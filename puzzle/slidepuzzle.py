@@ -1,7 +1,7 @@
 import chex
 import jax
 import jax.numpy as jnp
-from puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle, state_dataclass
 
 class SlidePuzzle(Puzzle):
 
@@ -10,7 +10,7 @@ class SlidePuzzle(Puzzle):
 
     @state_dataclass
     class State:
-        board: chex.Array
+        board: chex.Array 
 
     def __init__(self, size: int):
         self.size = size
@@ -93,7 +93,7 @@ class SlidePuzzle(Puzzle):
         This function should return a random state.
         """
         def get_random_state(key):
-            return self.State(board=jax.random.permutation(key, jnp.arange(0, self.size**2)))
+            return self.State(board=jax.random.permutation(key, jnp.arange(0, self.size**2, dtype=jnp.uint8)))
         
         def not_solverable(x):
             state = x[0]
@@ -143,33 +143,3 @@ class SlidePuzzle(Puzzle):
                 return count + is_inv(arr[i], arr[j])
             return count + jax.lax.fori_loop(i+1, n * n, count_inv_j, 0)
         return jax.lax.fori_loop(0, n * n - 1, count_inv_i, 0)
-
-if __name__ == "__main__":
-    puzzle = SlidePuzzle(4)
-    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10))
-    print(states[0])
-    print("Solverable : ", puzzle._solverable(states[0]))
-
-    #check solverable is working
-    states = puzzle.State(board=jnp.array([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0]))
-    print(states)
-    print("Solverable : ", puzzle._solverable(states))
-    states = puzzle.State(board=jnp.array([1,2,3,4,5,6,7,8,9,10,11,12,13,15,14,0]))
-    print(states)
-    print("Solverable : ", puzzle._solverable(states))
-
-    #check neighbours
-    states = puzzle.State(board=jnp.array([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0]))
-    print(states)
-    next_states, costs = puzzle.get_neighbours(states)
-    for i in range(4):
-        print(next_states[i])
-        print(costs[i])
-
-    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10000))
-    next_states, costs = jax.vmap(puzzle.get_neighbours, in_axes=0)(states)
-    # vstack (4, 10000, 16) -> (40000, 16)
-    next_states = jax.tree_util.tree_map(lambda x: jnp.vstack(x), next_states)
-    costs = jnp.vstack(costs)
-    print(next_states.shape)
-    print(costs.shape)
