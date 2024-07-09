@@ -38,7 +38,7 @@ def add_forms(cls: Type[T], parsfunc: callable) -> Type[T]:
     setattr(cls, '__str__', get_str)
     return cls
 
-class puzzle(ABC):
+class Puzzle(ABC):
     
     @state_dataclass
     class State:

@@ -1,9 +1,9 @@
 import chex
 import jax
 import jax.numpy as jnp
-from puzzle import puzzle, state_dataclass
+from puzzle_base import Puzzle, state_dataclass
 
-class slidepuzzle(puzzle):
+class SlidePuzzle(Puzzle):
 
     size: int
     actions = jnp.array([[0, 1], [0, -1], [1, 0], [-1, 0]])
@@ -143,7 +143,7 @@ class slidepuzzle(puzzle):
         return jax.lax.fori_loop(0, n * n - 1, count_inv_i, 0)
 
 if __name__ == "__main__":
-    puzzle = slidepuzzle(4)
+    puzzle = SlidePuzzle(4)
     states = puzzle.get_random_state(jax.random.PRNGKey(0))
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10))
     print(states[0])
