@@ -20,6 +20,11 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
         return shape_tuple(*[getattr(self, field_name).shape for field_name in cls.__annotations__.keys()])
     setattr(cls, 'shape', property(get_shape))
 
+    type_tuple = namedtuple('dtype', cls.__annotations__.keys())
+    def get_type(self) -> Dict[str, Any]:
+        return type_tuple(*[jnp.dtype(getattr(self, field_name).dtype) for field_name in cls.__annotations__.keys()])
+    setattr(cls, 'dtype', property(get_type))
+
     def getitem(self, index):
         new_values = {}
         for field_name, field_value in self.__dict__.items():
