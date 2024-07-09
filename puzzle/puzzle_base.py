@@ -8,6 +8,11 @@ from collections import namedtuple
 T = TypeVar('T')
 
 def state_dataclass(cls: Type[T]) -> Type[T]:
+    """
+    This function is a decorator that adds some functionality to the dataclass.
+    1. It adds a shape property to the class that returns the shape of each field.
+    2. It adds a __getitem__ method to the class that returns a new instance of the class with each field indexed by the input index.
+    """
     cls = chex.dataclass(cls)
 
     shape_tuple = namedtuple('shape', cls.__annotations__.keys())
@@ -31,6 +36,9 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
     return cls
 
 def add_forms(cls: Type[T], parsfunc: callable) -> Type[T]:
+    """
+    This function is a decorator that adds a __str__ method to the class that returns a string representation of the class.
+    """
 
     def get_str(self) -> str:
         return parsfunc(self)
@@ -42,9 +50,15 @@ class Puzzle(ABC):
     
     @state_dataclass
     class State:
+        """
+        This class should be a dataclass that represents the state of the puzzle.
+        """
         pass
 
     def __init__(self):
+        """
+        This function should be called in the __init__ of the subclass.
+        """
         super().__init__()
         self.State = add_forms(self.State, self.get_string_parser())
 

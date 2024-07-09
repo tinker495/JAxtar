@@ -17,23 +17,23 @@ class SlidePuzzle(Puzzle):
         super().__init__()
 
     def get_string_parser(self):
-        form = self.get_visualize_format()
+        form = self._get_visualize_format()
         def parser(state):
             return form.format(*state.board)
         return parser
     
     def get_initial_state(self, key = None) -> State:
-        return self.get_random_state(key)
+        return self._get_random_state(key)
 
     def get_target_state(self, key = None) -> State:
-        return self.get_random_state(key)
+        return self._get_random_state(key)
     
     def get_neighbours(self, state:State) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
         """
-        x, y = self.getBlankPosition(state)
+        x, y = self._getBlankPosition(state)
         pos = jnp.asarray((x, y))
         next_pos = pos + self.actions
         board = state.board
@@ -63,7 +63,7 @@ class SlidePuzzle(Puzzle):
         )(next_pos)
         return self.State(board=next_boards), costs
 
-    def get_visualize_format(self):
+    def _get_visualize_format(self):
         hexa = False
         size = self.size
         if size >= 4:
@@ -88,14 +88,16 @@ class SlidePuzzle(Puzzle):
             form += "━━┻━" if i != size - 1 else "━━┛"
         return form
 
-    def get_random_state(self, key):
-        
+    def _get_random_state(self, key):
+        """
+        This function should return a random state.
+        """
         def get_random_state(key):
             return self.State(board=jax.random.permutation(key, jnp.arange(0, self.size**2)))
         
         def not_solverable(x):
             state = x[0]
-            return ~self.solverable(state)
+            return ~self._solverable(state)
         
         def while_loop(x):
             state, key = x
@@ -108,28 +110,28 @@ class SlidePuzzle(Puzzle):
         state, _ = jax.lax.while_loop(not_solverable, while_loop, (state, next_key))
         return state
 
-    def solverable(self, state:State):
+    def _solverable(self, state:State):
         """Check if the state is solverable"""
         N = self.size
-        inv_count = self.getInvCount(state)
+        inv_count = self._getInvCount(state)
         return jax.lax.cond(
             N % 1,
             lambda _: inv_count % 2 == 0,
-            lambda _: jnp.logical_xor(self.getBlankRow(state) % 2 == 0, inv_count % 2 == 0),
+            lambda _: jnp.logical_xor(self._getBlankRow(state) % 2 == 0, inv_count % 2 == 0),
             None
         )
     
-    def getBlankPosition(self, state:State):
+    def _getBlankPosition(self, state:State):
         flat_index = jnp.argmax(state.board == 0)
         return jnp.unravel_index(flat_index, (self.size, self.size))
     
-    def getBlankRow(self, state:State):
-        return self.getBlankPosition(state)[0]
+    def _getBlankRow(self, state:State):
+        return self._getBlankPosition(state)[0]
     
-    def getBlankCol(self, state:State):
-        return self.getBlankPosition(state)[1]
+    def _getBlankCol(self, state:State):
+        return self._getBlankPosition(state)[1]
 
-    def getInvCount(self, state:State):
+    def _getInvCount(self, state:State):
         
         def is_inv(a, b):
             return jnp.logical_and(a < b, jnp.logical_and(a != 0, b != 0))
@@ -144,18 +146,17 @@ class SlidePuzzle(Puzzle):
 
 if __name__ == "__main__":
     puzzle = SlidePuzzle(4)
-    states = puzzle.get_random_state(jax.random.PRNGKey(0))
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10))
     print(states[0])
-    print("Solverable : ", puzzle.solverable(states[0]))
+    print("Solverable : ", puzzle._solverable(states[0]))
 
     #check solverable is working
     states = puzzle.State(board=jnp.array([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0]))
     print(states)
-    print("Solverable : ", puzzle.solverable(states))
+    print("Solverable : ", puzzle._solverable(states))
     states = puzzle.State(board=jnp.array([1,2,3,4,5,6,7,8,9,10,11,12,13,15,14,0]))
     print(states)
-    print("Solverable : ", puzzle.solverable(states))
+    print("Solverable : ", puzzle._solverable(states))
 
     #check neighbours
     states = puzzle.State(board=jnp.array([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,0]))
@@ -165,7 +166,7 @@ if __name__ == "__main__":
         print(next_states[i])
         print(costs[i])
 
-    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10))
+    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10000))
     next_states, costs = jax.vmap(puzzle.get_neighbours, in_axes=0)(states)
     print(next_states.shape)
     print(costs.shape)
