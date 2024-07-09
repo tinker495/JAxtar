@@ -168,5 +168,8 @@ if __name__ == "__main__":
 
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10000))
     next_states, costs = jax.vmap(puzzle.get_neighbours, in_axes=0)(states)
+    # vstack (4, 10000, 16) -> (40000, 16)
+    next_states = jax.tree_util.tree_map(lambda x: jnp.vstack(x), next_states)
+    costs = jnp.vstack(costs)
     print(next_states.shape)
     print(costs.shape)
