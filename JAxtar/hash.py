@@ -13,7 +13,7 @@ def rotl(x, n):
 
 def to_uint32(x: chex.Array):
     bitlen = x.dtype.itemsize
-    div = 4 // bitlen
+    div = jnp.maximum(4 // bitlen, 1)
     x_reshaped = jnp.reshape(x, (-1, div))
     return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped)
     
