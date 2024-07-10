@@ -55,7 +55,10 @@ def dataclass_hashing(x, seed):
     """
     x is a dataclass
     """
-    tree_hash = jax.tree_map(lambda x: jnp.sum(hashing(x, seed)), x)
+    def _h(x):
+        hashs = hashing(x, seed)
+        return jnp.sum(hashs * jnp.arange(1, len(hashs) + 1)) # sum of hash * index for collision
+    tree_hash = jax.tree_map(_h, x)
     flattened_sum_hash = sum(jax.tree_leaves(tree_hash))
     return flattened_sum_hash
 
