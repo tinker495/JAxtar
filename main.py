@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from JAxtar.hash import cuckooHash
+from JAxtar.hash import dataclass_hashing, dataclass_hashing_batch
 from puzzle.slidepuzzle import SlidePuzzle
 
 puzzle = SlidePuzzle(4)
@@ -34,3 +34,7 @@ costs = first_flat(costs)
 print(next_states.shape)
 print(next_states.dtype)
 print(costs.shape)
+
+#check hashing
+hashes = dataclass_hashing(next_states[0], 1)
+print(hashes.shape)
