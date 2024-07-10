@@ -36,8 +36,17 @@ print(next_states.dtype)
 print(costs.shape)
 
 #check hashing
+print("States Hashing, this should be not collision")
 hashes = dataclass_hashing_batch(states, 1)
 #count hash collision
 print(hashes.shape)
 print(hashes.dtype)
-print(jnp.unique(hashes).shape)
+print(jnp.unique(hashes).shape) # No collision
+
+#check hashing
+print("Next states Hashing, this should be collision")
+hashes = dataclass_hashing_batch(next_states, 1)
+#count hash collision
+print(hashes.shape)
+print(hashes.dtype)
+print(jnp.unique(hashes).shape) # Collision
