@@ -13,14 +13,13 @@ def rotl(x, n):
 
 def to_uint32(x: chex.Array):
     bitlen = x.dtype.itemsize
-    cond = bitlen == 4
-    return jax.lax.cond(cond, lambda _: x, 
-            lambda _: jax.lax.bitcast_convert_type(x, jnp.uint32),
-            None)
+    div = 4 // bitlen
+    x_reshaped = jnp.reshape(x, (-1, div))
+    return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped)
     
 
 def xxhash(x, seed):
-    x = jax.lax.bitcast_convert_type(x, jnp.uint32)
+    x = to_uint32(x)
     prime_1 = jnp.uint32(0x9E3779B1)
     prime_2 = jnp.uint32(0x85EBCA77)
     prime_3 = jnp.uint32(0xC2B2AE3D)
@@ -56,8 +55,8 @@ def dataclass_hashing(x, seed):
     """
     x is a dataclass
     """
-    tree_hash = jax.tree_map(lambda x: hashing(x, seed), x)
-    flattened_sum_hash = jnp.sum(jax.tree_leaves(tree_hash))
+    tree_hash = jax.tree_map(lambda x: jnp.sum(hashing(x, seed)), x)
+    flattened_sum_hash = sum(jax.tree_leaves(tree_hash))
     return flattened_sum_hash
 
 def dataclass_hashing_batch(x, seed):

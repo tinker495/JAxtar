@@ -36,5 +36,8 @@ print(next_states.dtype)
 print(costs.shape)
 
 #check hashing
-hashes = dataclass_hashing(next_states[0], 1)
+hashes = dataclass_hashing_batch(states, 1)
+#count hash collision
 print(hashes.shape)
+print(hashes.dtype)
+print(jnp.unique(hashes).shape)
