@@ -55,11 +55,5 @@ print(jnp.unique(hashes).shape) # Collision
 
 #check heuristic
 print("Heuristic")
-print(states[0])
-print(next_states[0])
-diff, _ = heuristic._diff_pos(states[0], next_states[0])
-print(diff.shape)
-print(diff[:,0])
-print(diff[:,1])
-dist = heuristic.distance(states[0], next_states[0])
+dist = jax.vmap(heuristic.distance, in_axes=(0, None))(next_states, states[0])
 print(dist)
