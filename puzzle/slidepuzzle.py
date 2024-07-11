@@ -63,6 +63,9 @@ class SlidePuzzle(Puzzle):
         )(next_pos)
         return self.State(board=next_boards), costs
 
+    def is_solved(self, state:State, target:State) -> bool:
+        return self.is_equal(state, target)
+
     def _get_visualize_format(self):
         hexa = False
         size = self.size
