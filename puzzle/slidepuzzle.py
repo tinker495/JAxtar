@@ -18,8 +18,16 @@ class SlidePuzzle(Puzzle):
 
     def get_string_parser(self):
         form = self._get_visualize_format()
+
+        def to_char(x):
+            if x == 0:
+                return " "
+            if x > 9:
+                return chr(x + 55)
+            return str(x)
+
         def parser(state):
-            return form.format(*state.board)
+            return form.format(*map(to_char, state.board))
         return parser
     
     def get_initial_state(self, key = None) -> State:
@@ -67,10 +75,7 @@ class SlidePuzzle(Puzzle):
         return self.is_equal(state, target)
 
     def _get_visualize_format(self):
-        hexa = False
         size = self.size
-        if size >= 4:
-            hexa = True
         form = "┏━"
         for i in range(size):
             form += "━━┳━" if i != size - 1 else "━━┓"
@@ -78,7 +83,7 @@ class SlidePuzzle(Puzzle):
         for i in range(size):
             form += "┃ "
             for j in range(size):
-                form += "{:d}" if not hexa else "{:x}"
+                form += "{:s}"
                 form += " ┃ " if j != size - 1 else " ┃"
             form += "\n"
             if i != size - 1:
