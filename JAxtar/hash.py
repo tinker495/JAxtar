@@ -15,8 +15,7 @@ def to_uint32(x: chex.Array):
     bitlen = x.dtype.itemsize
     div = jnp.maximum(4 // bitlen, 1)
     x_reshaped = jnp.reshape(x, (-1, div))
-    return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped)
-    
+    return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
 
 def xxhash(x, seed):
     x = to_uint32(x)
