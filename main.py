@@ -3,8 +3,10 @@ import jax.numpy as jnp
 
 from JAxtar.hash import dataclass_hashing, dataclass_hashing_batch
 from puzzle.slidepuzzle import SlidePuzzle
+from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 
 puzzle = SlidePuzzle(4)
+heuristic = SlidePuzzleHeuristic(puzzle)
 states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10))
 print(states[0])
 print("Solverable : ", puzzle._solverable(states[0]))
@@ -50,3 +52,14 @@ hashes = dataclass_hashing_batch(next_states, 1)
 print(hashes.shape)
 print(hashes.dtype)
 print(jnp.unique(hashes).shape) # Collision
+
+#check heuristic
+print("Heuristic")
+print(states[0])
+print(next_states[0])
+diff, _ = heuristic._diff_pos(states[0], next_states[0])
+print(diff.shape)
+print(diff[:,0])
+print(diff[:,1])
+dist = heuristic.distance(states[0], next_states[0])
+print(dist)
