@@ -96,3 +96,20 @@ class Puzzle(ABC):
         if impossible to move in a direction cost should be inf and State should be same as input state.
         """
         pass
+
+    @abstractmethod
+    def is_solved(self, state: State, target: State) -> bool:
+        """
+        This function should return True if the state is the target state.
+        if the puzzle has multiple target states, this function should return True if the state is one of the target conditions.
+        e.g sokoban puzzle has multiple target states. box's position should be the same as the target position but the player's position can be different.
+        """
+        pass
+
+    def is_equal(self, state1: State, state2: State) -> bool:
+        """
+        This function should return True if the two states are equal.
+        this functions must be all puzzle's state(dataclass) compatible, so this is not a abstract method.
+        """
+        tree_equal = jax.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
+        return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)

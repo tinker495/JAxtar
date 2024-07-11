@@ -1,21 +1,30 @@
 import operator
 
+import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax import lax
+from typing import Any, Dict, Type, TypeVar
 
+T = TypeVar('T')
 
 def rotl(x, n):
     return (x << n) | (x >> (32 - n))
 
+def to_uint32(x: chex.Array):
+    bitlen = x.dtype.itemsize
+    div = jnp.maximum(4 // bitlen, 1)
+    x = jnp.concatenate([x, jnp.zeros(div - len(x) % div, x.dtype)])
+    x_reshaped = jnp.reshape(x, (-1, div))
+    return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
+
 def xxhash(x, seed):
-    x = lax.bitcast_convert_type(x, jnp.uint32)
-    prime_1 = np.uint32(0x9E3779B1)
-    prime_2 = np.uint32(0x85EBCA77)
-    prime_3 = np.uint32(0xC2B2AE3D)
-    prime_5 = np.uint32(0x165667B1)
-    acc = np.uint32(seed) + prime_5
+    x = to_uint32(x)
+    prime_1 = jnp.uint32(0x9E3779B1)
+    prime_2 = jnp.uint32(0x85EBCA77)
+    prime_3 = jnp.uint32(0xC2B2AE3D)
+    prime_5 = jnp.uint32(0x165667B1)
+    acc = jnp.uint32(seed) + prime_5
     for _ in range(4):
         lane = x & 255
         acc = acc + lane * prime_5
@@ -42,6 +51,25 @@ def hashing(x, seed): # max capacity is 2 ** 24
     c3 = (b3 * capacity) >> 8
     return c1 + c2 + c3
 
+def dataclass_hashing(x, seed):
+    """
+    x is a dataclass
+    """
+    def _h(x):
+        # sum of hash * index for collision
+        hashs = hashing(x, seed)
+        return jnp.sum(hashs * jnp.arange(1, len(hashs) + 1), dtype=jnp.uint32)
+    tree_hash = jax.tree_map(_h, x)
+    flattened_sum_hash = sum(jax.tree_leaves(tree_hash))
+    return flattened_sum_hash
+
+def dataclass_hashing_batch(x, seed):
+    """
+    x is a dataclass
+    """
+    hashes = jax.vmap(lambda x: dataclass_hashing(x, seed),in_axes=0)(x)
+    return hashes
+
 @jax.jit
 def batchIndex(arr, idx):
     return jax.vmap(operator.getitem)(arr, idx)
@@ -59,7 +87,7 @@ def cuckooHash(xs, seed=1):
         collided = count[hash_assigned] > 1
         return jnp.where(collided, 1 - assignment, assignment), jnp.any(collided), i + 1
     
-    assignment, collided, _ = lax.while_loop(cond_fun, body_fun, (assignment, True, 0))
+    assignment, collided, _ = jax.lax.while_loop(cond_fun, body_fun, (assignment, True, 0))
     if collided:
         return cuckooHash(xs, seed + 1)
     return batchIndex(hash_stack, assignment), seed
