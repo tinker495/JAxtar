@@ -51,8 +51,7 @@ class SlidePuzzleHeuristic:
         """
         tpos = jnp.reshape(tpos, (self.puzzle.size, self.puzzle.size, 2))
         not_empty = jnp.expand_dims(not_empty, axis=1)
-        #inrows = jnp.reshape(not_empty * (diff == 0), (self.puzzle.size, self.puzzle.size, 2))
-        conflict = 0
+        inrows = jnp.reshape(not_empty * (diff == 0), (self.puzzle.size, self.puzzle.size, 2))
 
         def _cond(val):
             _, _, conflict, _ = val
@@ -68,20 +67,19 @@ class SlidePuzzleHeuristic:
             i, j = jnp.arange(self.puzzle.size), jnp.arange(self.puzzle.size)
             i = jnp.expand_dims(i, axis=0)
             j = jnp.expand_dims(j, axis=1)
-            conflict = jnp.zeros((self.puzzle.size), dtype=jnp.uint8)
-                #jnp.sum(_check_conflict(i,j) * inrow[i] * inrow[j], axis=1, dtype=jnp.uint8) # check conflict in rows
+            conflict = jnp.sum(_check_conflict(i,j) * inrow[i] * inrow[j], axis=1, dtype=jnp.uint8) # check conflict in rows
             
             max_idx = jnp.argmax(conflict)
-            inrow = inrow.at[max_idx].set(0)
+            inrow = inrow.at[max_idx].set(False)
             ans += 1
             #print(pos.shape, inrow.shape, conflict.shape, ans)
             return pos, inrow, conflict, ans
         
         def _count_conflict(pos, inrow):
-            _, _, _, conflict = jax.lax.while_loop(_cond, _while_count_conflict, (pos, inrow, jnp.ones(self.puzzle.size, dtype=jnp.uint8), 0))
+            _, _, _, conflict = jax.lax.while_loop(_cond, _while_count_conflict, (pos, inrow, jnp.ones(self.puzzle.size, dtype=jnp.uint8), -1))
             return conflict * 2
         
-        #x_conflicts = jax.vmap(_count_conflict, in_axes=(1,1))(tpos[:,:,0], inrows[:,:,0])
-        #y_conflicts = jax.vmap(_count_conflict, in_axes=(0,0))(tpos[:,:,1], inrows[:,:,1])
-        #conflict += jnp.sum(x_conflicts) + jnp.sum(y_conflicts)
-        return 0
+        x_conflicts = jax.vmap(_count_conflict, in_axes=(1,1))(tpos[:,:,0], inrows[:,:,0])
+        y_conflicts = jax.vmap(_count_conflict, in_axes=(0,0))(tpos[:,:,1], inrows[:,:,1])
+        conflict = jnp.sum(x_conflicts) + jnp.sum(y_conflicts)
+        return conflict
