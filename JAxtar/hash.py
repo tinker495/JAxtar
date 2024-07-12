@@ -97,6 +97,9 @@ class HashTable:
     def check(table: "HashTable", x: Puzzle.State):
         """
         find the index of the state in the table if it exists.
+        if it exists return the index, cuckoo_idx and True
+        if is does not exist return the unfilled index, cuckoo_idx and False
+        this function could be used to check if the state is in the table or not, and insert it if it is not.
         """
 
         def get_new_idx(seed):
