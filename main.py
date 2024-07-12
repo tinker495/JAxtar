@@ -7,8 +7,8 @@ from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 
 puzzle = SlidePuzzle(4)
 heuristic = SlidePuzzleHeuristic(puzzle)
-defualt_state = puzzle.State.default()
-print(defualt_state)
+defualt_state = jax.vmap(puzzle.State.default)(jnp.zeros(10000))
+print(defualt_state[0])
 states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10))
 print(states[0])
 print("Solverable : ", puzzle._solverable(states[0]))
@@ -29,7 +29,7 @@ for i in range(4):
     print(next_states[i])
     print(costs[i])
 
-states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10000))
+states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10000000))
 next_states, costs = jax.vmap(puzzle.get_neighbours, in_axes=0)(states)
 # vstack (4, 10000, 16) -> (40000, 16)
 first_flat = lambda x: jnp.reshape(x, (-1, *x.shape[2:]))
