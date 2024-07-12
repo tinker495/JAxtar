@@ -51,6 +51,18 @@ def add_forms(cls: Type[T], parsfunc: callable) -> Type[T]:
     setattr(cls, '__str__', get_str)
     return cls
 
+def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
+    """
+    This function is a decorator that adds a default dataclass to the class.
+    this function for making a default dataclass with the given shape, for example, hash table of the puzzle.
+    """
+
+    def get_default(_ = None) -> T:
+        return defaultfunc()
+    
+    setattr(cls, 'default', staticmethod(get_default))
+    return cls
+
 class Puzzle(ABC):
     
     @state_dataclass
@@ -66,12 +78,21 @@ class Puzzle(ABC):
         """
         super().__init__()
         self.State = add_forms(self.State, self.get_string_parser())
+        self.State = add_default(self.State, self.add_default_gen())
 
     @abstractmethod
     def get_string_parser(self) -> callable:
         """
         This function should return a callable that takes a state and returns a string representation of it.
         function signature: (state: State) -> str
+        """
+        pass
+
+    @abstractmethod
+    def add_default_gen(self) -> callable:
+        """
+        This function should return a callable that takes a state and returns a shape of it.
+        function signature: (state: State) -> Dict[str, Any]
         """
         pass
 

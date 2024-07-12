@@ -7,6 +7,8 @@ from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 
 puzzle = SlidePuzzle(4)
 heuristic = SlidePuzzleHeuristic(puzzle)
+defualt_state = puzzle.State.default()
+print(defualt_state)
 states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(0),10))
 print(states[0])
 print("Solverable : ", puzzle._solverable(states[0]))

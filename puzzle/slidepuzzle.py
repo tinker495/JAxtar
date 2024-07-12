@@ -10,7 +10,7 @@ class SlidePuzzle(Puzzle):
 
     @state_dataclass
     class State:
-        board: chex.Array 
+        board: chex.Array
 
     def __init__(self, size: int):
         self.size = size
@@ -30,6 +30,12 @@ class SlidePuzzle(Puzzle):
             return form.format(*map(to_char, state.board))
         return parser
     
+
+    def add_default_gen(self) -> callable:
+        def gen():
+            return self.State(board=jnp.zeros(self.size**2, dtype=jnp.uint8))
+        return gen
+
     def get_initial_state(self, key = None) -> State:
         return self._get_random_state(key)
 
