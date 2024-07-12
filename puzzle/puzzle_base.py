@@ -60,7 +60,7 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
     def get_default(_ = None) -> T:
         return defaultfunc()
     
-    setattr(cls, 'default', staticmethod(get_default))
+    setattr(cls, 'default', staticmethod(jax.jit(get_default)))
     return cls
 
 class Puzzle(ABC):
