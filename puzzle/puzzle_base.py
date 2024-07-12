@@ -80,6 +80,12 @@ class Puzzle(ABC):
         self.State = add_forms(self.State, self.get_string_parser())
         self.State = add_default(self.State, self.get_default_gen())
 
+        self.get_initial_state = jax.jit(self.get_initial_state)
+        self.get_target_state = jax.jit(self.get_target_state)
+        self.get_neighbours = jax.jit(self.get_neighbours)
+        self.is_solved = jax.jit(self.is_solved)
+        self.is_equal = jax.jit(self.is_equal)
+
     @abstractmethod
     def get_string_parser(self) -> callable:
         """
