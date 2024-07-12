@@ -4,6 +4,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
+from functools import partial
 from typing import Any, Dict, Type, TypeVar
 from puzzle.puzzle_base import Puzzle
 
@@ -15,8 +16,14 @@ def rotl(x, n):
 def to_uint32(x: chex.Array):
     bitlen = x.dtype.itemsize
     div = jnp.maximum(4 // bitlen, 1)
-    x = jnp.concatenate([x, jnp.zeros(div - len(x) % div, x.dtype)])
-    x_reshaped = jnp.reshape(x, (-1, div))
+    pad_len = jax.lax.cond(
+        x.shape[0] % div == 0,
+        lambda _: 0,
+        lambda _: div - x.shape[0] % div,
+        None
+    )
+    x_padded = jnp.pad(x, (0, pad_len), mode='constant', constant_values=0)
+    x_reshaped = jnp.reshape(x_padded, (-1, div))
     return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
 
 def xxhash(x, seed):
@@ -73,28 +80,31 @@ def dataclass_hashing_batch(x, seed):
 
 @chex.dataclass
 class HashTable:
+    """
+    Cuckoo Hash Table
+    """
 
     seed: int
     capacity: int
-    cuckoo_len: int # number of tables
-    table: Puzzle.State # shape = State("args" = (cuckoo_len, max_capacity, ...), ...) 
-    filled: chex.Array # shape = (cuckoo_len, max_capacity,)
+    n_table: int # number of tables
+    table: Puzzle.State # shape = State("args" = (capacity, cuckoo_len, ...), ...) 
+    table_idx: chex.Array # shape = (capacity, ) dtype = jnp.uint4 is the index of the table in the cuckoo table.
 
     @staticmethod
-    def make_lookup_table(statecls: Puzzle.State, seed: int, capacity: int, cuckoo_len: int = 2):
+    def make_lookup_table(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
         """
-        dataclass is a dataclass
+        make a lookup table with the default state of the statecls
         """
-        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((cuckoo_len, capacity)))
-        filled = jnp.zeros((cuckoo_len, capacity), dtype=jnp.bool_)
+        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((capacity, n_table)))
+        table_idx = jnp.zeros((capacity), dtype=jnp.uint8)
         return HashTable(seed=seed,
                         capacity=capacity,
-                        cuckoo_len=cuckoo_len,
+                        n_table=n_table,
                         table=table,
-                        filled=filled)
+                        table_idx=table_idx)
 
     @staticmethod
-    def check(table: "HashTable", x: Puzzle.State):
+    def check(table: "HashTable", input: Puzzle.State):
         """
         find the index of the state in the table if it exists.
         if it exists return the index, cuckoo_idx and True
@@ -103,31 +113,48 @@ class HashTable:
         """
 
         def get_new_idx(seed):
-            hash_value = dataclass_hashing(x, seed)
+            hash_value = dataclass_hashing(input, seed)
             idx = hash_value % table.capacity
-            return idx, seed+1
-
+            return idx
+        
         def _cond(val):
-            _, _, equal, not_filled = val
-            return jnp.logical_or(not_filled, equal)
-        
-        def _check_equal(state1, state2):
-            tree_equal = jax.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
-            return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
+            seed, idx, table_idx, found = val
+            filled_idx = table.table_idx[idx]
+            in_empty = filled_idx == table_idx
+            return jnp.logical_and(~found, ~in_empty)
 
-        def _while_check(val):
-            _, cuckoo, seed, _, _ = val
-            idx, seed = jax.lax.cond(cuckoo, lambda x: get_new_idx(x), lambda x: (idx, seed), seed)
-            table_state = jax.lax.cond(cuckoo, lambda idx: table.cuckoo_table[idx], lambda idx: table.table[idx], idx)
-            equal = _check_equal(table_state, x)
-        
-        idx, _, found, _ = jax.lax.while_loop(_cond, _while_check, (0, False, table.seed, False, True))
-        return idx, found
+        def _while(val):
+            seed, idx, table_idx, found = val
 
-    @staticmethod
-    def insert(table: "HashTable", x: Puzzle.State):
-        """
-        x is a dataclass
-        """
-        hash_value = dataclass_hashing(x, table.seed)
-        idx = hash_value % table.capacity
+            def get_new_idx_and_table_idx(seed, idx, table_idx):
+                next_table = table_idx == table.n_table - 1
+                idx, table_idx, seed = jax.lax.cond(
+                    next_table,
+                    lambda _: (get_new_idx(seed+1), 0, seed+1),
+                    lambda _: (idx, table_idx+1, seed),
+                    None
+                )
+                return idx, table_idx, seed
+            
+            def _check_equal(state1, state2):
+                tree_equal = jax.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
+                return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
+
+            state = table.table[idx, table_idx]
+            found = _check_equal(state, input)
+            idx, table_idx, seed = jax.lax.cond(
+                found,
+                lambda _: (idx, table_idx, seed),
+                lambda _: get_new_idx_and_table_idx(seed, idx, table_idx),
+                None
+            )
+            return seed, idx, table_idx, found
+        
+        seed = table.seed
+        idx = get_new_idx(seed)
+        _, idx, table_idx, found = jax.lax.while_loop(
+            _cond,
+            _while,
+            (seed, idx, 0, False)
+        )
+        return idx, table_idx, found
