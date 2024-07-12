@@ -59,7 +59,7 @@ def hashing(x, seed): # max capacity is 2 ** 24
     c3 = (b3 * capacity) >> 8
     return c1 + c2 + c3
 
-def dataclass_hashing(x, seed):
+def dataclass_hashing(x: Puzzle.State, seed: int):
     """
     x is a dataclass
     """
@@ -71,7 +71,7 @@ def dataclass_hashing(x, seed):
     flattened_sum_hash = sum(jax.tree_leaves(tree_hash))
     return flattened_sum_hash
 
-def dataclass_hashing_batch(x, seed):
+def dataclass_hashing_batch(x: Puzzle.State, seed: int):
     """
     x is a dataclass
     """
