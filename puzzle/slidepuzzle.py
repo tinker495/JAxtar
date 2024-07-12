@@ -30,8 +30,7 @@ class SlidePuzzle(Puzzle):
             return form.format(*map(to_char, state.board))
         return parser
     
-
-    def add_default_gen(self) -> callable:
+    def get_default_gen(self) -> callable:
         def gen():
             return self.State(board=jnp.zeros(self.size**2, dtype=jnp.uint8))
         return gen

@@ -78,7 +78,7 @@ class Puzzle(ABC):
         """
         super().__init__()
         self.State = add_forms(self.State, self.get_string_parser())
-        self.State = add_default(self.State, self.add_default_gen())
+        self.State = add_default(self.State, self.get_default_gen())
 
     @abstractmethod
     def get_string_parser(self) -> callable:
@@ -89,7 +89,7 @@ class Puzzle(ABC):
         pass
 
     @abstractmethod
-    def add_default_gen(self) -> callable:
+    def get_default_gen(self) -> callable:
         """
         This function should return a callable that takes a state and returns a shape of it.
         function signature: (state: State) -> Dict[str, Any]
