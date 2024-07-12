@@ -14,16 +14,18 @@ def rotl(x, n):
     return (x << n) | (x >> (32 - n))
 
 def to_uint32(x: chex.Array):
+    '''
     bitlen = x.dtype.itemsize
-    div = jnp.maximum(4 // bitlen, 1)
+    div = jnp.maximum(4 // bitlen, 1).astype(int)
     pad_len = jax.lax.cond(
         x.shape[0] % div == 0,
         lambda _: 0,
-        lambda _: div - x.shape[0] % div,
+        lambda _: (div - x.shape[0] % div).astype(int),
         None
-    )
-    x_padded = jnp.pad(x, (0, pad_len), mode='constant', constant_values=0)
-    x_reshaped = jnp.reshape(x_padded, (-1, div))
+    ) # when variable dataclass is used this must be fixed, for now jit is not working with variable dataclass
+    '''
+    x_padded = jnp.pad(x, (0, 0), mode='constant', constant_values=0) # this must be fix for variable dataclass
+    x_reshaped = jnp.reshape(x_padded, (4, 4))                        # this must be fix for variable dataclass
     return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
 
 def xxhash(x, seed):
@@ -158,3 +160,44 @@ class HashTable:
             (seed, idx, 0, False)
         )
         return idx, table_idx, found
+    
+    @staticmethod
+    def _insert(table: "HashTable", input: Puzzle.State, idx: int, table_idx: int):
+        """
+        insert the state in the table
+        """
+        table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(y), table.table, input)
+        table.table_idx = table.table_idx.at[idx].set(table_idx + 1)
+        return table
+
+    @staticmethod
+    @jax.jit
+    def insert(table: "HashTable", input: Puzzle.State):
+        """
+        insert the state in the table
+        """
+        idx, table_idx, found = HashTable.check(table, input)
+        return jax.lax.cond(
+            found,
+            lambda _: table,
+            lambda _: HashTable._insert(table, input, idx, table_idx),
+            None
+        ), ~found
+    
+    @staticmethod
+    @jax.jit
+    def batch_insert(table: "HashTable", inputs: Puzzle.State):
+        """
+        insert the states in the table
+        """
+        def _insert(table, input):
+            idx, table_idx, found = HashTable.check(table, input)
+            table = jax.lax.cond(
+                found,
+                lambda _: table,
+                lambda _: HashTable._insert(table, input, idx, table_idx),
+                None
+            )
+            return table, ~found
+
+        return jax.lax.scan(_insert, table, inputs)
