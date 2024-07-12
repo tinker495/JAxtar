@@ -76,18 +76,20 @@ class HashTable:
 
     seed: int
     capacity: int
-    table: Puzzle.State # shape = State("args" = (2, max_capacity, ...), ...) 0 is for table 1 is for cuckoo table
-    filled: chex.Array # shape = (2, max_capacity,) filled table for cuckoo table
+    cuckoo_len: int # number of tables
+    table: Puzzle.State # shape = State("args" = (cuckoo_len, max_capacity, ...), ...) 
+    filled: chex.Array # shape = (cuckoo_len, max_capacity,)
 
     @staticmethod
-    def make_lookup_table(statecls: Puzzle.State, seed: int, capacity: int):
+    def make_lookup_table(statecls: Puzzle.State, seed: int, capacity: int, cuckoo_len: int = 2):
         """
         dataclass is a dataclass
         """
-        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((2,capacity)))
-        filled = jnp.zeros((2,capacity), dtype=jnp.bool_)
+        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((cuckoo_len, capacity)))
+        filled = jnp.zeros((cuckoo_len, capacity), dtype=jnp.bool_)
         return HashTable(seed=seed,
                         capacity=capacity,
+                        cuckoo_len=cuckoo_len,
                         table=table,
                         filled=filled)
 
