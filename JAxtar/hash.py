@@ -20,7 +20,7 @@ def hash_func_builder(x: Puzzle.State):
     """
     build a hash function for the state dataclass
     """
-    default = x.default()
+    default = x.default() # get the default state, reference for building the hash function
 
     def _get_leaf_hash_func(leaf):
         flatten_leaf = jnp.reshape(leaf, (-1,))
@@ -78,8 +78,8 @@ def hash_func_builder(x: Puzzle.State):
         
         return _h
 
-    tree_flatten_func = jax.tree_map(_get_leaf_hash_func, default)
-    def _h(x, seed):
+    tree_flatten_func = jax.tree_map(_get_leaf_hash_func, default) # each leaf has a hash function for each array shape and dtype
+    def _h(x, seed): # sum of all the hash functions for each leaf
         return jax.tree_util.tree_reduce(operator.add, jax.tree_map(lambda f,l: f(l, seed), tree_flatten_func, x))
     return jax.jit(_h)
 
@@ -108,19 +108,22 @@ class HashTable:
                         table=table,
                         table_idx=table_idx)
 
+
+
     @staticmethod
-    def _lookup(hash_func: callable, table: "HashTable", input: Puzzle.State, seed: int):
+    def get_new_idx(hash_func: callable, table: "HashTable", input: Puzzle.State, seed: int):
+        hash_value = hash_func(input, seed)
+        idx = hash_value % table.capacity
+        return idx
+
+    @staticmethod
+    def _lookup(hash_func: callable, table: "HashTable", input: Puzzle.State, idx: int, table_idx: int, seed: int):
         """
         find the index of the state in the table if it exists.
         if it exists return the index, cuckoo_idx and True
         if is does not exist return the unfilled index, cuckoo_idx and False
         this function could be used to check if the state is in the table or not, and insert it if it is not.
         """
-
-        def get_new_idx(seed):
-            hash_value = hash_func(input, seed)
-            idx = hash_value % table.capacity
-            return idx
         
         def _cond(val):
             seed, idx, table_idx, found = val
@@ -135,7 +138,7 @@ class HashTable:
                 next_table = table_idx == table.n_table - 1
                 idx, table_idx, seed = jax.lax.cond(
                     next_table,
-                    lambda _: (get_new_idx(seed+1), 0, seed+1),
+                    lambda _: (HashTable.get_new_idx(hash_func, table, state, seed+1), 0, seed+1),
                     lambda _: (idx, table_idx+1, seed),
                     None
                 )
@@ -155,11 +158,10 @@ class HashTable:
             )
             return seed, idx, table_idx, found
         
-        idx = get_new_idx(seed)
         update_seed, idx, table_idx, found = jax.lax.while_loop(
             _cond,
             _while,
-            (seed, idx, 0, False)
+            (seed, idx, table_idx, False)
         )
         return update_seed, idx, table_idx, found
     
@@ -170,7 +172,8 @@ class HashTable:
         if it exists return the index, cuckoo_idx and True
         if is does not exist return the
         """
-        _, idx, table_idx, found = HashTable._lookup(hash_func, table, input, table.seed)
+        index = HashTable.get_new_idx(hash_func, table, input, table.seed)
+        _, idx, table_idx, found = HashTable._lookup(hash_func, table, input, index, 0, table.seed)
         return idx, table_idx, found
     
     @staticmethod
@@ -199,7 +202,7 @@ class HashTable:
     @staticmethod
     def batch_insert(hash_func: callable, table: "HashTable", inputs: Puzzle.State):
         """
-        insert the states in the table
+        insert the states in the table one by one
         """
         def _insert(table, input):
             idx, table_idx, found = HashTable.lookup(hash_func, table, input)
@@ -215,14 +218,17 @@ class HashTable:
     def parallel_insert(hash_func: callable, table: "HashTable", inputs: Puzzle.State):
         """
         insert the states in the table at the same time
-        this is not working properly yet
         """
-        jit_lookup = jax.jit(partial(HashTable._lookup, hash_func))
-        seeds, idx, table_idx, found = jax.vmap(jit_lookup, in_axes=(None, 0, None))(table, inputs, table.seed)
+        index = jax.vmap(jax.jit(partial(HashTable.get_new_idx, hash_func)), in_axes=(None, 0, None))(table, inputs, table.seed)
+        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None))(table, inputs, index, 0, table.seed)
         idxs = jnp.stack([idx, table_idx], axis=1) # shape = (batch_size, 2)
         batch_len = idx.shape[0]
-        val, unique_idxs = jnp.unique(idxs, axis=0, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
-        unique_update = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
+        values, idxs, inv, count = jnp.unique(idxs, axis=0, size=batch_len, return_index=True, return_inverse=True, return_counts=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
+        unique_update = jnp.zeros((batch_len,), dtype=jnp.bool_).at[idxs].set(True)
         updatable = jnp.logical_and(~found, unique_update)
-        table = HashTable._insert(table, inputs[updatable], idx[updatable], table_idx[updatable])
-        return table, updatable
+        def _update_table(table, inputs, idx, table_idx, updatable):
+            table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(jnp.where(updatable.reshape(-1, 1), y, x[idx,table_idx])), table.table, inputs)
+            table.table_idx = table.table_idx.at[idx].add(updatable)
+            return table
+        
+        return _update_table(table, inputs, idx, table_idx, updatable), updatable
