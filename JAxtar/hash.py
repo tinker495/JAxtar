@@ -198,21 +198,6 @@ class HashTable:
             lambda _: HashTable._insert(table, input, idx, table_idx),
             None
         ), ~found
-    
-    @staticmethod
-    def batch_insert(hash_func: callable, table: "HashTable", inputs: Puzzle.State):
-        """
-        insert the states in the table one by one
-        """
-        def _insert(table, input):
-            idx, table_idx, found = HashTable.lookup(hash_func, table, input)
-            return jax.lax.cond(
-                found,
-                lambda _: table,
-                lambda _: HashTable._insert(table, input, idx, table_idx),
-                None
-            ), ~found
-        return jax.lax.scan(_insert, table, inputs)
 
     @staticmethod
     def parallel_insert(hash_func: callable, table: "HashTable", inputs: Puzzle.State):
