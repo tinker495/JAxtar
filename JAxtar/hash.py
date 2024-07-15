@@ -219,16 +219,39 @@ class HashTable:
         """
         insert the states in the table at the same time
         """
-        index = jax.vmap(jax.jit(partial(HashTable.get_new_idx, hash_func)), in_axes=(None, 0, None))(table, inputs, table.seed)
-        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None))(table, inputs, index, 0, table.seed)
-        idxs = jnp.stack([idx, table_idx], axis=1) # shape = (batch_size, 2)
-        batch_len = idx.shape[0]
-        values, idxs, inv, count = jnp.unique(idxs, axis=0, size=batch_len, return_index=True, return_inverse=True, return_counts=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
-        unique_update = jnp.zeros((batch_len,), dtype=jnp.bool_).at[idxs].set(True)
-        updatable = jnp.logical_and(~found, unique_update)
+        def _get_next_indexs(table, inputs, idx, table_idx, seeds):
+            seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, 0, 0))(table, inputs, idx, table_idx, seeds)
+            idxs = jnp.stack([idx, table_idx], axis=1)
+            return seeds, idxs, idx, table_idx, ~found
+
         def _update_table(table, inputs, idx, table_idx, updatable):
             table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(jnp.where(updatable.reshape(-1, 1), y, x[idx,table_idx])), table.table, inputs)
             table.table_idx = table.table_idx.at[idx].add(updatable)
             return table
         
-        return _update_table(table, inputs, idx, table_idx, updatable), updatable
+        def _cond(val):
+            _, _, _, _, unupdated, _ = val
+            return jnp.any(unupdated)
+        
+        def _while(val):
+            seeds, idxs, idx, table_idx, unupdated, table = val
+            idxs = jnp.where(unupdated.reshape(-1,1), idxs, jnp.ones_like(idxs) * table.capacity + 10)
+            _, unique_idxs = jnp.unique(idxs, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
+            unique_update = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
+            updatable = jnp.logical_and(unupdated, unique_update)
+            table = _update_table(table, inputs, idx, table_idx, updatable)
+            seeds, idxs, idx, table_idx, unupdated = _get_next_indexs(table, inputs, idx, table_idx, seeds)
+            unupdated = jnp.logical_and(unupdated, ~unique_update)
+            return seeds, idxs, idx, table_idx, unupdated, table
+
+        idxs = jax.vmap(jax.jit(partial(HashTable.get_new_idx, hash_func)), in_axes=(None, 0, None))(table, inputs, table.seed)
+        batch_len = idxs.shape[0]
+        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None))(table, inputs, idxs, 0, table.seed)
+        idxs = jnp.stack([idx, table_idx], axis=1)
+        inserted = ~found
+        seeds, _, _, _, _, table  = jax.lax.while_loop(
+            _cond,
+            _while,
+            (seeds, idxs, idx, table_idx, inserted, table)
+        )
+        return table, inserted
