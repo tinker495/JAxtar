@@ -135,7 +135,7 @@ class HashTable:
             seed, idx, table_idx, found = val
 
             def get_new_idx_and_table_idx(seed, idx, table_idx):
-                next_table = table_idx == table.n_table - 1
+                next_table = table_idx >= table.n_table - 1
                 idx, table_idx, seed = jax.lax.cond(
                     next_table,
                     lambda _: (HashTable.get_new_idx(hash_func, table, state, seed+1), 0, seed+1),
@@ -220,10 +220,10 @@ class HashTable:
         
         def _while(val):
             seeds, idxs, idx, table_idx, unupdated, table = val
-            idxs = jnp.where(unupdated.reshape(-1,1), idxs, jnp.ones_like(idxs) * table.capacity + 10)
+            idxs = jnp.where(unupdated.reshape(-1,1), idxs, jnp.ones_like(idxs) * table.capacity + 1) # set the idxs to the capacity + 1 if it is not updated
             _, unique_idxs = jnp.unique(idxs, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
-            unique_update = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
-            updatable = jnp.logical_and(unupdated, unique_update)
+            unique_update = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True) # set the unique index to True
+            updatable = jnp.logical_and(unupdated, unique_update) # only update the unique index
             table = _update_table(table, inputs, idx, table_idx, updatable)
             seeds, idxs, idx, table_idx, unupdated = _get_next_indexs(table, inputs, idx, table_idx, seeds)
             unupdated = jnp.logical_and(unupdated, ~unique_update)
