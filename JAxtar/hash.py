@@ -74,7 +74,7 @@ def hash_func_builder(x: Puzzle.State):
         def _h(x, seed):
             # sum of hash * index for collision
             hashs = leaf_hashing(x, seed)
-            return jnp.sum(hashs * jnp.arange(1, chunk + 1), dtype=jnp.uint32)
+            return jnp.sum(hashs<<jnp.arange(0, chunk), dtype=jnp.uint32)
         
         return _h
 
