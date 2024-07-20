@@ -24,9 +24,9 @@ class BGPQ: # Batched GPU Priority Queue
         branch_size = total_size // group_size + 1
         max_size = branch_size * group_size
         size = jnp.zeros(1, dtype=jnp.uint32)
-        key_store = jnp.full((branch_size, group_size), 1.e5, dtype=jnp.float32)
+        key_store = jnp.full((branch_size, group_size), jnp.inf, dtype=jnp.float32)
         val_store = jnp.zeros((branch_size, group_size), dtype=value_type)
-        key_buffer = jnp.full((group_size - 1,), 1.e5, dtype=jnp.float32) 
+        key_buffer = jnp.full((group_size - 1,), jnp.inf, dtype=jnp.float32) 
         val_buffer = jnp.zeros((group_size - 1,), dtype=value_type)
         return BGPQ(max_size=max_size,
                     size=size,
