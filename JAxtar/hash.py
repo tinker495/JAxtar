@@ -117,7 +117,7 @@ class HashTable:
         return idx
 
     @staticmethod
-    def _lookup(hash_func: callable, table: "HashTable", input: Puzzle.State, idx: int, table_idx: int, seed: int):
+    def _lookup(hash_func: callable, table: "HashTable", input: Puzzle.State, idx: int, table_idx: int, seed: int, found: bool):
         """
         find the index of the state in the table if it exists.
         if it exists return the index, cuckoo_idx and True
@@ -161,7 +161,7 @@ class HashTable:
         update_seed, idx, table_idx, found = jax.lax.while_loop(
             _cond,
             _while,
-            (seed, idx, table_idx, False)
+            (seed, idx, table_idx, found)
         )
         return update_seed, idx, table_idx, found
     
@@ -173,29 +173,28 @@ class HashTable:
         if is does not exist return the
         """
         index = HashTable.get_new_idx(hash_func, table, input, table.seed)
-        _, idx, table_idx, found = HashTable._lookup(hash_func, table, input, index, 0, table.seed)
+        _, idx, table_idx, found = HashTable._lookup(hash_func, table, input, index, 0, table.seed, False)
         return idx, table_idx, found
-    
-    @staticmethod
-    @jax.jit
-    def _insert(table: "HashTable", input: Puzzle.State, idx: int, table_idx: int):
-        """
-        insert the state in the table
-        """
-        table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(y), table.table, input)
-        table.table_idx = table.table_idx.at[idx].add(1)
-        return table
 
     @staticmethod
     def insert(hash_func: callable, table: "HashTable", input: Puzzle.State):
         """
         insert the state in the table
         """
+
+        def _update_table(table: "HashTable", input: Puzzle.State, idx: int, table_idx: int):
+            """
+            insert the state in the table
+            """
+            table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(y), table.table, input)
+            table.table_idx = table.table_idx.at[idx].add(1)
+            return table
+
         idx, table_idx, found = HashTable.lookup(hash_func, table, input)
         return jax.lax.cond(
             found,
             lambda _: table,
-            lambda _: HashTable._insert(table, input, idx, table_idx),
+            lambda _: _update_table(table, input, idx, table_idx),
             None
         ), ~found
 
@@ -204,12 +203,12 @@ class HashTable:
         """
         insert the states in the table at the same time
         """
-        def _get_next_indexs(table, inputs, idx, table_idx, seeds):
-            seeds, idx, table_idx, found = jax.vmap(partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, 0, 0))(table, inputs, idx, table_idx, seeds)
+        def _get_next_indexs(table: "HashTable", inputs: Puzzle.State, idx, table_idx, seeds):
+            seeds, idx, table_idx, found = jax.vmap(partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, 0, 0, None))(table, inputs, idx, table_idx, seeds, False)
             idxs = jnp.stack([idx, table_idx], axis=1)
             return seeds, idxs, idx, table_idx, ~found
 
-        def _update_table(table, inputs, idx, table_idx, updatable):
+        def _update_table(table: "HashTable", inputs: Puzzle.State, idx, table_idx, updatable):
             table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(jnp.where(updatable.reshape(-1, 1), y, x[idx,table_idx])), table.table, inputs)
             table.table_idx = table.table_idx.at[idx].add(updatable)
             return table
@@ -231,7 +230,7 @@ class HashTable:
 
         idxs = jax.vmap(jax.jit(partial(HashTable.get_new_idx, hash_func)), in_axes=(None, 0, None))(table, inputs, table.seed)
         batch_len = idxs.shape[0]
-        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None))(table, inputs, idxs, 0, table.seed)
+        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None, None))(table, inputs, idxs, 0, table.seed, False)
         idxs = jnp.stack([idx, table_idx], axis=1)
         inserted = ~found
         seeds, _, _, _, _, table  = jax.lax.while_loop(
