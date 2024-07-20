@@ -76,13 +76,3 @@ class BGPQ: # Batched GPU Priority Queue
         Insert a key-value pair into the heap.
         """
         batched_insert_key, batched_insert_val = BGPQ.make_batched(insert_key, insert_val, heap.group_size)
-
-
-
-if __name__ == "__main__":
-    from jax.config import config
-    config.update('jax_disable_jit', True)
-    
-    ls = jax.random.normal(jax.random.PRNGKey(0), (16,))
-    ls2 = sorted(ls)
-    size = len(ls)
