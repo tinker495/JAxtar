@@ -42,7 +42,6 @@ def hash_func_builder(x: Puzzle.State):
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
 
         def xxhash(x, seed):
-            x = _to_uint32(x)
             prime_1 = jnp.uint32(0x9E3779B1)
             prime_2 = jnp.uint32(0x85EBCA77)
             prime_3 = jnp.uint32(0xC2B2AE3D)
@@ -73,8 +72,9 @@ def hash_func_builder(x: Puzzle.State):
 
         def _h(x, seed):
             # sum of hash * index for collision
-            hashs = leaf_hashing(x, seed)
-            return jnp.sum(hashs<<jnp.arange(0, chunk), dtype=jnp.uint32)
+            x = _to_uint32(x)
+            hashs = jax.vmap(leaf_hashing, in_axes=(0, None))(x, seed)
+            return jnp.sum(hashs * jnp.arange(1, chunk+1), dtype=jnp.uint32)
         
         return _h
 
