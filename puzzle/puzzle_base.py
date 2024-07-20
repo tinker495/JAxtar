@@ -16,12 +16,12 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
     cls = chex.dataclass(cls)
 
     shape_tuple = namedtuple('shape', cls.__annotations__.keys())
-    def get_shape(self) -> Dict[str, Any]:
+    def get_shape(self) -> shape_tuple:
         return shape_tuple(*[getattr(self, field_name).shape for field_name in cls.__annotations__.keys()])
     setattr(cls, 'shape', property(get_shape))
 
     type_tuple = namedtuple('dtype', cls.__annotations__.keys())
-    def get_type(self) -> Dict[str, Any]:
+    def get_type(self) -> type_tuple:
         return type_tuple(*[jnp.dtype(getattr(self, field_name).dtype) for field_name in cls.__annotations__.keys()])
     setattr(cls, 'dtype', property(get_type))
 
@@ -70,6 +70,14 @@ class Puzzle(ABC):
         """
         This class should be a dataclass that represents the state of the puzzle.
         """
+
+        @abstractmethod
+        def dtype(self):
+            pass
+
+        @abstractmethod
+        def shape(self):
+            pass
 
         @abstractmethod
         def default(_ = None) -> T:
