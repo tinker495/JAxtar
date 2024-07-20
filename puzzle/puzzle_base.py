@@ -40,7 +40,7 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
 
     return cls
 
-def add_forms(cls: Type[T], parsfunc: callable) -> Type[T]:
+def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
     """
     This function is a decorator that adds a __str__ method to the class that returns a string representation of the class.
     """
@@ -88,7 +88,7 @@ class Puzzle(ABC):
         This function should be called in the __init__ of the subclass.
         """
         super().__init__()
-        self.State = add_forms(self.State, self.get_string_parser())
+        self.State = add_string_parser(self.State, self.get_string_parser())
         self.State = add_default(self.State, self.get_default_gen())
 
         self.get_initial_state = jax.jit(self.get_initial_state)
