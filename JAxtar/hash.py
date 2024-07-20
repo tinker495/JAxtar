@@ -205,7 +205,7 @@ class HashTable:
         insert the states in the table at the same time
         """
         def _get_next_indexs(table, inputs, idx, table_idx, seeds):
-            seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, 0, 0))(table, inputs, idx, table_idx, seeds)
+            seeds, idx, table_idx, found = jax.vmap(partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, 0, 0))(table, inputs, idx, table_idx, seeds)
             idxs = jnp.stack([idx, table_idx], axis=1)
             return seeds, idxs, idx, table_idx, ~found
 
