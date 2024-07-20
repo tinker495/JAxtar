@@ -70,7 +70,10 @@ class Puzzle(ABC):
         """
         This class should be a dataclass that represents the state of the puzzle.
         """
-        pass
+
+        @abstractmethod
+        def default(_ = None) -> T:
+            pass
 
     def __init__(self):
         """

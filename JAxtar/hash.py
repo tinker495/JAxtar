@@ -199,7 +199,7 @@ class HashTable:
         ), ~found
 
     @staticmethod
-    def parallel_insert(hash_func: callable, table: "HashTable", inputs: Puzzle.State):
+    def parallel_insert(hash_func: callable, table: "HashTable", inputs: Puzzle.State, filled: chex.Array):
         """
         insert the states in the table at the same time
         """
@@ -230,7 +230,7 @@ class HashTable:
 
         idxs = jax.vmap(jax.jit(partial(HashTable.get_new_idx, hash_func)), in_axes=(None, 0, None))(table, inputs, table.seed)
         batch_len = idxs.shape[0]
-        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None, None))(table, inputs, idxs, 0, table.seed, False)
+        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None, 0))(table, inputs, idxs, 0, table.seed, ~filled)
         idxs = jnp.stack([idx, table_idx], axis=1)
         inserted = ~found
         seeds, _, _, _, _, table  = jax.lax.while_loop(
