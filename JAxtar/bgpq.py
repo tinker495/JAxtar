@@ -5,6 +5,20 @@ from functools import partial
 
 @chex.dataclass
 class BGPQ: # Batched GPU Priority Queue
+    """
+    This class is a batched GPU priority queue.
+    It is a dataclass with the following fields:
+    1. max_size: int
+    2. size: int
+    3. group_size: int
+    4. key_store: chex.Array
+    5. val_store: chex.Array
+    6. key_buffer: chex.Array
+    7. val_buffer: chex.Array
+
+    This class works with the following properties:
+    inf value is used to pad the key_store and key_buffer.
+    """
     max_size: int # maximum size of the heap
     size: int # current size of the heap
     group_size: int # size of the group
@@ -48,17 +62,17 @@ class BGPQ: # Batched GPU Priority Queue
         idx = jnp.argsort(key)
         key = key[idx]
         val = val[idx]
-        return (key[:n], key[n:], val[:n], val[n:])
+        return key[:n], key[n:], val[:n], val[n:]
     
     @staticmethod
-    def make_batched(key, val, group_size):
+    def make_batched(key: chex.Array, val: chex.Array, group_size):
         """
         Make a batched version of the key-value pair.
         """
         n = key.shape[-1]
         m = n // group_size
-        key = jnp.concatenate([key, jnp.full((m * group_size - n,), 1.e5, dtype=jnp.float32)])
-        val = jnp.concatenate([val, jnp.zeros((m * group_size - n,), dtype=jnp.uint32)])
+        key = jnp.concatenate([key, jnp.full((m * group_size - n,), jnp.inf, dtype=jnp.float32)])
+        val = jnp.concatenate([val, jnp.zeros((m * group_size - n,), dtype=val.dtype)])
         key = key[:m * group_size].reshape((m, group_size))
         val = val[:m * group_size].reshape((m, group_size))
         return key, val
@@ -71,8 +85,15 @@ class BGPQ: # Batched GPU Priority Queue
         pass
 
     @staticmethod
-    def insert(heap: "BGPQ", insert_key, insert_val):
+    def insert(heap: "BGPQ", batched_key: chex.Array, batched_val: chex.Array):
         """
         Insert a key-value pair into the heap.
         """
-        batched_insert_key, batched_insert_val = BGPQ.make_batched(insert_key, insert_val, heap.group_size)
+        root_key, root_val = heap.key_store[0], heap.val_store[0]
+        root_key, batched_key, root_val, batched_val = BGPQ.merge(root_key, batched_key, root_val, batched_val)
+        heap.key_store = heap.key_store.at[0].set(root_key)
+        heap.val_store = heap.val_store.at[0].set(root_val)
+        
+        def _cond(val):
+            idx, key, val = val
+            return idx < heap.size
