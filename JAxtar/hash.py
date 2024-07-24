@@ -108,8 +108,6 @@ class HashTable:
                         table=table,
                         table_idx=table_idx)
 
-
-
     @staticmethod
     def get_new_idx(hash_func: callable, table: "HashTable", input: Puzzle.State, seed: int):
         hash_value = hash_func(input, seed)
@@ -197,6 +195,17 @@ class HashTable:
             lambda _: _update_table(table, input, idx, table_idx),
             None
         ), ~found
+    
+    @staticmethod
+    @partial(jax.jit, static_argnums=(0,2,))
+    def make_batched(statecls: Puzzle.State, inputs: Puzzle.State, batch_size: int):
+        """
+        make a batched version of the inputs
+        """
+        count = len(inputs)
+        batched = jax.tree_util.tree_map(lambda x, y: jnp.concatenate([x, y]), inputs, jax.vmap(statecls.default)(jnp.arange(batch_size - count)))
+        filled = jnp.concatenate([jnp.ones(count), jnp.zeros(batch_size - count)], dtype=jnp.bool_)
+        return batched, filled
 
     @staticmethod
     def parallel_insert(hash_func: callable, table: "HashTable", inputs: Puzzle.State, filled: chex.Array):

@@ -11,7 +11,9 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
     """
     This function is a decorator that adds some functionality to the dataclass.
     1. It adds a shape property to the class that returns the shape of each field.
-    2. It adds a __getitem__ method to the class that returns a new instance of the class with each field indexed by the input index.
+    2. It adds a dtype property to the class that returns the dtype of each field.
+    3. It adds a __getitem__ method to the class that returns a new instance of the class with each field indexed by the input index. (this is for vectorized dataclass)
+    4. It adds a __len__ method to the class that returns the length of the first field. (this is for vectorized dataclass)
     """
     cls = chex.dataclass(cls)
 
@@ -37,6 +39,10 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
                 new_values[field_name] = field_value
         return cls(**new_values)
     setattr(cls, '__getitem__', getitem)
+
+    def len(self):
+        return self.shape[0][0]
+    setattr(cls, '__len__', len)
 
     return cls
 
