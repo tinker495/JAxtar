@@ -134,7 +134,7 @@ class Puzzle(ABC):
         pass
 
     @abstractmethod
-    def get_neighbours(self, state: State) -> tuple[State, chex.Array]:
+    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
