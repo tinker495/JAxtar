@@ -3,8 +3,44 @@ import jax.numpy as jnp
 import jax
 from functools import partial
 from abc import ABC, abstractmethod
+from collections import namedtuple
 
-@chex.dataclass
+def heapcalue_dataclass(cls):
+    """
+    This function is a decorator that creates a dataclass for HeapValue.
+    """
+    cls = chex.dataclass(cls)
+
+    shape_tuple = namedtuple('shape', cls.__annotations__.keys())
+    def get_shape(self) -> shape_tuple:
+        return shape_tuple(*[getattr(self, field_name).shape for field_name in cls.__annotations__.keys()])
+    setattr(cls, 'shape', property(get_shape))
+
+    type_tuple = namedtuple('dtype', cls.__annotations__.keys())
+    def get_type(self) -> type_tuple:
+        return type_tuple(*[jnp.dtype(getattr(self, field_name).dtype) for field_name in cls.__annotations__.keys()])
+    setattr(cls, 'dtype', property(get_type))
+
+    def getitem(self, index):
+        new_values = {}
+        for field_name, field_value in self.__dict__.items():
+            if hasattr(field_value, '__getitem__'):
+                try:
+                    new_values[field_name] = field_value[index]
+                except IndexError:
+                    new_values[field_name] = field_value
+            else:
+                new_values[field_name] = field_value
+        return cls(**new_values)
+    setattr(cls, '__getitem__', getitem)
+
+    def len(self):
+        return self.shape[0][0]
+    setattr(cls, '__len__', len)
+
+    return cls
+
+@heapcalue_dataclass
 class HeapValue(ABC):
     """
     This class is a dataclass that represents a heap value.
@@ -23,8 +59,8 @@ class HeapValue(ABC):
         """
         pass
 
-@chex.dataclass
-class HashTableHeapValue:
+@heapcalue_dataclass
+class HashTableHeapValue(HeapValue):
     """
     This class is a dataclass that represents a hash table heap value.
     It has two fields:
@@ -86,22 +122,78 @@ class BGPQ: # Batched GPU Priority Queue
                     val_buffer=val_buffer)
 
     @staticmethod
-    def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue):
+    def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
         """
         Merge two sorted key tensors ak and bk as well as corresponding
         value tensors av and bv into a single sorted tensor.
+
+        Args:
+            ak: chex.Array - sorted key tensor
+            av: HeapValue - sorted value tensor
+            bk: chex.Array - sorted key tensor
+            bv: HeapValue - sorted value tensor
+
+        Returns:
+            key1: chex.Array - merged and sorted
+            val1: HeapValue - merged and sorted
+            key2: chex.Array - merged and sorted
+            val2: HeapValue - merged and sorted
         """
         n = ak.shape[-1] # size of group
         key = jnp.concatenate([ak, bk])
-        val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]))(av, bv)
+        val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
         idx = jnp.argsort(key)
         key = key[idx]
         val = jax.tree_util.tree_map(lambda x: x[idx], val)
         key1 = key[:n] # smaller keys
         key2 = key[n:] # larger keys
-        val1, val2 = jax.tree_util.tree_map(lambda x: (x[:n], x[n:]), val) # smaller and larger key values
-        return (key1, val1), (key2, val2)
+        val1 = val[:n]
+        val2 = val[n:]
+        return key1, val1, key2, val2
     
+    @staticmethod
+    def merge_buffer(blockk: chex.Array, blockv: HeapValue, bufferk: chex.Array, bufferv: HeapValue):
+        """
+        Merge buffer into the key and value.
+
+        inf key values are not active key, so it is not filled.
+        if buffer overflow, heapify filled block is returned.
+        if buffer not overflow, heapify filled buffer is not returned.
+        only buffer is filled with active keys.
+
+        Args:
+            blockk: chex.Array
+            blockv: HeapValue
+            bufferk: chex.Array
+            bufferv: HeapValue
+
+        Returns:
+            blockk: chex.Array - heapyfing block keys
+            blockv: HeapValue - heapyfing block values
+            bufferk: chex.Array - buffer keys
+            bufferv: HeapValue - buffer values
+            buffer_overflow: bool # if buffer overflow, return True
+        """
+        n = blockk.shape[0]
+        key = jnp.concatenate([blockk, bufferk])
+        val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, bufferv)
+        idx = jnp.argsort(key)
+        key = key[idx]
+        val = jax.tree_util.tree_map(lambda x: x[idx], val)
+        merged_n = key.shape[0]
+        filled = jnp.isfinite(key) # inf values are not filled
+        n_filled = jnp.sum(filled)
+        buffer_overflow = n_filled >= n # buffer overflow
+        block_idx, buffer_idx = jax.lax.cond(buffer_overflow,
+                                        lambda _: (jnp.arange(0,n), jnp.arange(n, merged_n)), # if buffer overflow, block is filled with smaller keys
+                                        lambda _: (jnp.arange(n - 1, merged_n), jnp.arange(0, n - 1)), # if buffer not overflow, buffer is filled with smaller keys 
+                                        None)
+        blockk = key[block_idx]
+        blockv = val[block_idx]
+        bufferk = key[buffer_idx]
+        bufferv = val[buffer_idx]
+        return blockk, blockv, bufferk, bufferv, buffer_overflow
+
     @staticmethod
     def make_batched(key: chex.Array, val: HeapValue, group_size: int):
         """
@@ -114,15 +206,30 @@ class BGPQ: # Batched GPU Priority Queue
         key = key[:m * group_size].reshape((m, group_size))
         val = jax.tree_util.tree_map(lambda x: x[:m * group_size].reshape((m, group_size) + x.shape[1:]), val)
         return key, val
+    
+    @staticmethod
+    def heapify(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue):
+        """
+        Heapify the block.
+        """
+
+        return heap
 
     @staticmethod
-    def insert(heap: "BGPQ", batched_key: chex.Array, batched_val: chex.Array):
+    def insert(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue):
         """
         Insert a key-value pair into the heap.
         """
-        # first, 
-        root_key, batched_key, root_val, batched_val = BGPQ.merge_sort_split(heap.key_store[0], batched_key, heap.val_store[0], batched_val)
+        root_key = heap.key_store[0]
+        root_val = heap.val_store[0]
+        root_key, root_val, block_key, block_val = BGPQ.merge_sort_split(root_key, root_val, block_key, block_val)
         heap.key_store = heap.key_store.at[0].set(root_key)
-        heap.val_store = heap.val_store.at[0].set(root_val)
+        heap.val_store = jax.tree_util.tree_map(lambda x, r: x.at[0].set(r), heap.val_store, root_val)
         
-        batched_key, heap.key_buffer, batched_val, heap.val_buffer = BGPQ.merge_sort_split(batched_key, heap.key_buffer, batched_val, heap.val_buffer)
+        block_key, block_val, heap.key_buffer, heap.val_buffer, buffer_overflow = BGPQ.merge_buffer(block_key, block_val, heap.key_buffer, heap.val_buffer)
+
+        heap = jax.lax.cond(buffer_overflow,
+                            lambda heap, block_key, block_val: BGPQ.heapify(heap, block_key, block_val),
+                            lambda heap, block_key, block_val: heap,
+                            heap, block_key, block_val)
+        return heap, buffer_overflow
