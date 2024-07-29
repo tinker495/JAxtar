@@ -206,13 +206,43 @@ class BGPQ: # Batched GPU Priority Queue
         key = key[:m * group_size].reshape((m, group_size))
         val = jax.tree_util.tree_map(lambda x: x[:m * group_size].reshape((m, group_size) + x.shape[1:]), val)
         return key, val
-    
-    @staticmethod
-    def heapify(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue):
-        """
-        Heapify the block.
-        """
 
+    @staticmethod
+    def _make_path(index: int, bits: int) -> chex.Array:
+        """
+        Make a path from the index.
+        """
+        mask = 2 ** jnp.arange(bits-1, -1, -1) # [2^bits-1, ..., 2^0]
+        x = jnp.bitwise_and(jnp.array(index+1).ravel(), mask) != 0 # [bits]
+        def path(c, a):
+            x = a + 2 * c
+            x = jnp.minimum(x, index+1)
+            return x, x
+        _, x = jax.lax.scan(path, jnp.array([1]), x[1:])
+        return (x - 1).reshape(-1)
+
+    @staticmethod
+    def _insert_heapify(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue):
+        """
+        Insert a key-value pair into the heap.
+        """
+        branch_size = heap.key_store.shape[0]
+        path = BGPQ._make_path(heap.size + 1, branch_size)
+        print(path)
+        def insert_heapify(state, n):
+            key_store, val_store, keys, values = state
+            head, hvalues, keys, values = BGPQ.merge_sort_split(
+                key_store[n], val_store[n], keys, values
+            )
+            key_store = key_store.at[n].set(head)
+            val_store = jax.tree_util.tree_map(lambda x, y: x.at[n].set(y), val_store, hvalues)
+            return (key_store, val_store,
+                    keys, values), None
+
+        (key_store, val_store, _, _), _ = \
+            jax.lax.scan(insert_heapify, (heap.key_store, heap.val_store, block_key, block_val), path)
+        heap.key_store = key_store
+        heap.val_store = val_store
         return heap
 
     @staticmethod
@@ -229,7 +259,48 @@ class BGPQ: # Batched GPU Priority Queue
         block_key, block_val, heap.key_buffer, heap.val_buffer, buffer_overflow = BGPQ.merge_buffer(block_key, block_val, heap.key_buffer, heap.val_buffer)
 
         heap = jax.lax.cond(buffer_overflow,
-                            lambda heap, block_key, block_val: BGPQ.heapify(heap, block_key, block_val),
+                            lambda heap, block_key, block_val: BGPQ._insert_heapify(heap, block_key, block_val),
                             lambda heap, block_key, block_val: heap,
                             heap, block_key, block_val)
+        heap.size = heap.size + buffer_overflow
         return heap, buffer_overflow
+    
+    @staticmethod
+    def delete_mins(heap: "BGPQ"):
+        """
+        Delete the minimum key-value pair from the heap.
+        In this function we did not clear the values, we just set the key to inf.
+        """
+        branch_size = heap.key_store.shape[0]
+        min_keys = heap.key_store[0]
+        min_values = heap.val_store[0]
+
+        def make_empty(key_store, val_store):
+            return key_store.at[0].set(jnp.inf), val_store # empty the root
+        
+        def delete_heapify(key_store, val_store):
+            path = BGPQ._make_path(heap.size - 1, branch_size)
+            key_store = key_store.at[0].set(key_store[path[-1]]).at[path[-1]].set(jnp.inf)
+            def _f(_, var):
+                key_store, val_store, n = var
+                c = jnp.stack(((n + 1) * 2 - 1, (n + 1) * 2))
+                c_l,c_r = key_store[c[0]], key_store[c[1]]
+                c_lv, c_rv = val_store[c[0]], val_store[c[1]]
+                ins = jnp.where(c_l[-1] < c_r[-1], 0, 1)
+                s, l = c[ins], c[1 - ins]
+                small, smallv, k2, v2 = BGPQ.merge_sort_split(c_l, c_lv, c_r, c_rv)
+                k1, v1, k2, v2 = BGPQ.merge_sort_split(key_store[n], val_store[n], small, smallv)
+                key_store = key_store.at[l].set(k2).at[n].set(k1).at[s].set(k2)
+                val_store = jax.tree_util.tree_map(lambda x, v1, v2: x.at[l].set(v2).at[n].set(v1).at[s].set(v2), val_store, v1, v2)
+                return key_store, val_store, s
+            key_store, val_store, _ = jax.lax.fori_loop(0, branch_size, _f, (key_store, val_store, 0))
+            return key_store, val_store
+        
+        key_store, val_store = jax.lax.cond(heap.size[0] > 1,
+                                            delete_heapify,
+                                            make_empty,
+                                            heap.key_store, heap.val_store)
+        heap.key_store = key_store
+        heap.val_store = val_store
+        heap.size = heap.size - 1
+        return heap, min_keys, min_values
