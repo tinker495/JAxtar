@@ -67,8 +67,8 @@ class HashTableHeapValue(HeapValue):
     1. index: jnp.uint32 / hashtable index
     2. table_index: jnp.uint8 / cuckoo table index
     """
-    index: jnp.uint32
-    table_index: jnp.uint8
+    index: chex.Array
+    table_index: chex.Array
 
     @staticmethod
     def default(_ = None) -> "HashTableHeapValue":
