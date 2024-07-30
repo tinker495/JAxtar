@@ -275,15 +275,15 @@ class BGPQ: # Batched GPU Priority Queue
         min_values = heap.val_store[0]
         size = heap.size[0]
 
-        def make_empty(key_store, val_store):
-            return key_store.at[0].set(jnp.inf), val_store # empty the root
+        def make_empty(key_store, val_store, key_buffer, val_buffer):
+            return key_store.at[0].set(jnp.inf), val_store, key_buffer, val_buffer # empty the root
         
-        def delete_heapify(key_store, val_store):
+        def delete_heapify(key_store, val_store, key_buffer, val_buffer):
             last = BGPQ._make_path(heap.size - 1, branch_size)[-1]
             key_store = key_store.at[0].set(key_store[last]).at[last].set(jnp.inf)
-            #root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(key_store[0], val_store[0], heap.key_buffer, heap.val_buffer)
-            #key_store = key_store.at[0].set(root_key)
-            #root_val = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
+            root_key, root_val, key_buffer, val_buffer = BGPQ.merge_sort_split(key_store[0], val_store[0], key_buffer, val_buffer)
+            key_store = key_store.at[0].set(root_key)
+            root_val = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
             def _f(_, var):
                 key_store, val_store, n = var
                 c = jnp.stack(((n + 1) * 2 - 1, (n + 1) * 2))
@@ -297,13 +297,15 @@ class BGPQ: # Batched GPU Priority Queue
                 val_store = jax.tree_util.tree_map(lambda x, v1, v2, v3: x.at[l].set(v3).at[n].set(v1).at[s].set(v2), val_store, v1, v2, v3)
                 return key_store, val_store, s
             key_store, val_store, _ = jax.lax.fori_loop(jnp.uint32(0), size, _f, (key_store, val_store, 0))
-            return key_store, val_store
+            return key_store, val_store, key_buffer, val_buffer
         
-        key_store, val_store = jax.lax.cond(size > 1,
+        key_store, val_store, key_buffer, val_buffer = jax.lax.cond(size > 1,
                                             delete_heapify,
                                             make_empty,
-                                            heap.key_store, heap.val_store)
+                                            heap.key_store, heap.val_store, heap.key_buffer, heap.val_buffer)
         heap.key_store = key_store
         heap.val_store = val_store
+        heap.key_buffer = key_buffer
+        heap.val_buffer = val_buffer
         heap.size = heap.size - 1
         return heap, min_keys, min_values
