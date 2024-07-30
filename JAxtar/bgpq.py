@@ -281,6 +281,9 @@ class BGPQ: # Batched GPU Priority Queue
         def delete_heapify(key_store, val_store):
             last = BGPQ._make_path(heap.size - 1, branch_size)[-1]
             key_store = key_store.at[0].set(key_store[last]).at[last].set(jnp.inf)
+            #root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(key_store[0], val_store[0], heap.key_buffer, heap.val_buffer)
+            #key_store = key_store.at[0].set(root_key)
+            #root_val = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
             def _f(_, var):
                 key_store, val_store, n = var
                 c = jnp.stack(((n + 1) * 2 - 1, (n + 1) * 2))
@@ -288,10 +291,10 @@ class BGPQ: # Batched GPU Priority Queue
                 c_lv, c_rv = val_store[c[0]], val_store[c[1]]
                 ins = jnp.where(c_l[-1] < c_r[-1], 0, 1)
                 s, l = c[ins], c[1 - ins]
-                small, smallv, k2, v2 = BGPQ.merge_sort_split(c_l, c_lv, c_r, c_rv)
+                small, smallv, k3, v3 = BGPQ.merge_sort_split(c_l, c_lv, c_r, c_rv)
                 k1, v1, k2, v2 = BGPQ.merge_sort_split(key_store[n], val_store[n], small, smallv)
-                key_store = key_store.at[l].set(k2).at[n].set(k1).at[s].set(k2)
-                #val_store = jax.tree_util.tree_map(lambda x, v1, v2: x.at[l].set(v2).at[n].set(v1).at[s].set(v2), val_store, v1, v2)
+                key_store = key_store.at[l].set(k3).at[n].set(k1).at[s].set(k2)
+                val_store = jax.tree_util.tree_map(lambda x, v1, v2, v3: x.at[l].set(v3).at[n].set(v1).at[s].set(v2), val_store, v1, v2, v3)
                 return key_store, val_store, s
             key_store, val_store, _ = jax.lax.fori_loop(jnp.uint32(0), size, _f, (key_store, val_store, 0))
             return key_store, val_store
