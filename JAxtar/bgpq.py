@@ -276,7 +276,9 @@ class BGPQ: # Batched GPU Priority Queue
         size = heap.size[0]
 
         def make_empty(key_store, val_store, key_buffer, val_buffer):
-            return key_store.at[0].set(jnp.inf), val_store, key_buffer, val_buffer # empty the root
+            root_key, root_val, key_buffer, val_buffer = BGPQ.merge_sort_split(jnp.full_like(key_store[0], jnp.inf), val_store[0], key_buffer, val_buffer)
+            val_store = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
+            return key_store.at[0].set(root_key), val_store, key_buffer, val_buffer # empty the root
         
         def delete_heapify(key_store, val_store, key_buffer, val_buffer):
             last = BGPQ._make_path(heap.size - 1, branch_size)[-1]
