@@ -106,9 +106,9 @@ class BGPQ: # Batched GPU Priority Queue
         value_type is the type of the values stored in the heap.
         In this repository, we only use uint32 for hash indexes values.
         """
-        branch_size = total_size // group_size + 1
+        branch_size = jnp.where(total_size % group_size == 0, total_size // group_size, total_size // group_size + 1)
         max_size = branch_size * group_size
-        size = jnp.zeros(1, dtype=jnp.uint32) + 1
+        size = jnp.uint32(0)
         key_store = jnp.full((branch_size, group_size), jnp.inf, dtype=jnp.float32) # [branch_size, group_size]
         val_store = jax.vmap(lambda _: jax.vmap(value_class.default)(jnp.arange(group_size)))(jnp.arange(branch_size)) # [branch_size, group_size, ...]
         key_buffer = jnp.full((group_size - 1,), jnp.inf, dtype=jnp.float32) # [group_size - 1]
@@ -208,38 +208,35 @@ class BGPQ: # Batched GPU Priority Queue
         return key, val
 
     @staticmethod
-    def _make_path(index: int, bits: int) -> chex.Array:
+    def _next(current, target):
         """
-        Make a path from the index.
+        Get the next index.
+        travel to target as heapify.
         """
-        mask = 2 ** jnp.arange(bits-1, -1, -1) # [2^bits-1, ..., 2^0]
-        x = jnp.bitwise_and(jnp.array(index+1).ravel(), mask) != 0 # [bits]
-        def path(c, a):
-            x = a + 2 * c
-            x = jnp.minimum(x, index+1)
-            return x, x
-        _, x = jax.lax.scan(path, jnp.array([1]), x[1:])
-        return (x - 1).reshape(-1)
+        return target.astype(jnp.uint32) >> (jax.lax.clz(current) - jax.lax.clz(target) - 1)
 
     @staticmethod
     def _insert_heapify(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue):
         """
         Insert a key-value pair into the heap.
         """
-        branch_size = heap.key_store.shape[0]
-        path = BGPQ._make_path(heap.size, branch_size)
-        def insert_heapify(state, n):
-            key_store, val_store, keys, values = state
+        size = heap.size // heap.group_size
+        def _cond(var):
+            _, _, _, _, n = var
+            return n < size
+
+        def insert_heapify(var):
+            key_store, val_store, keys, values, n = var
             head, hvalues, keys, values = BGPQ.merge_sort_split(
                 key_store[n], val_store[n], keys, values
             )
             key_store = key_store.at[n].set(head)
             val_store = jax.tree_util.tree_map(lambda x, y: x.at[n].set(y), val_store, hvalues)
-            return (key_store, val_store,
-                    keys, values), None
+            return  key_store, val_store, keys, values, BGPQ._next(n, size)
 
-        (key_store, val_store, _, _), _ = \
-            jax.lax.scan(insert_heapify, (heap.key_store, heap.val_store, block_key, block_val), path)
+        key_store, val_store, keys, values, _ = jax.lax.while_loop(_cond, insert_heapify, (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(0, size)))
+        key_store = key_store.at[size].set(keys)
+        val_store = jax.tree_util.tree_map(lambda x, y: x.at[size].set(y), val_store, values)
         heap.key_store = key_store
         heap.val_store = val_store
         return heap
@@ -249,6 +246,7 @@ class BGPQ: # Batched GPU Priority Queue
         """
         Insert a key-value pair into the heap.
         """
+        added_size = jnp.sum(jnp.isfinite(block_key))
         root_key = heap.key_store[0]
         root_val = heap.val_store[0]
         root_key, root_val, block_key, block_val = BGPQ.merge_sort_split(root_key, root_val, block_key, block_val)
@@ -261,8 +259,8 @@ class BGPQ: # Batched GPU Priority Queue
                             lambda heap, block_key, block_val: BGPQ._insert_heapify(heap, block_key, block_val),
                             lambda heap, block_key, block_val: heap,
                             heap, block_key, block_val)
-        heap.size = heap.size + buffer_overflow
-        return heap, buffer_overflow
+        heap.size = heap.size + added_size
+        return heap
     
     @staticmethod
     def delete_mins(heap: "BGPQ"):
@@ -270,10 +268,11 @@ class BGPQ: # Batched GPU Priority Queue
         Delete the minimum key-value pair from the heap.
         In this function we did not clear the values, we just set the key to inf.
         """
-        branch_size = heap.key_store.shape[0]
         min_keys = heap.key_store[0]
         min_values = heap.val_store[0]
-        size = heap.size[0]
+        size = jnp.uint32(heap.size // heap.group_size)
+
+        # todo: optimize this function
 
         def make_empty(key_store, val_store, key_buffer, val_buffer):
             root_key, root_val, key_buffer, val_buffer = BGPQ.merge_sort_split(jnp.full_like(key_store[0], jnp.inf), val_store[0], key_buffer, val_buffer)
@@ -281,7 +280,7 @@ class BGPQ: # Batched GPU Priority Queue
             return key_store.at[0].set(root_key), val_store, key_buffer, val_buffer # empty the root
         
         def delete_heapify(key_store, val_store, key_buffer, val_buffer):
-            last = BGPQ._make_path(heap.size - 1, branch_size)[-1]
+            last = size - 1
             key_store = key_store.at[0].set(key_store[last]).at[last].set(jnp.inf)
             root_key, root_val, key_buffer, val_buffer = BGPQ.merge_sort_split(key_store[0], val_store[0], key_buffer, val_buffer)
             key_store = key_store.at[0].set(root_key)
@@ -309,5 +308,5 @@ class BGPQ: # Batched GPU Priority Queue
         heap.val_store = val_store
         heap.key_buffer = key_buffer
         heap.val_buffer = val_buffer
-        heap.size = heap.size - 1
+        heap.size = heap.size - jnp.sum(jnp.isfinite(min_keys))
         return heap, min_keys, min_values
