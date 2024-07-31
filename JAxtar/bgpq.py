@@ -285,19 +285,40 @@ class BGPQ: # Batched GPU Priority Queue
             root_key, root_val, key_buffer, val_buffer = BGPQ.merge_sort_split(key_store[0], val_store[0], key_buffer, val_buffer)
             key_store = key_store.at[0].set(root_key)
             root_val = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
-            def _f(_, var):
-                key_store, val_store, n = var
-                c = jnp.stack(((n + 1) * 2 - 1, (n + 1) * 2))
-                c_l,c_r = key_store[c[0]], key_store[c[1]]
-                c_lv, c_rv = val_store[c[0]], val_store[c[1]]
-                ins = jnp.where(c_l[-1] < c_r[-1], 0, 1)
-                s, l = c[ins], c[1 - ins]
-                small, smallv, k3, v3 = BGPQ.merge_sort_split(c_l, c_lv, c_r, c_rv)
-                k1, v1, k2, v2 = BGPQ.merge_sort_split(key_store[n], val_store[n], small, smallv)
-                key_store = key_store.at[l].set(k3).at[n].set(k1).at[s].set(k2)
-                val_store = jax.tree_util.tree_map(lambda x, v1, v2, v3: x.at[l].set(v3).at[n].set(v1).at[s].set(v2), val_store, v1, v2, v3)
-                return key_store, val_store, s
-            key_store, val_store, _ = jax.lax.fori_loop(jnp.uint32(0), size, _f, (key_store, val_store, 0))
+            def _lr(n):
+                l = n * 2 + 1
+                r = n * 2 + 2
+                return l, r
+
+            def _cond(var):
+                key_store, val_store, c, l, r = var
+                max_c = jnp.max(key_store[c])
+                min_l = jnp.min(key_store[l])
+                min_r = jnp.min(key_store[r])
+                min_lr = jnp.minimum(min_l, min_r)
+                return max_c > min_lr
+
+            def _f(var):
+                key_store, val_store, c, l, r = var
+                max_l = jnp.max(key_store[l])
+                max_r = jnp.max(key_store[r])
+                
+                x,y = jax.lax.cond(max_l > max_r,
+                                    lambda _: (l, r),
+                                    lambda _: (r, l),
+                                    None)
+                ks, vs, k3, v3 = BGPQ.merge_sort_split(key_store[l], val_store[l], key_store[r], val_store[r])
+                k1, v1, k2, v2 = BGPQ.merge_sort_split(key_store[c], val_store[c], ks, vs)
+                key_store = key_store.at[c].set(k1).at[y].set(k2).at[x].set(k3)
+                val_store = jax.tree_util.tree_map(lambda x, v1, v2, v3: x.at[c].set(v1).at[y].set(v2).at[x].set(v3), val_store, v1, v2, v3)
+
+                nc = y
+                nl, nr = _lr(y)
+                return key_store, val_store, nc, nl, nr
+            
+            c = jnp.uint32(0)
+            l, r = _lr(c)
+            key_store, val_store, _, _, _ = jax.lax.while_loop(_cond, _f, (key_store, val_store, c, l, r))
             return key_store, val_store, key_buffer, val_buffer
         
         key_store, val_store, key_buffer, val_buffer = jax.lax.cond(size > 1,
