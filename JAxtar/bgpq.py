@@ -5,6 +5,8 @@ from functools import partial
 from abc import ABC, abstractmethod
 from collections import namedtuple
 
+SORT_STABLE = True
+
 def heapcalue_dataclass(cls):
     """
     This function is a decorator that creates a dataclass for HeapValue.
@@ -142,14 +144,10 @@ class BGPQ: # Batched GPU Priority Queue
         n = ak.shape[-1] # size of group
         key = jnp.concatenate([ak, bk])
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-        idx = jnp.argsort(key)
+        idx = jnp.argsort(key, stable=SORT_STABLE)
         key = key[idx]
         val = jax.tree_util.tree_map(lambda x: x[idx], val)
-        key1 = key[:n] # smaller keys
-        key2 = key[n:] # larger keys
-        val1 = val[:n]
-        val2 = val[n:]
-        return key1, val1, key2, val2
+        return key[:n], val[:n], key[n:], val[n:]
     
     @staticmethod
     def merge_buffer(blockk: chex.Array, blockv: HeapValue, bufferk: chex.Array, bufferv: HeapValue):
@@ -177,21 +175,18 @@ class BGPQ: # Batched GPU Priority Queue
         n = blockk.shape[0]
         key = jnp.concatenate([blockk, bufferk])
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, bufferv)
-        idx = jnp.argsort(key)
+        idx = jnp.argsort(key, stable=SORT_STABLE)
         key = key[idx]
         val = jax.tree_util.tree_map(lambda x: x[idx], val)
-        merged_n = key.shape[0]
         filled = jnp.isfinite(key) # inf values are not filled
         n_filled = jnp.sum(filled)
         buffer_overflow = n_filled >= n # buffer overflow
-        block_idx, buffer_idx = jax.lax.cond(buffer_overflow,
-                                        lambda _: (jnp.arange(0,n), jnp.arange(n, merged_n)), # if buffer overflow, block is filled with smaller keys
-                                        lambda _: (jnp.arange(n - 1, merged_n), jnp.arange(0, n - 1)), # if buffer not overflow, buffer is filled with smaller keys 
+        blockk, blockv, bufferk, bufferv = jax.lax.cond(buffer_overflow,
+                                        lambda _: (key[:n], val[:n], key[n:], val[n:]),
+                                        # if buffer overflow, block is filled with smaller keys
+                                        lambda _: (key[(n-1):], val[(n-1):], key[:(n-1)], val[:(n-1)]),
+                                        # if buffer not overflow, buffer is filled with smaller keys 
                                         None)
-        blockk = key[block_idx]
-        blockv = val[block_idx]
-        bufferk = key[buffer_idx]
-        bufferv = val[buffer_idx]
         return blockk, blockv, bufferk, bufferv, buffer_overflow
 
     @staticmethod
@@ -235,10 +230,8 @@ class BGPQ: # Batched GPU Priority Queue
             return  key_store, val_store, keys, values, BGPQ._next(n, size)
 
         key_store, val_store, keys, values, _ = jax.lax.while_loop(_cond, insert_heapify, (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(0, size)))
-        key_store = key_store.at[size].set(keys)
-        val_store = jax.tree_util.tree_map(lambda x, y: x.at[size].set(y), val_store, values)
-        heap.key_store = key_store
-        heap.val_store = val_store
+        heap.key_store = key_store.at[size].set(keys)
+        heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[size].set(y), val_store, values)
         return heap
 
     @staticmethod
@@ -263,6 +256,51 @@ class BGPQ: # Batched GPU Priority Queue
         return heap
     
     @staticmethod
+    def delete_heapify(heap: "BGPQ"):
+        size = jnp.uint32(heap.size // heap.group_size)
+        last = size - 1
+
+        heap.key_store = heap.key_store.at[0].set(heap.key_store[last]).at[last].set(jnp.inf)
+        root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(heap.key_store[0], heap.val_store[0], heap.key_buffer, heap.val_buffer)
+        heap.key_store = heap.key_store.at[0].set(root_key)
+        heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), heap.val_store, root_val)
+        def _lr(n):
+            l = n * 2 + 1
+            r = n * 2 + 2
+            return l, r
+
+        def _cond(var):
+            key_store, val_store, c, l, r = var
+            max_c = key_store[c][-1]
+            min_l = key_store[l][0]
+            min_r = key_store[r][0]
+            min_lr = jnp.minimum(min_l, min_r)
+            return max_c > min_lr
+
+        def _f(var):
+            key_store, val_store, c, l, r = var
+            max_l = key_store[l][-1]
+            max_r = key_store[r][-1]
+            
+            x,y = jax.lax.cond(max_l > max_r,
+                                lambda _: (l, r),
+                                lambda _: (r, l),
+                                None)
+            ks, vs, k3, v3 = BGPQ.merge_sort_split(key_store[l], val_store[l], key_store[r], val_store[r])
+            k1, v1, k2, v2 = BGPQ.merge_sort_split(key_store[c], val_store[c], ks, vs)
+            key_store = key_store.at[c].set(k1).at[y].set(k2).at[x].set(k3)
+            val_store = jax.tree_util.tree_map(lambda x, v1, v2, v3: x.at[c].set(v1).at[y].set(v2).at[x].set(v3), val_store, v1, v2, v3)
+
+            nc = y
+            nl, nr = _lr(y)
+            return key_store, val_store, nc, nl, nr
+        
+        c = jnp.uint32(0)
+        l, r = _lr(c)
+        heap.key_store, heap.val_store, _, _, _ = jax.lax.while_loop(_cond, _f, (heap.key_store, heap.val_store, c, l, r))
+        return heap
+
+    @staticmethod
     def delete_mins(heap: "BGPQ"):
         """
         Delete the minimum key-value pair from the heap.
@@ -272,62 +310,21 @@ class BGPQ: # Batched GPU Priority Queue
         min_values = heap.val_store[0]
         size = jnp.uint32(heap.size // heap.group_size)
 
-        # todo: optimize this function
-
-        def make_empty(key_store, val_store, key_buffer, val_buffer):
+        def make_empty(heap: "BGPQ"):
+            key_store = heap.key_store
+            val_store = heap.val_store
+            key_buffer = heap.key_buffer
+            val_buffer = heap.val_buffer
             root_key, root_val, key_buffer, val_buffer = BGPQ.merge_sort_split(jnp.full_like(key_store[0], jnp.inf), val_store[0], key_buffer, val_buffer)
-            val_store = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
-            return key_store.at[0].set(root_key), val_store, key_buffer, val_buffer # empty the root
+            heap.key_store = key_store.at[0].set(root_key)
+            heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
+            heap.key_buffer = key_buffer
+            heap.val_buffer = val_buffer
+            return heap
         
-        def delete_heapify(key_store, val_store, key_buffer, val_buffer):
-            last = size - 1
-            key_store = key_store.at[0].set(key_store[last]).at[last].set(jnp.inf)
-            root_key, root_val, key_buffer, val_buffer = BGPQ.merge_sort_split(key_store[0], val_store[0], key_buffer, val_buffer)
-            key_store = key_store.at[0].set(root_key)
-            root_val = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
-            def _lr(n):
-                l = n * 2 + 1
-                r = n * 2 + 2
-                return l, r
-
-            def _cond(var):
-                key_store, val_store, c, l, r = var
-                max_c = jnp.max(key_store[c])
-                min_l = jnp.min(key_store[l])
-                min_r = jnp.min(key_store[r])
-                min_lr = jnp.minimum(min_l, min_r)
-                return max_c > min_lr
-
-            def _f(var):
-                key_store, val_store, c, l, r = var
-                max_l = jnp.max(key_store[l])
-                max_r = jnp.max(key_store[r])
-                
-                x,y = jax.lax.cond(max_l > max_r,
-                                    lambda _: (l, r),
-                                    lambda _: (r, l),
-                                    None)
-                ks, vs, k3, v3 = BGPQ.merge_sort_split(key_store[l], val_store[l], key_store[r], val_store[r])
-                k1, v1, k2, v2 = BGPQ.merge_sort_split(key_store[c], val_store[c], ks, vs)
-                key_store = key_store.at[c].set(k1).at[y].set(k2).at[x].set(k3)
-                val_store = jax.tree_util.tree_map(lambda x, v1, v2, v3: x.at[c].set(v1).at[y].set(v2).at[x].set(v3), val_store, v1, v2, v3)
-
-                nc = y
-                nl, nr = _lr(y)
-                return key_store, val_store, nc, nl, nr
-            
-            c = jnp.uint32(0)
-            l, r = _lr(c)
-            key_store, val_store, _, _, _ = jax.lax.while_loop(_cond, _f, (key_store, val_store, c, l, r))
-            return key_store, val_store, key_buffer, val_buffer
-        
-        key_store, val_store, key_buffer, val_buffer = jax.lax.cond(size > 1,
-                                            delete_heapify,
-                                            make_empty,
-                                            heap.key_store, heap.val_store, heap.key_buffer, heap.val_buffer)
-        heap.key_store = key_store
-        heap.val_store = val_store
-        heap.key_buffer = key_buffer
-        heap.val_buffer = val_buffer
+        heap = jax.lax.cond(size > 1,
+                            BGPQ.delete_heapify,
+                            make_empty,
+                            heap)
         heap.size = heap.size - jnp.sum(jnp.isfinite(min_keys))
         return heap, min_keys, min_values
