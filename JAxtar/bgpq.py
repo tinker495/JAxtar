@@ -286,10 +286,13 @@ class BGPQ: # Batched GPU Priority Queue
                                 lambda _: (l, r),
                                 lambda _: (r, l),
                                 None)
-            ks, vs, k3, v3 = BGPQ.merge_sort_split(key_store[l], val_store[l], key_store[r], val_store[r])
-            k1, v1, k2, v2 = BGPQ.merge_sort_split(key_store[c], val_store[c], ks, vs)
+            kc, vc = key_store[c], val_store[c]
+            kl, vl = key_store[x], val_store[x]
+            kr, vr = key_store[y], val_store[y]
+            ks, vs, k3, v3 = BGPQ.merge_sort_split(kl, vl, kr, vr)
+            k1, v1, k2, v2 = BGPQ.merge_sort_split(kc, vc, ks, vs)
             key_store = key_store.at[c].set(k1).at[y].set(k2).at[x].set(k3)
-            val_store = jax.tree_util.tree_map(lambda x, v1, v2, v3: x.at[c].set(v1).at[y].set(v2).at[x].set(v3), val_store, v1, v2, v3)
+            val_store = jax.tree_util.tree_map(lambda val, v1, v2, v3: val.at[c].set(v1).at[y].set(v2).at[x].set(v3), val_store, v1, v2, v3)
 
             nc = y
             nl, nr = _lr(y)
@@ -311,15 +314,9 @@ class BGPQ: # Batched GPU Priority Queue
         size = jnp.uint32(heap.size // heap.group_size)
 
         def make_empty(heap: "BGPQ"):
-            key_store = heap.key_store
-            val_store = heap.val_store
-            key_buffer = heap.key_buffer
-            val_buffer = heap.val_buffer
-            root_key, root_val, key_buffer, val_buffer = BGPQ.merge_sort_split(jnp.full_like(key_store[0], jnp.inf), val_store[0], key_buffer, val_buffer)
-            heap.key_store = key_store.at[0].set(root_key)
-            heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), val_store, root_val)
-            heap.key_buffer = key_buffer
-            heap.val_buffer = val_buffer
+            root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(jnp.full_like(heap.key_store[0], jnp.inf), heap.val_store[0], heap.key_buffer, heap.val_buffer)
+            heap.key_store = heap.key_store.at[0].set(root_key)
+            heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[0].set(y), heap.val_store, root_val)
             return heap
         
         heap = jax.lax.cond(size > 1,
