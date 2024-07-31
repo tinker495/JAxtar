@@ -124,6 +124,7 @@ class BGPQ: # Batched GPU Priority Queue
                     val_buffer=val_buffer)
 
     @staticmethod
+    @jax.jit
     def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
         """
         Merge two sorted key tensors ak and bk as well as corresponding
@@ -150,6 +151,7 @@ class BGPQ: # Batched GPU Priority Queue
         return key[:n], val[:n], key[n:], val[n:]
     
     @staticmethod
+    @jax.jit
     def merge_buffer(blockk: chex.Array, blockv: HeapValue, bufferk: chex.Array, bufferv: HeapValue):
         """
         Merge buffer into the key and value.
