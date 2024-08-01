@@ -41,7 +41,7 @@ class SlidePuzzle(Puzzle):
     def get_target_state(self, key = None) -> State:
         return self._get_random_state(key)
     
-    def get_neighbours(self, state:State) -> tuple[State, chex.Array]:
+    def get_neighbours(self, state:State, filled: bool = True) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
@@ -61,10 +61,10 @@ class SlidePuzzle(Puzzle):
             board = board.at[next_flat_index].set(board[flat_index])
             return board.at[flat_index].set(old_board[next_flat_index])
         
-        def map(next_pos):
+        def map(next_pos, filled):
             next_x, next_y = next_pos
             next_board, cost = jax.lax.cond(
-                is_valid(next_x, next_y),
+                jnp.logical_and(is_valid(next_x, next_y),filled),
                 lambda _: (swap(board, x, y, next_x, next_y), 1.0),
                 lambda _: (board, jnp.inf),
                 None
@@ -72,8 +72,8 @@ class SlidePuzzle(Puzzle):
             return next_board, cost
 
         next_boards, costs = jax.vmap(
-            map, in_axes=(0)
-        )(next_pos)
+            map, in_axes=(0, None)
+        )(next_pos, filled)
         return self.State(board=next_boards), costs
 
     def is_solved(self, state:State, target:State) -> bool:
