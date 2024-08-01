@@ -62,7 +62,7 @@ class HeapValue(ABC):
         pass
 
 @heapcalue_dataclass
-class HashTableHeapValue(HeapValue):
+class HashTableHeapValue:
     """
     This class is a dataclass that represents a hash table heap value.
     It has two fields:
@@ -237,11 +237,13 @@ class BGPQ: # Batched GPU Priority Queue
         return heap
 
     @staticmethod
-    def insert(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue):
+    @partial(jax.jit, static_argnums=(3,))
+    def insert(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue, added_size: int = None):
         """
         Insert a key-value pair into the heap.
         """
-        added_size = jnp.sum(jnp.isfinite(block_key))
+        if added_size is None:
+            added_size = jnp.sum(jnp.isfinite(block_key))
         root_key = heap.key_store[0]
         root_val = heap.val_store[0]
         root_key, root_val, block_key, block_val = BGPQ.merge_sort_split(root_key, root_val, block_key, block_val)
@@ -306,6 +308,7 @@ class BGPQ: # Batched GPU Priority Queue
         return heap
 
     @staticmethod
+    @jax.jit
     def delete_mins(heap: "BGPQ"):
         """
         Delete the minimum key-value pair from the heap.
