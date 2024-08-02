@@ -91,6 +91,7 @@ class HashTable:
 
     seed: int
     capacity: int
+    size: int
     n_table: int # number of tables
     table: Puzzle.State # shape = State("args" = (capacity, cuckoo_len, ...), ...) 
     table_idx: chex.Array # shape = (capacity, ) dtype = jnp.uint4 is the index of the table in the cuckoo table.
@@ -104,6 +105,7 @@ class HashTable:
         table_idx = jnp.zeros((capacity), dtype=jnp.uint8)
         return HashTable(seed=seed,
                         capacity=capacity,
+                        size=jnp.uint32(0),
                         n_table=n_table,
                         table=table,
                         table_idx=table_idx)
@@ -133,7 +135,7 @@ class HashTable:
             seed, idx, table_idx, found = val
 
             def get_new_idx_and_table_idx(seed, idx, table_idx):
-                next_table = table_idx >= table.n_table - 1
+                next_table = table_idx >= (table.n_table - 1)
                 idx, table_idx, seed = jax.lax.cond(
                     next_table,
                     lambda _: (HashTable.get_new_idx(hash_func, table, state, seed+1), 0, seed+1),
@@ -242,6 +244,7 @@ class HashTable:
         seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None, 0))(table, inputs, idxs, 0, table.seed, ~filled)
         idxs = jnp.stack([idx, table_idx], axis=1)
         inserted = ~found
+        table.size += jnp.sum(inserted)
         seeds, _, _, _, _, table  = jax.lax.while_loop(
             _cond,
             _while,
