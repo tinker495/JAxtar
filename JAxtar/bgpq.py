@@ -40,25 +40,22 @@ def heapcalue_dataclass(cls):
         return self.shape[0][0]
     setattr(cls, '__len__', len)
 
+    # this class must have a default method for creating a default instance.
+    assert hasattr(cls, 'default'), "HeapValue class must have a default method."
+
     return cls
 
 @heapcalue_dataclass
-class HeapValue(ABC):
+class HeapValue: # dummy heap value
     """
     This class is a dataclass that represents a heap value.
     value could be a uint32 value, but it could be more complex.
     so, we use a dataclass to represent the value.
     """
     pass
-    
+
     @staticmethod
-    @abstractmethod
     def default(_ = None) -> "HeapValue":
-        """
-        This function is a default dataclass for HeapValue.
-        we can use this function with vmapped functions.
-        vmap(HeapValue.default)(jnp.arange(1000)) -> HeapValue[1000, ...]
-        """
         pass
 
 @heapcalue_dataclass
