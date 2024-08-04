@@ -7,7 +7,7 @@ from collections import namedtuple
 
 SORT_STABLE = True
 
-def heapcalue_dataclass(cls):
+def bgpq_value_dataclass(cls):
     """
     This function is a decorator that creates a dataclass for HeapValue.
     """
@@ -45,8 +45,8 @@ def heapcalue_dataclass(cls):
 
     return cls
 
-@heapcalue_dataclass
-class HeapValue: # dummy heap value
+@bgpq_value_dataclass
+class HeapValue: # dummy heap value for type hinting
     """
     This class is a dataclass that represents a heap value.
     value could be a uint32 value, but it could be more complex.
@@ -58,8 +58,8 @@ class HeapValue: # dummy heap value
     def default(_ = None) -> "HeapValue":
         pass
 
-@heapcalue_dataclass
-class HashTableHeapValue:
+@bgpq_value_dataclass
+class HashTableIdx_HeapValue:
     """
     This class is a dataclass that represents a hash table heap value.
     It has two fields:
@@ -70,8 +70,8 @@ class HashTableHeapValue:
     table_index: chex.Array
 
     @staticmethod
-    def default(_ = None) -> "HashTableHeapValue":
-        return HashTableHeapValue(index=jnp.zeros(1, dtype=jnp.uint32), table_index=jnp.zeros(1, dtype=jnp.uint8))
+    def default(_ = None) -> "HashTableIdx_HeapValue":
+        return HashTableIdx_HeapValue(index=jnp.zeros(1, dtype=jnp.uint32), table_index=jnp.zeros(1, dtype=jnp.uint8))
 
 @chex.dataclass
 class BGPQ: # Batched GPU Priority Queue
@@ -80,7 +80,7 @@ class BGPQ: # Batched GPU Priority Queue
     It is a dataclass with the following fields:
     1. max_size: int
     2. size: int
-    3. group_size: int
+    3. batch_size: int
     4. key_store: chex.Array
     5. val_store: chex.Array
     6. key_buffer: chex.Array
@@ -91,30 +91,30 @@ class BGPQ: # Batched GPU Priority Queue
     """
     max_size: int # maximum size of the heap
     size: int # current size of the heap
-    group_size: int # size of the group
-    key_store: chex.Array # shape = (total_size, group_size) batched binary tree of keys
-    val_store: HeapValue # shape = (total_size, group_size, ...) batched binary tree of values
-    key_buffer: chex.Array # shape = (group_size - 1,) key buffer for unbatched(not enough to fill a batch) keys
-    val_buffer: HeapValue # shape = (group_size - 1, ...) value buffer for unbatched(not enough to fill a batch) values
+    batch_size: int # size of the group
+    key_store: chex.Array # shape = (total_size, batch_size) batched binary tree of keys
+    val_store: HeapValue # shape = (total_size, batch_size, ...) batched binary tree of values
+    key_buffer: chex.Array # shape = (batch_size - 1,) key buffer for unbatched(not enough to fill a batch) keys
+    val_buffer: HeapValue # shape = (batch_size - 1, ...) value buffer for unbatched(not enough to fill a batch) values
 
     @staticmethod
-    def make_heap(total_size, group_size, value_class=HeapValue):
+    def build(total_size, batch_size, value_class=HeapValue):
         """
-        Create a heap over vectors of `group_size` that
+        Create a heap over vectors of `batch_size` that
         can store up to `total_size` elements.
         value_type is the type of the values stored in the heap.
         In this repository, we only use uint32 for hash indexes values.
         """
-        branch_size = jnp.where(total_size % group_size == 0, total_size // group_size, total_size // group_size + 1)
-        max_size = branch_size * group_size
+        branch_size = jnp.where(total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1)
+        max_size = branch_size * batch_size
         size = jnp.uint32(0)
-        key_store = jnp.full((branch_size, group_size), jnp.inf, dtype=jnp.float32) # [branch_size, group_size]
-        val_store = jax.vmap(lambda _: jax.vmap(value_class.default)(jnp.arange(group_size)))(jnp.arange(branch_size)) # [branch_size, group_size, ...]
-        key_buffer = jnp.full((group_size - 1,), jnp.inf, dtype=jnp.float32) # [group_size - 1]
-        val_buffer = jax.vmap(value_class.default)(jnp.arange(group_size - 1)) # [group_size - 1, ...]
+        key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=jnp.float32) # [branch_size, batch_size]
+        val_store = jax.vmap(lambda _: jax.vmap(value_class.default)(jnp.arange(batch_size)))(jnp.arange(branch_size)) # [branch_size, batch_size, ...]
+        key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=jnp.float32) # [batch_size - 1]
+        val_buffer = jax.vmap(value_class.default)(jnp.arange(batch_size - 1)) # [batch_size - 1, ...]
         return BGPQ(max_size=max_size,
                     size=size,
-                    group_size=group_size,
+                    batch_size=batch_size,
                     key_store=key_store,
                     val_store=val_store,
                     key_buffer=key_buffer,
@@ -189,16 +189,16 @@ class BGPQ: # Batched GPU Priority Queue
         return blockk, blockv, bufferk, bufferv, buffer_overflow
 
     @staticmethod
-    def make_batched(key: chex.Array, val: HeapValue, group_size: int):
+    def make_batched(key: chex.Array, val: HeapValue, batch_size: int):
         """
         Make a batched version of the key-value pair.
         """
         n = key.shape[0]
-        m = n // group_size + 1
-        key = jnp.concatenate([key, jnp.full((m * group_size - n,), jnp.inf, dtype=jnp.float32)])
-        val = jax.tree_util.tree_map(lambda x, y: jnp.concatenate([x, y]), val, jax.vmap(val.default)(jnp.arange(m * group_size - n)))
-        key = key[:m * group_size].reshape((m, group_size))
-        val = jax.tree_util.tree_map(lambda x: x[:m * group_size].reshape((m, group_size) + x.shape[1:]), val)
+        m = n // batch_size + 1
+        key = jnp.concatenate([key, jnp.full((m * batch_size - n,), jnp.inf, dtype=jnp.float32)])
+        val = jax.tree_util.tree_map(lambda x, y: jnp.concatenate([x, y]), val, jax.vmap(val.default)(jnp.arange(m * batch_size - n)))
+        key = key[:m * batch_size].reshape((m, batch_size))
+        val = jax.tree_util.tree_map(lambda x: x[:m * batch_size].reshape((m, batch_size) + x.shape[1:]), val)
         return key, val
 
     @staticmethod
@@ -214,7 +214,7 @@ class BGPQ: # Batched GPU Priority Queue
         """
         Insert a key-value pair into the heap.
         """
-        size = heap.size // heap.group_size
+        size = heap.size // heap.batch_size
         def _cond(var):
             _, _, _, _, n = var
             return n < size
@@ -258,7 +258,7 @@ class BGPQ: # Batched GPU Priority Queue
     
     @staticmethod
     def delete_heapify(heap: "BGPQ"):
-        size = jnp.uint32(heap.size // heap.group_size)
+        size = jnp.uint32(heap.size // heap.batch_size)
         last = size - 1
 
         heap.key_store = heap.key_store.at[0].set(heap.key_store[last]).at[last].set(jnp.inf)
@@ -311,9 +311,9 @@ class BGPQ: # Batched GPU Priority Queue
         Delete the minimum key-value pair from the heap.
         In this function we did not clear the values, we just set the key to inf.
         """
-        min_keys = heap.key_store[0]
-        min_values = heap.val_store[0]
-        size = jnp.uint32(heap.size // heap.group_size)
+        min_keys = heap.key_store[0].squeeze()
+        min_values = jax.tree_util.tree_map(lambda x: x.squeeze(), heap.val_store[0])
+        size = jnp.uint32(heap.size // heap.batch_size)
 
         def make_empty(heap: "BGPQ"):
             root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(jnp.full_like(heap.key_store[0], jnp.inf), heap.val_store[0], heap.key_buffer, heap.val_buffer)

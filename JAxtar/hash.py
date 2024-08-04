@@ -75,6 +75,7 @@ def hash_func_builder(x: Puzzle.State):
             x = _to_uint32(x)
             hashs = jax.vmap(leaf_hashing, in_axes=(0, None))(x, seed)
             return jnp.sum(hashs * jnp.arange(1, chunk+1), dtype=jnp.uint32)
+            #return jnp.sum(hashs >> jnp.arange(0, chunk), dtype=jnp.uint32)
         
         return _h
 
@@ -97,7 +98,7 @@ class HashTable:
     table_idx: chex.Array # shape = (capacity, ) dtype = jnp.uint4 is the index of the table in the cuckoo table.
 
     @staticmethod
-    def make_lookup_table(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
+    def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
         """
         make a lookup table with the default state of the statecls
         """
@@ -214,10 +215,10 @@ class HashTable:
         """
         insert the states in the table at the same time
         """
-        def _get_next_indexs(table: "HashTable", inputs: Puzzle.State, idx, table_idx, seeds):
-            seeds, idx, table_idx, found = jax.vmap(partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, 0, 0, None))(table, inputs, idx, table_idx, seeds, False)
+        def _get_next_indexs(table: "HashTable", inputs: Puzzle.State, idx, table_idx, seeds, updatable):
+            seeds, idx, table_idx, found = jax.vmap(partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, 0, 0, 0))(table, inputs, idx, table_idx, seeds, ~updatable)
             idxs = jnp.stack([idx, table_idx], axis=1)
-            return seeds, idxs, idx, table_idx, ~found
+            return seeds, idxs, idx, table_idx, jnp.logical_and(~found, updatable)
 
         def _update_table(table: "HashTable", inputs: Puzzle.State, idx, table_idx, updatable):
             table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(jnp.where(updatable.reshape(-1, 1), y, x[idx,table_idx])), table.table, inputs)
@@ -230,24 +231,23 @@ class HashTable:
         
         def _while(val):
             seeds, idxs, idx, table_idx, unupdated, table = val
-            idxs = jnp.where(unupdated.reshape(-1,1), idxs, jnp.ones_like(idxs) * table.capacity + 1) # set the idxs to the capacity + 1 if it is not updated
+            idxs = jnp.where(unupdated[:, jnp.newaxis], idxs, jnp.ones_like(idxs) * -1) # set the idxs to the capacity + 1 if it is not updated
             _, unique_idxs = jnp.unique(idxs, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
             unique_update = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True) # set the unique index to True
             updatable = jnp.logical_and(unupdated, unique_update) # only update the unique index
             table = _update_table(table, inputs, idx, table_idx, updatable)
-            seeds, idxs, idx, table_idx, unupdated = _get_next_indexs(table, inputs, idx, table_idx, seeds)
-            unupdated = jnp.logical_and(unupdated, ~unique_update)
+            seeds, idxs, idx, table_idx, unupdated = _get_next_indexs(table, inputs, idx, table_idx, seeds, unupdated)
             return seeds, idxs, idx, table_idx, unupdated, table
 
-        idxs = jax.vmap(jax.jit(partial(HashTable.get_new_idx, hash_func)), in_axes=(None, 0, None))(table, inputs, table.seed)
-        batch_len = idxs.shape[0]
-        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None, 0))(table, inputs, idxs, 0, table.seed, ~filled)
+        idx = jax.vmap(jax.jit(partial(HashTable.get_new_idx, hash_func)), in_axes=(None, 0, None))(table, inputs, table.seed)
+        batch_len = idx.shape[0]
+        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None, 0))(table, inputs, idx, 0, table.seed, ~filled)
         idxs = jnp.stack([idx, table_idx], axis=1)
-        inserted = ~found
+        inserted = jnp.logical_and(~found, filled)
         table.size += jnp.sum(inserted)
         seeds, _, _, _, _, table  = jax.lax.while_loop(
             _cond,
             _while,
             (seeds, idxs, idx, table_idx, inserted, table)
         )
-        return table, inserted
+        return table, inserted, idx, table_idx
