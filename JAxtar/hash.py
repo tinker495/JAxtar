@@ -25,20 +25,13 @@ def hash_func_builder(x: Puzzle.State):
     def _get_leaf_hash_func(leaf):
         flatten_leaf = jnp.reshape(leaf, (-1,))
         bitlen = flatten_leaf.dtype.itemsize
-        div = jnp.maximum(4 // bitlen, 1).astype(int)
-        pad_len = jax.lax.cond(
-            flatten_leaf.shape[0] % div == 0,
-            lambda _: 0,
-            lambda _: (div - flatten_leaf.shape[0] % div).astype(int),
-            None
-        )
-        paded_len = len(flatten_leaf) + pad_len
-        chunk = int(paded_len // div)
+        chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1))
+        pad_len = 4 * chunk - len(flatten_leaf)
 
         def _to_uint32(x):
             x = jnp.reshape(x, (-1,))
             x_padded = jnp.pad(x, (0, pad_len), mode='constant', constant_values=0)
-            x_reshaped = jnp.reshape(x_padded, (-1, div))
+            x_reshaped = jnp.reshape(x_padded, (-1, chunk))
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
 
         def xxhash(x, seed):
@@ -75,7 +68,6 @@ def hash_func_builder(x: Puzzle.State):
             x = _to_uint32(x)
             hashs = jax.vmap(leaf_hashing, in_axes=(0, None))(x, seed)
             return jnp.sum(hashs * jnp.arange(1, chunk+1), dtype=jnp.uint32)
-            #return jnp.sum(hashs >> jnp.arange(0, chunk), dtype=jnp.uint32)
         
         return _h
 
