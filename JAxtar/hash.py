@@ -207,39 +207,91 @@ class HashTable:
         """
         insert the states in the table at the same time
         """
-        def _get_next_indexs(table: "HashTable", inputs: Puzzle.State, idx, table_idx, seeds, updatable):
-            seeds, idx, table_idx, found = jax.vmap(partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, 0, 0, 0))(table, inputs, idx, table_idx, seeds, ~updatable)
-            idxs = jnp.stack([idx, table_idx], axis=1)
-            return seeds, idxs, idx, table_idx, jnp.logical_and(~found, updatable)
 
-        def _update_table(table: "HashTable", inputs: Puzzle.State, idx, table_idx, updatable):
-            table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(jnp.where(updatable.reshape(-1, 1), y, x[idx,table_idx])), table.table, inputs)
-            table.table_idx = table.table_idx.at[idx].add(updatable)
-            return table
-        
+        def _next_idx(states, seeds, _idxs, unupdated):
+
+            def get_new_idx_and_table_idx(seed, idx, table_idx, state):
+                next_table = table_idx >= (table.n_table - 1)
+                seed, idx = jax.lax.cond(
+                    next_table,
+                    lambda _: (seed+1, HashTable.get_new_idx(hash_func, table, state, seed+1)),
+                    lambda _: (seed, idx),
+                    None
+                )
+                table_idx = jnp.where(next_table, table.table_idx[idx], table_idx+1)
+                return seed, idx, table_idx
+            
+            idxs = _idxs[:, 0]
+            table_idx = _idxs[:, 1]
+            seeds, idxs, table_idx = jax.vmap(
+                lambda unupdated, seed, idx, table_idx, state: 
+                    jax.lax.cond(
+                        unupdated,
+                        lambda _: get_new_idx_and_table_idx(seed, idx, table_idx, state),
+                        lambda _: (seed, idx, table_idx),
+                        None
+                    )
+            )(unupdated, seeds, idxs, table_idx, states)
+            _idxs = jnp.stack((idxs, table_idx), axis=1)
+            return seeds, _idxs
+
         def _cond(val):
-            _, _, _, _, unupdated, _ = val
+            _, _, unupdated = val
             return jnp.any(unupdated)
         
         def _while(val):
-            seeds, idxs, idx, table_idx, unupdated, table = val
-            idxs = jnp.where(unupdated[:, jnp.newaxis], idxs, jnp.ones_like(idxs) * -1) # set the idxs to the capacity + 1 if it is not updated
-            _, unique_idxs = jnp.unique(idxs, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
-            unique_update = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True) # set the unique index to True
-            updatable = jnp.logical_and(unupdated, unique_update) # only update the unique index
-            table = _update_table(table, inputs, idx, table_idx, updatable)
-            seeds, idxs, idx, table_idx, unupdated = _get_next_indexs(table, inputs, idx, table_idx, seeds, unupdated)
-            return seeds, idxs, idx, table_idx, unupdated, table
+            seeds, _idxs, unupdated = val
+            seeds, _idxs = _next_idx(inputs, seeds, _idxs, unupdated)
 
-        idx = jax.vmap(jax.jit(partial(HashTable.get_new_idx, hash_func)), in_axes=(None, 0, None))(table, inputs, table.seed)
-        batch_len = idx.shape[0]
-        seeds, idx, table_idx, found = jax.vmap(jax.jit(partial(HashTable._lookup, hash_func)), in_axes=(None, 0, 0, None, None, 0))(table, inputs, idx, 0, table.seed, ~filled)
-        idxs = jnp.stack([idx, table_idx], axis=1)
-        inserted = jnp.logical_and(~found, filled)
-        table.size += jnp.sum(inserted)
-        seeds, _, _, _, _, table  = jax.lax.while_loop(
+            overflowed = _idxs[:, 1] >= table.n_table # overflowed index must be updated
+            masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+            _, unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
+            not_uniques = jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False) # set the unique index to True
+            unupdated = jnp.logical_and(updatable, not_uniques) # remove the unique index from the unupdated index
+            unupdated = jnp.logical_or(unupdated, overflowed) # add the overflowed index to the unupdated index
+            return seeds, _idxs, unupdated
+
+        initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func),
+                        in_axes=(
+                                None,
+                                0,
+                                None))(
+                        table,
+                        inputs,
+                        table.seed
+                        )
+        batch_len = initial_idx.shape[0]
+        seeds, idx, table_idx, found = jax.vmap(partial(HashTable._lookup, hash_func),
+                                        in_axes=(
+                                                None,
+                                                0,
+                                                0,
+                                                None,
+                                                None,
+                                                0))(
+                                        table,
+                                        inputs,
+                                        initial_idx,
+                                        0,
+                                        table.seed,
+                                        ~filled
+                                        )
+        _idxs = jnp.stack([idx, table_idx], axis=1)
+        updatable = jnp.logical_and(~found, filled)
+
+        masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+        _, unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
+        not_uniques = jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False) # set the unique index to True
+        unupdated = jnp.logical_and(updatable, not_uniques) # remove the unique index from the unupdated index
+
+        seeds, _idxs, _  = jax.lax.while_loop(
             _cond,
             _while,
-            (seeds, idxs, idx, table_idx, inserted, table)
+            (seeds, _idxs, unupdated)
         )
-        return table, inserted, idx, table_idx
+
+        idx, table_idx = _idxs[:, 0], _idxs[:, 1]
+        table.table = jax.tree_map(lambda x, y: x.at[idx, table_idx].set(jnp.where(updatable.reshape(-1, 1), y, x[idx, table_idx])), table.table, inputs)
+        table.table_idx = table.table_idx.at[idx].add(updatable)
+        table.size += jnp.sum(updatable)
+        return table, updatable, idx, table_idx
