@@ -90,7 +90,7 @@ class HashTable:
     table_idx: chex.Array # shape = (capacity, ) dtype = jnp.uint4 is the index of the table in the cuckoo table.
 
     @staticmethod
-    def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
+    def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 10):
         """
         make a lookup table with the default state of the statecls
         """
@@ -129,13 +129,13 @@ class HashTable:
 
             def get_new_idx_and_table_idx(seed, idx, table_idx):
                 next_table = table_idx >= (table.n_table - 1)
-                idx, table_idx, seed = jax.lax.cond(
+                seed, idx, table_idx = jax.lax.cond(
                     next_table,
-                    lambda _: (HashTable.get_new_idx(hash_func, table, state, seed+1), 0, seed+1),
-                    lambda _: (idx, table_idx+1, seed),
+                    lambda _: (seed+1, HashTable.get_new_idx(hash_func, table, state, seed+1), 0),
+                    lambda _: (seed, idx, table_idx+1),
                     None
                 )
-                return idx, table_idx, seed
+                return seed, idx, table_idx
             
             def _check_equal(state1, state2):
                 tree_equal = jax.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
@@ -143,9 +143,9 @@ class HashTable:
 
             state = table.table[idx, table_idx]
             found = _check_equal(state, input)
-            idx, table_idx, seed = jax.lax.cond(
+            seed, idx, table_idx = jax.lax.cond(
                 found,
-                lambda _: (idx, table_idx, seed),
+                lambda _: (seed, idx, table_idx),
                 lambda _: get_new_idx_and_table_idx(seed, idx, table_idx),
                 None
             )
@@ -208,7 +208,7 @@ class HashTable:
         insert the states in the table at the same time
         """
 
-        def _next_idx(states, seeds, _idxs, unupdated):
+        def _next_idx(seeds, _idxs, unupdated):
 
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
                 next_table = table_idx >= (table.n_table - 1)
@@ -222,8 +222,8 @@ class HashTable:
                 return seed, idx, table_idx
             
             idxs = _idxs[:, 0]
-            table_idx = _idxs[:, 1]
-            seeds, idxs, table_idx = jax.vmap(
+            table_idxs = _idxs[:, 1]
+            seeds, idxs, table_idxs = jax.vmap(
                 lambda unupdated, seed, idx, table_idx, state: 
                     jax.lax.cond(
                         unupdated,
@@ -231,8 +231,8 @@ class HashTable:
                         lambda _: (seed, idx, table_idx),
                         None
                     )
-            )(unupdated, seeds, idxs, table_idx, states)
-            _idxs = jnp.stack((idxs, table_idx), axis=1)
+            )(unupdated, seeds, idxs, table_idxs, inputs)
+            _idxs = jnp.stack((idxs, table_idxs), axis=1)
             return seeds, _idxs
 
         def _cond(val):
@@ -241,7 +241,7 @@ class HashTable:
         
         def _while(val):
             seeds, _idxs, unupdated = val
-            seeds, _idxs = _next_idx(inputs, seeds, _idxs, unupdated)
+            seeds, _idxs = _next_idx(seeds, _idxs, unupdated)
 
             overflowed = _idxs[:, 1] >= table.n_table # overflowed index must be updated
             masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
