@@ -3,6 +3,8 @@ import jax
 import jax.numpy as jnp
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
+TYPE = jnp.uint8
+
 class SlidePuzzle(Puzzle):
 
     size: int
@@ -32,7 +34,7 @@ class SlidePuzzle(Puzzle):
     
     def get_default_gen(self) -> callable:
         def gen():
-            return self.State(board=jnp.zeros(self.size**2, dtype=jnp.uint8))
+            return self.State(board=jnp.zeros(self.size**2, dtype=TYPE))
         return gen
 
     def get_initial_state(self, key = None) -> State:
@@ -106,7 +108,7 @@ class SlidePuzzle(Puzzle):
         This function should return a random state.
         """
         def get_random_state(key):
-            return self.State(board=jax.random.permutation(key, jnp.arange(0, self.size**2, dtype=jnp.uint8)))
+            return self.State(board=jax.random.permutation(key, jnp.arange(0, self.size**2, dtype=TYPE)))
         
         def not_solverable(x):
             state = x[0]
