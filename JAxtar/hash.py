@@ -121,7 +121,7 @@ class HashTable:
         def _cond(val):
             seed, idx, table_idx, found = val
             filled_idx = table.table_idx[idx]
-            in_empty = filled_idx == table_idx
+            in_empty = table_idx >= filled_idx
             return jnp.logical_and(~found, ~in_empty)
 
         def _while(val):
