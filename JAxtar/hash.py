@@ -213,18 +213,17 @@ class HashTable:
 
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
                 next_table = table_idx >= (table.n_table - 1)
-                seed = jnp.where(
+                seed, idx = jax.lax.cond(
                     next_table,
-                    seed+1,
-                    seed
-                )
-                idx = jax.lax.cond(
-                    next_table,
-                    lambda _: HashTable.get_new_idx(hash_func, table, state, seed),
-                    lambda _: idx,
+                    lambda _: (seed+1, HashTable.get_new_idx(hash_func, table, state, seed)),
+                    lambda _: (seed, idx),
                     None
                 )
-                table_idx = jnp.where(next_table, table.table_idx[idx], table_idx+1)
+                table_idx = jax.lax.cond(next_table,
+                    lambda _: table.table_idx[idx].astype(jnp.uint32),
+                    lambda _: table_idx+1,
+                    None
+                )
                 return seed, idx, table_idx
             
             idxs = _idxs[:, 0]
