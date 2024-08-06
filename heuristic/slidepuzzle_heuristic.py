@@ -7,10 +7,14 @@ import jax.numpy as jnp
 from puzzle.slidepuzzle import SlidePuzzle
 
 class SlidePuzzleHeuristic:
-    puzzle: SlidePuzzle
+    puzzle: SlidePuzzle # The puzzle rule object
+    base_xy : chex.Array # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle):
         self.puzzle = puzzle
+        x = jnp.tile(jnp.arange(self.puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, self.puzzle.size, 1))
+        y = jnp.tile(jnp.arange(self.puzzle.size)[jnp.newaxis, :, jnp.newaxis], (self.puzzle.size, 1, 1))
+        self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
 
     def distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> int:
         """
@@ -31,13 +35,9 @@ class SlidePuzzleHeuristic:
         def pos(num, board):
             return to_xy(jnp.argmax(board == num))
         
-        current_pos = jnp.array([pos(i, current.board) for i in range(0, self.puzzle.size ** 2)])
-        target_pos = jnp.array([pos(i, target.board) for i in range(0, self.puzzle.size ** 2)])
         tpos = jnp.array([pos(i, target.board) for i in current.board], dtype=jnp.int8)
-        num_diff = current_pos - target_pos
-        return (jnp.take_along_axis(num_diff, jnp.expand_dims(current.board,axis=1), axis=0),
-                tpos)
-
+        diff = self.base_xy - tpos
+        return (diff, tpos)
 
     def _manhattan_distance(self, not_empty, diff) -> int:
         """
@@ -50,7 +50,7 @@ class SlidePuzzleHeuristic:
         This function should return the linear conflict between the state and the target.
         """
         tpos = jnp.reshape(tpos, (self.puzzle.size, self.puzzle.size, 2))
-        not_empty = jnp.expand_dims(not_empty, axis=1)
+        not_empty = not_empty[:, jnp.newaxis]
         inrows = jnp.reshape(not_empty * (diff == 0), (self.puzzle.size, self.puzzle.size, 2))
 
         def _cond(val):
@@ -61,8 +61,8 @@ class SlidePuzzleHeuristic:
             pos, inrow, _, ans = val
             def _check_conflict(i,j):
                 logic1 = i != j
-                logic2 = jnp.logical_and(pos[i] > pos[j],i < j)
-                logic3 = jnp.logical_and(pos[i] < pos[j],i > j)
+                logic2 = jnp.logical_and(pos[i] > pos[j], i < j)
+                logic3 = jnp.logical_and(pos[i] < pos[j], i > j)
                 return jnp.logical_and(logic1,jnp.logical_or(logic2, logic3))
             i, j = jnp.arange(self.puzzle.size), jnp.arange(self.puzzle.size)
             i = jnp.expand_dims(i, axis=0)
@@ -79,7 +79,7 @@ class SlidePuzzleHeuristic:
             _, _, _, conflict = jax.lax.while_loop(_cond, _while_count_conflict, (pos, inrow, jnp.ones(self.puzzle.size, dtype=jnp.uint8), -1))
             return conflict * 2
         
-        x_conflicts = jax.vmap(_count_conflict, in_axes=(1,1))(tpos[:,:,0], inrows[:,:,0])
-        y_conflicts = jax.vmap(_count_conflict, in_axes=(0,0))(tpos[:,:,1], inrows[:,:,1])
+        x_conflicts = jax.vmap(_count_conflict, in_axes=(1,1))(tpos[:,:,0], inrows[:,:,1])
+        y_conflicts = jax.vmap(_count_conflict, in_axes=(0,0))(tpos[:,:,1], inrows[:,:,0])
         conflict = jnp.sum(x_conflicts) + jnp.sum(y_conflicts)
         return conflict
