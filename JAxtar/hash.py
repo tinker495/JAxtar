@@ -90,7 +90,7 @@ class HashTable:
     table_idx: chex.Array # shape = (capacity, ) dtype = jnp.uint4 is the index of the table in the cuckoo table.
 
     @staticmethod
-    def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 10):
+    def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
         """
         make a lookup table with the default state of the statecls
         """
@@ -117,6 +117,9 @@ class HashTable:
         if is does not exist return the unfilled index, cuckoo_idx and False
         this function could be used to check if the state is in the table or not, and insert it if it is not.
         """
+        def _check_equal(state1, state2):
+            tree_equal = jax.tree.map(lambda x, y: jnp.all(x == y), state1, state2)
+            return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
         
         def _cond(val):
             seed, idx, table_idx, found = val
@@ -131,15 +134,11 @@ class HashTable:
                 next_table = table_idx >= (table.n_table - 1)
                 seed, idx, table_idx = jax.lax.cond(
                     next_table,
-                    lambda _: (seed+1, HashTable.get_new_idx(hash_func, table, state, seed+1), 0),
+                    lambda _: (seed+1, HashTable.get_new_idx(hash_func, table, input, seed+1), 0),
                     lambda _: (seed, idx, table_idx+1),
                     None
                 )
                 return seed, idx, table_idx
-            
-            def _check_equal(state1, state2):
-                tree_equal = jax.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
-                return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
 
             state = table.table[idx, table_idx]
             found = _check_equal(state, input)
@@ -151,6 +150,8 @@ class HashTable:
             )
             return seed, idx, table_idx, found
         
+        state = table.table[idx, table_idx]
+        found = jnp.logical_or(found, _check_equal(state, input))
         update_seed, idx, table_idx, found = jax.lax.while_loop(
             _cond,
             _while,
@@ -208,14 +209,19 @@ class HashTable:
         insert the states in the table at the same time
         """
 
-        def _next_idx(seeds, _idxs, unupdated):
+        def _next_idx(seeds, _idxs, unupdateds):
 
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
                 next_table = table_idx >= (table.n_table - 1)
-                seed, idx = jax.lax.cond(
+                seed = jnp.where(
                     next_table,
-                    lambda _: (seed+1, HashTable.get_new_idx(hash_func, table, state, seed+1)),
-                    lambda _: (seed, idx),
+                    seed+1,
+                    seed
+                )
+                idx = jax.lax.cond(
+                    next_table,
+                    lambda _: HashTable.get_new_idx(hash_func, table, state, seed),
+                    lambda _: idx,
                     None
                 )
                 table_idx = jnp.where(next_table, table.table_idx[idx], table_idx+1)
@@ -231,7 +237,7 @@ class HashTable:
                         lambda _: (seed, idx, table_idx),
                         None
                     )
-            )(unupdated, seeds, idxs, table_idxs, inputs)
+            )(unupdateds, seeds, idxs, table_idxs, inputs)
             _idxs = jnp.stack((idxs, table_idxs), axis=1)
             return seeds, _idxs
 
