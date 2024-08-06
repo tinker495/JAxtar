@@ -13,9 +13,6 @@ T = TypeVar('T')
 def rotl(x, n):
     return (x << n) | (x >> (32 - n))
 
-capacity = int(1024 * 1024 * 2)
-max_try = 128
-
 def hash_func_builder(x: Puzzle.State):
     """
     build a hash function for the state dataclass
@@ -52,22 +49,20 @@ def hash_func_builder(x: Puzzle.State):
             acc = acc ^ (acc >> 16)
             return acc
 
-        def leaf_hashing(x, seed): # max capacity is 2 ** 24
-            z = xxhash(x, seed) >> 8
-            b1 = z & 255
-            z = z >> 8
-            b2 = z & 255
-            b3 = z >> 8
-            c1 = (b1 * capacity) >> 24
-            c2 = (b2 * capacity) >> 16
-            c3 = (b3 * capacity) >> 8
-            return c1 + c2 + c3
-
         def _h(x, seed):
             # sum of hash * index for collision
             x = _to_uint32(x)
-            hashs = jax.vmap(leaf_hashing, in_axes=(0, None))(x, seed)
-            return jnp.sum(hashs * jnp.arange(1, chunk+1), dtype=jnp.uint32)
+            hashs = jax.vmap(xxhash, in_axes=(0, None))(x, seed)
+            def scan_body(carry, x):
+                i, h = x
+                result = jnp.bitwise_xor(carry, h)
+                result = jnp.bitwise_or(result << i, result >> (32 - i))
+                return result, result
+
+            init = jnp.uint32(0)
+            indices = jnp.arange(chunk, dtype=jnp.uint32)
+            final_result, _ = jax.lax.scan(scan_body, init, (indices, hashs))
+            return final_result
         
         return _h
 
@@ -84,6 +79,7 @@ class HashTable:
 
     seed: int
     capacity: int
+    _capacity: int
     size: int
     n_table: int # number of tables
     table: Puzzle.State # shape = State("args" = (capacity, cuckoo_len, ...), ...) 
@@ -94,11 +90,12 @@ class HashTable:
         """
         make a lookup table with the default state of the statecls
         """
-        capacity = int(capacity//n_table)
-        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((capacity, n_table)))
-        table_idx = jnp.zeros((capacity), dtype=jnp.uint8)
+        _capacity = int(1.1 * capacity//n_table) # make the capacity a little bit bigger than the given capacity to avoid the infinite loop
+        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity, n_table)))
+        table_idx = jnp.zeros((_capacity), dtype=jnp.uint8)
         return HashTable(seed=seed,
                         capacity=capacity,
+                        _capacity=_capacity,
                         size=jnp.uint32(0),
                         n_table=n_table,
                         table=table,
@@ -107,7 +104,7 @@ class HashTable:
     @staticmethod
     def get_new_idx(hash_func: callable, table: "HashTable", input: Puzzle.State, seed: int):
         hash_value = hash_func(input, seed)
-        idx = hash_value % table.capacity
+        idx = hash_value % table._capacity
         return idx
 
     @staticmethod
