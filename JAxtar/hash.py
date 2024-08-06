@@ -94,6 +94,7 @@ class HashTable:
         """
         make a lookup table with the default state of the statecls
         """
+        capacity = int(capacity//n_table)
         table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((capacity, n_table)))
         table_idx = jnp.zeros((capacity), dtype=jnp.uint8)
         return HashTable(seed=seed,
