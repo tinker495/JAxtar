@@ -6,24 +6,66 @@ import jax.numpy as jnp
 
 from puzzle.slidepuzzle import SlidePuzzle
 
+heuristic_types = ['manhattan', 'linear_conflict','walking_distance']
+
 class SlidePuzzleHeuristic:
     puzzle: SlidePuzzle # The puzzle rule object
     base_xy : chex.Array # The coordinates of the numbers in the puzzle
 
-    def __init__(self, puzzle: SlidePuzzle):
+    def __init__(self, puzzle: SlidePuzzle, heuristic_type: str='linear_conflict'):
+        """
+        This function should initialize the heuristic object.
+        """
         self.puzzle = puzzle
         x = jnp.tile(jnp.arange(self.puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, self.puzzle.size, 1))
         y = jnp.tile(jnp.arange(self.puzzle.size)[jnp.newaxis, :, jnp.newaxis], (self.puzzle.size, 1, 1))
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
+        if heuristic_type not in heuristic_types:
+            raise ValueError(f'Heuristic type {heuristic_type} not supported')
+        self.heuristic_type = heuristic_type
+        if heuristic_type == 'manhattan':
+            self.distance = self.manhattan_distance 
+        elif heuristic_type == 'linear_conflict':
+            self.distance = self.lc_distance
+        elif heuristic_type == 'walking_distance':
+            self._walking_distance = self.build_walking_distance()
+            self.distance = self.walking_distance
 
     def distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> int:
+        pass
+
+    def manhattan_distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> int:
+        """
+        This function should return the manhattan distance between the state and the target.
+        """
+        diff, _ = self._diff_pos(current, target)
+        not_empty = (current.board != 0)
+        return self._manhattan_distance(not_empty, diff)
+
+    def lc_distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> int:
         """
         This function should return the distance between the state and the target.
         """
         diff, tpos = self._diff_pos(current, target)
         not_empty = (current.board != 0)
         return self._manhattan_distance(not_empty, diff) + self._linear_conflict(tpos, not_empty, diff)
+    
+    def walking_distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> int:
+        """
+        This function should return the walking distance between the state and the target.
+        """
+        diff, _ = self._diff_pos(current, target)
+        not_empty = (current.board != 0)
+        return jnp.sum(self._walking_distance * not_empty * jnp.sum(jnp.abs(diff),axis=1))
 
+    def build_walking_distance(self):
+        """
+        This function should build the walking distance matrix.
+        matrix[i, j] should be the walking distance between i and j.
+        """
+        def _build_walking_distance(i, j):
+            return jnp.abs(i // self.puzzle.size - j // self.puzzle.size) + jnp.abs(i % self.puzzle.size - j % self.puzzle.size)
+        return jax.vmap(_build_walking_distance)(jnp.arange(self.puzzle.size ** 2), jnp.arange(self.puzzle.size ** 2))
         
     def _diff_pos(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
         """
