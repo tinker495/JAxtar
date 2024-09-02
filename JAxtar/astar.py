@@ -4,12 +4,12 @@ import jax
 from functools import partial
 from puzzle.puzzle_base import Puzzle
 from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue
-from JAxtar.hash import HashTable
+from JAxtar.hash import hash_func_builder, HashTable
 
 
 
 @chex.dataclass
-class OpenClosedSet:
+class AstarResult:
     '''
     OpenClosedSet is a dataclass that contains the data structures used in the A* algorithm.
     
@@ -32,54 +32,154 @@ class OpenClosedSet:
     cost: chex.Array
     heuristic: chex.Array
     closed: chex.Array
+    parant: chex.Array
 
     @staticmethod
-    def build(statecls: Puzzle.State, HashTablecls: HashTable, batch_size: int, max_nodes: int, seed=0):
+    def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=0, n_table=2):
         '''
-        build is a static method that creates a new instance of OpenClosedSet.
+        build is a static method that creates a new instance of AstarResult.
         '''
-        hashtable = HashTablecls.build(statecls, seed, max_nodes)
+        hashtable = HashTable.build(statecls, seed, max_nodes, n_table=n_table)
+        size_table = hashtable.capacity
         n_table = hashtable.n_table
-        priority_queue = BGPQ.build(max_nodes * n_table, batch_size, HashTableIdx_HeapValue)
-        cost = jnp.full((max_nodes, n_table), jnp.inf)
-        heuristic = jnp.full((max_nodes, n_table), jnp.inf)
-        closed = jnp.zeros((max_nodes, n_table), dtype=jnp.bool)
-        return OpenClosedSet(
+        priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
+        cost = jnp.full((size_table, n_table), jnp.inf)
+        heuristic = jnp.full((size_table, n_table), jnp.inf)
+        closed = jnp.zeros((size_table, n_table), dtype=jnp.bool)
+        parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.int32)
+        return AstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
             cost=cost,
             heuristic=heuristic,
-            closed=closed
+            closed=closed,
+            parant=parant
         )
     
-    @staticmethod
-    def update(
-        insert_fn: HashTable.parallel_insert,
-        open_closed: "OpenClosedSet",
-        state: Puzzle.State,
-        idx: int,
-        cost: float,
-        heuristic: float,
-        closed: bool
-    ):
-        '''
-        update updates the OpenClosedSet with the new state.
-        '''
-        open_closed.hashtable = insert_fn(
-            open_closed.hashtable,
-            state,
-            idx
-        )
+    @property
+    def capacity(self):
+        return self.hashtable.capacity
+    
+    @property
+    def n_table(self):
+        return self.hashtable.n_table
 
+    @property
+    def size(self):
+        return self.hashtable.size
 
-def astar(
-    puzzle: Puzzle,
-    start: Puzzle.State,
-    target: Puzzle.State,
-    heuristic_fn: callable,
-    batch_size: int = 1024,
-    max_nodes: int = int(1e6)
-):
+def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024, max_nodes: int = int(1e6), astar_weight : float = 1.0 - 1e-6):
     '''
-    astar is the implementation of the A* algorithm.
+    astar_builder is a function that returns a partial function of astar.
     '''
+    
+    statecls = puzzle.State
+
+    batch_size = jnp.array(batch_size, dtype=jnp.int32)
+    max_nodes = jnp.array(max_nodes, dtype=jnp.int32)
+    hash_func = hash_func_builder(puzzle.State)
+    astar_result = AstarResult.build(statecls, batch_size, max_nodes)
+    
+    lookup = jax.jit(jax.vmap(partial(HashTable.lookup, hash_func), in_axes=(None, 0)))
+    parallel_insert = jax.jit(partial(HashTable.parallel_insert, hash_func))
+    def cond_heuristic_fn(states, cond, target):
+        # if cond is True, return the heuristic value, otherwise return infinity.
+        # this is used to avoid the computation of the heuristic value when the state is not valid.
+        return jax.lax.cond(cond, lambda x: heuristic_fn(x, target), lambda x: jnp.full((), jnp.inf, dtype=jnp.float32), states)
+    heuristic = jax.jit(jax.vmap(cond_heuristic_fn, in_axes=(0, 0, None)))
+    solved_fn = jax.jit(jax.vmap(puzzle.is_solved, in_axes=(0, None)))
+    neighbours_fn = jax.jit(jax.vmap(puzzle.get_neighbours, in_axes=(0,0)))
+    delete_fn = jax.jit(BGPQ.delete_mins)
+    insert_fn = jax.jit(BGPQ.insert)
+
+    def astar(
+        astar_result: AstarResult,
+        start: Puzzle.State,
+        filled: chex.Array,
+        target: Puzzle.State,
+    ) -> tuple[AstarResult, chex.Array]:
+        '''
+        astar is the implementation of the A* algorithm.
+        '''
+        
+        states = start
+
+        astar_result.hashtable, inserted, idx, table_idx = parallel_insert(astar_result.hashtable, states, filled)
+        hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
+
+        cost_val = jnp.where(filled, 0, jnp.inf)
+        astar_result.cost = astar_result.cost.at[idx, table_idx].set(jnp.where(inserted, cost_val, astar_result.cost[idx, table_idx]))
+        
+        heur_val = heuristic(states, filled, target)
+        total_cost = cost_val + heur_val
+        astar_result.priority_queue = BGPQ.insert(astar_result.priority_queue, total_cost, hash_idxs)
+
+        def _cond(astar_result: AstarResult):
+            heap_size = astar_result.priority_queue.size
+            hash_size = astar_result.hashtable.size
+            size_cond1 = heap_size > 0
+            size_cond2 = heap_size < max_nodes
+            size_cond3 = hash_size < max_nodes
+            size_cond = jnp.logical_and(jnp.logical_and(size_cond1, size_cond2), size_cond3)
+
+            min_val = astar_result.priority_queue.val_store[0] # get the minimum value
+            states = astar_result.hashtable.table[min_val.index, min_val.table_index]
+            solved = solved_fn(states, target)
+            return jnp.logical_and(size_cond, ~solved.any())
+        
+        def _body(astar_result: AstarResult):
+            astar_result.priority_queue, min_key, min_val = delete_fn(astar_result.priority_queue)
+            min_idx, min_table_idx = min_val.index, min_val.table_index
+            parant_idx = jnp.stack((min_idx, min_table_idx), axis=-1).astype(jnp.int32)
+
+            cost_val, closed_val = astar_result.cost[min_idx, min_table_idx], astar_result.closed[min_idx, min_table_idx]
+            states = astar_result.hashtable.table[min_idx, min_table_idx]
+
+            filled = jnp.logical_and(jnp.isfinite(min_key),~closed_val)
+
+            def _filled(astar_result: AstarResult):
+                astar_result.closed = astar_result.closed.at[min_idx, min_table_idx].set(jnp.where(filled, True, astar_result.closed[min_idx, min_table_idx]))
+
+                neighbours, ncost = neighbours_fn(states, filled)
+                nextcosts = cost_val[:, jnp.newaxis] + ncost
+                availables = jnp.logical_and(jnp.expand_dims(filled, axis=-1), jnp.isfinite(nextcosts))
+                _, _, already_inserted = jax.vmap(lookup, in_axes=(None, 0))(astar_result.hashtable, neighbours)
+                availables = jnp.logical_and(availables, ~already_inserted)
+
+                nextheur = jax.vmap(heuristic, in_axes=(0, 0, None))(neighbours, availables, target)
+                nextkeys = astar_weight * nextcosts + nextheur
+                filleds = jnp.isfinite(nextkeys)
+
+                def _scan(astar_result : AstarResult, val):
+                    neighbour, neighbour_key, neighbour_cost, neighbour_filled = val
+
+                    astar_result.hashtable, inserted, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
+                    vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
+                    more_optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
+                    astar_result.cost = astar_result.cost.at[idx, table_idx].set(jnp.minimum(neighbour_cost, astar_result.cost[idx, table_idx]))
+                    astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(more_optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
+                    astar_result.closed = astar_result.closed.at[idx, table_idx].set(jnp.logical_and(astar_result.closed[idx, table_idx], ~more_optimal))
+                    neighbour_key = jnp.where(astar_result.closed[idx, table_idx], jnp.inf, neighbour_key)
+
+                    astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals)
+                    return astar_result, None
+                
+                neighbours = jax.tree_util.tree_map(lambda x: jnp.moveaxis(x, 0, 1), neighbours)
+                nextkeys = jnp.moveaxis(nextkeys, 0, 1)
+                nextcosts = jnp.moveaxis(nextcosts, 0, 1)
+                filleds = jnp.moveaxis(filleds, 0, 1)
+                astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextkeys, nextcosts, filleds))
+
+                return astar_result
+            
+            astar_result = jax.lax.cond(filled.any(), _filled, lambda x: x, astar_result)
+
+            return astar_result
+        
+        astar_result = jax.lax.while_loop(_cond, _body, astar_result)
+        min_val = astar_result.priority_queue.val_store[0] # get the minimum value
+        states = astar_result.hashtable.table[min_val.index, min_val.table_index]
+        solved = solved_fn(states, target)
+        return astar_result, hash_idxs, states, solved
+
+    return jax.jit(partial(astar, astar_result))

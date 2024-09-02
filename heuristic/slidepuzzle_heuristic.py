@@ -22,7 +22,7 @@ class SlidePuzzleHeuristic:
         """
         diff, tpos = self._diff_pos(current, target)
         not_empty = (current.board != 0)
-        return self._manhattan_distance(not_empty, diff) + self._linear_conflict(tpos, not_empty, diff)
+        return (self._manhattan_distance(not_empty, diff) + self._linear_conflict(tpos, not_empty, diff)).astype(jnp.float32)
 
         
     def _diff_pos(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
