@@ -82,11 +82,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
     
     lookup = jax.jit(jax.vmap(partial(HashTable.lookup, hash_func), in_axes=(None, 0)))
     parallel_insert = jax.jit(partial(HashTable.parallel_insert, hash_func))
-    def cond_heuristic_fn(states, cond, target):
-        # if cond is True, return the heuristic value, otherwise return infinity.
-        # this is used to avoid the computation of the heuristic value when the state is not valid.
-        return jax.lax.cond(cond, lambda x: heuristic_fn(x, target), lambda x: jnp.full((), jnp.inf, dtype=jnp.float32), states)
-    heuristic = jax.jit(jax.vmap(cond_heuristic_fn, in_axes=(0, 0, None)))
+    heuristic = jax.jit(jax.vmap(heuristic_fn, in_axes=(0, None)))
     solved_fn = jax.jit(jax.vmap(puzzle.is_solved, in_axes=(0, None)))
     neighbours_fn = jax.jit(jax.vmap(puzzle.get_neighbours, in_axes=(0,0)))
     delete_fn = jax.jit(BGPQ.delete_mins)
@@ -110,7 +106,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         cost_val = jnp.where(filled, 0, jnp.inf)
         astar_result.cost = astar_result.cost.at[idx, table_idx].set(jnp.where(inserted, cost_val, astar_result.cost[idx, table_idx]))
         
-        heur_val = heuristic(states, filled, target)
+        heur_val = heuristic(states, target)
         total_cost = cost_val + heur_val
         astar_result.priority_queue = BGPQ.insert(astar_result.priority_queue, total_cost, hash_idxs)
 
@@ -142,11 +138,8 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
                 neighbours, ncost = neighbours_fn(states, filled)
                 nextcosts = cost_val[:, jnp.newaxis] + ncost
-                availables = jnp.logical_and(jnp.expand_dims(filled, axis=-1), jnp.isfinite(nextcosts))
-                _, _, already_inserted = jax.vmap(lookup, in_axes=(None, 0))(astar_result.hashtable, neighbours)
-                availables = jnp.logical_and(availables, ~already_inserted)
 
-                nextheur = jax.vmap(heuristic, in_axes=(0, 0, None))(neighbours, availables, target)
+                nextheur = jax.vmap(heuristic, in_axes=(0, None))(neighbours, target)
                 nextkeys = astar_weight * nextcosts + nextheur
                 filleds = jnp.isfinite(nextkeys)
 
@@ -180,6 +173,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         min_val = astar_result.priority_queue.val_store[0] # get the minimum value
         states = astar_result.hashtable.table[min_val.index, min_val.table_index]
         solved = solved_fn(states, target)
-        return astar_result, hash_idxs, states, solved
+        solved_idx = min_val[jnp.argmax(solved)]
+        return astar_result, solved.any(), solved_idx
 
     return jax.jit(partial(astar, astar_result))
