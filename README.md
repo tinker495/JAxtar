@@ -5,16 +5,17 @@
 # JAxtar: A* solver in pure Jax!
 
 JAxtar is a codebase with a JAX-native implementation of parallelizeable A* solver for neural heuristic search research.
-This project is inspired by mctx from google-deepmind. mcts can be written in pure jax, so why not A*?
+This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. mcts can be written in pure jax, so why not A*?
+**The project is not yet fully complete, with many types of puzzles left to be solved, more efficient basic heuristics, learning neural network heuristics, and more.**
 
-mcts, or tree search, is used in many RL algorithmic techniques, starting with AlphaGo, but graph search (not tree search) doesn't seem to have received much attention. Nevertheless, there are puzzle solving algorithms that use neural heuristics like DeepcubeA and A* (graph search).
+mcts, or tree search, is used in many RL algorithmic techniques, starting with AlphaGo, but graph search (not tree search) doesn't seem to have received much attention. Nevertheless, there are puzzle solving algorithms that use neural heuristics like [DeepcubeA](https://github.com/forestagostinelli/DeepCubeA) and A* (graph search).
 
-However, the most frustrating aspect of my brief (MSc) research in this area is the time it takes to pass information back and forth between the GPU and CPU. 
+However, the most frustrating aspect of my brief research(MSc) in this area is the time it takes to pass information back and forth between the GPU and CPU. 
 When using neural heuristic as a heuristic to eval a single node, it uses almost 50-80% of the time. Because of this, DeepcubeA batches multiple nodes at the same time, which seems to work quite well.
 
 However, this is not a fundamental solution, and I needed to find a way to remove this bottleneck altogether. This led me to look for ways to perform A* on the GPU, and I found quite a few implementations, but most of them suffer from the following problems.
 
-* They are written in pure cuda, which is not compatible with ML research
+* They are written in pure c and cuda, which is not compatible with ML research
 * They are jax or torch, which are 2d grid environments or connectivity matrices, which cannot scale to an infinite number of different states that cannot all be held in memory
 * The implementation itself is dependent on the definition of the state or problem.
 
@@ -37,7 +38,10 @@ Specially written components in this project include:
 * a priority queue that can be batched, pushed and popped
 * a fully jitted A* algorithm for puzzles.
 
+This project was a real pain in the arse to write, and I almost felt like I was doing acrobatics with Jax, but I managed to create a fully functional version, and hopefully it will inspire you to stumble upon something amazing when you travel to Jax.
+
 ## Result
+We can find the optimal path using a jittable, batched A* search as shown below. This is not a blazingly fast result, but it can be used for heuristics using neural networks.
 ```
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -64,4 +68,16 @@ JIT compiled
 Time:  17.50 seconds
 Solution found - 66.0 step
 Search states: 8431634 # 481807.65 state per sec
+```
+
+## Citation
+Please use this citation to reference this project.
+
+```bibtex
+@software{kyuseokjung2020jaxtar,
+  title = {JAxtar: A* solver in pure Jax!},
+  author = {Kyuseok Jung},
+  url = {https://github.com/tinker495/JAxtar},
+  year = {2024},
+}
 ```
