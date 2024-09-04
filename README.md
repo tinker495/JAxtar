@@ -2,9 +2,9 @@
 <img src="images/JAxtar.png" alt="logo" width="200"></img>
 </div>
 
-# JAxtar: A* solver in pure Jax!
+# JA<sup>xtar</sup>: A* solver in pure Jax!
 
-JAxtar is a codebase with a JAX-native implementation of parallelizeable A* solver for neural heuristic search research.
+JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizeable A* solver for neural heuristic search research.
 This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. mcts can be written in pure jax, so why not A*?
 **The project is not yet fully complete, with many types of puzzles left to be solved, more efficient basic heuristics, learning neural network heuristics, and more.**
 
@@ -16,7 +16,7 @@ When using neural heuristic as a heuristic to eval a single node, it uses almost
 However, this is not a fundamental solution, and I needed to find a way to remove this bottleneck altogether. This led me to look for ways to perform A* on the GPU, and I found quite a few implementations, but most of them suffer from the following problems.
 
 * They are written in pure c and cuda, which is not compatible with ML research
-* They are jax or torch, which are 2d grid environments or connectivity matrices, which cannot scale to an infinite number of different states that cannot all be held in memory
+* They are written in jax or torch, but which are 2d grid environments or connectivity matrices, which cannot scale to an infinite number of different states that cannot all be held in memory
 * The implementation itself is dependent on the definition of the state or problem.
 
 To solve this problem, I decided to write code that adheres to the following principles and works.
