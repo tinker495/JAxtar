@@ -97,7 +97,7 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
 # astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
-Time: 104.48 seconds
+Time: 28.94 seconds
 Solution found [False  True  True  True False  True False  True  True False] # 6/10 in 2e7/10 node at each search
 # this means astart_fn is completely vmapable and jitable
 ```
