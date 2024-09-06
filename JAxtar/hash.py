@@ -66,9 +66,9 @@ def hash_func_builder(x: Puzzle.State):
         
         return _h
 
-    tree_flatten_func = jax.tree_map(_get_leaf_hash_func, default) # each leaf has a hash function for each array shape and dtype
+    tree_flatten_func = jax.tree_util.tree_map(_get_leaf_hash_func, default) # each leaf has a hash function for each array shape and dtype
     def _h(x, seed): # sum of all the hash functions for each leaf
-        return jax.tree_util.tree_reduce(operator.add, jax.tree_map(lambda f,l: f(l, seed), tree_flatten_func, x))
+        return jax.tree_util.tree_reduce(operator.add, jax.tree_util.tree_map(lambda f,l: f(l, seed), tree_flatten_func, x))
     return jax.jit(_h)
 
 @chex.dataclass
@@ -178,7 +178,7 @@ class HashTable:
             """
             insert the state in the table
             """
-            table.table = jax.tree_map(lambda x, y: x.at[idx,table_idx].set(y), table.table, input)
+            table.table = jax.tree_util.tree_map(lambda x, y: x.at[idx,table_idx].set(y), table.table, input)
             table.table_idx = table.table_idx.at[idx].add(1)
             return table
 
@@ -294,7 +294,7 @@ class HashTable:
         )
 
         idx, table_idx = _idxs[:, 0], _idxs[:, 1]
-        table.table = jax.tree_map(lambda x, y: x.at[idx, table_idx].set(jnp.where(updatable.reshape(-1, 1), y, x[idx, table_idx])), table.table, inputs)
+        table.table = jax.tree_util.tree_map(lambda x, y: x.at[idx, table_idx].set(jnp.where(updatable.reshape(-1, 1), y, x[idx, table_idx])), table.table, inputs)
         table.table_idx = table.table_idx.at[idx].add(updatable)
         table.size += jnp.sum(updatable)
         return table, updatable, idx, table_idx
