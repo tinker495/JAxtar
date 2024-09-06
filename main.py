@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import click
 import time
 
+from functools import partial
 from puzzle.slidepuzzle import SlidePuzzle
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
@@ -89,6 +90,31 @@ def main(puzzle, max_node_size, batch_size, start_state_seed, seed):
         print(c)
     print(solved_st)
     print(solved_cost)
+
+    print("\n\n")
+
+    map_size = 10
+    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size//map_size, max_node_size//map_size)
+    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),map_size))
+
+    print("Vmapped A* search, multiple initial state solution\n\n")
+    print("Start state")
+    print(states[0], f"\n.\n.\n. x {map_size}")
+    print("Target state\n\n")
+    print(target)
+
+    states, filled = jax.vmap(lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size//map_size), in_axes=0)(states)
+
+    print("vmap astar")
+    print("# astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)")
+    start = time.time()
+
+    astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
+    end = time.time()
+
+    print(f"Time: {end - start:6.2f} seconds\n\n")
+    print("Solution found", solved)
+    # this means astart_fn is completely vmapable and jitable
 
 if __name__ == "__main__":
     main()

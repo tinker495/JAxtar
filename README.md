@@ -2,7 +2,7 @@
 <img src="images/JAxtar.png" alt="logo" width="200"></img>
 </div>
 
-# JA<sup>xtar</sup>: A* solver in pure Jax!
+# JA<sup>xtar</sup>: Batched parallel A* solver in pure Jax!
 
 JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizeable A* solver for neural heuristic search research.
 This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. mcts can be written in pure jax, so why not A*?
@@ -68,6 +68,38 @@ JIT compiled
 Time:  17.50 seconds
 Solution found - 66.0 step
 Search states: 8431634 # 481807.65 state per sec
+```
+
+```
+Vmapped A* search, multiple initial state solution 
+Start state
+┏━━━┳━━━┳━━━┳━━━┓
+┃ 7 ┃ 9 ┃ 3 ┃ C ┃
+┣━━━╋━━━╋━━━╋━━━┫
+┃ F ┃ 2 ┃ A ┃ D ┃
+┣━━━╋━━━╋━━━╋━━━┫
+┃ 4 ┃ 8 ┃ 5 ┃   ┃
+┣━━━╋━━━╋━━━╋━━━┫
+┃ 6 ┃ E ┃ 1 ┃ B ┃
+┗━━━┻━━━┻━━━┻━━━┛
+.
+.
+. x 10
+Target state
+┏━━━┳━━━┳━━━┳━━━┓
+┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
+┣━━━╋━━━╋━━━╋━━━┫
+┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃
+┣━━━╋━━━╋━━━╋━━━┫
+┃ 9 ┃ A ┃ B ┃ C ┃
+┣━━━╋━━━╋━━━╋━━━┫
+┃ D ┃ E ┃ F ┃   ┃
+┗━━━┻━━━┻━━━┻━━━┛
+vmap astar
+# astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
+Time: 104.48 seconds
+Solution found [False  True  True  True False  True False  True  True False] # 6/10 in 2e7/10 node at each search
+# this means astart_fn is completely vmapable and jitable
 ```
 
 ## Citation
