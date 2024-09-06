@@ -16,11 +16,14 @@ puzzle_dict = {
 
 @click.command()
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
-@click.option("--max_node_size", default=2e7, help="Size of the puzzle")
-@click.option("--batch_size", default=10000, help="Batch size for BGPQ")
+@click.option("--max_node_size", default=2e6, help="Size of the puzzle")
+@click.option("--batch_size", default=1000, help="Batch size for BGPQ")
+@click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
+@click.option("--efficient_heuristic", default=False, help="Use efficient heuristic")
 @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
 @click.option("--seed", default=0, help="Seed for the random puzzle")
-def main(puzzle, max_node_size, batch_size, start_state_seed, seed):
+@click.option("--vmap_size", default=10, help="Size for the vmap")
+def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, start_state_seed, seed, vmap_size):
     puzzle, heuristic_fn = puzzle_dict[puzzle](None)
 
     max_node_size = int(max_node_size)
@@ -36,7 +39,7 @@ def main(puzzle, max_node_size, batch_size, start_state_seed, seed):
     print("Target state\n\n")
     print(target)
 
-    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size)
+    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight, efficient_heuristic=efficient_heuristic)
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
     print("initializing jit\n\n")
@@ -58,48 +61,47 @@ def main(puzzle, max_node_size, batch_size, start_state_seed, seed):
     start = time.time()
     astar_result, solved, solved_idx = astar_fn(states, filled, target)
     end = time.time()
-    print(f"Time: {end - start:6.2f} seconds\n\n")
+    single_search_time = end - start
+    print(f"Time: {single_search_time:6.2f} seconds\n\n")
 
     if not solved:
         print("No solution found\n\n")
-        return
-    
-    print("Solution found\n\n")
+    else:
+        print("Solution found\n\n")
 
-    searched_states = astar_result.hashtable.size
+        searched_states = astar_result.hashtable.size
 
-    print(f"Search states: {searched_states}\n\n")
-    parants = astar_result.parant
-    table = astar_result.hashtable.table
-    cost = astar_result.cost
+        print(f"Search states: {searched_states}\n\n")
+        parants = astar_result.parant
+        table = astar_result.hashtable.table
+        cost = astar_result.cost
 
-    solved_st = astar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
-    solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
+        solved_st = astar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
+        solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
 
-    path = []
-    parant_last = parants[solved_idx.index, solved_idx.table_index][0]
-    for i in range(100):
-        if parant_last[0] == -1:
-            break
-        path.append(parant_last)
-        parant_last = parants[*parant_last]
-    for p in path[::-1]:
-        state = table[p[0], p[1]]
-        c = cost[p[0], p[1]]
-        print(state)
-        print(c)
-    print(solved_st)
-    print(solved_cost)
+        path = []
+        parant_last = parants[solved_idx.index, solved_idx.table_index][0]
+        for i in range(100):
+            if parant_last[0] == -1:
+                break
+            path.append(parant_last)
+            parant_last = parants[*parant_last]
+        for p in path[::-1]:
+            state = table[p[0], p[1]]
+            c = cost[p[0], p[1]]
+            print(state)
+            print(c)
+        print(solved_st)
+        print(solved_cost)
 
-    print("\n\n")
+        print("\n\n")
 
-    map_size = 10
-    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size//map_size) # 10 times smaller size for memory usage
-    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),map_size))
+    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight, efficient_heuristic=efficient_heuristic) # 10 times smaller size for memory usage
+    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),vmap_size))
 
     print("Vmapped A* search, multiple initial state solution\n\n")
     print("Start state")
-    print(states[0], f"\n.\n.\n. x {map_size}")
+    print(states[0], f"\n.\n.\n. x {vmap_size}")
     print("Target state")
     print(target)
 
@@ -111,9 +113,10 @@ def main(puzzle, max_node_size, batch_size, start_state_seed, seed):
 
     astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
     end = time.time()
+    vmapped_search_time = end - start
 
-    print(f"Time: {end - start:6.2f} seconds\n\n")
-    print("Solution found", solved)
+    print(f"Time: {vmapped_search_time:6.2f} seconds (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})\n\n")
+    print("Solution found:", f"{jnp.mean(solved)*100:.2f}%")
     # this means astart_fn is completely vmapable and jitable
 
 if __name__ == "__main__":
