@@ -155,5 +155,5 @@ class Puzzle(ABC):
         This function should return True if the two states are equal.
         this functions must be all puzzle's state(dataclass) compatible, so this is not a abstract method.
         """
-        tree_equal = jax.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
+        tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
         return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)

@@ -8,10 +8,12 @@ from puzzle.slidepuzzle import SlidePuzzle
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
+from heuristic.dummy_neural_heuristic import Dummyneuralheuristic
 
 
 puzzle_dict = {
-    "n-puzzle": lambda _: (SlidePuzzle(4), SlidePuzzleHeuristic(SlidePuzzle(4)).distance)
+    "n-puzzle": lambda _: (SlidePuzzle(4), SlidePuzzleHeuristic(SlidePuzzle(4)).distance),
+    "n-puzzle-nn": lambda _: (SlidePuzzle(4), Dummyneuralheuristic(SlidePuzzle(4)).distance)
 }
 
 @click.command()
@@ -19,7 +21,7 @@ puzzle_dict = {
 @click.option("--max_node_size", default=2e6, help="Size of the puzzle")
 @click.option("--batch_size", default=1000, help="Batch size for BGPQ")
 @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
-@click.option("--efficient_heuristic", default=False, help="Use efficient heuristic")
+@click.option("--efficient_heuristic", cls=click.Option, is_flag=True, default=False, help="Use efficient heuristic")
 @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
 @click.option("--seed", default=0, help="Seed for the random puzzle")
 @click.option("--vmap_size", default=10, help="Size for the vmap")
@@ -97,7 +99,8 @@ def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, s
         print("\n\n")
 
     astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight, efficient_heuristic=efficient_heuristic) # 10 times smaller size for memory usage
-    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),vmap_size))
+    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),1))
+    states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
 
     print("Vmapped A* search, multiple initial state solution\n\n")
     print("Start state")
