@@ -18,13 +18,13 @@ puzzle_dict = {
 
 @click.command()
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
-@click.option("--max_node_size", default=1e6, help="Size of the puzzle")
-@click.option("--batch_size", default=1000, help="Batch size for BGPQ")
+@click.option("--max_node_size", default=2e7, help="Size of the puzzle")
+@click.option("--batch_size", default=10000, help="Batch size for BGPQ")
 @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
 @click.option("--efficient_heuristic", cls=click.Option, is_flag=True, default=False, help="Use efficient heuristic")
 @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
 @click.option("--seed", default=0, help="Seed for the random puzzle")
-@click.option("--vmap_size", default=4, help="Size for the vmap")
+@click.option("--vmap_size", default=10, help="Size for the vmap")
 def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, start_state_seed, seed, vmap_size):
     puzzle, heuristic_fn = puzzle_dict[puzzle](None)
 
@@ -94,10 +94,10 @@ def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, s
 
         print("\n\n")
 
-    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight, efficient_heuristic=efficient_heuristic) # 10 times smaller size for memory usage
+    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size//vmap_size, astar_weight=astar_weight, efficient_heuristic=efficient_heuristic) # 10 times smaller size for memory usage
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),vmap_size))
 
-    print("Vmapped A* search, multiple initial state solution\n\n")
+    print("Vmapped A* search, multiple initial state solution")
     print("Start state")
     print(states[0], f"\n.\n.\n. x {vmap_size}")
     print("Target state")
@@ -113,7 +113,10 @@ def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, s
     end = time.time()
     vmapped_search_time = end - start
 
-    print(f"Time: {vmapped_search_time:6.2f} seconds (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})\n\n")
+    search_states = jnp.sum(astar_result.hashtable.size)
+
+    print(f"Time: {vmapped_search_time:6.2f} seconds (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})")
+    print(f"Search states: {search_states} ({search_states / vmapped_search_time:.2f} states/s)")
     print("Solution found:", f"{jnp.mean(solved)*100:.2f}%")
     # this means astart_fn is completely vmapable and jitable
 

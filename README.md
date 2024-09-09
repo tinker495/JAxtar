@@ -71,20 +71,20 @@ Search states: 8431634 # 481807.65 state per sec
 ```
 
 ```
-Vmapped A* search, multiple initial state solution 
+Vmapped A* search, multiple initial state solution
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
-┃ 7 ┃ 9 ┃ 3 ┃ C ┃
+┃ D ┃ 1 ┃ 3 ┃   ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ F ┃ 2 ┃ A ┃ D ┃
+┃ C ┃ 2 ┃ F ┃ 9 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 4 ┃ 8 ┃ 5 ┃   ┃
+┃ 5 ┃ E ┃ 4 ┃ B ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 6 ┃ E ┃ 1 ┃ B ┃
-┗━━━┻━━━┻━━━┻━━━┛
+┃ A ┃ 7 ┃ 8 ┃ 6 ┃
+┗━━━┻━━━┻━━━┻━━━┛ 
 .
 .
-. x 10
+. x 20
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
 ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
@@ -97,8 +97,9 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
 # astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
-Time: 28.94 seconds
-Solution found [False  True  True  True False  True False  True  True False] # 6/10 in 2e7/10 node at each search
+Time: 159.15 seconds (x9.2/20)
+Search states: 14908291 (93676.74 states/s)
+Solution found: 40.00%
 # this means astart_fn is completely vmapable and jitable
 ```
 
