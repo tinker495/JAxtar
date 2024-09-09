@@ -95,8 +95,7 @@ def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, s
         print("\n\n")
 
     astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight, efficient_heuristic=efficient_heuristic) # 10 times smaller size for memory usage
-    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),1))
-    states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
+    states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),vmap_size))
 
     print("Vmapped A* search, multiple initial state solution\n\n")
     print("Start state")
