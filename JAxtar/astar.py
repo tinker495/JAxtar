@@ -153,7 +153,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                 def _scan(astar_result : AstarResult, val):
                     neighbour, neighbour_key, neighbour_cost, neighbour_filled = val
 
-                    astar_result.hashtable, inserted, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
+                    astar_result.hashtable, _, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
                     vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
                     more_optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
                     astar_result.cost = astar_result.cost.at[idx, table_idx].set(jnp.minimum(neighbour_cost, astar_result.cost[idx, table_idx]))
@@ -172,9 +172,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
                 return astar_result
             
-            astar_result = jax.lax.cond(filled.any(), _filled, lambda x: x, astar_result)
-
-            return astar_result
+            return jax.lax.cond(filled.any(), _filled, lambda x: x, astar_result)
         
         astar_result = jax.lax.while_loop(_cond, _body, astar_result)
         min_val = astar_result.priority_queue.val_store[0] # get the minimum value
