@@ -18,13 +18,13 @@ puzzle_dict = {
 
 @click.command()
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
-@click.option("--max_node_size", default=2e6, help="Size of the puzzle")
-@click.option("--batch_size", default=10000, help="Batch size for BGPQ")
+@click.option("--max_node_size", default=1e6, help="Size of the puzzle")
+@click.option("--batch_size", default=1000, help="Batch size for BGPQ")
 @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
 @click.option("--efficient_heuristic", cls=click.Option, is_flag=True, default=False, help="Use efficient heuristic")
 @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
 @click.option("--seed", default=0, help="Seed for the random puzzle")
-@click.option("--vmap_size", default=10, help="Size for the vmap")
+@click.option("--vmap_size", default=4, help="Size for the vmap")
 def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, start_state_seed, seed, vmap_size):
     puzzle, heuristic_fn = puzzle_dict[puzzle](None)
 
@@ -78,7 +78,7 @@ def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, s
 
         path = []
         parant_last = parants[solved_idx.index, solved_idx.table_index][0]
-        for i in range(100):
+        while True:
             if parant_last[0] == -1:
                 break
             path.append(parant_last)
