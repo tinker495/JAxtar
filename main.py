@@ -39,7 +39,7 @@ def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, s
     astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight, efficient_heuristic=efficient_heuristic)
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
-    print("initializing jit\n\n")
+    print("initializing jit")
     start = time.time()
     astar_result, solved, solved_idx = astar_fn(states, filled, target)
     end = time.time()
@@ -48,18 +48,19 @@ def main(puzzle, max_node_size, batch_size, astar_weight, efficient_heuristic, s
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),1))
     target = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0], dtype=jnp.uint8))
 
-    print("Start state\n\n")
+    print("Start state")
     print(states[0])
-    print("Target state\n\n")
+    print("Target state")
     print(target)
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
-    print("JIT compiled\n\n")
+    print("\n\nJIT compiled")
     start = time.time()
     astar_result, solved, solved_idx = astar_fn(states, filled, target)
     end = time.time()
     single_search_time = end - start
-    print(f"Time: {single_search_time:6.2f} seconds\n\n")
+    print(f"Time: {single_search_time:6.2f} seconds")
+    print(f"Search states: {astar_result.hashtable.size} ({astar_result.hashtable.size / single_search_time:.2f} states/s)\n\n")
 
     if not solved:
         print("No solution found\n\n")
