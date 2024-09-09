@@ -24,7 +24,7 @@ class Model(nn.Module):
         x = nn.Dense(1)(x)
         return x
 
-class Dummyneuralheuristic:
+class SlidePuzzleNeuralHeuristic:
     base_xy : chex.Array # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle):
