@@ -30,7 +30,6 @@ class AstarResult:
     hashtable: HashTable
     priority_queue: BGPQ
     cost: chex.Array
-    heuristic: chex.Array
     closed: chex.Array
     parant: chex.Array
 
@@ -44,14 +43,12 @@ class AstarResult:
         n_table = hashtable.n_table
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
         cost = jnp.full((size_table, n_table), jnp.inf)
-        heuristic = jnp.full((size_table, n_table), jnp.inf)
         closed = jnp.zeros((size_table, n_table), dtype=jnp.bool)
         parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.int32)
         return AstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
             cost=cost,
-            heuristic=heuristic,
             closed=closed,
             parant=parant
         )
@@ -68,7 +65,7 @@ class AstarResult:
     def size(self):
         return self.hashtable.size
 
-def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024, max_nodes: int = int(1e6), astar_weight : float = 1.0 - 1e-6, efficient_heuristic: bool = False):
+def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024, max_nodes: int = int(1e6), astar_weight : float = 1.0 - 1e-6):
     '''
     astar_builder is a function that returns a partial function of astar.
 
@@ -90,27 +87,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
     hash_func = hash_func_builder(puzzle.State)
     astar_result = AstarResult.build(statecls, batch_size, max_nodes)
     
-    lookup = jax.jit(partial(HashTable.lookup, hash_func))
-
-    if efficient_heuristic:
-        def _heuristic_fn(states: Puzzle.State, filled: chex.Array, astar_result: AstarResult, target: Puzzle.State) -> chex.Array:
-            """
-            heuristic is a function that returns the heuristic value of the states.
-            """
-            idx, table_idx, found = lookup(astar_result.hashtable, states)
-            hash_heur = astar_result.heuristic[idx, table_idx]
-            def not_found(states):
-                return heuristic_fn(states, target)
-
-            def _filled(states):
-                heur = jax.lax.cond(found, lambda _: hash_heur, not_found, states)
-                return heur
-
-            heur = jax.lax.cond(filled, _filled, lambda _: jnp.inf, states)
-            return heur
-        heuristic = jax.jit(jax.vmap(_heuristic_fn, in_axes=(0, 0, None, None)))
-    else:
-        heuristic = jax.jit(jax.vmap(heuristic_fn, in_axes=(0, None)))
+    heuristic = jax.jit(jax.vmap(heuristic_fn, in_axes=(0, None)))
 
     parallel_insert = jax.jit(partial(HashTable.parallel_insert, hash_func))
     solved_fn = jax.jit(jax.vmap(puzzle.is_solved, in_axes=(0, None)))
@@ -130,14 +107,12 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         
         states = start
 
-        heur_val = heuristic(states, filled, astar_result, target) if efficient_heuristic else heuristic(states, target)
+        heur_val = heuristic(states, target)
         astar_result.hashtable, inserted, idx, table_idx = parallel_insert(astar_result.hashtable, states, filled)
         hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
 
         cost_val = jnp.where(filled, 0, jnp.inf)
         astar_result.cost = astar_result.cost.at[idx, table_idx].set(jnp.where(inserted, cost_val, astar_result.cost[idx, table_idx]))
-        if efficient_heuristic:
-            astar_result.heuristic = astar_result.heuristic.at[idx, table_idx].set(jnp.where(inserted, heur_val, astar_result.heuristic[idx, table_idx]))
         
         total_cost = cost_val + heur_val
         astar_result.priority_queue = BGPQ.insert(astar_result.priority_queue, total_cost, hash_idxs)
@@ -172,22 +147,16 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                 nextcosts = cost_val[:, jnp.newaxis] + ncost
                 filleds = jnp.isfinite(nextcosts)
 
-                nextheur = jax.vmap(heuristic, in_axes=(0, 0, None, None))(neighbours, filleds, astar_result, target) \
-                            if efficient_heuristic else jax.vmap(heuristic, in_axes=(0, None))(neighbours, target)
+                nextheur = jax.vmap(heuristic, in_axes=(0, None))(neighbours, target)
                 nextkeys = astar_weight * nextcosts + nextheur
 
                 def _scan(astar_result : AstarResult, val):
-                    if efficient_heuristic:
-                        neighbour, neighbour_key, neighbour_cost, neighbour_heur, neighbour_filled = val
-                    else:
-                        neighbour, neighbour_key, neighbour_cost, neighbour_filled = val
+                    neighbour, neighbour_key, neighbour_cost, neighbour_filled = val
 
                     astar_result.hashtable, inserted, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
                     vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
                     more_optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
                     astar_result.cost = astar_result.cost.at[idx, table_idx].set(jnp.minimum(neighbour_cost, astar_result.cost[idx, table_idx]))
-                    if efficient_heuristic:
-                        astar_result.heuristic = astar_result.heuristic.at[idx, table_idx].set(jnp.where(inserted, neighbour_heur, astar_result.heuristic[idx, table_idx]))
                     astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(more_optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
                     astar_result.closed = astar_result.closed.at[idx, table_idx].set(jnp.logical_and(astar_result.closed[idx, table_idx], ~more_optimal))
                     neighbour_key = jnp.where(astar_result.closed[idx, table_idx], jnp.inf, neighbour_key)
@@ -198,11 +167,8 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                 neighbours = jax.tree_util.tree_map(lambda x: jnp.moveaxis(x, 0, 1), neighbours)
                 nextkeys = jnp.moveaxis(nextkeys, 0, 1)
                 nextcosts = jnp.moveaxis(nextcosts, 0, 1)
-                if efficient_heuristic:
-                    nextheur = jnp.moveaxis(nextheur, 0, 1)
                 filleds = jnp.moveaxis(filleds, 0, 1)
-                astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextkeys, nextcosts, nextheur, filleds) 
-                                                if efficient_heuristic else (neighbours, nextkeys, nextcosts, filleds))
+                astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextkeys, nextcosts, filleds))
 
                 return astar_result
             

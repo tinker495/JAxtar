@@ -12,14 +12,14 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 6] -> conv
-        x = nn.Conv(256, (3, 3), padding='SAME')(x)
+        x = nn.Conv(512, (3, 3), padding='SAME')(x)
         x = nn.relu(x)
-        x = nn.Conv(128, (3, 3), padding='SAME')(x)
-        x = nn.relu(x)
-        x = nn.Conv(64, (3, 3), padding='SAME')(x)
+        x = nn.Conv(512, (3, 3))(x)
         x = nn.relu(x)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(NODE_SIZE)(x)
+        x = nn.Dense(512)(x)
+        x = nn.relu(x)
+        x = nn.Dense(256)(x)
         x = nn.relu(x)
         x = nn.Dense(1)(x)
         return x
