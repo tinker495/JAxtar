@@ -8,12 +8,12 @@ from puzzle.slidepuzzle import SlidePuzzle
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
-from heuristic.dummy_neural_heuristic import Dummyneuralheuristic
+from heuristic.slidepuzzle_neural_heuristic import SlidePuzzleNeuralHeuristic
 
 
 puzzle_dict = {
     "n-puzzle": lambda _: (SlidePuzzle(4), SlidePuzzleHeuristic(SlidePuzzle(4)).distance),
-    "n-puzzle-nn": lambda _: (SlidePuzzle(4), Dummyneuralheuristic(SlidePuzzle(4)).distance)
+    "n-puzzle-nn": lambda _: (SlidePuzzle(4), SlidePuzzleNeuralHeuristic(SlidePuzzle(4)).distance)
 }
 
 @click.command()
