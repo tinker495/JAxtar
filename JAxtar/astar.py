@@ -147,7 +147,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                 nextcosts = cost_val[:, jnp.newaxis] + ncost
                 filleds = jnp.isfinite(nextcosts)
 
-                nextheur = jax.vmap(heuristic, in_axes=(0, None))(neighbours, target)
+                nextheur = jax.vmap(heuristic, in_axes=(1, None), out_axes=1)(neighbours, target)
                 nextkeys = astar_weight * nextcosts + nextheur
 
                 def _scan(astar_result : AstarResult, val):
