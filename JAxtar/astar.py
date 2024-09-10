@@ -140,7 +140,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
             filled = jnp.logical_and(jnp.isfinite(min_key),~closed_val)
 
-            astar_result.closed = astar_result.closed.at[min_idx, min_table_idx].set(filled)
+            astar_result.closed = astar_result.closed.at[min_idx, min_table_idx].max(filled) # or operation with closed
 
             neighbours, ncost = neighbours_fn(states, filled)
             nextcosts = cost_val[:, jnp.newaxis] + ncost
@@ -154,11 +154,11 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
                 astar_result.hashtable, _, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
-                more_optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
-                astar_result.cost = astar_result.cost.at[idx, table_idx].set(jnp.minimum(neighbour_cost, astar_result.cost[idx, table_idx]))
-                astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(more_optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
-                astar_result.closed = astar_result.closed.at[idx, table_idx].set(~more_optimal)
-                neighbour_key = jnp.where(~more_optimal, jnp.inf, neighbour_key)
+                not_optimal = (neighbour_cost >= astar_result.cost[idx, table_idx])
+                astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
+                astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(not_optimal[:,jnp.newaxis], astar_result.parant[idx, table_idx], parant_idx))
+                astar_result.closed = astar_result.closed.at[idx, table_idx].set(not_optimal)
+                neighbour_key = jnp.where(not_optimal, jnp.inf, neighbour_key)
 
                 astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals)
                 return astar_result, None
