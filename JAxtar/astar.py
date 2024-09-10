@@ -44,7 +44,7 @@ class AstarResult:
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
         cost = jnp.full((size_table, n_table), jnp.inf)
         closed = jnp.zeros((size_table, n_table), dtype=jnp.bool)
-        parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.int32)
+        parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
         return AstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
@@ -133,7 +133,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         def _body(astar_result: AstarResult):
             astar_result.priority_queue, min_key, min_val = delete_fn(astar_result.priority_queue)
             min_idx, min_table_idx = min_val.index, min_val.table_index
-            parant_idx = jnp.stack((min_idx, min_table_idx), axis=-1).astype(jnp.int32)
+            parant_idx = jnp.stack((min_idx, min_table_idx), axis=-1)
 
             cost_val, closed_val = astar_result.cost[min_idx, min_table_idx], astar_result.closed[min_idx, min_table_idx]
             states = astar_result.hashtable.table[min_idx, min_table_idx]

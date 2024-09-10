@@ -71,7 +71,7 @@ class HashTableIdx_HeapValue:
 
     @staticmethod
     def default(_ = None) -> "HashTableIdx_HeapValue":
-        return HashTableIdx_HeapValue(index=jnp.zeros(1, dtype=jnp.int32), table_index=jnp.zeros(1, dtype=jnp.int32))
+        return HashTableIdx_HeapValue(index=jnp.zeros(1, dtype=jnp.uint32), table_index=jnp.zeros(1, dtype=jnp.uint32))
 
 @chex.dataclass
 class BGPQ: # Batched GPU Priority Queue
