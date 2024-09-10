@@ -42,7 +42,8 @@ This project was a real pain in the arse to write, and I almost felt like I was 
 
 ## Result
 We can find the optimal path using a jittable, batched A* search as shown below. This is not a blazingly fast result, but it can be used for heuristics using neural networks.
-```
+``` 
+$ python main.py
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
 ┃ C ┃ 1 ┃ B ┃ E ┃
@@ -65,26 +66,27 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛
 
 JIT compiled
-Time:  17.50 seconds
+Time:   3.20 seconds
 Solution found - 66.0 step
-Search states: 8431634 # 481807.65 state per sec
+Search states: 4651812 (1454000.62 states/s)
 ```
 
 ```
+$ python main.py --max_node_size 1e6 --batch_size 1000 --vmap_size 100
 Vmapped A* search, multiple initial state solution
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
-┃ D ┃ 1 ┃ 3 ┃   ┃
+┃ A ┃ 6 ┃ 2 ┃ B ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ C ┃ 2 ┃ F ┃ 9 ┃
+┃ 7 ┃ 9 ┃ F ┃ E ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 5 ┃ E ┃ 4 ┃ B ┃
+┃ 3 ┃ 5 ┃   ┃ 8 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ A ┃ 7 ┃ 8 ┃ 6 ┃
+┃ D ┃ C ┃ 1 ┃ 4 ┃
 ┗━━━┻━━━┻━━━┻━━━┛ 
 .
 .
-. x 20
+. x 100
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
 ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
@@ -97,9 +99,9 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
 # astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
-Time: 159.15 seconds (x9.2/20)
-Search states: 14908291 (93676.74 states/s)
-Solution found: 40.00%
+Time: 205.51 seconds (x40.8/100)
+Search states: 65396322 (318218.00 states/s)
+Solution found: 50.00%
 # this means astart_fn is completely vmapable and jitable
 ```
 
