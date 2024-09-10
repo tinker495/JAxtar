@@ -23,7 +23,7 @@ puzzle_dict = {
 @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
 @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
 @click.option("--seed", default=0, help="Seed for the random puzzle")
-@click.option("--vmap_size", default=10, help="Size for the vmap")
+@click.option("--vmap_size", default=1, help="Size for the vmap")
 def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size):
     puzzle, heuristic_fn = puzzle_dict[puzzle](None)
 
@@ -93,7 +93,7 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
 
         print("\n\n")
 
-    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight) # 10 times smaller size for memory usage
+    #astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size//vmap_size, astar_weight=astar_weight) # 10 times smaller size for memory usage
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),vmap_size))
 
     print("Vmapped A* search, multiple initial state solution")
