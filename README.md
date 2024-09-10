@@ -68,7 +68,7 @@ Target state
 JIT compiled
 Time:   3.20 seconds
 Solution found - 66.0 step
-Search states: 4651812 (1454000.62 states/s)
+Search states: 4.65M (1.46M states/s)
 ```
 
 ```
@@ -99,8 +99,8 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
 # astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
-Time: 200.48 seconds (x39.7/100)
-Search states: 65519419 (326811.84 states/s)
+Time: 196.43 seconds (x38.6/100)
+Search states: 65.4M (333K states/s)
 Solution found: 50.00%
 # this means astart_fn is completely vmapable and jitable
 ```
