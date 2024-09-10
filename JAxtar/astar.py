@@ -87,13 +87,13 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
     hash_func = hash_func_builder(puzzle.State)
     astar_result = AstarResult.build(statecls, batch_size, max_nodes)
     
-    heuristic = jax.jit(jax.vmap(heuristic_fn, in_axes=(0, None)))
+    heuristic = jax.vmap(heuristic_fn, in_axes=(0, None))
 
-    parallel_insert = jax.jit(partial(HashTable.parallel_insert, hash_func))
-    solved_fn = jax.jit(jax.vmap(puzzle.is_solved, in_axes=(0, None)))
-    neighbours_fn = jax.jit(jax.vmap(puzzle.get_neighbours, in_axes=(0,0)))
-    delete_fn = jax.jit(BGPQ.delete_mins)
-    insert_fn = jax.jit(BGPQ.insert)
+    parallel_insert = partial(HashTable.parallel_insert, hash_func)
+    solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
+    neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0,0))
+    delete_fn = BGPQ.delete_mins
+    insert_fn = BGPQ.insert
 
     def astar(
         astar_result: AstarResult,
