@@ -141,13 +141,13 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             filled = jnp.logical_and(jnp.isfinite(min_key),~closed_val)
 
             def _filled(astar_result: AstarResult):
-                astar_result.closed = astar_result.closed.at[min_idx, min_table_idx].set(jnp.where(filled, True, astar_result.closed[min_idx, min_table_idx]))
+                astar_result.closed = astar_result.closed.at[min_idx, min_table_idx].set(filled)
 
                 neighbours, ncost = neighbours_fn(states, filled)
                 nextcosts = cost_val[:, jnp.newaxis] + ncost
                 filleds = jnp.isfinite(nextcosts)
 
-                nextheur = jax.vmap(heuristic, in_axes=(1, None), out_axes=1)(neighbours, target)
+                nextheur = jax.vmap(heuristic, in_axes=(0, None))(neighbours, target)
                 nextkeys = astar_weight * nextcosts + nextheur
 
                 def _scan(astar_result : AstarResult, val):
@@ -158,8 +158,8 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                     more_optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
                     astar_result.cost = astar_result.cost.at[idx, table_idx].set(jnp.minimum(neighbour_cost, astar_result.cost[idx, table_idx]))
                     astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(more_optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
-                    astar_result.closed = astar_result.closed.at[idx, table_idx].set(jnp.logical_and(astar_result.closed[idx, table_idx], ~more_optimal))
-                    neighbour_key = jnp.where(astar_result.closed[idx, table_idx], jnp.inf, neighbour_key)
+                    astar_result.closed = astar_result.closed.at[idx, table_idx].set(~more_optimal)
+                    neighbour_key = jnp.where(~more_optimal, jnp.inf, neighbour_key)
 
                     astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals)
                     return astar_result, None
