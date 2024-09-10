@@ -42,11 +42,9 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
     start = time.time()
     astar_result, solved, solved_idx = astar_fn(states, filled, target)
     end = time.time()
-    jit_time = end - start
-    print(f"Time: {jit_time:6.2f} seconds\n\n")
+    print(f"Time: {end - start:6.2f} seconds\n\n")
 
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),1))
-    target = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0], dtype=jnp.uint8))
 
     print("Start state")
     print(states[0])
@@ -95,6 +93,16 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
         print("\n\n")
 
     #astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size//vmap_size, astar_weight=astar_weight) # 10 times smaller size for memory usage
+    states = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0, 15], dtype=jnp.uint8))[jnp.newaxis, ...]
+    states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
+    states, filled = jax.vmap(lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0)(states)
+    vmapped_astar = jax.vmap(astar_fn, in_axes=(0, 0, None))
+    print("initializing vmapped jit")
+    start = time.time()
+    astar_result, solved, solved_idx = vmapped_astar(states, filled, target)
+    end = time.time()
+    print(f"Time: {end - start:6.2f} seconds\n\n")
+
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),vmap_size))
 
     print("Vmapped A* search, multiple initial state solution")
@@ -109,9 +117,9 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
     print("# astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)")
     start = time.time()
 
-    astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
+    astar_result, solved, solved_idx = vmapped_astar(states, filled, target)
     end = time.time()
-    vmapped_search_time = end - start - jit_time # subtract jit time from the vmapped search time
+    vmapped_search_time = end - start # subtract jit time from the vmapped search time
 
     search_states = jnp.sum(astar_result.hashtable.size)
 
