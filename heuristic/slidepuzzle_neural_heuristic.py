@@ -39,12 +39,15 @@ class SlidePuzzleNeuralHeuristic:
         """
         This function should return the distance between the state and the target.
         """
+        return self._distance(self.params, current, target)
+    
+    def _distance(self, params, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
         diff = self.to_2d(self._diff_pos(current, target)) # [4, 4, 2]
         c_zero = self.to_2d(self._zero_pos(current)) # [4, 4, 1]
         t_zero = self.to_2d(self._zero_pos(target)) # [4, 4, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1) # [4, 4, 4]
         x = jnp.expand_dims(x, axis=0)
-        return self.model.apply(self.params, x).squeeze()
+        return self.model.apply(params, x).squeeze()
     
     def to_2d(self, x: chex.Array) -> chex.Array:
         return x.reshape((self.puzzle.size, self.puzzle.size, x.shape[-1]))
