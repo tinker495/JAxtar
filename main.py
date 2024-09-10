@@ -65,9 +65,6 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
     else:
         print("Solution found\n\n")
 
-        searched_states = astar_result.hashtable.size
-
-        print(f"Search states: {searched_states}\n\n")
         parants = astar_result.parant
         table = astar_result.hashtable.table
         cost = astar_result.cost
