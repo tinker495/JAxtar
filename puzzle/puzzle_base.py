@@ -28,16 +28,7 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
     setattr(cls, 'dtype', property(get_type))
 
     def getitem(self, index):
-        new_values = {}
-        for field_name, field_value in self.__dict__.items():
-            if hasattr(field_value, '__getitem__'):
-                try:
-                    new_values[field_name] = field_value[index]
-                except IndexError:
-                    new_values[field_name] = field_value
-            else:
-                new_values[field_name] = field_value
-        return cls(**new_values)
+        return jax.tree_map(lambda x: x[index], self)
     setattr(cls, '__getitem__', getitem)
 
     def len(self):
