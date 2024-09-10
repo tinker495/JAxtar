@@ -16,6 +16,14 @@ puzzle_dict = {
     "n-puzzle-nn": lambda _: (SlidePuzzle(4), SlidePuzzleNeuralHeuristic(SlidePuzzle(4)).distance)
 }
 
+def human_format(num):
+    num = float('{:.3g}'.format(num))
+    magnitude = 0
+    while abs(num) >= 1000:
+        magnitude += 1
+        num /= 1000.0
+    return '{}{}'.format('{:f}'.format(num).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+
 @click.command()
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
 @click.option("--max_node_size", default=2e7, help="Size of the puzzle")
@@ -58,7 +66,7 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
     end = time.time()
     single_search_time = end - start
     print(f"Time: {single_search_time:6.2f} seconds")
-    print(f"Search states: {astar_result.hashtable.size} ({astar_result.hashtable.size / single_search_time:.2f} states/s)\n\n")
+    print(f"Search states: {human_format(astar_result.hashtable.size)} ({human_format(astar_result.hashtable.size / single_search_time)} states/s)\n\n")
 
     if not solved:
         print("No solution found\n\n")
@@ -121,7 +129,7 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
     search_states = jnp.sum(astar_result.hashtable.size)
 
     print(f"Time: {vmapped_search_time:6.2f} seconds (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})")
-    print(f"Search states: {search_states} ({search_states / vmapped_search_time:.2f} states/s)")
+    print(f"Search states: {human_format(search_states)} ({human_format(search_states / vmapped_search_time)} states/s)")
     print("Solution found:", f"{jnp.mean(solved)*100:.2f}%")
     # this means astart_fn is completely vmapable and jitable
 
