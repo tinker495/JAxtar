@@ -93,7 +93,7 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
     states = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0, 15], dtype=jnp.uint8))[jnp.newaxis, ...]
     states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
     states, filled = jax.vmap(lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0)(states)
-    vmapped_astar = jax.vmap(astar_fn, in_axes=(0, 0, None))
+    vmapped_astar = jax.jit(jax.vmap(astar_fn, in_axes=(0, 0, None)))
     print("initializing vmapped jit")
     start = time.time()
     astar_result, solved, solved_idx = vmapped_astar(states, filled, target)
