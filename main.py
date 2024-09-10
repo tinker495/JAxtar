@@ -42,7 +42,8 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
     start = time.time()
     astar_result, solved, solved_idx = astar_fn(states, filled, target)
     end = time.time()
-    print(f"Time: {end - start:6.2f} seconds\n\n")
+    jit_time = end - start
+    print(f"Time: {jit_time:6.2f} seconds\n\n")
 
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),1))
     target = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0], dtype=jnp.uint8))
@@ -110,7 +111,7 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
 
     astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
     end = time.time()
-    vmapped_search_time = end - start
+    vmapped_search_time = end - start - jit_time # subtract jit time from the vmapped search time
 
     search_states = jnp.sum(astar_result.hashtable.size)
 
