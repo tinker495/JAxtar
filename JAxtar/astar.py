@@ -159,7 +159,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
             def _scan(astar_result : AstarResult, val):
                 neighbour, neighbour_cost, neighbour_filled = val
-                any_filled = jnp.any(neighbour_filled, axis=0)
+                any_filled = jnp.any(neighbour_filled)
                 def _any_filled_fn(astar_result : AstarResult):
                     neighbour_heur = heuristic(neighbour, target)
                     neighbour_key = astar_weight * neighbour_cost + neighbour_heur
