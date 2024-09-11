@@ -157,8 +157,9 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                 not_optimal = (neighbour_cost >= astar_result.cost[idx, table_idx])
                 astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
                 astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(not_optimal[:,jnp.newaxis], astar_result.parant[idx, table_idx], parant_idx))
-                astar_result.closed = astar_result.closed.at[idx, table_idx].set(not_optimal)
-                neighbour_key = jnp.where(not_optimal, jnp.inf, neighbour_key)
+                closed_update = astar_result.closed[idx, table_idx] & not_optimal
+                astar_result.closed = astar_result.closed.at[idx, table_idx].set(closed_update)
+                neighbour_key = jnp.where(closed_update, jnp.inf, neighbour_key)
 
                 astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals)
                 return astar_result, None

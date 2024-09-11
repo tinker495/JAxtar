@@ -97,6 +97,8 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
 
         print("\n\n")
 
+    if vmap_size == 1:
+        return
     #astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size//vmap_size, astar_weight=astar_weight) # 10 times smaller size for memory usage
     states = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0, 15], dtype=jnp.uint8))[jnp.newaxis, ...]
     states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
