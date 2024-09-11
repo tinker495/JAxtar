@@ -23,14 +23,16 @@ class AstarResult:
     - cost: cost of the path from the start node to the current node.
             this could be update if a better path is found.
     - heuristic: estimated cost from the current node to the goal node. 
-                 this is not updated during the search, it is a constant value.
-    - closed: a boolean array that indicates whether the state is in the closed set or not.
+                this is not updated during the search, it is a constant value.
+    - not_closed: a boolean array that indicates whether the state is in the closed set or not.
+                this is inverted for the efficient implementation. not_closed = ~closed
+    - parant: a 2D array that contains the index of the parent node.
     '''
 
     hashtable: HashTable
     priority_queue: BGPQ
     cost: chex.Array
-    closed: chex.Array
+    not_closed: chex.Array
     parant: chex.Array
 
     @staticmethod
@@ -43,13 +45,13 @@ class AstarResult:
         n_table = hashtable.n_table
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
         cost = jnp.full((size_table, n_table), jnp.inf)
-        closed = jnp.zeros((size_table, n_table), dtype=jnp.bool)
+        not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
         parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
         return AstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
             cost=cost,
-            closed=closed,
+            not_closed=not_closed,
             parant=parant
         )
     
@@ -135,12 +137,12 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             min_idx, min_table_idx = min_val.index, min_val.table_index
             parant_idx = jnp.stack((min_idx, min_table_idx), axis=-1)
 
-            cost_val, closed_val = astar_result.cost[min_idx, min_table_idx], astar_result.closed[min_idx, min_table_idx]
+            cost_val, not_closed_val = astar_result.cost[min_idx, min_table_idx], astar_result.not_closed[min_idx, min_table_idx]
             states = astar_result.hashtable.table[min_idx, min_table_idx]
 
-            filled = jnp.logical_and(jnp.isfinite(min_key),~closed_val)
+            filled = jnp.logical_and(jnp.isfinite(min_key), not_closed_val)
 
-            astar_result.closed = astar_result.closed.at[min_idx, min_table_idx].max(filled) # or operation with closed
+            astar_result.not_closed = astar_result.not_closed.at[min_idx, min_table_idx].min(~filled) # or operation with closed
 
             neighbours, ncost = neighbours_fn(states, filled)
             nextcosts = cost_val[jnp.newaxis, :] + ncost
@@ -154,12 +156,12 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
                 astar_result.hashtable, _, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
-                not_optimal = (neighbour_cost >= astar_result.cost[idx, table_idx])
+                optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
                 astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
-                astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(not_optimal[:,jnp.newaxis], astar_result.parant[idx, table_idx], parant_idx))
-                closed_update = astar_result.closed[idx, table_idx] & not_optimal
-                astar_result.closed = astar_result.closed.at[idx, table_idx].set(closed_update)
-                neighbour_key = jnp.where(closed_update, jnp.inf, neighbour_key)
+                astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
+                not_closed_update =  astar_result.not_closed[idx, table_idx] | optimal
+                astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(not_closed_update)
+                neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
 
                 astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals)
                 return astar_result, None
