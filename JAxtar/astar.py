@@ -91,7 +91,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
     parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
-    neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0,0))
+    neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0,0), out_axes=(1,1))
     delete_fn = BGPQ.delete_mins
     insert_fn = BGPQ.insert
 
@@ -143,7 +143,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             astar_result.closed = astar_result.closed.at[min_idx, min_table_idx].max(filled) # or operation with closed
 
             neighbours, ncost = neighbours_fn(states, filled)
-            nextcosts = cost_val[:, jnp.newaxis] + ncost
+            nextcosts = cost_val[jnp.newaxis, :] + ncost
             filleds = jnp.isfinite(nextcosts)
 
             nextheur = jax.vmap(heuristic, in_axes=(0, None))(neighbours, target)
@@ -163,13 +163,8 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
                 astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals)
                 return astar_result, None
-            
-            neighbours = jax.tree_util.tree_map(lambda x: jnp.moveaxis(x, 0, 1), neighbours)
-            nextkeys = jnp.moveaxis(nextkeys, 0, 1)
-            nextcosts = jnp.moveaxis(nextcosts, 0, 1)
-            filleds = jnp.moveaxis(filleds, 0, 1)
-            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextkeys, nextcosts, filleds))
 
+            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextkeys, nextcosts, filleds))
             return astar_result
         
         astar_result = jax.lax.while_loop(_cond, _body, astar_result)
