@@ -9,6 +9,7 @@ from typing import Any, Dict, Type, TypeVar
 from puzzle.puzzle_base import Puzzle
 
 T = TypeVar('T')
+HASH_SIZE_MULTIPLIER = 1.1
 
 def rotl(x, n):
     return (x << n) | (x >> (32 - n))
@@ -83,7 +84,7 @@ class HashTable:
         """
         make a lookup table with the default state of the statecls
         """
-        _capacity = jnp.array(1.1 * capacity//n_table, jnp.uint32) # make the capacity a little bit bigger than the given capacity to avoid the infinite loop
+        _capacity = jnp.array(HASH_SIZE_MULTIPLIER * capacity//n_table, jnp.uint32) # make the capacity a little bit bigger than the given capacity to avoid the infinite loop
         table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity, n_table)))
         table_idx = jnp.zeros((_capacity), dtype=jnp.uint8)
         return HashTable(seed=seed,
