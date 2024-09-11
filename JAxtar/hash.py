@@ -19,6 +19,24 @@ def hash_func_builder(x: Puzzle.State):
     """
     default = x.default() # get the default state, reference for building the hash function
 
+    def xxhash(x, seed):
+        prime_1 = jnp.uint32(0x9E3779B1)
+        prime_2 = jnp.uint32(0x85EBCA77)
+        prime_3 = jnp.uint32(0xC2B2AE3D)
+        prime_5 = jnp.uint32(0x165667B1)
+        acc = jnp.uint32(seed) + prime_5
+        for _ in range(4):
+            lane = x & 255
+            acc = acc + lane * prime_5
+            acc = rotl(acc, 11) * prime_1
+            x = x >> 8
+        acc = acc ^ (acc >> 15)
+        acc = acc * prime_2
+        acc = acc ^ (acc >> 13)
+        acc = acc * prime_3
+        acc = acc ^ (acc >> 16)
+        return acc
+
     def _get_leaf_hash_func(leaf):
         flatten_leaf = jnp.reshape(leaf, (-1,))
         bitlen = flatten_leaf.dtype.itemsize
@@ -31,43 +49,19 @@ def hash_func_builder(x: Puzzle.State):
             x_reshaped = jnp.reshape(x_padded, (-1, chunk))
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
 
-        def xxhash(x, seed):
-            prime_1 = jnp.uint32(0x9E3779B1)
-            prime_2 = jnp.uint32(0x85EBCA77)
-            prime_3 = jnp.uint32(0xC2B2AE3D)
-            prime_5 = jnp.uint32(0x165667B1)
-            acc = jnp.uint32(seed) + prime_5
-            for _ in range(4):
-                lane = x & 255
-                acc = acc + lane * prime_5
-                acc = rotl(acc, 11) * prime_1
-                x = x >> 8
-            acc = acc ^ (acc >> 15)
-            acc = acc * prime_2
-            acc = acc ^ (acc >> 13)
-            acc = acc * prime_3
-            acc = acc ^ (acc >> 16)
-            return acc
-
         def _h(x, seed):
-            # sum of hash * index for collision
             x = _to_uint32(x)
-            hashs = jax.vmap(xxhash, in_axes=(0, None))(x, seed)
-            def scan_body(carry, x):
-                i, h = x
-                result = rotl(jnp.bitwise_xor(carry, h), i)
+            def scan_body(seed, x): # scan body for the xxhash function
+                result = xxhash(x, seed)
                 return result, result
-
-            init = jnp.uint32(0)
-            indices = jnp.arange(chunk, dtype=jnp.uint32)
-            final_result, _ = jax.lax.scan(scan_body, init, (indices, hashs))
+            final_result, _ = jax.lax.scan(scan_body, seed, x)
             return final_result
         
         return _h
 
     tree_flatten_func = jax.tree_util.tree_map(_get_leaf_hash_func, default) # each leaf has a hash function for each array shape and dtype
-    def _h(x, seed): # sum of all the hash functions for each leaf
-        return jax.tree_util.tree_reduce(operator.add, jax.tree_util.tree_map(lambda f,l: f(l, seed), tree_flatten_func, x))
+    def _h(x, seed): # hash function for the whole tree structure
+        return jax.tree_util.tree_reduce(xxhash, jax.tree_util.tree_map(lambda f,l: f(l, seed), tree_flatten_func, x))
     return jax.jit(_h)
 
 @chex.dataclass
