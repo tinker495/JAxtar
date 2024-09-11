@@ -55,8 +55,7 @@ def hash_func_builder(x: Puzzle.State):
             hashs = jax.vmap(xxhash, in_axes=(0, None))(x, seed)
             def scan_body(carry, x):
                 i, h = x
-                result = jnp.bitwise_xor(carry, h)
-                result = jnp.bitwise_or(result << i, result >> (32 - i))
+                result = rotl(jnp.bitwise_xor(carry, h), i)
                 return result, result
 
             init = jnp.uint32(0)
