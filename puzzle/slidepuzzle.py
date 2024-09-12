@@ -8,7 +8,6 @@ TYPE = jnp.uint8
 class SlidePuzzle(Puzzle):
 
     size: int
-    actions = jnp.array([[0, 1], [0, -1], [1, 0], [-1, 0]])
 
     @state_dataclass
     class State:
@@ -50,7 +49,7 @@ class SlidePuzzle(Puzzle):
         """
         x, y = self._getBlankPosition(state)
         pos = jnp.asarray((x, y))
-        next_pos = pos + self.actions
+        next_pos = pos + jnp.array([[0, 1], [0, -1], [1, 0], [-1, 0]])
         board = state.board
 
         def is_valid(x, y):
@@ -63,7 +62,7 @@ class SlidePuzzle(Puzzle):
             board = board.at[next_flat_index].set(board[flat_index])
             return board.at[flat_index].set(old_board[next_flat_index])
         
-        def map(next_pos, filled):
+        def map_fn(next_pos, filled):
             next_x, next_y = next_pos
             next_board, cost = jax.lax.cond(
                 jnp.logical_and(is_valid(next_x, next_y),filled),
@@ -74,7 +73,7 @@ class SlidePuzzle(Puzzle):
             return next_board, cost
 
         next_boards, costs = jax.vmap(
-            map, in_axes=(0, None)
+            map_fn, in_axes=(0, None)
         )(next_pos, filled)
         return self.State(board=next_boards), costs
 
