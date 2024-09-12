@@ -145,28 +145,40 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             astar_result.not_closed = astar_result.not_closed.at[min_idx, min_table_idx].min(~filled) # or operation with closed
 
             neighbours, ncost = neighbours_fn(states, filled)
-            nextcosts = cost_val[jnp.newaxis, :] + ncost
-            filleds = jnp.isfinite(nextcosts)
+            nextcosts = cost_val[jnp.newaxis, :] + ncost # [n_neighbours, batch_size]
+            filleds = jnp.isfinite(nextcosts) # [n_neighbours, batch_size]
 
-            nextheur = jax.vmap(heuristic, in_axes=(0, None))(neighbours, target)
-            nextkeys = astar_weight * nextcosts + nextheur
+            filleds_sort_idx = jnp.argsort(nextcosts, axis=0) # [n_neighbours, batch_size]
+            neighbours = jax.tree_util.tree_map(lambda x: jnp.take_along_axis(x, 
+                                                            jnp.reshape(filleds_sort_idx, 
+                                                            shape=list(filleds_sort_idx.shape) + [1 for _ in range(x.ndim - filleds_sort_idx.ndim)]),
+                                                            axis=0)
+                                                            , neighbours)
+            nextcosts = jnp.take_along_axis(nextcosts, filleds_sort_idx, axis=0)
+            filleds = jnp.take_along_axis(filleds, filleds_sort_idx, axis=0)
 
             def _scan(astar_result : AstarResult, val):
-                neighbour, neighbour_key, neighbour_cost, neighbour_filled = val
+                neighbour, neighbour_cost, neighbour_filled = val
+                any_filled = jnp.any(neighbour_filled)
+                def _any_filled_fn(astar_result : AstarResult):
+                    neighbour_heur = heuristic(neighbour, target)
+                    neighbour_key = astar_weight * neighbour_cost + neighbour_heur
 
-                astar_result.hashtable, _, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
-                vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
-                optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
-                astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
-                astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
-                not_closed_update =  astar_result.not_closed[idx, table_idx] | optimal
-                astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(not_closed_update)
-                neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
+                    astar_result.hashtable, _, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
+                    vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
+                    optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
+                    astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
+                    astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
+                    not_closed_update =  astar_result.not_closed[idx, table_idx] | optimal
+                    astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(not_closed_update)
+                    neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
 
-                astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals)
-                return astar_result, None
+                    astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals)
+                    return astar_result
+                
+                return jax.lax.cond(any_filled, _any_filled_fn, lambda x: x, astar_result), None
 
-            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextkeys, nextcosts, filleds))
+            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextcosts, filleds))
             return astar_result
         
         astar_result = jax.lax.while_loop(_cond, _body, astar_result)
