@@ -9,7 +9,7 @@ from typing import Any, Dict, Type, TypeVar
 from puzzle.puzzle_base import Puzzle
 
 T = TypeVar('T')
-HASH_SIZE_MULTIPLIER = 1.1
+HASH_SIZE_MULTIPLIER = 2
 
 def rotl(x, n):
     return (x << n) | (x >> (32 - n))
