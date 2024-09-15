@@ -131,7 +131,7 @@ class SlidePuzzle(Puzzle):
         return jax.lax.cond(
             N % 2 == 1,
             lambda inv_count: inv_count % 2 == 0,
-            lambda inv_count: jnp.logical_xor(self._getBlankRow(state) % 2 == 0, inv_count % 2 == 0),
+            lambda inv_count: jnp.logical_xor(self._getBlankCol(state) % 2 == 0, inv_count % 2 == 0),
             inv_count
         )
     
