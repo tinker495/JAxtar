@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
-TYPE = jnp.bool
+TYPE = jnp.uint8
 
 class LightsOut(Puzzle):
 
@@ -36,8 +36,8 @@ class LightsOut(Puzzle):
         return self._get_random_state(key)
 
     def get_target_state(self, key = None) -> State:
-        return self._get_random_state(key)
-    
+        return self.State(board=jnp.zeros(self.size**2, dtype=TYPE))
+
     def get_neighbours(self, state:State, filled: bool = True) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
@@ -63,8 +63,8 @@ class LightsOut(Puzzle):
             )
             return next_board, cost
 
-        next_board, cost = jax.vmap(map_fn, in_axes=(0, None))(actions, filled)
-        return self.State(board=next_board), cost
+        next_boards, costs = jax.vmap(map_fn, in_axes=(0, None))(actions, filled)
+        return self.State(board=next_boards), costs
 
     def is_solved(self, state:State, target:State) -> bool:
         return self.is_equal(state, target)
@@ -73,22 +73,30 @@ class LightsOut(Puzzle):
         size = self.size
         form = "┏━"
         for i in range(size):
-            form += "━" if i != size - 1 else "━┓"
+            form += "━━" if i != size - 1 else "━━┓"
         form += "\n"
         for i in range(size):
             form += "┃ "
             for j in range(size):
-                form += "{:s}"
-            form += " ┃"
+                form += "{:s} "
+            form += "┃"
             form += "\n"
         form += "┗━"
         for i in range(size):
-            form += "━" if i != size - 1 else "━┛"
+            form += "━━" if i != size - 1 else "━━┛"
         return form
 
-    def _get_random_state(self, key):
+    def _get_random_state(self, key, num_shuffle=1):
         """
         This function should return a random state.
         """
         init_state = self.State(board=jnp.zeros(self.size**2, dtype=TYPE))
-        return init_state
+        def random_flip(carry, _):
+            state, key = carry
+            neighbor_states, _ = self.get_neighbours(state, filled=True)
+            key, subkey = jax.random.split(key)
+            idx = jax.random.choice(subkey, jnp.arange(self.size**2))
+            next_state = neighbor_states[idx]
+            return (next_state, key), None
+        (last_state, _), _ = jax.lax.scan(random_flip, (init_state, key), None, length=num_shuffle)
+        return last_state
