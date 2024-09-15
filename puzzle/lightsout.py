@@ -71,17 +71,17 @@ class LightsOut(Puzzle):
 
     def _get_visualize_format(self):
         size = self.size
-        form = "┏━"
+        form = "┏"
         for i in range(size):
             form += "━━" if i != size - 1 else "━━┓"
         form += "\n"
         for i in range(size):
-            form += "┃ "
+            form += "┃"
             for j in range(size):
                 form += "{:s} "
             form += "┃"
             form += "\n"
-        form += "┗━"
+        form += "┗"
         for i in range(size):
             form += "━━" if i != size - 1 else "━━┛"
         return form
