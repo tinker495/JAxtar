@@ -123,7 +123,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             heap_size = astar_result.priority_queue.size
             hash_size = astar_result.hashtable.size
             size_cond1 = heap_size > 0
-            size_cond2 = heap_size < max_nodes
+            size_cond2 = heap_size < astar_result.priority_queue.max_size
             size_cond3 = hash_size < max_nodes
             size_cond = jnp.logical_and(jnp.logical_and(size_cond1, size_cond2), size_cond3)
 

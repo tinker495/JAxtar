@@ -29,7 +29,7 @@ class LightsOut(Puzzle):
     
     def get_default_gen(self) -> callable:
         def gen():
-            return self.State(board=jnp.zeros(self.size**2, dtype=TYPE))
+            return self.State(board=jnp.full(self.size**2, -1, dtype=TYPE))
         return gen
 
     def get_initial_state(self, key = None) -> State:

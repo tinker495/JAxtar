@@ -5,15 +5,17 @@ import time
 
 from functools import partial
 from puzzle.slidepuzzle import SlidePuzzle
+from puzzle.lightsout import LightsOut
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 from heuristic.slidepuzzle_neural_heuristic import SlidePuzzleNeuralHeuristic
-
+from heuristic.lightsout_heuristic import LightsOutHeuristic
 
 puzzle_dict = {
     "n-puzzle": lambda _: (SlidePuzzle(4), SlidePuzzleHeuristic(SlidePuzzle(4)).distance),
-    "n-puzzle-nn": lambda _: (SlidePuzzle(4), SlidePuzzleNeuralHeuristic(SlidePuzzle(4)).distance)
+    "n-puzzle-nn": lambda _: (SlidePuzzle(4), SlidePuzzleNeuralHeuristic(SlidePuzzle(4)).distance),
+    "lightsout": lambda _: (LightsOut(4), LightsOutHeuristic(LightsOut(4)).distance)
 }
 
 def human_format(num):
@@ -32,7 +34,12 @@ def human_format(num):
 @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
 @click.option("--seed", default=0, help="Seed for the random puzzle")
 @click.option("--vmap_size", default=1, help="Size for the vmap")
-def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size):
+@click.option("--debug", is_flag=True, help="Debug mode")
+def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug):
+    if debug:
+        #disable jit
+        print("Disabling JIT")
+        jax.config.update('jax_disable_jit', True)
     puzzle, heuristic_fn = puzzle_dict[puzzle](None)
 
     max_node_size = int(max_node_size)
@@ -40,8 +47,8 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
     start_state_seed = int(start_state_seed)
     seed = int(seed)
 
-    states = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0, 15], dtype=jnp.uint8))[jnp.newaxis, ...]
-    target = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0], dtype=jnp.uint8))
+    states = puzzle.get_target_state()[jnp.newaxis, ...]
+    target = puzzle.get_target_state()
 
     astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight)
 
@@ -99,8 +106,8 @@ def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed
 
     if vmap_size == 1:
         return
-    #astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size//vmap_size, astar_weight=astar_weight) # 10 times smaller size for memory usage
-    states = puzzle.State(board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0, 15], dtype=jnp.uint8))[jnp.newaxis, ...]
+    
+    states = puzzle.get_target_state()[jnp.newaxis, ...]
     states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
     states, filled = jax.vmap(lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0)(states)
     vmapped_astar = jax.jit(jax.vmap(astar_fn, in_axes=(0, 0, None)))

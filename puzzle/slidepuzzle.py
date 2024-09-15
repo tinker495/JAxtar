@@ -40,7 +40,7 @@ class SlidePuzzle(Puzzle):
         return self._get_random_state(key)
 
     def get_target_state(self, key = None) -> State:
-        return self._get_random_state(key)
+        return self.State(board=jnp.array([*range(1, self.size**2), 0], dtype=TYPE))
     
     def get_neighbours(self, state:State, filled: bool = True) -> tuple[State, chex.Array]:
         """
