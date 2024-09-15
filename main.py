@@ -13,9 +13,9 @@ from heuristic.slidepuzzle_neural_heuristic import SlidePuzzleNeuralHeuristic
 from heuristic.lightsout_heuristic import LightsOutHeuristic
 
 puzzle_dict = {
-    "n-puzzle": lambda _: (SlidePuzzle(4), SlidePuzzleHeuristic(SlidePuzzle(4)).distance),
-    "n-puzzle-nn": lambda _: (SlidePuzzle(4), SlidePuzzleNeuralHeuristic(SlidePuzzle(4)).distance),
-    "lightsout": lambda _: (LightsOut(4), LightsOutHeuristic(LightsOut(4)).distance)
+    "n-puzzle": lambda n: (SlidePuzzle(n), SlidePuzzleHeuristic(SlidePuzzle(n)).distance),
+    "n-puzzle-nn": lambda n: (SlidePuzzle(n), SlidePuzzleNeuralHeuristic(SlidePuzzle(n)).distance),
+    "lightsout": lambda n: (LightsOut(n), LightsOutHeuristic(LightsOut(n)).distance)
 }
 
 def human_format(num):
@@ -28,6 +28,7 @@ def human_format(num):
 
 @click.command()
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
+@click.option("--puzzle_size", default=4, type=int, help="Size of the puzzle")
 @click.option("--max_node_size", default=2e7, help="Size of the puzzle")
 @click.option("--batch_size", default=10000, help="Batch size for BGPQ")
 @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
@@ -35,12 +36,12 @@ def human_format(num):
 @click.option("--seed", default=0, help="Seed for the random puzzle")
 @click.option("--vmap_size", default=1, help="Size for the vmap")
 @click.option("--debug", is_flag=True, help="Debug mode")
-def main(puzzle, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug):
+def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug):
     if debug:
         #disable jit
         print("Disabling JIT")
         jax.config.update('jax_disable_jit', True)
-    puzzle, heuristic_fn = puzzle_dict[puzzle](None)
+    puzzle, heuristic_fn = puzzle_dict[puzzle](puzzle_size)
 
     max_node_size = int(max_node_size)
     batch_size = int(batch_size)
