@@ -42,7 +42,11 @@ def hash_func_builder(x: Puzzle.State):
         flatten_leaf = jnp.reshape(leaf, (-1,))
         bitlen = flatten_leaf.dtype.itemsize
         chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1))
-        pad_len = 4 * chunk - len(flatten_leaf)
+        pad_len = 4 * chunk - (flatten_leaf.shape[0] % 4)
+        print(pad_len)
+        print(bitlen)
+        print(chunk)
+        print(flatten_leaf.shape)
 
         def _to_uint32(x):
             x = jnp.reshape(x, (-1,))
