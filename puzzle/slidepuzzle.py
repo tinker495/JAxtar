@@ -111,7 +111,7 @@ class SlidePuzzle(Puzzle):
         
         def not_solverable(x):
             state = x[0]
-            return ~self._solverable(state)
+            return ~self._solvable(state)
         
         def while_loop(x):
             state, key = x
@@ -124,15 +124,15 @@ class SlidePuzzle(Puzzle):
         state, _ = jax.lax.while_loop(not_solverable, while_loop, (state, next_key))
         return state
 
-    def _solverable(self, state:State):
-        """Check if the state is solverable"""
+    def _solvable(self, state:State):
+        """Check if the state is solvable"""
         N = self.size
         inv_count = self._getInvCount(state)
         return jax.lax.cond(
-            N % 1,
-            lambda _: inv_count % 2 == 0,
-            lambda _: jnp.logical_xor(self._getBlankRow(state) % 2 == 0, inv_count % 2 == 0),
-            None
+            N % 2 == 1,
+            lambda inv_count: inv_count % 2 == 0,
+            lambda inv_count: jnp.logical_xor(self._getBlankRow(state) % 2 == 0, inv_count % 2 == 0),
+            inv_count
         )
     
     def _getBlankPosition(self, state:State):
@@ -148,12 +148,12 @@ class SlidePuzzle(Puzzle):
     def _getInvCount(self, state:State):
         
         def is_inv(a, b):
-            return jnp.logical_and(a < b, jnp.logical_and(a != 0, b != 0))
+            return jnp.logical_and(a > b, jnp.logical_and(a != 0, b != 0))
         
         n = self.size
         arr = state.board
-        def count_inv_i(count, i):
-            def count_inv_j(count, j):
-                return count + is_inv(arr[i], arr[j])
-            return count + jax.lax.fori_loop(i+1, n * n, count_inv_j, 0)
-        return jax.lax.fori_loop(0, n * n - 1, count_inv_i, 0)
+        inv_count = 0
+        for i in range(n * n):
+            for j in range(i + 1, n * n):
+                inv_count += is_inv(arr[i], arr[j])
+        return inv_count
