@@ -39,14 +39,13 @@ def hash_func_builder(x: Puzzle.State):
         return acc
 
     def _get_leaf_hash_func(leaf):
-        flatten_leaf = jnp.reshape(leaf, (-1,))
-        bitlen = flatten_leaf.dtype.itemsize
-        chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1))
-        pad_len = 4 * chunk - (flatten_leaf.shape[0] % 4)
-        print(pad_len)
-        print(bitlen)
-        print(chunk)
-        print(flatten_leaf.shape)
+        flatten_leaf = jnp.reshape(leaf, (-1,)) # if leaf uint8 x 100 -> (100,)
+        bitlen = flatten_leaf.dtype.itemsize # 1
+        chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1)) # 4
+        if flatten_leaf.shape[0] % chunk != 0:
+            pad_len = chunk - flatten_leaf.shape[0] % chunk
+        else:
+            pad_len = 0
 
         def _to_uint32(x):
             x = jnp.reshape(x, (-1,))

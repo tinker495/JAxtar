@@ -5,6 +5,7 @@ from functools import partial
 from abc import ABC, abstractmethod
 from collections import namedtuple
 
+HEAP_SIZE_MULTIPLIER = 2
 SORT_STABLE = True
 
 def bgpq_value_dataclass(cls):
@@ -105,6 +106,7 @@ class BGPQ: # Batched GPU Priority Queue
         value_type is the type of the values stored in the heap.
         In this repository, we only use uint32 for hash indexes values.
         """
+        total_size = total_size * HEAP_SIZE_MULTIPLIER
         branch_size = jnp.where(total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1)
         max_size = branch_size * batch_size
         size = jnp.uint32(0)
