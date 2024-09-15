@@ -18,7 +18,7 @@ class LightsOutHeuristic:
 
     def distance(self, current: LightsOut.State, target: LightsOut.State) -> float:
         """
-        현재 상태와 목표 상태 사이의 거리를 계산합니다.
+        Get distance between current state and target state.
         """
         xor_state = jnp.logical_xor(current.board, target.board)
         cross_kernel_count = self._count_cross_kernels(xor_state)
@@ -26,7 +26,7 @@ class LightsOutHeuristic:
         return cross_kernel_count.astype(jnp.float32)
 
     def _count_cross_kernels(self, state):
-        """컨볼루션을 사용하여 십자 커널의 개수를 계산합니다."""
+        """Get count of cross kernels in the state."""
         state_2d = state.reshape(self.puzzle.size, self.puzzle.size)
         convolved = convolve2d(state_2d, self.cross_kernel, mode='same')
         
