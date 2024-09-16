@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Type, TypeVar
 from collections import namedtuple
+from tabulate import tabulate
 
 T = TypeVar('T')
 
@@ -43,7 +44,34 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
     """
 
     def get_str(self) -> str:
-        return parsfunc(self)
+        default_shape = self.default().shape  # named tuple 
+        shape = self.shape
+
+        if self.default().shape == self.shape:
+            return parsfunc(self)
+        elif all(default_shape[k] == shape[k][-len(default_shape[k]):] for k in range(len(cls.__annotations__.keys()))):
+            batch_shape = shape[0][:-len(default_shape[0])]
+            batch_len = jnp.prod(batch_shape) if len(batch_shape) != 1 else batch_shape[0]
+            results = []
+            if batch_len < 10:
+                for i in range(batch_len):
+                    index = jnp.unravel_index(i, batch_shape)
+                    current_state = jax.tree_map(lambda x: x[index], self)
+                    results.append(parsfunc(current_state))
+                
+            else:
+                for i in range(3):
+                    index = jnp.unravel_index(i, batch_shape)
+                    current_state = jax.tree_map(lambda x: x[index], self)
+                    results.append(parsfunc(current_state))
+                results.append("...")
+                for i in range(batch_len - 3, batch_len):
+                    index = jnp.unravel_index(i, batch_shape)
+                    current_state = jax.tree_map(lambda x: x[index], self)
+                    results.append(parsfunc(current_state))
+            return tabulate([results], tablefmt="plain")
+        else:
+            raise ValueError("State is not structed")
     
     setattr(cls, '__str__', get_str)
     return cls
