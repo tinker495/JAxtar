@@ -166,7 +166,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
                     astar_result.hashtable, _, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
                     vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
-                    optimal = (neighbour_cost < astar_result.cost[idx, table_idx])
+                    optimal = jnp.less(neighbour_cost, astar_result.cost[idx, table_idx])
                     astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
                     astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
                     not_closed_update =  astar_result.not_closed[idx, table_idx] | optimal
