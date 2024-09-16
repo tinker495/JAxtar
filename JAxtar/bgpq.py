@@ -236,7 +236,7 @@ class BGPQ: # Batched GPU Priority Queue
         return heap
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(3,))
+    @jax.jit
     def insert(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue, added_size: int = None):
         """
         Insert a key-value pair into the heap.
