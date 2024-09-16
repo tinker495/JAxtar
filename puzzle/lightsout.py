@@ -86,7 +86,7 @@ class LightsOut(Puzzle):
             form += "━━" if i != size - 1 else "━━┛"
         return form
 
-    def _get_random_state(self, key, num_shuffle=100):
+    def _get_random_state(self, key, num_shuffle=8):
         """
         This function should return a random state.
         """
