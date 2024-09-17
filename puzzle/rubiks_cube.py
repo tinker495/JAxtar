@@ -42,6 +42,8 @@ class RubiksCube(Puzzle):
             # Helper function to get face string
             def get_empty_face_string():
                 return "\n".join(["  " * (self.size+2) for _ in range(self.size+2)])
+            def color_legend():
+                return "\n".join([f"{face_map[i]:<6}:{colored('■', color_map[i])}" for i in range(6)])
             def get_face_string(face):
                 face_str = face_map[face]
                 string = f"┏━{face_str.center(self.size * 2 - 1, '━')}━┓\n"
@@ -54,8 +56,8 @@ class RubiksCube(Puzzle):
             # Create the cube string representation
             cube_str = tabulate([[get_empty_face_string(), get_face_string(0)],
                 [get_face_string(2), get_face_string(4), get_face_string(3), get_face_string(5)],
-                [get_empty_face_string(), get_face_string(1)]],
-                tablefmt="plain")
+                [get_empty_face_string(), get_face_string(1), color_legend()]],
+                tablefmt="plain", rowalign="center")
             return cube_str
         return parser
     
