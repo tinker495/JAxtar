@@ -8,6 +8,12 @@ from termcolor import colored
 
 TYPE = jnp.uint8
 
+UP = 0
+DOWN = 1
+LEFT = 2
+RIGHT = 3
+FRONT = 4
+BACK = 5
 face_map = {
     0: 'up',
     1: 'down',
@@ -128,14 +134,14 @@ class RubiksCube(Puzzle):
         # index is the index of the edge to rotate
         # clockwise is a boolean, True for clockwise, False for counterclockwise
         rotate_edge_map = jnp.array([
-            [0, 4, 1, 5],
-            [2, 4, 3, 5],
-            [0, 2, 1, 3],
+            [UP    , FRONT  , DOWN  , BACK  ], # x-axis
+            [LEFT  , FRONT  , RIGHT , BACK  ], # y-axis
+            [UP    , LEFT   , DOWN  , RIGHT ], # z-axis
         ])
         rotate_edge_rot = jnp.array([
-            [-1, -1, -1, -1],
-            [2, 2, 2, 2],
-            [0, 3, 2, 1],
+            [-1, -1, -1, -1],   # x-axis
+            [2, 2, 2, 2],       # y-axis  
+            [0, 3, 2, 1],       # z-axis
         ])
         edge_faces = rotate_edge_map[axis]
         edge_rot = rotate_edge_rot[axis]
@@ -148,11 +154,11 @@ class RubiksCube(Puzzle):
         switch_num = jnp.where(is_edge, 1 + 2 * axis + index // (self.size - 1), 0) # 0: None, 1: left, 2: right, 3: up, 4: down, 5: front, 6: back
         shaped_faces = jax.lax.switch(switch_num, [
             lambda: shaped_faces, # 0: None
-            lambda: shaped_faces.at[2].set(self._rotate_face(shaped_faces[2], clockwise, 1)), # 1: left
-            lambda: shaped_faces.at[3].set(self._rotate_face(shaped_faces[3], clockwise, -1)), # 2: right
-            lambda: shaped_faces.at[1].set(self._rotate_face(shaped_faces[1], clockwise, -1)), # 3: down
-            lambda: shaped_faces.at[0].set(self._rotate_face(shaped_faces[0], clockwise, 1)), # 4: up
-            lambda: shaped_faces.at[5].set(self._rotate_face(shaped_faces[5], clockwise, 1)), # 5: front
-            lambda: shaped_faces.at[4].set(self._rotate_face(shaped_faces[4], clockwise, -1)), # 6: back
+            lambda: shaped_faces.at[LEFT].set(self._rotate_face(shaped_faces[LEFT], clockwise, 1)), # 1: left
+            lambda: shaped_faces.at[RIGHT].set(self._rotate_face(shaped_faces[RIGHT], clockwise, -1)), # 2: right
+            lambda: shaped_faces.at[DOWN].set(self._rotate_face(shaped_faces[DOWN], clockwise, -1)), # 3: down
+            lambda: shaped_faces.at[UP].set(self._rotate_face(shaped_faces[UP], clockwise, 1)), # 4: up
+            lambda: shaped_faces.at[FRONT].set(self._rotate_face(shaped_faces[FRONT], clockwise, 1)), # 5: front
+            lambda: shaped_faces.at[BACK].set(self._rotate_face(shaped_faces[BACK], clockwise, -1)), # 6: back
         ])
         return shaped_faces
