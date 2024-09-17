@@ -93,30 +93,7 @@ class RubiksCube(Puzzle):
         # axis is the axis of the rotation, 0 for x, 1 for y, 2 for z
         # index is the index of the edge to rotate
         # clockwise is a boolean, True for clockwise, False for counterclockwise
-        
-        # Define the faces and their positions for each axis rotation
-        rotations = {
-            0: [(1, 1, index), (5, 1, index), (2, 1, index), (6, 1, self.size - 1 - index)],
-            1: [(1, index, 1), (3, 1, index), (2, self.size - 1 - index, 1), (4, 1, self.size - 1 - index)],
-            2: [(3, index, 1), (5, index, 1), (4, index, 1), (6, index, 1)]
-        }
-        
-        faces, positions = zip(*rotations[axis])
-        
-        # Get the current values
-        values = [state.faces[face][pos[0], pos[1]] for face, pos in zip(faces, positions)]
-        
-        # Rotate the values
-        if clockwise:
-            values = values[-1:] + values[:-1]
-        else:
-            values = values[1:] + values[:1]
-        
-        # Set the new values
-        for (face, pos), value in zip(zip(faces, positions), values):
-            state.faces = state.faces.at[face, pos[0], pos[1]].set(value)
-        
-        return state
+        pass
 
     def _rotate_corner(self, state, axis, index, clockwise=True):
         # rotate the corner clockwise or counterclockwise
