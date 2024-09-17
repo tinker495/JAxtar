@@ -53,7 +53,7 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
             batch_shape = shape[0][:-len(default_shape[0])]
             batch_len = jnp.prod(batch_shape) if len(batch_shape) != 1 else batch_shape[0]
             results = []
-            if batch_len < 10:
+            if batch_len < 20:
                 for i in range(batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_map(lambda x: x[index], self)
@@ -69,7 +69,7 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
-            return tabulate([results], tablefmt="plain")
+            return tabulate([results], tablefmt="grid")
         else:
             raise ValueError("State is not structed")
     

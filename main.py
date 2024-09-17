@@ -6,16 +6,19 @@ import time
 from functools import partial
 from puzzle.slidepuzzle import SlidePuzzle
 from puzzle.lightsout import LightsOut
+from puzzle.rubikscube import RubiksCube
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 from heuristic.slidepuzzle_neural_heuristic import SlidePuzzleNeuralHeuristic
 from heuristic.lightsout_heuristic import LightsOutHeuristic
+from heuristic.rubikscube_heuristic import RubiksCubeHeuristic
 
 puzzle_dict = {
     "n-puzzle": lambda n: (SlidePuzzle(n), SlidePuzzleHeuristic(SlidePuzzle(n)).distance),
     "n-puzzle-nn": lambda n: (SlidePuzzle(n), SlidePuzzleNeuralHeuristic(SlidePuzzle(n)).distance),
-    "lightsout": lambda n: (LightsOut(n), LightsOutHeuristic(LightsOut(n)).distance)
+    "lightsout": lambda n: (LightsOut(n), LightsOutHeuristic(LightsOut(n)).distance),
+    "rubikscube": lambda n: (RubiksCube(n), RubiksCubeHeuristic(RubiksCube(n)).distance)
 }
 
 def human_format(num):
