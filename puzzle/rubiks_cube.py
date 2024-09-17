@@ -44,10 +44,10 @@ class RubiksCube(Puzzle):
                 return "\n".join(["  " * (self.size+2) for _ in range(self.size+2)])
             def get_face_string(face):
                 face_str = face_map[face]
-                string = f"┏━{face_str.center(self.size * 2 - 1)}━┓\n"
-                for i in range(self.size):
+                string = f"┏━{face_str.center(self.size * 2 - 1, '━')}━┓\n"
+                for j in range(self.size):
                     string += "┃ " + ' '.join([colored('■', color_map[int(state.faces[face, j*self.size + i])])
-                                 for j in range(self.size)]) + " ┃\n"
+                                 for i in range(self.size)]) + " ┃\n"
                 string += "┗━" + "━━" * (self.size - 1) + "━━┛\n"
                 return string
             
