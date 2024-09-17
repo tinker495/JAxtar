@@ -6,3 +6,4 @@ dm_pix
 dm-haiku
 flax
 optax
+termcolor
