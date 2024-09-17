@@ -52,9 +52,9 @@ class RubiksCube(Puzzle):
                 return string
             
             # Create the cube string representation
-            cube_str = tabulate([[get_empty_face_string(), get_face_string(0), get_empty_face_string(), get_empty_face_string()],
+            cube_str = tabulate([[get_empty_face_string(), get_face_string(0)],
                 [get_face_string(2), get_face_string(4), get_face_string(3), get_face_string(5)],
-                [get_empty_face_string(), get_face_string(1), get_empty_face_string(), get_empty_face_string()]],
+                [get_empty_face_string(), get_face_string(1)]],
                 tablefmt="plain")
             return cube_str
         return parser
