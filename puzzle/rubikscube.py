@@ -103,7 +103,7 @@ class RubiksCube(Puzzle):
     def is_solved(self, state:State, target:State) -> bool:
         return self.is_equal(state, target)
 
-    def _get_random_state(self, key, num_shuffle=8):
+    def _get_random_state(self, key, num_shuffle=12):
         """
         This function should return a random state.
         """

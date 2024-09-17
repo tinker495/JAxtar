@@ -13,4 +13,7 @@ class RubiksCubeHeuristic:
         """
         Get distance between current state and target state.
         """
-        return 0
+        current_faces = current.faces
+        target_faces = target.faces
+        equal_faces = 1 - jnp.equal(current_faces, target_faces).mean(1)
+        return equal_faces.sum()
