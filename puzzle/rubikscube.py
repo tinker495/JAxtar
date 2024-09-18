@@ -140,18 +140,18 @@ class RubiksCube(Puzzle):
         ])
         rotate_edge_rot = jnp.array([
             [-1, -1, -1, -1],   # x-axis
-            [2, 2, 2, 2],       # y-axis  
+            [2, 2, 2, 0],       # y-axis  
             [2, 1, 0, 3],       # z-axis
         ])
         edge_faces = rotate_edge_map[axis]
         edge_rot = rotate_edge_rot[axis]
-        shaped_faces = shaped_faces.at[BACK].set(jnp.flip(shaped_faces[BACK], axis=1))
+        shaped_faces = shaped_faces.at[BACK].set(jnp.flip(jnp.flip(shaped_faces[BACK], axis=0), axis=1))
         rolled_faces = shaped_faces[edge_faces]
         rolled_faces = jax.vmap(lambda face, rot: rot90_traceable(face, k=rot))(rolled_faces, edge_rot)
         rolled_faces = rolled_faces.at[:, index, :].set(jnp.roll(rolled_faces[:, index, :], jnp.where(clockwise, 1, -1), axis=0))
         rolled_faces = jax.vmap(lambda face, rot: rot90_traceable(face, k=-rot))(rolled_faces, edge_rot)
         shaped_faces = shaped_faces.at[edge_faces].set(rolled_faces)
-        shaped_faces = shaped_faces.at[BACK].set(jnp.flip(shaped_faces[BACK], axis=1))
+        shaped_faces = shaped_faces.at[BACK].set(jnp.flip(jnp.flip(shaped_faces[BACK], axis=1), axis=0))
         is_edge = jnp.isin(index, jnp.array([0, self.size - 1]))
         switch_num = jnp.where(is_edge, 1 + 2 * axis + index // (self.size - 1), 0) # 0: None, 1: left, 2: right, 3: up, 4: down, 5: front, 6: back
         shaped_faces = jax.lax.switch(switch_num, [
