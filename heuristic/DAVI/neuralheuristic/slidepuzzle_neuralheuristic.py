@@ -35,10 +35,10 @@ class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
         super().__init__(puzzle, model=Model())
 
     def pre_process(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
-        diff = self.to_2d(self._diff_pos(current, target)) # [4, 4, 2]
-        c_zero = self.to_2d(self._zero_pos(current)) # [4, 4, 1]
-        t_zero = self.to_2d(self._zero_pos(target)) # [4, 4, 1]
-        x = jnp.concatenate([diff, c_zero, t_zero], axis=-1) # [4, 4, 4]
+        diff = self.to_2d(self._diff_pos(current, target)) # [n, n, 2]
+        c_zero = self.to_2d(self._zero_pos(current)) # [n, n, 1]
+        t_zero = self.to_2d(self._zero_pos(target)) # [n, n, 1]
+        x = jnp.concatenate([diff, c_zero, t_zero], axis=-1) # [n, n, 4]
         x = jnp.expand_dims(x, axis=0)
         return x
     
