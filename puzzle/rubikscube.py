@@ -156,8 +156,8 @@ class RubiksCube(Puzzle):
         switch_num = jnp.where(is_edge, 1 + 2 * axis + index // (self.size - 1), 0) # 0: None, 1: left, 2: right, 3: up, 4: down, 5: front, 6: back
         shaped_faces = jax.lax.switch(switch_num, [
             lambda: shaped_faces, # 0: None
-            lambda: shaped_faces.at[LEFT].set(self._rotate_face(shaped_faces[LEFT], clockwise, 1)), # 1: left
-            lambda: shaped_faces.at[RIGHT].set(self._rotate_face(shaped_faces[RIGHT], clockwise, -1)), # 2: right
+            lambda: shaped_faces.at[LEFT].set(self._rotate_face(shaped_faces[LEFT], clockwise, -1)), # 1: left
+            lambda: shaped_faces.at[RIGHT].set(self._rotate_face(shaped_faces[RIGHT], clockwise, 1)), # 2: right
             lambda: shaped_faces.at[DOWN].set(self._rotate_face(shaped_faces[DOWN], clockwise, -1)), # 3: down
             lambda: shaped_faces.at[UP].set(self._rotate_face(shaped_faces[UP], clockwise, 1)), # 4: up
             lambda: shaped_faces.at[FRONT].set(self._rotate_face(shaped_faces[FRONT], clockwise, 1)), # 5: front
