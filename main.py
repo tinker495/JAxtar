@@ -10,7 +10,7 @@ from puzzle.rubikscube import RubiksCube
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
-from heuristic.slidepuzzle_neuralheuristic import SlidePuzzleNeuralHeuristic
+from heuristic.DAVI.neuralheuristic.slidepuzzle_neuralheuristic import SlidePuzzleNeuralHeuristic
 from heuristic.lightsout_heuristic import LightsOutHeuristic
 from heuristic.rubikscube_heuristic import RubiksCubeHeuristic
 

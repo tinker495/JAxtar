@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from flax import linen as nn
+from heuristic.DAVI.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.slidepuzzle import SlidePuzzle
 
 NODE_SIZE = 256
@@ -24,30 +25,22 @@ class Model(nn.Module):
         x = nn.Dense(1)(x)
         return x
 
-class SlidePuzzleNeuralHeuristic:
+class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
     base_xy : chex.Array # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle):
-        self.puzzle = puzzle
-        x = jnp.tile(jnp.arange(self.puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, self.puzzle.size, 1))
-        y = jnp.tile(jnp.arange(self.puzzle.size)[jnp.newaxis, :, jnp.newaxis], (self.puzzle.size, 1, 1))
+        x = jnp.tile(jnp.arange(puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, puzzle.size, 1))
+        y = jnp.tile(jnp.arange(puzzle.size)[jnp.newaxis, :, jnp.newaxis], (puzzle.size, 1, 1))
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
-        self.model = Model()
-        self.params = self.model.init(jax.random.PRNGKey(0), jnp.zeros((1, self.puzzle.size, self.puzzle.size, 4)))
+        super().__init__(puzzle, model=Model())
 
-    def distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> float:
-        """
-        This function should return the distance between the state and the target.
-        """
-        return self._distance(self.params, current, target)
-    
-    def _distance(self, params, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
+    def pre_process(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
         diff = self.to_2d(self._diff_pos(current, target)) # [4, 4, 2]
         c_zero = self.to_2d(self._zero_pos(current)) # [4, 4, 1]
         t_zero = self.to_2d(self._zero_pos(target)) # [4, 4, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1) # [4, 4, 4]
         x = jnp.expand_dims(x, axis=0)
-        return self.model.apply(params, x).squeeze()
+        return x
     
     def to_2d(self, x: chex.Array) -> chex.Array:
         return x.reshape((self.puzzle.size, self.puzzle.size, x.shape[-1]))
