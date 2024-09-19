@@ -13,6 +13,6 @@ class LightsOutHeuristic:
         """
         Get distance between current state and target state.
         """
-        xor_state = jnp.logical_xor(current.board, target.board)
+        xor_state = jnp.not_equal(current.board, target.board)
         sum_xor_state = jnp.sum(xor_state)
         return sum_xor_state / 5

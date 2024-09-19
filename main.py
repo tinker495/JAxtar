@@ -11,6 +11,7 @@ from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 from heuristic.DAVI.neuralheuristic.slidepuzzle_neuralheuristic import SlidePuzzleNeuralHeuristic
+from heuristic.DAVI.neuralheuristic.lightsout_neuralheuristic import LightsOutNeuralHeuristic
 from heuristic.lightsout_heuristic import LightsOutHeuristic
 from heuristic.rubikscube_heuristic import RubiksCubeHeuristic
 
@@ -18,6 +19,7 @@ puzzle_dict = {
     "n-puzzle": lambda n: (SlidePuzzle(n), SlidePuzzleHeuristic(SlidePuzzle(n)).distance),
     "n-puzzle-nn": lambda n: (SlidePuzzle(n), SlidePuzzleNeuralHeuristic(SlidePuzzle(n)).distance),
     "lightsout": lambda n: (LightsOut(n), LightsOutHeuristic(LightsOut(n)).distance),
+    "lightsout-nn": lambda n: (LightsOut(n), LightsOutNeuralHeuristic(LightsOut(n)).distance),
     "rubikscube": lambda n: (RubiksCube(n), RubiksCubeHeuristic(RubiksCube(n)).distance)
 }
 
