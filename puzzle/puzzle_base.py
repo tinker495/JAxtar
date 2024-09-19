@@ -71,7 +71,7 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
                     results.append(parsfunc(current_state))
             return tabulate([results], tablefmt="grid")
         else:
-            raise ValueError("State is not structed")
+            raise ValueError(f"State is not structured: {self.shape} != {default_shape}")
     
     setattr(cls, '__str__', get_str)
     return cls
