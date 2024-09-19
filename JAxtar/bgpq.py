@@ -5,7 +5,7 @@ from functools import partial
 from abc import ABC, abstractmethod
 from collections import namedtuple
 
-HEAP_SIZE_MULTIPLIER = 2
+HEAP_SIZE_MULTIPLIER = 1.0
 SORT_STABLE = True
 
 def bgpq_value_dataclass(cls):
@@ -92,6 +92,7 @@ class BGPQ: # Batched GPU Priority Queue
     """
     max_size: int # maximum size of the heap
     size: int # current size of the heap
+    branch_size: int # size of the branch
     batch_size: int # size of the group
     key_store: chex.Array # shape = (total_size, batch_size) batched binary tree of keys
     val_store: HeapValue # shape = (total_size, batch_size, ...) batched binary tree of values
@@ -107,7 +108,7 @@ class BGPQ: # Batched GPU Priority Queue
         In this repository, we only use uint32 for hash indexes values.
         """
         total_size = total_size * HEAP_SIZE_MULTIPLIER
-        branch_size = jnp.where(total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1)
+        branch_size = jnp.where(total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1).astype(jnp.uint32)
         max_size = branch_size * batch_size
         size = jnp.uint32(0)
         key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=jnp.float32) # [branch_size, batch_size]
@@ -116,6 +117,7 @@ class BGPQ: # Batched GPU Priority Queue
         val_buffer = jax.vmap(value_class.default)(jnp.arange(batch_size - 1)) # [batch_size - 1, ...]
         return BGPQ(max_size=max_size,
                     size=size,
+                    branch_size=branch_size,
                     batch_size=batch_size,
                     key_store=key_store,
                     val_store=val_store,
@@ -216,10 +218,11 @@ class BGPQ: # Batched GPU Priority Queue
         """
         Insert a key-value pair into the heap.
         """
-        size = heap.size // heap.batch_size
+        last_node = heap.size // heap.batch_size
+        max_size = jnp.minimum(heap.branch_size, last_node)
         def _cond(var):
             _, _, _, _, n = var
-            return n < size
+            return n < max_size
 
         def insert_heapify(var):
             key_store, val_store, keys, values, n = var
@@ -228,11 +231,18 @@ class BGPQ: # Batched GPU Priority Queue
             )
             key_store = key_store.at[n].set(head)
             val_store = jax.tree_util.tree_map(lambda x, y: x.at[n].set(y), val_store, hvalues)
-            return  key_store, val_store, keys, values, BGPQ._next(n, size)
+            return  key_store, val_store, keys, values, BGPQ._next(n, last_node)
 
-        key_store, val_store, keys, values, _ = jax.lax.while_loop(_cond, insert_heapify, (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(0, size)))
-        heap.key_store = key_store.at[size].set(keys)
-        heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[size].set(y), val_store, values)
+        key_store, val_store, keys, values, _ = jax.lax.while_loop(_cond, insert_heapify, (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(0, last_node)))
+
+        def _size_not_full(heap):
+            # if size is not full, insert the keys and values to the heap
+            # but size is full, last keys and values are not inserted to the heap
+            # because, this 'last' keys and values are shoud be waste of memory.
+            heap.key_store = key_store.at[last_node].set(keys)
+            heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[last_node].set(y), val_store, values)
+            return heap
+        heap = jax.lax.cond(last_node <= heap.branch_size, _size_not_full, lambda heap: heap, heap)
         return heap
 
     @staticmethod
@@ -251,11 +261,11 @@ class BGPQ: # Batched GPU Priority Queue
         
         block_key, block_val, heap.key_buffer, heap.val_buffer, buffer_overflow = BGPQ.merge_buffer(block_key, block_val, heap.key_buffer, heap.val_buffer)
 
+        heap.size = heap.size + added_size
         heap = jax.lax.cond(buffer_overflow,
                             lambda heap, block_key, block_val: BGPQ._insert_heapify(heap, block_key, block_val),
                             lambda heap, block_key, block_val: heap,
                             heap, block_key, block_val)
-        heap.size = heap.size + added_size
         return heap
     
     @staticmethod

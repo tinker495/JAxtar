@@ -122,10 +122,9 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         def _cond(astar_result: AstarResult):
             heap_size = astar_result.priority_queue.size
             hash_size = astar_result.hashtable.size
-            size_cond1 = heap_size > 0
-            size_cond2 = heap_size < astar_result.priority_queue.max_size
-            size_cond3 = hash_size < max_nodes
-            size_cond = jnp.logical_and(jnp.logical_and(size_cond1, size_cond2), size_cond3)
+            size_cond1 = heap_size > 0 # queue is not empty
+            size_cond2 = hash_size < max_nodes # hash table is not full
+            size_cond = jnp.logical_and(size_cond1, size_cond2)
 
             min_val = astar_result.priority_queue.val_store[0] # get the minimum value
             states = astar_result.hashtable.table[min_val.index, min_val.table_index]
@@ -147,16 +146,34 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             neighbours, ncost = neighbours_fn(states, filled)
             nextcosts = cost_val[jnp.newaxis, :] + ncost # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts) # [n_neighbours, batch_size]
+            neighbours_parant_idx = jnp.broadcast_to(parant_idx, (filleds.shape[0], filleds.shape[1], 2))
 
-            filleds_sort_idx = jnp.argsort(nextcosts, axis=0) # [n_neighbours, batch_size]
-            neighbours = jax.tree_util.tree_map(lambda x: jnp.take_along_axis(x, 
-                                                            jnp.expand_dims(filleds_sort_idx, axis=[-1]*(x.ndim - filleds_sort_idx.ndim)),
-                                                            axis=0), neighbours)
-            nextcosts = jnp.take_along_axis(nextcosts, filleds_sort_idx, axis=0)
+            #flatten the filleds and nextcosts
+            unflatten_size = filleds.shape
+            flatten_size = unflatten_size[0] * unflatten_size[1]
+            filleds = filleds.reshape((flatten_size,))
+            nextcosts = nextcosts.reshape((flatten_size,))
+            neighbours_parant_idx = neighbours_parant_idx.reshape((flatten_size, 2))
+            neighbours = jax.tree_util.tree_map(lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours)
+
+            filleds_sort_idx = jnp.argsort(nextcosts, axis=0) # [flatten_size]
             filleds = jnp.take_along_axis(filleds, filleds_sort_idx, axis=0)
+            nextcosts = jnp.take_along_axis(nextcosts, filleds_sort_idx, axis=0)
+            neighbours_parant_idx = jnp.take_along_axis(neighbours_parant_idx, filleds_sort_idx[:, jnp.newaxis], axis=0)
+            neighbours = jax.tree_util.tree_map(lambda x: jnp.take_along_axis(x, 
+                                                            filleds_sort_idx.reshape(
+                                                                list(filleds_sort_idx.shape) + [1 for _ in range(x.ndim - filleds_sort_idx.ndim)]
+                                                            ),
+                                                            axis=0), neighbours)
+
+            # unflatten the neighbours, nextcosts, filleds
+            filleds = filleds.reshape(unflatten_size)
+            nextcosts = nextcosts.reshape(unflatten_size)
+            neighbours_parant_idx = neighbours_parant_idx.reshape(unflatten_size + (2,))
+            neighbours = jax.tree_util.tree_map(lambda x: x.reshape(unflatten_size + x.shape[1:]), neighbours)
 
             def _scan(astar_result : AstarResult, val):
-                neighbour, neighbour_cost, neighbour_filled = val
+                neighbour, neighbour_cost, neighbour_parant_idx, neighbour_filled = val
                 any_filled = jnp.any(neighbour_filled)
                 def _any_filled_fn(astar_result : AstarResult):
                     neighbour_heur = heuristic(neighbour, target)
@@ -166,7 +183,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                     vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
                     optimal = jnp.less(neighbour_cost, astar_result.cost[idx, table_idx])
                     astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
-                    astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(optimal[:,jnp.newaxis], parant_idx, astar_result.parant[idx, table_idx]))
+                    astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(optimal[:,jnp.newaxis], neighbour_parant_idx, astar_result.parant[idx, table_idx]))
                     not_closed_update =  astar_result.not_closed[idx, table_idx] | optimal
                     astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(not_closed_update)
                     neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
@@ -176,7 +193,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                 
                 return jax.lax.cond(any_filled, _any_filled_fn, lambda x: x, astar_result), None
 
-            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextcosts, filleds))
+            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextcosts, neighbours_parant_idx, filleds))
             return astar_result
         
         astar_result = jax.lax.while_loop(_cond, _body, astar_result)
