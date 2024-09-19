@@ -261,11 +261,11 @@ class BGPQ: # Batched GPU Priority Queue
         
         block_key, block_val, heap.key_buffer, heap.val_buffer, buffer_overflow = BGPQ.merge_buffer(block_key, block_val, heap.key_buffer, heap.val_buffer)
 
+        heap.size = heap.size + added_size
         heap = jax.lax.cond(buffer_overflow,
                             lambda heap, block_key, block_val: BGPQ._insert_heapify(heap, block_key, block_val),
                             lambda heap, block_key, block_val: heap,
                             heap, block_key, block_val)
-        heap.size = heap.size + added_size
         return heap
     
     @staticmethod
