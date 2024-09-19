@@ -14,6 +14,12 @@ from heuristic.slidepuzzle_neuralheuristic import SlidePuzzleNeuralHeuristic
 from heuristic.lightsout_heuristic import LightsOutHeuristic
 from heuristic.rubikscube_heuristic import RubiksCubeHeuristic
 
+defualt_puzzle_sizes = {
+    "n-puzzle": 4,
+    "n-puzzle-nn": 4,
+    "lightsout": 7,
+    "rubikscube": 3
+}
 puzzle_dict = {
     "n-puzzle": lambda n: (SlidePuzzle(n), SlidePuzzleHeuristic(SlidePuzzle(n)).distance),
     "n-puzzle-nn": lambda n: (SlidePuzzle(n), SlidePuzzleNeuralHeuristic(SlidePuzzle(n)).distance),
@@ -31,7 +37,7 @@ def human_format(num):
 
 @click.command()
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
-@click.option("--puzzle_size", default=4, type=int, help="Size of the puzzle")
+@click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
 @click.option("--max_node_size", default=2e7, help="Size of the puzzle")
 @click.option("--batch_size", default=8192, help="Batch size for BGPQ") # 1024 * 8 = 8192
 @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
@@ -44,6 +50,10 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
         #disable jit
         print("Disabling JIT")
         jax.config.update('jax_disable_jit', True)
+    if puzzle_size == "default":
+        puzzle_size = defualt_puzzle_sizes[puzzle]
+    else:
+        puzzle_size = int(puzzle_size)
     puzzle, heuristic_fn = puzzle_dict[puzzle](puzzle_size)
 
     max_node_size = int(max_node_size)
