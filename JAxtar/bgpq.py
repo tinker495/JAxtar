@@ -5,7 +5,7 @@ from functools import partial
 from abc import ABC, abstractmethod
 from collections import namedtuple
 
-HEAP_SIZE_MULTIPLIER = 2
+HEAP_SIZE_MULTIPLIER = 1.1
 SORT_STABLE = True
 
 def bgpq_value_dataclass(cls):
@@ -107,7 +107,7 @@ class BGPQ: # Batched GPU Priority Queue
         In this repository, we only use uint32 for hash indexes values.
         """
         total_size = total_size * HEAP_SIZE_MULTIPLIER
-        branch_size = jnp.where(total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1)
+        branch_size = jnp.where(total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1).astype(jnp.uint32)
         max_size = branch_size * batch_size
         size = jnp.uint32(0)
         key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=jnp.float32) # [branch_size, batch_size]
