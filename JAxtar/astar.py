@@ -122,10 +122,9 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         def _cond(astar_result: AstarResult):
             heap_size = astar_result.priority_queue.size
             hash_size = astar_result.hashtable.size
-            size_cond1 = heap_size > 0
-            size_cond2 = heap_size < astar_result.priority_queue.max_size
-            size_cond3 = hash_size < max_nodes
-            size_cond = jnp.logical_and(jnp.logical_and(size_cond1, size_cond2), size_cond3)
+            size_cond1 = heap_size > 0 # queue is not empty
+            size_cond2 = hash_size < max_nodes # hash table is not full
+            size_cond = jnp.logical_and(size_cond1, size_cond2)
 
             min_val = astar_result.priority_queue.val_store[0] # get the minimum value
             states = astar_result.hashtable.table[min_val.index, min_val.table_index]
