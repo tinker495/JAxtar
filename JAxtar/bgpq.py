@@ -219,10 +219,9 @@ class BGPQ: # Batched GPU Priority Queue
         Insert a key-value pair into the heap.
         """
         last_node = heap.size // heap.batch_size
-        max_size = jnp.minimum(heap.branch_size, last_node)
         def _cond(var):
             _, _, _, _, n = var
-            return n < max_size
+            return n < last_node
 
         def insert_heapify(var):
             key_store, val_store, keys, values, n = var
@@ -233,17 +232,18 @@ class BGPQ: # Batched GPU Priority Queue
             val_store = jax.tree_util.tree_map(lambda x, y: x.at[n].set(y), val_store, hvalues)
             return  key_store, val_store, keys, values, BGPQ._next(n, last_node)
 
-        key_store, val_store, keys, values, _ = jax.lax.while_loop(_cond, insert_heapify, (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(0, last_node)))
+        heap.key_store, heap.val_store, keys, values, _ = jax.lax.while_loop(_cond, insert_heapify, (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(0, last_node)))
 
         def _size_not_full(heap):
             # if size is not full, insert the keys and values to the heap
             # but size is full, last keys and values are not inserted to the heap
             # because, this 'last' keys and values are shoud be waste of memory.
-            heap.key_store = key_store.at[last_node].set(keys)
-            heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[last_node].set(y), val_store, values)
+            heap.key_store = heap.key_store.at[last_node].set(keys)
+            heap.val_store = jax.tree_util.tree_map(lambda x, y: x.at[last_node].set(y), heap.val_store, values)
             return heap
-        heap = jax.lax.cond(last_node <= heap.branch_size, _size_not_full, lambda heap: heap, heap)
-        return heap
+        added = last_node < heap.branch_size
+        heap = jax.lax.cond(added, _size_not_full, lambda heap: heap, heap)
+        return heap, added
 
     @staticmethod
     @jax.jit
@@ -261,11 +261,11 @@ class BGPQ: # Batched GPU Priority Queue
         
         block_key, block_val, heap.key_buffer, heap.val_buffer, buffer_overflow = BGPQ.merge_buffer(block_key, block_val, heap.key_buffer, heap.val_buffer)
 
-        heap.size = heap.size + added_size
-        heap = jax.lax.cond(buffer_overflow,
+        heap, added = jax.lax.cond(buffer_overflow,
                             lambda heap, block_key, block_val: BGPQ._insert_heapify(heap, block_key, block_val),
-                            lambda heap, block_key, block_val: heap,
+                            lambda heap, block_key, block_val: (heap, True),
                             heap, block_key, block_val)
+        heap.size = heap.size + added_size * added
         return heap
     
     @staticmethod
