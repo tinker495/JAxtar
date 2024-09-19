@@ -150,10 +150,8 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
 
             filleds_sort_idx = jnp.argsort(nextcosts, axis=0) # [n_neighbours, batch_size]
             neighbours = jax.tree_util.tree_map(lambda x: jnp.take_along_axis(x, 
-                                                            jnp.reshape(filleds_sort_idx, 
-                                                            shape=list(filleds_sort_idx.shape) + [1 for _ in range(x.ndim - filleds_sort_idx.ndim)]),
-                                                            axis=0)
-                                                            , neighbours)
+                                                            jnp.expand_dims(filleds_sort_idx, axis=[-1]*(x.ndim - filleds_sort_idx.ndim)),
+                                                            axis=0), neighbours)
             nextcosts = jnp.take_along_axis(nextcosts, filleds_sort_idx, axis=0)
             filleds = jnp.take_along_axis(filleds, filleds_sort_idx, axis=0)
 
