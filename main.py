@@ -33,7 +33,7 @@ def human_format(num):
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
 @click.option("--puzzle_size", default=4, type=int, help="Size of the puzzle")
 @click.option("--max_node_size", default=2e7, help="Size of the puzzle")
-@click.option("--batch_size", default=10000, help="Batch size for BGPQ")
+@click.option("--batch_size", default=8192, help="Batch size for BGPQ") # 1024 * 8 = 8192
 @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
 @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
 @click.option("--seed", default=0, help="Seed for the random puzzle")

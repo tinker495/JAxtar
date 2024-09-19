@@ -50,7 +50,7 @@ def hash_func_builder(x: Puzzle.State):
         reshape_size = ((flatten_len + pad_len) // chunk, chunk)
 
         def _to_uint32(x):
-            x = jnp.broadcast_to(x, (flatten_len, ))
+            x = jnp.reshape(x, (flatten_len, ))
             x_padded = jnp.pad(x, (0, pad_len), mode='constant', constant_values=0)
             x_reshaped = jnp.reshape(x_padded, reshape_size)
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
