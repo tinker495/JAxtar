@@ -19,6 +19,7 @@ defualt_puzzle_sizes = {
     "n-puzzle": 4,
     "n-puzzle-nn": 4,
     "lightsout": 7,
+    "lightsout-nn": 7,
     "rubikscube": 3
 }
 puzzle_dict = {
