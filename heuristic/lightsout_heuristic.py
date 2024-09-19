@@ -13,6 +13,6 @@ class LightsOutHeuristic:
         """
         Get distance between current state and target state.
         """
-        xor_state = jnp.not_equal(self.puzzle.from_uint8(current.board), self.puzzle.from_uint8(target.board))
-        sum_xor_state = jnp.sum(xor_state)
-        return sum_xor_state / 5
+        neq_state = jnp.not_equal(self.puzzle.from_uint8(current.board), self.puzzle.from_uint8(target.board))
+        sum_neq_state = jnp.sum(neq_state)
+        return sum_neq_state / 5
