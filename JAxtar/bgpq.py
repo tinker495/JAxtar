@@ -301,13 +301,12 @@ class BGPQ: # Batched GPU Priority Queue
                                 lambda _: (l, r),
                                 lambda _: (r, l),
                                 None)
-            kc, vc = key_store[c], val_store[c]
-            kl, vl = key_store[x], val_store[x]
-            kr, vr = key_store[y], val_store[y]
-            ks, vs, k3, v3 = BGPQ.merge_sort_split(kl, vl, kr, vr)
-            k1, v1, k2, v2 = BGPQ.merge_sort_split(kc, vc, ks, vs)
-            key_store = key_store.at[c].set(k1).at[y].set(k2).at[x].set(k3)
-            val_store = jax.tree_util.tree_map(lambda val, v1, v2, v3: val.at[c].set(v1).at[y].set(v2).at[x].set(v3), val_store, v1, v2, v3)
+            ky, vy, kx, vx = BGPQ.merge_sort_split(key_store[l], val_store[l], key_store[r], val_store[r])
+            key_store = key_store.at[x].set(kx)
+            val_store = jax.tree_util.tree_map(lambda val, v1: val.at[x].set(v1), val_store, vx)
+            kc, vc, ky, vy = BGPQ.merge_sort_split(key_store[c], val_store[c], ky, vy)
+            key_store = key_store.at[c].set(kc).at[y].set(ky)
+            val_store = jax.tree_util.tree_map(lambda val, v1, v2: val.at[c].set(v1).at[y].set(v2), val_store, vc, vy)
 
             nc = y
             nl, nr = _lr(y)
