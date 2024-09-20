@@ -51,25 +51,25 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
             return parsfunc(self)
         elif all(default_shape[k] == shape[k][-len(default_shape[k]):] for k in range(len(cls.__annotations__.keys()))):
             batch_shape = shape[0][:-len(default_shape[0])]
-            batch_len = jnp.prod(batch_shape) if len(batch_shape) != 1 else batch_shape[0]
+            batch_len = jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
             results = []
             if batch_len < 20:
                 for i in range(batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
-                
+                results.append(f"batch : {batch_shape}")
             else:
                 for i in range(3):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
-                results.append("...")
+                results.append(f"...\n" + f"(batch : {batch_shape})")
                 for i in range(batch_len - 3, batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
-            return tabulate([results], tablefmt="grid")
+            return tabulate([results], tablefmt="plain")
         else:
             raise ValueError(f"State is not structured: {self.shape} != {default_shape}")
     
