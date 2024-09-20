@@ -45,7 +45,8 @@ def human_format(num):
 @click.option("--seed", default=0, help="Seed for the random puzzle")
 @click.option("--vmap_size", default=1, help="Size for the vmap")
 @click.option("--debug", is_flag=True, help="Debug mode")
-def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug):
+@click.option("--profile", is_flag=True, help="Profile mode")
+def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug, profile):
     if debug:
         #disable jit
         print("Disabling JIT")
@@ -80,6 +81,9 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     print("Target state")
     print(target)
 
+    if profile:
+        print("Profiling")
+        jax.profiler.start_trace("tmp/tensorboard")
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
     print("\n\nJIT compiled")
     start = time.time()
@@ -88,6 +92,8 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     single_search_time = end - start
     print(f"Time: {single_search_time:6.2f} seconds")
     print(f"Search states: {human_format(astar_result.hashtable.size)} ({human_format(astar_result.hashtable.size / single_search_time)} states/s)\n\n")
+    if profile:
+        jax.profiler.stop_trace()
 
     if not solved:
         print("No solution found\n\n")
