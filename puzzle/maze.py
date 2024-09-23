@@ -107,7 +107,7 @@ class Maze(Puzzle):
         def is_not_wall(x):
             state = x[0]
             maze = self.from_uint8(self.maze)
-            return (maze[state.pos[0] * self.size + state.pos[1]] != 0).all()
+            return maze[state.pos[0] * self.size + state.pos[1]] != 0
         
         def while_loop(x):
             state, key = x
