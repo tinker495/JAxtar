@@ -188,7 +188,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                     astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(not_closed_update)
                     neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
 
-                    astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(not_closed_update, dtype=jnp.uint32))
+                    astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(optimal, dtype=jnp.uint32))
                     return astar_result
                 
                 return jax.lax.cond(any_filled, _any_filled_fn, lambda x: x, astar_result), None
