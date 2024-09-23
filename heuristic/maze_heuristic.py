@@ -13,4 +13,4 @@ class MazeHeuristic:
         """
         Get distance between current state and target state.
         """
-        return (jnp.abs(current.posx - target.posx) + jnp.abs(current.posy - target.posy))[0]
+        return jnp.sum(jnp.abs(current.pos.astype(int) - target.pos.astype(int)))
