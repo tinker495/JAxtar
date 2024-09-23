@@ -7,24 +7,28 @@ from functools import partial
 from puzzle.slidepuzzle import SlidePuzzle
 from puzzle.lightsout import LightsOut
 from puzzle.rubikscube import RubiksCube
+from puzzle.maze import Maze
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 from heuristic.slidepuzzle_neuralheuristic import SlidePuzzleNeuralHeuristic
 from heuristic.lightsout_heuristic import LightsOutHeuristic
 from heuristic.rubikscube_heuristic import RubiksCubeHeuristic
+from heuristic.maze_heuristic import MazeHeuristic
 
 defualt_puzzle_sizes = {
     "n-puzzle": 4,
     "n-puzzle-nn": 4,
     "lightsout": 7,
-    "rubikscube": 3
+    "rubikscube": 3,
+    "maze": 20
 }
 puzzle_dict = {
     "n-puzzle": lambda n: (SlidePuzzle(n), SlidePuzzleHeuristic(SlidePuzzle(n)).distance),
     "n-puzzle-nn": lambda n: (SlidePuzzle(n), SlidePuzzleNeuralHeuristic(SlidePuzzle(n)).distance),
     "lightsout": lambda n: (LightsOut(n), LightsOutHeuristic(LightsOut(n)).distance),
-    "rubikscube": lambda n: (RubiksCube(n), RubiksCubeHeuristic(RubiksCube(n)).distance)
+    "rubikscube": lambda n: (RubiksCube(n), RubiksCubeHeuristic(RubiksCube(n)).distance),
+    "maze": lambda n: (Maze(n), MazeHeuristic(Maze(n)).distance)
 }
 
 def human_format(num):
