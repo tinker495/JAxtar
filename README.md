@@ -106,6 +106,13 @@ Solution found: 35.00%
 # this means astart_fn is completely vmapable and jitable
 ```
 
+## Puzzles
+
+| Rubikscube | Slidepuzzle | Lightsout |  Maze |
+|------------|-------------|-----------|-------|
+|   <img src="images/rubikscubesolve.png" height="300"> | <img src="images/slidepuzzlesolve.png" height="400"> |  <img src="images/lightsoutsolve.png" height="400"> | <img src="images/mazesolve.png" height="400"> |
+
+
 ## Citation
 Please use this citation to reference this project.
 
