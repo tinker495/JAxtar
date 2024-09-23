@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from puzzle.puzzle_base import Puzzle, state_dataclass
 from termcolor import colored
 
-TYPE = jnp.uint32
+TYPE = jnp.uint16
 
 class Maze(Puzzle):
 
@@ -13,8 +13,7 @@ class Maze(Puzzle):
 
     @state_dataclass
     class State:
-        posx: chex.Array
-        posy: chex.Array
+        pos: chex.Array
 
     def __init__(self, size: int, p=0.3, key = jax.random.PRNGKey(0)):
         self.size = size
@@ -33,13 +32,13 @@ class Maze(Puzzle):
 
         def parser(state):
             maze_with_pos = self.from_uint8(self.maze)
-            maze_with_pos = maze_with_pos.at[state.posx * self.size + state.posy].set(2)
+            maze_with_pos = maze_with_pos.at[state.pos[0] * self.size + state.pos[1]].set(2)
             return form.format(*map(to_char, maze_with_pos))
         return parser
     
     def get_default_gen(self) -> callable:
         def gen():
-            return self.State(posx=jnp.array([-1], dtype=TYPE), posy=jnp.array([-1], dtype=TYPE))
+            return self.State(pos=jnp.array([-1, -1], dtype=TYPE))
         return gen
 
     def get_initial_state(self, key = jax.random.PRNGKey(0)) -> State:
@@ -57,22 +56,19 @@ class Maze(Puzzle):
         moves = jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
         
         def move(state, move):
-            new_x = state.posx + move[0]
-            new_y = state.posy + move[1]
+            new_pos = (state.pos + move).astype(TYPE)
             
             maze = self.from_uint8(self.maze)
             # Check if the new position is within the maze bounds and not a wall
-            valid_move = (new_x >= 0) & (new_x < self.size) & (new_y >= 0) & (new_y < self.size) & \
-                         (maze[new_x * self.size + new_y] == 0) & filled
+            valid_move = (new_pos >= 0).all() & (new_pos < self.size).all() & (maze[new_pos[0] * self.size + new_pos[1]] == 0) & filled
             
             # If the move is valid, update the position. Otherwise, keep the old position.
             new_state = self.State(
-                posx=jnp.where(valid_move, new_x, state.posx),
-                posy=jnp.where(valid_move, new_y, state.posy)
+                pos=jnp.where(valid_move, new_pos, state.pos)
             )
             
             # Cost is 1 for valid moves, inf for invalid moves
-            cost = jnp.where(valid_move, 1.0, jnp.inf)[0]
+            cost = jnp.where(valid_move, 1.0, jnp.inf)
             
             return new_state, cost
 
@@ -106,14 +102,12 @@ class Maze(Puzzle):
         This function should return a random state.
         """
         def get_random_state(key):
-            key1, key2 = jax.random.split(key)
-            return self.State(posx=jax.random.randint(key1, (1,), 0, self.size, dtype=TYPE),
-                              posy=jax.random.randint(key2, (1,), 0, self.size, dtype=TYPE))
+            return self.State(pos=jax.random.randint(key, (2,), 0, self.size, dtype=TYPE))
         
         def is_not_wall(x):
             state = x[0]
             maze = self.from_uint8(self.maze)
-            return (maze[state.posx * self.size + state.posy] != 0)[0]
+            return (maze[state.pos[0] * self.size + state.pos[1]] != 0).all()
         
         def while_loop(x):
             state, key = x
