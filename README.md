@@ -5,7 +5,7 @@
 # JA<sup>xtar</sup>: Batched parallel A* solver in pure Jax!
 
 JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizeable A* solver for neural heuristic search research.
-This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. mcts can be written in pure jax, so why not A*?
+This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. If mcts can be written in pure jax, so why not A*?
 **The project is not yet fully complete, with many types of puzzles left to be solved, more efficient basic heuristics, learning neural network heuristics, and more.**
 
 mcts, or tree search, is used in many RL algorithmic techniques, starting with AlphaGo, but graph search (not tree search) doesn't seem to have received much attention. Nevertheless, there are puzzle solving algorithms that use neural heuristics like [DeepcubeA](https://github.com/forestagostinelli/DeepCubeA) with A* (graph search).
