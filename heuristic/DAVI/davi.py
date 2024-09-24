@@ -18,7 +18,10 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
             in_axes=(None, 0, 0) # axis - None, 0, 0
         )(heuristic_params, current, targets)
         diff = current_heuristic - targets_heuristic
-        loss = jnp.mean(jnp.square(diff))
+        tmax = jnp.max(targets_heuristic)   
+        weight = (tmax - targets_heuristic)
+        weight = jax.lax.stop_gradient(weight / jnp.max(weight) * 1.9 + 0.1) # for stop overshooting. small value is more important
+        loss = jnp.mean(jnp.square(diff) * weight)
         return loss
 
     optimizer = optax.adamw(1e-3)
