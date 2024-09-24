@@ -1,4 +1,3 @@
-
 import chex
 import jax
 import jax.numpy as jnp
@@ -96,6 +95,7 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
         return defaultfunc()
     
     default_shape = defaultfunc().shape
+    default_dim = len(default_shape[0])
     
     def get_default_shape(self) -> Dict[str, Any]:
         return default_shape
@@ -108,9 +108,9 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
         else:
             return StructuredType.UNSTRUCTURED
         
-    def batch_shape(self) -> Dict[str, Any]:
+    def batch_shape(self) -> tuple[int, ...]:
         if self.structured_type == StructuredType.BATCHED:
-            return self.shape[0][:-len(self.default_shape[0])]
+            return self.shape[0][:-default_dim]
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
 
@@ -125,13 +125,10 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
         
-    def flatten(self) -> T:
-        if self.structured_type == StructuredType.BATCHED:
-            total_length = jnp.prod(jnp.array(self.batch_shape))
-            batch_dim = len(self.batch_shape)
-            return jax.tree_map(lambda x: jnp.reshape(x, (total_length, *x.shape[batch_dim:])), self)
-        else:
-            raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
+    def flatten(self):
+        total_length = jnp.prod(jnp.array(self.batch_shape))
+        print(total_length, *self[0].shape[-default_dim:])
+        return jax.tree_map(lambda x: jnp.reshape(x, (total_length, *x.shape[-default_dim:])), self)
     
     #add method based on default state
     setattr(cls, 'default', staticmethod(jax.jit(get_default)))
