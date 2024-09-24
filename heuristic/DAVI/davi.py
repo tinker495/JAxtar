@@ -1,17 +1,17 @@
 import jax
 import jax.numpy as jnp
 import chex
-
+from functools import partial
 from puzzle.puzzle_base import Puzzle
-from puzzle.slidepuzzle import SlidePuzzle
 
-def davi(puzzle: Puzzle, steps: int):
+def davi(puzzle: Puzzle, steps: int, batch_size: int, key: chex.PRNGKey):
     """
     DAVI is a heuristic for the sliding puzzle problem.
     """
     
     pass
 
+@partial(jax.jit, static_argnums=(0, 1, 2))
 def create_shuffled_path(puzzle: Puzzle, shuffle_length: int, batch_size: int, key: chex.PRNGKey):
     target = puzzle.get_target_state()
 
@@ -26,8 +26,10 @@ def create_shuffled_path(puzzle: Puzzle, shuffle_length: int, batch_size: int, k
             next_state = neighbor_states[idx]
             return (next_state, key), next_state
 
-        _, moves = jax.lax.scan(_scan, (target, key), None, length=shuffle_length)
+        _, moves = jax.lax.scan(_scan, (target, key), None, length=shuffle_length - 1)
+        moves = jax.tree_util.tree_map(lambda t, x: jnp.concatenate([t, x], axis=0), target[jnp.newaxis, ...], moves)
         return moves
     
     moves = jax.vmap(get_trajectory_key)(jax.random.split(key, batch_size)) # [batch_size, shuffle_length][state...]
+    moves = jax.tree_util.tree_map(lambda x: jnp.reshape(x, (-1, *x.shape[2:])), moves)
     return moves
