@@ -68,7 +68,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
             key, subkey = jax.random.split(key)
             indexs = jax.random.choice(subkey, jnp.arange(total_batch_size), shape=(32,))
             loss, grads = jax.value_and_grad(davi_loss)(heuristic_params, target_flatten[indexs], flatten_shuffled_path[indexs], flatten_target_heuristic[indexs])
-            updates, opt_state = optimizer.update(grads, opt_state)
+            updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
             return (heuristic_params, opt_state, key), loss
 
