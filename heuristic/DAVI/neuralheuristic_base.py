@@ -58,10 +58,11 @@ class NeuralHeuristicBase(ABC):
         return self.param_distance(self.params, current, target)
     
     def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+        equal = self.puzzle.is_equal(current, target) #if equal, return 0
         x = self.pre_process(current, target)
         x = self.model.apply(params, x).squeeze()
-        return self.post_process(x)
-    
+        return jnp.where(equal, 0.0, self.post_process(x))
+
     @abstractmethod
     def pre_process(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
         """

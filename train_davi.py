@@ -2,17 +2,19 @@ import click
 import jax
 import jax.numpy as jnp
 import chex
+from tqdm import trange
 
 from puzzle.slidepuzzle import SlidePuzzle
 from puzzle_config import puzzle_dict_nn, default_puzzle_sizes
-from heuristic.DAVI.davi import create_shuffled_path
+from heuristic.DAVI.davi import create_shuffled_path, davi_builder
 
 @click.command()
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict_nn.keys()), help="Puzzle to solve")
 @click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
-@click.option("--steps", type=int, default=10)
+@click.option("--steps", type=int, default=10000)
+@click.option("--key", type=int, default=0)
 @click.option("--debug", is_flag=True, help="Debug mode")
-def train_davi(puzzle, puzzle_size: int, steps: int, debug: bool):
+def train_davi(puzzle, puzzle_size: int, steps: int, key: int, debug: bool):
     if debug:
         #disable jit
         print("Disabling JIT")
@@ -26,9 +28,14 @@ def train_davi(puzzle, puzzle_size: int, steps: int, debug: bool):
     heuristic_fn = heuristic.param_distance
     heuristic_params = heuristic.params
 
-    print(heuristic_fn(heuristic_params, puzzle.get_target_state(), puzzle.get_target_state()))
+    davi_fn, opt_state = davi_builder(puzzle, int(1e2), int(1e3), 200, heuristic_fn, heuristic_params)
 
-    print(create_shuffled_path(puzzle, 200, 50000, jax.random.PRNGKey(0)))
+    key = jax.random.PRNGKey(key)
+    pbar = trange(steps)
+    for i in pbar:
+        key, subkey = jax.random.split(key)
+        heuristic_params, opt_state, loss, mean_target_heuristic = davi_fn(subkey, heuristic_params, opt_state)
+        pbar.set_description(f"Loss: {loss:5.4f}, Mean Target Heuristic: {mean_target_heuristic:4.1f}")
 
 if __name__ == "__main__":
     train_davi()
