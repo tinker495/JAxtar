@@ -21,7 +21,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         loss = jnp.mean(jnp.square(diff))
         return loss
 
-    optimizer = optax.adam(1e-3)
+    optimizer = optax.adamw(1e-3)
     opt_state = optimizer.init(heuristic_params)
 
     def davi(key: chex.PRNGKey, heuristic_params: jax.tree_util.PyTreeDef, opt_state: optax.OptState): 
@@ -56,7 +56,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         min_neighbors_heuristic = jnp.min(neighbors_heuristics, axis=2)
         target_heuristic = min_neighbors_heuristic + jnp.min(cost, axis=2)
 
-        flatten_target_heuristic = target_heuristic.reshape((-1,))
+        flatten_target_heuristic = jax.lax.stop_gradient(target_heuristic.reshape((-1,)))
         print(flatten_target_heuristic.shape)
         flatten_shuffled_path = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), shuffled_path)
         tile_targets = jax.tree_util.tree_map(lambda x: jnp.tile(x[:, jnp.newaxis, :], (1, shuffle_length, 1)), targets)
@@ -66,7 +66,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         def train_loop(carry, _):
             heuristic_params, opt_state, key = carry
             key, subkey = jax.random.split(key)
-            indexs = jax.random.choice(subkey, jnp.arange(total_batch_size), shape=(minibatch_size,))
+            indexs = jax.random.choice(subkey, jnp.arange(total_batch_size), shape=(32,))
             loss, grads = jax.value_and_grad(davi_loss)(heuristic_params, target_flatten[indexs], flatten_shuffled_path[indexs], flatten_target_heuristic[indexs])
             updates, opt_state = optimizer.update(grads, opt_state)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
