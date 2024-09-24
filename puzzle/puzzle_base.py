@@ -1,12 +1,20 @@
+
 import chex
 import jax
 import jax.numpy as jnp
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Type, TypeVar
+from enum import Enum
 from collections import namedtuple
 from tabulate import tabulate
 
 T = TypeVar('T')
+
+#enum for state type
+class StructuredType(Enum):
+    SINGLE = 0
+    BATCHED = 1
+    UNSTRUCTURED = 2
 
 def state_dataclass(cls: Type[T]) -> Type[T]:
     """
@@ -44,12 +52,14 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
     """
 
     def get_str(self) -> str:
-        default_shape = self.default().shape  # named tuple 
+        default_shape = self.default_shape  # named tuple 
         shape = self.shape
 
-        if self.default().shape == self.shape:
+        structured_type = self.structured_type
+
+        if structured_type == StructuredType.SINGLE:
             return parsfunc(self)
-        elif all(default_shape[k] == shape[k][-len(default_shape[k]):] for k in range(len(cls.__annotations__.keys()))):
+        elif structured_type == StructuredType.BATCHED:
             batch_shape = shape[0][:-len(default_shape[0])]
             batch_len = jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
             results = []
@@ -85,7 +95,51 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
     def get_default(_ = None) -> T:
         return defaultfunc()
     
+    default_shape = defaultfunc().shape
+    
+    def get_default_shape(self) -> Dict[str, Any]:
+        return default_shape
+    
+    def get_structured_type(self) -> StructuredType:
+        if self.shape == self.default_shape:
+            return StructuredType.SINGLE
+        elif all(default_shape[k] == self.shape[k][-len(default_shape[k]):] for k in range(len(cls.__annotations__.keys()))):
+            return StructuredType.BATCHED
+        else:
+            return StructuredType.UNSTRUCTURED
+        
+    def batch_shape(self) -> Dict[str, Any]:
+        if self.structured_type == StructuredType.BATCHED:
+            return self.shape[0][:-len(self.default_shape[0])]
+        else:
+            raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
+
+    def reshape(self, new_shape: tuple[int, ...]) -> T:
+        if self.structured_type == StructuredType.BATCHED:
+            total_length = jnp.prod(jnp.array(self.batch_shape))
+            new_total_length = jnp.prod(jnp.array(new_shape))
+            batch_dim = len(self.batch_shape)
+            if total_length != new_total_length:
+                raise ValueError(f"Total length of the state and new shape does not match: {total_length} != {new_total_length}")
+            return jax.tree_map(lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]), self)
+        else:
+            raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
+        
+    def flatten(self) -> T:
+        if self.structured_type == StructuredType.BATCHED:
+            total_length = jnp.prod(jnp.array(self.batch_shape))
+            batch_dim = len(self.batch_shape)
+            return jax.tree_map(lambda x: jnp.reshape(x, (total_length, *x.shape[batch_dim:])), self)
+        else:
+            raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
+    
+    #add method based on default state
     setattr(cls, 'default', staticmethod(jax.jit(get_default)))
+    setattr(cls, 'default_shape', property(get_default_shape))
+    setattr(cls, 'structured_type', property(get_structured_type))
+    setattr(cls, 'batch_shape', property(batch_shape))
+    setattr(cls, 'reshape', reshape)
+    setattr(cls, 'flatten', flatten)
     return cls
 
 class Puzzle(ABC):
