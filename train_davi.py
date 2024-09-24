@@ -10,7 +10,7 @@ def train_davi(puzzle: Puzzle, steps: int):
     """
     Train DAVI on the sliding puzzle problem.
     """
-    print(create_shuffled_path(puzzle, 1000, 20, jax.random.PRNGKey(0)))
+    print(create_shuffled_path(puzzle, 1000, 1000, jax.random.PRNGKey(0)))
 
 if __name__ == "__main__":
     puzzle = SlidePuzzle(4)
