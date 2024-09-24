@@ -51,15 +51,12 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
     """
 
     def get_str(self) -> str:
-        default_shape = self.default_shape  # named tuple 
-        shape = self.shape
-
         structured_type = self.structured_type
 
         if structured_type == StructuredType.SINGLE:
             return parsfunc(self)
         elif structured_type == StructuredType.BATCHED:
-            batch_shape = shape[0][:-len(default_shape[0])]
+            batch_shape = self.batch_shape
             batch_len = jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
             results = []
             if batch_len < 20:
@@ -80,7 +77,7 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
                     results.append(parsfunc(current_state))
             return tabulate([results], tablefmt="plain")
         else:
-            raise ValueError(f"State is not structured: {self.shape} != {default_shape}")
+            raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
     
     setattr(cls, '__str__', get_str)
     return cls
