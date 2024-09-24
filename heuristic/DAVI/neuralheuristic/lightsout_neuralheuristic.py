@@ -36,10 +36,12 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
         return x
     
     def to_2d(self, x: chex.Array) -> chex.Array:
-        return jnp.reshape(x, (self.puzzle.size, self.puzzle.size, -1))
+        return jnp.reshape(x, (self.puzzle.size, self.puzzle.size))
     
     def _diff(self, current: LightsOut.State, target: LightsOut.State) -> chex.Array:
         """
         This function should return the difference, not_equal of the current state and the target state
         """
-        return jnp.not_equal(current.board, target.board)
+        current_map = self.puzzle.from_uint8(current.board)
+        target_map = self.puzzle.from_uint8(target.board)
+        return jnp.not_equal(current_map, target_map)
