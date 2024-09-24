@@ -38,6 +38,10 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, debug: bool)
         heuristic_params, opt_state, loss, mean_target_heuristic = davi_fn(subkey, heuristic_params, opt_state)
         pbar.set_description(f"Loss: {loss:5.4f}, Mean Target Heuristic: {mean_target_heuristic:4.1f}")
 
+        if i % 10000 == 0:
+            heuristic.params = heuristic_params
+            heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
+
     heuristic.params = heuristic_params
     heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
 
