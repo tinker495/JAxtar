@@ -19,7 +19,8 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
             ), 
             in_axes=(None, 0, 0) # axis - None, 0, 0
         )(heuristic_params, current, targets)
-        loss = jnp.mean(jnp.square(current_heuristic - targets_heuristic))
+        diff = current_heuristic - targets_heuristic
+        loss = jnp.mean(jnp.square(diff))
         return loss
 
     optimizer = optax.adam(1e-3)
