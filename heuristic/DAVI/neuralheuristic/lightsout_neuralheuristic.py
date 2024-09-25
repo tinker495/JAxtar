@@ -13,9 +13,9 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
-        x = nn.Conv(512, (3, 3), padding='SAME')(x)
+        x = nn.Conv(512, (3, 3), strides=1, padding='SAME')(x)
         x = nn.relu(x)
-        x = nn.Conv(512, (3, 3))(x)
+        x = nn.Conv(512, (3, 3), strides=1)(x)
         x = nn.relu(x)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
@@ -27,8 +27,8 @@ class Model(nn.Module):
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):
 
-    def __init__(self, puzzle: LightsOut):
-        super().__init__(puzzle, model=Model())
+    def __init__(self, puzzle: LightsOut, init_params: bool = True):
+        super().__init__(puzzle, model=Model(), init_params=init_params)
 
     def pre_process(self, current: LightsOut.State, target: LightsOut.State) -> chex.Array:
         x = self.to_2d(self._diff(current, target))
