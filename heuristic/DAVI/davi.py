@@ -17,11 +17,8 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
             heuristic_fn, 
             in_axes=(None, 0, 0) # axis - None, 0, 0
         )(heuristic_params, current, targets)
-        diff = current_heuristic - targets_heuristic
-        tmax = jnp.max(targets_heuristic)   
-        weight = (tmax - targets_heuristic)
-        weight = jax.lax.stop_gradient(weight / jnp.max(weight) * 1.9 + 0.1) # for stop overshooting. small value is more important
-        loss = jnp.mean(jnp.square(diff) * weight)
+        diff = targets_heuristic - current_heuristic
+        loss = jnp.mean(jnp.square(diff))
         return loss
 
     optimizer = optax.adamw(1e-3)
@@ -69,7 +66,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         def train_loop(carry, _):
             heuristic_params, opt_state, key = carry
             key, subkey = jax.random.split(key)
-            indexs = jax.random.choice(subkey, jnp.arange(total_batch_size), shape=(32,))
+            indexs = jax.random.choice(subkey, jnp.arange(total_batch_size), shape=(256,))
             loss, grads = jax.value_and_grad(davi_loss)(heuristic_params, target_flatten[indexs], flatten_shuffled_path[indexs], flatten_target_heuristic[indexs])
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
