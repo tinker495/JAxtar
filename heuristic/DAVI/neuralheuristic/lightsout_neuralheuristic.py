@@ -8,21 +8,35 @@ from puzzle.lightsout import LightsOut
 
 NODE_SIZE = 256
 
+class ConvResBlock(nn.Module):
+    filters: int
+    kernel_size: int
+    strides: int
+
+    @nn.compact
+    def __call__(self, x):
+        input = x
+        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding='SAME')(x)
+        x = nn.relu(x)
+        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding='SAME')(x)
+        x = nn.relu(x)
+        x = x + input
+        return x
+
 class Model(nn.Module):
 
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
-        x = nn.Conv(512, (3, 3), strides=1, padding='SAME')(x)
+        x = nn.Conv(128, (3, 3), strides=1, padding='SAME')(x)
         x = nn.relu(x)
-        x = nn.Conv(512, (3, 3), strides=1)(x)
-        x = nn.relu(x)
+        x = ConvResBlock(128, (3, 3), strides=1)(x)
+        x = ConvResBlock(128, (3, 3), strides=1)(x)
+        x = ConvResBlock(128, (3, 3), strides=1)(x)
+        x = ConvResBlock(128, (3, 3), strides=1)(x)
+        x = ConvResBlock(128, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(512)(x)
-        x = nn.relu(x)
-        x = nn.Dense(256)(x)
-        x = nn.relu(x)
-        x = nn.Dense(1)(x)
+        x = jnp.sum(x, axis=1)
         return x
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):
@@ -36,7 +50,7 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
         return x
     
     def to_2d(self, x: chex.Array) -> chex.Array:
-        return jnp.reshape(x, (self.puzzle.size, self.puzzle.size))
+        return jnp.reshape(x, (self.puzzle.size, self.puzzle.size, 1))
     
     def _diff(self, current: LightsOut.State, target: LightsOut.State) -> chex.Array:
         """
@@ -44,4 +58,4 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
         """
         current_map = self.puzzle.from_uint8(current.board)
         target_map = self.puzzle.from_uint8(target.board)
-        return jnp.not_equal(current_map, target_map)
+        return jnp.not_equal(current_map, target_map).astype(jnp.float32) - 0.5

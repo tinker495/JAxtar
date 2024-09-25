@@ -23,6 +23,9 @@ class DefaultModel(nn.Module):
     def __call__(self, x):
         # [4, 4, 6] -> conv
         x = nn.Dense(5000)(x)
+        x = nn.relu(x)
+        x = nn.Dense(1000)(x)
+        x = nn.relu(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
@@ -67,7 +70,7 @@ class NeuralHeuristicBase(ABC):
         return self.param_distance(self.params, current, target)
     
     def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
-        equal = self.puzzle.is_equal(current, target) #if equal, return 0
+        equal = self.puzzle.is_solved(current, target) #if equal, return 0
         x = self.pre_process(current, target)
         x = self.model.apply(params, x).squeeze()
         return jnp.where(equal, 0.0, self.post_process(x))
