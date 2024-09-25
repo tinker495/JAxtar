@@ -47,10 +47,10 @@ class NeuralHeuristicBase(ABC):
             with open(path, 'rb') as f:
                 params = pickle.load(f)
             model = cls(puzzle, init_params=False)
-            model.params = params
             dummy_current = puzzle.State.default()
             dummy_target = puzzle.State.default()
-            model.model.apply(model.params, model.pre_process(dummy_current, dummy_target)) # check if the params are compatible with the model
+            model.model.apply(params, model.pre_process(dummy_current, dummy_target)) # check if the params are compatible with the model
+            model.params = params
         except Exception as e:
             print(f"Error loading model: {e}")
             model = cls(puzzle)
