@@ -13,9 +13,9 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 6] -> conv
-        x = nn.Conv(512, (3, 3), padding='SAME')(x)
+        x = nn.Conv(512, (3, 3), strides=1, padding='SAME')(x)
         x = nn.relu(x)
-        x = nn.Conv(512, (3, 3))(x)
+        x = nn.Conv(512, (3, 3), strides=1)(x)
         x = nn.relu(x)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
