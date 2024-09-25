@@ -28,11 +28,11 @@ class Model(nn.Module):
 class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
     base_xy : chex.Array # The coordinates of the numbers in the puzzle
 
-    def __init__(self, puzzle: SlidePuzzle):
+    def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):
         x = jnp.tile(jnp.arange(puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, puzzle.size, 1))
         y = jnp.tile(jnp.arange(puzzle.size)[jnp.newaxis, :, jnp.newaxis], (puzzle.size, 1, 1))
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
-        super().__init__(puzzle, model=Model())
+        super().__init__(puzzle, model=Model(), init_params=init_params)
 
     def pre_process(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
         diff = self.to_2d(self._diff_pos(current, target)) # [n, n, 2]
