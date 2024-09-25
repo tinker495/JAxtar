@@ -25,7 +25,7 @@ puzzle_dict = {
 
 puzzle_dict_nn = {
     "n-puzzle": lambda n: (SlidePuzzle(n), SlidePuzzleNeuralHeuristic.load_model(SlidePuzzle(n), f"heuristic/DAVI/neuralheuristic/params/n-puzzle_{n}.pkl")),
-    "lightsout": lambda n: (LightsOut(n), LightsOutNeuralHeuristic(LightsOut(n))),
+    "lightsout": lambda n: (LightsOut(n), LightsOutNeuralHeuristic.load_model(LightsOut(n), f"heuristic/DAVI/neuralheuristic/params/lightsout_{n}.pkl")),
     #"rubikscube": lambda n: (RubiksCube(n), RubiksCubeNeuralHeuristic(RubiksCube(n)).distance),
     #"maze": lambda n: (Maze(n), MazeNeuralHeuristic(Maze(n)).distance)
 }

@@ -5,9 +5,8 @@ import jax.numpy as jnp
 import chex
 from tqdm import trange
 
-from puzzle.slidepuzzle import SlidePuzzle
 from puzzle_config import puzzle_dict_nn, default_puzzle_sizes
-from heuristic.DAVI.davi import create_shuffled_path, davi_builder
+from heuristic.DAVI.davi import davi_builder
 
 @click.command()
 @click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict_nn.keys()), help="Puzzle to solve")
@@ -31,8 +30,9 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, debug: bool)
     heuristic_fn = heuristic.param_distance
     heuristic_params = heuristic.params
 
-    davi_fn, opt_state = davi_builder(puzzle, int(1e5), int(1e6), 1000, 100000, heuristic_fn, heuristic_params)
+    davi_fn, opt_state = davi_builder(puzzle, int(1e5), int(1e5), 1000, 10000, heuristic_fn, heuristic_params)
     key = jax.random.PRNGKey(key)
+
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
