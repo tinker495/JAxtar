@@ -34,7 +34,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         neighbors, cost = jax.vmap(jax.vmap(puzzle.get_neighbours))(shuffled_path) # [batch_size, shuffle_length, 4] [batch_size, shuffle_length, 4]
         original_shape = cost.shape
         neighbor_len = cost.shape[-1]
-        tile_targets = jax.tree_util.tree_map(lambda x: jnp.tile(x[:, jnp.newaxis, jnp.newaxis, :], (1, shuffle_length, neighbor_len, 1)), targets)
+        tile_targets = jax.tree_util.tree_map(lambda x: jnp.tile(x[:, jnp.newaxis, jnp.newaxis, ...], (1, shuffle_length, neighbor_len, 1, 1)), targets)
         print(neighbors.shape, tile_targets.shape)
 
         neighbors_flatten = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[3:])), neighbors)
@@ -59,8 +59,8 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         flatten_target_heuristic = jax.lax.stop_gradient(target_heuristic.reshape((-1,)))
         print(flatten_target_heuristic.shape)
         flatten_shuffled_path = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), shuffled_path)
-        tile_targets = jax.tree_util.tree_map(lambda x: jnp.tile(x[:, jnp.newaxis, :], (1, shuffle_length, 1)), targets)
-        target_flatten = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), tile_targets)
+        tile_targets = jax.tree_util.tree_map(lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length, 1, 1, 1)), targets)
+        target_flatten = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[3:])), tile_targets)
         print(flatten_shuffled_path.shape, target_flatten.shape)
 
         def train_loop(carry, _):
