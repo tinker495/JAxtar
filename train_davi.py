@@ -1,3 +1,4 @@
+import os
 import click
 import jax
 import jax.numpy as jnp
@@ -30,7 +31,7 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, debug: bool)
     heuristic_fn = heuristic.param_distance
     heuristic_params = heuristic.params
 
-    davi_fn, opt_state = davi_builder(puzzle, int(1e2), int(1e4), 1000, 1000, heuristic_fn, heuristic_params)
+    davi_fn, opt_state = davi_builder(puzzle, int(1e5), int(1e6), 1000, 100000, heuristic_fn, heuristic_params)
     key = jax.random.PRNGKey(key)
     pbar = trange(steps)
     for i in pbar:
@@ -38,9 +39,8 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, debug: bool)
         heuristic_params, opt_state, loss, mean_target_heuristic = davi_fn(subkey, heuristic_params, opt_state)
         pbar.set_description(f"Loss: {loss:5.4f}, Mean Target Heuristic: {mean_target_heuristic:4.1f}")
 
-        if i % 10000 == 0:
-            heuristic.params = heuristic_params
-            heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
+        heuristic.params = heuristic_params
+        heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
 
     heuristic.params = heuristic_params
     heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
