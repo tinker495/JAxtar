@@ -30,7 +30,7 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, debug: bool)
     heuristic_fn = heuristic.param_distance
     heuristic_params = heuristic.params
 
-    davi_fn, opt_state = davi_builder(puzzle, int(1e5), int(1e5), 1000, 10000, heuristic_fn, heuristic_params)
+    davi_fn, opt_state = davi_builder(puzzle, int(1e4), int(1e4), 1000, 1000, heuristic_fn, heuristic_params)
     key = jax.random.PRNGKey(key)
 
     pbar = trange(steps)
