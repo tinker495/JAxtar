@@ -10,8 +10,9 @@ class ResBlock(nn.Module):
     features: int = 1000
 
     @nn.compact
-    def __call__(self, x0):
-        x = nn.Dense(self.features)(x0)
+    def __call__(self, x):
+        x0 = nn.Dense(self.features)(x)
+        x = nn.Dense(self.features)(x)
         x = nn.relu(x)
         x = nn.Dense(self.features)(x)
         x = nn.relu(x)
@@ -23,9 +24,6 @@ class DefaultModel(nn.Module):
     def __call__(self, x):
         # [4, 4, 6] -> conv
         x = nn.Dense(5000)(x)
-        x = nn.relu(x)
-        x = nn.Dense(1000)(x)
-        x = nn.relu(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
