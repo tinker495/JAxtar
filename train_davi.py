@@ -3,6 +3,7 @@ import click
 import jax
 import jax.numpy as jnp
 import chex
+import copy
 from tqdm import trange
 
 from puzzle_config import puzzle_dict_nn, default_puzzle_sizes
@@ -29,19 +30,22 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, debug: bool)
 
     heuristic_fn = heuristic.param_distance
     heuristic_params = heuristic.params
+    target_heuristic_params = copy.deepcopy(heuristic_params)
 
-    davi_fn, opt_state = davi_builder(puzzle, int(1e4), int(1e4), 1000, 1000, heuristic_fn, heuristic_params)
+    davi_fn, opt_state = davi_builder(puzzle, int(1e2), int(1e4), 1000, 10000, heuristic_fn, heuristic_params)
     key = jax.random.PRNGKey(key)
 
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        heuristic_params, opt_state, loss, mean_target_heuristic = davi_fn(subkey, heuristic_params, opt_state)
+        heuristic_params, opt_state, loss, mean_target_heuristic = davi_fn(subkey, target_heuristic_params, heuristic_params, opt_state)
         pbar.set_description(f"Loss: {loss:5.4f}, Mean Target Heuristic: {mean_target_heuristic:4.1f}")
 
-        heuristic.params = heuristic_params
-        heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
-
+        if loss < 1e-2 and i % 100 == 0:
+            heuristic.params = heuristic_params
+            heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
+            target_heuristic_params = copy.deepcopy(heuristic_params)
+            print("updated target heuristic params")
     heuristic.params = heuristic_params
     heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
 
