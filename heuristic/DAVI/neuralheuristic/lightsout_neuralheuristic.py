@@ -15,12 +15,12 @@ class ConvResBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        input = x
+        x0 = nn.Conv(self.filters, 1)(x) # 1x1 conv to pass information through
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding='SAME')(x)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding='SAME')(x)
         x = nn.relu(x)
-        x = x + input
+        x = x + x0
         return x
 
 class Model(nn.Module):
@@ -28,15 +28,15 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
-        x = nn.Conv(128, (3, 3), strides=1, padding='SAME')(x)
-        x = nn.relu(x)
-        x = ConvResBlock(128, (3, 3), strides=1)(x)
-        x = ConvResBlock(128, (3, 3), strides=1)(x)
         x = ConvResBlock(128, (3, 3), strides=1)(x)
         x = ConvResBlock(128, (3, 3), strides=1)(x)
         x = ConvResBlock(128, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = jnp.sum(x, axis=1)
+        x = nn.Dense(256)(x)
+        x = nn.relu(x)
+        x = nn.Dense(128)(x)
+        x = nn.relu(x)
+        x = nn.Dense(1)(x)
         return x
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):
