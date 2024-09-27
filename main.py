@@ -71,7 +71,7 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     print(states[0])
     print("Target state")
     print(target)
-    print(f"Heuristic: {heuristics[0]}")
+    print(f"Heuristic: {heuristics[0]:.2f}")
 
     if profile:
         print("Profiling")
