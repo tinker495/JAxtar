@@ -21,10 +21,10 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         loss = jnp.mean(jnp.square(diff))
         return loss
 
-    optimizer = optax.rmsprop(1e-3)
+    optimizer = optax.adamaxw(1e-4)
     opt_state = optimizer.init(heuristic_params)
 
-    def davi(key: chex.PRNGKey, heuristic_params: jax.tree_util.PyTreeDef, opt_state: optax.OptState): 
+    def davi(key: chex.PRNGKey, target_heuristic_params: jax.tree_util.PyTreeDef, heuristic_params: jax.tree_util.PyTreeDef, opt_state: optax.OptState): 
         """
         DAVI is a heuristic for the sliding puzzle problem.
         """
@@ -48,7 +48,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
             neighbors_heuristic = jax.vmap(
                 heuristic_fn,
                 in_axes=(None, 0, 0)
-            )(heuristic_params, neighbors_flatten[i:i+minibatch_size], target_flatten[i:i+minibatch_size])
+            )(target_heuristic_params, neighbors_flatten[i:i+minibatch_size], target_flatten[i:i+minibatch_size])
             neighbors_heuristics.append(neighbors_heuristic)
         neighbors_heuristics = jnp.concatenate(neighbors_heuristics, axis=0)
         neighbors_heuristics = neighbors_heuristics.reshape(original_shape)
@@ -73,7 +73,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
             return (heuristic_params, opt_state, key), loss
 
         (heuristic_params, opt_state, key), losses = jax.lax.scan(train_loop, (heuristic_params, opt_state, key), None, length=steps)
-        loss = jnp.mean(losses)
+        loss = losses[-1]
         mean_target_heuristic = jnp.mean(target_heuristic)
         return heuristic_params, opt_state, loss, mean_target_heuristic
     

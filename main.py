@@ -65,11 +65,13 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     print(f"Time: {end - start:6.2f} seconds\n\n")
 
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(key=jax.random.split(jax.random.PRNGKey(start_state_seed),1))
+    heuristics = jax.vmap(heuristic_fn, in_axes=(0, None))(states, target)
 
     print("Start state")
     print(states[0])
     print("Target state")
     print(target)
+    print(f"Heuristic: {heuristics[0]}")
 
     if profile:
         print("Profiling")
