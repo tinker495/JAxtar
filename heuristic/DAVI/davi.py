@@ -21,7 +21,7 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         loss = jnp.mean(jnp.square(diff))
         return loss
 
-    optimizer = optax.adamaxw(1e-4)
+    optimizer = optax.adamw(1e-4)
     opt_state = optimizer.init(heuristic_params)
 
     def davi(key: chex.PRNGKey, target_heuristic_params: jax.tree_util.PyTreeDef, heuristic_params: jax.tree_util.PyTreeDef, opt_state: optax.OptState): 
