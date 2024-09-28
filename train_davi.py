@@ -70,11 +70,11 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, debug: bool)
         heuristic_params, opt_state, loss, mean_target_heuristic = davi_fn(subkey, target_heuristic_params, heuristic_params, opt_state)
         pbar.set_description(f"Loss: {loss:5.4f}, Mean Target Heuristic: {mean_target_heuristic:4.1f}")
 
-        if loss < 1e-2 and i % 100 == 0:
+        if loss < 5e-2 and i % 5000 == 0:
             heuristic.params = heuristic_params
             heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
             target_heuristic_params = copy.deepcopy(heuristic_params)
-            heuristic_params = soft_reset(heuristic_params, 0.5, subkey)
+            heuristic_params = soft_reset(heuristic_params, 0.1, subkey)
             print("updated target heuristic params")
     heuristic.params = heuristic_params
     heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
