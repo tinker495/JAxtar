@@ -36,7 +36,7 @@ class Model(nn.Module):
         x = nn.relu(x)
         x = nn.Dense(128)(x)
         x = nn.relu(x)
-        x = nn.Dense(1, kernel_init=nn.initializers.zeros_init())(x)
+        x = nn.Dense(1)(x)
         return x
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):

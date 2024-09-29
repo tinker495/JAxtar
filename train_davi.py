@@ -65,16 +65,18 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
 
     davi_fn, opt_state = davi_builder(puzzle, int(1e2), int(1e4), 1000, 10000, heuristic_fn, heuristic_params)
 
+    count = 0
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
         heuristic_params, opt_state, loss, mean_target_heuristic = davi_fn(subkey, target_heuristic_params, heuristic_params, opt_state)
         pbar.set_description(f"Loss: {loss:5.4f}, Mean Target Heuristic: {mean_target_heuristic:4.1f}")
 
-        if loss < 1e-1 and i % 1000 == 0:
+        if (loss < 1e-1 or count < 10) and (i % 1000 == 0 and i > 0):
             heuristic.params = heuristic_params
             heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
             target_heuristic_params = copy.deepcopy(heuristic_params)
+            count += 1
             heuristic_params = soft_reset(heuristic_params, 0.2, subkey)
             print("updated target heuristic params")
     heuristic.params = heuristic_params
