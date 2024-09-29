@@ -31,7 +31,7 @@ class DefaultModel(nn.Module):
         x = ResBlock()(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
-        x = nn.Dense(1, kernel_init=nn.initializers.zeros_init())(x)
+        x = nn.Dense(1)(x)
         return x
 
 class NeuralHeuristicBase(ABC):
