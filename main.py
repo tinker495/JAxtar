@@ -38,7 +38,7 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
         puzzle_size = int(puzzle_size)
     if nn:
         try:
-            puzzle, heuristic = puzzle_dict_nn[puzzle](puzzle_size)
+            puzzle, heuristic = puzzle_dict_nn[puzzle](puzzle_size, False)
         except KeyError:
             print("Neural heuristic not available for this puzzle")
             exit(1)
