@@ -7,14 +7,17 @@ from flax import linen as nn
 from puzzle.puzzle_base import Puzzle
 
 class ResBlock(nn.Module):
-    features: int = 1000
+    stage1_features: int = 1000
+    stage2_features: int = 1000
 
     @nn.compact
     def __call__(self, x):
-        x0 = nn.Dense(self.features)(x)
-        x = nn.Dense(self.features)(x)
+        x0 = nn.Dense(self.stage2_features)(x)
+        x = nn.Dense(self.stage1_features)(x)
+        x = nn.GroupNorm(num_groups=10)(x)
         x = nn.relu(x)
-        x = nn.Dense(self.features)(x)
+        x = nn.Dense(self.stage2_features)(x)
+        x = nn.GroupNorm(num_groups=10)(x)
         x = nn.relu(x)
         return x + x0
 
@@ -23,12 +26,12 @@ class DefaultModel(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 6] -> conv
-        x = nn.Dense(5000)(x)
+        x = ResBlock(stage1_features=5000)(x) # start with 5000 features
         x = ResBlock()(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
-        x = nn.Dense(1)(x)
+        x = nn.Dense(1, kernel_init=nn.initializers.zeros_init())(x)
         return x
 
 class NeuralHeuristicBase(ABC):

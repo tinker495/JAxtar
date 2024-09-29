@@ -25,8 +25,11 @@ puzzle_dict = {
 }
 
 puzzle_dict_nn = {
-    "n-puzzle": lambda n: (SlidePuzzle(n), SlidePuzzleNeuralHeuristic.load_model(SlidePuzzle(n), f"heuristic/DAVI/neuralheuristic/params/n-puzzle_{n}.pkl")),
-    "lightsout": lambda n: (LightsOut(n), LightsOutNeuralHeuristic.load_model(LightsOut(n), f"heuristic/DAVI/neuralheuristic/params/lightsout_{n}.pkl")),
-    "rubikscube": lambda n: (RubiksCube(n), RubiksCubeNeuralHeuristic.load_model(RubiksCube(n), f"heuristic/DAVI/neuralheuristic/params/rubikscube_{n}.pkl")),
+    "n-puzzle": lambda n, reset: (SlidePuzzle(n), SlidePuzzleNeuralHeuristic(SlidePuzzle(n)) 
+                                    if reset else SlidePuzzleNeuralHeuristic.load_model(SlidePuzzle(n), f"heuristic/DAVI/neuralheuristic/params/n-puzzle_{n}.pkl")),
+    "lightsout": lambda n, reset: (LightsOut(n), LightsOutNeuralHeuristic(LightsOut(n)) 
+                                    if reset else LightsOutNeuralHeuristic.load_model(LightsOut(n), f"heuristic/DAVI/neuralheuristic/params/lightsout_{n}.pkl")),
+    "rubikscube": lambda n, reset: (RubiksCube(n), RubiksCubeNeuralHeuristic(RubiksCube(n))
+                                    if reset else RubiksCubeNeuralHeuristic.load_model(RubiksCube(n), f"heuristic/DAVI/neuralheuristic/params/rubikscube_{n}.pkl")),
     #"maze": lambda n: (Maze(n), MazeNeuralHeuristic(Maze(n)).distance)
 }

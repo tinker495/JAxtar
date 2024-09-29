@@ -8,23 +8,6 @@ from puzzle.rubikscube import RubiksCube
 
 NODE_SIZE = 256
 
-class Model(nn.Module):
-
-    @nn.compact
-    def __call__(self, x):
-        # [4, 4, 6] -> conv
-        x = nn.Conv(512, (3, 3), strides=1, padding='SAME')(x)
-        x = nn.relu(x)
-        x = nn.Conv(512, (3, 3), strides=1)(x)
-        x = nn.relu(x)
-        x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(512)(x)
-        x = nn.relu(x)
-        x = nn.Dense(256)(x)
-        x = nn.relu(x)
-        x = nn.Dense(1)(x)
-        return x
-
 class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
     base_xy : chex.Array # The coordinates of the numbers in the puzzle
 
@@ -32,5 +15,7 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
         super().__init__(puzzle, init_params=init_params)
 
     def pre_process(self, current: RubiksCube.State, target: RubiksCube.State) -> chex.Array:
-        flatten_face = jnp.expand_dims(current.faces.flatten(), axis=0)
-        return flatten_face
+        flatten_face = current.faces.flatten()
+        # Create a one-hot encoding of the flattened face
+        one_hot = jax.nn.one_hot(flatten_face, num_classes=6).flatten()  # 6 colors in Rubik's Cube
+        return jnp.expand_dims(one_hot, axis=0)
