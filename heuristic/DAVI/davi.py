@@ -30,18 +30,15 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         """
         #print("Starting DAVI")
         tiled_targets, shuffled_path = create_shuffled_path_fn(key) # [batch_size, shuffle_length] [batch_size, shuffle_length]
-        print(tiled_targets.shape, shuffled_path.shape)
         neighbors, cost = jax.vmap(jax.vmap(puzzle.get_neighbours))(shuffled_path) # [batch_size, shuffle_length, 4] [batch_size, shuffle_length, 4]
         original_shape = cost.shape
         neighbor_len = cost.shape[-1]
         next_tiled_targets = jax.tree_util.tree_map(lambda x: jnp.tile(x[:, :, jnp.newaxis, ...], (1, 1, neighbor_len) + (x.ndim - 2) * (1,)), tiled_targets)
-        print(neighbors.shape, next_tiled_targets.shape)
 
         neighbors_flatten = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[3:])), neighbors)
         target_flatten = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[3:])), next_tiled_targets)
         cost_flatten = cost.reshape((-1,))
         flatten_size = cost_flatten.shape[0]
-        print(neighbors_flatten.shape, target_flatten.shape) 
 
         neighbors_heuristics = []
         for i in range(0, flatten_size, minibatch_size):
@@ -56,15 +53,13 @@ def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_leng
         target_heuristic = jnp.min(neighbors_heuristics + cost, axis=2)
 
         flatten_target_heuristic = jax.lax.stop_gradient(target_heuristic.reshape((-1,)))
-        print(flatten_target_heuristic.shape)
         flatten_shuffled_path = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), shuffled_path)
         target_flatten = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), tiled_targets)
-        print(flatten_shuffled_path.shape, target_flatten.shape)
 
         def train_loop(carry, _):
             heuristic_params, opt_state, key = carry
             key, subkey = jax.random.split(key)
-            indexs = jax.random.choice(subkey, jnp.arange(total_batch_size), shape=(256,))
+            indexs = jax.random.choice(subkey, flatten_target_heuristic.shape[0], (256,))
             loss, grads = jax.value_and_grad(davi_loss)(heuristic_params, target_flatten[indexs], flatten_shuffled_path[indexs], flatten_target_heuristic[indexs])
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
