@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import jax
 from functools import partial
 from puzzle.puzzle_base import Puzzle
-from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue
+from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue, HeapValue
 from JAxtar.hash import hash_func_builder, HashTable
 
 
@@ -31,6 +31,8 @@ class AstarResult:
 
     hashtable: HashTable
     priority_queue: BGPQ
+    min_key_buffer: chex.Array
+    min_val_buffer: HashTableIdx_HeapValue
     cost: chex.Array
     not_closed: chex.Array
     parant: chex.Array
@@ -44,12 +46,16 @@ class AstarResult:
         size_table = hashtable.capacity
         n_table = hashtable.n_table
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
+        min_key_buffer = jnp.full((batch_size, ), jnp.inf)
+        min_val_buffer = HashTableIdx_HeapValue(index=jnp.zeros((batch_size, ), dtype=jnp.uint32), table_index=jnp.zeros((batch_size, ), dtype=jnp.uint32))
         cost = jnp.full((size_table, n_table), jnp.inf)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
         parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
         return AstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
+            min_key_buffer=min_key_buffer,
+            min_val_buffer=min_val_buffer,
             cost=cost,
             not_closed=not_closed,
             parant=parant
@@ -66,6 +72,33 @@ class AstarResult:
     @property
     def size(self):
         return self.hashtable.size
+
+def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
+    """
+    Merge two sorted key tensors ak and bk as well as corresponding
+    value tensors av and bv into a single sorted tensor.
+
+    Args:
+        ak: chex.Array - sorted key tensor
+        av: HeapValue - sorted value tensor
+        bk: chex.Array - sorted key tensor
+        bv: HeapValue - sorted value tensor
+
+    Returns:
+        key1: chex.Array - merged and sorted
+        val1: HeapValue - merged and sorted
+        key2: chex.Array - merged and sorted
+        val2: HeapValue - merged and sorted
+    """
+    n = ak.shape[-1] # size of group
+    key = jnp.concatenate([ak, bk])
+    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+    idx = jnp.argsort(key, stable=True)
+
+    # Sort both key and value arrays using the same index
+    sorted_key = key[idx]
+    sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
+    return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
 def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024, max_nodes: int = int(1e6), astar_weight : float = 1.0 - 1e-6):
     '''
@@ -96,6 +129,28 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0,0), out_axes=(1,1))
     delete_fn = BGPQ.delete_mins
     insert_fn = BGPQ.insert
+
+
+    def pop_full(astar_result: AstarResult):
+        astar_result.priority_queue, min_key, min_val = delete_fn(astar_result.priority_queue)
+        min_idx, min_table_idx = min_val.index, min_val.table_index
+        min_key = jnp.where(astar_result.not_closed[min_idx, min_table_idx], min_key, jnp.inf)
+        min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer)
+        filled = jnp.isfinite(min_key)
+
+        def _cond(val):
+            astar_result, _, _, filled = val
+            return jnp.logical_and(astar_result.priority_queue.size > 0, ~filled.all())
+        
+        def _body(val):
+            astar_result, min_key, min_val, filled = val
+            astar_result.priority_queue, min_key_buffer, min_val_buffer = delete_fn(astar_result.priority_queue)
+            min_key_buffer = jnp.where(astar_result.not_closed[min_val_buffer.index, min_val_buffer.table_index], min_key_buffer, jnp.inf)
+            min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, min_key_buffer, min_val_buffer)
+            filled = jnp.isfinite(min_key)
+            return astar_result, min_key, min_val, filled
+        astar_result, min_key, min_val, filled = jax.lax.while_loop(_cond, _body, (astar_result, min_key, min_val, filled))
+        return astar_result, min_val, filled
 
     def astar(
         astar_result: AstarResult,
@@ -132,14 +187,12 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             return jnp.logical_and(size_cond, ~solved.any())
         
         def _body(astar_result: AstarResult):
-            astar_result.priority_queue, min_key, min_val = delete_fn(astar_result.priority_queue)
+            astar_result, min_val, filled = pop_full(astar_result)
             min_idx, min_table_idx = min_val.index, min_val.table_index
             parant_idx = jnp.stack((min_idx, min_table_idx), axis=-1)
 
-            cost_val, not_closed_val = astar_result.cost[min_idx, min_table_idx], astar_result.not_closed[min_idx, min_table_idx]
+            cost_val = astar_result.cost[min_idx, min_table_idx]
             states = astar_result.hashtable.table[min_idx, min_table_idx]
-
-            filled = jnp.logical_and(jnp.isfinite(min_key), not_closed_val)
 
             astar_result.not_closed = astar_result.not_closed.at[min_idx, min_table_idx].min(~filled) # or operation with closed
 
