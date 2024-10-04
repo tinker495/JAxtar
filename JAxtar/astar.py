@@ -22,8 +22,6 @@ class AstarResult:
     - priority_queue: BGPQ instance that contains the indexes of the states in the HashTable.
     - cost: cost of the path from the start node to the current node.
             this could be update if a better path is found.
-    - heuristic: estimated cost from the current node to the goal node. 
-                this is not updated during the search, it is a constant value.
     - not_closed: a boolean array that indicates whether the state is in the closed set or not.
                 this is inverted for the efficient implementation. not_closed = ~closed
     - parant: a 2D array that contains the index of the parent node.
