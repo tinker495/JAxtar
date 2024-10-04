@@ -4,19 +4,19 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from heuristic.heuristic_base import Heuristic
 from puzzle.slidepuzzle import SlidePuzzle
 
-class SlidePuzzleHeuristic:
-    puzzle: SlidePuzzle # The puzzle rule object
+class SlidePuzzleHeuristic(Heuristic):
     base_xy : chex.Array # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle):
-        self.puzzle = puzzle
+        super().__init__(puzzle)
         x = jnp.tile(jnp.arange(self.puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, self.puzzle.size, 1))
         y = jnp.tile(jnp.arange(self.puzzle.size)[jnp.newaxis, :, jnp.newaxis], (self.puzzle.size, 1, 1))
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
 
-    def distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> int:
+    def distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> float:
         """
         This function should return the distance between the state and the target.
         """
