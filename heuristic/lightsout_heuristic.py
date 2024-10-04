@@ -1,13 +1,12 @@
 import chex
 import jax.numpy as jnp
 
+from heuristic.heuristic_base import Heuristic
 from puzzle.lightsout import LightsOut
 
-class LightsOutHeuristic:
-    puzzle: LightsOut
-
+class LightsOutHeuristic(Heuristic):
     def __init__(self, puzzle: LightsOut):
-        self.puzzle = puzzle
+        super().__init__(puzzle)
 
     def distance(self, current: LightsOut.State, target: LightsOut.State) -> float:
         """

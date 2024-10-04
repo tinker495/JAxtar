@@ -1,14 +1,14 @@
 import chex
 import jax.numpy as jnp
 
+from heuristic.heuristic_base import Heuristic
 from puzzle.rubikscube import RubiksCube
 
-class RubiksCubeHeuristic:
-    puzzle: RubiksCube
+class RubiksCubeHeuristic(Heuristic):
     heur_modify: float
 
     def __init__(self, puzzle: RubiksCube):
-        self.puzzle = puzzle
+        super().__init__(puzzle)
         if puzzle.size % 2 == 0:
             self.heur_modify = 0
         else:
