@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from flax import linen as nn
-from heuristic.DAVI.neuralheuristic_base import NeuralHeuristicBase
+from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.lightsout import LightsOut
 
 NODE_SIZE = 256

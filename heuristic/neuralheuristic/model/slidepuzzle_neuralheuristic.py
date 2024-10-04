@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from flax import linen as nn
-from heuristic.DAVI.neuralheuristic_base import NeuralHeuristicBase
+from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.slidepuzzle import SlidePuzzle
 
 NODE_SIZE = 256
