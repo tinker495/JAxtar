@@ -105,7 +105,7 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
             if parant_last[0] == -1:
                 break
             path.append(parant_last)
-            parant_last = parants[*parant_last]
+            parant_last = parants[parant_last[0], parant_last[1]]
         for p in path[::-1]:
             state = table[p[0], p[1]]
             c = cost[p[0], p[1]]
