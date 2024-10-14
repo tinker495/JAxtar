@@ -98,6 +98,27 @@ def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValu
     sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
+def pop_full(astar_result: AstarResult):
+    astar_result.priority_queue, min_key, min_val = BGPQ.delete_mins(astar_result.priority_queue)
+    min_idx, min_table_idx = min_val.index, min_val.table_index
+    min_key = jnp.where(astar_result.not_closed[min_idx, min_table_idx], min_key, jnp.inf)
+    min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer)
+    filled = jnp.isfinite(min_key)
+
+    def _cond(val):
+        astar_result, _, _, filled = val
+        return jnp.logical_and(astar_result.priority_queue.size > 0, ~filled.all())
+    
+    def _body(val):
+        astar_result, min_key, min_val, filled = val
+        astar_result.priority_queue, min_key_buffer, min_val_buffer = BGPQ.delete_mins(astar_result.priority_queue)
+        min_key_buffer = jnp.where(astar_result.not_closed[min_val_buffer.index, min_val_buffer.table_index], min_key_buffer, jnp.inf)
+        min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, min_key_buffer, min_val_buffer)
+        filled = jnp.isfinite(min_key)
+        return astar_result, min_key, min_val, filled
+    astar_result, min_key, min_val, filled = jax.lax.while_loop(_cond, _body, (astar_result, min_key, min_val, filled))
+    return astar_result, min_val, filled
+
 def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024, max_nodes: int = int(1e6), astar_weight : float = 1.0 - 1e-6):
     '''
     astar_builder is a function that returns a partial function of astar.
@@ -125,30 +146,6 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
     parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0,0), out_axes=(1,1))
-    delete_fn = BGPQ.delete_mins
-    insert_fn = BGPQ.insert
-
-
-    def pop_full(astar_result: AstarResult):
-        astar_result.priority_queue, min_key, min_val = delete_fn(astar_result.priority_queue)
-        min_idx, min_table_idx = min_val.index, min_val.table_index
-        min_key = jnp.where(astar_result.not_closed[min_idx, min_table_idx], min_key, jnp.inf)
-        min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer)
-        filled = jnp.isfinite(min_key)
-
-        def _cond(val):
-            astar_result, _, _, filled = val
-            return jnp.logical_and(astar_result.priority_queue.size > 0, ~filled.all())
-        
-        def _body(val):
-            astar_result, min_key, min_val, filled = val
-            astar_result.priority_queue, min_key_buffer, min_val_buffer = delete_fn(astar_result.priority_queue)
-            min_key_buffer = jnp.where(astar_result.not_closed[min_val_buffer.index, min_val_buffer.table_index], min_key_buffer, jnp.inf)
-            min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, min_key_buffer, min_val_buffer)
-            filled = jnp.isfinite(min_key)
-            return astar_result, min_key, min_val, filled
-        astar_result, min_key, min_val, filled = jax.lax.while_loop(_cond, _body, (astar_result, min_key, min_val, filled))
-        return astar_result, min_val, filled
 
     def astar(
         astar_result: AstarResult,
@@ -239,7 +236,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                     astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(not_closed_update)
                     neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
 
-                    astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(optimal, dtype=jnp.uint32))
+                    astar_result.priority_queue = BGPQ.insert(astar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(optimal, dtype=jnp.uint32))
                     return astar_result
                 
                 return jax.lax.cond(any_filled, _any_filled_fn, lambda x: x, astar_result), None
