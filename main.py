@@ -27,7 +27,8 @@ def human_format(num):
 @click.option("--debug", is_flag=True, help="Debug mode")
 @click.option("--profile", is_flag=True, help="Profile mode")
 @click.option("--nn", is_flag=True, help="Use neural heuristic")
-def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug, profile, nn):
+@click.option("-ns","--not_show_path", default=False, is_flag=True, help="Not show the path")
+def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug, profile, nn, not_show_path):
     if debug:
         #disable jit
         print("Disabling JIT")
@@ -36,6 +37,7 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
         # scale down the sizes for debuging
         max_node_size = 10000 
         batch_size = 100
+        not_show_path = True
     if puzzle_size == "default":
         puzzle_size = default_puzzle_sizes[puzzle]
     else:
@@ -91,7 +93,7 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     if profile:
         jax.profiler.stop_trace()
     
-    if debug:
+    if not_show_path:
         return
     
     if not solved:
