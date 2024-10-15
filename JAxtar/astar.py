@@ -71,54 +71,6 @@ class AstarResult:
     def size(self):
         return self.hashtable.size
 
-def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
-    """
-    Merge two sorted key tensors ak and bk as well as corresponding
-    value tensors av and bv into a single sorted tensor.
-
-    Args:
-        ak: chex.Array - sorted key tensor
-        av: HeapValue - sorted value tensor
-        bk: chex.Array - sorted key tensor
-        bv: HeapValue - sorted value tensor
-
-    Returns:
-        key1: chex.Array - merged and sorted
-        val1: HeapValue - merged and sorted
-        key2: chex.Array - merged and sorted
-        val2: HeapValue - merged and sorted
-    """
-    n = ak.shape[-1] # size of group
-    key = jnp.concatenate([ak, bk])
-    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-    idx = jnp.argsort(key, stable=True)
-
-    # Sort both key and value arrays using the same index
-    sorted_key = key[idx]
-    sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
-    return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
-
-def pop_full(astar_result: AstarResult):
-    astar_result.priority_queue, min_key, min_val = BGPQ.delete_mins(astar_result.priority_queue)
-    min_idx, min_table_idx = min_val.index, min_val.table_index
-    min_key = jnp.where(astar_result.not_closed[min_idx, min_table_idx], min_key, jnp.inf)
-    min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer)
-    filled = jnp.isfinite(min_key)
-
-    def _cond(val):
-        astar_result, _, _, filled = val
-        return jnp.logical_and(astar_result.priority_queue.size > 0, ~filled.all())
-    
-    def _body(val):
-        astar_result, min_key, min_val, filled = val
-        astar_result.priority_queue, min_key_buffer, min_val_buffer = BGPQ.delete_mins(astar_result.priority_queue)
-        min_key_buffer = jnp.where(astar_result.not_closed[min_val_buffer.index, min_val_buffer.table_index], min_key_buffer, jnp.inf)
-        min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, min_key_buffer, min_val_buffer)
-        filled = jnp.isfinite(min_key)
-        return astar_result, min_key, min_val, filled
-    astar_result, min_key, min_val, filled = jax.lax.while_loop(_cond, _body, (astar_result, min_key, min_val, filled))
-    return astar_result, min_val, filled
-
 def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024, max_nodes: int = int(1e6), astar_weight : float = 1.0 - 1e-6):
     '''
     astar_builder is a function that returns a partial function of astar.
@@ -252,3 +204,51 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         return astar_result, solved.any(), solved_idx
 
     return jax.jit(partial(astar, astar_result))
+
+def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
+    """
+    Merge two sorted key tensors ak and bk as well as corresponding
+    value tensors av and bv into a single sorted tensor.
+
+    Args:
+        ak: chex.Array - sorted key tensor
+        av: HeapValue - sorted value tensor
+        bk: chex.Array - sorted key tensor
+        bv: HeapValue - sorted value tensor
+
+    Returns:
+        key1: chex.Array - merged and sorted
+        val1: HeapValue - merged and sorted
+        key2: chex.Array - merged and sorted
+        val2: HeapValue - merged and sorted
+    """
+    n = ak.shape[-1] # size of group
+    key = jnp.concatenate([ak, bk])
+    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+    idx = jnp.argsort(key, stable=True)
+
+    # Sort both key and value arrays using the same index
+    sorted_key = key[idx]
+    sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
+    return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
+
+def pop_full(astar_result: AstarResult):
+    astar_result.priority_queue, min_key, min_val = BGPQ.delete_mins(astar_result.priority_queue)
+    min_idx, min_table_idx = min_val.index, min_val.table_index
+    min_key = jnp.where(astar_result.not_closed[min_idx, min_table_idx], min_key, jnp.inf)
+    min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer)
+    filled = jnp.isfinite(min_key)
+
+    def _cond(val):
+        astar_result, _, _, filled = val
+        return jnp.logical_and(astar_result.priority_queue.size > 0, ~filled.all())
+    
+    def _body(val):
+        astar_result, min_key, min_val, filled = val
+        astar_result.priority_queue, min_key_buffer, min_val_buffer = BGPQ.delete_mins(astar_result.priority_queue)
+        min_key_buffer = jnp.where(astar_result.not_closed[min_val_buffer.index, min_val_buffer.table_index], min_key_buffer, jnp.inf)
+        min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, min_key_buffer, min_val_buffer)
+        filled = jnp.isfinite(min_key)
+        return astar_result, min_key, min_val, filled
+    astar_result, min_key, min_val, filled = jax.lax.while_loop(_cond, _body, (astar_result, min_key, min_val, filled))
+    return astar_result, min_val, filled
