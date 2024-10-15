@@ -93,37 +93,40 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     if profile:
         jax.profiler.stop_trace()
     
-    if not_show_path:
-        return
-    
-    if not solved:
-        print("No solution found\n\n")
+    if not not_show_path:
+        if solved:
+            print("Solution found\n\n")
+
+            parants = astar_result.parant
+            table = astar_result.hashtable.table
+            cost = astar_result.cost
+
+            solved_st = astar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
+            solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
+
+            path = []
+            parant_last = parants[solved_idx.index, solved_idx.table_index][0]
+            while True:
+                if parant_last[0] == -1:
+                    break
+                path.append(parant_last)
+                parant_last = parants[parant_last[0], parant_last[1]]
+            for p in path[::-1]:
+                state = table[p[0], p[1]]
+                c = cost[p[0], p[1]]
+                print(state)
+                print(c)
+            print(solved_st)
+            print(solved_cost)
+
+            print("\n\n")
+        else:
+            print("No solution found\n\n")
     else:
-        print("Solution found\n\n")
-
-        parants = astar_result.parant
-        table = astar_result.hashtable.table
-        cost = astar_result.cost
-
-        solved_st = astar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
-        solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
-
-        path = []
-        parant_last = parants[solved_idx.index, solved_idx.table_index][0]
-        while True:
-            if parant_last[0] == -1:
-                break
-            path.append(parant_last)
-            parant_last = parants[parant_last[0], parant_last[1]]
-        for p in path[::-1]:
-            state = table[p[0], p[1]]
-            c = cost[p[0], p[1]]
-            print(state)
-            print(c)
-        print(solved_st)
-        print(solved_cost)
-
-        print("\n\n")
+        if solved:
+            print("Solution found\n\n")
+        else:
+            print("No solution found\n\n")
 
     if vmap_size == 1:
         return
