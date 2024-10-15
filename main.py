@@ -32,6 +32,10 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
         #disable jit
         print("Disabling JIT")
         jax.config.update('jax_disable_jit', True)
+        
+        # scale down the sizes for debuging
+        max_node_size = 10000 
+        batch_size = 100
     if puzzle_size == "default":
         puzzle_size = default_puzzle_sizes[puzzle]
     else:
@@ -55,12 +59,12 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     states = puzzle.get_target_state()[jnp.newaxis, ...]
     target = puzzle.get_target_state()
 
-    astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight)
+    astar_result_build, astar_fn = astar_builder(puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight)
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
     print("initializing jit")
     start = time.time()
-    astar_result, solved, solved_idx = astar_fn(states, filled, target)
+    astar_result, solved, solved_idx = astar_fn(astar_result_build(), states, filled, target)
     end = time.time()
     print(f"Time: {end - start:6.2f} seconds\n\n")
 
@@ -79,7 +83,7 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
     print("\n\nJIT compiled")
     start = time.time()
-    astar_result, solved, solved_idx = astar_fn(states, filled, target)
+    astar_result, solved, solved_idx = astar_fn(astar_result_build(), states, filled, target)
     end = time.time()
     single_search_time = end - start
     print(f"Time: {single_search_time:6.2f} seconds")
@@ -122,10 +126,10 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     states = puzzle.get_target_state()[jnp.newaxis, ...]
     states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
     states, filled = jax.vmap(lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0)(states)
-    vmapped_astar = jax.jit(jax.vmap(astar_fn, in_axes=(0, 0, None)))
+    vmapped_astar = jax.jit(jax.vmap(astar_fn, in_axes=(None, 0, 0, None)))
     print("initializing vmapped jit")
     start = time.time()
-    astar_result, solved, solved_idx = vmapped_astar(states, filled, target)
+    astar_result, solved, solved_idx = vmapped_astar(astar_result_build(), states, filled, target)
     end = time.time()
     print(f"Time: {end - start:6.2f} seconds\n\n")
 
@@ -140,10 +144,10 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     states, filled = jax.vmap(lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0)(states)
 
     print("vmap astar")
-    print("# astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)")
+    print("# astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(astar_result_build(), states, filled, target)")
     start = time.time()
 
-    astar_result, solved, solved_idx = vmapped_astar(states, filled, target)
+    astar_result, solved, solved_idx = vmapped_astar(astar_result_build(), states, filled, target)
     end = time.time()
     vmapped_search_time = end - start # subtract jit time from the vmapped search time
 
