@@ -111,6 +111,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         '''
         astar is the implementation of the A* algorithm.
         '''
+        astar_result = AstarResult.build(statecls, batch_size, max_nodes)
         
         states = start
 
@@ -158,10 +159,11 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             nextcosts = nextcosts.reshape((flatten_size,))
             neighbours_parant_idx = neighbours_parant_idx.reshape((flatten_size, 2))
             neighbours = jax.tree_util.tree_map(lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours)
-            astar_result.hashtable, inserted, idxs, table_idxs = parallel_insert(astar_result.hashtable, neighbours, filleds)
+            astar_result.hashtable, _, idxs, table_idxs = parallel_insert(astar_result.hashtable, neighbours, filleds)
+            not_avail_heuristic = jnp.isinf(astar_result.heuristic[idxs, table_idxs])
 
             # Sort the filleds and nextcosts by priority: inserted first, then filleds, then the rest
-            filleds_sort_idx = jnp.argsort(3 * inserted + 2 * filleds, axis=0, descending=True)
+            filleds_sort_idx = jnp.argsort(2 * filleds + not_avail_heuristic, axis=0, descending=True)
             filleds = jnp.take_along_axis(filleds, filleds_sort_idx, axis=0)
             nextcosts = jnp.take_along_axis(nextcosts, filleds_sort_idx, axis=0)
             neighbours_parant_idx = jnp.take_along_axis(neighbours_parant_idx, filleds_sort_idx[:, jnp.newaxis], axis=0)
@@ -185,22 +187,25 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             table_idxs = table_idxs.reshape(unflatten_size)
             optimals = optimals.reshape(unflatten_size)
 
+            print(" ------ ")
+
             def _scan(astar_result : AstarResult, val):
                 neighbour, neighbour_cost, neighbour_filled, idx, table_idx, optimal = val
                 avail_heuristic = jnp.all(jnp.isfinite(astar_result.heuristic[idx, table_idx]))
+                any_filled = jnp.any(neighbour_filled)
+                print(avail_heuristic, any_filled)
 
-                def _heuristic_get(astar_result : AstarResult, neighbour: Puzzle.State):
+                def _heuristic_get(astar_result : AstarResult):
                     heuristic = astar_result.heuristic[idx, table_idx]
                     return astar_result, heuristic
                 
-                def _heuristic_new(astar_result : AstarResult, neighbour: Puzzle.State):
+                def _heuristic_new(astar_result : AstarResult):
                     heuristic = heuristic_fn(neighbour, target)
-                    astar_result.heuristic = astar_result.heuristic.at[idx, table_idx].set(heuristic)
+                    astar_result.heuristic = astar_result.heuristic.at[idx, table_idx].set(jnp.where(neighbour_filled, heuristic, astar_result.heuristic[idx, table_idx]))
                     return astar_result, heuristic
                 
-                astar_result, heuristic = jax.lax.cond(avail_heuristic, _heuristic_get, _heuristic_new, astar_result, neighbour)
+                astar_result, heuristic = jax.lax.cond(avail_heuristic, _heuristic_get, _heuristic_new, astar_result)
 
-                any_filled = jnp.any(neighbour_filled)
                 def _any_filled_fn(astar_result : AstarResult):
                     neighbour_key = astar_weight * neighbour_cost + heuristic
                     vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
