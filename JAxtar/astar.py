@@ -94,7 +94,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
     batch_size = jnp.array(batch_size, dtype=jnp.int32)
     max_nodes = jnp.array(max_nodes, dtype=jnp.int32)
     hash_func = hash_func_builder(puzzle.State)
-    astar_result = AstarResult.build(statecls, batch_size, max_nodes)
+    astar_result_build = partial(AstarResult.build, statecls, batch_size, max_nodes)
     
     heuristic_fn = jax.vmap(heuristic_fn, in_axes=(0, None))
 
@@ -228,7 +228,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         solved_idx = min_val[jnp.argmax(solved)]
         return astar_result, solved.any(), solved_idx
 
-    return jax.jit(partial(astar, astar_result))
+    return astar_result_build, jax.jit(astar)
 
 def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
     """
