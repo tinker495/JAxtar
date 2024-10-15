@@ -155,6 +155,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             nextcosts = nextcosts.reshape((flatten_size,))
             neighbours_parant_idx = neighbours_parant_idx.reshape((flatten_size, 2))
             neighbours = jax.tree_util.tree_map(lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours)
+            astar_result.hashtable, _, idxs, table_idxs = parallel_insert(astar_result.hashtable, neighbours, filleds)
 
             filleds_sort_idx = jnp.argsort(nextcosts, axis=0) # [flatten_size]
             filleds = jnp.take_along_axis(filleds, filleds_sort_idx, axis=0)
@@ -165,21 +166,24 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                                                                 list(filleds_sort_idx.shape) + [1 for _ in range(x.ndim - filleds_sort_idx.ndim)]
                                                             ),
                                                             axis=0), neighbours)
+            idxs = jnp.take_along_axis(idxs, filleds_sort_idx, axis=0)
+            table_idxs = jnp.take_along_axis(table_idxs, filleds_sort_idx, axis=0)
 
             # unflatten the neighbours, nextcosts, filleds
             filleds = filleds.reshape(unflatten_size)
             nextcosts = nextcosts.reshape(unflatten_size)
             neighbours_parant_idx = neighbours_parant_idx.reshape(unflatten_size + (2,))
             neighbours = jax.tree_util.tree_map(lambda x: x.reshape(unflatten_size + x.shape[1:]), neighbours)
+            idxs = idxs.reshape(unflatten_size)
+            table_idxs = table_idxs.reshape(unflatten_size)
 
             def _scan(astar_result : AstarResult, val):
-                neighbour, neighbour_cost, neighbour_parant_idx, neighbour_filled = val
+                neighbour, neighbour_cost, neighbour_parant_idx, neighbour_filled, idx, table_idx = val
                 any_filled = jnp.any(neighbour_filled)
                 def _any_filled_fn(astar_result : AstarResult):
                     neighbour_heur = heuristic(neighbour, target)
                     neighbour_key = astar_weight * neighbour_cost + neighbour_heur
 
-                    astar_result.hashtable, _, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
                     vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
                     optimal = jnp.less(neighbour_cost, astar_result.cost[idx, table_idx])
                     astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
@@ -193,7 +197,7 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
                 
                 return jax.lax.cond(any_filled, _any_filled_fn, lambda x: x, astar_result), None
 
-            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextcosts, neighbours_parant_idx, filleds))
+            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextcosts, neighbours_parant_idx, filleds, idxs, table_idxs))
             return astar_result
         
         astar_result = jax.lax.while_loop(_cond, _body, astar_result)
