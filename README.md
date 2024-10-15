@@ -47,13 +47,13 @@ The tests below were performed on a single A100 80GB GPU.
 $ python main.py
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
-┃ C ┃ 1 ┃ B ┃ E ┃
+┃ 2 ┃ F ┃ 3 ┃ 4 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ A ┃ 5 ┃ 6 ┃   ┃
+┃   ┃ 5 ┃ 7 ┃ B ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 8 ┃ F ┃ 9 ┃ D ┃
+┃ C ┃ 9 ┃ 1 ┃ A ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 3 ┃ 4 ┃ 2 ┃ 7 ┃
+┃ 8 ┃ E ┃ D ┃ 6 ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -65,29 +65,29 @@ Target state
 ┣━━━╋━━━╋━━━╋━━━┫
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
+Heuristic: 33.00
 
 JIT compiled
-Time:  15.65 seconds
-Solution found - 66.0 step
-Search states: 10.2M (654K states/s)
+Time:   0.62 seconds
+Search states: 810K (1.31M states/s)
 ```
 
 ```
-$ python main.py --max_node_size 1e6 --batch_size 1000 --vmap_size 100
+$ python main.py --max_node_size 1e6 --batch_size 1024 --vmap_size 10
 Vmapped A* search, multiple initial state solution
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
-┃ A ┃ 6 ┃ 2 ┃ B ┃
+┃ 2 ┃ F ┃ 3 ┃ 4 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 7 ┃ 9 ┃ F ┃ E ┃
+┃   ┃ 5 ┃ 7 ┃ B ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 3 ┃ 5 ┃   ┃ 8 ┃
+┃ C ┃ 9 ┃ 1 ┃ A ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ D ┃ C ┃ 1 ┃ 4 ┃
+┃ 8 ┃ E ┃ D ┃ 6 ┃
 ┗━━━┻━━━┻━━━┻━━━┛ 
 .
 .
-. x 100
+. x 10
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
 ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
@@ -99,10 +99,10 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
-# astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(0, 0, None))(states, filled, target)
-Time: 216.81 seconds (x30.1/100)
-Search states: 74.6M (344K states/s)
-Solution found: 35.00%
+# astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(astar_result_build(), states, filled, target)
+Time:   2.36 seconds (x4.8/10)
+Search states: 1.89M (799K states/s)
+Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
 
