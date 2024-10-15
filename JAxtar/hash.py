@@ -296,4 +296,21 @@ class HashTable:
         table.table = jax.tree_util.tree_map(lambda x, y: x.at[idx, table_idx].set(jnp.where(updatable.reshape(-1, *([1] * (len(y.shape) - 1))), y, x[idx, table_idx])), table.table, inputs)
         table.table_idx = table.table_idx.at[idx].add(updatable)
         table.size += jnp.sum(updatable)
+
+        #get the idx and table_idx of the inputs
+        _, idx, table_idx, _ = jax.vmap(partial(HashTable._lookup, hash_func),
+                                        in_axes=(
+                                                None,
+                                                0,
+                                                0,
+                                                None,
+                                                None,
+                                                0))(
+                                        table,
+                                        inputs,
+                                        initial_idx,
+                                        0,
+                                        table.seed,
+                                        ~filled
+                                        )
         return table, updatable, idx, table_idx
