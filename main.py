@@ -90,7 +90,10 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
     print(f"Search states: {human_format(astar_result.hashtable.size)} ({human_format(astar_result.hashtable.size / single_search_time)} states/s)\n\n")
     if profile:
         jax.profiler.stop_trace()
-
+    
+    if debug:
+        return
+    
     if not solved:
         print("No solution found\n\n")
     else:
