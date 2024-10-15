@@ -124,6 +124,10 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
             print("No solution found\n\n")
     else:
         if solved:
+            solved_st = astar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
+            solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
+            print(solved_st)
+            print(solved_cost)
             print("Solution found\n\n")
         else:
             print("No solution found\n\n")
