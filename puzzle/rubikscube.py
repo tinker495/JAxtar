@@ -164,3 +164,11 @@ class RubiksCube(Puzzle):
             lambda: shaped_faces.at[BACK].set(self._rotate_face(shaped_faces[BACK], clockwise, -1)), # 6: back
         ])
         return shaped_faces
+
+class RubiksCubeHard(RubiksCube):
+    """
+    This class is a extension of RubiksCube, it will generate the hardest state for the puzzle.
+    """
+
+    def get_initial_state(self, key=None) -> RubiksCube.State:
+        return self._get_random_state(key, num_shuffle=50)
