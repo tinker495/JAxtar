@@ -245,12 +245,12 @@ class HashTable:
             seeds, _idxs, unupdated = val
             seeds, _idxs = _next_idx(seeds, _idxs, unupdated)
 
-            overflowed = _idxs[:, 1] >= table.n_table # overflowed index must be updated
-            masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
-            _, unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
-            not_uniques = jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False) # set the unique index to True
-            unupdated = jnp.logical_and(updatable, not_uniques) # remove the unique index from the unupdated index
-            unupdated = jnp.logical_or(unupdated, overflowed) # add the overflowed index to the unupdated index
+            overflowed = _idxs[:, 1] >= table.n_table  # Overflowed index must be updated
+            unique_mask = jnp.unique(_idxs, axis=0, size=batch_len, return_inverse=True)[1] < batch_len
+            
+            not_uniques = ~unique_mask
+            unupdated = jnp.logical_and(updatable, not_uniques)
+            unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, _idxs, unupdated
 
         initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func),
