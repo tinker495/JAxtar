@@ -109,3 +109,11 @@ class LightsOut(Puzzle):
     def from_uint8(self, board: chex.Array) -> chex.Array:
         # from uint8 4 to boolean 32
         return jnp.unpackbits(board, axis=-1, count=self.size**2, bitorder='little')
+    
+class LightsOutHard(LightsOut):
+    """
+    This class is a extension of LightsOut, it will generate the hardest state for the puzzle.
+    """
+    
+    def get_initial_state(self, key=None) -> LightsOut.State:
+        return self._get_random_state(key, num_shuffle=50)

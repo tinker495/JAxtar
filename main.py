@@ -5,7 +5,7 @@ import time
 
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
-from puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_dict_nn
+from puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_dict_hard, puzzle_heuristic_dict, puzzle_heuristic_dict_nn
 
 def human_format(num):
     num = float('{:.3g}'.format(num))
@@ -16,7 +16,8 @@ def human_format(num):
     return '{}{}'.format('{:f}'.format(num).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
 
 @click.command()
-@click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
+@click.option("-p","--puzzle_name", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
+@click.option("-h","--hard", default=False, is_flag=True, help="Use the hard puzzle")
 @click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
 @click.option("--max_node_size", default=2e7, help="Size of the puzzle")
 @click.option("--batch_size", default=8192, help="Batch size for BGPQ") # 1024 * 8 = 8192
@@ -26,9 +27,9 @@ def human_format(num):
 @click.option("--vmap_size", default=1, help="Size for the vmap")
 @click.option("--debug", is_flag=True, help="Debug mode")
 @click.option("--profile", is_flag=True, help="Profile mode")
-@click.option("--nn", is_flag=True, help="Use neural heuristic")
+@click.option("-nn","--neural_heuristic", is_flag=True, help="Use neural heuristic")
 @click.option("-ns","--not_show_path", default=False, is_flag=True, help="Not show the path")
-def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug, profile, nn, not_show_path):
+def main(puzzle_name, hard, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug, profile, neural_heuristic, not_show_path):
     if debug:
         #disable jit
         print("Disabling JIT")
@@ -39,17 +40,23 @@ def main(puzzle, puzzle_size, max_node_size, batch_size, astar_weight, start_sta
         batch_size = 100
         not_show_path = True
     if puzzle_size == "default":
-        puzzle_size = default_puzzle_sizes[puzzle]
+        puzzle_size = default_puzzle_sizes[puzzle_name]
     else:
         puzzle_size = int(puzzle_size)
-    if nn:
+
+    if hard:
+        puzzle = puzzle_dict_hard[puzzle_name](puzzle_size)
+    else:
+        puzzle = puzzle_dict[puzzle_name](puzzle_size)
+
+    if neural_heuristic:
         try:
-            puzzle, heuristic = puzzle_dict_nn[puzzle](puzzle_size, False)
+            heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle_size, puzzle, False)
         except KeyError:
             print("Neural heuristic not available for this puzzle")
             exit(1)
     else:
-        puzzle, heuristic = puzzle_dict[puzzle](puzzle_size)
+        heuristic = puzzle_heuristic_dict[puzzle_name](puzzle)
 
     heuristic_fn = heuristic.distance
 
