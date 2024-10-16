@@ -20,6 +20,7 @@ def hash_func_builder(x: Puzzle.State):
     """
     default = x.default() # get the default state, reference for building the hash function
 
+    @jax.jit
     def xxhash(x, seed):
         prime_1 = jnp.uint32(0x9E3779B1)
         prime_2 = jnp.uint32(0x85EBCA77)
@@ -28,7 +29,7 @@ def hash_func_builder(x: Puzzle.State):
         acc = jnp.uint32(seed) + prime_5
         for _ in range(4):
             lane = x & 255
-            acc = acc + lane * prime_5
+            acc = (acc + lane * prime_5)
             acc = rotl(acc, 11) * prime_1
             x = x >> 8
         acc = acc ^ (acc >> 15)
@@ -39,22 +40,21 @@ def hash_func_builder(x: Puzzle.State):
         return acc
 
     def _get_leaf_hash_func(leaf):
-        flatten_leaf = jnp.reshape(leaf, (-1,)) # if leaf uint8 x 100 -> (100,)
-        bitlen = flatten_leaf.dtype.itemsize # 1
+        flatten_leaf = jnp.reshape(leaf, (-1,))
+        bitlen = flatten_leaf.dtype.itemsize
         flatten_len = flatten_leaf.shape[0]
-        chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1)) # 4
-        if flatten_len % chunk != 0:
-            pad_len = chunk - flatten_len % chunk
-        else:
-            pad_len = 0
+        chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1))
+        pad_len = jnp.where(flatten_len % chunk != 0, chunk - (flatten_len % chunk), 0)
         reshape_size = ((flatten_len + pad_len) // chunk, chunk)
 
+        @jax.jit
         def _to_uint32(x):
             x = jnp.reshape(x, (flatten_len, ))
             x_padded = jnp.pad(x, (0, pad_len), mode='constant', constant_values=0)
             x_reshaped = jnp.reshape(x_padded, reshape_size)
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
 
+        @jax.jit
         def _h(x, seed):
             x = _to_uint32(x)
             def scan_body(seed, x): # scan body for the xxhash function
