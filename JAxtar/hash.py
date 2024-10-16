@@ -20,6 +20,7 @@ def hash_func_builder(x: Puzzle.State):
     """
     default = x.default() # get the default state, reference for building the hash function
 
+    @jax.jit
     def xxhash(x, seed):
         prime_1 = jnp.uint32(0x9E3779B1)
         prime_2 = jnp.uint32(0x85EBCA77)
@@ -28,7 +29,7 @@ def hash_func_builder(x: Puzzle.State):
         acc = jnp.uint32(seed) + prime_5
         for _ in range(4):
             lane = x & 255
-            acc = acc + lane * prime_5
+            acc = (acc + lane * prime_5)
             acc = rotl(acc, 11) * prime_1
             x = x >> 8
         acc = acc ^ (acc >> 15)
@@ -39,22 +40,21 @@ def hash_func_builder(x: Puzzle.State):
         return acc
 
     def _get_leaf_hash_func(leaf):
-        flatten_leaf = jnp.reshape(leaf, (-1,)) # if leaf uint8 x 100 -> (100,)
-        bitlen = flatten_leaf.dtype.itemsize # 1
+        flatten_leaf = jnp.reshape(leaf, (-1,))
+        bitlen = flatten_leaf.dtype.itemsize
         flatten_len = flatten_leaf.shape[0]
-        chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1)) # 4
-        if flatten_len % chunk != 0:
-            pad_len = chunk - flatten_len % chunk
-        else:
-            pad_len = 0
+        chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1))
+        pad_len = jnp.where(flatten_len % chunk != 0, chunk - (flatten_len % chunk), 0)
         reshape_size = ((flatten_len + pad_len) // chunk, chunk)
 
+        @jax.jit
         def _to_uint32(x):
             x = jnp.reshape(x, (flatten_len, ))
             x_padded = jnp.pad(x, (0, pad_len), mode='constant', constant_values=0)
             x_reshaped = jnp.reshape(x_padded, reshape_size)
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(-1)
 
+        @jax.jit
         def _h(x, seed):
             x = _to_uint32(x)
             def scan_body(seed, x): # scan body for the xxhash function
@@ -210,16 +210,17 @@ class HashTable:
 
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
                 next_table = table_idx >= (table.n_table - 1)
-                seed, idx = jax.lax.cond(
+
+                def next_table_fn(seed, table):
+                    next_idx = HashTable.get_new_idx(hash_func, table, state, seed)
+                    seed = seed + 1
+                    return seed, next_idx, table.table_idx[next_idx].astype(jnp.uint32)
+                
+                seed, idx, table_idx = jax.lax.cond(
                     next_table,
-                    lambda _: (seed+1, HashTable.get_new_idx(hash_func, table, state, seed)),
-                    lambda _: (seed, idx),
-                    None
-                )
-                table_idx = jax.lax.cond(next_table,
-                    lambda _: table.table_idx[idx].astype(jnp.uint32),
-                    lambda _: table_idx+1,
-                    None
+                    next_table_fn,
+                    lambda seed, _: (seed, idx, table_idx + 1),
+                    seed, table
                 )
                 return seed, idx, table_idx
             
@@ -245,12 +246,11 @@ class HashTable:
             seeds, _idxs, unupdated = val
             seeds, _idxs = _next_idx(seeds, _idxs, unupdated)
 
-            overflowed = _idxs[:, 1] >= table.n_table # overflowed index must be updated
-            masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
-            _, unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
-            not_uniques = jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False) # set the unique index to True
-            unupdated = jnp.logical_and(updatable, not_uniques) # remove the unique index from the unupdated index
-            unupdated = jnp.logical_or(unupdated, overflowed) # add the overflowed index to the unupdated index
+            overflowed = _idxs[:, 1] >= table.n_table  # Overflowed index must be updated
+            not_uniques = jnp.unique(_idxs, axis=0, size=batch_len, return_inverse=True)[1] >= batch_len
+
+            unupdated = jnp.logical_and(updatable, not_uniques)
+            unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, _idxs, unupdated
 
         initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func),
@@ -281,9 +281,7 @@ class HashTable:
         _idxs = jnp.stack([idx, table_idx], axis=1)
         updatable = jnp.logical_and(~found, filled)
 
-        masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
-        _, unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True) # val = (unique_len, 2), unique_idxs = (unique_len,)
-        not_uniques = jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False) # set the unique index to True
+        not_uniques = jnp.unique(_idxs, axis=0, size=batch_len, return_inverse=True)[1] >= batch_len
         unupdated = jnp.logical_and(updatable, not_uniques) # remove the unique index from the unupdated index
 
         seeds, _idxs, _  = jax.lax.while_loop(
