@@ -210,16 +210,17 @@ class HashTable:
 
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
                 next_table = table_idx >= (table.n_table - 1)
-                seed, idx = jax.lax.cond(
+
+                def next_table_fn(seed, table):
+                    next_idx = HashTable.get_new_idx(hash_func, table, state, seed)
+                    seed = seed + 1
+                    return seed, next_idx, table.table_idx[next_idx].astype(jnp.uint32)
+                
+                seed, idx, table_idx = jax.lax.cond(
                     next_table,
-                    lambda _: (seed+1, HashTable.get_new_idx(hash_func, table, state, seed)),
-                    lambda _: (seed, idx),
-                    None
-                )
-                table_idx = jax.lax.cond(next_table,
-                    lambda _: table.table_idx[idx].astype(jnp.uint32),
-                    lambda _: table_idx+1,
-                    None
+                    next_table_fn,
+                    lambda seed, _: (seed, idx, table_idx + 1),
+                    seed, table
                 )
                 return seed, idx, table_idx
             
