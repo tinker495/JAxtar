@@ -2,9 +2,10 @@ import jax
 import jax.numpy as jnp
 import click
 import time
-
+from functools import wraps
 from JAxtar.hash import HashTable
 from JAxtar.astar import astar_builder
+from JAxtar.qstar import qstar_builder
 from puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_dict_hard, puzzle_heuristic_dict, puzzle_heuristic_dict_nn
 
 def human_format(num):
@@ -15,21 +16,57 @@ def human_format(num):
         num /= 1000.0
     return '{}{}'.format('{:f}'.format(num).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
 
-@click.command()
-@click.option("-p","--puzzle_name", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
-@click.option("-h","--hard", default=False, is_flag=True, help="Use the hard puzzle")
-@click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
-@click.option("--max_node_size", default=2e7, help="Size of the puzzle")
-@click.option("--batch_size", default=8192, help="Batch size for BGPQ") # 1024 * 8 = 8192
-@click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
-@click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
-@click.option("--seed", default=0, help="Seed for the random puzzle")
-@click.option("--vmap_size", default=1, help="Size for the vmap")
-@click.option("--debug", is_flag=True, help="Debug mode")
-@click.option("--profile", is_flag=True, help="Profile mode")
-@click.option("-nn","--neural_heuristic", is_flag=True, help="Use neural heuristic")
-@click.option("-ns","--not_show_path", default=False, is_flag=True, help="Not show the path")
-def main(puzzle_name, hard, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug, profile, neural_heuristic, not_show_path):
+@click.group()
+def main():
+    pass
+
+def puzzle_options(func: callable) -> callable:
+    @click.option("-p","--puzzle_name", default="n-puzzle", type=click.Choice(puzzle_dict.keys()), help="Puzzle to solve")
+    @click.option("-h","--hard", default=False, is_flag=True, help="Use the hard puzzle")
+    @click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
+    @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
+    @click.option("--seed", default=0, help="Seed for the random puzzle")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    
+    return wrapper
+
+def search_options(func: callable) -> callable:
+    @click.option("--max_node_size", default=2e7, help="Size of the puzzle")
+    @click.option("--batch_size", default=8192, help="Batch size for BGPQ") # 1024 * 8 = 8192
+    @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
+    @click.option("--vmap_size", default=1, help="Size for the vmap")
+    @click.option("--debug", is_flag=True, help="Debug mode")
+    @click.option("--profile", is_flag=True, help="Profile mode")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    
+    return wrapper
+
+def heuristic_options(func: callable) -> callable:
+    @click.option("-nn","--neural_heuristic", is_flag=True, help="Use neural heuristic")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    
+    return wrapper
+
+def visualize_options(func: callable) -> callable:
+    @click.option("-v","--visualize", is_flag=True, help="Visualize the path")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    
+    return wrapper
+
+@main.command()
+@puzzle_options
+@search_options
+@heuristic_options
+@visualize_options
+def astar(puzzle_name, hard, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug, profile, neural_heuristic, visualize):
     if debug:
         #disable jit
         print("Disabling JIT")
@@ -100,7 +137,7 @@ def main(puzzle_name, hard, puzzle_size, max_node_size, batch_size, astar_weight
     if profile:
         jax.profiler.stop_trace()
     
-    if not not_show_path:
+    if visualize:
         if solved:
             print("Solution found\n\n")
 
@@ -179,5 +216,41 @@ def main(puzzle_name, hard, puzzle_size, max_node_size, batch_size, astar_weight
     print("Solution found:", f"{jnp.mean(solved)*100:.2f}%")
     # this means astart_fn is completely vmapable and jitable
 
+@main.command()
+@puzzle_options
+@search_options
+@heuristic_options
+@visualize_options
+def qstar(puzzle_name, hard, puzzle_size, max_node_size, batch_size, astar_weight, start_state_seed, seed, vmap_size, debug, profile, neural_heuristic, visualize):
+    if debug:
+        #disable jit
+        print("Disabling JIT")
+        jax.config.update('jax_disable_jit', True)
+        
+        # scale down the sizes for debuging
+        max_node_size = 10000 
+        batch_size = 100
+        not_show_path = True
+    if puzzle_size == "default":
+        puzzle_size = default_puzzle_sizes[puzzle_name]
+    else:
+        puzzle_size = int(puzzle_size)
+
+    if hard:
+        puzzle = puzzle_dict_hard[puzzle_name](puzzle_size)
+    else:
+        puzzle = puzzle_dict[puzzle_name](puzzle_size)
+
+    if neural_heuristic:
+        try:
+            heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle_size, puzzle, False)
+        except KeyError:
+            print("Neural heuristic not available for this puzzle")
+            exit(1)
+    else:
+        heuristic = puzzle_heuristic_dict[puzzle_name](puzzle)
+
 if __name__ == "__main__":
+    main.add_command(astar)
+    main.add_command(qstar)
     main()
