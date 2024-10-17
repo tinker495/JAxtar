@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import jax
 from functools import partial
 from puzzle.puzzle_base import Puzzle
-from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue
+from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue, HeapValue
 from JAxtar.hash import hash_func_builder, HashTable
 
 
@@ -28,6 +28,8 @@ class QstarResult:
 
     hashtable: HashTable
     priority_queue: BGPQ
+    min_key_buffer: chex.Array
+    min_val_buffer: HashTableIdx_HeapValue
     cost: chex.Array
     not_closed: chex.Array
     parant: chex.Array
@@ -35,18 +37,22 @@ class QstarResult:
     @staticmethod
     def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=0, n_table=2):
         '''
-        build is a static method that creates a new instance of QstarResult.
+        build is a static method that creates a new instance of AstarResult.
         '''
         hashtable = HashTable.build(statecls, seed, max_nodes, n_table=n_table)
         size_table = hashtable.capacity
         n_table = hashtable.n_table
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
+        min_key_buffer = jnp.full((batch_size, ), jnp.inf)
+        min_val_buffer = HashTableIdx_HeapValue(index=jnp.zeros((batch_size, ), dtype=jnp.uint32), table_index=jnp.zeros((batch_size, ), dtype=jnp.uint32))
         cost = jnp.full((size_table, n_table), jnp.inf)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
         parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
         return QstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
+            min_key_buffer=min_key_buffer,
+            min_val_buffer=min_val_buffer,
             cost=cost,
             not_closed=not_closed,
             parant=parant
@@ -64,7 +70,7 @@ class QstarResult:
     def size(self):
         return self.hashtable.size
 
-def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024, max_nodes: int = int(1e6), astar_weight : float = 1.0 - 1e-6):
+def qstar_builder(puzzle: Puzzle, q_fn: callable, batch_size: int = 1024, max_nodes: int = int(1e6), astar_weight : float = 1.0 - 1e-6):
     '''
     astar_builder is a function that returns a partial function of astar.
 
@@ -84,17 +90,15 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
     batch_size = jnp.array(batch_size, dtype=jnp.int32)
     max_nodes = jnp.array(max_nodes, dtype=jnp.int32)
     hash_func = hash_func_builder(puzzle.State)
-    qstar_result = QstarResult.build(statecls, batch_size, max_nodes)
+    qstar_result_build = partial(QstarResult.build, statecls, batch_size, max_nodes)
     
-    heuristic = jax.vmap(heuristic_fn, in_axes=(0, None))
+    q_fn = jax.vmap(q_fn, in_axes=(0, None))
 
     parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0,0), out_axes=(1,1))
-    delete_fn = BGPQ.delete_mins
-    insert_fn = BGPQ.insert
 
-    def astar(
+    def qstar(
         qstar_result: QstarResult,
         start: Puzzle.State,
         filled: chex.Array,
@@ -103,17 +107,17 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         '''
         astar is the implementation of the A* algorithm.
         '''
-        
+
         states = start
 
-        heur_val = heuristic(states, target)
+        q_val = q_fn(states, target)
         qstar_result.hashtable, inserted, idx, table_idx = parallel_insert(qstar_result.hashtable, states, filled)
         hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
 
         cost_val = jnp.where(filled, 0, jnp.inf)
         qstar_result.cost = qstar_result.cost.at[idx, table_idx].set(jnp.where(inserted, cost_val, qstar_result.cost[idx, table_idx]))
         
-        total_cost = cost_val + heur_val
+        total_cost = cost_val + q_val
         qstar_result.priority_queue = BGPQ.insert(qstar_result.priority_queue, total_cost, hash_idxs)
 
         def _cond(qstar_result: QstarResult):
@@ -129,14 +133,12 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             return jnp.logical_and(size_cond, ~solved.any())
         
         def _body(qstar_result: QstarResult):
-            qstar_result.priority_queue, min_key, min_val = delete_fn(qstar_result.priority_queue)
+            qstar_result, min_val, filled = pop_full(qstar_result)
             min_idx, min_table_idx = min_val.index, min_val.table_index
             parant_idx = jnp.stack((min_idx, min_table_idx), axis=-1)
 
-            cost_val, not_closed_val = qstar_result.cost[min_idx, min_table_idx], qstar_result.not_closed[min_idx, min_table_idx]
+            cost_val = qstar_result.cost[min_idx, min_table_idx]
             states = qstar_result.hashtable.table[min_idx, min_table_idx]
-
-            filled = jnp.logical_and(jnp.isfinite(min_key), not_closed_val)
 
             qstar_result.not_closed = qstar_result.not_closed.at[min_idx, min_table_idx].min(~filled) # or operation with closed
 
@@ -145,52 +147,38 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             filleds = jnp.isfinite(nextcosts) # [n_neighbours, batch_size]
             neighbours_parant_idx = jnp.broadcast_to(parant_idx, (filleds.shape[0], filleds.shape[1], 2))
 
-            #flatten the filleds and nextcosts
+            #insert neighbours into hashtable at once
             unflatten_size = filleds.shape
             flatten_size = unflatten_size[0] * unflatten_size[1]
-            filleds = filleds.reshape((flatten_size,))
-            nextcosts = nextcosts.reshape((flatten_size,))
-            neighbours_parant_idx = neighbours_parant_idx.reshape((flatten_size, 2))
-            neighbours = jax.tree_util.tree_map(lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours)
+            
+            flatten_neighbours = jax.tree_util.tree_map(lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours)
+            qstar_result.hashtable, _, idxs, table_idxs = parallel_insert(qstar_result.hashtable, flatten_neighbours, filleds.reshape((flatten_size,)))
+            
+            flatten_nextcosts = nextcosts.reshape((flatten_size,))
+            optimals = jnp.less(flatten_nextcosts, qstar_result.cost[idxs, table_idxs])
+            qstar_result.cost = qstar_result.cost.at[idxs, table_idxs].min(flatten_nextcosts) # update the minimul cost
 
-            filleds_sort_idx = jnp.argsort(nextcosts, axis=0) # [flatten_size]
-            filleds = jnp.take_along_axis(filleds, filleds_sort_idx, axis=0)
-            nextcosts = jnp.take_along_axis(nextcosts, filleds_sort_idx, axis=0)
-            neighbours_parant_idx = jnp.take_along_axis(neighbours_parant_idx, filleds_sort_idx[:, jnp.newaxis], axis=0)
-            neighbours = jax.tree_util.tree_map(lambda x: jnp.take_along_axis(x, 
-                                                            filleds_sort_idx.reshape(
-                                                                list(filleds_sort_idx.shape) + [1 for _ in range(x.ndim - filleds_sort_idx.ndim)]
-                                                            ),
-                                                            axis=0), neighbours)
+            flatten_neighbours_parant_idx = neighbours_parant_idx.reshape((flatten_size, 2))
+            qstar_result.parant = qstar_result.parant.at[idxs, table_idxs].set(jnp.where(optimals[:,jnp.newaxis], flatten_neighbours_parant_idx, qstar_result.parant[idxs, table_idxs]))
 
-            # unflatten the neighbours, nextcosts, filleds
-            filleds = filleds.reshape(unflatten_size)
-            nextcosts = nextcosts.reshape(unflatten_size)
-            neighbours_parant_idx = neighbours_parant_idx.reshape(unflatten_size + (2,))
-            neighbours = jax.tree_util.tree_map(lambda x: x.reshape(unflatten_size + x.shape[1:]), neighbours)
+            idxs = idxs.reshape(unflatten_size)
+            table_idxs = table_idxs.reshape(unflatten_size)
+            optimals = optimals.reshape(unflatten_size)
 
             def _scan(qstar_result : QstarResult, val):
-                neighbour, neighbour_cost, neighbour_parant_idx, neighbour_filled = val
-                any_filled = jnp.any(neighbour_filled)
-                def _any_filled_fn(qstar_result : QstarResult):
-                    neighbour_heur = heuristic(neighbour, target)
-                    neighbour_key = astar_weight * neighbour_cost + neighbour_heur
+                neighbour, neighbour_cost, idx, table_idx, optimal = val
+                neighbour_heur = q_fn(neighbour, target)
+                neighbour_key = astar_weight * neighbour_cost + neighbour_heur
 
-                    qstar_result.hashtable, _, idx, table_idx = parallel_insert(qstar_result.hashtable, neighbour, neighbour_filled)
-                    vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
-                    optimal = jnp.less(neighbour_cost, qstar_result.cost[idx, table_idx])
-                    qstar_result.cost = qstar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
-                    qstar_result.parant = qstar_result.parant.at[idx, table_idx].set(jnp.where(optimal[:,jnp.newaxis], neighbour_parant_idx, qstar_result.parant[idx, table_idx]))
-                    not_closed_update =  qstar_result.not_closed[idx, table_idx] | optimal
-                    qstar_result.not_closed = qstar_result.not_closed.at[idx, table_idx].set(not_closed_update)
-                    neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
+                vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
+                not_closed_update =  qstar_result.not_closed[idx, table_idx] | optimal
+                qstar_result.not_closed = qstar_result.not_closed.at[idx, table_idx].set(not_closed_update)
+                neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
 
-                    qstar_result.priority_queue = insert_fn(qstar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(optimal, dtype=jnp.uint32))
-                    return qstar_result
-                
-                return jax.lax.cond(any_filled, _any_filled_fn, lambda x: x, qstar_result), None
+                qstar_result.priority_queue = BGPQ.insert(qstar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(optimal, dtype=jnp.uint32))
+                return qstar_result, None
 
-            qstar_result, _ = jax.lax.scan(_scan, qstar_result, (neighbours, nextcosts, neighbours_parant_idx, filleds))
+            qstar_result, _ = jax.lax.scan(_scan, qstar_result, (neighbours, nextcosts, idxs, table_idxs, optimals))
             return qstar_result
         
         qstar_result = jax.lax.while_loop(_cond, _body, qstar_result)
@@ -200,4 +188,52 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         solved_idx = min_val[jnp.argmax(solved)]
         return qstar_result, solved.any(), solved_idx
 
-    return jax.jit(partial(astar, qstar_result))
+    return qstar_result_build, jax.jit(qstar)
+
+def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
+    """
+    Merge two sorted key tensors ak and bk as well as corresponding
+    value tensors av and bv into a single sorted tensor.
+
+    Args:
+        ak: chex.Array - sorted key tensor
+        av: HeapValue - sorted value tensor
+        bk: chex.Array - sorted key tensor
+        bv: HeapValue - sorted value tensor
+
+    Returns:
+        key1: chex.Array - merged and sorted
+        val1: HeapValue - merged and sorted
+        key2: chex.Array - merged and sorted
+        val2: HeapValue - merged and sorted
+    """
+    n = ak.shape[-1] # size of group
+    key = jnp.concatenate([ak, bk])
+    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+    idx = jnp.argsort(key, stable=True)
+
+    # Sort both key and value arrays using the same index
+    sorted_key = key[idx]
+    sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
+    return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
+
+def pop_full(qstar_result: QstarResult):
+    qstar_result.priority_queue, min_key, min_val = BGPQ.delete_mins(qstar_result.priority_queue)
+    min_idx, min_table_idx = min_val.index, min_val.table_index
+    min_key = jnp.where(qstar_result.not_closed[min_idx, min_table_idx], min_key, jnp.inf)
+    min_key, min_val, qstar_result.min_key_buffer, qstar_result.min_val_buffer = merge_sort_split(min_key, min_val, qstar_result.min_key_buffer, qstar_result.min_val_buffer)
+    filled = jnp.isfinite(min_key)
+
+    def _cond(val):
+        qstar_result, _, _, filled = val
+        return jnp.logical_and(qstar_result.priority_queue.size > 0, ~filled.all())
+    
+    def _body(val):
+        qstar_result, min_key, min_val, filled = val
+        qstar_result.priority_queue, min_key_buffer, min_val_buffer = BGPQ.delete_mins(qstar_result.priority_queue)
+        min_key_buffer = jnp.where(qstar_result.not_closed[min_val_buffer.index, min_val_buffer.table_index], min_key_buffer, jnp.inf)
+        min_key, min_val, qstar_result.min_key_buffer, qstar_result.min_val_buffer = merge_sort_split(min_key, min_val, min_key_buffer, min_val_buffer)
+        filled = jnp.isfinite(min_key)
+        return qstar_result, min_key, min_val, filled
+    qstar_result, min_key, min_val, filled = jax.lax.while_loop(_cond, _body, (qstar_result, min_key, min_val, filled))
+    return qstar_result, min_val, filled
