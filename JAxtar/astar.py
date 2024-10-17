@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import jax
 from functools import partial
 from puzzle.puzzle_base import Puzzle
-from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue
+from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue, HeapValue
 from JAxtar.hash import hash_func_builder, HashTable
 
 
@@ -29,6 +29,8 @@ class AstarResult:
 
     hashtable: HashTable
     priority_queue: BGPQ
+    min_key_buffer: chex.Array
+    min_val_buffer: HashTableIdx_HeapValue
     cost: chex.Array
     not_closed: chex.Array
     parant: chex.Array
@@ -42,12 +44,16 @@ class AstarResult:
         size_table = hashtable.capacity
         n_table = hashtable.n_table
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
+        min_key_buffer = jnp.full((batch_size, ), jnp.inf)
+        min_val_buffer = HashTableIdx_HeapValue(index=jnp.zeros((batch_size, ), dtype=jnp.uint32), table_index=jnp.zeros((batch_size, ), dtype=jnp.uint32))
         cost = jnp.full((size_table, n_table), jnp.inf)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
         parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
         return AstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
+            min_key_buffer=min_key_buffer,
+            min_val_buffer=min_val_buffer,
             cost=cost,
             not_closed=not_closed,
             parant=parant
@@ -85,15 +91,13 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
     batch_size = jnp.array(batch_size, dtype=jnp.int32)
     max_nodes = jnp.array(max_nodes, dtype=jnp.int32)
     hash_func = hash_func_builder(puzzle.State)
-    astar_result = AstarResult.build(statecls, batch_size, max_nodes)
+    astar_result_build = partial(AstarResult.build, statecls, batch_size, max_nodes)
     
     heuristic = jax.vmap(heuristic_fn, in_axes=(0, None))
 
     parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0,0), out_axes=(1,1))
-    delete_fn = BGPQ.delete_mins
-    insert_fn = BGPQ.insert
 
     def astar(
         astar_result: AstarResult,
@@ -130,14 +134,12 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             return jnp.logical_and(size_cond, ~solved.any())
         
         def _body(astar_result: AstarResult):
-            astar_result.priority_queue, min_key, min_val = delete_fn(astar_result.priority_queue)
+            astar_result, min_val, filled = pop_full(astar_result)
             min_idx, min_table_idx = min_val.index, min_val.table_index
             parant_idx = jnp.stack((min_idx, min_table_idx), axis=-1)
 
-            cost_val, not_closed_val = astar_result.cost[min_idx, min_table_idx], astar_result.not_closed[min_idx, min_table_idx]
+            cost_val = astar_result.cost[min_idx, min_table_idx]
             states = astar_result.hashtable.table[min_idx, min_table_idx]
-
-            filled = jnp.logical_and(jnp.isfinite(min_key), not_closed_val)
 
             astar_result.not_closed = astar_result.not_closed.at[min_idx, min_table_idx].min(~filled) # or operation with closed
 
@@ -146,52 +148,38 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
             filleds = jnp.isfinite(nextcosts) # [n_neighbours, batch_size]
             neighbours_parant_idx = jnp.broadcast_to(parant_idx, (filleds.shape[0], filleds.shape[1], 2))
 
-            #flatten the filleds and nextcosts
+            #insert neighbours into hashtable at once
             unflatten_size = filleds.shape
             flatten_size = unflatten_size[0] * unflatten_size[1]
-            filleds = filleds.reshape((flatten_size,))
-            nextcosts = nextcosts.reshape((flatten_size,))
-            neighbours_parant_idx = neighbours_parant_idx.reshape((flatten_size, 2))
-            neighbours = jax.tree_util.tree_map(lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours)
+            
+            flatten_neighbours = jax.tree_util.tree_map(lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours)
+            astar_result.hashtable, _, idxs, table_idxs = parallel_insert(astar_result.hashtable, flatten_neighbours, filleds.reshape((flatten_size,)))
+            
+            flatten_nextcosts = nextcosts.reshape((flatten_size,))
+            optimals = jnp.less(flatten_nextcosts, astar_result.cost[idxs, table_idxs])
+            astar_result.cost = astar_result.cost.at[idxs, table_idxs].min(flatten_nextcosts) # update the minimul cost
 
-            filleds_sort_idx = jnp.argsort(nextcosts, axis=0) # [flatten_size]
-            filleds = jnp.take_along_axis(filleds, filleds_sort_idx, axis=0)
-            nextcosts = jnp.take_along_axis(nextcosts, filleds_sort_idx, axis=0)
-            neighbours_parant_idx = jnp.take_along_axis(neighbours_parant_idx, filleds_sort_idx[:, jnp.newaxis], axis=0)
-            neighbours = jax.tree_util.tree_map(lambda x: jnp.take_along_axis(x, 
-                                                            filleds_sort_idx.reshape(
-                                                                list(filleds_sort_idx.shape) + [1 for _ in range(x.ndim - filleds_sort_idx.ndim)]
-                                                            ),
-                                                            axis=0), neighbours)
+            flatten_neighbours_parant_idx = neighbours_parant_idx.reshape((flatten_size, 2))
+            astar_result.parant = astar_result.parant.at[idxs, table_idxs].set(jnp.where(optimals[:,jnp.newaxis], flatten_neighbours_parant_idx, astar_result.parant[idxs, table_idxs]))
 
-            # unflatten the neighbours, nextcosts, filleds
-            filleds = filleds.reshape(unflatten_size)
-            nextcosts = nextcosts.reshape(unflatten_size)
-            neighbours_parant_idx = neighbours_parant_idx.reshape(unflatten_size + (2,))
-            neighbours = jax.tree_util.tree_map(lambda x: x.reshape(unflatten_size + x.shape[1:]), neighbours)
+            idxs = idxs.reshape(unflatten_size)
+            table_idxs = table_idxs.reshape(unflatten_size)
+            optimals = optimals.reshape(unflatten_size)
 
             def _scan(astar_result : AstarResult, val):
-                neighbour, neighbour_cost, neighbour_parant_idx, neighbour_filled = val
-                any_filled = jnp.any(neighbour_filled)
-                def _any_filled_fn(astar_result : AstarResult):
-                    neighbour_heur = heuristic(neighbour, target)
-                    neighbour_key = astar_weight * neighbour_cost + neighbour_heur
+                neighbour, neighbour_cost, idx, table_idx, optimal = val
+                neighbour_heur = heuristic(neighbour, target)
+                neighbour_key = astar_weight * neighbour_cost + neighbour_heur
 
-                    astar_result.hashtable, _, idx, table_idx = parallel_insert(astar_result.hashtable, neighbour, neighbour_filled)
-                    vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
-                    optimal = jnp.less(neighbour_cost, astar_result.cost[idx, table_idx])
-                    astar_result.cost = astar_result.cost.at[idx, table_idx].min(neighbour_cost) # update the minimul cost
-                    astar_result.parant = astar_result.parant.at[idx, table_idx].set(jnp.where(optimal[:,jnp.newaxis], neighbour_parant_idx, astar_result.parant[idx, table_idx]))
-                    not_closed_update =  astar_result.not_closed[idx, table_idx] | optimal
-                    astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(not_closed_update)
-                    neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
+                vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
+                not_closed_update =  astar_result.not_closed[idx, table_idx] | optimal
+                astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(not_closed_update)
+                neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
 
-                    astar_result.priority_queue = insert_fn(astar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(optimal, dtype=jnp.uint32))
-                    return astar_result
-                
-                return jax.lax.cond(any_filled, _any_filled_fn, lambda x: x, astar_result), None
+                astar_result.priority_queue = BGPQ.insert(astar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(optimal, dtype=jnp.uint32))
+                return astar_result, None
 
-            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextcosts, neighbours_parant_idx, filleds))
+            astar_result, _ = jax.lax.scan(_scan, astar_result, (neighbours, nextcosts, idxs, table_idxs, optimals))
             return astar_result
         
         astar_result = jax.lax.while_loop(_cond, _body, astar_result)
@@ -201,4 +189,52 @@ def astar_builder(puzzle: Puzzle, heuristic_fn: callable, batch_size: int = 1024
         solved_idx = min_val[jnp.argmax(solved)]
         return astar_result, solved.any(), solved_idx
 
-    return jax.jit(partial(astar, astar_result))
+    return astar_result_build, jax.jit(astar)
+
+def merge_sort_split(ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
+    """
+    Merge two sorted key tensors ak and bk as well as corresponding
+    value tensors av and bv into a single sorted tensor.
+
+    Args:
+        ak: chex.Array - sorted key tensor
+        av: HeapValue - sorted value tensor
+        bk: chex.Array - sorted key tensor
+        bv: HeapValue - sorted value tensor
+
+    Returns:
+        key1: chex.Array - merged and sorted
+        val1: HeapValue - merged and sorted
+        key2: chex.Array - merged and sorted
+        val2: HeapValue - merged and sorted
+    """
+    n = ak.shape[-1] # size of group
+    key = jnp.concatenate([ak, bk])
+    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+    idx = jnp.argsort(key, stable=True)
+
+    # Sort both key and value arrays using the same index
+    sorted_key = key[idx]
+    sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
+    return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
+
+def pop_full(astar_result: AstarResult):
+    astar_result.priority_queue, min_key, min_val = BGPQ.delete_mins(astar_result.priority_queue)
+    min_idx, min_table_idx = min_val.index, min_val.table_index
+    min_key = jnp.where(astar_result.not_closed[min_idx, min_table_idx], min_key, jnp.inf)
+    min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer)
+    filled = jnp.isfinite(min_key)
+
+    def _cond(val):
+        astar_result, _, _, filled = val
+        return jnp.logical_and(astar_result.priority_queue.size > 0, ~filled.all())
+    
+    def _body(val):
+        astar_result, min_key, min_val, filled = val
+        astar_result.priority_queue, min_key_buffer, min_val_buffer = BGPQ.delete_mins(astar_result.priority_queue)
+        min_key_buffer = jnp.where(astar_result.not_closed[min_val_buffer.index, min_val_buffer.table_index], min_key_buffer, jnp.inf)
+        min_key, min_val, astar_result.min_key_buffer, astar_result.min_val_buffer = merge_sort_split(min_key, min_val, min_key_buffer, min_val_buffer)
+        filled = jnp.isfinite(min_key)
+        return astar_result, min_key, min_val, filled
+    astar_result, min_key, min_val, filled = jax.lax.while_loop(_cond, _body, (astar_result, min_key, min_val, filled))
+    return astar_result, min_val, filled
