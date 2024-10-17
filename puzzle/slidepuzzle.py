@@ -157,3 +157,21 @@ class SlidePuzzle(Puzzle):
             for j in range(i + 1, n * n):
                 inv_count += is_inv(arr[i], arr[j])
         return inv_count
+
+class SlidePuzzleHard(SlidePuzzle):
+    """
+    This class is a extension of SlidePuzzle, it will generate the hardest state for the puzzle.
+    """
+    def __init__(self, size: int):
+        super().__init__(size)
+        self.size = size
+        if size not in [3, 4]:
+            raise ValueError("Size of the puzzle must be 3 or 4")
+        
+        if size == 3:
+            self.hardest_state = self.State(board=jnp.array([3, 1, 2, 0, 4, 5, 6, 7, 8], dtype=TYPE))
+        elif size == 4:
+            self.hardest_state = self.State(board=jnp.array([0, 12, 9, 13, 15, 11, 10, 14, 3, 7, 2, 5, 4, 8, 6, 1], dtype=TYPE))
+
+    def get_initial_state(self, key = None) -> SlidePuzzle.State:
+        return self.hardest_state
