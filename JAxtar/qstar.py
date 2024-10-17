@@ -110,14 +110,13 @@ def qstar_builder(puzzle: Puzzle, q_fn: callable, batch_size: int = 1024, max_no
 
         states = start
 
-        q_val = q_fn(states, target)
         qstar_result.hashtable, inserted, idx, table_idx = parallel_insert(qstar_result.hashtable, states, filled)
         hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
 
         cost_val = jnp.where(filled, 0, jnp.inf)
         qstar_result.cost = qstar_result.cost.at[idx, table_idx].set(jnp.where(inserted, cost_val, qstar_result.cost[idx, table_idx]))
-        
-        total_cost = cost_val + q_val
+
+        total_cost = cost_val # no heuristic in Q* and first key is no matter
         qstar_result.priority_queue = BGPQ.insert(qstar_result.priority_queue, total_cost, hash_idxs)
 
         def _cond(qstar_result: QstarResult):
@@ -142,8 +141,10 @@ def qstar_builder(puzzle: Puzzle, q_fn: callable, batch_size: int = 1024, max_no
 
             qstar_result.not_closed = qstar_result.not_closed.at[min_idx, min_table_idx].min(~filled) # or operation with closed
 
+            q_vals = q_fn(states, target)
             neighbours, ncost = neighbours_fn(states, filled)
             nextcosts = cost_val[jnp.newaxis, :] + ncost # [n_neighbours, batch_size]
+            neighbour_key = astar_weight * nextcosts + q_vals
             filleds = jnp.isfinite(nextcosts) # [n_neighbours, batch_size]
             neighbours_parant_idx = jnp.broadcast_to(parant_idx, (filleds.shape[0], filleds.shape[1], 2))
 
@@ -166,9 +167,7 @@ def qstar_builder(puzzle: Puzzle, q_fn: callable, batch_size: int = 1024, max_no
             optimals = optimals.reshape(unflatten_size)
 
             def _scan(qstar_result : QstarResult, val):
-                neighbour, neighbour_cost, idx, table_idx, optimal = val
-                neighbour_heur = q_fn(neighbour, target)
-                neighbour_key = astar_weight * neighbour_cost + neighbour_heur
+                neighbour_key, idx, table_idx, optimal = val
 
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
                 not_closed_update =  qstar_result.not_closed[idx, table_idx] | optimal
@@ -178,7 +177,7 @@ def qstar_builder(puzzle: Puzzle, q_fn: callable, batch_size: int = 1024, max_no
                 qstar_result.priority_queue = BGPQ.insert(qstar_result.priority_queue, neighbour_key, vals, added_size=jnp.sum(optimal, dtype=jnp.uint32))
                 return qstar_result, None
 
-            qstar_result, _ = jax.lax.scan(_scan, qstar_result, (neighbours, nextcosts, idxs, table_idxs, optimals))
+            qstar_result, _ = jax.lax.scan(_scan, qstar_result, (neighbour_key, idxs, table_idxs, optimals))
             return qstar_result
         
         qstar_result = jax.lax.while_loop(_cond, _body, qstar_result)
