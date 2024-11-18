@@ -92,7 +92,7 @@ def qstar_builder(puzzle: Puzzle, q_fn: callable, batch_size: int = 1024, max_no
     hash_func = hash_func_builder(puzzle.State)
     qstar_result_build = partial(QstarResult.build, statecls, batch_size, max_nodes)
     
-    q_fn = jax.vmap(q_fn, in_axes=(0, None))
+    q_fn = jax.vmap(q_fn, in_axes=(0, None), out_axes=1)
 
     parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
