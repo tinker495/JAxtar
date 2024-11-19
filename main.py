@@ -80,7 +80,7 @@ def astar(puzzle, hard, puzzle_size, max_node_size, batch_size, astar_weight, st
         print("Disabling JIT")
         jax.config.update('jax_disable_jit', True)
         
-        # scale down the sizes for debuging
+        # scale down the sizes for debugging
         max_node_size = 10000 
         batch_size = 100
         not_show_path = True
@@ -237,7 +237,7 @@ def qstar(puzzle, hard, puzzle_size, max_node_size, batch_size, astar_weight, st
         print("Disabling JIT")
         jax.config.update('jax_disable_jit', True)
         
-        # scale down the sizes for debuging
+        # scale down the sizes for debugging
         max_node_size = 10000 
         batch_size = 100
         not_show_path = True
