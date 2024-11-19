@@ -9,6 +9,10 @@ from heuristic.maze_heuristic import MazeHeuristic
 from heuristic.neuralheuristic.model.slidepuzzle_neuralheuristic import SlidePuzzleNeuralHeuristic
 from heuristic.neuralheuristic.model.lightsout_neuralheuristic import LightsOutNeuralHeuristic
 from heuristic.neuralheuristic.model.rubikscube_neuralheuristic import RubiksCubeNeuralHeuristic
+from qfunction.slidepuzzle_q import SlidePuzzleQ
+from qfunction.lightsout_q import LightsOutQ
+from qfunction.rubikscube_q import RubiksCubeQ
+from qfunction.maze_q import MazeQ
 
 default_puzzle_sizes = {
     "n-puzzle": 4,
@@ -45,5 +49,15 @@ puzzle_heuristic_dict_nn = {
                                     if reset else LightsOutNeuralHeuristic.load_model(puzzle, f"heuristic/neuralheuristic/model/params/lightsout_{n}.pkl"),
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralHeuristic(puzzle)
                                     if reset else RubiksCubeNeuralHeuristic.load_model(puzzle, f"heuristic/neuralheuristic/model/params/rubikscube_{n}.pkl"),
-    #"maze": lambda n: (Maze(n), MazeNeuralHeuristic(Maze(n)).distance)
+}
+
+puzzle_q_dict = {
+    "n-puzzle": lambda puzzle: SlidePuzzleQ(puzzle),
+    "lightsout": lambda puzzle: LightsOutQ(puzzle),
+    "rubikscube": lambda puzzle: RubiksCubeQ(puzzle),
+    "maze": lambda puzzle: MazeQ(puzzle)
+}
+
+puzzle_q_dict_nn = {
+    "none": lambda n, puzzle, reset: None
 }
