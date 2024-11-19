@@ -6,7 +6,6 @@ import optax
 from functools import partial
 from puzzle.puzzle_base import Puzzle
 from typing import Callable
-from tqdm import trange
 
 def davi_builder(puzzle: Puzzle, steps: int, total_batch_size: int, shuffle_length: int, minibatch_size: int, heuristic_fn: Callable, heuristic_params: jax.tree_util.PyTreeDef):
     
