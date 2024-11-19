@@ -1,9 +1,11 @@
 import chex
 import jax
 import jax.numpy as jnp
+
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint8
+
 
 class LightsOut(Puzzle):
 
@@ -25,27 +27,31 @@ class LightsOut(Puzzle):
 
         def parser(state):
             return form.format(*map(to_char, self.from_uint8(state.board)))
+
         return parser
-    
+
     def get_default_gen(self) -> callable:
         def gen():
             return self.State(board=self.to_uint8(jnp.ones(self.size**2, dtype=bool)))
+
         return gen
 
-    def get_initial_state(self, key = None) -> State:
+    def get_initial_state(self, key=None) -> State:
         return self._get_random_state(key)
 
-    def get_target_state(self, key = None) -> State:
+    def get_target_state(self, key=None) -> State:
         return self.State(board=self.to_uint8(jnp.zeros(self.size**2, dtype=bool)))
 
-    def get_neighbours(self, state:State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
         """
         board = self.from_uint8(state.board)
         # actions - combinations of range(size) with 2 elements
-        actions = jnp.stack(jnp.meshgrid(jnp.arange(self.size), jnp.arange(self.size)), axis=-1).reshape(-1, 2)
+        actions = jnp.stack(
+            jnp.meshgrid(jnp.arange(self.size), jnp.arange(self.size)), axis=-1
+        ).reshape(-1, 2)
 
         def flip(board, action):
             x, y = action
@@ -56,17 +62,14 @@ class LightsOut(Puzzle):
 
         def map_fn(action, filled):
             next_board, cost = jax.lax.cond(
-                filled,
-                lambda _: (flip(board, action), 1.0),
-                lambda _: (board, jnp.inf),
-                None
+                filled, lambda _: (flip(board, action), 1.0), lambda _: (board, jnp.inf), None
             )
             return self.to_uint8(next_board), cost
 
         next_boards, costs = jax.vmap(map_fn, in_axes=(0, None))(actions, filled)
         return self.State(board=next_boards), costs
 
-    def is_solved(self, state:State, target:State) -> bool:
+    def is_solved(self, state: State, target: State) -> bool:
         return self.is_equal(state, target)
 
     def _get_visualize_format(self):
@@ -91,6 +94,7 @@ class LightsOut(Puzzle):
         This function should return a random state.
         """
         init_state = self.get_target_state()
+
         def random_flip(carry, _):
             state, key = carry
             neighbor_states, _ = self.get_neighbours(state, filled=True)
@@ -98,22 +102,24 @@ class LightsOut(Puzzle):
             idx = jax.random.choice(subkey, jnp.arange(self.size**2))
             next_state = neighbor_states[idx]
             return (next_state, key), None
+
         (last_state, _), _ = jax.lax.scan(random_flip, (init_state, key), None, length=num_shuffle)
         return last_state
 
     def to_uint8(self, board: chex.Array) -> chex.Array:
         # from booleans to uint8
         # boolean 32 to uint8 4
-        return jnp.packbits(board, axis=-1, bitorder='little')
-    
+        return jnp.packbits(board, axis=-1, bitorder="little")
+
     def from_uint8(self, board: chex.Array) -> chex.Array:
         # from uint8 4 to boolean 32
-        return jnp.unpackbits(board, axis=-1, count=self.size**2, bitorder='little')
-    
+        return jnp.unpackbits(board, axis=-1, count=self.size**2, bitorder="little")
+
+
 class LightsOutHard(LightsOut):
     """
     This class is a extension of LightsOut, it will generate the hardest state for the puzzle.
     """
-    
+
     def get_initial_state(self, key=None) -> LightsOut.State:
         return self._get_random_state(key, num_shuffle=50)
