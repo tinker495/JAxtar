@@ -8,32 +8,30 @@ from flax import linen as nn
 
 from puzzle.puzzle_base import Puzzle
 
-
+# Simba Residual Block
 class ResBlock(nn.Module):
     stage1_features: int = 1000
     stage2_features: int = 1000
 
     @nn.compact
-    def __call__(self, x):
-        x0 = nn.Dense(self.stage2_features)(x)
+    def __call__(self, x0):
+        x = nn.LayerNorm()(x0)
         x = nn.Dense(self.stage1_features)(x)
-        x = nn.GroupNorm(num_groups=10)(x)
         x = nn.relu(x)
         x = nn.Dense(self.stage2_features)(x)
-        x = nn.GroupNorm(num_groups=10)(x)
-        x = nn.relu(x)
         return x + x0
 
 
 class DefaultModel(nn.Module):
     @nn.compact
     def __call__(self, x):
-        # [4, 4, 6] -> conv
-        x = ResBlock(stage1_features=5000)(x)  # start with 5000 features
+        x = (x - 0.5) * 2.0 # normalize to [-1, 1]
+        x = nn.Dense(1000)(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
         x = ResBlock()(x)
+        x = nn.LayerNorm()(x)
         x = nn.Dense(1)(x)
         return x
 
