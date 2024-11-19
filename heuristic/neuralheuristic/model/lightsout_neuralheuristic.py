@@ -28,6 +28,7 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
+        x = (x - 0.5) * 2.0
         x = ConvResBlock(128, (3, 3), strides=1)(x)
         x = ConvResBlock(128, (3, 3), strides=1)(x)
         x = ConvResBlock(128, (3, 3), strides=1)(x)

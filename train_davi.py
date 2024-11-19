@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from tqdm import trange
 
+from puzzle_config import puzzle_dict, puzzle_heuristic_dict_nn, default_puzzle_sizes
 from heuristic.neuralheuristic.davi import davi_builder
 from puzzle_config import default_puzzle_sizes, puzzle_dict_nn
 
@@ -39,9 +40,7 @@ def soft_reset(tensors, tau, key):
 
 
 @click.command()
-@click.option(
-    "--puzzle", default="n-puzzle", type=click.Choice(puzzle_dict_nn.keys()), help="Puzzle to solve"
-)
+@click.option("--puzzle", default="n-puzzle", type=click.Choice(puzzle_heuristic_dict_nn.keys()), help="Puzzle to solve")
 @click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
 @click.option("--steps", type=int, default=100000)
 @click.option("--key", type=int, default=0)
@@ -57,8 +56,9 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
     else:
         puzzle_size = int(puzzle_size)
     puzzle_name = puzzle
-    puzzle, heuristic = puzzle_dict_nn[puzzle_name](puzzle_size, reset)
-    heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
+    puzzle = puzzle_dict[puzzle_name](puzzle_size)
+    heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle_size, puzzle, reset)
+    heuristic.save_model(f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl")
 
     heuristic_fn = heuristic.param_distance
     heuristic_params = heuristic.params
@@ -82,17 +82,17 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
             f"Loss: {loss:5.4f}, Mean Target Heuristic: {mean_target_heuristic:4.1f}"
         )
 
-        if (loss < 1e-1 or count < 10) and (i % 1000 == 0 and i > 0):
-            heuristic.params = heuristic_params
-            heuristic.save_model(
-                f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl"
-            )
-            target_heuristic_params = copy.deepcopy(heuristic_params)
+        if (i % 100 == 0 and i > 0):
             count += 1
+            if loss < 1e-1 or count >= 10:
+                heuristic.params = heuristic_params
+                heuristic.save_model(f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl")
+                target_heuristic_params = copy.deepcopy(heuristic_params)
+                count = 0
+                print("updated target heuristic params")
             heuristic_params = soft_reset(heuristic_params, 0.2, subkey)
-            print("updated target heuristic params")
     heuristic.params = heuristic_params
-    heuristic.save_model(f"heuristic/DAVI/neuralheuristic/params/{puzzle_name}_{puzzle_size}.pkl")
+    heuristic.save_model(f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl")
 
 
 if __name__ == "__main__":
