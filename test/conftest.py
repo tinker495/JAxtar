@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 
+
 def setup_project():
     project_root = Path(__file__).parent.parent
     if str(project_root) not in sys.path:

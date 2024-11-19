@@ -1,9 +1,9 @@
-import chex
 import jax
 import jax.numpy as jnp
 
-from qfunction.q_base import QFunction
 from puzzle.maze import Maze
+from qfunction.q_base import QFunction
+
 
 class MazeQ(QFunction):
     def __init__(self, puzzle: Maze):

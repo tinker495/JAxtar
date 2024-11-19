@@ -1,9 +1,9 @@
-import chex
 import jax
 import jax.numpy as jnp
 
-from qfunction.q_base import QFunction
 from puzzle.rubikscube import RubiksCube
+from qfunction.q_base import QFunction
+
 
 class RubiksCubeQ(QFunction):
     heur_modify: float
@@ -13,7 +13,7 @@ class RubiksCubeQ(QFunction):
         if puzzle.size % 2 == 0:
             self.heur_modify = 0
         else:
-            self.heur_modify = 1 / (puzzle.size ** 2)
+            self.heur_modify = 1 / (puzzle.size**2)
 
     def q_value(self, current: RubiksCube.State, target: RubiksCube.State) -> float:
         """
@@ -29,6 +29,8 @@ class RubiksCubeQ(QFunction):
         """
         current_faces = current.faces
         target_faces = target.faces
-        equal_faces = 1 - (jnp.equal(current_faces, target_faces).mean(1) - self.heur_modify) / (1 - self.heur_modify)
+        equal_faces = 1 - (jnp.equal(current_faces, target_faces).mean(1) - self.heur_modify) / (
+            1 - self.heur_modify
+        )
         # center of faces are not considered
         return equal_faces.sum()
