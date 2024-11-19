@@ -9,7 +9,7 @@ from tqdm import trange
 from typing import Any, Callable
 
 from puzzle_config import puzzle_dict_nn, default_puzzle_sizes
-from heuristic.DAVI.davi import davi_builder
+from heuristic.neuralheuristic.davi import davi_builder
 
 PyTree = Any
 
