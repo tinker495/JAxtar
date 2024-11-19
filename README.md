@@ -1,10 +1,10 @@
 <div align="center">
-<img src="images/JAxtar.png" alt="logo" width="200"></img>
+  <img src="images/JAxtar.png" alt="logo" width="200"></img>
 </div>
 
-# JA<sup>xtar</sup>: Batched parallel A\* solver in pure Jax!
+# JA^xtar^: Batched parallel A\* solver in pure Jax!
 
-JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizeable A\* solver for neural heuristic search research.
+JA^xtar^ is a project with a JAX-native implementation of parallelizeable A\* solver for neural heuristic search research.
 This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. If mcts can be written in pure jax, so why not A\*?
 **The project is not yet fully complete, with many types of puzzles left to be solved, more efficient basic heuristics, learning neural network heuristics, and more.**
 
@@ -46,7 +46,7 @@ This project was a real pain in the arse to write, and I almost felt like I was 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a blazingly fast result, but it can be used for heuristics using neural networks.
 The tests below were performed on a single A100 80GB GPU.
 
-```
+```bash
 $ python main.py
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -75,7 +75,7 @@ Time:   0.62 seconds
 Search states: 810K (1.31M states/s)
 ```
 
-```
+```bash
 $ python main.py --max_node_size 1e6 --batch_size 1024 --vmap_size 10
 Vmapped A* search, multiple initial state solution
 Start state
@@ -111,9 +111,9 @@ Solution found: 100.00%
 
 ## Puzzles
 
-| Rubikscube                                          | Slidepuzzle                                          | Lightsout                                          | Maze                                          |
-| --------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------- | --------------------------------------------- |
-| <img src="images/rubikscubesolve.png" height="300"> | <img src="images/slidepuzzlesolve.png" height="400"> | <img src="images/lightsoutsolve.png" height="400"> | <img src="images/mazesolve.png" height="400"> |
+| Rubikscube                                       | Slidepuzzle                                        | Lightsout                                      | Maze                                |
+| ------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |
+| ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) |
 
 ## Citation
 
