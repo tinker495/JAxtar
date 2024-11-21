@@ -1,53 +1,73 @@
+from abc import ABC, abstractmethod
+from collections import namedtuple
+from enum import Enum
+from typing import Any, Dict, Type, TypeVar
+
 import chex
 import jax
 import jax.numpy as jnp
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Type, TypeVar
-from enum import Enum
-from collections import namedtuple
 from tabulate import tabulate
 
-T = TypeVar('T')
+T = TypeVar("T")
 
-#enum for state type
+
+# enum for state type
 class StructuredType(Enum):
     SINGLE = 0
     BATCHED = 1
     UNSTRUCTURED = 2
+
 
 def state_dataclass(cls: Type[T]) -> Type[T]:
     """
     This function is a decorator that adds some functionality to the dataclass.
     1. It adds a shape property to the class that returns the shape of each field.
     2. It adds a dtype property to the class that returns the dtype of each field.
-    3. It adds a __getitem__ method to the class that returns a new instance of the class with each field indexed by the input index. (this is for vectorized dataclass)
-    4. It adds a __len__ method to the class that returns the length of the first field. (this is for vectorized dataclass)
+    3. It adds a __getitem__ method to the class that returns a new instance of the
+    class with each field indexed by the input index. (this is for vectorized dataclass)
+    4. It adds a __len__ method to the class that returns the length of the first field.
+    (this is for vectorized dataclass)
     """
     cls = chex.dataclass(cls)
 
-    shape_tuple = namedtuple('shape', cls.__annotations__.keys())
-    def get_shape(self) -> shape_tuple:
-        return shape_tuple(*[getattr(self, field_name).shape for field_name in cls.__annotations__.keys()])
-    setattr(cls, 'shape', property(get_shape))
+    shape_tuple = namedtuple("shape", cls.__annotations__.keys())
 
-    type_tuple = namedtuple('dtype', cls.__annotations__.keys())
+    def get_shape(self) -> shape_tuple:
+        return shape_tuple(
+            *[getattr(self, field_name).shape for field_name in cls.__annotations__.keys()]
+        )
+
+    setattr(cls, "shape", property(get_shape))
+
+    type_tuple = namedtuple("dtype", cls.__annotations__.keys())
+
     def get_type(self) -> type_tuple:
-        return type_tuple(*[jnp.dtype(getattr(self, field_name).dtype) for field_name in cls.__annotations__.keys()])
-    setattr(cls, 'dtype', property(get_type))
+        return type_tuple(
+            *[
+                jnp.dtype(getattr(self, field_name).dtype)
+                for field_name in cls.__annotations__.keys()
+            ]
+        )
+
+    setattr(cls, "dtype", property(get_type))
 
     def getitem(self, index):
         return jax.tree_map(lambda x: x[index], self)
-    setattr(cls, '__getitem__', getitem)
+
+    setattr(cls, "__getitem__", getitem)
 
     def len(self):
         return self.shape[0][0]
-    setattr(cls, '__len__', len)
+
+    setattr(cls, "__len__", len)
 
     return cls
 
+
 def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
     """
-    This function is a decorator that adds a __str__ method to the class that returns a string representation of the class.
+    This function is a decorator that adds a __str__ method to
+    the class that returns a string representation of the class.
     """
 
     def get_str(self) -> str:
@@ -57,7 +77,9 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
             return parsfunc(self)
         elif structured_type == StructuredType.BATCHED:
             batch_shape = self.batch_shape
-            batch_len = jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
+            batch_len = (
+                jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
+            )
             results = []
             if batch_len < 20:
                 for i in range(batch_len):
@@ -70,7 +92,7 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
-                results.append(f"...\n" + f"(batch : {batch_shape})")
+                results.append("...\n(batch : " + f"{batch_shape})")
                 for i in range(batch_len - 3, batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_map(lambda x: x[index], self)
@@ -78,9 +100,10 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
             return tabulate([results], tablefmt="plain")
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
-    
-    setattr(cls, '__str__', get_str)
+
+    setattr(cls, "__str__", get_str)
     return cls
+
 
 def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
     """
@@ -88,23 +111,26 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
     this function for making a default dataclass with the given shape, for example, hash table of the puzzle.
     """
 
-    def get_default(_ = None) -> T:
+    def get_default(_=None) -> T:
         return defaultfunc()
-    
+
     default_shape = defaultfunc().shape
     default_dim = len(default_shape[0])
-    
+
     def get_default_shape(self) -> Dict[str, Any]:
         return default_shape
-    
+
     def get_structured_type(self) -> StructuredType:
         if self.shape == self.default_shape:
             return StructuredType.SINGLE
-        elif all(default_shape[k] == self.shape[k][-len(default_shape[k]):] for k in range(len(cls.__annotations__.keys()))):
+        elif all(
+            default_shape[k] == self.shape[k][-len(default_shape[k]) :]
+            for k in range(len(cls.__annotations__.keys()))
+        ):
             return StructuredType.BATCHED
         else:
             return StructuredType.UNSTRUCTURED
-        
+
     def batch_shape(self) -> tuple[int, ...]:
         if self.structured_type == StructuredType.BATCHED:
             return self.shape[0][:-default_dim]
@@ -117,27 +143,29 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
             new_total_length = jnp.prod(jnp.array(new_shape))
             batch_dim = len(self.batch_shape)
             if total_length != new_total_length:
-                raise ValueError(f"Total length of the state and new shape does not match: {total_length} != {new_total_length}")
+                raise ValueError(
+                    f"Total length of the state and new shape does not match: {total_length} != {new_total_length}"
+                )
             return jax.tree_map(lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]), self)
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
-        
+
     def flatten(self):
         total_length = jnp.prod(jnp.array(self.batch_shape))
         print(total_length, *self[0].shape[-default_dim:])
         return jax.tree_map(lambda x: jnp.reshape(x, (total_length, *x.shape[-default_dim:])), self)
-    
-    #add method based on default state
-    setattr(cls, 'default', staticmethod(jax.jit(get_default)))
-    setattr(cls, 'default_shape', property(get_default_shape))
-    setattr(cls, 'structured_type', property(get_structured_type))
-    setattr(cls, 'batch_shape', property(batch_shape))
-    setattr(cls, 'reshape', reshape)
-    setattr(cls, 'flatten', flatten)
+
+    # add method based on default state
+    setattr(cls, "default", staticmethod(jax.jit(get_default)))
+    setattr(cls, "default_shape", property(get_default_shape))
+    setattr(cls, "structured_type", property(get_structured_type))
+    setattr(cls, "batch_shape", property(batch_shape))
+    setattr(cls, "reshape", reshape)
+    setattr(cls, "flatten", flatten)
     return cls
 
+
 class Puzzle(ABC):
-    
     @state_dataclass
     class State:
         """
@@ -153,7 +181,7 @@ class Puzzle(ABC):
             pass
 
         @abstractmethod
-        def default(_ = None) -> T:
+        def default(_=None) -> T:
             pass
 
     def __init__(self):
@@ -187,14 +215,14 @@ class Puzzle(ABC):
         pass
 
     @abstractmethod
-    def get_initial_state(self, key = None) -> State:
+    def get_initial_state(self, key=None) -> State:
         """
         This function should return a initial state.
         """
         pass
 
     @abstractmethod
-    def get_target_state(self, key = None) -> State:
+    def get_target_state(self, key=None) -> State:
         """
         This function should return a target state.
         """
@@ -212,8 +240,10 @@ class Puzzle(ABC):
     def is_solved(self, state: State, target: State) -> bool:
         """
         This function should return True if the state is the target state.
-        if the puzzle has multiple target states, this function should return True if the state is one of the target conditions.
-        e.g sokoban puzzle has multiple target states. box's position should be the same as the target position but the player's position can be different.
+        if the puzzle has multiple target states, this function should return
+        True if the state is one of the target conditions.
+        e.g sokoban puzzle has multiple target states. box's position should
+        be the same as the target position but the player's position can be different.
         """
         pass
 
