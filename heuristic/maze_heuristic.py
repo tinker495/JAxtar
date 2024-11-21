@@ -1,8 +1,8 @@
-import chex
 import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
 from puzzle.maze import Maze
+
 
 class MazeHeuristic(Heuristic):
     def __init__(self, puzzle: Maze):
