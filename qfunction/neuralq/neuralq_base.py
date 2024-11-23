@@ -33,6 +33,7 @@ class DefaultModel(nn.Module):
         x = nn.LayerNorm()(x)
         x = nn.Dense(self.action_size)(x)
         return x
+
 class NeuralQFunctionBase(ABC):
 
     def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True):
@@ -66,7 +67,7 @@ class NeuralQFunctionBase(ABC):
 
     def q_value(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
         x = self.pre_process(current, target)
-        x = self.model.apply(self.params, x)
+        x = self.model.apply(self.params, x).squeeze()
         return x
     
     def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
