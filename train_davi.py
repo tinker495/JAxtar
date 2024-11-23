@@ -69,7 +69,7 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
     heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
-    dataset_size = int(1e7)
+    dataset_size = int(1e6)
     batch_size = int(5e1)
     shuffle_length = 200
     minibatch_size = 128
@@ -94,7 +94,7 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
         # Log metrics to tensorboard
         writer.add_scalar('Loss', loss, i)
         
-        if i % 2 == 0 and i != 0 and loss < 1e-1:
+        if i % 10 == 0 and i != 0 and loss < 1e-1:
             heuristic.params = heuristic_params
             heuristic.save_model(f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl")
             dataset = get_datasets(puzzle, heuristic.pre_process, heuristic_fn, heuristic_params, dataset_size, batch_size, shuffle_length, subkey)
