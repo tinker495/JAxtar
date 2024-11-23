@@ -70,8 +70,8 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
     dataset_size = int(1e7)
-    batch_size = int(1e1)
-    shuffle_length = 1000
+    batch_size = int(5e1)
+    shuffle_length = 200
     minibatch_size = 128
     
     davi_fn, opt_state = davi_builder( minibatch_size, heuristic_fn, heuristic_params
