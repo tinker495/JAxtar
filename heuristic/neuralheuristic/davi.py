@@ -117,25 +117,26 @@ def create_shuffled_path(puzzle: Puzzle, shuffle_length: int, batch_size: int, k
 
     def get_trajectory_key(target: Puzzle.State, key: chex.PRNGKey):
         def _scan(carry, _):
-            state, key = carry
+            state, before_state, key = carry
             neighbor_states, cost = puzzle.get_neighbours(state, filled=True)
+            go_back = jax.vmap(puzzle.is_equal, in_axes=(None, 0))(before_state, neighbor_states)
             filled = jnp.isfinite(cost).astype(jnp.float32)
+            filled = jnp.where(go_back, 0.0, filled)
             prob = filled / jnp.sum(filled)
             key, subkey = jax.random.split(key)
             idx = jax.random.choice(subkey, jnp.arange(cost.shape[0]), p=prob)
             next_state = neighbor_states[idx]
-            return (next_state, key), next_state
+            return (next_state, state, key), next_state
 
-        _, moves = jax.lax.scan(_scan, (target, key), None, length=shuffle_length)
+        _, moves = jax.lax.scan(_scan, (target, target, key), None, length=shuffle_length)
         return moves
-
+    moves = jax.vmap(get_trajectory_key)(
+        targets, jax.random.split(key, batch_size)
+    )  # [batch_size, shuffle_length][state...]
     tiled_targets = jax.tree_util.tree_map(
         lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length) + (x.ndim - 1) * (1,)),
         targets,
     )
-    moves = jax.vmap(get_trajectory_key)(
-        targets, jax.random.split(key, batch_size)
-    )  # [batch_size, shuffle_length][state...]
     tiled_targets = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, *x.shape[2:])), tiled_targets
     )
