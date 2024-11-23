@@ -2,7 +2,7 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
-from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from puzzle.slidepuzzle import SlidePuzzle
 
 NODE_SIZE = 256
@@ -47,17 +47,18 @@ class Model(nn.Module):
         x = ResBlock(128)(x)
         x = ResBlock(128)(x)
         x = nn.LayerNorm()(x)
-        x = nn.Dense(1)(x)
+        x = nn.Dense(self.action_size)(x)
         return x
 
-class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
+
+class SlidePuzzleNeuralHeuristic(NeuralQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):
         x = jnp.tile(jnp.arange(puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, puzzle.size, 1))
         y = jnp.tile(jnp.arange(puzzle.size)[jnp.newaxis, :, jnp.newaxis], (puzzle.size, 1, 1))
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
-        super().__init__(puzzle, model=Model(), init_params=init_params)
+        super().__init__(puzzle, model=Model, init_params=init_params)
 
     def pre_process(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
         diff = self.to_2d(self._diff_pos(current, target))  # [n, n, 2]
