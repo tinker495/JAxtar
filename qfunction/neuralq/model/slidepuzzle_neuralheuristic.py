@@ -2,8 +2,8 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
-from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from puzzle.slidepuzzle import SlidePuzzle
+from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 NODE_SIZE = 256
 
@@ -21,6 +21,7 @@ class ConvResBlock(nn.Module):
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
         return x + x0
 
+
 class ResBlock(nn.Module):
     node_size: int
 
@@ -31,6 +32,7 @@ class ResBlock(nn.Module):
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
         return x + x0
+
 
 class Model(nn.Module):
     action_size: int = 4

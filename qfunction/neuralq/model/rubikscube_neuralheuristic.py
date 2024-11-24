@@ -2,8 +2,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from puzzle.rubikscube import RubiksCube
+from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 NODE_SIZE = 256
 
