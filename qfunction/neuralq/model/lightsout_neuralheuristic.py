@@ -7,6 +7,7 @@ from puzzle.lightsout import LightsOut
 
 NODE_SIZE = 256
 
+
 class ConvResBlock(nn.Module):
     filters: int
     kernel_size: int
@@ -20,8 +21,10 @@ class ConvResBlock(nn.Module):
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
         return x + x0
 
+
 class Model(nn.Module):
     action_size: int
+
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv

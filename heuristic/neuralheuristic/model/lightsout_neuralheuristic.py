@@ -24,19 +24,32 @@ class ConvResBlock(nn.Module):
         return x
 
 
+class ResBlock(nn.Module):
+    node_size: int
+
+    @nn.compact
+    def __call__(self, x0):
+        x = nn.LayerNorm()(x0)
+        x = nn.Dense(self.node_size)(x0)
+        x = nn.relu(x)
+        x = nn.Dense(self.node_size)(x)
+        return x + x0
+
+
 class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
         x = (x - 0.5) * 2.0
-        x = ConvResBlock(128, (3, 3), strides=1)(x)
-        x = ConvResBlock(128, (3, 3), strides=1)(x)
-        x = ConvResBlock(128, (3, 3), strides=1)(x)
+        x = nn.Conv(32, (1, 1))(x)
+        x = ConvResBlock(32, (3, 3), strides=1)(x)
+        x = ConvResBlock(32, (3, 3), strides=1)(x)
+        x = ConvResBlock(32, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(256)(x)
-        x = nn.relu(x)
         x = nn.Dense(128)(x)
-        x = nn.relu(x)
+        x = ResBlock(128)(x)
+        x = ResBlock(128)(x)
+        x = nn.LayerNorm()(x)
         x = nn.Dense(1)(x)
         return x
 
@@ -59,4 +72,4 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
         """
         current_map = self.puzzle.from_uint8(current.board)
         target_map = self.puzzle.from_uint8(target.board)
-        return jnp.not_equal(current_map, target_map).astype(jnp.float32) - 0.5
+        return jnp.not_equal(current_map, target_map).astype(jnp.float32)

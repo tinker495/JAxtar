@@ -3,34 +3,34 @@ from abc import ABC, abstractmethod
 
 import chex
 import jax
-import jax.numpy as jnp
+import numpy as np
 from flax import linen as nn
 
 from puzzle.puzzle_base import Puzzle
 
+
 # Simba Residual Block
 class ResBlock(nn.Module):
-    stage1_features: int = 1000
-    stage2_features: int = 1000
+    node_size: int
 
     @nn.compact
     def __call__(self, x0):
         x = nn.LayerNorm()(x0)
-        x = nn.Dense(self.stage1_features)(x)
+        x = nn.Dense(self.node_size)(x0)
         x = nn.relu(x)
-        x = nn.Dense(self.stage2_features)(x)
+        x = nn.Dense(self.node_size)(x)
         return x + x0
 
 
 class DefaultModel(nn.Module):
     @nn.compact
     def __call__(self, x):
-        x = (x - 0.5) * 2.0 # normalize to [-1, 1]
+        x = (x - 0.5) * 2.0  # normalize to [-1, 1]
         x = nn.Dense(1000)(x)
-        x = ResBlock()(x)
-        x = ResBlock()(x)
-        x = ResBlock()(x)
-        x = ResBlock()(x)
+        x = ResBlock(1000)(x)
+        x = ResBlock(1000)(x)
+        x = ResBlock(1000)(x)
+        x = ResBlock(1000)(x)
         x = nn.LayerNorm()(x)
         x = nn.Dense(1)(x)
         return x
@@ -44,7 +44,8 @@ class NeuralHeuristicBase(ABC):
         dummy_target = self.puzzle.State.default()
         if init_params:
             self.params = self.model.init(
-                jax.random.PRNGKey(0), self.pre_process(dummy_current, dummy_target)
+                jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
+                self.pre_process(dummy_current, dummy_target),
             )
 
     @classmethod
@@ -74,7 +75,7 @@ class NeuralHeuristicBase(ABC):
         This function should return the distance between the state and the target.
         """
         return self.param_distance(self.params, current, target)
-    
+
     def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
         x = self.pre_process(current, target)
         x = self.model.apply(params, x).squeeze()
