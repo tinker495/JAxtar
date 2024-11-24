@@ -21,6 +21,7 @@ class ConvResBlock(nn.Module):
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
         return x + x0
 
+
 class ResBlock(nn.Module):
     node_size: int
 
@@ -31,6 +32,7 @@ class ResBlock(nn.Module):
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
         return x + x0
+
 
 class Model(nn.Module):
     action_size: int = 4
@@ -49,6 +51,7 @@ class Model(nn.Module):
         x = nn.LayerNorm()(x)
         x = nn.Dense(1)(x)
         return x
+
 
 class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
