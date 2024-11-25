@@ -63,7 +63,6 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
     puzzle_name = puzzle
     puzzle = puzzle_dict[puzzle_name](puzzle_size)
     heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle_size, puzzle, reset)
-    heuristic.save_model(f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl")
 
     # Setup tensorboard logging
     log_dir = f"runs/{puzzle_name}_{puzzle_size}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -73,9 +72,10 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
     heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
-    dataset_size = int(1e7)
-    batch_size = int(1e1)
-    shuffle_length = 200
+    dataset_size = int(1e6)
+    shuffle_parallel = int(1e2)
+    shuffle_length = 1000
+    dataset_minibatch_size = 500
     minibatch_size = 128
 
     davi_fn, opt_state = davi_builder(minibatch_size, heuristic_fn, heuristic_params)
@@ -84,8 +84,9 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
         heuristic.pre_process,
         heuristic_fn,
         dataset_size,
-        batch_size,
+        shuffle_parallel,
         shuffle_length,
+        dataset_minibatch_size,
     )
 
     pbar = trange(steps)
@@ -99,30 +100,40 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
     mean_target_heuristic = jnp.mean(target_heuristic)
     writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, 0)
     writer.add_histogram("Target Heuristic", target_heuristic, 0)
-    pbar.set_description(f"loss: {0:.4f}, mean_target_heuristic: {mean_target_heuristic:.4f}")
+    pbar.set_description(
+        f"loss: {0:.4f}, mean_abs_diff: {0:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
+    )
+    count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
-        heuristic_params, opt_state, loss = davi_fn(key, dataset, heuristic_params, opt_state)
+        heuristic_params, opt_state, loss, mean_abs_diff = davi_fn(
+            key, dataset, heuristic_params, opt_state
+        )
         pbar.set_description(
-            f"loss: {loss:.4f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
+            f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
         )
 
         # Log metrics to tensorboard
         writer.add_scalar("Loss", loss, i)
+        writer.add_scalar("Mean Abs Diff", mean_abs_diff, i)
 
-        if i % 2 == 0 and i != 0 and loss < 1e-3:
-            heuristic.params = heuristic_params
-            heuristic.save_model(
-                f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
-            )
-            dataset = get_datasets(
-                heuristic_params,
-                subkey,
-            )
-            target_heuristic = dataset[1]
-            mean_target_heuristic = jnp.mean(target_heuristic)
-            writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, i)
-            writer.add_histogram("Target Heuristic", target_heuristic, i)
+        if i % 5 == 0 and i != 0:
+            count += 1
+            if mean_abs_diff < 5e-2 or count >= 10:
+                heuristic.params = heuristic_params
+                heuristic.save_model(
+                    f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
+                )
+                dataset = get_datasets(
+                    heuristic_params,
+                    subkey,
+                )
+                target_heuristic = dataset[1]
+                mean_target_heuristic = jnp.mean(target_heuristic)
+                writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, i)
+                writer.add_histogram("Target Heuristic", target_heuristic, i)
+                heuristic_params = soft_reset(heuristic_params, 0.2, subkey)
+                count = 0
 
 
 if __name__ == "__main__":
