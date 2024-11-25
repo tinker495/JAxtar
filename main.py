@@ -144,8 +144,6 @@ def astar(
     else:
         heuristic = puzzle_heuristic_dict[puzzle_name](puzzle)
 
-    heuristic_fn = heuristic.distance
-
     max_node_size = int(max_node_size)
     batch_size = int(batch_size)
     start_state_seed = int(start_state_seed)
@@ -155,7 +153,7 @@ def astar(
     target = puzzle.get_target_state()
 
     astar_result_build, astar_fn = astar_builder(
-        puzzle, heuristic_fn, batch_size, max_node_size, astar_weight=astar_weight
+        puzzle, heuristic, batch_size, max_node_size, astar_weight=astar_weight
     )
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
@@ -168,13 +166,14 @@ def astar(
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(
         key=jax.random.split(jax.random.PRNGKey(start_state_seed), 1)
     )
-    heuristics = jax.vmap(heuristic_fn, in_axes=(0, None))(states, target)
+    heuristic_values = heuristic.batched_distance(states, target)
+    print(heuristic_values.shape)
 
     print("Start state")
     print(states[0])
     print("Target state")
     print(target)
-    print(f"Heuristic: {heuristics[0]:.2f}")
+    print(f"Heuristic: {heuristic_values[0]:.2f}")
 
     if profile:
         print("Profiling")

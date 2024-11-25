@@ -77,9 +77,10 @@ class NeuralHeuristicBase(ABC):
     def batched_param_distance(
         self, params, current: Puzzle.State, target: Puzzle.State
     ) -> chex.Array:
-        x = jax.vmap(self.pre_process, in_axes=(0, 0))(current, target)
-        x = self.model.apply(params, x).squeeze()
-        return self.post_process(x)
+        x = jax.vmap(self.pre_process, in_axes=(0, None))(current, target)
+        x = self.model.apply(params, x).squeeze(1)
+        x = self.post_process(x)
+        return x
 
     def distance(self, current: Puzzle.State, target: Puzzle.State) -> float:
         """
