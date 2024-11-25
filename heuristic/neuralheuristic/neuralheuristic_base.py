@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 
 import chex
 import jax
+import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
 
@@ -45,7 +46,7 @@ class NeuralHeuristicBase(ABC):
         if init_params:
             self.params = self.model.init(
                 jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-                self.pre_process(dummy_current, dummy_target),
+                jnp.expand_dims(self.pre_process(dummy_current, dummy_target), axis=0),
             )
 
     @classmethod
@@ -58,7 +59,7 @@ class NeuralHeuristicBase(ABC):
             dummy_current = puzzle.State.default()
             dummy_target = puzzle.State.default()
             model.model.apply(
-                params, model.pre_process(dummy_current, dummy_target)
+                params, jnp.expand_dims(model.pre_process(dummy_current, dummy_target), axis=0)
             )  # check if the params are compatible with the model
             model.params = params
         except Exception as e:
@@ -70,6 +71,16 @@ class NeuralHeuristicBase(ABC):
         with open(path, "wb") as f:
             pickle.dump(self.params, f)
 
+    def batched_distance(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+        return self.batched_param_distance(self.params, current, target)
+
+    def batched_param_distance(
+        self, params, current: Puzzle.State, target: Puzzle.State
+    ) -> chex.Array:
+        x = jax.vmap(self.pre_process, in_axes=(0, 0))(current, target)
+        x = self.model.apply(params, x).squeeze()
+        return self.post_process(x)
+
     def distance(self, current: Puzzle.State, target: Puzzle.State) -> float:
         """
         This function should return the distance between the state and the target.
@@ -78,6 +89,7 @@ class NeuralHeuristicBase(ABC):
 
     def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
         x = self.pre_process(current, target)
+        x = jnp.expand_dims(x, axis=0)
         x = self.model.apply(params, x).squeeze()
         return self.post_process(x)
 

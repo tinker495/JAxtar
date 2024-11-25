@@ -37,18 +37,16 @@ class ResBlock(nn.Module):
 
 
 class Model(nn.Module):
+    action_size: int = 4
+
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
-        x = (x - 0.5) * 2.0
-        x = nn.Conv(32, (1, 1))(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
+        x = nn.Conv(512, (1, 1))(x)
+        x = ConvResBlock(512, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(128)(x)
-        x = ResBlock(128)(x)
-        x = ResBlock(128)(x)
+        x = nn.Dense(512)(x)
+        x = ResBlock(512)(x)
         x = nn.LayerNorm()(x)
         x = nn.Dense(1)(x)
         return x
@@ -60,7 +58,6 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
 
     def pre_process(self, current: LightsOut.State, target: LightsOut.State) -> chex.Array:
         x = self.to_2d(self._diff(current, target))
-        x = jnp.expand_dims(x, axis=0)
         return x
 
     def to_2d(self, x: chex.Array) -> chex.Array:
