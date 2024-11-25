@@ -40,14 +40,11 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
-        x = nn.Conv(32, (1, 1))(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
+        x = nn.Conv(512, (1, 1))(x)
+        x = ConvResBlock(512, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(128)(x)
-        x = ResBlock(128)(x)
-        x = ResBlock(128)(x)
+        x = nn.Dense(512)(x)
+        x = ResBlock(512)(x)
         x = nn.LayerNorm()(x)
         x = nn.Dense(1)(x)
         return x
@@ -67,7 +64,6 @@ class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
         c_zero = self.to_2d(self._zero_pos(current))  # [n, n, 1]
         t_zero = self.to_2d(self._zero_pos(target))  # [n, n, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1)  # [n, n, 4]
-        x = jnp.expand_dims(x, axis=0)
         return x
 
     def to_2d(self, x: chex.Array) -> chex.Array:
