@@ -28,7 +28,7 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0):
         x = nn.LayerNorm()(x0)
-        x = nn.Dense(self.node_size)(x0)
+        x = nn.Dense(self.node_size)(x)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
         return x + x0
@@ -40,7 +40,7 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
-        x = nn.Conv(512, (1, 1))(x)
+        x = nn.Conv(512, (3, 3), strides=1, padding="SAME")(x)
         x = ConvResBlock(512, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
