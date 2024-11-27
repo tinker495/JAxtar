@@ -15,7 +15,7 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0):
         x = nn.LayerNorm()(x0)
-        x = nn.Dense(self.node_size)(x0)
+        x = nn.Dense(self.node_size)(x)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
         return x + x0
@@ -24,7 +24,8 @@ class ResBlock(nn.Module):
 class Model(nn.Module):
     @nn.compact
     def __call__(self, x):
-        x = (x - 0.5) * 2.0  # normalize to [-1, 1]
+        x = nn.Dense(5000)(x)
+        x = nn.tanh(x)
         x = nn.Dense(1000)(x)
         x = ResBlock(1000)(x)
         x = ResBlock(1000)(x)
@@ -42,7 +43,7 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
         super().__init__(puzzle, Model(), init_params=init_params)
 
     def pre_process(self, current: RubiksCube.State, target: RubiksCube.State) -> chex.Array:
-        flatten_face = current.faces.flatten()
+        flatten_face = current.faces.flatten()  # (3,3,6) -> (54,)
         # Create a one-hot encoding of the flattened face
         one_hot = jax.nn.one_hot(flatten_face, num_classes=6).flatten()  # 6 colors in Rubik's Cube
-        return one_hot
+        return (one_hot - 0.5) * 2.0  # normalize to [-1, 1]

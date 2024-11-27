@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -14,29 +15,11 @@ from puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_heuristic_di
 PyTree = Any
 
 
-def random_split_like_tree(rng_key: jax.random.PRNGKey, target: PyTree = None, treedef=None):
-    if treedef is None:
-        treedef = jax.tree.structure(target)
-    keys = jax.random.split(rng_key, treedef.num_leaves)
-    return jax.tree.unflatten(treedef, keys)
-
-
-def tree_random_normal_like(rng_key: jax.random.PRNGKey, target: PyTree):
-    keys_tree = random_split_like_tree(rng_key, target)
-    return jax.tree.map(
-        lambda t, k: jax.random.normal(k, t.shape, t.dtype) * jnp.std(t),
-        target,
-        keys_tree,
+@jax.jit
+def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
+    return jax.tree_util.tree_map(
+        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, old_tensors
     )
-
-
-def soft_reset(tensors, tau, key):
-    new_tensors = tree_random_normal_like(key, tensors)
-    soft_reseted = jax.tree.map(
-        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, tensors
-    )
-    # name dense is hardreset
-    return soft_reseted
 
 
 @click.command()
@@ -70,11 +53,12 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
 
     heuristic_fn = heuristic.model.apply
     heuristic_params = heuristic.params
+    target_heuristic_params = deepcopy(heuristic_params)
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
-    dataset_size = int(1e6)
-    shuffle_parallel = int(1e2)
-    shuffle_length = 1000
+    dataset_size = int(3e5)
+    shuffle_parallel = int(1e3)
+    shuffle_length = 30
     dataset_minibatch_size = 500
     minibatch_size = 128
 
@@ -90,22 +74,18 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
     )
 
     pbar = trange(steps)
-    dataset = get_datasets(
-        heuristic_params,
-        subkey,
-    )
 
-    heuristic_params = soft_reset(heuristic_params, 0.2, subkey)
-    target_heuristic = dataset[1]
-    mean_target_heuristic = jnp.mean(target_heuristic)
-    writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, 0)
-    writer.add_histogram("Target Heuristic", target_heuristic, 0)
-    pbar.set_description(
-        f"loss: {0:.4f}, mean_abs_diff: {0:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
-    )
     count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
+        dataset = get_datasets(
+            target_heuristic_params,
+            subkey,
+        )
+        target_heuristic = dataset[1]
+        mean_target_heuristic = jnp.mean(target_heuristic)
+        writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, i)
+        writer.add_histogram("Target Heuristic", target_heuristic, i)
         heuristic_params, opt_state, loss, mean_abs_diff = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
@@ -117,22 +97,15 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
         writer.add_scalar("Loss", loss, i)
         writer.add_scalar("Mean Abs Diff", mean_abs_diff, i)
 
-        if i % 5 == 0 and i != 0:
+        target_heuristic_params = soft_update(heuristic_params, target_heuristic_params, 0.01)
+
+        if i % 100 == 0 and i != 0:
             count += 1
-            if mean_abs_diff < 5e-2 or count >= 10:
+            if mean_abs_diff < 1e-1 or count >= 10:
                 heuristic.params = heuristic_params
                 heuristic.save_model(
                     f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
-                dataset = get_datasets(
-                    heuristic_params,
-                    subkey,
-                )
-                target_heuristic = dataset[1]
-                mean_target_heuristic = jnp.mean(target_heuristic)
-                writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, i)
-                writer.add_histogram("Target Heuristic", target_heuristic, i)
-                heuristic_params = soft_reset(heuristic_params, 0.2, subkey)
                 count = 0
 
 

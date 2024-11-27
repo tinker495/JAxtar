@@ -6,7 +6,6 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
-from tqdm import trange
 
 from puzzle.puzzle_base import Puzzle
 
@@ -35,7 +34,7 @@ def davi_builder(
         loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
         return loss, jnp.mean(jnp.abs(diff))
 
-    optimizer = optax.adabelief(1e-4)
+    optimizer = optax.adamw(1e-4)
     opt_state = optimizer.init(heuristic_params)
 
     def davi(
@@ -121,7 +120,7 @@ def _get_datasets(
     heur = jnp.reshape(heur, (preproc_neighbors.shape[0], -1))
     heur = jnp.maximum(jnp.where(equal, 0.0, heur), 0.0)
     target_heuristic = jnp.min(heur + cost, axis=1)
-    states = jax.vmap(preproc_fn)(shuffled_path, tiled_targets).squeeze()
+    states = jax.vmap(preproc_fn)(shuffled_path, tiled_targets)
     return states, target_heuristic, weights
 
 
@@ -154,7 +153,7 @@ def get_dataset_builder(
         key: chex.PRNGKey,
     ):
         dataset = []
-        for _ in trange(steps):
+        for _ in range(steps):
             dataset.append(jited_get_datasets(heuristic_params, key))
         flatten_dataset = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *dataset)
         return flatten_dataset
