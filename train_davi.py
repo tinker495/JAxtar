@@ -83,7 +83,6 @@ def train_davi(
 
     pbar = trange(steps)
 
-    count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(
@@ -108,13 +107,10 @@ def train_davi(
         target_heuristic_params = soft_update(heuristic_params, target_heuristic_params, 0.01)
 
         if i % 100 == 0 and i != 0:
-            count += 1
-            if mean_abs_diff < 1e-1 or count >= 10:
-                heuristic.params = heuristic_params
-                heuristic.save_model(
-                    f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
-                )
-                count = 0
+            heuristic.params = heuristic_params
+            heuristic.save_model(
+                f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
+            )
 
 
 if __name__ == "__main__":
