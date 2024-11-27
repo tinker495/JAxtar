@@ -31,7 +31,8 @@ def davi_builder(
     ):
         current_heuristic = heuristic_fn(heuristic_params, states).squeeze()
         diff = target_heuristic - current_heuristic
-        loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
+        # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
+        loss = jnp.mean(jnp.square(diff) * weights)
         return loss, jnp.mean(jnp.abs(diff))
 
     optimizer = optax.adamw(1e-4)
