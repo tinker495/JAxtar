@@ -14,14 +14,12 @@ class ConvResBlock(nn.Module):
     strides: int
 
     @nn.compact
-    def __call__(self, x):
-        x0 = nn.Conv(self.filters, 1)(x)  # 1x1 conv to pass information through
+    def __call__(self, x0):
+        x = nn.LayerNorm()(x0)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        x = nn.relu(x)
-        x = x + x0
-        return x
+        return x + x0
 
 
 class ResBlock(nn.Module):
@@ -37,13 +35,11 @@ class ResBlock(nn.Module):
 
 
 class Model(nn.Module):
-    action_size: int = 4
-
     @nn.compact
     def __call__(self, x):
         # [4, 4, 1] -> conv
-        x = nn.Conv(512, (1, 1))(x)
-        x = ConvResBlock(512, (3, 3), strides=1)(x)
+        x = nn.Conv(64, (3, 3), strides=1, padding="SAME")(x)
+        x = ConvResBlock(64, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
         x = ResBlock(512)(x)
