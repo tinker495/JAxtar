@@ -28,7 +28,7 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0):
         x = nn.LayerNorm()(x0)
-        x = nn.Dense(self.node_size)(x0)
+        x = nn.Dense(self.node_size)(x)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
         return x + x0
