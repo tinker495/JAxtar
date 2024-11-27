@@ -31,10 +31,19 @@ def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
 )
 @click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
 @click.option("--steps", type=int, default=100000)
+@click.option("--shuffle_length", type=int, default=30)
 @click.option("--key", type=int, default=0)
 @click.option("--reset", is_flag=True, help="Reset the target heuristic params")
 @click.option("--debug", is_flag=True, help="Debug mode")
-def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool, debug: bool):
+def train_davi(
+    puzzle: str,
+    puzzle_size: int,
+    steps: int,
+    shuffle_length: int,
+    key: int,
+    reset: bool,
+    debug: bool,
+):
     if debug:
         # disable jit
         print("Disabling JIT")
@@ -57,8 +66,7 @@ def train_davi(puzzle: str, puzzle_size: int, steps: int, key: int, reset: bool,
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
     dataset_size = int(3e5)
-    shuffle_parallel = int(1e3)
-    shuffle_length = 30
+    shuffle_parallel = int(3e4 // shuffle_length)
     dataset_minibatch_size = 500
     minibatch_size = 128
 
