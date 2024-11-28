@@ -67,8 +67,8 @@ def train_davi(
     key, subkey = jax.random.split(key)
     dataset_size = int(3e5)
     shuffle_parallel = int(3e4 // shuffle_length)
-    dataset_minibatch_size = 500
-    minibatch_size = 128
+    dataset_minibatch_size = 10000
+    minibatch_size = 1024 * 8
 
     davi_fn, opt_state = davi_builder(minibatch_size, heuristic_fn, heuristic_params)
     get_datasets = get_dataset_builder(
@@ -104,9 +104,12 @@ def train_davi(
         writer.add_scalar("Loss", loss, i)
         writer.add_scalar("Mean Abs Diff", mean_abs_diff, i)
 
-        target_heuristic_params = soft_update(heuristic_params, target_heuristic_params, 0.01)
 
-        if i % 100 == 0 and i != 0:
+        if (
+            ((i % 1000 == 0 or (mean_target_heuristic < shuffle_length // 10 and i % 100 == 0)) and i != 0)
+            and loss <= 0.05
+        ):
+            target_heuristic_params = deepcopy(heuristic_params)
             heuristic.params = heuristic_params
             heuristic.save_model(
                 f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"

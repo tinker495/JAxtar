@@ -9,30 +9,32 @@ from flax import linen as nn
 
 from puzzle.puzzle_base import Puzzle
 
-
-# Simba Residual Block
+# Residual Block
 class ResBlock(nn.Module):
     node_size: int
 
     @nn.compact
-    def __call__(self, x0):
-        x = nn.LayerNorm()(x0)
+    def __call__(self, x0, training=False):
         x = nn.Dense(self.node_size)(x0)
+        x = nn.BatchNorm(use_running_average=not training)(x)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        return x + x0
-
+        x = nn.BatchNorm(use_running_average=not training)(x)
+        return nn.relu(x + x0)
 
 class DefaultModel(nn.Module):
     @nn.compact
-    def __call__(self, x):
-        x = (x - 0.5) * 2.0  # normalize to [-1, 1]
+    def __call__(self, x, training=False):
+        x = nn.Dense(5000)(x)
+        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.relu(x)
         x = nn.Dense(1000)(x)
-        x = ResBlock(1000)(x)
-        x = ResBlock(1000)(x)
-        x = ResBlock(1000)(x)
-        x = ResBlock(1000)(x)
-        x = nn.LayerNorm()(x)
+        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.relu(x)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
         x = nn.Dense(1)(x)
         return x
 
@@ -78,7 +80,7 @@ class NeuralHeuristicBase(ABC):
         self, params, current: Puzzle.State, target: Puzzle.State
     ) -> chex.Array:
         x = jax.vmap(self.pre_process, in_axes=(0, None))(current, target)
-        x = self.model.apply(params, x).squeeze(1)
+        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
         x = self.post_process(x)
         return x
 
@@ -91,7 +93,7 @@ class NeuralHeuristicBase(ABC):
     def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
         x = self.pre_process(current, target)
         x = jnp.expand_dims(x, axis=0)
-        x = self.model.apply(params, x).squeeze()
+        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
         return self.post_process(x)
 
     @abstractmethod
@@ -105,4 +107,4 @@ class NeuralHeuristicBase(ABC):
         """
         This function should return the post-processed distance.
         """
-        return x
+        return x.squeeze(1)
