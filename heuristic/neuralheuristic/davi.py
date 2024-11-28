@@ -29,13 +29,16 @@ def davi_builder(
         target_heuristic: chex.Array,
         weights: chex.Array,
     ):
-        current_heuristic = heuristic_fn(heuristic_params, states).squeeze()
-        diff = target_heuristic - current_heuristic
+        current_heuristic, variable_updates = heuristic_fn(
+            heuristic_params, states, training=True, mutable=["batch_stats"]
+        )
+        heuristic_params["batch_stats"] = variable_updates["batch_stats"]
+        diff = target_heuristic - current_heuristic.squeeze()
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
         loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, jnp.mean(jnp.abs(diff))
+        return loss, (heuristic_params, jnp.mean(jnp.abs(diff)))
 
-    optimizer = optax.adamw(1e-4)
+    optimizer = optax.adabelief(1e-3)
     opt_state = optimizer.init(heuristic_params)
 
     def davi(
@@ -67,7 +70,7 @@ def davi_builder(
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
             states, target_heuristic, weights = batched_dataset
-            (loss, mean_abs_diff), grads = jax.value_and_grad(davi_loss, has_aux=True)(
+            (loss, (heuristic_params, mean_abs_diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
                 states,
                 target_heuristic,
@@ -113,8 +116,10 @@ def _get_datasets(
     )
 
     def heur_scan(_, neighbors):
-        heur = heuristic_fn(target_heuristic_params, neighbors).squeeze()
-        return None, heur
+        heur, _ = heuristic_fn(
+            target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
+        )
+        return None, heur.squeeze()
 
     _, heur = jax.lax.scan(heur_scan, None, flatten_neighbors)
     heur = jnp.concatenate(heur, axis=0)

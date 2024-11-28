@@ -14,38 +14,41 @@ class ConvResBlock(nn.Module):
     strides: int
 
     @nn.compact
-    def __call__(self, x0):
-        x = nn.LayerNorm()(x0)
-        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
+    def __call__(self, x0, training=False):
+        x = nn.Conv(self.filters * 4, self.kernel_size, strides=self.strides, padding="SAME")(x0)
+        x = nn.BatchNorm(use_running_average=not training)(x)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        return x + x0
+        x = nn.BatchNorm(use_running_average=not training)(x)
+        return nn.relu(x + x0)
 
 
 class ResBlock(nn.Module):
     node_size: int
 
     @nn.compact
-    def __call__(self, x0):
-        x = nn.LayerNorm()(x0)
-        x = nn.Dense(self.node_size)(x)
+    def __call__(self, x0, training=False):
+        x = nn.Dense(self.node_size)(x0)
+        x = nn.BatchNorm(use_running_average=not training)(x)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        return x + x0
+        x = nn.BatchNorm(use_running_average=not training)(x)
+        return nn.relu(x + x0)
 
 
 class Model(nn.Module):
-    action_size: int = 4
-
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(512, (3, 3), strides=1, padding="SAME")(x)
-        x = ConvResBlock(512, (3, 3), strides=1)(x)
+        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.relu(x)
+        x = ConvResBlock(512, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
-        x = ResBlock(512)(x)
-        x = nn.LayerNorm()(x)
+        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.relu(x)
+        x = ResBlock(512)(x, training)
         x = nn.Dense(1)(x)
         return x
 
