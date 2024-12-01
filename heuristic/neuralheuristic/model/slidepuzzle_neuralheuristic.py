@@ -15,7 +15,7 @@ class ConvResBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = nn.Conv(self.filters * 4, self.kernel_size, strides=self.strides, padding="SAME")(x0)
+        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
         x = nn.BatchNorm(use_running_average=not training)(x)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
@@ -40,10 +40,10 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
-        x = nn.Conv(512, (3, 3), strides=1, padding="SAME")(x)
+        x = nn.Conv(64, (3, 3), strides=1, padding="SAME")(x)
         x = nn.BatchNorm(use_running_average=not training)(x)
         x = nn.relu(x)
-        x = ConvResBlock(512, (3, 3), strides=1)(x, training)
+        x = ConvResBlock(64, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
         x = nn.BatchNorm(use_running_average=not training)(x)
