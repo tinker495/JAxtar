@@ -15,7 +15,7 @@ class ConvResBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = nn.Conv(self.filters * 4, self.kernel_size, strides=self.strides, padding="SAME")(x0)
+        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
         x = nn.BatchNorm(use_running_average=not training)(x)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
