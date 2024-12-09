@@ -16,20 +16,20 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0, training=False):
         x = nn.Dense(self.node_size)(x0)
-        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         return nn.relu(x + x0)
 
 class DefaultModel(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000)(x)
-        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Dense(1000)(x)
-        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
