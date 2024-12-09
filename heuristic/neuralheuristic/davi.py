@@ -160,7 +160,8 @@ def get_dataset_builder(
     ):
         dataset = []
         for _ in range(steps):
-            dataset.append(jited_get_datasets(heuristic_params, key))
+            key, subkey = jax.random.split(key)
+            dataset.append(jited_get_datasets(heuristic_params, subkey))
         flatten_dataset = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *dataset)
         assert flatten_dataset[0].shape[0] == dataset_size
         return flatten_dataset

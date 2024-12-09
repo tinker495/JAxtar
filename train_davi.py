@@ -32,7 +32,7 @@ def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
     help="Puzzle to solve",
 )
 @click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
-@click.option("--steps", type=int, default=20000)
+@click.option("--steps", type=int, default=1000000)
 @click.option("--shuffle_length", type=int, default=30)
 @click.option("--key", type=int, default=0)
 @click.option("--reset", is_flag=True, help="Reset the target heuristic params")
@@ -67,7 +67,7 @@ def train_davi(
     target_heuristic_params = deepcopy(heuristic_params)
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
-    dataset_size = int(1e6)
+    dataset_size = int(1e5)
     dataset_minibatch_size = 10000
     shuffle_parallel = int(math.ceil(dataset_minibatch_size / shuffle_length))
     minibatch_size = 1000
@@ -87,44 +87,42 @@ def train_davi(
     )
 
     pbar = trange(steps)
-    dataset = get_datasets(
-        target_heuristic_params,
-        subkey,
-    )
-    target_heuristic = dataset[1]
-    mean_target_heuristic = jnp.mean(target_heuristic)
-    writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, 0)
-    writer.add_histogram("Target Heuristic", target_heuristic, 0)
+    mean_target_heuristic = 0
+    reset_count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
+        dataset = get_datasets(
+            target_heuristic_params,
+            subkey,
+        )
         heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
         pbar.set_description(
             f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
         )
-        if i % 5 == 0:
+        if i % 100 == 0:
+            target_heuristic = dataset[1]
+            mean_target_heuristic = jnp.mean(target_heuristic)
+            writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, i)
+            writer.add_histogram("Target Heuristic", target_heuristic, i)
             writer.add_histogram("Diff", diffs, i)
 
             # Log metrics to tensorboard
             writer.add_scalar("Loss", loss, i)
             writer.add_scalar("Mean Abs Diff", mean_abs_diff, i)
 
-        if (i % 100 == 0 and i != 0) and loss <= 0.05:
-                heuristic.params = heuristic_params
+        if (i % 500 == 0 and i != 0) and loss <= 0.05:
+            heuristic.params = heuristic_params
+            target_heuristic_params = deepcopy(heuristic_params)
+            reset_count += 1
+            if reset_count >= 10:
                 heuristic.save_model(
                     f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
-                target_heuristic_params = deepcopy(heuristic_params)
-                dataset = get_datasets(
-                    target_heuristic_params,
-                    subkey,
-                )
-                target_heuristic = dataset[1]
-                mean_target_heuristic = jnp.mean(target_heuristic)
-                writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, i)
-                writer.add_histogram("Target Heuristic", target_heuristic, i)
-                opt_state = optimizer.init(heuristic_params) # reset optimizer state
+                heuristic_params = heuristic.get_new_params() # reset model params
+                reset_count = 0
+            opt_state = optimizer.init(heuristic_params) # reset optimizer state
 
 if __name__ == "__main__":
     train_davi()
