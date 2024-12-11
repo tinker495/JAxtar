@@ -19,14 +19,13 @@ def qlearning_builder(
         heuristic_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
         target_qs: chex.Array,
-        available_actions: chex.Array,
     ):
         q_values, variable_updates = q_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
         heuristic_params["batch_stats"] = variable_updates["batch_stats"]
         diff = target_qs - q_values
-        loss = jnp.mean(jnp.square(diff) * available_actions)
+        loss = jnp.mean(jnp.square(diff))
         return loss, (heuristic_params, diff)
 
     def qlearning(
@@ -38,7 +37,7 @@ def qlearning_builder(
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q, available_actions = dataset
+        states, target_q = dataset
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -53,18 +52,16 @@ def qlearning_builder(
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
-        batched_available_actions = jnp.take(available_actions, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
-            states, target_q, available_actions = batched_dataset
+            states, target_q = batched_dataset
             (loss, (heuristic_params, diff)), grads = jax.value_and_grad(
                 qlearning_loss, has_aux=True
             )(
                 heuristic_params,
                 states,
                 target_q,
-                available_actions,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
@@ -73,7 +70,7 @@ def qlearning_builder(
         (heuristic_params, opt_state), (losses, diffs) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
-            (batched_states, batched_target_q, batched_available_actions),
+            (batched_states, batched_target_q),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -92,9 +89,12 @@ def _get_datasets(
     key: chex.PRNGKey,
 ):
     tiled_targets, shuffled_path, move_costs = create_shuffled_path_fn(key)
-    neighbors, cost = jax.vmap(puzzle.get_neighbours)(
+    neighbors, _ = jax.vmap(puzzle.get_neighbours)(
         shuffled_path
-    )  # [batch_size, shuffle_length, action_shape] [batch_size, shuffle_length, action_shape]
+    )  # [batch_size * shuffle_length, action_shape] [batch_size * shuffle_length, action_shape]
+    _, neighbors_neighbor_cost = jax.vmap(jax.vmap(puzzle.get_neighbours))(
+        neighbors
+    )  # [batch_size * shuffle_length, action_shape]
     equal = jax.vmap(jax.vmap(puzzle.is_solved, in_axes=(0, None)), in_axes=(0, 0))(
         neighbors, tiled_targets
     )  # if equal, return 0
@@ -104,22 +104,24 @@ def _get_datasets(
     flatten_neighbors = jnp.reshape(
         preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
     )
+    flatten_neighbors_neighbor_cost = jnp.reshape(
+        neighbors_neighbor_cost, (-1, minibatch_size, *neighbors_neighbor_cost.shape[2:])
+    )
 
-    def q_scan(_, neighbors):
+    def q_scan(_, data):
+        neighbors, neighbor_cost = data
         q, _ = q_fn(
             target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        min_q = jnp.min(q, axis=1)
+        min_q = jnp.min(q + neighbor_cost, axis=1)
         return None, min_q
 
-    _, qs = jax.lax.scan(q_scan, None, flatten_neighbors)
-    qs = jnp.concatenate(qs, axis=0)
-    qs = jnp.reshape(qs, (preproc_neighbors.shape[0], -1))
-    qs = jnp.maximum(jnp.where(equal, 0.0, qs), 0.0)
-    available_actions = jnp.isfinite(cost)
-    target_q = qs + cost  # [batch_size * shuffle_length, action_shape]
+    _, target_q = jax.lax.scan(q_scan, None, (flatten_neighbors, flatten_neighbors_neighbor_cost))
+    target_q = jnp.concatenate(target_q, axis=0)
+    target_q = jnp.reshape(target_q, (preproc_neighbors.shape[0], -1))
+    target_q = jnp.maximum(jnp.where(equal, 0.0, target_q), 0.0)
     states = jax.vmap(preproc_fn)(shuffled_path, tiled_targets)
-    return states, target_q, available_actions
+    return states, target_q
 
 
 def get_dataset_builder(
