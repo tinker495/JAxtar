@@ -1,4 +1,4 @@
-from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.model.lightsout_neuralq import LightsOutNeuralQ
 from qfunction.neuralq.model.rubikscube_neuralq import RubiksCubeNeuralQ
 from qfunction.neuralq.model.slidepuzzle_neuralq import SlidePuzzleNeuralQ
+from qfunction.neuralq.neuralq_base import NeuralQFunctionBase

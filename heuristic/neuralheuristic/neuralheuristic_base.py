@@ -9,6 +9,7 @@ from flax import linen as nn
 
 from puzzle.puzzle_base import Puzzle
 
+
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int
@@ -21,6 +22,7 @@ class ResBlock(nn.Module):
         x = nn.Dense(self.node_size)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
         return nn.relu(x + x0)
+
 
 class DefaultModel(nn.Module):
     @nn.compact
@@ -64,7 +66,9 @@ class NeuralHeuristicBase(ABC):
             dummy_current = puzzle.State.default()
             dummy_target = puzzle.State.default()
             heuristic.model.apply(
-                params, jnp.expand_dims(heuristic.pre_process(dummy_current, dummy_target), axis=0), training=False
+                params,
+                jnp.expand_dims(heuristic.pre_process(dummy_current, dummy_target), axis=0),
+                training=False,
             )  # check if the params are compatible with the model
             heuristic.params = params
         except Exception as e:
