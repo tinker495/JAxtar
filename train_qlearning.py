@@ -1,7 +1,7 @@
-from copy import deepcopy
+import math
 from datetime import datetime
 from typing import Any
-import math
+
 import click
 import jax
 import jax.numpy as jnp
@@ -10,9 +10,9 @@ import optax
 import tensorboardX
 from tqdm import trange
 
-from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
-from qfunction.neuralq.qlearning import qlearning_builder, get_dataset_builder
 from puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_q_dict_nn
+from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+from qfunction.neuralq.qlearning import get_dataset_builder, qlearning_builder
 
 PyTree = Any
 
@@ -59,10 +59,12 @@ def train_qlearning(
         puzzle_size = int(puzzle_size)
     puzzle_name = puzzle
     puzzle = puzzle_dict[puzzle_name](puzzle_size)
-    qfunc : NeuralQFunctionBase = puzzle_q_dict_nn[puzzle_name](puzzle_size, puzzle, reset)
+    qfunc: NeuralQFunctionBase = puzzle_q_dict_nn[puzzle_name](puzzle_size, puzzle, reset)
 
     # Setup tensorboard logging
-    log_dir = f"runs/qlearning_{puzzle_name}_{puzzle_size}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    log_dir = (
+        f"runs/qlearning_{puzzle_name}_{puzzle_size}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    )
     writer = tensorboardX.SummaryWriter(log_dir)
 
     qfunc_fn = qfunc.model.apply
@@ -119,14 +121,13 @@ def train_qlearning(
             save_count += 1
             # swap target and current params
             target_qfunc_params, qfunc_params = (qfunc_params, target_qfunc_params)
-            opt_state = optimizer.init(qfunc_params) # reset optimizer state
+            opt_state = optimizer.init(qfunc_params)  # reset optimizer state
 
             if save_count >= 5:
                 qfunc.params = target_qfunc_params
-                qfunc.save_model(
-                    f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl"
-                )
+                qfunc.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
                 save_count = 0
+
 
 if __name__ == "__main__":
     train_qlearning()

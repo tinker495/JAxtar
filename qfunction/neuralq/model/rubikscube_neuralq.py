@@ -1,6 +1,5 @@
 import chex
 import jax
-import jax.numpy as jnp
 
 from puzzle.rubikscube import RubiksCube
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
