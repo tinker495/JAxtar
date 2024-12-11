@@ -9,6 +9,7 @@ import optax
 
 from puzzle.puzzle_base import Puzzle
 
+
 def qlearning_builder(
     minibatch_size: int,
     q_fn: Callable,
@@ -57,7 +58,9 @@ def qlearning_builder(
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
             states, target_q, available_actions = batched_dataset
-            (loss, (heuristic_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
+            (loss, (heuristic_params, diff)), grads = jax.value_and_grad(
+                qlearning_loss, has_aux=True
+            )(
                 heuristic_params,
                 states,
                 target_q,
@@ -105,7 +108,7 @@ def _get_datasets(
     def q_scan(_, neighbors):
         q, _ = q_fn(
             target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
-        ) # [minibatch_size, action_shape]
+        )  # [minibatch_size, action_shape]
         min_q = jnp.min(q, axis=1)
         return None, min_q
 
@@ -114,7 +117,7 @@ def _get_datasets(
     qs = jnp.reshape(qs, (preproc_neighbors.shape[0], -1))
     qs = jnp.maximum(jnp.where(equal, 0.0, qs), 0.0)
     available_actions = jnp.isfinite(cost)
-    target_q = qs + cost # [batch_size * shuffle_length, action_shape]
+    target_q = qs + cost  # [batch_size * shuffle_length, action_shape]
     states = jax.vmap(preproc_fn)(shuffled_path, tiled_targets)
     return states, target_q, available_actions
 
@@ -159,7 +162,11 @@ def get_dataset_builder(
 
 
 def create_shuffled_path(
-    puzzle: Puzzle, shuffle_length: int, shuffle_parallel: int, dataset_minibatch_size: int, key: chex.PRNGKey
+    puzzle: Puzzle,
+    shuffle_length: int,
+    shuffle_parallel: int,
+    dataset_minibatch_size: int,
+    key: chex.PRNGKey,
 ):
     targets = jax.vmap(puzzle.get_target_state)(jax.random.split(key, shuffle_parallel))
 
@@ -178,7 +185,9 @@ def create_shuffled_path(
             move_cost = move_cost + cost
             return (next_state, key, move_cost), (next_state, move_cost)
 
-        _, (moves, move_costs) = jax.lax.scan(_scan, (target, key, 0.0), None, length=shuffle_length)
+        _, (moves, move_costs) = jax.lax.scan(
+            _scan, (target, key, 0.0), None, length=shuffle_length
+        )
         return moves, move_costs
 
     moves, move_costs = jax.vmap(get_trajectory_key)(

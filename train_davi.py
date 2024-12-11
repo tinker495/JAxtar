@@ -1,7 +1,7 @@
-from copy import deepcopy
+import math
 from datetime import datetime
 from typing import Any
-import math
+
 import click
 import jax
 import jax.numpy as jnp
@@ -10,8 +10,8 @@ import optax
 import tensorboardX
 from tqdm import trange
 
-from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from heuristic.neuralheuristic.davi import davi_builder, get_dataset_builder
+from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_heuristic_dict_nn
 
 PyTree = Any
@@ -59,7 +59,9 @@ def train_davi(
         puzzle_size = int(puzzle_size)
     puzzle_name = puzzle
     puzzle = puzzle_dict[puzzle_name](puzzle_size)
-    heuristic : NeuralHeuristicBase = puzzle_heuristic_dict_nn[puzzle_name](puzzle_size, puzzle, reset)
+    heuristic: NeuralHeuristicBase = puzzle_heuristic_dict_nn[puzzle_name](
+        puzzle_size, puzzle, reset
+    )
 
     # Setup tensorboard logging
     log_dir = f"runs/{puzzle_name}_{puzzle_size}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -119,7 +121,7 @@ def train_davi(
             save_count += 1
             # swap target and current params
             target_heuristic_params, heuristic_params = (heuristic_params, target_heuristic_params)
-            opt_state = optimizer.init(heuristic_params) # reset optimizer state
+            opt_state = optimizer.init(heuristic_params)  # reset optimizer state
 
             if save_count >= 5:
                 heuristic.params = target_heuristic_params
@@ -127,6 +129,7 @@ def train_davi(
                     f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
                 save_count = 0
+
 
 if __name__ == "__main__":
     train_davi()

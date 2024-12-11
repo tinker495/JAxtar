@@ -9,6 +9,7 @@ import optax
 
 from puzzle.puzzle_base import Puzzle
 
+
 def davi_builder(
     minibatch_size: int,
     heuristic_fn: Callable,
@@ -116,7 +117,7 @@ def _get_datasets(
     # it just doesn't make sense to have a heuristic greater than the number of moves
     # heuristic's definition is the optimal cost to reach the target state
     # so it doesn't make sense to have a heuristic greater than the number of moves
-    target_heuristic = jnp.minimum(target_heuristic, move_costs) 
+    target_heuristic = jnp.minimum(target_heuristic, move_costs)
     states = jax.vmap(preproc_fn)(shuffled_path, tiled_targets)
     return states, target_heuristic
 
@@ -161,7 +162,11 @@ def get_dataset_builder(
 
 
 def create_shuffled_path(
-    puzzle: Puzzle, shuffle_length: int, shuffle_parallel: int, dataset_minibatch_size: int, key: chex.PRNGKey
+    puzzle: Puzzle,
+    shuffle_length: int,
+    shuffle_parallel: int,
+    dataset_minibatch_size: int,
+    key: chex.PRNGKey,
 ):
     targets = jax.vmap(puzzle.get_target_state)(jax.random.split(key, shuffle_parallel))
 
@@ -180,7 +185,9 @@ def create_shuffled_path(
             move_cost = move_cost + cost
             return (next_state, key, move_cost), (next_state, move_cost)
 
-        _, (moves, move_costs) = jax.lax.scan(_scan, (target, key, 0.0), None, length=shuffle_length)
+        _, (moves, move_costs) = jax.lax.scan(
+            _scan, (target, key, 0.0), None, length=shuffle_length
+        )
         return moves, move_costs
 
     moves, move_costs = jax.vmap(get_trajectory_key)(

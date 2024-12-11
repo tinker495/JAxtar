@@ -1,6 +1,23 @@
-from heuristic import LightsOutHeuristic, RubiksCubeHeuristic, SlidePuzzleHeuristic, MazeHeuristic
-from heuristic.neuralheuristic import LightsOutNeuralHeuristic, RubiksCubeNeuralHeuristic, SlidePuzzleNeuralHeuristic
-from puzzle import LightsOut, LightsOutHard, Maze, RubiksCube, RubiksCubeHard, SlidePuzzle, SlidePuzzleHard
+from heuristic import (
+    LightsOutHeuristic,
+    MazeHeuristic,
+    RubiksCubeHeuristic,
+    SlidePuzzleHeuristic,
+)
+from heuristic.neuralheuristic import (
+    LightsOutNeuralHeuristic,
+    RubiksCubeNeuralHeuristic,
+    SlidePuzzleNeuralHeuristic,
+)
+from puzzle import (
+    LightsOut,
+    LightsOutHard,
+    Maze,
+    RubiksCube,
+    RubiksCubeHard,
+    SlidePuzzle,
+    SlidePuzzleHard,
+)
 from qfunction import LightsOutQ, MazeQ, RubiksCubeQ, SlidePuzzleQ
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
 

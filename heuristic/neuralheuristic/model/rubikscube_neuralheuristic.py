@@ -1,6 +1,5 @@
 import chex
 import jax
-from flax import linen as nn
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.rubikscube import RubiksCube

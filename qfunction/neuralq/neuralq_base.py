@@ -1,10 +1,10 @@
 import pickle
-import numpy as np
 from abc import ABC, abstractmethod
 
 import chex
 import jax
 import jax.numpy as jnp
+import numpy as np
 from flax import linen as nn
 
 from puzzle.puzzle_base import Puzzle
@@ -22,6 +22,7 @@ class ResBlock(nn.Module):
         x = nn.Dense(self.node_size)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
         return nn.relu(x + x0)
+
 
 class DefaultModel(nn.Module):
     action_size: int = 4
@@ -69,7 +70,9 @@ class NeuralQFunctionBase(ABC):
             dummy_current = puzzle.State.default()
             dummy_target = puzzle.State.default()
             qfunc.model.apply(
-                params, jnp.expand_dims(qfunc.pre_process(dummy_current, dummy_target), axis=0), training=False
+                params,
+                jnp.expand_dims(qfunc.pre_process(dummy_current, dummy_target), axis=0),
+                training=False,
             )  # check if the params are compatible with the model
             qfunc.params = params
         except Exception as e:
