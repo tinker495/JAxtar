@@ -1,0 +1,5 @@
+from heuristic.lightsout_heuristic import LightsOutHeuristic
+from heuristic.maze_heuristic import MazeHeuristic
+from heuristic.rubikscube_heuristic import RubiksCubeHeuristic
+from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
+from heuristic.neuralheuristic import LightsOutNeuralHeuristic, RubiksCubeNeuralHeuristic, SlidePuzzleNeuralHeuristic

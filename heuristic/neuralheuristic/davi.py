@@ -9,15 +9,6 @@ import optax
 
 from puzzle.puzzle_base import Puzzle
 
-
-def hubberloss(x, delta):
-    abs_errors = jnp.abs(x)
-    quadratic = jnp.minimum(abs_errors, delta)
-    # Same as max(abs_x - delta, 0) but avoids potentially doubling gradient.
-    linear = abs_errors - quadratic
-    return 0.5 * quadratic**2 + delta * linear
-
-
 def davi_builder(
     minibatch_size: int,
     heuristic_fn: Callable,
