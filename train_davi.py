@@ -26,6 +26,7 @@ def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
 
 @click.command()
 @click.option(
+    "-p",
     "--puzzle",
     default="n-puzzle",
     type=click.Choice(puzzle_heuristic_dict_nn.keys()),
@@ -37,6 +38,7 @@ def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
 @click.option("--key", type=int, default=0)
 @click.option("--reset", is_flag=True, help="Reset the target heuristic params")
 @click.option("--debug", is_flag=True, help="Debug mode")
+@click.option("-l", "--loss_threshold", type=float, default=0.05)
 def train_davi(
     puzzle: str,
     puzzle_size: int,
@@ -45,6 +47,7 @@ def train_davi(
     key: int,
     reset: bool,
     debug: bool,
+    loss_threshold: float,
 ):
     if debug:
         # disable jit
@@ -63,8 +66,8 @@ def train_davi(
     writer = tensorboardX.SummaryWriter(log_dir)
 
     heuristic_fn = heuristic.model.apply
-    heuristic_params = heuristic.params
-    target_heuristic_params = deepcopy(heuristic_params)
+    heuristic_params = heuristic.get_new_params()
+    target_heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
     dataset_size = int(1e5)
@@ -72,7 +75,7 @@ def train_davi(
     shuffle_parallel = int(math.ceil(dataset_minibatch_size / shuffle_length))
     minibatch_size = 1000
 
-    optimizer = optax.adabelief(1e-4)
+    optimizer = optax.adabelief(1e-3)
     opt_state = optimizer.init(heuristic_params)
 
     davi_fn = davi_builder(minibatch_size, heuristic_fn, optimizer)
@@ -88,7 +91,7 @@ def train_davi(
 
     pbar = trange(steps)
     mean_target_heuristic = 0
-    reset_count = 0
+    save_count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(
@@ -112,17 +115,18 @@ def train_davi(
             writer.add_scalar("Loss", loss, i)
             writer.add_scalar("Mean Abs Diff", mean_abs_diff, i)
 
-        if (i % 500 == 0 and i != 0) and loss <= 0.05:
-            heuristic.params = heuristic_params
-            target_heuristic_params = deepcopy(heuristic_params)
-            reset_count += 1
-            if reset_count >= 10:
+        if (i % 500 == 0 and i != 0) and loss <= loss_threshold:
+            save_count += 1
+            # swap target and current params
+            target_heuristic_params, heuristic_params = (heuristic_params, target_heuristic_params)
+            opt_state = optimizer.init(heuristic_params) # reset optimizer state
+
+            if save_count >= 5:
+                heuristic.params = target_heuristic_params
                 heuristic.save_model(
                     f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
-                heuristic_params = heuristic.get_new_params() # reset model params
-                reset_count = 0
-            opt_state = optimizer.init(heuristic_params) # reset optimizer state
+                save_count = 0
 
 if __name__ == "__main__":
     train_davi()
