@@ -53,7 +53,7 @@ class Model(nn.Module):
         return x
 
 
-class SlidePuzzleNeuralHeuristic(NeuralQFunctionBase):
+class SlidePuzzleNeuralQ(NeuralQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):
@@ -67,7 +67,6 @@ class SlidePuzzleNeuralHeuristic(NeuralQFunctionBase):
         c_zero = self.to_2d(self._zero_pos(current))  # [n, n, 1]
         t_zero = self.to_2d(self._zero_pos(target))  # [n, n, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1)  # [n, n, 4]
-        x = jnp.expand_dims(x, axis=0)
         return x
 
     def to_2d(self, x: chex.Array) -> chex.Array:

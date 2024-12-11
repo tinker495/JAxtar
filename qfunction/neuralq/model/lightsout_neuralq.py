@@ -2,8 +2,8 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
-from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.lightsout import LightsOut
+from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 NODE_SIZE = 256
 
@@ -41,13 +41,12 @@ class Model(nn.Module):
         return x
 
 
-class LightsOutNeuralHeuristic(NeuralHeuristicBase):
+class LightsOutNeuralQ(NeuralQFunctionBase):
     def __init__(self, puzzle: LightsOut, init_params: bool = True):
         super().__init__(puzzle, model=Model(), init_params=init_params)
 
     def pre_process(self, current: LightsOut.State, target: LightsOut.State) -> chex.Array:
         x = self.to_2d(self._diff(current, target))
-        x = jnp.expand_dims(x, axis=0)
         return x
 
     def to_2d(self, x: chex.Array) -> chex.Array:

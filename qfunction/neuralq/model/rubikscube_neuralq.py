@@ -8,7 +8,7 @@ from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 NODE_SIZE = 256
 
 
-class RubiksCubeNeuralHeuristic(NeuralQFunctionBase):
+class RubiksCubeNeuralQ(NeuralQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: RubiksCube, init_params: bool = True):
@@ -18,4 +18,4 @@ class RubiksCubeNeuralHeuristic(NeuralQFunctionBase):
         flatten_face = current.faces.flatten()
         # Create a one-hot encoding of the flattened face
         one_hot = jax.nn.one_hot(flatten_face, num_classes=6).flatten()  # 6 colors in Rubik's Cube
-        return jnp.expand_dims(one_hot, axis=0)
+        return (one_hot - 0.5) * 2.0  # normalize to [-1, 1]
