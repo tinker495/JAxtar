@@ -14,40 +14,45 @@ class ConvResBlock(nn.Module):
     strides: int
 
     @nn.compact
-    def __call__(self, x0):
-        x = nn.LayerNorm()(x0)
-        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
+    def __call__(self, x0, training: bool = True):
+        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        return x + x0
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        return nn.relu(x + x0)
 
 
 class Model(nn.Module):
     action_size: int
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x, training: bool = True):
         # [4, 4, 1] -> conv
-        x = (x - 0.5) * 2.0
-        x = nn.Conv(32, (1, 1))(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = ConvResBlock(32, (3, 3), strides=1)(x)
-        x = nn.LayerNorm()(x)
-        x = jnp.reshape(x, (x.shape[0], -1))
-        chex.assert_shape(x, (None, self.action_size))
-        return x
+        x = nn.Conv(256, (3, 3), strides=1, padding="SAME")(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = nn.Conv(32, (3, 3), strides=1, padding="SAME")(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = ConvResBlock(32, (3, 3), strides=1)(x, training)
+        x = ConvResBlock(32, (3, 3), strides=1)(x, training)
+        value_feature = jnp.reshape(x, (x.shape[0], -1))
+        value = nn.Dense(1)(value_feature)
+        adv = nn.Conv(1, (1, 1), strides=1, padding="SAME")(x)
+        adv = jnp.reshape(adv, (x.shape[0], -1))
+        q = value + adv - jnp.mean(adv, axis=1, keepdims=True)
+        chex.assert_shape(q, (None, self.action_size))
+        return q
 
 
 class LightsOutNeuralQ(NeuralQFunctionBase):
     def __init__(self, puzzle: LightsOut, init_params: bool = True):
-        super().__init__(puzzle, model=Model(), init_params=init_params)
+        super().__init__(puzzle, model=Model, init_params=init_params)
 
     def pre_process(self, current: LightsOut.State, target: LightsOut.State) -> chex.Array:
         x = self.to_2d(self._diff(current, target))
-        return x
+        return (x - 0.5) * 2.0
 
     def to_2d(self, x: chex.Array) -> chex.Array:
         return jnp.reshape(x, (self.puzzle.size, self.puzzle.size, 1))

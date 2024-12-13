@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import chex
+import jax
 
 from puzzle.puzzle_base import Puzzle
 
@@ -25,3 +26,9 @@ class QFunction(ABC):
             shape : (batch_size, action_size)
         """
         pass
+
+    def batched_q_value(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+        """
+        Get q value of the current state and target state.
+        """
+        return jax.vmap(self.q_value, in_axes=(0, None))(current, target)
