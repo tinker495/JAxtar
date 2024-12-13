@@ -4,6 +4,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from heuristic.heuristic_base import Heuristic
 from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue, HeapValue
 from JAxtar.hash import HashTable, hash_func_builder
 from puzzle.puzzle_base import Puzzle
@@ -78,10 +79,10 @@ class AstarResult:
 
 def astar_builder(
     puzzle: Puzzle,
-    heuristic_fn: callable,
+    heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    astar_weight: float = 1.0 - 1e-6,
+    cost_weight: float = 1.0 - 1e-6,
 ):
     """
     astar_builder is a function that returns a partial function of astar.
@@ -106,8 +107,6 @@ def astar_builder(
     hash_func = hash_func_builder(puzzle.State)
     astar_result_build = partial(AstarResult.build, statecls, batch_size, max_nodes)
 
-    heuristic = jax.vmap(heuristic_fn, in_axes=(0, None))
-
     parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
@@ -124,7 +123,7 @@ def astar_builder(
 
         states = start
 
-        heur_val = heuristic(states, target)
+        heur_val = heuristic.batched_distance(states, target)
         astar_result.hashtable, inserted, idx, table_idx = parallel_insert(
             astar_result.hashtable, states, filled
         )
@@ -203,8 +202,8 @@ def astar_builder(
 
             def _scan(astar_result: AstarResult, val):
                 neighbour, neighbour_cost, idx, table_idx, optimal = val
-                neighbour_heur = heuristic(neighbour, target)
-                neighbour_key = astar_weight * neighbour_cost + neighbour_heur
+                neighbour_heur = heuristic.batched_distance(neighbour, target)
+                neighbour_key = cost_weight * neighbour_cost + neighbour_heur
 
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
                 not_closed_update = astar_result.not_closed[idx, table_idx] | optimal

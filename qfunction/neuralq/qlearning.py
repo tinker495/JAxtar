@@ -10,36 +10,35 @@ import optax
 from puzzle.puzzle_base import Puzzle
 
 
-def davi_builder(
+def qlearning_builder(
     minibatch_size: int,
-    heuristic_fn: Callable,
+    q_fn: Callable,
     optimizer: optax.GradientTransformation,
 ):
-    def davi_loss(
+    def qlearning_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
-        target_heuristic: chex.Array,
+        target_qs: chex.Array,
     ):
-        current_heuristic, variable_updates = heuristic_fn(
+        q_values, variable_updates = q_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
         heuristic_params["batch_stats"] = variable_updates["batch_stats"]
-        diff = target_heuristic - current_heuristic.squeeze()
-        # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
+        diff = target_qs - q_values
         loss = jnp.mean(jnp.square(diff))
         return loss, (heuristic_params, diff)
 
-    def davi(
+    def qlearning(
         key: chex.PRNGKey,
         dataset: tuple[chex.Array, chex.Array],
         heuristic_params: jax.tree_util.PyTreeDef,
         opt_state: optax.OptState,
     ):
         """
-        DAVI is a heuristic for the sliding puzzle problem.
+        Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_heuristic = dataset
-        data_size = target_heuristic.shape[0]
+        states, target_q = dataset
+        data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
         batch_indexs = jnp.concatenate(
@@ -52,15 +51,17 @@ def davi_builder(
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
-        batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
+        batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
-            states, target_heuristic = batched_dataset
-            (loss, (heuristic_params, diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
+            states, target_q = batched_dataset
+            (loss, (heuristic_params, diff)), grads = jax.value_and_grad(
+                qlearning_loss, has_aux=True
+            )(
                 heuristic_params,
                 states,
-                target_heuristic,
+                target_q,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
@@ -69,28 +70,31 @@ def davi_builder(
         (heuristic_params, opt_state), (losses, diffs) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
-            (batched_states, batched_target_heuristic),
+            (batched_states, batched_target_q),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         return heuristic_params, opt_state, loss, mean_abs_diff, diffs
 
-    return jax.jit(davi)
+    return jax.jit(qlearning)
 
 
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_fn: Callable,
+    q_fn: Callable,
     create_shuffled_path_fn: Callable,
     minibatch_size: int,
     target_heuristic_params: jax.tree_util.PyTreeDef,
     key: chex.PRNGKey,
 ):
     tiled_targets, shuffled_path, move_costs = create_shuffled_path_fn(key)
-    neighbors, cost = jax.vmap(puzzle.get_neighbours)(
+    neighbors, _ = jax.vmap(puzzle.get_neighbours)(
         shuffled_path
-    )  # [batch_size, shuffle_length, 4] [batch_size, shuffle_length, 4]
+    )  # [batch_size * shuffle_length, action_shape] [batch_size * shuffle_length, action_shape]
+    _, neighbors_neighbor_cost = jax.vmap(jax.vmap(puzzle.get_neighbours))(
+        neighbors
+    )  # [batch_size * shuffle_length, action_shape]
     equal = jax.vmap(jax.vmap(puzzle.is_solved, in_axes=(0, None)), in_axes=(0, 0))(
         neighbors, tiled_targets
     )  # if equal, return 0
@@ -100,32 +104,30 @@ def _get_datasets(
     flatten_neighbors = jnp.reshape(
         preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
     )
+    flatten_neighbors_neighbor_cost = jnp.reshape(
+        neighbors_neighbor_cost, (-1, minibatch_size, *neighbors_neighbor_cost.shape[2:])
+    )
 
-    def heur_scan(_, neighbors):
-        heur, _ = heuristic_fn(
+    def q_scan(_, data):
+        neighbors, neighbor_cost = data
+        q, _ = q_fn(
             target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
-        )
-        return None, heur.squeeze()
+        )  # [minibatch_size, action_shape]
+        min_q = jnp.min(q + neighbor_cost, axis=1)
+        return None, min_q
 
-    _, heur = jax.lax.scan(heur_scan, None, flatten_neighbors)
-    heur = jnp.concatenate(heur, axis=0)
-    heur = jnp.reshape(heur, (preproc_neighbors.shape[0], -1))
-    heur = jnp.maximum(jnp.where(equal, 0.0, heur), 0.0)
-    target_heuristic = jnp.min(heur + cost, axis=1)
-
-    # target_heuristic must be less than the number of moves
-    # it just doesn't make sense to have a heuristic greater than the number of moves
-    # heuristic's definition is the optimal cost to reach the target state
-    # so it doesn't make sense to have a heuristic greater than the number of moves
-    target_heuristic = jnp.minimum(target_heuristic, move_costs)
+    _, target_q = jax.lax.scan(q_scan, None, (flatten_neighbors, flatten_neighbors_neighbor_cost))
+    target_q = jnp.concatenate(target_q, axis=0)
+    target_q = jnp.reshape(target_q, (preproc_neighbors.shape[0], -1))
+    target_q = jnp.maximum(jnp.where(equal, 0.0, target_q), 0.0)
     states = jax.vmap(preproc_fn)(shuffled_path, tiled_targets)
-    return states, target_heuristic
+    return states, target_q
 
 
 def get_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_fn: Callable,
+    q_fn: Callable,
     dataset_size: int,
     shuffle_parallel: int,
     shuffle_length: int,
@@ -140,7 +142,7 @@ def get_dataset_builder(
             _get_datasets,
             puzzle,
             preproc_fn,
-            heuristic_fn,
+            q_fn,
             create_shuffled_path_fn,
             dataset_minibatch_size,
         )
