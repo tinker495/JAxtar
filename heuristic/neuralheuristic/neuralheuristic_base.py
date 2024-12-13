@@ -4,34 +4,39 @@ from abc import ABC, abstractmethod
 import chex
 import jax
 import jax.numpy as jnp
+import numpy as np
 from flax import linen as nn
 
 from puzzle.puzzle_base import Puzzle
 
-# Simba Residual Block
+
+# Residual Block
 class ResBlock(nn.Module):
-    stage1_features: int = 1000
-    stage2_features: int = 1000
+    node_size: int
 
     @nn.compact
-    def __call__(self, x0):
-        x = nn.LayerNorm()(x0)
-        x = nn.Dense(self.stage1_features)(x)
+    def __call__(self, x0, training=False):
+        x = nn.Dense(self.node_size)(x0)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
-        x = nn.Dense(self.stage2_features)(x)
-        return x + x0
+        x = nn.Dense(self.node_size)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        return nn.relu(x + x0)
 
 
 class DefaultModel(nn.Module):
     @nn.compact
-    def __call__(self, x):
-        x = (x - 0.5) * 2.0 # normalize to [-1, 1]
+    def __call__(self, x, training=False):
+        x = nn.Dense(5000)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
         x = nn.Dense(1000)(x)
-        x = ResBlock()(x)
-        x = ResBlock()(x)
-        x = ResBlock()(x)
-        x = ResBlock()(x)
-        x = nn.LayerNorm()(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
         x = nn.Dense(1)(x)
         return x
 
@@ -40,12 +45,16 @@ class NeuralHeuristicBase(ABC):
     def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel(), init_params: bool = True):
         self.puzzle = puzzle
         self.model = model
+        if init_params:
+            self.params = self.get_new_params()
+
+    def get_new_params(self):
         dummy_current = self.puzzle.State.default()
         dummy_target = self.puzzle.State.default()
-        if init_params:
-            self.params = self.model.init(
-                jax.random.PRNGKey(0), self.pre_process(dummy_current, dummy_target)
-            )
+        return self.model.init(
+            jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
+            jnp.expand_dims(self.pre_process(dummy_current, dummy_target), axis=0),
+        )
 
     @classmethod
     def load_model(cls, puzzle: Puzzle, path: str):
@@ -53,21 +62,34 @@ class NeuralHeuristicBase(ABC):
         try:
             with open(path, "rb") as f:
                 params = pickle.load(f)
-            model = cls(puzzle, init_params=False)
+            heuristic = cls(puzzle, init_params=False)
             dummy_current = puzzle.State.default()
             dummy_target = puzzle.State.default()
-            model.model.apply(
-                params, model.pre_process(dummy_current, dummy_target)
+            heuristic.model.apply(
+                params,
+                jnp.expand_dims(heuristic.pre_process(dummy_current, dummy_target), axis=0),
+                training=False,
             )  # check if the params are compatible with the model
-            model.params = params
+            heuristic.params = params
         except Exception as e:
             print(f"Error loading model: {e}")
-            model = cls(puzzle)
-        return model
+            heuristic = cls(puzzle)
+        return heuristic
 
     def save_model(self, path: str):
         with open(path, "wb") as f:
             pickle.dump(self.params, f)
+
+    def batched_distance(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+        return self.batched_param_distance(self.params, current, target)
+
+    def batched_param_distance(
+        self, params, current: Puzzle.State, target: Puzzle.State
+    ) -> chex.Array:
+        x = jax.vmap(self.pre_process, in_axes=(0, None))(current, target)
+        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.post_process(x)
+        return x
 
     def distance(self, current: Puzzle.State, target: Puzzle.State) -> float:
         """
@@ -76,10 +98,10 @@ class NeuralHeuristicBase(ABC):
         return self.param_distance(self.params, current, target)
 
     def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
-        equal = self.puzzle.is_solved(current, target)  # if equal, return 0
         x = self.pre_process(current, target)
-        x = self.model.apply(params, x).squeeze()
-        return jnp.where(equal, 0.0, self.post_process(x))
+        x = jnp.expand_dims(x, axis=0)
+        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        return self.post_process(x)
 
     @abstractmethod
     def pre_process(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
@@ -92,4 +114,4 @@ class NeuralHeuristicBase(ABC):
         """
         This function should return the post-processed distance.
         """
-        return x
+        return x.squeeze(1)

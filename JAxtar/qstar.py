@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue, HeapValue
 from JAxtar.hash import HashTable, hash_func_builder
 from puzzle.puzzle_base import Puzzle
+from qfunction.q_base import QFunction
 
 
 @chex.dataclass
@@ -78,10 +79,10 @@ class QstarResult:
 
 def qstar_builder(
     puzzle: Puzzle,
-    q_fn: callable,
+    q_fn: QFunction,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    astar_weight: float = 1.0 - 1e-6,
+    cost_weight: float = 1.0 - 1e-6,
 ):
     """
     astar_builder is a function that returns a partial function of astar.
@@ -105,8 +106,6 @@ def qstar_builder(
     max_nodes = jnp.array(max_nodes, dtype=jnp.int32)
     hash_func = hash_func_builder(puzzle.State)
     qstar_result_build = partial(QstarResult.build, statecls, batch_size, max_nodes)
-
-    q_fn = jax.vmap(q_fn, in_axes=(0, None), out_axes=1)
 
     parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
@@ -163,10 +162,12 @@ def qstar_builder(
                 ~filled
             )  # or operation with closed
 
-            q_vals = q_fn(states, target)
+            q_vals = q_fn.batched_q_value(
+                states, target
+            ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbours, ncost = neighbours_fn(states, filled)
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
-            neighbour_key = astar_weight * nextcosts + q_vals
+            neighbour_key = cost_weight * nextcosts + q_vals
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             neighbours_parant_idx = jnp.broadcast_to(
                 parant_idx, (filleds.shape[0], filleds.shape[1], 2)

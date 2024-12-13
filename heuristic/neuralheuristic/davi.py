@@ -1,3 +1,4 @@
+import math
 from functools import partial
 from typing import Callable
 
@@ -10,137 +11,196 @@ from puzzle.puzzle_base import Puzzle
 
 
 def davi_builder(
-    puzzle: Puzzle,
-    steps: int,
-    total_batch_size: int,
-    shuffle_length: int,
     minibatch_size: int,
     heuristic_fn: Callable,
-    heuristic_params: jax.tree_util.PyTreeDef,
+    optimizer: optax.GradientTransformation,
 ):
-
-    create_shuffled_path_fn = partial(
-        create_shuffled_path, puzzle, shuffle_length, total_batch_size // shuffle_length
-    )
-
     def davi_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
-        targets: Puzzle.State,
-        current: Puzzle.State,
-        targets_heuristic: chex.Array,
+        states: chex.Array,
+        target_heuristic: chex.Array,
     ):
-        current_heuristic = jax.vmap(heuristic_fn, in_axes=(None, 0, 0))(  # axis - None, 0, 0
-            heuristic_params, current, targets
+        current_heuristic, variable_updates = heuristic_fn(
+            heuristic_params, states, training=True, mutable=["batch_stats"]
         )
-        diff = targets_heuristic - current_heuristic
+        heuristic_params["batch_stats"] = variable_updates["batch_stats"]
+        diff = target_heuristic - current_heuristic.squeeze()
+        # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
         loss = jnp.mean(jnp.square(diff))
-        return loss
-
-    optimizer = optax.adabelief(1e-4)
-    opt_state = optimizer.init(heuristic_params)
+        return loss, (heuristic_params, diff)
 
     def davi(
         key: chex.PRNGKey,
-        target_heuristic_params: jax.tree_util.PyTreeDef,
+        dataset: tuple[chex.Array, chex.Array],
         heuristic_params: jax.tree_util.PyTreeDef,
         opt_state: optax.OptState,
     ):
         """
         DAVI is a heuristic for the sliding puzzle problem.
         """
-        # print("Starting DAVI")
-        tiled_targets, shuffled_path = create_shuffled_path_fn(
-            key
-        )  # [batch_size, shuffle_length] [batch_size, shuffle_length]
-        neighbors, cost = jax.vmap(jax.vmap(puzzle.get_neighbours))(
-            shuffled_path
-        )  # [batch_size, shuffle_length, 4] [batch_size, shuffle_length, 4]
-        original_shape = cost.shape
-        neighbor_len = cost.shape[-1]
-        next_tiled_targets = jax.tree_util.tree_map(
-            lambda x: jnp.tile(
-                x[:, :, jnp.newaxis, ...], (1, 1, neighbor_len) + (x.ndim - 2) * (1,)
-            ),
-            tiled_targets,
-        )
+        states, target_heuristic = dataset
+        data_size = target_heuristic.shape[0]
+        batch_size = math.ceil(data_size / minibatch_size)
 
-        neighbors_flatten = jax.tree_util.tree_map(
-            lambda x: x.reshape((-1, *x.shape[3:])), neighbors
-        )
-        target_flatten = jax.tree_util.tree_map(
-            lambda x: x.reshape((-1, *x.shape[3:])), next_tiled_targets
-        )
-        cost_flatten = cost.reshape((-1,))
-        flatten_size = cost_flatten.shape[0]
+        batch_indexs = jnp.concatenate(
+            [
+                jax.random.permutation(key, jnp.arange(data_size)),
+                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
+            ],
+            axis=0,
+        )  # [batch_size * minibatch_size]
+        batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
-        neighbors_heuristics = []
-        for i in range(0, flatten_size, minibatch_size):
-            neighbors_heuristic = jax.vmap(heuristic_fn, in_axes=(None, 0, 0))(
-                target_heuristic_params,
-                neighbors_flatten[i : i + minibatch_size],
-                target_flatten[i : i + minibatch_size],
-            )
-            neighbors_heuristics.append(neighbors_heuristic)
-        neighbors_heuristics = jnp.concatenate(neighbors_heuristics, axis=0)
-        neighbors_heuristics = neighbors_heuristics.reshape(original_shape)
+        batched_states = jnp.take(states, batch_indexs, axis=0)
+        batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
 
-        target_heuristic = jnp.min(neighbors_heuristics + cost, axis=2)
-
-        flatten_target_heuristic = jax.lax.stop_gradient(target_heuristic.reshape((-1,)))
-        flatten_shuffled_path = jax.tree_util.tree_map(
-            lambda x: x.reshape((-1, *x.shape[2:])), shuffled_path
-        )
-        target_flatten = jax.tree_util.tree_map(
-            lambda x: x.reshape((-1, *x.shape[2:])), tiled_targets
-        )
-
-        def train_loop(carry, _):
-            heuristic_params, opt_state, key = carry
-            key, subkey = jax.random.split(key)
-            indexs = jax.random.choice(subkey, flatten_target_heuristic.shape[0], (256,))
-            loss, grads = jax.value_and_grad(davi_loss)(
+        def train_loop(carry, batched_dataset):
+            heuristic_params, opt_state = carry
+            states, target_heuristic = batched_dataset
+            (loss, (heuristic_params, diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
-                target_flatten[indexs],
-                flatten_shuffled_path[indexs],
-                flatten_target_heuristic[indexs],
+                states,
+                target_heuristic,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
-            return (heuristic_params, opt_state, key), loss
+            return (heuristic_params, opt_state), (loss, diff)
 
-        (heuristic_params, opt_state, key), losses = jax.lax.scan(
-            train_loop, (heuristic_params, opt_state, key), None, length=steps
+        (heuristic_params, opt_state), (losses, diffs) = jax.lax.scan(
+            train_loop,
+            (heuristic_params, opt_state),
+            (batched_states, batched_target_heuristic),
         )
         loss = jnp.mean(losses)
-        mean_target_heuristic = jnp.mean(target_heuristic)
-        return heuristic_params, opt_state, loss, mean_target_heuristic
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
+        return heuristic_params, opt_state, loss, mean_abs_diff, diffs
 
-    return jax.jit(davi), opt_state
+    return jax.jit(davi)
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2))
-def create_shuffled_path(puzzle: Puzzle, shuffle_length: int, batch_size: int, key: chex.PRNGKey):
-    targets = jax.vmap(puzzle.get_target_state)(jax.random.split(key, batch_size))
+def _get_datasets(
+    puzzle: Puzzle,
+    preproc_fn: Callable,
+    heuristic_fn: Callable,
+    create_shuffled_path_fn: Callable,
+    minibatch_size: int,
+    target_heuristic_params: jax.tree_util.PyTreeDef,
+    key: chex.PRNGKey,
+):
+    tiled_targets, shuffled_path, move_costs = create_shuffled_path_fn(key)
+    neighbors, cost = jax.vmap(puzzle.get_neighbours)(
+        shuffled_path
+    )  # [batch_size, shuffle_length, 4] [batch_size, shuffle_length, 4]
+    equal = jax.vmap(jax.vmap(puzzle.is_solved, in_axes=(0, None)), in_axes=(0, 0))(
+        neighbors, tiled_targets
+    )  # if equal, return 0
+    preproc_neighbors = jax.vmap(jax.vmap(preproc_fn, in_axes=(0, None)), in_axes=(0, 0))(
+        neighbors, tiled_targets
+    )
+    flatten_neighbors = jnp.reshape(
+        preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
+    )
+
+    def heur_scan(_, neighbors):
+        heur, _ = heuristic_fn(
+            target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
+        )
+        return None, heur.squeeze()
+
+    _, heur = jax.lax.scan(heur_scan, None, flatten_neighbors)
+    heur = jnp.concatenate(heur, axis=0)
+    heur = jnp.reshape(heur, (preproc_neighbors.shape[0], -1))
+    heur = jnp.maximum(jnp.where(equal, 0.0, heur), 0.0)
+    target_heuristic = jnp.min(heur + cost, axis=1)
+
+    # target_heuristic must be less than the number of moves
+    # it just doesn't make sense to have a heuristic greater than the number of moves
+    # heuristic's definition is the optimal cost to reach the target state
+    # so it doesn't make sense to have a heuristic greater than the number of moves
+    target_heuristic = jnp.minimum(target_heuristic, move_costs)
+    states = jax.vmap(preproc_fn)(shuffled_path, tiled_targets)
+    return states, target_heuristic
+
+
+def get_dataset_builder(
+    puzzle: Puzzle,
+    preproc_fn: Callable,
+    heuristic_fn: Callable,
+    dataset_size: int,
+    shuffle_parallel: int,
+    shuffle_length: int,
+    dataset_minibatch_size: int,
+):
+    steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
+    create_shuffled_path_fn = partial(
+        create_shuffled_path, puzzle, shuffle_length, shuffle_parallel, dataset_minibatch_size
+    )
+    jited_get_datasets = jax.jit(
+        partial(
+            _get_datasets,
+            puzzle,
+            preproc_fn,
+            heuristic_fn,
+            create_shuffled_path_fn,
+            dataset_minibatch_size,
+        )
+    )
+
+    def get_datasets(
+        heuristic_params: jax.tree_util.PyTreeDef,
+        key: chex.PRNGKey,
+    ):
+        dataset = []
+        for _ in range(steps):
+            key, subkey = jax.random.split(key)
+            dataset.append(jited_get_datasets(heuristic_params, subkey))
+        flatten_dataset = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *dataset)
+        assert flatten_dataset[0].shape[0] == dataset_size
+        return flatten_dataset
+
+    return get_datasets
+
+
+def create_shuffled_path(
+    puzzle: Puzzle,
+    shuffle_length: int,
+    shuffle_parallel: int,
+    dataset_minibatch_size: int,
+    key: chex.PRNGKey,
+):
+    targets = jax.vmap(puzzle.get_target_state)(jax.random.split(key, shuffle_parallel))
 
     def get_trajectory_key(target: Puzzle.State, key: chex.PRNGKey):
         def _scan(carry, _):
-            state, key = carry
+            state, key, move_cost = carry
             neighbor_states, cost = puzzle.get_neighbours(state, filled=True)
+            is_target = jax.vmap(puzzle.is_equal, in_axes=(None, 0))(target, neighbor_states)
             filled = jnp.isfinite(cost).astype(jnp.float32)
+            filled = jnp.where(is_target, 0.0, filled)
             prob = filled / jnp.sum(filled)
             key, subkey = jax.random.split(key)
             idx = jax.random.choice(subkey, jnp.arange(cost.shape[0]), p=prob)
             next_state = neighbor_states[idx]
-            return (next_state, key), next_state
+            cost = cost[idx]
+            move_cost = move_cost + cost
+            return (next_state, key, move_cost), (next_state, move_cost)
 
-        _, moves = jax.lax.scan(_scan, (target, key), None, length=shuffle_length)
-        return moves
+        _, (moves, move_costs) = jax.lax.scan(
+            _scan, (target, key, 0.0), None, length=shuffle_length
+        )
+        return moves, move_costs
 
-    moves = jax.vmap(get_trajectory_key)(
-        targets, jax.random.split(key, batch_size)
+    moves, move_costs = jax.vmap(get_trajectory_key)(
+        targets, jax.random.split(key, shuffle_parallel)
     )  # [batch_size, shuffle_length][state...]
     tiled_targets = jax.tree_util.tree_map(
         lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length) + (x.ndim - 1) * (1,)),
         targets,
     )
-    return tiled_targets, moves
+    tiled_targets = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), tiled_targets)
+    moves = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), moves)
+    move_costs = jnp.reshape(move_costs, (-1))
+    tiled_targets = tiled_targets[:dataset_minibatch_size]
+    moves = moves[:dataset_minibatch_size]
+    move_costs = move_costs[:dataset_minibatch_size]
+    return tiled_targets, moves, move_costs

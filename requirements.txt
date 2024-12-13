@@ -10,3 +10,4 @@ dm-haiku
 flax
 optax
 termcolor
+tensorboardX

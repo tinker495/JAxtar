@@ -14,28 +14,41 @@ class ConvResBlock(nn.Module):
     strides: int
 
     @nn.compact
-    def __call__(self, x):
-        x0 = nn.Conv(self.filters, 1)(x)  # 1x1 conv to pass information through
-        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
+    def __call__(self, x0, training=False):
+        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        return nn.relu(x + x0)
+
+
+class ResBlock(nn.Module):
+    node_size: int
+
+    @nn.compact
+    def __call__(self, x0, training=False):
+        x = nn.Dense(self.node_size)(x0)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
-        x = x + x0
-        return x
+        x = nn.Dense(self.node_size)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        return nn.relu(x + x0)
 
 
 class Model(nn.Module):
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
-        x = ConvResBlock(128, (3, 3), strides=1)(x)
-        x = ConvResBlock(128, (3, 3), strides=1)(x)
-        x = ConvResBlock(128, (3, 3), strides=1)(x)
+        x = nn.Conv(256, (3, 3), strides=1, padding="SAME")(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = ConvResBlock(256, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(256)(x)
+        x = nn.Dense(512)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
-        x = nn.Dense(128)(x)
-        x = nn.relu(x)
+        x = ResBlock(512)(x, training)
         x = nn.Dense(1)(x)
         return x
 
@@ -54,7 +67,6 @@ class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
         c_zero = self.to_2d(self._zero_pos(current))  # [n, n, 1]
         t_zero = self.to_2d(self._zero_pos(target))  # [n, n, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1)  # [n, n, 4]
-        x = jnp.expand_dims(x, axis=0)
         return x
 
     def to_2d(self, x: chex.Array) -> chex.Array:
