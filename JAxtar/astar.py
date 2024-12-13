@@ -82,7 +82,7 @@ def astar_builder(
     heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    astar_weight: float = 1.0 - 1e-6,
+    cost_weight: float = 1.0 - 1e-6,
 ):
     """
     astar_builder is a function that returns a partial function of astar.
@@ -203,7 +203,7 @@ def astar_builder(
             def _scan(astar_result: AstarResult, val):
                 neighbour, neighbour_cost, idx, table_idx, optimal = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
-                neighbour_key = astar_weight * neighbour_cost + neighbour_heur
+                neighbour_key = cost_weight * neighbour_cost + neighbour_heur
 
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
                 not_closed_update = astar_result.not_closed[idx, table_idx] | optimal
