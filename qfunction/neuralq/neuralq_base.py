@@ -84,17 +84,28 @@ class NeuralQFunctionBase(ABC):
         with open(path, "wb") as f:
             pickle.dump(self.params, f)
 
-    def q_value(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
-        x = self.pre_process(current, target)
-        x = self.model.apply(self.params, x).squeeze()
+    def batched_q_value(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+        return self.batched_param_q_value(self.params, current, target)
+
+    def batched_param_q_value(
+        self, params, current: Puzzle.State, target: Puzzle.State
+    ) -> chex.Array:
+        x = jax.vmap(self.pre_process, in_axes=(0, None))(current, target)
+        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.post_process(x)
         return x
 
-    def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+    def q_value(self, current: Puzzle.State, target: Puzzle.State) -> float:
+        """
+        This function should return the distance between the state and the target.
+        """
+        return self.param_q_value(self.params, current, target)
+
+    def param_q_value(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
         x = self.pre_process(current, target)
-        x = self.model.apply(params, x)
-        neighbors, _ = self.puzzle.get_neighbours(current)
-        equal = jax.vmap(self.puzzle.is_solved, in_axes=(0, None))(neighbors, target)
-        return jnp.where(equal, 0.0, self.post_process(x))
+        x = jnp.expand_dims(x, axis=0)
+        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        return self.post_process(x)
 
     @abstractmethod
     def pre_process(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:

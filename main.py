@@ -5,6 +5,7 @@ import click
 import jax
 import jax.numpy as jnp
 
+from heuristic.heuristic_base import Heuristic
 from JAxtar.astar import astar_builder
 from JAxtar.hash import HashTable
 from JAxtar.qstar import qstar_builder
@@ -17,6 +18,7 @@ from puzzle_config import (
     puzzle_q_dict,
     puzzle_q_dict_nn,
 )
+from qfunction.q_base import QFunction
 
 
 def human_format(num):
@@ -44,7 +46,7 @@ def puzzle_options(func: callable) -> callable:
         help="Puzzle to solve",
     )
     @click.option("-h", "--hard", default=False, is_flag=True, help="Use the hard puzzle")
-    @click.option("--puzzle_size", default="default", type=str, help="Size of the puzzle")
+    @click.option("-ps", "--puzzle_size", default="default", type=str, help="Size of the puzzle")
     @click.option("--start_state_seed", default=32, help="Seed for the random puzzle")
     @click.option("--seed", default=0, help="Seed for the random puzzle")
     @wraps(func)
@@ -55,10 +57,10 @@ def puzzle_options(func: callable) -> callable:
 
 
 def search_options(func: callable) -> callable:
-    @click.option("--max_node_size", default=2e7, help="Size of the puzzle")
-    @click.option("--batch_size", default=8192, help="Batch size for BGPQ")  # 1024 * 8 = 8192
-    @click.option("--astar_weight", default=1.0 - 1e-3, help="Weight for the A* search")
-    @click.option("--vmap_size", default=1, help="Size for the vmap")
+    @click.option("-m", "--max_node_size", default=2e7, help="Size of the puzzle")
+    @click.option("-b", "--batch_size", default=8192, help="Batch size for BGPQ")  # 1024 * 8 = 8192
+    @click.option("-w", "--cost_weight", default=1.0 - 1e-3, help="Weight for the A* search")
+    @click.option("-v", "--vmap_size", default=1, help="Size for the vmap")
     @click.option("--debug", is_flag=True, help="Debug mode")
     @click.option("--profile", is_flag=True, help="Profile mode")
     @wraps(func)
@@ -106,7 +108,7 @@ def astar(
     puzzle_size,
     max_node_size,
     batch_size,
-    astar_weight,
+    cost_weight,
     start_state_seed,
     seed,
     vmap_size,
@@ -136,13 +138,13 @@ def astar(
 
     if neural_heuristic:
         try:
-            heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle_size, puzzle, False)
+            heuristic: Heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle_size, puzzle, False)
         except KeyError:
             print("Neural heuristic not available for this puzzle")
             print(f"list of neural heuristic: {puzzle_heuristic_dict_nn.keys()}")
             exit(1)
     else:
-        heuristic = puzzle_heuristic_dict[puzzle_name](puzzle)
+        heuristic: Heuristic = puzzle_heuristic_dict[puzzle_name](puzzle)
 
     max_node_size = int(max_node_size)
     batch_size = int(batch_size)
@@ -153,7 +155,7 @@ def astar(
     target = puzzle.get_target_state()
 
     astar_result_build, astar_fn = astar_builder(
-        puzzle, heuristic, batch_size, max_node_size, astar_weight=astar_weight
+        puzzle, heuristic, batch_size, max_node_size, cost_weight=cost_weight
     )
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
@@ -296,7 +298,7 @@ def qstar(
     puzzle_size,
     max_node_size,
     batch_size,
-    astar_weight,
+    cost_weight,
     start_state_seed,
     seed,
     vmap_size,
@@ -326,15 +328,13 @@ def qstar(
 
     if neural_qfunction:
         try:
-            qfunction = puzzle_q_dict_nn[puzzle_name](puzzle_size, puzzle, False)
+            qfunction: QFunction = puzzle_q_dict_nn[puzzle_name](puzzle_size, puzzle, False)
         except KeyError:
             print("Neural qfunction not available for this puzzle")
             print(f"list of neural qfunction: {puzzle_q_dict_nn.keys()}")
             exit(1)
     else:
-        qfunction = puzzle_q_dict[puzzle_name](puzzle)
-
-    q_fn = qfunction.q_value
+        qfunction: QFunction = puzzle_q_dict[puzzle_name](puzzle)
 
     max_node_size = int(max_node_size)
     batch_size = int(batch_size)
@@ -345,7 +345,7 @@ def qstar(
     target = puzzle.get_target_state()
 
     qstar_result_build, qstar_fn = qstar_builder(
-        puzzle, q_fn, batch_size, max_node_size, astar_weight=astar_weight
+        puzzle, qfunction, batch_size, max_node_size, cost_weight=cost_weight
     )
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
@@ -358,7 +358,7 @@ def qstar(
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(
         key=jax.random.split(jax.random.PRNGKey(start_state_seed), 1)
     )
-    qvalues = jax.vmap(q_fn, in_axes=(0, None))(states, target)
+    qvalues = qfunction.batched_q_value(states, target)
 
     print("Start state")
     print(states[0])
