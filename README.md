@@ -6,7 +6,6 @@
 
 JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizeable A\* solver for neural heuristic search research.
 This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. If mcts can be written in pure jax, so why not A\*?
-**The project is not yet fully complete, with many types of puzzles left to be solved, more efficient basic heuristics, learning neural network heuristics, and more.**
 
 mcts, or tree search, is used in many RL algorithmic techniques, starting with AlphaGo, but graph search (not tree search) doesn't seem to have received much attention. Nevertheless, there are puzzle solving algorithms that use neural heuristics like [DeepcubeA](https://github.com/forestagostinelli/DeepCubeA) with A\* (graph search).
 
@@ -46,8 +45,10 @@ This project was a real pain in the arse to write, and I almost felt like I was 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a blazingly fast result, but it can be used for heuristics using neural networks.
 The tests below were performed on a single A100 80GB GPU.
 
+### Test Run
+
 ```bash
-$ python main.py
+$ python main.py astar
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
 ┃ 2 ┃ F ┃ 3 ┃ 4 ┃
@@ -75,8 +76,10 @@ Time:   0.62 seconds
 Search states: 810K (1.31M states/s)
 ```
 
+### Test vmapped run
+
 ```bash
-$ python main.py --max_node_size 1e6 --batch_size 1024 --vmap_size 10
+$ python main.py astar --max_node_size 1e6 --batch_size 1024 --vmap_size 10
 Vmapped A* search, multiple initial state solution
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -107,6 +110,43 @@ Time:   2.36 seconds (x4.8/10)
 Search states: 1.89M (799K states/s)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
+```
+
+### BWAS with neural heuristic
+
+```bash
+python3 main.py astar -nn -h -p rubikscube -w 0.2
+
+initializing jit
+Time:  38.24 seconds
+
+...
+
+JIT compiled
+Time:   5.40 seconds
+Search states: 3.01M(557K states/s)
+
+
+Cost: 24.0
+Solution found
+```
+
+### BWQS with neural Q model
+
+```bash
+python3 main.py qstar -nn -h -p rubikscube -w 0.2
+initializing jit
+Time:  37.02 seconds
+
+...
+
+JIT compiled
+Time:   1.46 seconds
+Search states: 1.76M(1.21M states/s)
+
+
+Cost: 24.0
+Solution found
 ```
 
 ## Puzzles
