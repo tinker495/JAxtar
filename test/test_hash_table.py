@@ -67,14 +67,21 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
     num = 10
     counts = 0
     for i in range(num):
-        sample = puzzle.get_initial_state(jax.random.PRNGKey(i))
-        sample = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), sample)
+        key1, key2 = jax.random.split(jax.random.PRNGKey(i))
+        sample1 = puzzle.get_initial_state(key1)
+        sample2 = puzzle.get_initial_state(key2)
+        sample1 = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), sample1)
+        sample2 = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), sample2)
+
+        sample = jax.tree_util.tree_map(
+            lambda x, y: jnp.concatenate([x, y], axis=0), sample1, sample2
+        )
 
         batched_sample, filled = HashTable.make_batched(puzzle.State, sample, batch)
         table, _, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
         unique_idxs = jnp.unique(jnp.stack([idxs, table_idxs], axis=1), axis=0)
-        assert unique_idxs.shape[0] == 2, f"unique_idxs.shape: {unique_idxs.shape}"
-        counts += 1
+        assert unique_idxs.shape[0] == 3, f"unique_idxs.shape: {unique_idxs.shape}"
+        counts += 2
 
     assert table.size == counts, f"table.table.size: {table.size}, counts: {counts}"
 
