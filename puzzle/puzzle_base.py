@@ -61,56 +61,6 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
 
     setattr(cls, "__len__", len)
 
-    def get_flatten(self: "Puzzle.State"):
-        batch_size = len(self)
-        x = jax.tree_util.tree_map(lambda x: jnp.reshape(x, (batch_size, -1)), self)
-        x_flattens, _ = jax.tree_util.tree_flatten(x)
-        x_flattens = jnp.concatenate(x_flattens, axis=1)
-        return x_flattens
-
-    setattr(cls, "get_flatten", get_flatten)
-
-    def unique_mask(self: "Puzzle.State"):
-        """
-        check if the dataclass is unique
-        """
-        size = len(self)
-        flatten_x = self.get_flatten()
-        unique_idx = jnp.unique(flatten_x, axis=0, size=size, return_index=True)[
-            1
-        ]  # shape = (size,)
-        unique_masks = (
-            jnp.zeros((size,), dtype=jnp.bool_).at[unique_idx].set(True)
-        )  # set the unique index to True
-        return unique_masks
-
-    setattr(cls, "unique_mask", unique_mask)
-
-    def unique_optimal(self: "Puzzle.State", key: jnp.ndarray):
-        size = len(self)
-        flatten_x: jnp.ndarray = self.get_flatten()  # [size, ...]
-
-        # Get unique states and their indices
-        _, inverse_idx, _ = jnp.unique(
-            flatten_x, axis=0, size=size, return_inverse=True, return_counts=True
-        )
-
-        # Use size as the maximum possible number of segments
-        # This is guaranteed to be large enough
-        min_key_mask = jnp.zeros((size,), dtype=jnp.bool_)
-        min_key_idx = jax.ops.segment_min(
-            jnp.arange(size),
-            inverse_idx,
-            num_segments=size,  # Use size instead
-            indices_are_sorted=False,
-            unique_indices=True,
-        )
-        min_key_mask = min_key_mask.at[min_key_idx].set(True)
-
-        return min_key_mask
-
-    setattr(cls, "unique_optimal", unique_optimal)
-
     return cls
 
 
