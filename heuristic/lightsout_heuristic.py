@@ -16,4 +16,4 @@ class LightsOutHeuristic(Heuristic):
             self.puzzle.from_uint8(current.board), self.puzzle.from_uint8(target.board)
         )
         sum_neq_state = jnp.sum(neq_state)
-        return sum_neq_state / 5
+        return sum_neq_state / 5 * 2
