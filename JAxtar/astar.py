@@ -182,7 +182,9 @@ def astar_builder(
             )
 
             flatten_nextcosts = nextcosts.reshape((flatten_size,))
+            # unique_optimal_mask = flatten_neighbours.unique_optimal(flatten_nextcosts)
             optimals = jnp.less(flatten_nextcosts, astar_result.cost[idxs, table_idxs])
+            # optimals = jnp.logical_and(optimals, unique_optimal_mask)
             astar_result.cost = astar_result.cost.at[idxs, table_idxs].min(
                 flatten_nextcosts
             )  # update the minimul cost
