@@ -61,6 +61,15 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
 
     setattr(cls, "__len__", len)
 
+    def get_flatten(self):
+        batch_size = len(self)
+        x = jax.tree_util.tree_map(lambda x: jnp.reshape(x, (batch_size, -1)), self)
+        x_flattens, _ = jax.tree_util.tree_flatten(x)
+        x_flattens = jnp.concatenate(x_flattens, axis=1)
+        return x_flattens
+
+    setattr(cls, "get_flatten", get_flatten)
+
     return cls
 
 
