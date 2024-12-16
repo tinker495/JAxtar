@@ -140,7 +140,7 @@ class HashTable:
         """
 
         def _check_equal(state1, state2):
-            tree_equal = jax.tree.map(lambda x, y: jnp.all(x == y), state1, state2)
+            tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
             return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
 
         def _cond(val):
@@ -334,9 +334,4 @@ class HashTable:
         )
         table.table_idx = table.table_idx.at[idx].add(updatable)
         table.size += jnp.sum(updatable)
-
-        # get the idx and table_idx of the inputs
-        _, idx, table_idx, _ = jax.vmap(
-            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
-        )(table, inputs, initial_idx, 0, table.seed, ~filled)
         return table, updatable, idx, table_idx
