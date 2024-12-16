@@ -2,7 +2,7 @@
   <img src="images/JAxtar.png" alt="logo" width="200"></img>
 </div>
 
-# JA<sup>xtar</sup>: Batched parallel A\* solver in pure Jax!
+# JA<sup>xtar</sup>: Batched parallel A\* & Q\* solver in pure Jax!
 
 JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizeable A\* solver for neural heuristic search research.
 This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. If mcts can be written in pure jax, so why not A\*?
