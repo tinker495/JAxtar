@@ -155,7 +155,7 @@ class HashTable:
         """
 
         def _check_equal(state1, state2):
-            tree_equal = jax.tree.map(lambda x, y: jnp.all(x == y), state1, state2)
+            tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
             return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
 
         def _cond(val):
@@ -326,9 +326,9 @@ class HashTable:
         )(table, inputs, initial_idx, 0, table.seed, ~filled)
         _idxs = jnp.stack([idx, table_idx], axis=1)
         updatable = jnp.logical_and(~found, filled)
-        _updatable = jnp.logical_and(updatable, inputs_unique_mask)
+        updatable = jnp.logical_and(updatable, inputs_unique_mask)
 
-        masked_idx = jnp.where(_updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+        masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
         unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True)[
             1
         ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
