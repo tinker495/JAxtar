@@ -177,14 +177,12 @@ def astar_builder(
             flatten_neighbours = jax.tree_util.tree_map(
                 lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours
             )
-            astar_result.hashtable, _, idxs, table_idxs = parallel_insert(
+            astar_result.hashtable, updated, idxs, table_idxs = parallel_insert(
                 astar_result.hashtable, flatten_neighbours, filleds.reshape((flatten_size,))
             )
 
             flatten_nextcosts = nextcosts.reshape((flatten_size,))
-            # unique_optimal_mask = flatten_neighbours.unique_optimal(flatten_nextcosts)
             optimals = jnp.less(flatten_nextcosts, astar_result.cost[idxs, table_idxs])
-            # optimals = jnp.logical_and(optimals, unique_optimal_mask)
             astar_result.cost = astar_result.cost.at[idxs, table_idxs].min(
                 flatten_nextcosts
             )  # update the minimul cost
