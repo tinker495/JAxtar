@@ -84,6 +84,21 @@ class SlidePuzzle(Puzzle):
     def is_solved(self, state: State, target: State) -> bool:
         return self.is_equal(state, target)
 
+    def action_to_string(self, action: int) -> str:
+        """
+        This function should return a string representation of the action.
+        """
+        if action == 0:
+            return "←"
+        elif action == 1:
+            return "→"
+        elif action == 2:
+            return "↑"
+        elif action == 3:
+            return "↓"
+        else:
+            raise ValueError(f"Invalid action: {action}")
+
     def _get_visualize_format(self):
         size = self.size
         form = "┏━"
