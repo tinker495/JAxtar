@@ -26,7 +26,7 @@ class QstarResult:
             this could be update if a better path is found.
     - not_closed: a boolean array that indicates whether the state is in the closed set or not.
                 this is inverted for the efficient implementation. not_closed = ~closed
-    - parant: a 2D array that contains the index of the parent node.
+    - parent: a 2D array that contains the index of the parent node.
     """
 
     hashtable: HashTable
@@ -35,7 +35,7 @@ class QstarResult:
     min_val_buffer: HashTableIdx_HeapValue
     cost: chex.Array
     not_closed: chex.Array
-    parant: chex.Array
+    parent: chex.Array
 
     @staticmethod
     def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=0, n_table=2):
@@ -53,7 +53,7 @@ class QstarResult:
         )
         cost = jnp.full((size_table, n_table), jnp.inf)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
-        parant = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
+        parent = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
         return QstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
@@ -61,7 +61,7 @@ class QstarResult:
             min_val_buffer=min_val_buffer,
             cost=cost,
             not_closed=not_closed,
-            parant=parant,
+            parent=parent,
         )
 
     @property
@@ -153,7 +153,7 @@ def qstar_builder(
         def _body(qstar_result: QstarResult):
             qstar_result, min_val, filled = pop_full(qstar_result)
             min_idx, min_table_idx = min_val.index, min_val.table_index
-            parant_idx = jnp.stack((min_idx, min_table_idx), axis=-1)
+            parent_idx = jnp.stack((min_idx, min_table_idx), axis=-1)
 
             cost_val = qstar_result.cost[min_idx, min_table_idx]
             states = qstar_result.hashtable.table[min_idx, min_table_idx]
@@ -169,8 +169,8 @@ def qstar_builder(
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             neighbour_key = cost_weight * nextcosts + q_vals
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
-            neighbours_parant_idx = jnp.broadcast_to(
-                parant_idx, (filleds.shape[0], filleds.shape[1], 2)
+            neighbours_parent_idx = jnp.broadcast_to(
+                parent_idx, (filleds.shape[0], filleds.shape[1], 2)
             )
 
             # insert neighbours into hashtable at once
@@ -190,12 +190,12 @@ def qstar_builder(
                 flatten_nextcosts
             )  # update the minimul cost
 
-            flatten_neighbours_parant_idx = neighbours_parant_idx.reshape((flatten_size, 2))
-            qstar_result.parant = qstar_result.parant.at[idxs, table_idxs].set(
+            flatten_neighbours_parent_idx = neighbours_parent_idx.reshape((flatten_size, 2))
+            qstar_result.parent = qstar_result.parent.at[idxs, table_idxs].set(
                 jnp.where(
                     optimals[:, jnp.newaxis],
-                    flatten_neighbours_parant_idx,
-                    qstar_result.parant[idxs, table_idxs],
+                    flatten_neighbours_parent_idx,
+                    qstar_result.parent[idxs, table_idxs],
                 )
             )
 

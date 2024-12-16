@@ -198,7 +198,7 @@ def astar(
         if solved:
             print("Solution found\n\n")
 
-            parants = astar_result.parant
+            parents = astar_result.parent
             table = astar_result.hashtable.table
             cost = astar_result.cost
 
@@ -206,12 +206,12 @@ def astar(
             solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
 
             path = []
-            parant_last = parants[solved_idx.index, solved_idx.table_index][0]
+            parent_last = parents[solved_idx.index, solved_idx.table_index][0]
             while True:
-                if parant_last[0] == -1:
+                if parent_last[0] == -1:
                     break
-                path.append(parant_last)
-                parant_last = parants[parant_last[0], parant_last[1]]
+                path.append(parent_last)
+                parent_last = parents[parent_last[0], parent_last[1]]
             for p in path[::-1]:
                 state = table[p[0], p[1]]
                 c = cost[p[0], p[1]]
@@ -387,7 +387,7 @@ def qstar(
         if solved:
             print("Solution found\n\n")
 
-            parants = qstar_result.parant
+            parents = qstar_result.parent
             table = qstar_result.hashtable.table
             cost = qstar_result.cost
 
@@ -395,12 +395,12 @@ def qstar(
             solved_cost = qstar_result.cost[solved_idx.index, solved_idx.table_index][0]
 
             path = []
-            parant_last = parants[solved_idx.index, solved_idx.table_index][0]
+            parent_last = parents[solved_idx.index, solved_idx.table_index][0]
             while True:
-                if parant_last[0] == -1:
+                if parent_last[0] == -1:
                     break
-                path.append(parant_last)
-                parant_last = parants[parant_last[0], parant_last[1]]
+                path.append(parent_last)
+                parent_last = parents[parent_last[0], parent_last[1]]
             for p in path[::-1]:
                 state = table[p[0], p[1]]
                 c = cost[p[0], p[1]]
