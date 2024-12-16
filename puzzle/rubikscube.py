@@ -16,6 +16,7 @@ LEFT = 2
 RIGHT = 3
 FRONT = 4
 BACK = 5
+rotate_face_map = {0: "left", 1: "down", 2: "front", 3: "right", 4: "back", 5: "up"}
 face_map = {0: "up", 1: "down", 2: "left", 3: "right", 4: "front", 5: "back"}
 color_map = {0: "white", 1: "yellow", 2: "red", 3: "magenta", 4: "green", 5: "blue"}  # orange
 
@@ -131,6 +132,12 @@ class RubiksCube(Puzzle):
 
     def is_solved(self, state: State, target: State) -> bool:
         return self.is_equal(state, target)
+
+    def action_to_string(self, action: int) -> str:
+        """
+        This function should return a string representation of the action.
+        """
+        return f"{rotate_face_map[int(action // 2)]}_{'cw' if action % 2 == 0 else 'ccw'}"
 
     def _get_random_state(self, key, num_shuffle=12):
         """

@@ -199,24 +199,26 @@ def astar(
             print("Solution found\n\n")
 
             parents = astar_result.parent
+            parent_action = astar_result.parent_action
             table = astar_result.hashtable.table
             cost = astar_result.cost
 
             solved_st = astar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
             solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
 
-            path = []
+            path = [(solved_idx.index[0], solved_idx.table_index[0])]
             parent_last = parents[solved_idx.index, solved_idx.table_index][0]
             while True:
                 if parent_last[0] == -1:
                     break
                 path.append(parent_last)
                 parent_last = parents[parent_last[0], parent_last[1]]
-            for p in path[::-1]:
-                state = table[p[0], p[1]]
-                c = cost[p[0], p[1]]
+            for (p0, p1) in zip(path[::-1], path[::-1][1:]):
+                state = table[p0[0], p0[1]]
+                c = cost[p0[0], p0[1]]
+                a = parent_action[p1[0], p1[1]]
                 print(state)
-                print(c)
+                print(f"cost: {c}, action: {puzzle.action_to_string(a)}")
             print(solved_st)
             print(f"Cost: {solved_cost}")
 
@@ -388,24 +390,26 @@ def qstar(
             print("Solution found\n\n")
 
             parents = qstar_result.parent
+            parent_action = qstar_result.parent_action
             table = qstar_result.hashtable.table
             cost = qstar_result.cost
 
             solved_st = qstar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
             solved_cost = qstar_result.cost[solved_idx.index, solved_idx.table_index][0]
 
-            path = []
+            path = [(solved_idx.index[0], solved_idx.table_index[0])]
             parent_last = parents[solved_idx.index, solved_idx.table_index][0]
             while True:
                 if parent_last[0] == -1:
                     break
                 path.append(parent_last)
                 parent_last = parents[parent_last[0], parent_last[1]]
-            for p in path[::-1]:
-                state = table[p[0], p[1]]
-                c = cost[p[0], p[1]]
+            for (p0, p1) in zip(path[::-1], path[::-1][1:]):
+                state = table[p0[0], p0[1]]
+                c = cost[p0[0], p0[1]]
+                a = parent_action[p1[0], p1[1]]
                 print(state)
-                print(c)
+                print(f"cost: {c}, action: {puzzle.action_to_string(a)}")
             print(solved_st)
             print(f"Cost: {solved_cost}")
 

@@ -36,6 +36,7 @@ class QstarResult:
     cost: chex.Array
     not_closed: chex.Array
     parent: chex.Array
+    parent_action: chex.Array
 
     @staticmethod
     def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=0, n_table=2):
@@ -54,6 +55,7 @@ class QstarResult:
         cost = jnp.full((size_table, n_table), jnp.inf)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
         parent = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
+        parent_action = jnp.full((size_table, n_table), -1, dtype=jnp.uint32)
         return QstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
@@ -62,6 +64,7 @@ class QstarResult:
             cost=cost,
             not_closed=not_closed,
             parent=parent,
+            parent_action=parent_action,
         )
 
     @property
@@ -166,6 +169,9 @@ def qstar_builder(
                 states, target
             ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbours, ncost = neighbours_fn(states, filled)
+            parent_action = jnp.tile(
+                jnp.arange(ncost.shape[0], dtype=jnp.uint32)[:, jnp.newaxis], (1, ncost.shape[1])
+            )
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             neighbour_key = cost_weight * nextcosts + q_vals
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
@@ -191,11 +197,19 @@ def qstar_builder(
             )  # update the minimul cost
 
             flatten_neighbours_parent_idx = neighbours_parent_idx.reshape((flatten_size, 2))
+            flatten_parent_action = parent_action.reshape((flatten_size,))
             qstar_result.parent = qstar_result.parent.at[idxs, table_idxs].set(
                 jnp.where(
                     optimals[:, jnp.newaxis],
                     flatten_neighbours_parent_idx,
                     qstar_result.parent[idxs, table_idxs],
+                )
+            )
+            qstar_result.parent_action = qstar_result.parent_action.at[idxs, table_idxs].set(
+                jnp.where(
+                    optimals,
+                    flatten_parent_action,
+                    qstar_result.parent_action[idxs, table_idxs],
                 )
             )
 
