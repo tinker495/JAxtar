@@ -24,4 +24,4 @@ class RubiksCubeHeuristic(Heuristic):
             1 - self.heur_modify
         )
         # center of faces are not considered
-        return equal_faces.sum()
+        return equal_faces.sum() * 2
