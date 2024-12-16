@@ -52,7 +52,7 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
     setattr(cls, "dtype", property(get_type))
 
     def getitem(self, index):
-        return jax.tree_map(lambda x: x[index], self)
+        return jax.tree_util.tree_map(lambda x: x[index], self)
 
     setattr(cls, "__getitem__", getitem)
 
@@ -93,18 +93,18 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
             if batch_len < 20:
                 for i in range(batch_len):
                     index = jnp.unravel_index(i, batch_shape)
-                    current_state = jax.tree_map(lambda x: x[index], self)
+                    current_state = jax.tree_util.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
                 results.append(f"batch : {batch_shape}")
             else:
                 for i in range(3):
                     index = jnp.unravel_index(i, batch_shape)
-                    current_state = jax.tree_map(lambda x: x[index], self)
+                    current_state = jax.tree_util.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
                 results.append("...\n(batch : " + f"{batch_shape})")
                 for i in range(batch_len - 3, batch_len):
                     index = jnp.unravel_index(i, batch_shape)
-                    current_state = jax.tree_map(lambda x: x[index], self)
+                    current_state = jax.tree_util.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
             return tabulate([results], tablefmt="plain")
         else:
@@ -155,14 +155,18 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
                 raise ValueError(
                     f"Total length of the state and new shape does not match: {total_length} != {new_total_length}"
                 )
-            return jax.tree_map(lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]), self)
+            return jax.tree_util.tree_map(
+                lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]), self
+            )
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
 
     def flatten(self):
         total_length = jnp.prod(jnp.array(self.batch_shape))
         print(total_length, *self[0].shape[-default_dim:])
-        return jax.tree_map(lambda x: jnp.reshape(x, (total_length, *x.shape[-default_dim:])), self)
+        return jax.tree_util.tree_map(
+            lambda x: jnp.reshape(x, (total_length, *x.shape[-default_dim:])), self
+        )
 
     # add method based on default state
     setattr(cls, "default", staticmethod(jax.jit(get_default)))
