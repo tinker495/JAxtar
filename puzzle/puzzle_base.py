@@ -251,6 +251,12 @@ class Puzzle(ABC):
         """
         pass
 
+    def action_to_string(self, action: int) -> str:
+        """
+        This function should return a string representation of the action.
+        """
+        return f"action {action}"
+
     def is_equal(self, state1: State, state2: State) -> bool:
         """
         This function should return True if the two states are equal.

@@ -36,6 +36,7 @@ class AstarResult:
     cost: chex.Array
     not_closed: chex.Array
     parent: chex.Array
+    parent_action: chex.Array
 
     @staticmethod
     def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=0, n_table=2):
@@ -54,6 +55,7 @@ class AstarResult:
         cost = jnp.full((size_table, n_table), jnp.inf)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
         parent = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
+        parent_action = jnp.full((size_table, n_table), -1, dtype=jnp.uint32)
         return AstarResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
@@ -62,6 +64,7 @@ class AstarResult:
             cost=cost,
             not_closed=not_closed,
             parent=parent,
+            parent_action=parent_action,
         )
 
     @property
@@ -164,6 +167,9 @@ def astar_builder(
             )  # or operation with closed
 
             neighbours, ncost = neighbours_fn(states, filled)
+            parent_action = jnp.tile(
+                jnp.arange(ncost.shape[0], dtype=jnp.uint32)[:, jnp.newaxis], (1, ncost.shape[1])
+            )
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             neighbours_parent_idx = jnp.broadcast_to(
@@ -188,11 +194,19 @@ def astar_builder(
             )  # update the minimul cost
 
             flatten_neighbours_parent_idx = neighbours_parent_idx.reshape((flatten_size, 2))
+            flatten_parent_action = parent_action.reshape((flatten_size,))
             astar_result.parent = astar_result.parent.at[idxs, table_idxs].set(
                 jnp.where(
                     optimals[:, jnp.newaxis],
                     flatten_neighbours_parent_idx,
                     astar_result.parent[idxs, table_idxs],
+                )
+            )
+            astar_result.parent_action = astar_result.parent_action.at[idxs, table_idxs].set(
+                jnp.where(
+                    optimals,
+                    flatten_parent_action,
+                    astar_result.parent_action[idxs, table_idxs],
                 )
             )
 
