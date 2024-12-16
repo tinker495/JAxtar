@@ -15,6 +15,21 @@ def rotl(x, n):
     return (x << n) | (x >> (32 - n))
 
 
+def dataclass_unique_mask(x: Puzzle.State):
+    """
+    check if the dataclass is unique
+    """
+    size = len(x)
+    flatten_x = x.get_flatten()
+    tree_unique_idx = jnp.unique(flatten_x, axis=0, size=size, return_index=True)[
+        1
+    ]  # shape = (size,)
+    unique_masks = (
+        jnp.zeros((size,), dtype=jnp.bool_).at[tree_unique_idx].set(True)
+    )  # set the unique index to True
+    return unique_masks
+
+
 def hash_func_builder(x: Puzzle.State):
     """
     build a hash function for the state dataclass
@@ -301,6 +316,7 @@ class HashTable:
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, _idxs, unupdated
 
+        inputs_unique_mask = dataclass_unique_mask(inputs)
         initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func), in_axes=(None, 0, None))(
             table, inputs, table.seed
         )
@@ -310,8 +326,9 @@ class HashTable:
         )(table, inputs, initial_idx, 0, table.seed, ~filled)
         _idxs = jnp.stack([idx, table_idx], axis=1)
         updatable = jnp.logical_and(~found, filled)
+        _updatable = jnp.logical_and(updatable, inputs_unique_mask)
 
-        masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+        masked_idx = jnp.where(_updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
         unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True)[
             1
         ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
