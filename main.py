@@ -360,7 +360,7 @@ def qstar(
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(
         key=jax.random.split(jax.random.PRNGKey(start_state_seed), 1)
     )
-    qvalues = qfunction.batched_q_value(states, target)
+    qvalues = qfunction.batched_q_value(states, target)[0]
 
     print("Start state")
     print(states[0])
