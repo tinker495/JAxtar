@@ -164,6 +164,7 @@ def astar(
     astar_result, solved, solved_idx = astar_fn(astar_result_build(), states, filled, target)
     end = time.time()
     print(f"Time: {end - start:6.2f} seconds\n\n")
+    print("\n\nJIT compiled")
 
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(
         key=jax.random.split(jax.random.PRNGKey(start_state_seed), 1)
@@ -181,7 +182,6 @@ def astar(
         print("Profiling")
         jax.profiler.start_trace("tmp/tensorboard")
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
-    print("\n\nJIT compiled")
     start = time.time()
     astar_result, solved, solved_idx = astar_fn(astar_result_build(), states, filled, target)
     end = time.time()
@@ -355,6 +355,7 @@ def qstar(
     qstar_result, solved, solved_idx = qstar_fn(qstar_result_build(), states, filled, target)
     end = time.time()
     print(f"Time: {end - start:6.2f} seconds\n\n")
+    print("\n\nJIT compiled")
 
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(
         key=jax.random.split(jax.random.PRNGKey(start_state_seed), 1)
@@ -377,7 +378,6 @@ def qstar(
         print("Profiling")
         jax.profiler.start_trace("tmp/tensorboard")
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
-    print("\n\nJIT compiled")
     start = time.time()
     qstar_result, solved, solved_idx = qstar_fn(qstar_result_build(), states, filled, target)
     end = time.time()
