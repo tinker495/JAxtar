@@ -76,7 +76,7 @@ class LightsOut(Puzzle):
         """
         This function should return a string representation of the action.
         """
-        return f"flip {action}"
+        return f"{action:02d}"
 
     def _get_visualize_format(self):
         size = self.size
