@@ -218,7 +218,7 @@ def astar(
                 c = cost[p0[0], p0[1]]
                 a = parent_action[p1[0], p1[1]]
                 print(state)
-                print(f"cost: {c}, action: {puzzle.action_to_string(a)}")
+                print(f"Cost: {c} | Action: {puzzle.action_to_string(a)}")
             print(solved_st)
             print(f"Cost: {solved_cost}")
 
@@ -227,7 +227,6 @@ def astar(
             print("No solution found\n\n")
     else:
         if solved:
-            solved_st = astar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
             solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
             print(f"Cost: {solved_cost}")
             print("Solution found\n\n")
@@ -366,7 +365,13 @@ def qstar(
     print(states[0])
     print("Target state")
     print(target)
-    print(f"qvalues: {qvalues}")
+    print("qvalues: ", end="")
+    print(
+        " | ".join(
+            f"'{puzzle.action_to_string(i)}': {qvalues[i]:.1f}" for i in range(qvalues.shape[0])
+        )
+    )
+    print()
 
     if profile:
         print("Profiling")
@@ -409,7 +414,7 @@ def qstar(
                 c = cost[p0[0], p0[1]]
                 a = parent_action[p1[0], p1[1]]
                 print(state)
-                print(f"cost: {c}, action: {puzzle.action_to_string(a)}")
+                print(f"Cost: {c} | Action: '{puzzle.action_to_string(a)}'")
             print(solved_st)
             print(f"Cost: {solved_cost}")
 
@@ -418,7 +423,6 @@ def qstar(
             print("No solution found\n\n")
     else:
         if solved:
-            solved_st = qstar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
             solved_cost = qstar_result.cost[solved_idx.index, solved_idx.table_index][0]
             print(f"Cost: {solved_cost}")
             print("Solution found\n\n")

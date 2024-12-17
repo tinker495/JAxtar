@@ -16,7 +16,7 @@ LEFT = 2
 RIGHT = 3
 FRONT = 4
 BACK = 5
-rotate_face_map = {0: "left", 1: "down", 2: "front", 3: "right", 4: "back", 5: "up"}
+rotate_face_map = {0: "l", 1: "d", 2: "f", 3: "r", 4: "b", 5: "u"}
 face_map = {0: "up", 1: "down", 2: "left", 3: "right", 4: "front", 5: "back"}
 color_map = {0: "white", 1: "yellow", 2: "red", 3: "magenta", 4: "green", 5: "blue"}  # orange
 
