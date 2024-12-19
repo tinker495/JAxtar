@@ -99,7 +99,7 @@ def merge_sort_split(
     n = ak.shape[-1]  # size of group
     key = jnp.concatenate([ak, bk])
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-    idx = jnp.argsort(key, stable=True)
+    idx = jnp.argpartition(key, n, axis=0)
 
     # Sort both key and value arrays using the same index
     sorted_key = key[idx]

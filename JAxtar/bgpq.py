@@ -176,7 +176,7 @@ class BGPQ:  # Batched GPU Priority Queue
         n = ak.shape[-1]  # size of group
         key = jnp.concatenate([ak, bk])
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-        idx = jnp.argsort(key, stable=SORT_STABLE)
+        idx = jnp.argpartition(key, n, axis=0)
 
         # Sort both key and value arrays using the same index
         sorted_key = key[idx]
@@ -212,7 +212,7 @@ class BGPQ:  # Batched GPU Priority Queue
         n = blockk.shape[0]
         key = jnp.concatenate([blockk, bufferk])
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, bufferv)
-        idx = jnp.argsort(key, stable=SORT_STABLE)
+        idx = jnp.argpartition(key, n, axis=0)
         key = key[idx]
         val = jax.tree_util.tree_map(lambda x: x[idx], val)
         filled = jnp.isfinite(key)  # inf values are not filled
