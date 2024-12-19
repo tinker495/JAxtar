@@ -4,8 +4,6 @@ import chex
 import jax
 import jax.numpy as jnp
 
-SORT_STABLE = True
-
 
 def bgpq_value_dataclass(cls):
     """
