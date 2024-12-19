@@ -218,13 +218,19 @@ class BGPQ:  # Batched GPU Priority Queue
         filled = jnp.isfinite(key)  # inf values are not filled
         n_filled = jnp.sum(filled)
         buffer_overflow = n_filled >= n  # buffer overflow
+
+        def overflowed(key, val):
+            return key[:n], val[:n], key[n:], val[n:]
+
+        def not_overflowed(key, val):
+            return key[n - 1 :], val[n - 1 :], key[: n - 1], val[: n - 1]
+
         blockk, blockv, bufferk, bufferv = jax.lax.cond(
             buffer_overflow,
-            lambda _: (key[:n], val[:n], key[n:], val[n:]),
-            # if buffer overflow, block is filled with smaller keys
-            lambda _: (key[(n - 1) :], val[(n - 1) :], key[: (n - 1)], val[: (n - 1)]),
-            # if buffer not overflow, buffer is filled with smaller keys
-            None,
+            overflowed,
+            not_overflowed,
+            key,
+            val,
         )
         return blockk, blockv, bufferk, bufferv, buffer_overflow
 
@@ -253,7 +259,11 @@ class BGPQ:  # Batched GPU Priority Queue
         Get the next index.
         travel to target as heapify.
         """
-        return target.astype(jnp.uint32) >> (jax.lax.clz(current) - jax.lax.clz(target) - 1)
+        clz_current = jax.lax.clz(current)
+        clz_target = jax.lax.clz(target)
+        shift_amount = clz_current - clz_target - 1
+        next_index = target.astype(jnp.uint32) >> shift_amount
+        return next_index
 
     @staticmethod
     def _insert_heapify(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue):
