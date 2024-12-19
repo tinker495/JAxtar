@@ -4,7 +4,6 @@ import chex
 import jax
 import jax.numpy as jnp
 
-HEAP_SIZE_MULTIPLIER = 1.0
 SORT_STABLE = True
 
 
@@ -39,10 +38,7 @@ def bgpq_value_dataclass(cls):
         new_values = {}
         for field_name, field_value in self.__dict__.items():
             if hasattr(field_value, "__getitem__"):
-                try:
-                    new_values[field_name] = field_value[index]
-                except IndexError:
-                    new_values[field_name] = field_value
+                new_values[field_name] = field_value[index]
             else:
                 new_values[field_name] = field_value
         return cls(**new_values)
@@ -90,7 +86,8 @@ class HashTableIdx_HeapValue:
     @staticmethod
     def default(_=None) -> "HashTableIdx_HeapValue":
         return HashTableIdx_HeapValue(
-            index=jnp.zeros(1, dtype=jnp.uint32), table_index=jnp.zeros(1, dtype=jnp.uint32)
+            index=jnp.full(1, jnp.inf, dtype=jnp.uint32),
+            table_index=jnp.full(1, jnp.inf, dtype=jnp.uint32),
         )
 
 
@@ -128,7 +125,7 @@ class BGPQ:  # Batched GPU Priority Queue
         value_type is the type of the values stored in the heap.
         In this repository, we only use uint32 for hash indexes values.
         """
-        total_size = total_size * HEAP_SIZE_MULTIPLIER
+        total_size = total_size
         branch_size = jnp.where(
             total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1
         ).astype(jnp.uint32)
