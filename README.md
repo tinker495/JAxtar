@@ -104,8 +104,7 @@ Target state
 ┣━━━╋━━━╋━━━╋━━━┫
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
-vmap astar
-# astar_result, solved, solved_idx = jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(astar_result_build(), states, filled, target)
+
 Time:   2.36 seconds (x4.8/10)
 Search states: 1.89M (799K states/s)
 Solution found: 100.00%
