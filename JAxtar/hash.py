@@ -15,32 +15,33 @@ def rotl(x, n):
     return (x << n) | (x >> (32 - n))
 
 
-def hash_func_builder(x: Puzzle.State):
+@jax.jit
+def xxhash(x, seed):
+    prime_1 = jnp.uint32(0x9E3779B1)
+    prime_2 = jnp.uint32(0x85EBCA77)
+    prime_3 = jnp.uint32(0xC2B2AE3D)
+    prime_5 = jnp.uint32(0x165667B1)
+    acc = jnp.uint32(seed) + prime_5
+    for _ in range(4):
+        lane = x & 255
+        acc = acc + lane * prime_5
+        acc = rotl(acc, 11) * prime_1
+        x = x >> 8
+    acc = acc ^ (acc >> 15)
+    acc = acc * prime_2
+    acc = acc ^ (acc >> 13)
+    acc = acc * prime_3
+    acc = acc ^ (acc >> 16)
+    return acc
+
+
+def untree_builder(x: Puzzle.State):
     """
-    build a hash function for the state dataclass
+    build a untree function for the state dataclass
     """
     default = x.default()  # get the default state, reference for building the hash function
 
-    @jax.jit
-    def xxhash(x, seed):
-        prime_1 = jnp.uint32(0x9E3779B1)
-        prime_2 = jnp.uint32(0x85EBCA77)
-        prime_3 = jnp.uint32(0xC2B2AE3D)
-        prime_5 = jnp.uint32(0x165667B1)
-        acc = jnp.uint32(seed) + prime_5
-        for _ in range(4):
-            lane = x & 255
-            acc = acc + lane * prime_5
-            acc = rotl(acc, 11) * prime_1
-            x = x >> 8
-        acc = acc ^ (acc >> 15)
-        acc = acc * prime_2
-        acc = acc ^ (acc >> 13)
-        acc = acc * prime_3
-        acc = acc ^ (acc >> 16)
-        return acc
-
-    def _get_leaf_hash_func(leaf):
+    def _get_leaf_bytes(leaf):
         flatten_leaf = jnp.reshape(leaf, (-1,))
         bitlen = flatten_leaf.dtype.itemsize
         flatten_len = flatten_leaf.shape[0]
@@ -49,35 +50,54 @@ def hash_func_builder(x: Puzzle.State):
         reshape_size = ((flatten_len + pad_len) // chunk, chunk)
 
         @jax.jit
-        def _to_uint32(x):
+        def _to_uint8(x):
             x = jnp.reshape(x, (flatten_len,))
             x_padded = jnp.pad(x, (0, pad_len), mode="constant", constant_values=0)
             x_reshaped = jnp.reshape(x_padded, reshape_size)
-            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
+            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint8))(
                 x_reshaped
             ).reshape(-1)
 
-        @jax.jit
-        def _h(x, seed):
-            x = _to_uint32(x)
-
-            def scan_body(seed, x):  # scan body for the xxhash function
-                result = xxhash(x, seed)
-                return result, result
-
-            final_result, _ = jax.lax.scan(scan_body, seed, x)
-            return final_result
-
-        return _h
+        return _to_uint8
 
     tree_flatten_func = jax.tree_util.tree_map(
-        _get_leaf_hash_func, default
+        _get_leaf_bytes, default
     )  # each leaf has a hash function for each array shape and dtype
 
-    def _h(x, seed):  # hash function for the whole tree structure
-        return jax.tree_util.tree_reduce(
-            xxhash, jax.tree_util.tree_map(lambda f, leaf: f(leaf, seed), tree_flatten_func, x)
+    def _untree(x):
+        x = jax.tree_util.tree_map(lambda f, leaf: f(leaf), tree_flatten_func, x)
+        x, _ = jax.tree_util.tree_flatten(x)
+        return jnp.concatenate(x)
+
+    return jax.jit(_untree)
+
+
+def hash_func_builder(x: Puzzle.State):
+    """
+    build a hash function for the state dataclass
+    """
+    untree = untree_builder(x)
+    default_untree = untree(x.default())
+    bytes_len = default_untree.shape[0]
+    pad_len = jnp.where(bytes_len % 4 != 0, 4 - (bytes_len % 4), 0)
+
+    def _to_uint32(bytes):
+        x_padded = jnp.pad(bytes, (0, pad_len), mode="constant", constant_values=0)
+        x_reshaped = jnp.reshape(x_padded, (-1, 4))
+        return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(
+            -1
         )
+
+    def _h(x, seed):
+        x = untree(x)
+        x = _to_uint32(x)
+
+        def scan_body(seed, x):  # scan body for the xxhash function
+            result = xxhash(x, seed)
+            return result, result
+
+        final_result, _ = jax.lax.scan(scan_body, seed, x)
+        return final_result
 
     return jax.jit(_h)
 
