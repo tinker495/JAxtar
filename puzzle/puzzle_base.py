@@ -154,7 +154,6 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
 
     def flatten(self):
         total_length = jnp.prod(jnp.array(self.batch_shape))
-        print(total_length, *self[0].shape[-default_dim:])
         return jax.tree_util.tree_map(
             lambda x: jnp.reshape(x, (total_length, *x.shape[-default_dim:])), self
         )
