@@ -50,7 +50,7 @@ def test_hash_table_insert(puzzle, hash_func):
 
     # Insert states
     batched_sample, filled = HashTable.make_batched(puzzle.State, sample, batch)
-    table, inserted, _, _ = parallel_insert(table, batched_sample, filled)
+    table, inserted, _, _, _ = parallel_insert(table, batched_sample, filled)
 
     # Verify insertion
     _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
@@ -59,7 +59,7 @@ def test_hash_table_insert(puzzle, hash_func):
 
 
 def test_same_state_insert_at_batch(puzzle, hash_func):
-    count = 1000
+    count = 10
     batch = 5000
     table = HashTable.build(puzzle.State, 1, int(1e5))
     parallel_insert = jax.jit(partial(HashTable.parallel_insert, hash_func))
@@ -68,19 +68,20 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
     counts = 0
     for i in range(num):
         key1, key2 = jax.random.split(jax.random.PRNGKey(i))
-        sample1 = puzzle.get_initial_state(key1)
-        sample2 = puzzle.get_initial_state(key2)
-        sample1 = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), sample1)
-        sample2 = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), sample2)
+        _sample1 = puzzle.get_initial_state(key1)
+        _sample2 = puzzle.get_initial_state(key2)
+        sample1 = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), _sample1)
+        sample2 = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), _sample2)
 
         sample = jax.tree_util.tree_map(
             lambda x, y: jnp.concatenate([x, y], axis=0), sample1, sample2
         )
 
         batched_sample, filled = HashTable.make_batched(puzzle.State, sample, batch)
-        table, _, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
-        unique_idxs = jnp.unique(jnp.stack([idxs, table_idxs], axis=1), axis=0)
-        assert unique_idxs.shape[0] == 3, f"unique_idxs.shape: {unique_idxs.shape}"
+        table, _, unique, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
+        unique_idxs = jnp.unique(jnp.stack([idxs, table_idxs], axis=1)[unique], axis=0)
+        assert unique_idxs.shape[0] == 2, f"unique_idxs.shape: {unique_idxs.shape}"
+        assert jnp.sum(unique) == 2, f"unique: {unique}"
         counts += 2
 
     assert table.size == counts, f"table.table.size: {table.size}, counts: {counts}"
@@ -106,7 +107,7 @@ def test_large_hash_table(puzzle, hash_func):
     inserted_count = 0
     for i in range(0, count, batch):
         batch_sample = sample[i : i + batch]
-        table, inserted, _, _ = parallel_insert(
+        table, inserted, _, _, _ = parallel_insert(
             table, batch_sample, jnp.ones(len(batch_sample), dtype=jnp.bool_)
         )
         inserted_count += jnp.sum(inserted)
