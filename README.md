@@ -115,7 +115,7 @@ Solution found: 100.00%
 ### BWAS with neural heuristic
 
 ```bash
-python3 main.py astar -nn -h -p rubikscube -w 0.2
+$ python3 main.py astar -nn -h -p rubikscube -w 0.2
 
 initializing jit
 Time:  38.24 seconds
@@ -134,7 +134,7 @@ Solution found
 ### BWQS with neural Q model
 
 ```bash
-python3 main.py qstar -nn -h -p rubikscube -w 0.2
+$ python3 main.py qstar -nn -h -p rubikscube -w 0.2
 initializing jit
 Time:  37.02 seconds
 
