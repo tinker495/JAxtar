@@ -1,5 +1,5 @@
 from functools import partial
-from typing import TypeVar
+from typing import Callable, Tuple, TypeVar
 
 import chex
 import jax
@@ -9,6 +9,8 @@ from puzzle.puzzle_base import Puzzle
 
 T = TypeVar("T")
 HASH_SIZE_MULTIPLIER = 2
+
+HASH_FUNC_TYPE = Callable[[Puzzle.State, int], Tuple[jnp.uint32, jnp.ndarray]]
 
 
 def rotl(x, n):
@@ -76,8 +78,8 @@ def hash_func_builder(x: Puzzle.State):
     """
     build a hash function for the state dataclass
     """
-    untree = untree_builder(x)
-    default_untree = untree(x.default())
+    untree_fn = untree_builder(x)
+    default_untree = untree_fn(x.default())
     bytes_len = default_untree.shape[0]
     pad_len = jnp.where(bytes_len % 4 != 0, 4 - (bytes_len % 4), 0)
 
@@ -89,15 +91,15 @@ def hash_func_builder(x: Puzzle.State):
         )
 
     def _h(x, seed):
-        x = untree(x)
-        x = _to_uint32(x)
+        untreed = untree_fn(x)
+        x = _to_uint32(untreed)
 
         def scan_body(seed, x):  # scan body for the xxhash function
             result = xxhash(x, seed)
             return result, result
 
         final_result, _ = jax.lax.scan(scan_body, seed, x)
-        return final_result
+        return final_result, untreed
 
     return jax.jit(_h)
 
@@ -137,14 +139,30 @@ class HashTable:
         )
 
     @staticmethod
-    def get_new_idx(hash_func: callable, table: "HashTable", input: Puzzle.State, seed: int):
-        hash_value = hash_func(input, seed)
+    def get_new_idx(
+        hash_func: HASH_FUNC_TYPE,
+        table: "HashTable",
+        input: Puzzle.State,
+        seed: int,
+    ):
+        hash_value, _ = hash_func(input, seed)
         idx = hash_value % table._capacity
         return idx
 
     @staticmethod
+    def get_new_idx_untreed(
+        hash_func: HASH_FUNC_TYPE,
+        table: "HashTable",
+        input: Puzzle.State,
+        seed: int,
+    ):
+        hash_value, untreed = hash_func(input, seed)
+        idx = hash_value % table._capacity
+        return idx, untreed
+
+    @staticmethod
     def _lookup(
-        hash_func: callable,
+        hash_func: HASH_FUNC_TYPE,
         table: "HashTable",
         input: Puzzle.State,
         idx: int,
@@ -204,7 +222,7 @@ class HashTable:
         return update_seed, idx, table_idx, found
 
     @staticmethod
-    def lookup(hash_func: callable, table: "HashTable", input: Puzzle.State):
+    def lookup(hash_func: HASH_FUNC_TYPE, table: "HashTable", input: Puzzle.State):
         """
         find the index of the state in the table if it exists.
         if it exists return the index, cuckoo_idx and True
@@ -217,7 +235,7 @@ class HashTable:
         return idx, table_idx, found
 
     @staticmethod
-    def insert(hash_func: callable, table: "HashTable", input: Puzzle.State):
+    def insert(hash_func: HASH_FUNC_TYPE, table: "HashTable", input: Puzzle.State):
         """
         insert the state in the table
         """
@@ -263,7 +281,7 @@ class HashTable:
 
     @staticmethod
     def parallel_insert(
-        hash_func: callable, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
+        hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
     ):
         """
         insert the states in the table at the same time
@@ -321,15 +339,18 @@ class HashTable:
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, _idxs, unupdated
 
-        initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func), in_axes=(None, 0, None))(
-            table, inputs, table.seed
-        )
+        initial_idx, untreed = jax.vmap(
+            partial(HashTable.get_new_idx_untreed, hash_func), in_axes=(None, 0, None)
+        )(table, inputs, table.seed)
         batch_len = initial_idx.shape[0]
+        unique_untreed_idx = jnp.unique(untreed, axis=0, size=batch_len, return_index=True)[1]
+        unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_untreed_idx].set(True)
+        _filled = jnp.logical_and(filled, unique)
         seeds, idx, table_idx, found = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
         )(table, inputs, initial_idx, 0, table.seed, ~filled)
         _idxs = jnp.stack([idx, table_idx], axis=1)
-        updatable = jnp.logical_and(~found, filled)
+        updatable = jnp.logical_and(~found, _filled)
 
         masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
         unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True)[
@@ -354,4 +375,7 @@ class HashTable:
         )
         table.table_idx = table.table_idx.at[idx].add(updatable)
         table.size += jnp.sum(updatable)
+        _, idx, table_idx, found = jax.vmap(
+            HashTable._lookup, in_axes=(None, None, 0, 0, None, None, 0)
+        )(hash_func, table, inputs, initial_idx, 0, table.seed, filled)
         return table, updatable, idx, table_idx
