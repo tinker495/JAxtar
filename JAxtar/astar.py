@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from heuristic.heuristic_base import Heuristic
 from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue
 from JAxtar.hash import HashTable, hash_func_builder
-from JAxtar.search_result import SearchResult, pop_full
+from JAxtar.search_base import SearchResult, pop_full
 from puzzle.puzzle_base import Puzzle
 
 
