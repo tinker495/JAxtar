@@ -31,14 +31,14 @@ def astar_setup():
 
 def test_astar_initialization(astar_setup):
     setup = astar_setup
-    astar_result_build, astar_fn = astar_builder(
+    search_result_build, astar_fn = astar_builder(
         setup["puzzle"],
         setup["heuristic"],
         setup["batch_size"],
         setup["max_node_size"],
         cost_weight=setup["cost_weight"],
     )
-    assert astar_result_build is not None
+    assert search_result_build is not None
     assert astar_fn is not None
 
 
@@ -46,7 +46,7 @@ def test_astar_search(astar_setup):
     setup = astar_setup
 
     # Build A* search function
-    astar_result_build, astar_fn = astar_builder(
+    search_result_build, astar_fn = astar_builder(
         setup["puzzle"],
         setup["heuristic"],
         setup["batch_size"],
@@ -61,11 +61,11 @@ def test_astar_search(astar_setup):
     states, filled = HashTable.make_batched(setup["puzzle"].State, states, setup["batch_size"])
 
     # Run search
-    astar_result, solved, solved_idx = astar_fn(
-        astar_result_build(), states, filled, setup["target"]
+    search_result, solved, solved_idx = astar_fn(
+        search_result_build(), states, filled, setup["target"]
     )
 
-    assert astar_result is not None
+    assert search_result is not None
     assert solved, "Solution not found"
     assert solved_idx is not None, "Solved index not found"
 

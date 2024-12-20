@@ -154,14 +154,14 @@ def astar(
     states = puzzle.get_target_state()[jnp.newaxis, ...]
     target = puzzle.get_target_state()
 
-    astar_result_build, astar_fn = astar_builder(
+    search_result_build, astar_fn = astar_builder(
         puzzle, heuristic, batch_size, max_node_size, cost_weight=cost_weight
     )
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
     print("initializing jit")
     start = time.time()
-    astar_result, solved, solved_idx = astar_fn(astar_result_build(), states, filled, target)
+    search_result, solved, solved_idx = astar_fn(search_result_build(), states, filled, target)
     end = time.time()
     print(f"Time: {end - start:6.2f} seconds\n\n")
     print("\n\nJIT compiled")
@@ -183,13 +183,13 @@ def astar(
         jax.profiler.start_trace("tmp/tensorboard")
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
     start = time.time()
-    astar_result, solved, solved_idx = astar_fn(astar_result_build(), states, filled, target)
+    search_result, solved, solved_idx = astar_fn(search_result_build(), states, filled, target)
     end = time.time()
     single_search_time = end - start
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
-        f"Search states: {human_format(astar_result.hashtable.size)}"
-        f"({human_format(astar_result.hashtable.size / single_search_time)} states/s)\n\n"
+        f"Search states: {human_format(search_result.hashtable.size)}"
+        f"({human_format(search_result.hashtable.size / single_search_time)} states/s)\n\n"
     )
     if profile:
         jax.profiler.stop_trace()
@@ -198,13 +198,13 @@ def astar(
         if solved:
             print("Solution found\n\n")
 
-            parents = astar_result.parent
-            parent_action = astar_result.parent_action
-            table = astar_result.hashtable.table
-            cost = astar_result.cost
+            parents = search_result.parent
+            parent_action = search_result.parent_action
+            table = search_result.hashtable.table
+            cost = search_result.cost
 
-            solved_st = astar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
-            solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
+            solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
+            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index][0]
 
             path = [(solved_idx.index[0], solved_idx.table_index[0])]
             parent_last = parents[solved_idx.index, solved_idx.table_index][0]
@@ -227,7 +227,7 @@ def astar(
             print("No solution found\n\n")
     else:
         if solved:
-            solved_cost = astar_result.cost[solved_idx.index, solved_idx.table_index][0]
+            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index][0]
             print(f"Cost: {solved_cost}")
             print("Solution found\n\n")
         else:
@@ -244,7 +244,7 @@ def astar(
     vmapped_astar = jax.jit(jax.vmap(astar_fn, in_axes=(None, 0, 0, None)))
     print("initializing vmapped jit")
     start = time.time()
-    astar_result, solved, solved_idx = vmapped_astar(astar_result_build(), states, filled, target)
+    search_result, solved, solved_idx = vmapped_astar(search_result_build(), states, filled, target)
     end = time.time()
     print(f"Time: {end - start:6.2f} seconds\n\n")
 
@@ -266,17 +266,17 @@ def astar(
 
     print("vmap astar")
     print(
-        "# astar_result, solved, solved_idx ="
+        "# search_result, solved, solved_idx ="
         "jax.vmap(astar_fn, in_axes=(None, 0, 0, None))"
-        "(astar_result_build(), states, filled, target)"
+        "(search_result_build(), states, filled, target)"
     )
     start = time.time()
 
-    astar_result, solved, solved_idx = vmapped_astar(astar_result_build(), states, filled, target)
+    search_result, solved, solved_idx = vmapped_astar(search_result_build(), states, filled, target)
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
 
-    search_states = jnp.sum(astar_result.hashtable.size)
+    search_states = jnp.sum(search_result.hashtable.size)
 
     print(
         f"Time: {vmapped_search_time:6.2f} seconds (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})"
@@ -345,14 +345,14 @@ def qstar(
     states = puzzle.get_target_state()[jnp.newaxis, ...]
     target = puzzle.get_target_state()
 
-    qstar_result_build, qstar_fn = qstar_builder(
+    search_result_build, qstar_fn = qstar_builder(
         puzzle, qfunction, batch_size, max_node_size, cost_weight=cost_weight
     )
 
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
     print("initializing jit")
     start = time.time()
-    qstar_result, solved, solved_idx = qstar_fn(qstar_result_build(), states, filled, target)
+    search_result, solved, solved_idx = qstar_fn(search_result_build(), states, filled, target)
     end = time.time()
     print(f"Time: {end - start:6.2f} seconds\n\n")
     print("\n\nJIT compiled")
@@ -379,13 +379,13 @@ def qstar(
         jax.profiler.start_trace("tmp/tensorboard")
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
     start = time.time()
-    qstar_result, solved, solved_idx = qstar_fn(qstar_result_build(), states, filled, target)
+    search_result, solved, solved_idx = qstar_fn(search_result_build(), states, filled, target)
     end = time.time()
     single_search_time = end - start
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
-        f"Search states: {human_format(qstar_result.hashtable.size)}"
-        f"({human_format(qstar_result.hashtable.size / single_search_time)} states/s)\n\n"
+        f"Search states: {human_format(search_result.hashtable.size)}"
+        f"({human_format(search_result.hashtable.size / single_search_time)} states/s)\n\n"
     )
     if profile:
         jax.profiler.stop_trace()
@@ -394,13 +394,13 @@ def qstar(
         if solved:
             print("Solution found\n\n")
 
-            parents = qstar_result.parent
-            parent_action = qstar_result.parent_action
-            table = qstar_result.hashtable.table
-            cost = qstar_result.cost
+            parents = search_result.parent
+            parent_action = search_result.parent_action
+            table = search_result.hashtable.table
+            cost = search_result.cost
 
-            solved_st = qstar_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
-            solved_cost = qstar_result.cost[solved_idx.index, solved_idx.table_index][0]
+            solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
+            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index][0]
 
             path = [(solved_idx.index[0], solved_idx.table_index[0])]
             parent_last = parents[solved_idx.index, solved_idx.table_index][0]
@@ -423,7 +423,7 @@ def qstar(
             print("No solution found\n\n")
     else:
         if solved:
-            solved_cost = qstar_result.cost[solved_idx.index, solved_idx.table_index][0]
+            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index][0]
             print(f"Cost: {solved_cost}")
             print("Solution found\n\n")
         else:
@@ -440,7 +440,7 @@ def qstar(
     vmapped_qstar = jax.jit(jax.vmap(qstar_fn, in_axes=(None, 0, 0, None)))
     print("initializing vmapped jit")
     start = time.time()
-    qstar_result, solved, solved_idx = vmapped_qstar(qstar_result_build(), states, filled, target)
+    search_result, solved, solved_idx = vmapped_qstar(search_result_build(), states, filled, target)
     end = time.time()
     print(f"Time: {end - start:6.2f} seconds\n\n")
 
@@ -462,17 +462,17 @@ def qstar(
 
     print("vmap qstar")
     print(
-        "# qstar_result, solved, solved_idx ="
+        "# search_result, solved, solved_idx ="
         "jax.vmap(qstar_fn, in_axes=(None, 0, 0, None))"
-        "(qstar_result_build(), states, filled, target)"
+        "(search_result_build(), states, filled, target)"
     )
     start = time.time()
 
-    qstar_result, solved, solved_idx = vmapped_qstar(qstar_result_build(), states, filled, target)
+    search_result, solved, solved_idx = vmapped_qstar(search_result_build(), states, filled, target)
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
 
-    search_states = jnp.sum(qstar_result.hashtable.size)
+    search_states = jnp.sum(search_result.hashtable.size)
 
     print(
         f"Time: {vmapped_search_time:6.2f} seconds (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})"

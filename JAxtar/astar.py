@@ -39,14 +39,14 @@ def astar_builder(
     batch_size = jnp.array(batch_size, dtype=jnp.int32)
     max_nodes = jnp.array(max_nodes, dtype=jnp.int32)
     hash_func = hash_func_builder(puzzle.State)
-    astar_result_build = partial(SearchResult.build, statecls, batch_size, max_nodes)
+    search_result_build = partial(SearchResult.build, statecls, batch_size, max_nodes)
 
     parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
 
     def astar(
-        astar_result: SearchResult,
+        search_result: SearchResult,
         start: Puzzle.State,
         filled: chex.Array,
         target: Puzzle.State,
@@ -58,42 +58,42 @@ def astar_builder(
         states = start
 
         heur_val = heuristic.batched_distance(states, target)
-        astar_result.hashtable, inserted, idx, table_idx = parallel_insert(
-            astar_result.hashtable, states, filled
+        search_result.hashtable, inserted, idx, table_idx = parallel_insert(
+            search_result.hashtable, states, filled
         )
         hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
 
         cost_val = jnp.where(filled, 0, jnp.inf)
-        astar_result.cost = astar_result.cost.at[idx, table_idx].set(
-            jnp.where(inserted, cost_val, astar_result.cost[idx, table_idx])
+        search_result.cost = search_result.cost.at[idx, table_idx].set(
+            jnp.where(inserted, cost_val, search_result.cost[idx, table_idx])
         )
 
         total_cost = cost_val + heur_val
-        astar_result.priority_queue = BGPQ.insert(
-            astar_result.priority_queue, total_cost, hash_idxs
+        search_result.priority_queue = BGPQ.insert(
+            search_result.priority_queue, total_cost, hash_idxs
         )
 
-        def _cond(astar_result: SearchResult):
-            heap_size = astar_result.priority_queue.size
-            hash_size = astar_result.hashtable.size
+        def _cond(search_result: SearchResult):
+            heap_size = search_result.priority_queue.size
+            hash_size = search_result.hashtable.size
             size_cond1 = heap_size > 0  # queue is not empty
             size_cond2 = hash_size < max_nodes  # hash table is not full
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
-            min_val = astar_result.priority_queue.val_store[0]  # get the minimum value
-            states = astar_result.hashtable.table[min_val.index, min_val.table_index]
+            min_val = search_result.priority_queue.val_store[0]  # get the minimum value
+            states = search_result.hashtable.table[min_val.index, min_val.table_index]
             solved = solved_fn(states, target)
             return jnp.logical_and(size_cond, ~solved.any())
 
-        def _body(astar_result: SearchResult):
-            astar_result, min_val, filled = pop_full(astar_result)
+        def _body(search_result: SearchResult):
+            search_result, min_val, filled = pop_full(search_result)
             min_idx, min_table_idx = min_val.index, min_val.table_index
             parent_idx = jnp.stack((min_idx, min_table_idx), axis=-1)
 
-            cost_val = astar_result.cost[min_idx, min_table_idx]
-            states = astar_result.hashtable.table[min_idx, min_table_idx]
+            cost_val = search_result.cost[min_idx, min_table_idx]
+            states = search_result.hashtable.table[min_idx, min_table_idx]
 
-            astar_result.not_closed = astar_result.not_closed.at[min_idx, min_table_idx].min(
+            search_result.not_closed = search_result.not_closed.at[min_idx, min_table_idx].min(
                 ~filled
             )  # or operation with closed
 
@@ -114,30 +114,30 @@ def astar_builder(
             flatten_neighbours = jax.tree_util.tree_map(
                 lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours
             )
-            astar_result.hashtable, updated, idxs, table_idxs = parallel_insert(
-                astar_result.hashtable, flatten_neighbours, filleds.reshape((flatten_size,))
+            search_result.hashtable, updated, idxs, table_idxs = parallel_insert(
+                search_result.hashtable, flatten_neighbours, filleds.reshape((flatten_size,))
             )
 
             flatten_nextcosts = nextcosts.reshape((flatten_size,))
-            optimals = jnp.less(flatten_nextcosts, astar_result.cost[idxs, table_idxs])
-            astar_result.cost = astar_result.cost.at[idxs, table_idxs].min(
+            optimals = jnp.less(flatten_nextcosts, search_result.cost[idxs, table_idxs])
+            search_result.cost = search_result.cost.at[idxs, table_idxs].min(
                 flatten_nextcosts
             )  # update the minimul cost
 
             flatten_neighbours_parent_idx = neighbours_parent_idx.reshape((flatten_size, 2))
             flatten_parent_action = parent_action.reshape((flatten_size,))
-            astar_result.parent = astar_result.parent.at[idxs, table_idxs].set(
+            search_result.parent = search_result.parent.at[idxs, table_idxs].set(
                 jnp.where(
                     optimals[:, jnp.newaxis],
                     flatten_neighbours_parent_idx,
-                    astar_result.parent[idxs, table_idxs],
+                    search_result.parent[idxs, table_idxs],
                 )
             )
-            astar_result.parent_action = astar_result.parent_action.at[idxs, table_idxs].set(
+            search_result.parent_action = search_result.parent_action.at[idxs, table_idxs].set(
                 jnp.where(
                     optimals,
                     flatten_parent_action,
-                    astar_result.parent_action[idxs, table_idxs],
+                    search_result.parent_action[idxs, table_idxs],
                 )
             )
 
@@ -145,36 +145,36 @@ def astar_builder(
             table_idxs = table_idxs.reshape(unflatten_size)
             optimals = optimals.reshape(unflatten_size)
 
-            def _scan(astar_result: SearchResult, val):
+            def _scan(search_result: SearchResult, val):
                 neighbour, neighbour_cost, idx, table_idx, optimal = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
                 neighbour_key = cost_weight * neighbour_cost + neighbour_heur
 
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
-                not_closed_update = astar_result.not_closed[idx, table_idx] | optimal
-                astar_result.not_closed = astar_result.not_closed.at[idx, table_idx].set(
+                not_closed_update = search_result.not_closed[idx, table_idx] | optimal
+                search_result.not_closed = search_result.not_closed.at[idx, table_idx].set(
                     not_closed_update
                 )
                 neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
 
-                astar_result.priority_queue = BGPQ.insert(
-                    astar_result.priority_queue,
+                search_result.priority_queue = BGPQ.insert(
+                    search_result.priority_queue,
                     neighbour_key,
                     vals,
                     added_size=jnp.sum(optimal, dtype=jnp.uint32),
                 )
-                return astar_result, None
+                return search_result, None
 
-            astar_result, _ = jax.lax.scan(
-                _scan, astar_result, (neighbours, nextcosts, idxs, table_idxs, optimals)
+            search_result, _ = jax.lax.scan(
+                _scan, search_result, (neighbours, nextcosts, idxs, table_idxs, optimals)
             )
-            return astar_result
+            return search_result
 
-        astar_result = jax.lax.while_loop(_cond, _body, astar_result)
-        min_val = astar_result.priority_queue.val_store[0]  # get the minimum value
-        states = astar_result.hashtable.table[min_val.index, min_val.table_index]
+        search_result = jax.lax.while_loop(_cond, _body, search_result)
+        min_val = search_result.priority_queue.val_store[0]  # get the minimum value
+        states = search_result.hashtable.table[min_val.index, min_val.table_index]
         solved = solved_fn(states, target)
         solved_idx = min_val[jnp.argmax(solved)]
-        return astar_result, solved.any(), solved_idx
+        return search_result, solved.any(), solved_idx
 
-    return astar_result_build, jax.jit(astar)
+    return search_result_build, jax.jit(astar)
