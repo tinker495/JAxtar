@@ -342,15 +342,15 @@ class HashTable:
         initial_idx, untreed = jax.vmap(
             partial(HashTable.get_new_idx_untreed, hash_func), in_axes=(None, 0, None)
         )(table, inputs, table.seed)
-        batch_len = initial_idx.shape[0]
+        batch_len = filled.shape[0]
         unique_untreed_idx = jnp.unique(untreed, axis=0, size=batch_len, return_index=True)[1]
         unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_untreed_idx].set(True)
-        _filled = jnp.logical_and(filled, unique)
+        unique_filled = jnp.logical_and(filled, unique)
         seeds, idx, table_idx, found = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
-        )(table, inputs, initial_idx, 0, table.seed, ~filled)
+        )(table, inputs, initial_idx, 0, table.seed, ~unique_filled)
         _idxs = jnp.stack([idx, table_idx], axis=1)
-        updatable = jnp.logical_and(~found, _filled)
+        updatable = jnp.logical_and(~found, unique_filled)
 
         masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
         unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True)[
@@ -377,5 +377,5 @@ class HashTable:
         table.size += jnp.sum(updatable)
         _, idx, table_idx, found = jax.vmap(
             HashTable._lookup, in_axes=(None, None, 0, 0, None, None, 0)
-        )(hash_func, table, inputs, initial_idx, 0, table.seed, filled)
-        return table, updatable, idx, table_idx
+        )(hash_func, table, inputs, initial_idx, 0, table.seed, ~filled)
+        return table, updatable, unique_filled, idx, table_idx
