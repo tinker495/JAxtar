@@ -62,7 +62,7 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
     count = 10
     batch = 5000
     table = HashTable.build(puzzle.State, 1, int(1e5))
-    parallel_insert = jax.jit(partial(HashTable.parallel_insert, hash_func))
+    parallel_insert = jax.jit(partial(HashTable.parallel_insert_unique_condition, hash_func))
     lookup = jax.jit(partial(HashTable.lookup, hash_func))
 
     num = 10
