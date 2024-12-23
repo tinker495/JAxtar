@@ -3,6 +3,7 @@ numpy==1.26.4
 click
 tqdm
 pre-commit
+pytest
 jax[cuda12_pip]
 chex
 dm_pix
