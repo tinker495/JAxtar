@@ -57,7 +57,7 @@ def qstar_builder(
 
         states = start
 
-        search_result.hashtable, inserted, idx, table_idx = parallel_insert(
+        search_result.hashtable, inserted, _, idx, table_idx = parallel_insert(
             search_result.hashtable, states, filled
         )
         hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
@@ -117,7 +117,7 @@ def qstar_builder(
             flatten_neighbours = jax.tree_util.tree_map(
                 lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours
             )
-            search_result.hashtable, _, idxs, table_idxs = parallel_insert(
+            search_result.hashtable, _, _, idxs, table_idxs = parallel_insert(
                 search_result.hashtable, flatten_neighbours, filleds.reshape((flatten_size,))
             )
 

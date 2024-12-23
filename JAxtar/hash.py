@@ -279,14 +279,15 @@ class HashTable:
         filled = jnp.concatenate([jnp.ones(count), jnp.zeros(batch_size - count)], dtype=jnp.bool_)
         return batched, filled
 
-    @staticmethod
-    def parallel_insert(
-        hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
+    def _parallel_insert(
+        hash_func: HASH_FUNC_TYPE,
+        table: "HashTable",
+        inputs: Puzzle.State,
+        seeds: chex.Array,
+        index: chex.Array,
+        updatable: chex.Array,
+        batch_len: int,
     ):
-        """
-        insert the states in the table at the same time
-        """
-
         def _next_idx(seeds, _idxs, unupdateds):
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
                 next_table = table_idx >= (table.n_table - 1)
@@ -339,20 +340,7 @@ class HashTable:
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, _idxs, unupdated
 
-        initial_idx, untreed = jax.vmap(
-            partial(HashTable.get_new_idx_untreed, hash_func), in_axes=(None, 0, None)
-        )(table, inputs, table.seed)
-        batch_len = filled.shape[0]
-        unique_untreed_idx = jnp.unique(untreed, axis=0, size=batch_len, return_index=True)[1]
-        unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_untreed_idx].set(True)
-        unique_filled = jnp.logical_and(filled, unique)
-        seeds, idx, table_idx, found = jax.vmap(
-            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
-        )(table, inputs, initial_idx, 0, table.seed, ~unique_filled)
-        _idxs = jnp.stack([idx, table_idx], axis=1)
-        updatable = jnp.logical_and(~found, unique_filled)
-
-        masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+        masked_idx = jnp.where(updatable[:, jnp.newaxis], index, jnp.full_like(index, -1))
         unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True)[
             1
         ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
@@ -363,9 +351,9 @@ class HashTable:
             updatable, not_uniques
         )  # remove the unique index from the unupdated index
 
-        seeds, _idxs, _ = jax.lax.while_loop(_cond, _while, (seeds, _idxs, unupdated))
+        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, index, unupdated))
 
-        idx, table_idx = _idxs[:, 0], _idxs[:, 1]
+        idx, table_idx = index[:, 0], index[:, 1]
         table.table = jax.tree_util.tree_map(
             lambda x, y: x.at[idx, table_idx].set(
                 jnp.where(updatable.reshape(-1, *([1] * (len(y.shape) - 1))), y, x[idx, table_idx])
@@ -375,7 +363,58 @@ class HashTable:
         )
         table.table_idx = table.table_idx.at[idx].add(updatable)
         table.size += jnp.sum(updatable)
-        _, idx, table_idx, found = jax.vmap(
-            HashTable._lookup, in_axes=(None, None, 0, 0, None, None, 0)
-        )(hash_func, table, inputs, initial_idx, 0, table.seed, ~filled)
+        return table, idx, table_idx
+
+    @staticmethod
+    def parallel_insert(
+        hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
+    ):
+        """
+        insert the states in the table at the same time
+        return the table, updatable, filled, idx, table_idx
+        """
+
+        initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func), in_axes=(None, 0, None))(
+            table, inputs, table.seed
+        )
+        batch_len = filled.shape[0]
+        seeds, idx, table_idx, found = jax.vmap(
+            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
+        )(table, inputs, initial_idx, 0, table.seed, ~filled)
+        idxs = jnp.stack([idx, table_idx], axis=1)
+        updatable = jnp.logical_and(~found, filled)
+
+        table, idx, table_idx = HashTable._parallel_insert(
+            hash_func, table, inputs, seeds, idxs, updatable, batch_len
+        )
+        return table, updatable, filled, idx, table_idx
+
+    @staticmethod
+    def parallel_insert_unique_condition(
+        hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
+    ):
+        """
+        Insert the states into the table concurrently, handling unique state conditions.
+        Strictly speaking, this implementation is correct, but it is noted that the search functionality is broken.
+        Returns the table, updatable, filled, idx, and table_idx.
+        # TODO: The handling of unique state conditions is operational,
+        #       but the search functionality is currently broken and requires fixing.
+        """
+
+        initial_idx, untreed = jax.vmap(
+            partial(HashTable.get_new_idx_untreed, hash_func), in_axes=(None, 0, None)
+        )(table, inputs, table.seed)
+        batch_len = filled.shape[0]
+        unique_untreed_idx = jnp.unique(untreed, axis=0, size=batch_len, return_index=True)[1]
+        unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_untreed_idx].set(True)
+        unique_filled = jnp.logical_and(filled, unique)
+        seeds, idx, table_idx, found = jax.vmap(
+            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
+        )(table, inputs, initial_idx, 0, table.seed, ~unique_filled)
+        idxs = jnp.stack([idx, table_idx], axis=1)
+        updatable = jnp.logical_and(~found, unique_filled)
+
+        table, idx, table_idx = HashTable._parallel_insert(
+            hash_func, table, inputs, seeds, idxs, updatable, batch_len
+        )
         return table, updatable, unique_filled, idx, table_idx
