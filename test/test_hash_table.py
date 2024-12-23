@@ -63,6 +63,7 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
     batch = 5000
     table = HashTable.build(puzzle.State, 1, int(1e5))
     parallel_insert = jax.jit(partial(HashTable.parallel_insert, hash_func))
+    lookup = jax.jit(partial(HashTable.lookup, hash_func))
 
     num = 10
     counts = 0
@@ -83,6 +84,19 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
         assert unique_idxs.shape[0] == 2, f"unique_idxs.shape: {unique_idxs.shape}"
         assert jnp.sum(unique) == 2, f"unique: {unique}"
         counts += 2
+
+        idxs, table_idxs, found = lookup(table, _sample1)
+        assert found, f"found: {found}"
+        found_state = table.table[idxs, table_idxs]
+        assert puzzle.is_equal(
+            found_state, _sample1
+        ), f"sample1 : \n{_sample1}\nfound_state: \n{found_state}"
+        idxs, table_idxs, found = lookup(table, _sample2)
+        assert found, f"found: {found}"
+        found_state = table.table[idxs, table_idxs]
+        assert puzzle.is_equal(
+            found_state, _sample2
+        ), f"sample2 : \n{_sample2}\nfound_state: \n{found_state}"
 
     assert table.size == counts, f"table.table.size: {table.size}, counts: {counts}"
 
