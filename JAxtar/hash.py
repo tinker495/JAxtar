@@ -1,5 +1,5 @@
 from functools import partial
-from typing import TypeVar
+from typing import Callable, Tuple, TypeVar
 
 import chex
 import jax
@@ -10,37 +10,40 @@ from puzzle.puzzle_base import Puzzle
 T = TypeVar("T")
 HASH_SIZE_MULTIPLIER = 2
 
+HASH_FUNC_TYPE = Callable[[Puzzle.State, int], Tuple[jnp.uint32, jnp.ndarray]]
+
 
 def rotl(x, n):
     return (x << n) | (x >> (32 - n))
 
 
-def hash_func_builder(x: Puzzle.State):
+@jax.jit
+def xxhash(x, seed):
+    prime_1 = jnp.uint32(0x9E3779B1)
+    prime_2 = jnp.uint32(0x85EBCA77)
+    prime_3 = jnp.uint32(0xC2B2AE3D)
+    prime_5 = jnp.uint32(0x165667B1)
+    acc = jnp.uint32(seed) + prime_5
+    for _ in range(4):
+        lane = x & 255
+        acc = acc + lane * prime_5
+        acc = rotl(acc, 11) * prime_1
+        x = x >> 8
+    acc = acc ^ (acc >> 15)
+    acc = acc * prime_2
+    acc = acc ^ (acc >> 13)
+    acc = acc * prime_3
+    acc = acc ^ (acc >> 16)
+    return acc
+
+
+def untree_builder(x: Puzzle.State):
     """
-    build a hash function for the state dataclass
+    build a untree function for the state dataclass
     """
     default = x.default()  # get the default state, reference for building the hash function
 
-    @jax.jit
-    def xxhash(x, seed):
-        prime_1 = jnp.uint32(0x9E3779B1)
-        prime_2 = jnp.uint32(0x85EBCA77)
-        prime_3 = jnp.uint32(0xC2B2AE3D)
-        prime_5 = jnp.uint32(0x165667B1)
-        acc = jnp.uint32(seed) + prime_5
-        for _ in range(4):
-            lane = x & 255
-            acc = acc + lane * prime_5
-            acc = rotl(acc, 11) * prime_1
-            x = x >> 8
-        acc = acc ^ (acc >> 15)
-        acc = acc * prime_2
-        acc = acc ^ (acc >> 13)
-        acc = acc * prime_3
-        acc = acc ^ (acc >> 16)
-        return acc
-
-    def _get_leaf_hash_func(leaf):
+    def _get_leaf_bytes(leaf):
         flatten_leaf = jnp.reshape(leaf, (-1,))
         bitlen = flatten_leaf.dtype.itemsize
         flatten_len = flatten_leaf.shape[0]
@@ -49,35 +52,54 @@ def hash_func_builder(x: Puzzle.State):
         reshape_size = ((flatten_len + pad_len) // chunk, chunk)
 
         @jax.jit
-        def _to_uint32(x):
+        def _to_uint8(x):
             x = jnp.reshape(x, (flatten_len,))
             x_padded = jnp.pad(x, (0, pad_len), mode="constant", constant_values=0)
             x_reshaped = jnp.reshape(x_padded, reshape_size)
-            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
+            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint8))(
                 x_reshaped
             ).reshape(-1)
 
-        @jax.jit
-        def _h(x, seed):
-            x = _to_uint32(x)
-
-            def scan_body(seed, x):  # scan body for the xxhash function
-                result = xxhash(x, seed)
-                return result, result
-
-            final_result, _ = jax.lax.scan(scan_body, seed, x)
-            return final_result
-
-        return _h
+        return _to_uint8
 
     tree_flatten_func = jax.tree_util.tree_map(
-        _get_leaf_hash_func, default
+        _get_leaf_bytes, default
     )  # each leaf has a hash function for each array shape and dtype
 
-    def _h(x, seed):  # hash function for the whole tree structure
-        return jax.tree_util.tree_reduce(
-            xxhash, jax.tree_util.tree_map(lambda f, leaf: f(leaf, seed), tree_flatten_func, x)
+    def _untree(x):
+        x = jax.tree_util.tree_map(lambda f, leaf: f(leaf), tree_flatten_func, x)
+        x, _ = jax.tree_util.tree_flatten(x)
+        return jnp.concatenate(x)
+
+    return jax.jit(_untree)
+
+
+def hash_func_builder(x: Puzzle.State):
+    """
+    build a hash function for the state dataclass
+    """
+    untree_fn = untree_builder(x)
+    default_untree = untree_fn(x.default())
+    bytes_len = default_untree.shape[0]
+    pad_len = jnp.where(bytes_len % 4 != 0, 4 - (bytes_len % 4), 0)
+
+    def _to_uint32(bytes):
+        x_padded = jnp.pad(bytes, (0, pad_len), mode="constant", constant_values=0)
+        x_reshaped = jnp.reshape(x_padded, (-1, 4))
+        return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(
+            -1
         )
+
+    def _h(x, seed):
+        untreed = untree_fn(x)
+        x = _to_uint32(untreed)
+
+        def scan_body(seed, x):  # scan body for the xxhash function
+            result = xxhash(x, seed)
+            return result, result
+
+        final_result, _ = jax.lax.scan(scan_body, seed, x)
+        return final_result, untreed
 
     return jax.jit(_h)
 
@@ -117,14 +139,30 @@ class HashTable:
         )
 
     @staticmethod
-    def get_new_idx(hash_func: callable, table: "HashTable", input: Puzzle.State, seed: int):
-        hash_value = hash_func(input, seed)
+    def get_new_idx(
+        hash_func: HASH_FUNC_TYPE,
+        table: "HashTable",
+        input: Puzzle.State,
+        seed: int,
+    ):
+        hash_value, _ = hash_func(input, seed)
         idx = hash_value % table._capacity
         return idx
 
     @staticmethod
+    def get_new_idx_untreed(
+        hash_func: HASH_FUNC_TYPE,
+        table: "HashTable",
+        input: Puzzle.State,
+        seed: int,
+    ):
+        hash_value, untreed = hash_func(input, seed)
+        idx = hash_value % table._capacity
+        return idx, untreed
+
+    @staticmethod
     def _lookup(
-        hash_func: callable,
+        hash_func: HASH_FUNC_TYPE,
         table: "HashTable",
         input: Puzzle.State,
         idx: int,
@@ -184,7 +222,7 @@ class HashTable:
         return update_seed, idx, table_idx, found
 
     @staticmethod
-    def lookup(hash_func: callable, table: "HashTable", input: Puzzle.State):
+    def lookup(hash_func: HASH_FUNC_TYPE, table: "HashTable", input: Puzzle.State):
         """
         find the index of the state in the table if it exists.
         if it exists return the index, cuckoo_idx and True
@@ -197,7 +235,7 @@ class HashTable:
         return idx, table_idx, found
 
     @staticmethod
-    def insert(hash_func: callable, table: "HashTable", input: Puzzle.State):
+    def insert(hash_func: HASH_FUNC_TYPE, table: "HashTable", input: Puzzle.State):
         """
         insert the state in the table
         """
@@ -241,14 +279,15 @@ class HashTable:
         filled = jnp.concatenate([jnp.ones(count), jnp.zeros(batch_size - count)], dtype=jnp.bool_)
         return batched, filled
 
-    @staticmethod
-    def parallel_insert(
-        hash_func: callable, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
+    def _parallel_insert(
+        hash_func: HASH_FUNC_TYPE,
+        table: "HashTable",
+        inputs: Puzzle.State,
+        seeds: chex.Array,
+        index: chex.Array,
+        updatable: chex.Array,
+        batch_len: int,
     ):
-        """
-        insert the states in the table at the same time
-        """
-
         def _next_idx(seeds, _idxs, unupdateds):
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
                 next_table = table_idx >= (table.n_table - 1)
@@ -301,17 +340,7 @@ class HashTable:
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, _idxs, unupdated
 
-        initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func), in_axes=(None, 0, None))(
-            table, inputs, table.seed
-        )
-        batch_len = initial_idx.shape[0]
-        seeds, idx, table_idx, found = jax.vmap(
-            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
-        )(table, inputs, initial_idx, 0, table.seed, ~filled)
-        _idxs = jnp.stack([idx, table_idx], axis=1)
-        updatable = jnp.logical_and(~found, filled)
-
-        masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+        masked_idx = jnp.where(updatable[:, jnp.newaxis], index, jnp.full_like(index, -1))
         unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True)[
             1
         ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
@@ -322,9 +351,9 @@ class HashTable:
             updatable, not_uniques
         )  # remove the unique index from the unupdated index
 
-        seeds, _idxs, _ = jax.lax.while_loop(_cond, _while, (seeds, _idxs, unupdated))
+        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, index, unupdated))
 
-        idx, table_idx = _idxs[:, 0], _idxs[:, 1]
+        idx, table_idx = index[:, 0], index[:, 1]
         table.table = jax.tree_util.tree_map(
             lambda x, y: x.at[idx, table_idx].set(
                 jnp.where(updatable.reshape(-1, *([1] * (len(y.shape) - 1))), y, x[idx, table_idx])
@@ -334,4 +363,58 @@ class HashTable:
         )
         table.table_idx = table.table_idx.at[idx].add(updatable)
         table.size += jnp.sum(updatable)
-        return table, updatable, idx, table_idx
+        return table, idx, table_idx
+
+    @staticmethod
+    def parallel_insert(
+        hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
+    ):
+        """
+        insert the states in the table at the same time
+        return the table, updatable, filled, idx, table_idx
+        """
+
+        initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func), in_axes=(None, 0, None))(
+            table, inputs, table.seed
+        )
+        batch_len = filled.shape[0]
+        seeds, idx, table_idx, found = jax.vmap(
+            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
+        )(table, inputs, initial_idx, 0, table.seed, ~filled)
+        idxs = jnp.stack([idx, table_idx], axis=1)
+        updatable = jnp.logical_and(~found, filled)
+
+        table, idx, table_idx = HashTable._parallel_insert(
+            hash_func, table, inputs, seeds, idxs, updatable, batch_len
+        )
+        return table, updatable, filled, idx, table_idx
+
+    @staticmethod
+    def parallel_insert_unique_condition(
+        hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
+    ):
+        """
+        Insert the states into the table concurrently, handling unique state conditions.
+        Strictly speaking, this implementation is correct, but it is noted that the search functionality is broken.
+        Returns the table, updatable, filled, idx, and table_idx.
+        # TODO: The handling of unique state conditions is operational,
+        #       but the search functionality is currently broken and requires fixing.
+        """
+
+        initial_idx, untreed = jax.vmap(
+            partial(HashTable.get_new_idx_untreed, hash_func), in_axes=(None, 0, None)
+        )(table, inputs, table.seed)
+        batch_len = filled.shape[0]
+        unique_untreed_idx = jnp.unique(untreed, axis=0, size=batch_len, return_index=True)[1]
+        unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_untreed_idx].set(True)
+        unique_filled = jnp.logical_and(filled, unique)
+        seeds, idx, table_idx, found = jax.vmap(
+            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
+        )(table, inputs, initial_idx, 0, table.seed, ~unique_filled)
+        idxs = jnp.stack([idx, table_idx], axis=1)
+        updatable = jnp.logical_and(~found, unique_filled)
+
+        table, idx, table_idx = HashTable._parallel_insert(
+            hash_func, table, inputs, seeds, idxs, updatable, batch_len
+        )
+        return table, updatable, unique_filled, idx, table_idx
