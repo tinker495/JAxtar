@@ -37,50 +37,23 @@ def xxhash(x, seed):
     return acc
 
 
-def untree_builder(x: Puzzle.State):
-    """
-    build a untree function for the state dataclass
-    """
-    default = x.default()  # get the default state, reference for building the hash function
-
-    def _get_leaf_bytes(leaf):
-        flatten_leaf = jnp.reshape(leaf, (-1,))
-        bitlen = flatten_leaf.dtype.itemsize
-        flatten_len = flatten_leaf.shape[0]
-        chunk = int(jnp.maximum(jnp.ceil(4 / bitlen), 1))
-        pad_len = jnp.where(flatten_len % chunk != 0, chunk - (flatten_len % chunk), 0)
-        reshape_size = ((flatten_len + pad_len) // chunk, chunk)
-
-        @jax.jit
-        def _to_uint8(x):
-            x = jnp.reshape(x, (flatten_len,))
-            x_padded = jnp.pad(x, (0, pad_len), mode="constant", constant_values=0)
-            x_reshaped = jnp.reshape(x_padded, reshape_size)
-            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint8))(
-                x_reshaped
-            ).reshape(-1)
-
-        return _to_uint8
-
-    tree_flatten_func = jax.tree_util.tree_map(
-        _get_leaf_bytes, default
-    )  # each leaf has a hash function for each array shape and dtype
-
-    def _untree(x):
-        x = jax.tree_util.tree_map(lambda f, leaf: f(leaf), tree_flatten_func, x)
-        x, _ = jax.tree_util.tree_flatten(x)
-        return jnp.concatenate(x)
-
-    return jax.jit(_untree)
-
-
 def hash_func_builder(x: Puzzle.State):
     """
     build a hash function for the state dataclass
     """
-    untree_fn = untree_builder(x)
-    default_untree = untree_fn(x.default())
-    bytes_len = default_untree.shape[0]
+
+    @jax.jit
+    def _to_bytes(x):
+        return jax.lax.bitcast_convert_type(x, jnp.uint8).reshape(-1)
+
+    @jax.jit
+    def _byterize(x):
+        x = jax.tree_util.tree_map(_to_bytes, x)
+        x, _ = jax.tree_util.tree_flatten(x)
+        return jnp.concatenate(x)
+
+    default_bytes = _byterize(x.default())
+    bytes_len = default_bytes.shape[0]
     pad_len = jnp.where(bytes_len % 4 != 0, 4 - (bytes_len % 4), 0)
 
     def _to_uint32(bytes):
@@ -91,15 +64,15 @@ def hash_func_builder(x: Puzzle.State):
         )
 
     def _h(x, seed):
-        untreed = untree_fn(x)
-        x = _to_uint32(untreed)
+        bytes = _byterize(x)
+        uint32ed = _to_uint32(bytes)
 
         def scan_body(seed, x):  # scan body for the xxhash function
             result = xxhash(x, seed)
             return result, result
 
-        final_result, _ = jax.lax.scan(scan_body, seed, x)
-        return final_result, untreed
+        hash_value, _ = jax.lax.scan(scan_body, seed, uint32ed)
+        return hash_value, bytes
 
     return jax.jit(_h)
 
@@ -150,15 +123,15 @@ class HashTable:
         return idx
 
     @staticmethod
-    def get_new_idx_untreed(
+    def get_new_idx_byterized(
         hash_func: HASH_FUNC_TYPE,
         table: "HashTable",
         input: Puzzle.State,
         seed: int,
     ):
-        hash_value, untreed = hash_func(input, seed)
+        hash_value, bytes = hash_func(input, seed)
         idx = hash_value % table._capacity
-        return idx, untreed
+        return idx, bytes
 
     @staticmethod
     def _lookup(
@@ -401,12 +374,12 @@ class HashTable:
         #       but the search functionality is currently broken and requires fixing.
         """
 
-        initial_idx, untreed = jax.vmap(
-            partial(HashTable.get_new_idx_untreed, hash_func), in_axes=(None, 0, None)
+        initial_idx, bytes = jax.vmap(
+            partial(HashTable.get_new_idx_byterized, hash_func), in_axes=(None, 0, None)
         )(table, inputs, table.seed)
         batch_len = filled.shape[0]
-        unique_untreed_idx = jnp.unique(untreed, axis=0, size=batch_len, return_index=True)[1]
-        unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_untreed_idx].set(True)
+        unique_bytes_idx = jnp.unique(bytes, axis=0, size=batch_len, return_index=True)[1]
+        unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_bytes_idx].set(True)
         unique_filled = jnp.logical_and(filled, unique)
         seeds, idx, table_idx, found = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)

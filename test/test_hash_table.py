@@ -107,12 +107,12 @@ def test_large_hash_table(puzzle, hash_func):
     table = HashTable.build(puzzle.State, 1, count)
 
     sample = jax.vmap(puzzle.get_initial_state)(key=jax.random.split(jax.random.PRNGKey(2), count))
-    hash, untreed = jax.vmap(hash_func, in_axes=(0, None))(sample, 0)
-    unique_untreed = jnp.unique(untreed, axis=0, return_index=True)[1]
-    unique_untreed_len = unique_untreed.shape[0]
+    hash, bytes = jax.vmap(hash_func, in_axes=(0, None))(sample, 0)
+    unique_bytes = jnp.unique(bytes, axis=0, return_index=True)[1]
+    unique_bytes_len = unique_bytes.shape[0]
     unique_hash = jnp.unique(hash, axis=0, return_index=True)[1]
     unique_hash_len = unique_hash.shape[0]
-    print(f"unique_untreed_len: {unique_untreed_len}, unique_hash_len: {unique_hash_len}")
+    print(f"unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}")
 
     parallel_insert = jax.jit(partial(HashTable.parallel_insert, hash_func))
     lookup = jax.jit(partial(HashTable.lookup, hash_func))
@@ -127,8 +127,8 @@ def test_large_hash_table(puzzle, hash_func):
         inserted_count += jnp.sum(inserted)
 
     assert (
-        inserted_count == unique_untreed_len
-    ), f"inserted_count: {inserted_count}, unique_untreed_len: {unique_untreed_len}, unique_hash_len: {unique_hash_len}"
+        inserted_count == unique_bytes_len
+    ), f"inserted_count: {inserted_count}, unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}"
 
     # Verify all states can be found
     _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
