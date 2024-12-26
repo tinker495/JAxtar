@@ -163,14 +163,13 @@ def astar(
     start = time.time()
     search_result, solved, solved_idx = astar_fn(search_result_build(), states, filled, target)
     end = time.time()
-    print(f"Time: {end - start:6.2f} seconds\n\n")
-    print("\n\nJIT compiled")
+    print(f"Time: {end - start:6.2f} seconds")
+    print("JIT compiled\n\n")
 
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(
         key=jax.random.split(jax.random.PRNGKey(start_state_seed), 1)
     )
     heuristic_values = heuristic.batched_distance(states, target)
-    print(heuristic_values.shape)
 
     print("Start state")
     print(states[0])
@@ -354,8 +353,8 @@ def qstar(
     start = time.time()
     search_result, solved, solved_idx = qstar_fn(search_result_build(), states, filled, target)
     end = time.time()
-    print(f"Time: {end - start:6.2f} seconds\n\n")
-    print("\n\nJIT compiled")
+    print(f"Time: {end - start:6.2f} seconds")
+    print("JIT compiled\n\n")
 
     states = jax.vmap(puzzle.get_initial_state, in_axes=0)(
         key=jax.random.split(jax.random.PRNGKey(start_state_seed), 1)
