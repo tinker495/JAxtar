@@ -10,6 +10,9 @@ from tabulate import tabulate
 
 T = TypeVar("T")
 
+MAX_PRINT_BATCH_SIZE = 4
+SHOW_BATCH_SIZE = 2
+
 
 # enum for state type
 class StructuredType(Enum):
@@ -81,19 +84,19 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
                 jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
             )
             results = []
-            if batch_len < 20:
+            if batch_len < MAX_PRINT_BATCH_SIZE:
                 for i in range(batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
                 results.append(f"batch : {batch_shape}")
             else:
-                for i in range(3):
+                for i in range(SHOW_BATCH_SIZE):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
                 results.append("...\n(batch : " + f"{batch_shape})")
-                for i in range(batch_len - 3, batch_len):
+                for i in range(batch_len - SHOW_BATCH_SIZE, batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
                     results.append(parsfunc(current_state))
