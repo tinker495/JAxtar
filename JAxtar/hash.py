@@ -56,12 +56,22 @@ def hash_func_builder(x: Puzzle.State):
     bytes_len = default_bytes.shape[0]
     pad_len = jnp.where(bytes_len % 4 != 0, 4 - (bytes_len % 4), 0)
 
-    def _to_uint32(bytes):
-        x_padded = jnp.pad(bytes, (0, pad_len), mode="constant", constant_values=0)
-        x_reshaped = jnp.reshape(x_padded, (-1, 4))
-        return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(x_reshaped).reshape(
-            -1
-        )
+    if pad_len > 0:
+
+        def _to_uint32(bytes):
+            x_padded = jnp.pad(bytes, (0, pad_len), mode="constant", constant_values=0)
+            x_reshaped = jnp.reshape(x_padded, (-1, 4))
+            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
+                x_reshaped
+            ).reshape(-1)
+
+    else:
+
+        def _to_uint32(bytes):
+            x_reshaped = jnp.reshape(bytes, (-1, 4))
+            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
+                x_reshaped
+            ).reshape(-1)
 
     def _h(x, seed):
         bytes = _byterize(x)
