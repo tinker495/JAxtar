@@ -4,6 +4,13 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from JAxtar.annotate import (
+    HASH_POINT_DTYPE,
+    HASH_TABLE_IDX_DTYPE,
+    KEY_DTYPE,
+    SIZE_DTYPE,
+)
+
 SORT_STABLE = True
 
 
@@ -76,8 +83,8 @@ class HashTableIdx_HeapValue:
     """
     This class is a dataclass that represents a hash table heap value.
     It has two fields:
-    1. index: jnp.uint32 / hashtable index
-    2. table_index: jnp.uint8 / cuckoo table index
+    1. index: hashtable index
+    2. table_index: cuckoo table index
     """
 
     index: chex.Array
@@ -86,8 +93,8 @@ class HashTableIdx_HeapValue:
     @staticmethod
     def default(_=None) -> "HashTableIdx_HeapValue":
         return HashTableIdx_HeapValue(
-            index=jnp.full(1, jnp.inf, dtype=jnp.uint32),
-            table_index=jnp.full(1, jnp.inf, dtype=jnp.uint32),
+            index=jnp.full(1, jnp.inf, dtype=HASH_POINT_DTYPE),
+            table_index=jnp.full(1, jnp.inf, dtype=HASH_TABLE_IDX_DTYPE),
         )
 
 
@@ -128,16 +135,16 @@ class BGPQ:  # Batched GPU Priority Queue
         total_size = total_size
         branch_size = jnp.where(
             total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1
-        ).astype(jnp.uint32)
+        ).astype(SIZE_DTYPE)
         max_size = branch_size * batch_size
-        size = jnp.uint32(0)
+        size = SIZE_DTYPE(0)
         key_store = jnp.full(
-            (branch_size, batch_size), jnp.inf, dtype=jnp.float32
+            (branch_size, batch_size), jnp.inf, dtype=KEY_DTYPE
         )  # [branch_size, batch_size]
         val_store = jax.vmap(lambda _: jax.vmap(value_class.default)(jnp.arange(batch_size)))(
             jnp.arange(branch_size)
         )  # [branch_size, batch_size, ...]
-        key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=jnp.float32)  # [batch_size - 1]
+        key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=KEY_DTYPE)  # [batch_size - 1]
         val_buffer = jax.vmap(value_class.default)(
             jnp.arange(batch_size - 1)
         )  # [batch_size - 1, ...]
@@ -241,7 +248,7 @@ class BGPQ:  # Batched GPU Priority Queue
         """
         n = key.shape[0]
         m = n // batch_size + 1
-        key = jnp.concatenate([key, jnp.full((m * batch_size - n,), jnp.inf, dtype=jnp.float32)])
+        key = jnp.concatenate([key, jnp.full((m * batch_size - n,), jnp.inf, dtype=KEY_DTYPE)])
         val = jax.tree_util.tree_map(
             lambda x, y: jnp.concatenate([x, y]),
             val,
@@ -262,7 +269,7 @@ class BGPQ:  # Batched GPU Priority Queue
         clz_current = jax.lax.clz(current)
         clz_target = jax.lax.clz(target)
         shift_amount = clz_current - clz_target - 1
-        next_index = target.astype(jnp.uint32) >> shift_amount
+        next_index = target.astype(SIZE_DTYPE) >> shift_amount
         return next_index
 
     @staticmethod
@@ -340,7 +347,7 @@ class BGPQ:  # Batched GPU Priority Queue
 
     @staticmethod
     def delete_heapify(heap: "BGPQ"):
-        size = jnp.uint32(heap.size // heap.batch_size)
+        size = SIZE_DTYPE(heap.size // heap.batch_size)
         last = size - 1
 
         heap.key_store = heap.key_store.at[0].set(heap.key_store[last]).at[last].set(jnp.inf)
@@ -396,7 +403,7 @@ class BGPQ:  # Batched GPU Priority Queue
             nl, nr = _lr(y)
             return key_store, val_store, nc, nl, nr
 
-        c = jnp.uint32(0)
+        c = SIZE_DTYPE(0)
         l, r = _lr(c)
         heap.key_store, heap.val_store, _, _, _ = jax.lax.while_loop(
             _cond, _f, (heap.key_store, heap.val_store, c, l, r)
@@ -412,7 +419,7 @@ class BGPQ:  # Batched GPU Priority Queue
         """
         min_keys = heap.key_store[0].squeeze()
         min_values = jax.tree_util.tree_map(lambda x: x.squeeze(), heap.val_store[0])
-        size = jnp.uint32(heap.size // heap.batch_size)
+        size = SIZE_DTYPE(heap.size // heap.batch_size)
 
         def make_empty(heap: "BGPQ"):
             root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(

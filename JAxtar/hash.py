@@ -5,6 +5,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from JAxtar.annotate import HASH_TABLE_IDX_DTYPE, SIZE_DTYPE
 from puzzle.puzzle_base import Puzzle
 
 T = TypeVar("T")
@@ -99,7 +100,7 @@ class HashTable:
     size: int
     n_table: int  # number of tables
     table: Puzzle.State  # shape = State("args" = (capacity, cuckoo_len, ...), ...)
-    table_idx: chex.Array  # shape = (capacity, ) dtype = jnp.uint4 is the index of the table in the cuckoo table.
+    table_idx: chex.Array  # shape = (capacity, ) is the index of the table in the cuckoo table.
 
     @staticmethod
     def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
@@ -107,15 +108,16 @@ class HashTable:
         make a lookup table with the default state of the statecls
         """
         _capacity = jnp.array(
-            HASH_SIZE_MULTIPLIER * capacity // n_table, jnp.uint32
+            HASH_SIZE_MULTIPLIER * capacity // n_table, SIZE_DTYPE
         )  # make the capacity a little bit bigger than the given capacity to avoid the infinite loop
+        size = SIZE_DTYPE(0)
         table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity, n_table)))
-        table_idx = jnp.zeros((_capacity), dtype=jnp.uint8)
+        table_idx = jnp.zeros((_capacity), dtype=HASH_TABLE_IDX_DTYPE)
         return HashTable(
             seed=seed,
             capacity=capacity,
             _capacity=_capacity,
-            size=jnp.uint32(0),
+            size=size,
             n_table=n_table,
             table=table,
             table_idx=table_idx,

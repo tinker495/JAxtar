@@ -4,6 +4,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
 from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue
 from JAxtar.hash import HashTable, hash_func_builder
 from JAxtar.search_base import SearchResult, pop_full
@@ -36,8 +37,8 @@ def qstar_builder(
 
     statecls = puzzle.State
 
-    batch_size = jnp.array(batch_size, dtype=jnp.int32)
-    max_nodes = jnp.array(max_nodes, dtype=jnp.int32)
+    batch_size = jnp.array(batch_size, dtype=SIZE_DTYPE)
+    max_nodes = jnp.array(max_nodes, dtype=SIZE_DTYPE)
     hash_func = hash_func_builder(puzzle.State)
     search_result_build = partial(SearchResult.build, statecls, batch_size, max_nodes)
 
@@ -101,7 +102,7 @@ def qstar_builder(
             ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbours, ncost = neighbours_fn(states, filled)
             parent_action = jnp.tile(
-                jnp.arange(ncost.shape[0], dtype=jnp.uint8)[:, jnp.newaxis], (1, ncost.shape[1])
+                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[:, jnp.newaxis], (1, ncost.shape[1])
             )
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             neighbour_key = cost_weight * nextcosts + q_vals
@@ -156,13 +157,15 @@ def qstar_builder(
                 search_result.not_closed = search_result.not_closed.at[idx, table_idx].set(
                     not_closed_update
                 )
-                neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf)
+                neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf).astype(
+                    KEY_DTYPE
+                )
 
                 search_result.priority_queue = BGPQ.insert(
                     search_result.priority_queue,
                     neighbour_key,
                     vals,
-                    added_size=jnp.sum(optimal, dtype=jnp.uint32),
+                    added_size=jnp.sum(optimal, dtype=SIZE_DTYPE),
                 )
                 return search_result, None
 

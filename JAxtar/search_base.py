@@ -2,6 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from JAxtar.annotate import ACTION_DTYPE, HASH_POINT_DTYPE, KEY_DTYPE
 from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue, HeapValue
 from JAxtar.hash import HashTable
 from puzzle.puzzle_base import Puzzle
@@ -44,15 +45,15 @@ class SearchResult:
         size_table = hashtable.capacity
         n_table = hashtable.n_table
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
-        min_key_buffer = jnp.full((batch_size,), jnp.inf, dtype=jnp.float32)
+        min_key_buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
         min_val_buffer = HashTableIdx_HeapValue(
-            index=jnp.zeros((batch_size,), dtype=jnp.uint32),
-            table_index=jnp.zeros((batch_size,), dtype=jnp.uint32),
+            index=jnp.zeros((batch_size,), dtype=HASH_POINT_DTYPE),
+            table_index=jnp.zeros((batch_size,), dtype=HASH_POINT_DTYPE),
         )
-        cost = jnp.full((size_table, n_table), jnp.inf, dtype=jnp.float32)
+        cost = jnp.full((size_table, n_table), jnp.inf, dtype=KEY_DTYPE)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
-        parent = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
-        parent_action = jnp.full((size_table, n_table), -1, dtype=jnp.uint8)
+        parent = jnp.full((size_table, n_table, 2), -1, dtype=HASH_POINT_DTYPE)
+        parent_action = jnp.full((size_table, n_table), -1, dtype=ACTION_DTYPE)
         return SearchResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
