@@ -42,7 +42,7 @@ def astar_builder(
     hash_func = hash_func_builder(puzzle.State)
     search_result_build = partial(SearchResult.build, statecls, batch_size, max_nodes)
 
-    parallel_insert = partial(HashTable.parallel_insert, hash_func)
+    parallel_insert = partial(HashTable.parallel_insert_unique_condition, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
 
@@ -102,63 +102,42 @@ def astar_builder(
             parent_action = jnp.tile(
                 jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[:, jnp.newaxis], (1, ncost.shape[1])
             )
+            neighbours_parent_idx = jnp.tile(jnp.expand_dims(parent_idx, 0), (ncost.shape[0], 1, 1))
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
-            filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
-            neighbours_parent_idx = jnp.broadcast_to(
-                parent_idx, (filleds.shape[0], filleds.shape[1], 2)
-            )
-
-            # insert neighbours into hashtable at once
-            unflatten_size = filleds.shape
-            flatten_size = unflatten_size[0] * unflatten_size[1]
-
-            flatten_neighbours = jax.tree_util.tree_map(
-                lambda x: x.reshape((flatten_size, *x.shape[2:])), neighbours
-            )
-            search_result.hashtable, _, _, idxs, table_idxs = parallel_insert(
-                search_result.hashtable, flatten_neighbours, filleds.reshape((flatten_size,))
-            )
-
-            flatten_nextcosts = nextcosts.reshape((flatten_size,))
-            optimals = jnp.less(flatten_nextcosts, search_result.cost[idxs, table_idxs])
-            search_result.cost = search_result.cost.at[idxs, table_idxs].min(
-                flatten_nextcosts
-            )  # update the minimul cost
-
-            flatten_neighbours_parent_idx = neighbours_parent_idx.reshape((flatten_size, 2))
-            flatten_parent_action = parent_action.reshape((flatten_size,))
-            search_result.parent = search_result.parent.at[idxs, table_idxs].set(
-                jnp.where(
-                    optimals[:, jnp.newaxis],
-                    flatten_neighbours_parent_idx,
-                    search_result.parent[idxs, table_idxs],
-                )
-            )
-            search_result.parent_action = search_result.parent_action.at[idxs, table_idxs].set(
-                jnp.where(
-                    optimals,
-                    flatten_parent_action,
-                    search_result.parent_action[idxs, table_idxs],
-                )
-            )
-
-            idxs = idxs.reshape(unflatten_size)
-            table_idxs = table_idxs.reshape(unflatten_size)
-            optimals = optimals.reshape(unflatten_size)
 
             def _scan(search_result: SearchResult, val):
-                neighbour, neighbour_cost, idx, table_idx, optimal = val
+                neighbour, neighbour_cost, neighbours_parent_idx, parent_action = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
                 neighbour_key = cost_weight * neighbour_cost + neighbour_heur
+                filled = jnp.isfinite(neighbour_cost)  # [n_neighbours, batch_size]
+
+                search_result.hashtable, _, _, idx, table_idx = parallel_insert(
+                    search_result.hashtable, neighbour, filled
+                )
+
+                optimal = jnp.less(neighbour_cost, search_result.cost[idx, table_idx]) & filled
+                search_result.cost = search_result.cost.at[idx, table_idx].min(
+                    neighbour_cost
+                )  # update the minimul cost
+
+                search_result.parent = search_result.parent.at[idx, table_idx].set(
+                    jnp.where(
+                        optimal[:, jnp.newaxis],
+                        neighbours_parent_idx,
+                        search_result.parent[idx, table_idx],
+                    )
+                )
+                search_result.parent_action = search_result.parent_action.at[idx, table_idx].set(
+                    jnp.where(
+                        optimal,
+                        parent_action,
+                        search_result.parent_action[idx, table_idx],
+                    )
+                )
 
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)[:, jnp.newaxis]
-                not_closed_update = search_result.not_closed[idx, table_idx] | optimal
-                search_result.not_closed = search_result.not_closed.at[idx, table_idx].set(
-                    not_closed_update
-                )
-                neighbour_key = jnp.where(not_closed_update, neighbour_key, jnp.inf).astype(
-                    KEY_DTYPE
-                )
+                search_result.not_closed = search_result.not_closed.at[idx, table_idx].set(optimal)
+                neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf).astype(KEY_DTYPE)
 
                 search_result.priority_queue = BGPQ.insert(
                     search_result.priority_queue,
@@ -169,7 +148,7 @@ def astar_builder(
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
-                _scan, search_result, (neighbours, nextcosts, idxs, table_idxs, optimals)
+                _scan, search_result, (neighbours, nextcosts, neighbours_parent_idx, parent_action)
             )
             return search_result
 
