@@ -93,8 +93,8 @@ class HashTableIdx_HeapValue:
     @staticmethod
     def default(_=None) -> "HashTableIdx_HeapValue":
         return HashTableIdx_HeapValue(
-            index=jnp.full(1, jnp.inf, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full(1, jnp.inf, dtype=HASH_TABLE_IDX_DTYPE),
+            index=jnp.full((), jnp.inf, dtype=HASH_POINT_DTYPE),
+            table_index=jnp.full((), jnp.inf, dtype=HASH_TABLE_IDX_DTYPE),
         )
 
 
