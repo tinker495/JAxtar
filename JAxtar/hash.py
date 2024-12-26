@@ -108,11 +108,12 @@ class HashTable:
         make a lookup table with the default state of the statecls
         """
         _capacity = jnp.array(
-            HASH_SIZE_MULTIPLIER * capacity // n_table, SIZE_DTYPE
+            HASH_SIZE_MULTIPLIER * capacity / n_table, SIZE_DTYPE
         )  # make the capacity a little bit bigger than the given capacity to avoid the infinite loop
         size = SIZE_DTYPE(0)
-        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity, n_table)))
-        table_idx = jnp.zeros((_capacity), dtype=HASH_TABLE_IDX_DTYPE)
+        # add one to the capacity to avoid the infinite loop
+        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity + 1, n_table)))
+        table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
         return HashTable(
             seed=seed,
             capacity=capacity,
@@ -182,9 +183,9 @@ class HashTable:
                     lambda _: (
                         seed + 1,
                         HashTable.get_new_idx(hash_func, table, input, seed + 1),
-                        0,
+                        HASH_TABLE_IDX_DTYPE(0),
                     ),
-                    lambda _: (seed, idx, table_idx + 1),
+                    lambda _: (seed, idx, HASH_TABLE_IDX_DTYPE(table_idx + 1)),
                     None,
                 )
                 return seed, idx, table_idx
@@ -215,7 +216,7 @@ class HashTable:
         """
         index = HashTable.get_new_idx(hash_func, table, input, table.seed)
         _, idx, table_idx, found = HashTable._lookup(
-            hash_func, table, input, index, 0, table.seed, False
+            hash_func, table, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
         )
         return idx, table_idx, found
 
@@ -355,35 +356,6 @@ class HashTable:
         hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
     ):
         """
-        insert the states in the table at the same time
-        return the table, updatable, filled, idx, table_idx
-        """
-
-        initial_idx = jax.vmap(partial(HashTable.get_new_idx, hash_func), in_axes=(None, 0, None))(
-            table, inputs, table.seed
-        )
-        batch_len = filled.shape[0]
-        seeds, idx, table_idx, found = jax.vmap(
-            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
-        )(table, inputs, initial_idx, 0, table.seed, ~filled)
-        idxs = jnp.stack([idx, table_idx], axis=1, dtype=HASH_POINT_DTYPE)
-        updatable = jnp.logical_and(~found, filled)
-
-        table, idx, table_idx = HashTable._parallel_insert(
-            hash_func, table, inputs, seeds, idxs, updatable, batch_len
-        )
-
-        # get the idx and table_idx of the inputs
-        _, idx, table_idx, _ = jax.vmap(
-            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
-        )(table, inputs, initial_idx, 0, table.seed, ~filled)
-        return table, updatable, filled, idx, table_idx
-
-    @staticmethod
-    def parallel_insert_unique_condition(
-        hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
-    ):
-        """
         Insert the states into the table concurrently, handling unique state conditions.
         Strictly speaking, this implementation is correct, but it is noted that the search functionality is broken.
         Returns the table, updatable, filled, idx, and table_idx.
@@ -400,7 +372,7 @@ class HashTable:
         unique_filled = jnp.logical_and(filled, unique)
         seeds, idx, table_idx, found = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
-        )(table, inputs, initial_idx, 0, table.seed, ~unique_filled)
+        )(table, inputs, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~unique_filled)
         idxs = jnp.stack([idx, table_idx], axis=1, dtype=HASH_POINT_DTYPE)
         updatable = jnp.logical_and(~found, unique_filled)
 
@@ -411,5 +383,5 @@ class HashTable:
         # get the idx and table_idx of the inputs
         _, idx, table_idx, _ = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
-        )(table, inputs, initial_idx, 0, table.seed, ~filled)
+        )(table, inputs, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~filled)
         return table, updatable, unique_filled, idx, table_idx
