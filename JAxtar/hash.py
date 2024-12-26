@@ -372,6 +372,11 @@ class HashTable:
         table, idx, table_idx = HashTable._parallel_insert(
             hash_func, table, inputs, seeds, idxs, updatable, batch_len
         )
+
+        # get the idx and table_idx of the inputs
+        _, idx, table_idx, _ = jax.vmap(
+            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
+        )(table, inputs, initial_idx, 0, table.seed, ~filled)
         return table, updatable, filled, idx, table_idx
 
     @staticmethod
@@ -402,4 +407,9 @@ class HashTable:
         table, idx, table_idx = HashTable._parallel_insert(
             hash_func, table, inputs, seeds, idxs, updatable, batch_len
         )
+
+        # get the idx and table_idx of the inputs
+        _, idx, table_idx, _ = jax.vmap(
+            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
+        )(table, inputs, initial_idx, 0, table.seed, ~filled)
         return table, updatable, unique_filled, idx, table_idx
