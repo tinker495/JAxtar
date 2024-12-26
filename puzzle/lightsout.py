@@ -1,10 +1,26 @@
 import chex
 import jax
 import jax.numpy as jnp
+from termcolor import colored
 
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint8
+
+
+def action_to_char(action: int) -> str:
+    """
+    This function should return a string representation of the action.
+    0~9 -> 0~9
+    10~35 -> a~z
+    36~61 -> A~Z
+    """
+    if action < 10:
+        return colored(str(action), "light_yellow")
+    elif action < 36:
+        return colored(chr(action + 87), "light_yellow")
+    else:
+        return colored(chr(action + 29), "light_yellow")
 
 
 class LightsOut(Puzzle):
@@ -50,7 +66,7 @@ class LightsOut(Puzzle):
         board = self.from_uint8(state.board)
         # actions - combinations of range(size) with 2 elements
         actions = jnp.stack(
-            jnp.meshgrid(jnp.arange(self.size), jnp.arange(self.size)), axis=-1
+            jnp.meshgrid(jnp.arange(self.size), jnp.arange(self.size), indexing="ij"), axis=-1
         ).reshape(-1, 2)
 
         def flip(board, action):
@@ -76,23 +92,36 @@ class LightsOut(Puzzle):
         """
         This function should return a string representation of the action.
         """
-        return f"{action:02d}"
+        return action_to_char(action)
 
     def _get_visualize_format(self):
         size = self.size
+        action_idx = 0
         form = "┏━"
-        for i in range(size):
-            form += "━━" if i != size - 1 else "━━┓"
+        for i in range(size - 1):
+            form += "━━"
+        form += "━━┳━"
+        for i in range(size - 1):
+            form += "━━"
+        form += "━━┓"
         form += "\n"
         for i in range(size):
             form += "┃ "
             for j in range(size):
                 form += "{:s} "
+            form += "┃ "
+            for j in range(size):
+                form += action_to_char(action_idx) + " "
+                action_idx += 1
             form += "┃"
             form += "\n"
         form += "┗━"
-        for i in range(size):
-            form += "━━" if i != size - 1 else "━━┛"
+        for i in range(size - 1):
+            form += "━━"
+        form += "━━┻━"
+        for i in range(size - 1):
+            form += "━━"
+        form += "━━┛"
         return form
 
     def _get_random_state(self, key, num_shuffle=8):
