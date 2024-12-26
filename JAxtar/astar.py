@@ -99,7 +99,7 @@ def astar_builder(
 
             neighbours, ncost = neighbours_fn(states, filled)
             parent_action = jnp.tile(
-                jnp.arange(ncost.shape[0], dtype=jnp.uint32)[:, jnp.newaxis], (1, ncost.shape[1])
+                jnp.arange(ncost.shape[0], dtype=jnp.uint8)[:, jnp.newaxis], (1, ncost.shape[1])
             )
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
