@@ -95,12 +95,12 @@ def astar_builder(
             neighbours, ncost = neighbours_fn(states, filled)
             parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
+            filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
 
             def _scan(search_result: SearchResult, val):
-                neighbour, neighbour_cost, parent_action = val
+                neighbour, neighbour_cost, filled, parent_action = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
                 neighbour_key = (cost_weight * neighbour_cost + neighbour_heur).astype(KEY_DTYPE)
-                filled = jnp.isfinite(neighbour_cost)  # [n_neighbours, batch_size]
 
                 search_result.hashtable, _, _, idx, table_idx = parallel_insert(
                     search_result.hashtable, neighbour, filled
@@ -138,7 +138,7 @@ def astar_builder(
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
-                _scan, search_result, (neighbours, nextcosts, parent_action)
+                _scan, search_result, (neighbours, nextcosts, filleds, parent_action)
             )
             return search_result
 
