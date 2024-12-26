@@ -254,9 +254,9 @@ def astar(
     )
     states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
 
-    print("Vmapped A* search, multiple initial state solution")
-    print("Start state")
-    print(states[0], f"\n.\n.\n. x {vmap_size}")
+    print("Vmapped Q* search, multiple initial state solution")
+    print("Start states")
+    print(states)
     print("Target state")
     print(target)
 
@@ -451,8 +451,8 @@ def qstar(
     states = jax.tree_util.tree_map(lambda x: jnp.tile(x, (vmap_size, 1)), states)
 
     print("Vmapped Q* search, multiple initial state solution")
-    print("Start state")
-    print(states[0], f"\n.\n.\n. x {vmap_size}")
+    print("Start states")
+    print(states)
     print("Target state")
     print(target)
 
