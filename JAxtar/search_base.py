@@ -44,15 +44,15 @@ class SearchResult:
         size_table = hashtable.capacity
         n_table = hashtable.n_table
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
-        min_key_buffer = jnp.full((batch_size,), jnp.inf)
+        min_key_buffer = jnp.full((batch_size,), jnp.inf, dtype=jnp.float32)
         min_val_buffer = HashTableIdx_HeapValue(
             index=jnp.zeros((batch_size,), dtype=jnp.uint32),
             table_index=jnp.zeros((batch_size,), dtype=jnp.uint32),
         )
-        cost = jnp.full((size_table, n_table), jnp.inf)
+        cost = jnp.full((size_table, n_table), jnp.inf, dtype=jnp.float32)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
         parent = jnp.full((size_table, n_table, 2), -1, dtype=jnp.uint32)
-        parent_action = jnp.full((size_table, n_table), -1, dtype=jnp.uint32)
+        parent_action = jnp.full((size_table, n_table), -1, dtype=jnp.uint8)
         return SearchResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
