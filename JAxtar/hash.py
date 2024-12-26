@@ -5,7 +5,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from JAxtar.annotate import HASH_TABLE_IDX_DTYPE, SIZE_DTYPE
+from JAxtar.annotate import HASH_POINT_DTYPE, HASH_TABLE_IDX_DTYPE, SIZE_DTYPE
 from puzzle.puzzle_base import Puzzle
 
 T = TypeVar("T")
@@ -338,7 +338,7 @@ class HashTable:
 
         seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, index, unupdated))
 
-        idx, table_idx = index[:, 0], index[:, 1]
+        idx, table_idx = index[:, 0], index[:, 1].astype(HASH_TABLE_IDX_DTYPE)
         table.table = jax.tree_util.tree_map(
             lambda x, y: x.at[idx, table_idx].set(
                 jnp.where(updatable.reshape(-1, *([1] * (len(y.shape) - 1))), y, x[idx, table_idx])
@@ -347,7 +347,7 @@ class HashTable:
             inputs,
         )
         table.table_idx = table.table_idx.at[idx].add(updatable)
-        table.size += jnp.sum(updatable)
+        table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
         return table, idx, table_idx
 
     @staticmethod
@@ -366,7 +366,7 @@ class HashTable:
         seeds, idx, table_idx, found = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
         )(table, inputs, initial_idx, 0, table.seed, ~filled)
-        idxs = jnp.stack([idx, table_idx], axis=1)
+        idxs = jnp.stack([idx, table_idx], axis=1, dtype=HASH_POINT_DTYPE)
         updatable = jnp.logical_and(~found, filled)
 
         table, idx, table_idx = HashTable._parallel_insert(
@@ -396,7 +396,7 @@ class HashTable:
         seeds, idx, table_idx, found = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
         )(table, inputs, initial_idx, 0, table.seed, ~unique_filled)
-        idxs = jnp.stack([idx, table_idx], axis=1)
+        idxs = jnp.stack([idx, table_idx], axis=1, dtype=HASH_POINT_DTYPE)
         updatable = jnp.logical_and(~found, unique_filled)
 
         table, idx, table_idx = HashTable._parallel_insert(

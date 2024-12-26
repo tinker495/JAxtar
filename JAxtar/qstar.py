@@ -68,7 +68,7 @@ def qstar_builder(
             jnp.where(inserted, cost_val, search_result.cost[idx, table_idx])
         )
 
-        total_cost = cost_val  # no heuristic in Q* and first key is no matter
+        total_cost = cost_val.astype(KEY_DTYPE)  # no heuristic in Q* and first key is no matter
         search_result.priority_queue = BGPQ.insert(
             search_result.priority_queue, total_cost, hash_idxs
         )
