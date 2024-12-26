@@ -70,30 +70,28 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Heuristic: 33.00
+Time:   0.49 seconds
+Search states: 594K(1.21M states/s)
 
-JIT compiled
-Time:   0.63 seconds
-Search states: 583K(932K states/s)
+Cost: 49.0
+Solution found
 ```
 
 ### Test vmapped run
 
 ```bash
-$ python main.py astar --max_node_size 1e6 --batch_size 1024 --vmap_size 10
+$ python main.py astar -m 1e6 --vmap_size 10
 Vmapped A* search, multiple initial state solution
 Start state
-┏━━━┳━━━┳━━━┳━━━┓
-┃ 2 ┃ F ┃ 3 ┃ 4 ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃   ┃ 5 ┃ 7 ┃ B ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ C ┃ 9 ┃ 1 ┃ A ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ 8 ┃ E ┃ D ┃ 6 ┃
-┗━━━┻━━━┻━━━┻━━━┛
-.
-.
-. x 10
+┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
+┃ 2 ┃ F ┃ 3 ┃ 4 ┃  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃  (batch : (10,))  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃
+┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
+┃   ┃ 5 ┃ 7 ┃ B ┃  ┃   ┃ 5 ┃ 7 ┃ B ┃                   ┃   ┃ 5 ┃ 7 ┃ B ┃  ┃   ┃ 5 ┃ 7 ┃ B ┃
+┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
+┃ C ┃ 9 ┃ 1 ┃ A ┃  ┃ C ┃ 9 ┃ 1 ┃ A ┃                   ┃ C ┃ 9 ┃ 1 ┃ A ┃  ┃ C ┃ 9 ┃ 1 ┃ A ┃
+┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
+┃ 8 ┃ E ┃ D ┃ 6 ┃  ┃ 8 ┃ E ┃ D ┃ 6 ┃                   ┃ 8 ┃ E ┃ D ┃ 6 ┃  ┃ 8 ┃ E ┃ D ┃ 6 ┃
+┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
 ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
@@ -106,8 +104,8 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
 # search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(search_result_build(), states, filled, target)
-Time:   1.59 seconds (x3.0/10)
-Search states: 1.18M (743K states/s)
+Time:   1.13 seconds (x2.7/10)
+Search states: 5.94M (5.24M states/s)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -123,8 +121,8 @@ Time:  38.24 seconds
 ...
 
 JIT compiled
-Time:   5.40 seconds
-Search states: 3.01M(557K states/s)
+Time:   2.26 seconds
+Search states: 1.76M(780K states/s)
 
 
 Cost: 24.0
@@ -141,8 +139,8 @@ Time:  37.02 seconds
 ...
 
 JIT compiled
-Time:   1.46 seconds
-Search states: 1.76M(1.21M states/s)
+Time:   1.35 seconds
+Search states: 1.75M(1.3M states/s)
 
 
 Cost: 24.0
