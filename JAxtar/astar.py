@@ -69,7 +69,7 @@ def astar_builder(
             jnp.where(inserted, cost_val, search_result.cost[idx, table_idx])
         )
 
-        total_cost = cost_val + heur_val
+        total_cost = (cost_val + heur_val).astype(KEY_DTYPE)
         search_result.priority_queue = BGPQ.insert(
             search_result.priority_queue, total_cost, hash_idxs
         )
