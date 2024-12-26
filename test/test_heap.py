@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+from JAxtar.annotate import KEY_DTYPE
 from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue
 
 
@@ -24,7 +25,9 @@ def test_heap_insert_and_delete(heap_setup):
     heap, batch_size, max_size = heap_setup
 
     # Test inserting elements
-    key = jax.random.uniform(jax.random.PRNGKey(0), shape=(batch_size,), minval=0, maxval=10)
+    key = jax.random.uniform(
+        jax.random.PRNGKey(0), shape=(batch_size,), minval=0, maxval=10, dtype=KEY_DTYPE
+    )
     value = jax.vmap(HashTableIdx_HeapValue.default)(jnp.arange(batch_size))
 
     # Insert elements
@@ -44,7 +47,9 @@ def test_heap_overflow(heap_setup):
     heap, batch_size, max_size = heap_setup
 
     # Try to insert more elements than max_size
-    key = jax.random.uniform(jax.random.PRNGKey(0), shape=(max_size + 100,), minval=0, maxval=10)
+    key = jax.random.uniform(
+        jax.random.PRNGKey(0), shape=(max_size + 100,), minval=0, maxval=10, dtype=KEY_DTYPE
+    )
     value = jax.vmap(HashTableIdx_HeapValue.default)(jnp.arange(max_size + 100))
 
     with pytest.raises(Exception):  # Should raise an exception when exceeding max size
@@ -56,7 +61,9 @@ def test_heap_batch_operations(heap_setup):
 
     # Test batch insertion
     for i in range(0, 512, batch_size):
-        key = jax.random.uniform(jax.random.PRNGKey(i), shape=(batch_size,), minval=0, maxval=10)
+        key = jax.random.uniform(
+            jax.random.PRNGKey(i), shape=(batch_size,), minval=0, maxval=10, dtype=KEY_DTYPE
+        )
         value = jax.vmap(HashTableIdx_HeapValue.default)(jnp.arange(i, i + batch_size))
         heap = BGPQ.insert(heap, key, value)
 
