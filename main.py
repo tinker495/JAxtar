@@ -398,22 +398,22 @@ def qstar(
             table = search_result.hashtable.table
             cost = search_result.cost
 
-            solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index][0]
-            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index][0]
+            solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index]
 
-            path = [(solved_idx.index[0], solved_idx.table_index[0])]
-            parent_last = parents[solved_idx.index, solved_idx.table_index][0]
+            path = [solved_idx]
+            parent_last = parents[solved_idx.index, solved_idx.table_index]
             while True:
-                if parent_last[0] == -1:
+                if parent_last.index == -1:
                     break
                 path.append(parent_last)
-                parent_last = parents[parent_last[0], parent_last[1]]
+                parent_last = parents[parent_last.index, parent_last.table_index]
             for (p0, p1) in zip(path[::-1], path[::-1][1:]):
-                state = table[p0[0], p0[1]]
-                c = cost[p0[0], p0[1]]
-                a = parent_action[p1[0], p1[1]]
+                state = table[p0.index, p0.table_index]
+                c = cost[p0.index, p0.table_index]
+                a = parent_action[p1.index, p1.table_index]
                 print(state)
-                print(f"Cost: {c} | Action: '{puzzle.action_to_string(a)}'")
+                print(f"Cost: {c} | Action: {puzzle.action_to_string(a)}")
             print(solved_st)
             print(f"Cost: {solved_cost}")
 
@@ -422,8 +422,8 @@ def qstar(
             print("No solution found\n\n")
     else:
         if solved:
-            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index][0]
-            print(f"Cost: {solved_cost}")
+            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index]
+            print(f"Cost: {solved_cost:.1f}")
             print("Solution found\n\n")
         else:
             print("No solution found\n\n")
