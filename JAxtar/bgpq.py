@@ -4,12 +4,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from JAxtar.annotate import (
-    HASH_POINT_DTYPE,
-    HASH_TABLE_IDX_DTYPE,
-    KEY_DTYPE,
-    SIZE_DTYPE,
-)
+from JAxtar.annotate import KEY_DTYPE, SIZE_DTYPE
 
 SORT_STABLE = True
 
@@ -76,26 +71,6 @@ class HeapValue:  # dummy heap value for type hinting
     @staticmethod
     def default(_=None) -> "HeapValue":
         pass
-
-
-@bgpq_value_dataclass
-class HashTableIdx_HeapValue:
-    """
-    This class is a dataclass that represents a hash table heap value.
-    It has two fields:
-    1. index: hashtable index
-    2. table_index: cuckoo table index
-    """
-
-    index: chex.Array
-    table_index: chex.Array
-
-    @staticmethod
-    def default(_=None) -> "HashTableIdx_HeapValue":
-        return HashTableIdx_HeapValue(
-            index=jnp.full((), jnp.inf, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full((), jnp.inf, dtype=HASH_TABLE_IDX_DTYPE),
-        )
 
 
 @chex.dataclass

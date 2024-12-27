@@ -6,9 +6,9 @@ import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
-from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue
+from JAxtar.bgpq import BGPQ
 from JAxtar.hash import HashTable, hash_func_builder
-from JAxtar.search_base import SearchResult, pop_full
+from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult, pop_full
 from puzzle.puzzle_base import Puzzle
 
 
