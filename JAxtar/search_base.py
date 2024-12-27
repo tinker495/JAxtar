@@ -26,10 +26,10 @@ class HashTableIdx_HeapValue:
     table_index: chex.Array
 
     @staticmethod
-    def default(_=None) -> "HashTableIdx_HeapValue":
+    def default(shape=()) -> "HashTableIdx_HeapValue":
         return HashTableIdx_HeapValue(
-            index=jnp.full((), jnp.inf, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full((), jnp.inf, dtype=HASH_TABLE_IDX_DTYPE),
+            index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
+            table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
         )
 
 
@@ -71,16 +71,10 @@ class SearchResult:
         n_table = hashtable.n_table
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
         min_key_buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
-        min_val_buffer = HashTableIdx_HeapValue(
-            index=jnp.zeros((batch_size,), dtype=HASH_POINT_DTYPE),
-            table_index=jnp.zeros((batch_size,), dtype=HASH_TABLE_IDX_DTYPE),
-        )
+        min_val_buffer = HashTableIdx_HeapValue.default((batch_size,))
         cost = jnp.full((size_table, n_table), jnp.inf, dtype=KEY_DTYPE)
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
-        parent = HashTableIdx_HeapValue(
-            index=jnp.full((size_table, n_table), -1, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full((size_table, n_table), -1, dtype=HASH_TABLE_IDX_DTYPE),
-        )
+        parent = HashTableIdx_HeapValue.default((size_table, n_table))
         parent_action = jnp.full((size_table, n_table), -1, dtype=ACTION_DTYPE)
         return SearchResult(
             hashtable=hashtable,
