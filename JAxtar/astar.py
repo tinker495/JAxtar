@@ -5,10 +5,20 @@ import jax
 import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
+from JAxtar.annotate import (
+    ACTION_DTYPE,
+    HASH_POINT_DTYPE,
+    HASH_TABLE_IDX_DTYPE,
+    KEY_DTYPE,
+    SIZE_DTYPE,
+)
 from JAxtar.bgpq import BGPQ
 from JAxtar.hash import HashTable, hash_func_builder
-from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult, pop_full
+from JAxtar.search_base import (
+    HashTableidx_with_Parent_HeapValue,
+    SearchResult,
+    pop_full,
+)
 from puzzle.puzzle_base import Puzzle
 
 
@@ -62,16 +72,22 @@ def astar_builder(
         search_result.hashtable, inserted, _, idx, table_idx = parallel_insert(
             search_result.hashtable, states, filled
         )
-        hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
+        first_val = HashTableidx_with_Parent_HeapValue(
+            current=HashTableidx_with_Parent_HeapValue.Current(
+                index=idx, table_index=table_idx, cost=jnp.full_like(idx, 0, dtype=KEY_DTYPE)
+            ),
+            parent=HashTableidx_with_Parent_HeapValue.Parent(
+                index=jnp.full_like(idx, -1, dtype=HASH_POINT_DTYPE),
+                table_index=jnp.full_like(idx, -1, dtype=HASH_TABLE_IDX_DTYPE),
+                action=jnp.full_like(idx, -1, dtype=ACTION_DTYPE),
+            ),
+        )
 
         cost_val = jnp.where(filled, 0, jnp.inf)
-        search_result.cost = search_result.cost.at[idx, table_idx].set(
-            jnp.where(inserted, cost_val, search_result.cost[idx, table_idx])
-        )
 
         total_cost = (cost_val + heur_val).astype(KEY_DTYPE)
         search_result.priority_queue = BGPQ.insert(
-            search_result.priority_queue, total_cost, hash_idxs
+            search_result.priority_queue, total_cost, first_val
         )
 
         def _cond(search_result: SearchResult):
@@ -82,15 +98,18 @@ def astar_builder(
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
             min_val = search_result.priority_queue.val_store[0]  # get the minimum value
-            states = search_result.hashtable.table[min_val.index, min_val.table_index]
+            states = search_result.hashtable.table[
+                min_val.current.index, min_val.current.table_index
+            ]
             solved = solved_fn(states, target)
+            print(f"hash_size: {hash_size}, heap_size: {heap_size}, solved: {solved.any()}")
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(search_result: SearchResult):
-            search_result, parent_idx, filled = pop_full(search_result)
+            search_result, parent, filled = pop_full(search_result)
 
-            cost_val = search_result.cost[parent_idx.index, parent_idx.table_index]
-            states = search_result.hashtable.table[parent_idx.index, parent_idx.table_index]
+            cost_val = parent.cost
+            states = search_result.hashtable.table[parent.index, parent.table_index]
 
             neighbours, ncost = neighbours_fn(states, filled)
             parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
@@ -106,28 +125,16 @@ def astar_builder(
                     search_result.hashtable, neighbour, filled
                 )
 
-                optimal = jnp.less(neighbour_cost, search_result.cost[idx, table_idx])
-                search_result.cost = search_result.cost.at[idx, table_idx].min(
-                    neighbour_cost
-                )  # update the minimul cost
-
-                search_result.parent = jax.tree_util.tree_map(
-                    lambda insert, parent: parent.at[idx, table_idx].set(
-                        jnp.where(optimal, insert, parent[idx, table_idx])
+                vals = HashTableidx_with_Parent_HeapValue(
+                    current=HashTableidx_with_Parent_HeapValue.Current(
+                        index=idx, table_index=table_idx, cost=neighbour_cost
                     ),
-                    parent_idx,
-                    search_result.parent,
+                    parent=HashTableidx_with_Parent_HeapValue.Parent(
+                        index=parent.index,
+                        table_index=parent.table_index,
+                        action=jnp.tile(parent_action, (batch_size)),
+                    ),
                 )
-
-                search_result.parent_action = search_result.parent_action.at[idx, table_idx].set(
-                    jnp.where(
-                        optimal,
-                        parent_action,
-                        search_result.parent_action[idx, table_idx],
-                    )
-                )
-
-                vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
 
                 search_result.priority_queue = BGPQ.insert(
                     search_result.priority_queue,
@@ -144,9 +151,22 @@ def astar_builder(
 
         search_result = jax.lax.while_loop(_cond, _body, search_result)
         min_val = search_result.priority_queue.val_store[0]  # get the minimum value
-        states = search_result.hashtable.table[min_val.index, min_val.table_index]
+        search_result.cost = search_result.cost.at[
+            min_val.current.index, min_val.current.table_index
+        ].min(min_val.current.cost)
+        search_result.parent = jax.tree_util.tree_map(
+            lambda parent, insert: parent.at[
+                min_val.current.index, min_val.current.table_index
+            ].set(insert),
+            search_result.parent,
+            min_val.parent,
+        )
+        search_result.parent_action = search_result.parent_action.at[
+            min_val.current.index, min_val.current.table_index
+        ].set(min_val.parent.action)
+        states = search_result.hashtable.table[min_val.current.index, min_val.current.table_index]
         solved = solved_fn(states, target)
-        solved_idx = min_val[jnp.argmax(solved)]
+        solved_idx = min_val.current[jnp.argmax(solved)]
         return search_result, solved.any(), solved_idx
 
     return search_result_build, jax.jit(astar)

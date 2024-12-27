@@ -116,13 +116,9 @@ class BGPQ:  # Batched GPU Priority Queue
         key_store = jnp.full(
             (branch_size, batch_size), jnp.inf, dtype=KEY_DTYPE
         )  # [branch_size, batch_size]
-        val_store = jax.vmap(lambda _: jax.vmap(value_class.default)(jnp.arange(batch_size)))(
-            jnp.arange(branch_size)
-        )  # [branch_size, batch_size, ...]
+        val_store = value_class.default((branch_size, batch_size))
         key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=KEY_DTYPE)  # [batch_size - 1]
-        val_buffer = jax.vmap(value_class.default)(
-            jnp.arange(batch_size - 1)
-        )  # [batch_size - 1, ...]
+        val_buffer = value_class.default((batch_size - 1,))
         return BGPQ(
             max_size=max_size,
             size=size,

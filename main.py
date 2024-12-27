@@ -208,6 +208,13 @@ def astar(
             path = [solved_idx]
             parent_last = parents[solved_idx.index, solved_idx.table_index]
             while True:
+                print(parent_last)
+                print(table[parent_last.index, parent_last.table_index])
+                print(
+                    f"cost: {cost[parent_last.index, parent_last.table_index]}"
+                    f"| action: {parent_action[parent_last.index, parent_last.table_index]}"
+                )
+                time.sleep(1)
                 if parent_last.index == -1:
                     break
                 path.append(parent_last)
@@ -226,7 +233,7 @@ def astar(
             print("No solution found\n\n")
     else:
         if solved:
-            solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index]
+            solved_cost = solved_idx.cost
             print(f"Cost: {solved_cost:.1f}")
             print("Solution found\n\n")
         else:

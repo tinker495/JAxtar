@@ -1,6 +1,7 @@
 import chex
 import jax
 import jax.numpy as jnp
+import jax.test_util
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -14,7 +15,7 @@ from puzzle.puzzle_base import Puzzle
 
 
 @bgpq_value_dataclass
-class HashTableIdx_HeapValue:
+class HashTableidx_with_Parent_HeapValue:
     """
     This class is a dataclass that represents a hash table heap value.
     It has two fields:
@@ -22,14 +23,42 @@ class HashTableIdx_HeapValue:
     2. table_index: cuckoo table index
     """
 
-    index: chex.Array
-    table_index: chex.Array
+    @bgpq_value_dataclass
+    class Parent:
+        index: chex.Array
+        table_index: chex.Array
+        action: chex.Array
+
+        @staticmethod
+        def default(shape=()) -> "HashTableidx_with_Parent_HeapValue.Parent":
+            return HashTableidx_with_Parent_HeapValue.Parent(
+                index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
+                table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
+                action=jnp.full(shape, -1, dtype=ACTION_DTYPE),
+            )
+
+    @bgpq_value_dataclass
+    class Current:
+        index: chex.Array
+        table_index: chex.Array
+        cost: chex.Array
+
+        @staticmethod
+        def default(shape=()) -> "HashTableidx_with_Parent_HeapValue.Current":
+            return HashTableidx_with_Parent_HeapValue.Current(
+                index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
+                table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
+                cost=jnp.full(shape, jnp.inf, dtype=KEY_DTYPE),
+            )
+
+    parent: Parent
+    current: Current
 
     @staticmethod
-    def default(_=None) -> "HashTableIdx_HeapValue":
-        return HashTableIdx_HeapValue(
-            index=jnp.full((), jnp.inf, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full((), jnp.inf, dtype=HASH_TABLE_IDX_DTYPE),
+    def default(shape=()) -> "HashTableidx_with_Parent_HeapValue":
+        return HashTableidx_with_Parent_HeapValue(
+            parent=HashTableidx_with_Parent_HeapValue.Parent.default(shape),
+            current=HashTableidx_with_Parent_HeapValue.Current.default(shape),
         )
 
 
@@ -55,9 +84,8 @@ class SearchResult:
     hashtable: HashTable
     priority_queue: BGPQ
     min_key_buffer: chex.Array
-    min_val_buffer: HashTableIdx_HeapValue
+    min_val_buffer: HashTableidx_with_Parent_HeapValue
     cost: chex.Array
-    not_closed: chex.Array
     parent: chex.Array
     parent_action: chex.Array
 
@@ -69,26 +97,18 @@ class SearchResult:
         hashtable = HashTable.build(statecls, seed, max_nodes, n_table=n_table)
         size_table = hashtable.capacity
         n_table = hashtable.n_table
-        priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
+        priority_queue = BGPQ.build(max_nodes, batch_size, HashTableidx_with_Parent_HeapValue)
         min_key_buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
-        min_val_buffer = HashTableIdx_HeapValue(
-            index=jnp.zeros((batch_size,), dtype=HASH_POINT_DTYPE),
-            table_index=jnp.zeros((batch_size,), dtype=HASH_TABLE_IDX_DTYPE),
-        )
+        min_val_buffer = HashTableidx_with_Parent_HeapValue.default((batch_size,))
         cost = jnp.full((size_table, n_table), jnp.inf, dtype=KEY_DTYPE)
-        not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
-        parent = HashTableIdx_HeapValue(
-            index=jnp.full((size_table, n_table), -1, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full((size_table, n_table), -1, dtype=HASH_TABLE_IDX_DTYPE),
-        )
         parent_action = jnp.full((size_table, n_table), -1, dtype=ACTION_DTYPE)
+        parent = HashTableidx_with_Parent_HeapValue.Parent.default((size_table, n_table))
         return SearchResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
             min_key_buffer=min_key_buffer,
             min_val_buffer=min_val_buffer,
             cost=cost,
-            not_closed=not_closed,
             parent=parent,
             parent_action=parent_action,
         )
@@ -106,11 +126,11 @@ class SearchResult:
         return self.hashtable.size
 
 
-def unique_mask(val: HashTableIdx_HeapValue, batch_len: int):
+def unique_mask(val: HashTableidx_with_Parent_HeapValue, batch_len: int):
     """
     unique_mask is a function that returns a boolean mask of the unique values in the val tensor.
     """
-    min_val_stack = jnp.stack([val.index, val.table_index], axis=1)
+    min_val_stack = jnp.stack([val.current.index, val.current.table_index], axis=1)
     unique_idxs = jnp.unique(min_val_stack, axis=0, size=batch_len, return_index=True)[
         1
     ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
@@ -154,8 +174,11 @@ def merge_sort_split(
 
 def pop_full(search_result: SearchResult):
     search_result.priority_queue, min_key, min_val = BGPQ.delete_mins(search_result.priority_queue)
-    not_closed = search_result.not_closed[min_val.index, min_val.table_index]
-    min_key = jnp.where(not_closed, min_key, jnp.inf)
+    min_val_cost = min_val.current.cost
+    optimal = jnp.less(
+        min_val_cost, search_result.cost[min_val.current.index, min_val.current.table_index]
+    )
+    min_key = jnp.where(optimal, min_key, jnp.inf)
     min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer = merge_sort_split(
         min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer
     )
@@ -170,12 +193,11 @@ def pop_full(search_result: SearchResult):
         search_result.priority_queue, new_key, new_val = BGPQ.delete_mins(
             search_result.priority_queue
         )
-        not_closed = search_result.not_closed[new_val.index, new_val.table_index]
-        new_key = jnp.where(
-            not_closed,
-            new_key,
-            jnp.inf,
+        new_val_cost = new_val.current.cost
+        optimal = jnp.less(
+            new_val_cost, search_result.cost[new_val.current.index, new_val.current.table_index]
         )
+        new_key = jnp.where(optimal, new_key, jnp.inf)
         (
             min_key,
             min_val,
@@ -188,7 +210,17 @@ def pop_full(search_result: SearchResult):
     search_result, min_key, min_val, filled = jax.lax.while_loop(
         _cond, _body, (search_result, min_key, min_val, filled)
     )
-    search_result.not_closed = search_result.not_closed.at[min_val.index, min_val.table_index].set(
-        ~filled
+    search_result.cost = search_result.cost.at[
+        min_val.current.index, min_val.current.table_index
+    ].min(min_val.current.cost)
+    search_result.parent = jax.tree_util.tree_map(
+        lambda parent, insert: parent.at[min_val.current.index, min_val.current.table_index].set(
+            insert
+        ),
+        search_result.parent,
+        min_val.parent,
     )
-    return search_result, min_val, filled
+    search_result.parent_action = search_result.parent_action.at[
+        min_val.current.index, min_val.current.table_index
+    ].set(min_val.parent.action)
+    return search_result, min_val.current, filled

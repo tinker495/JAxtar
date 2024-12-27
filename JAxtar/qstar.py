@@ -7,7 +7,11 @@ import jax.numpy as jnp
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
 from JAxtar.bgpq import BGPQ
 from JAxtar.hash import HashTable, hash_func_builder
-from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult, pop_full
+from JAxtar.search_base import (
+    HashTableidx_with_Parent_HeapValue,
+    SearchResult,
+    pop_full,
+)
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
@@ -61,7 +65,7 @@ def qstar_builder(
         search_result.hashtable, inserted, _, idx, table_idx = parallel_insert(
             search_result.hashtable, states, filled
         )
-        hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
+        hash_idxs = HashTableidx_with_Parent_HeapValue(index=idx, table_index=table_idx)
 
         cost_val = jnp.where(filled, 0, jnp.inf)
         search_result.cost = search_result.cost.at[idx, table_idx].set(
@@ -128,7 +132,7 @@ def qstar_builder(
                     )
                 )
 
-                vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
+                vals = HashTableidx_with_Parent_HeapValue(index=idx, table_index=table_idx)
 
                 search_result.priority_queue = BGPQ.insert(
                     search_result.priority_queue,
