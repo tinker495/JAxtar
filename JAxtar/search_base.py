@@ -8,9 +8,29 @@ from JAxtar.annotate import (
     HASH_TABLE_IDX_DTYPE,
     KEY_DTYPE,
 )
-from JAxtar.bgpq import BGPQ, HashTableIdx_HeapValue, HeapValue
+from JAxtar.bgpq import BGPQ, HeapValue, bgpq_value_dataclass
 from JAxtar.hash import HashTable
 from puzzle.puzzle_base import Puzzle
+
+
+@bgpq_value_dataclass
+class HashTableIdx_HeapValue:
+    """
+    This class is a dataclass that represents a hash table heap value.
+    It has two fields:
+    1. index: hashtable index
+    2. table_index: cuckoo table index
+    """
+
+    index: chex.Array
+    table_index: chex.Array
+
+    @staticmethod
+    def default(_=None) -> "HashTableIdx_HeapValue":
+        return HashTableIdx_HeapValue(
+            index=jnp.full((), jnp.inf, dtype=HASH_POINT_DTYPE),
+            table_index=jnp.full((), jnp.inf, dtype=HASH_TABLE_IDX_DTYPE),
+        )
 
 
 @chex.dataclass
@@ -86,6 +106,18 @@ class SearchResult:
         return self.hashtable.size
 
 
+def unique_mask(val: HashTableIdx_HeapValue, batch_len: int):
+    """
+    unique_mask is a function that returns a boolean mask of the unique values in the val tensor.
+    """
+    min_val_stack = jnp.stack([val.index, val.table_index], axis=1)
+    unique_idxs = jnp.unique(min_val_stack, axis=0, size=batch_len, return_index=True)[
+        1
+    ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
+    uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
+    return uniques
+
+
 def merge_sort_split(
     ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue
 ) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
@@ -108,6 +140,10 @@ def merge_sort_split(
     n = ak.shape[-1]  # size of group
     key = jnp.concatenate([ak, bk])
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+
+    uniques = unique_mask(val, 2 * n)
+    key = jnp.where(uniques, key, jnp.inf)
+
     idx = jnp.argsort(key, stable=True)
 
     # Sort both key and value arrays using the same index
@@ -116,33 +152,14 @@ def merge_sort_split(
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
 
-def unique_mask(val: HashTableIdx_HeapValue, batch_len: int):
-    """
-    unique_mask is a function that returns a boolean mask of the unique values in the val tensor.
-    """
-    min_val_stack = jnp.stack([val.index, val.table_index], axis=1)
-    unique_idxs = jnp.unique(min_val_stack, axis=0, size=batch_len, return_index=True)[
-        1
-    ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
-    uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
-    return uniques
-
-
 def pop_full(search_result: SearchResult):
     search_result.priority_queue, min_key, min_val = BGPQ.delete_mins(search_result.priority_queue)
-    batch_len = min_key.shape[0]
-    uniques = unique_mask(min_val, batch_len)
-    min_key = jnp.where(
-        search_result.not_closed[min_val.index, min_val.table_index], min_key, jnp.inf
-    )
+    not_closed = search_result.not_closed[min_val.index, min_val.table_index]
+    min_key = jnp.where(not_closed, min_key, jnp.inf)
     min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer = merge_sort_split(
         min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer
     )
     filled = jnp.isfinite(min_key)
-    filled = jnp.logical_and(filled, uniques)
-    search_result.not_closed = search_result.not_closed.at[min_val.index, min_val.table_index].min(
-        ~filled
-    )  # or operation with closed
 
     def _cond(val):
         search_result, _, _, filled = val
@@ -150,12 +167,13 @@ def pop_full(search_result: SearchResult):
 
     def _body(val):
         search_result, min_key, min_val, filled = val
-        search_result.priority_queue, min_key_buffer, min_val_buffer = BGPQ.delete_mins(
+        search_result.priority_queue, new_key, new_val = BGPQ.delete_mins(
             search_result.priority_queue
         )
-        min_key_buffer = jnp.where(
-            search_result.not_closed[min_val_buffer.index, min_val_buffer.table_index],
-            min_key_buffer,
+        not_closed = search_result.not_closed[new_val.index, new_val.table_index]
+        new_key = jnp.where(
+            not_closed,
+            new_key,
             jnp.inf,
         )
         (
@@ -163,18 +181,14 @@ def pop_full(search_result: SearchResult):
             min_val,
             search_result.min_key_buffer,
             search_result.min_val_buffer,
-        ) = merge_sort_split(min_key, min_val, min_key_buffer, min_val_buffer)
-        uniques = unique_mask(min_val, batch_len)
+        ) = merge_sort_split(min_key, min_val, new_key, new_val)
         filled = jnp.isfinite(min_key)
-        filled = jnp.logical_and(filled, uniques)
-        search_result.not_closed = search_result.not_closed.at[
-            min_val.index, min_val.table_index
-        ].min(
-            ~filled
-        )  # or operation with closed
         return search_result, min_key, min_val, filled
 
     search_result, min_key, min_val, filled = jax.lax.while_loop(
         _cond, _body, (search_result, min_key, min_val, filled)
+    )
+    search_result.not_closed = search_result.not_closed.at[min_val.index, min_val.table_index].set(
+        ~filled
     )
     return search_result, min_val, filled
