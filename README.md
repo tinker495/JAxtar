@@ -114,13 +114,12 @@ Solution found: 100.00%
 
 ```bash
 $ python3 main.py astar -nn -h -p rubikscube -w 0.2
-
 initializing jit
-Time:  38.24 seconds
+Time:  78.53 seconds
+JIT compiled
 
 ...
 
-JIT compiled
 Time:   1.87 seconds
 Search states: 1.7M(908K states/s)
 
@@ -134,7 +133,8 @@ Solution found
 ```bash
 $ python3 main.py qstar -nn -h -p rubikscube -w 0.2
 initializing jit
-Time:  37.02 seconds
+Time:  77.01 seconds
+JIT compiled
 
 ...
 
