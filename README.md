@@ -121,8 +121,8 @@ Time:  38.24 seconds
 ...
 
 JIT compiled
-Time:   2.26 seconds
-Search states: 1.76M(780K states/s)
+Time:   1.87 seconds
+Search states: 1.7M(908K states/s)
 
 
 Cost: 24.0
@@ -138,9 +138,8 @@ Time:  37.02 seconds
 
 ...
 
-JIT compiled
-Time:   1.35 seconds
-Search states: 1.75M(1.3M states/s)
+Time:   0.98 seconds
+Search states: 1.67M(1.71M states/s)
 
 
 Cost: 24.0
