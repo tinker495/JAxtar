@@ -98,11 +98,9 @@ class LightsOut(Puzzle):
         size = self.size
         action_idx = 0
         form = "┏━"
-        for i in range(size - 1):
-            form += "━━"
+        form += "━Board".center((size - 1) * 2, "━")
         form += "━━┳━"
-        for i in range(size - 1):
-            form += "━━"
+        form += "━Actions".center((size - 1) * 2, "━")
         form += "━━┓"
         form += "\n"
         for i in range(size):
@@ -116,11 +114,9 @@ class LightsOut(Puzzle):
             form += "┃"
             form += "\n"
         form += "┗━"
-        for i in range(size - 1):
-            form += "━━"
+        form += "━━" * (size - 1)
         form += "━━┻━"
-        for i in range(size - 1):
-            form += "━━"
+        form += "━━" * (size - 1)
         form += "━━┛"
         return form
 
