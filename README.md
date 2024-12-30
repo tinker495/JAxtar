@@ -30,6 +30,9 @@ To solve this problem, I decided to write code that adheres to the following pri
   - If the state is a simple matter of parsing and indexing, we don't need to hash it, but if it's not and there are nearly infinite states, we need to hash each state to index it and access its unique value
 - Everything is batched and parallelised
   - GPUs have a lot of cores, but they are very slow compared to CPUs. To overcome this, algorithms running on GPUs should be written as parallel as possible.
+- The implementation should not change depending on the puzzle.
+  - The implementation should be able to handle any puzzle that has a defined state and a defined action space.
+  - This allows for the expansion of research and ensures that 'strict' behavior can be formalized in later implementations.
 
 Specially written components in this project include:
 
@@ -114,15 +117,14 @@ Solution found: 100.00%
 
 ```bash
 $ python3 main.py astar -nn -h -p rubikscube -w 0.2
-
 initializing jit
-Time:  38.24 seconds
+Time:  78.53 seconds
+JIT compiled
 
 ...
 
-JIT compiled
-Time:   2.26 seconds
-Search states: 1.76M(780K states/s)
+Time:   1.87 seconds
+Search states: 1.7M(908K states/s)
 
 
 Cost: 24.0
@@ -134,13 +136,13 @@ Solution found
 ```bash
 $ python3 main.py qstar -nn -h -p rubikscube -w 0.2
 initializing jit
-Time:  37.02 seconds
+Time:  77.01 seconds
+JIT compiled
 
 ...
 
-JIT compiled
-Time:   1.35 seconds
-Search states: 1.75M(1.3M states/s)
+Time:   0.98 seconds
+Search states: 1.67M(1.71M states/s)
 
 
 Cost: 24.0

@@ -118,7 +118,7 @@ class BGPQ:  # Batched GPU Priority Queue
         )  # [branch_size, batch_size]
         val_store = value_class.default((branch_size, batch_size))
         key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=KEY_DTYPE)  # [batch_size - 1]
-        val_buffer = value_class.default((batch_size - 1,))
+        val_buffer = value_class.default((batch_size - 1,))  # [batch_size - 1, ...]
         return BGPQ(
             max_size=max_size,
             size=size,
@@ -223,7 +223,7 @@ class BGPQ:  # Batched GPU Priority Queue
         val = jax.tree_util.tree_map(
             lambda x, y: jnp.concatenate([x, y]),
             val,
-            jax.vmap(val.default)(jnp.arange(m * batch_size - n)),
+            val.default((m * batch_size - n,)),
         )
         key = key[: m * batch_size].reshape((m, batch_size))
         val = jax.tree_util.tree_map(
