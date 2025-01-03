@@ -367,7 +367,7 @@ class BGPQ:  # Batched GPU Priority Queue
             )
             key_store = key_store.at[current_node].set(kc).at[y].set(ky)
             val_store = jax.tree_util.tree_map(
-                lambda val, v1, v2: val.at[c].set(v1).at[y].set(v2), val_store, vc, vy
+                lambda val, v1, v2: val.at[current_node].set(v1).at[y].set(v2), val_store, vc, vy
             )
 
             nc = y
