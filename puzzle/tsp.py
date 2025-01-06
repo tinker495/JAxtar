@@ -110,4 +110,4 @@ class TSP(Puzzle):
 
     def from_uint8(self, board: chex.Array) -> chex.Array:
         # from uint8 4 to boolean 32
-        return jnp.unpackbits(board, axis=-1, count=self.size**2, bitorder="little")
+        return jnp.unpackbits(board, axis=-1, count=self.number_of_points, bitorder="little")
