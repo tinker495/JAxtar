@@ -32,3 +32,8 @@ class Heuristic(ABC):
             shape : single scalar
         """
         pass
+
+
+class EmptyHeuristic(Heuristic):
+    def distance(self, current: Puzzle.State, target: Puzzle.State) -> float:
+        return 0
