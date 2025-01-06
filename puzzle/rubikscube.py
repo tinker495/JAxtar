@@ -17,7 +17,7 @@ RIGHT = 3
 FRONT = 4
 BACK = 5
 rotate_face_map = {0: "l", 1: "d", 2: "f", 3: "r", 4: "b", 5: "u"}
-face_map = {0: "up", 1: "down", 2: "left", 3: "right", 4: "front", 5: "back"}
+face_map = {0: "up━", 1: "down━", 2: "left━", 3: "right", 4: "front", 5: "back━"}
 color_map = {0: "white", 1: "yellow", 2: "red", 3: "magenta", 4: "green", 5: "blue"}  # orange
 
 
@@ -79,7 +79,7 @@ class RubiksCube(Puzzle):
             # Create the cube string representation
             cube_str = tabulate(
                 [
-                    [color_legend(), get_face_string(0)],
+                    [color_legend(), ".\n" + get_face_string(0)],
                     [
                         get_face_string(2),
                         get_face_string(4),
