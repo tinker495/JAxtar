@@ -17,6 +17,10 @@ class Maze(Puzzle):
     class State:
         pos: chex.Array
 
+    @property
+    def has_target(self) -> bool:
+        return True
+
     def __init__(self, size: int, p=0.3, key=jax.random.PRNGKey(0)):
         self.size = size
         self.maze = self.create_maze(size, p, key)

@@ -190,6 +190,14 @@ class Puzzle(ABC):
         def default(_=None) -> T:
             pass
 
+    @property
+    @abstractmethod
+    def has_target(self) -> bool:
+        """
+        This function should return a boolean that indicates whether the environment has a target state or not.
+        """
+        pass
+
     def __init__(self):
         """
         This function should be called in the __init__ of the subclass.
