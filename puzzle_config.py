@@ -1,5 +1,6 @@
 from heuristic import (
     DotKnotHeuristic,
+    EmptyHeuristic,
     LightsOutHeuristic,
     MazeHeuristic,
     RubiksCubeHeuristic,
@@ -11,6 +12,7 @@ from heuristic.neuralheuristic import (
     SlidePuzzleNeuralHeuristic,
 )
 from puzzle import (
+    TSP,
     DotKnot,
     LightsOut,
     LightsOutHard,
@@ -20,10 +22,24 @@ from puzzle import (
     SlidePuzzle,
     SlidePuzzleHard,
 )
-from qfunction import DotKnotQ, LightsOutQ, MazeQ, RubiksCubeQ, SlidePuzzleQ
+from qfunction import (
+    DotKnotQ,
+    EmptyQFunction,
+    LightsOutQ,
+    MazeQ,
+    RubiksCubeQ,
+    SlidePuzzleQ,
+)
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
 
-default_puzzle_sizes = {"n-puzzle": 4, "lightsout": 7, "rubikscube": 3, "maze": 20, "dotknot": 7}
+default_puzzle_sizes = {
+    "n-puzzle": 4,
+    "lightsout": 7,
+    "rubikscube": 3,
+    "maze": 20,
+    "dotknot": 7,
+    "tsp": 10,
+}
 
 puzzle_dict = {
     "n-puzzle": lambda n: SlidePuzzle(n),
@@ -31,6 +47,7 @@ puzzle_dict = {
     "rubikscube": lambda n: RubiksCube(n),
     "maze": lambda n: Maze(n),
     "dotknot": lambda n: DotKnot(n),
+    "tsp": lambda n: TSP(n),
 }
 
 puzzle_dict_hard = {
@@ -38,6 +55,8 @@ puzzle_dict_hard = {
     "lightsout": lambda n: LightsOutHard(n),
     "rubikscube": lambda n: RubiksCubeHard(n),
     "maze": lambda n: Maze(n),
+    "dotknot": lambda n: DotKnot(n),
+    "tsp": lambda n: TSP(n),
 }
 
 puzzle_heuristic_dict = {
@@ -46,6 +65,7 @@ puzzle_heuristic_dict = {
     "rubikscube": lambda puzzle: RubiksCubeHeuristic(puzzle),
     "maze": lambda puzzle: MazeHeuristic(puzzle),
     "dotknot": lambda puzzle: DotKnotHeuristic(puzzle),
+    "tsp": lambda puzzle: EmptyHeuristic(puzzle),
 }
 
 puzzle_heuristic_dict_nn = {
@@ -72,6 +92,7 @@ puzzle_q_dict = {
     "rubikscube": lambda puzzle: RubiksCubeQ(puzzle),
     "maze": lambda puzzle: MazeQ(puzzle),
     "dotknot": lambda puzzle: DotKnotQ(puzzle),
+    "tsp": lambda puzzle: EmptyQFunction(puzzle),
 }
 
 puzzle_q_dict_nn = {
