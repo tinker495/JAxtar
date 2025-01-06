@@ -35,6 +35,10 @@ class DotKnot(Puzzle):
         # color_num + 1 ~ 2 * color_num + 1 : point b
         # 2 * color_num + 2 ~ 3 * color_num + 2 : lines
 
+    @property
+    def has_target(self) -> bool:
+        return False
+
     def __init__(self, size: int, color_num: int = 4):
         self.size = size
         self.color_num = color_num

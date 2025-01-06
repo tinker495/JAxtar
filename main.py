@@ -120,14 +120,17 @@ def human_play(puzzle, hard, puzzle_size, start_state_seed, seed, debug):
         puzzle_size = int(puzzle_size)
     puzzle = puzzle_dict[puzzle](puzzle_size)
 
+    has_target = puzzle.has_target
+
     init_state = puzzle.get_initial_state(jax.random.PRNGKey(start_state_seed))
     target_state = puzzle.get_target_state()
     next_states, costs = puzzle.get_neighbours(init_state)
     n_actions = costs.shape[0]
     print("Initial state")
     print(init_state)
-    print("Target state")
-    print(target_state)
+    if has_target:
+        print("Target state")
+        print(target_state)
     print("Next states")
 
     print("Use number keys to move the point.")
@@ -199,6 +202,8 @@ def astar(
     else:
         puzzle = puzzle_dict[puzzle](puzzle_size)
 
+    has_target = puzzle.has_target
+
     if neural_heuristic:
         try:
             heuristic: Heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle_size, puzzle, False)
@@ -236,8 +241,9 @@ def astar(
 
     print("Start state")
     print(states[0])
-    print("Target state")
-    print(target)
+    if has_target:
+        print("Target state")
+        print(target)
     print(f"Heuristic: {heuristic_values[0]:.2f}")
 
     if profile:
@@ -248,6 +254,13 @@ def astar(
     search_result, solved, solved_idx = astar_fn(search_result_build(), states, filled, target)
     end = time.time()
     single_search_time = end - start
+
+    if not has_target:
+        solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+        print("Solution found")
+        print(solved_st)
+        print()
+
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
         f"Search states: {human_format(search_result.hashtable.size)}"
@@ -389,6 +402,8 @@ def qstar(
     else:
         puzzle = puzzle_dict[puzzle](puzzle_size)
 
+    has_target = puzzle.has_target
+
     if neural_qfunction:
         try:
             qfunction: QFunction = puzzle_q_dict_nn[puzzle_name](puzzle_size, puzzle, False)
@@ -426,8 +441,9 @@ def qstar(
 
     print("Start state")
     print(states[0])
-    print("Target state")
-    print(target)
+    if has_target:
+        print("Target state")
+        print(target)
     print("qvalues: ", end="")
     print(
         " | ".join(
@@ -444,6 +460,13 @@ def qstar(
     search_result, solved, solved_idx = qstar_fn(search_result_build(), states, filled, target)
     end = time.time()
     single_search_time = end - start
+
+    if not has_target:
+        solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+        print("Solution found")
+        print(solved_st)
+        print()
+
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
         f"Search states: {human_format(search_result.hashtable.size)}"
