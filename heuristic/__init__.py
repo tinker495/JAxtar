@@ -1,4 +1,5 @@
 from heuristic.dotknot_heuristic import DotKnotHeuristic
+from heuristic.heuristic_base import EmptyHeuristic, Heuristic
 from heuristic.lightsout_heuristic import LightsOutHeuristic
 from heuristic.maze_heuristic import MazeHeuristic
 from heuristic.neuralheuristic import (
