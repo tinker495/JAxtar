@@ -194,7 +194,7 @@ def astar(
     if puzzle_size == "default":
         puzzle_size = default_puzzle_sizes[puzzle]
     else:
-        puzzle_size = int(puzzle)
+        puzzle_size = int(puzzle_size)
 
     puzzle_name = puzzle
     if hard:
@@ -395,7 +395,7 @@ def qstar(
     if puzzle_size == "default":
         puzzle_size = default_puzzle_sizes[puzzle]
     else:
-        puzzle_size = int(puzzle)
+        puzzle_size = int(puzzle_size)
 
     puzzle_name = puzzle
     if hard:
