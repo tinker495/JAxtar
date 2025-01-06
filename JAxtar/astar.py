@@ -19,7 +19,13 @@ from JAxtar.search_base import (
     SearchResult,
     pop_full,
 )
-from JAxtar.util import set_array, set_tree
+from JAxtar.util import (
+    flatten_array,
+    flatten_tree,
+    set_array,
+    set_tree,
+    unflatten_array,
+)
 from puzzle.puzzle_base import Puzzle
 
 
@@ -116,14 +122,17 @@ def astar_builder(
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
 
+            search_result.hashtable, _, _, idxs, table_idxs = parallel_insert(
+                search_result.hashtable, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+            )
+
+            idxs = unflatten_array(idxs, filleds.shape)
+            table_idxs = unflatten_array(table_idxs, filleds.shape)
+
             def _scan(search_result: SearchResult, val):
-                neighbour, neighbour_cost, filled, parent_action = val
+                neighbour, neighbour_cost, filled, idx, table_idx, parent_action = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
                 neighbour_key = (cost_weight * neighbour_cost + neighbour_heur).astype(KEY_DTYPE)
-
-                search_result.hashtable, _, _, idx, table_idx = parallel_insert(
-                    search_result.hashtable, neighbour, filled
-                )
 
                 vals = HashTableidx_with_Parent_HeapValue(
                     current=HashTableidx_with_Parent_HeapValue.Current(
@@ -145,7 +154,9 @@ def astar_builder(
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
-                _scan, search_result, (neighbours, nextcosts, filleds, parent_action)
+                _scan,
+                search_result,
+                (neighbours, nextcosts, filleds, idxs, table_idxs, parent_action),
             )
             return search_result
 

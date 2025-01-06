@@ -18,7 +18,13 @@ from JAxtar.search_base import (
     SearchResult,
     pop_full,
 )
-from JAxtar.util import set_array, set_tree
+from JAxtar.util import (
+    flatten_array,
+    flatten_tree,
+    set_array,
+    set_tree,
+    unflatten_array,
+)
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
@@ -119,12 +125,15 @@ def qstar_builder(
             ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbour_key = (cost_weight * nextcosts + q_vals).astype(KEY_DTYPE)
 
-            def _scan(search_result: SearchResult, val):
-                neighbour, neighbour_cost, neighbour_key, filled, parent_action = val
+            search_result.hashtable, _, _, idxs, table_idxs = parallel_insert(
+                search_result.hashtable, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+            )
 
-                search_result.hashtable, _, _, idx, table_idx = parallel_insert(
-                    search_result.hashtable, neighbour, filled
-                )
+            idxs = unflatten_array(idxs, filleds.shape)
+            table_idxs = unflatten_array(table_idxs, filleds.shape)
+
+            def _scan(search_result: SearchResult, val):
+                neighbour_cost, neighbour_key, filled, idx, table_idx, parent_action = val
 
                 vals = HashTableidx_with_Parent_HeapValue(
                     current=HashTableidx_with_Parent_HeapValue.Current(
@@ -144,10 +153,11 @@ def qstar_builder(
                     added_size=jnp.sum(filled, dtype=SIZE_DTYPE),
                 )
                 return search_result, None
-                return search_result, None
 
             search_result, _ = jax.lax.scan(
-                _scan, search_result, (neighbours, nextcosts, neighbour_key, filleds, parent_action)
+                _scan,
+                search_result,
+                (nextcosts, neighbour_key, filleds, idxs, table_idxs, parent_action),
             )
             return search_result
 
