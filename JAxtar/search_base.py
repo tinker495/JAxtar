@@ -11,6 +11,7 @@ from JAxtar.annotate import (
 )
 from JAxtar.bgpq import BGPQ, HeapValue, bgpq_value_dataclass
 from JAxtar.hash import HashTable
+from JAxtar.util import set_array, set_tree
 from puzzle.puzzle_base import Puzzle
 
 
@@ -210,17 +211,22 @@ def pop_full(search_result: SearchResult):
     search_result, min_key, min_val, filled = jax.lax.while_loop(
         _cond, _body, (search_result, min_key, min_val, filled)
     )
-    search_result.cost = search_result.cost.at[
-        min_val.current.index, min_val.current.table_index
-    ].min(min_val.current.cost)
-    search_result.parent = jax.tree_util.tree_map(
-        lambda parent, insert: parent.at[min_val.current.index, min_val.current.table_index].set(
-            insert
-        ),
+    search_result.cost = set_array(
+        search_result.cost,
+        min_val.current.cost,
+        min_val.current.index,
+        min_val.current.table_index,
+    )
+    search_result.parent = set_tree(
         search_result.parent,
         min_val.parent,
+        min_val.current.index,
+        min_val.current.table_index,
     )
-    search_result.parent_action = search_result.parent_action.at[
-        min_val.current.index, min_val.current.table_index
-    ].set(min_val.parent.action)
+    search_result.parent_action = set_array(
+        search_result.parent_action,
+        min_val.parent.action,
+        min_val.current.index,
+        min_val.current.table_index,
+    )
     return search_result, min_val.current, filled

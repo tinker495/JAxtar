@@ -19,6 +19,7 @@ from JAxtar.search_base import (
     SearchResult,
     pop_full,
 )
+from JAxtar.util import set_array, set_tree
 from puzzle.puzzle_base import Puzzle
 
 
@@ -102,7 +103,6 @@ def astar_builder(
                 min_val.current.index, min_val.current.table_index
             ]
             solved = solved_fn(states, target)
-            print(f"hash_size: {hash_size}, heap_size: {heap_size}, solved: {solved.any()}")
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(search_result: SearchResult):
@@ -151,19 +151,24 @@ def astar_builder(
 
         search_result = jax.lax.while_loop(_cond, _body, search_result)
         min_val = search_result.priority_queue.val_store[0]  # get the minimum value
-        search_result.cost = search_result.cost.at[
-            min_val.current.index, min_val.current.table_index
-        ].min(min_val.current.cost)
-        search_result.parent = jax.tree_util.tree_map(
-            lambda parent, insert: parent.at[
-                min_val.current.index, min_val.current.table_index
-            ].set(insert),
+        search_result.cost = set_array(
+            search_result.cost,
+            min_val.current.cost,
+            min_val.current.index,
+            min_val.current.table_index,
+        )
+        search_result.parent = set_tree(
             search_result.parent,
             min_val.parent,
+            min_val.current.index,
+            min_val.current.table_index,
         )
-        search_result.parent_action = search_result.parent_action.at[
-            min_val.current.index, min_val.current.table_index
-        ].set(min_val.parent.action)
+        search_result.parent_action = set_array(
+            search_result.parent_action,
+            min_val.parent.action,
+            min_val.current.index,
+            min_val.current.table_index,
+        )
         states = search_result.hashtable.table[min_val.current.index, min_val.current.table_index]
         solved = solved_fn(states, target)
         solved_idx = min_val.current[jnp.argmax(solved)]

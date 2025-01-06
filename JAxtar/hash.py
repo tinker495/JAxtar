@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from JAxtar.annotate import HASH_POINT_DTYPE, HASH_TABLE_IDX_DTYPE, SIZE_DTYPE
+from JAxtar.util import set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 
 T = TypeVar("T")
@@ -230,9 +231,7 @@ class HashTable:
             """
             insert the state in the table
             """
-            table.table = jax.tree_util.tree_map(
-                lambda x, y: x.at[idx, table_idx].set(y), table.table, input
-            )
+            table.table = set_tree_as_condition(table.table, idx, input, table_idx)
             table.table_idx = table.table_idx.at[idx].add(1)
             return table
 
@@ -340,13 +339,7 @@ class HashTable:
         seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, index, unupdated))
 
         idx, table_idx = index[:, 0], index[:, 1].astype(HASH_TABLE_IDX_DTYPE)
-        table.table = jax.tree_util.tree_map(
-            lambda x, y: x.at[idx, table_idx].set(
-                jnp.where(updatable.reshape(-1, *([1] * (len(y.shape) - 1))), y, x[idx, table_idx])
-            ),
-            table.table,
-            inputs,
-        )
+        table.table = set_tree_as_condition(table.table, updatable, inputs, idx, table_idx)
         table.table_idx = table.table_idx.at[idx].add(updatable)
         table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
         return table, idx, table_idx

@@ -97,6 +97,72 @@ def visualize_options(func: callable) -> callable:
     return wrapper
 
 
+def human_play_options(func: callable) -> callable:
+    @click.option("--debug", is_flag=True, help="Debug mode")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+@main.command()
+@puzzle_options
+@human_play_options
+def human_play(puzzle, hard, puzzle_size, start_state_seed, seed, debug):
+    if debug:
+        # disable jit
+        print("Disabling JIT")
+        jax.config.update("jax_disable_jit", True)
+    if puzzle_size == "default":
+        puzzle_size = default_puzzle_sizes[puzzle]
+    else:
+        puzzle_size = int(puzzle_size)
+    puzzle = puzzle_dict[puzzle](puzzle_size)
+
+    has_target = puzzle.has_target
+
+    init_state = puzzle.get_initial_state(jax.random.PRNGKey(start_state_seed))
+    target_state = puzzle.get_target_state()
+    next_states, costs = puzzle.get_neighbours(init_state)
+    n_actions = costs.shape[0]
+    print("Initial state")
+    print(init_state)
+    if has_target:
+        print("Target state")
+        print(target_state)
+    print("Next states")
+
+    print("Use number keys to move the point.")
+    print("Use ESC to exit.")
+    current_state = init_state
+    sum_cost = 0
+    while True:
+        print(current_state)
+        print(f"Costs: {sum_cost}")
+        print(
+            f"Actions: {'|'.join(f'{i+1}: {puzzle.action_to_string(i)}' for i in range(n_actions))}"
+        )
+        neighbors, costs = puzzle.get_neighbours(current_state)
+        key = click.getchar()
+        if key == "\x1b":  # ESC
+            break
+        try:
+            action = int(key) - 1
+            if costs[action] == jnp.inf:
+                print("Invalid move!")
+                continue
+            current_state, cost = neighbors[action], costs[action]
+            sum_cost += cost
+        except ValueError:
+            print("Invalid input!")
+        except IndexError:
+            print("Invalid action index!")
+        if puzzle.is_solved(current_state, target_state):
+            print(f"Solved! Cost: {sum_cost}")
+            break
+
+
 @main.command()
 @puzzle_options
 @search_options
@@ -128,13 +194,15 @@ def astar(
     if puzzle_size == "default":
         puzzle_size = default_puzzle_sizes[puzzle]
     else:
-        puzzle_size = int(puzzle)
+        puzzle_size = int(puzzle_size)
 
     puzzle_name = puzzle
     if hard:
         puzzle = puzzle_dict_hard[puzzle](puzzle_size)
     else:
         puzzle = puzzle_dict[puzzle](puzzle_size)
+
+    has_target = puzzle.has_target
 
     if neural_heuristic:
         try:
@@ -173,8 +241,9 @@ def astar(
 
     print("Start state")
     print(states[0])
-    print("Target state")
-    print(target)
+    if has_target:
+        print("Target state")
+        print(target)
     print(f"Heuristic: {heuristic_values[0]:.2f}")
 
     if profile:
@@ -185,6 +254,14 @@ def astar(
     search_result, solved, solved_idx = astar_fn(search_result_build(), states, filled, target)
     end = time.time()
     single_search_time = end - start
+
+    if not has_target:
+        if solved:
+            solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+            print("Solution state")
+            print(solved_st)
+            print()
+
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
         f"Search states: {human_format(search_result.hashtable.size)}"
@@ -325,13 +402,15 @@ def qstar(
     if puzzle_size == "default":
         puzzle_size = default_puzzle_sizes[puzzle]
     else:
-        puzzle_size = int(puzzle)
+        puzzle_size = int(puzzle_size)
 
     puzzle_name = puzzle
     if hard:
         puzzle = puzzle_dict_hard[puzzle](puzzle_size)
     else:
         puzzle = puzzle_dict[puzzle](puzzle_size)
+
+    has_target = puzzle.has_target
 
     if neural_qfunction:
         try:
@@ -370,8 +449,9 @@ def qstar(
 
     print("Start state")
     print(states[0])
-    print("Target state")
-    print(target)
+    if has_target:
+        print("Target state")
+        print(target)
     print("qvalues: ", end="")
     print(
         " | ".join(
@@ -388,6 +468,14 @@ def qstar(
     search_result, solved, solved_idx = qstar_fn(search_result_build(), states, filled, target)
     end = time.time()
     single_search_time = end - start
+
+    if not has_target:
+        if solved:
+            solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+            print("Solution state")
+            print(solved_st)
+            print()
+
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
         f"Search states: {human_format(search_result.hashtable.size)}"
@@ -490,6 +578,7 @@ def qstar(
 
 
 if __name__ == "__main__":
+    main.add_command(human_play)
     main.add_command(astar)
     main.add_command(qstar)
     main()
