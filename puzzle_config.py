@@ -38,7 +38,7 @@ default_puzzle_sizes = {
     "rubikscube": 3,
     "maze": 20,
     "dotknot": 7,
-    "tsp": 10,
+    "tsp": 12,
 }
 
 puzzle_dict = {
