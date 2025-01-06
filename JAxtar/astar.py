@@ -9,6 +9,7 @@ from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
 from JAxtar.bgpq import BGPQ
 from JAxtar.hash import HashTable, hash_func_builder
 from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult, pop_full
+from JAxtar.util import set_array_as_condition, set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 
 
@@ -65,8 +66,12 @@ def astar_builder(
         hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
 
         cost_val = jnp.where(filled, 0, jnp.inf)
-        search_result.cost = search_result.cost.at[idx, table_idx].set(
-            jnp.where(inserted, cost_val, search_result.cost[idx, table_idx])
+        search_result.cost = set_array_as_condition(
+            search_result.cost,
+            inserted,
+            cost_val,
+            idx,
+            table_idx,
         )
 
         total_cost = (cost_val + heur_val).astype(KEY_DTYPE)
@@ -111,20 +116,20 @@ def astar_builder(
                     neighbour_cost
                 )  # update the minimul cost
 
-                search_result.parent = jax.tree_util.tree_map(
-                    lambda insert, parent: parent.at[idx, table_idx].set(
-                        jnp.where(optimal, insert, parent[idx, table_idx])
-                    ),
-                    parent_idx,
+                search_result.parent = set_tree_as_condition(
                     search_result.parent,
+                    optimal,
+                    parent_idx,
+                    idx,
+                    table_idx,
                 )
 
-                search_result.parent_action = search_result.parent_action.at[idx, table_idx].set(
-                    jnp.where(
-                        optimal,
-                        parent_action,
-                        search_result.parent_action[idx, table_idx],
-                    )
+                search_result.parent_action = set_array_as_condition(
+                    search_result.parent_action,
+                    optimal,
+                    parent_action,
+                    idx,
+                    table_idx,
                 )
 
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
