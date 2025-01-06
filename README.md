@@ -151,9 +151,17 @@ Solution found
 
 ## Puzzles
 
+### Target available puzzle
+
 | Rubikscube                                       | Slidepuzzle                                        | Lightsout                                      | Maze                                |
 | ------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |
 | ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) |
+
+### Target not available puzzle
+
+| Dotknot                              |
+| ------------------------------------ |
+| ![dotknot solve](images/dotknot.png) |
 
 ## Citation
 

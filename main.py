@@ -256,10 +256,11 @@ def astar(
     single_search_time = end - start
 
     if not has_target:
-        solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
-        print("Solution found")
-        print(solved_st)
-        print()
+        if solved:
+            solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+            print("Solution state")
+            print(solved_st)
+            print()
 
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
@@ -462,10 +463,11 @@ def qstar(
     single_search_time = end - start
 
     if not has_target:
-        solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
-        print("Solution found")
-        print(solved_st)
-        print()
+        if solved:
+            solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+            print("Solution state")
+            print(solved_st)
+            print()
 
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
