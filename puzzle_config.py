@@ -20,7 +20,7 @@ from puzzle import (
     SlidePuzzle,
     SlidePuzzleHard,
 )
-from qfunction import LightsOutQ, MazeQ, RubiksCubeQ, SlidePuzzleQ
+from qfunction import DotKnotQ, LightsOutQ, MazeQ, RubiksCubeQ, SlidePuzzleQ
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
 
 default_puzzle_sizes = {"n-puzzle": 4, "lightsout": 7, "rubikscube": 3, "maze": 20, "dotknot": 7}
@@ -71,6 +71,7 @@ puzzle_q_dict = {
     "lightsout": lambda puzzle: LightsOutQ(puzzle),
     "rubikscube": lambda puzzle: RubiksCubeQ(puzzle),
     "maze": lambda puzzle: MazeQ(puzzle),
+    "dotknot": lambda puzzle: DotKnotQ(puzzle),
 }
 
 puzzle_q_dict_nn = {
