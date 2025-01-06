@@ -15,6 +15,7 @@ class TSP(Puzzle):
     @state_dataclass
     class State:
         mask: chex.Array  # 1D array of size number_of_points, 0 if not visited, 1 if visited
+        start: chex.Array  # idx of the point that is the start
         point: chex.Array  # idx of the point that is currently visited
 
     @property
@@ -27,17 +28,19 @@ class TSP(Puzzle):
         super().__init__()
 
     def create_points(self, number_of_points, key=None):
-        return jax.random.uniform(key, shape=(number_of_points, 2), minval=0, maxval=1)
+        return jax.random.uniform(
+            key, shape=(number_of_points, 2), minval=0, maxval=1, dtype=jnp.float16
+        )
 
     def get_string_parser(self):
         form = self._get_visualize_format()
 
         def to_char(x):
-            return " " if x == 0 else "■"  # 0: empty, 1: wall, 2: player
+            return "☐" if x == 0 else "■"  # 0: not visited, 1: visited
 
         def parser(state):
             mask = self.from_uint8(state.mask)
-            return form.format(*map(to_char, mask))
+            return form.format(*map(to_char, mask), state.point)
 
         return parser
 
@@ -47,23 +50,25 @@ class TSP(Puzzle):
 
         def gen():
             mask = jnp.zeros(number_of_points, dtype=jnp.bool_)
-            point = jnp.array([-1], dtype=TYPE)
-            return self.State(mask=self.to_uint8(mask), point=point)
+            start = jnp.array(-1, dtype=TYPE)
+            point = jnp.array(-1, dtype=TYPE)
+            return self.State(mask=self.to_uint8(mask), start=start, point=point)
 
         return gen
 
     def get_initial_state(self, key=jax.random.PRNGKey(0)) -> State:
         mask = jnp.zeros(self.number_of_points, dtype=jnp.bool_)
         point = jax.random.randint(
-            key, shape=(1,), minval=0, maxval=self.number_of_points, dtype=TYPE
+            key, shape=(), minval=0, maxval=self.number_of_points, dtype=TYPE
         )
-        return self.State(mask=self.to_uint8(mask), point=point)
+        mask = mask.at[point].set(1)
+        return self.State(mask=self.to_uint8(mask), start=point, point=point)
 
     def get_target_state(self, key=jax.random.PRNGKey(128)) -> State:
         # this puzzle no target state
-        mask = jnp.ones(self.number_of_points, dtype=jnp.bool_)
-        point = jnp.array([-1], dtype=TYPE)
-        return self.State(mask=self.to_uint8(mask), point=point)
+        mask = jnp.zeros(self.number_of_points, dtype=jnp.bool_)
+        point = jnp.array(-1, dtype=TYPE)
+        return self.State(mask=self.to_uint8(mask), start=point, point=point)
 
     def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
         """
@@ -77,20 +82,25 @@ class TSP(Puzzle):
         point = state.point
 
         def move(idx):
-            masked = mask[idx]
-            new_mask = mask.at[idx].set(1)
+            masked = mask[idx] & filled
+            new_mask = mask.at[idx].set(True)
+            all_visited = jnp.all(new_mask)
 
-            cost = jnp.linalg.norm(self.points[point] - self.points[idx])
-            cost = jnp.where(masked, jnp.inf, cost)
-            new_state = self.State(mask=self.to_uint8(new_mask), point=idx)
+            cost = jnp.linalg.norm(self.points[point] - self.points[idx], axis=-1)
+            cost = jnp.where(masked, jnp.inf, cost) + jnp.where(
+                all_visited,
+                jnp.linalg.norm(self.points[state.start] - self.points[idx], axis=-1),
+                0,
+            )
+            new_state = self.State(mask=self.to_uint8(new_mask), start=state.start, point=idx)
             return new_state, cost
 
         # Apply the move function to all possible moves
-        new_states, costs = jax.vmap(move)(jnp.arange(self.number_of_points))
+        new_states, costs = jax.vmap(move)(jnp.arange(self.number_of_points, dtype=TYPE))
         return new_states, costs
 
     def is_solved(self, state: State, target: State) -> bool:
-        return self.is_equal(state, target)
+        return jnp.all(self.from_uint8(state.mask))
 
     def action_to_string(self, action: int) -> str:
         """
@@ -100,7 +110,7 @@ class TSP(Puzzle):
 
     def _get_visualize_format(self):
         size = self.number_of_points
-        form = "[" + "{:s}" * size + "]\n" + "point : [{:02d}]"
+        form = "[" + "{:s} " * size + "]\n" + "point : [{:02d}]"
         return form
 
     def to_uint8(self, board: chex.Array) -> chex.Array:
