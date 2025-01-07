@@ -1,3 +1,8 @@
+"""
+Hash table implementation using Cuckoo hashing technique for efficient state storage and lookup.
+This module provides functionality for hashing puzzle states and managing collisions.
+"""
+
 from functools import partial
 from typing import Callable, Tuple, TypeVar
 
@@ -10,17 +15,26 @@ from JAxtar.util import set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 
 T = TypeVar("T")
-HASH_SIZE_MULTIPLIER = 2
+HASH_SIZE_MULTIPLIER = 2  # Multiplier for hash table size to reduce collision probability
 
 HASH_FUNC_TYPE = Callable[[Puzzle.State, int], Tuple[jnp.uint32, jnp.ndarray]]
 
 
 def rotl(x, n):
+    """Rotate left operation for 32-bit integers."""
     return (x << n) | (x >> (32 - n))
 
 
 @jax.jit
 def xxhash(x, seed):
+    """
+    Implementation of xxHash algorithm for 32-bit integers.
+    Args:
+        x: Input value to hash
+        seed: Seed value for hash function
+    Returns:
+        32-bit hash value
+    """
     prime_1 = jnp.uint32(0x9E3779B1)
     prime_2 = jnp.uint32(0x85EBCA77)
     prime_3 = jnp.uint32(0xC2B2AE3D)
@@ -41,27 +55,38 @@ def xxhash(x, seed):
 
 def hash_func_builder(x: Puzzle.State):
     """
-    build a hash function for the state dataclass
+    Build a hash function for the puzzle state dataclass.
+    This function creates a JIT-compiled hash function that converts state objects to bytes
+    and then to uint32 arrays for hashing.
+
+    Args:
+        x: Example puzzle state to determine the structure
+    Returns:
+        JIT-compiled hash function that takes a state and seed
     """
 
     @jax.jit
     def _to_bytes(x):
+        """Convert input to byte array."""
         return jax.lax.bitcast_convert_type(x, jnp.uint8).reshape(-1)
 
     @jax.jit
     def _byterize(x):
+        """Convert entire state tree to flattened byte array."""
         x = jax.tree_util.tree_map(_to_bytes, x)
         x, _ = jax.tree_util.tree_flatten(x)
         return jnp.concatenate(x)
 
     default_bytes = _byterize(x.default())
     bytes_len = default_bytes.shape[0]
+    # Calculate padding needed to make byte length multiple of 4
     pad_len = jnp.where(bytes_len % 4 != 0, 4 - (bytes_len % 4), 0)
 
     if pad_len > 0:
 
         def _to_uint32(bytes):
-            x_padded = jnp.pad(bytes, (0, pad_len), mode="constant", constant_values=0)
+            """Convert padded bytes to uint32 array."""
+            x_padded = jnp.pad(bytes, (pad_len, 0), mode="constant", constant_values=0)
             x_reshaped = jnp.reshape(x_padded, (-1, 4))
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
                 x_reshaped
@@ -70,16 +95,21 @@ def hash_func_builder(x: Puzzle.State):
     else:
 
         def _to_uint32(bytes):
+            """Convert bytes directly to uint32 array."""
             x_reshaped = jnp.reshape(bytes, (-1, 4))
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
                 x_reshaped
             ).reshape(-1)
 
     def _h(x, seed):
+        """
+        Main hash function that converts state to bytes and applies xxhash.
+        Returns both hash value and byte representation.
+        """
         bytes = _byterize(x)
         uint32ed = _to_uint32(bytes)
 
-        def scan_body(seed, x):  # scan body for the xxhash function
+        def scan_body(seed, x):
             result = xxhash(x, seed)
             return result, result
 
@@ -92,7 +122,19 @@ def hash_func_builder(x: Puzzle.State):
 @chex.dataclass
 class HashTable:
     """
-    Cuckoo Hash Table
+    Cuckoo Hash Table Implementation
+
+    This implementation uses multiple hash functions (specified by n_table)
+    to resolve collisions. Each item can be stored in one of n_table possible positions.
+
+    Attributes:
+        seed: Initial seed for hash functions
+        capacity: User-specified capacity
+        _capacity: Actual internal capacity (larger than specified to handle collisions)
+        size: Current number of items in table
+        n_table: Number of hash functions/tables used
+        table: The actual storage for states
+        table_idx: Indices tracking which hash function was used for each entry
     """
 
     seed: int
@@ -106,13 +148,22 @@ class HashTable:
     @staticmethod
     def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
         """
-        make a lookup table with the default state of the statecls
+        Initialize a new hash table with specified parameters.
+
+        Args:
+            statecls: The puzzle state class to store
+            seed: Initial seed for hash functions
+            capacity: Desired capacity of the table
+            n_table: Number of hash functions to use (default=2)
+
+        Returns:
+            Initialized HashTable instance
         """
         _capacity = jnp.array(
             HASH_SIZE_MULTIPLIER * capacity / n_table, SIZE_DTYPE
-        )  # make the capacity a little bit bigger than the given capacity to avoid the infinite loop
+        )  # Internal capacity is larger to reduce collision probability
         size = SIZE_DTYPE(0)
-        # add one to the capacity to avoid the infinite loop
+        # Initialize table with default states
         table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity + 1, n_table)))
         table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
         return HashTable(
@@ -132,6 +183,18 @@ class HashTable:
         input: Puzzle.State,
         seed: int,
     ):
+        """
+        Calculate new index for input state using the hash function.
+
+        Args:
+            hash_func: Hash function to use
+            table: Hash table instance
+            input: State to hash
+            seed: Seed for hash function
+
+        Returns:
+            Index in the table for the input state
+        """
         hash_value, _ = hash_func(input, seed)
         idx = hash_value % table._capacity
         return idx
@@ -143,6 +206,11 @@ class HashTable:
         input: Puzzle.State,
         seed: int,
     ):
+        """
+        Calculate new index and return byte representation of input state.
+        Similar to get_new_idx but also returns the byte representation for
+        equality comparison.
+        """
         hash_value, bytes = hash_func(input, seed)
         idx = hash_value % table._capacity
         return idx, bytes
@@ -158,10 +226,20 @@ class HashTable:
         found: bool,
     ):
         """
-        find the index of the state in the table if it exists.
-        if it exists return the index, cuckoo_idx and True
-        if is does not exist return the unfilled index, cuckoo_idx and False
-        this function could be used to check if the state is in the table or not, and insert it if it is not.
+        Internal lookup method that searches for a state in the table.
+        Uses cuckoo hashing technique to check multiple possible locations.
+
+        Args:
+            hash_func: Hash function to use
+            table: Hash table instance
+            input: State to look up
+            idx: Initial index to check
+            table_idx: Which hash function to start with
+            seed: Initial seed
+            found: Whether the state has been found
+
+        Returns:
+            Tuple of (seed, idx, table_idx, found)
         """
 
         def _check_equal(state1, state2):
@@ -349,32 +427,52 @@ class HashTable:
         hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
     ):
         """
-        Insert the states into the table concurrently, handling unique state conditions.
-        Strictly speaking, this implementation is correct, but it is noted that the search functionality is broken.
-        Returns the table, updatable, filled, idx, and table_idx.
-        # TODO: The handling of unique state conditions is operational,
-        #       but the search functionality is currently broken and requires fixing.
+        Parallel insertion of multiple states into the hash table.
+
+        Args:
+            hash_func: Hash function to use
+            table: Hash table instance
+            inputs: States to insert
+            filled: Boolean array indicating which inputs are valid
+
+        Returns:
+            Tuple of (updated_table, updatable, unique_filled, idx, table_idx)
+
+        Note:
+            This implementation has a known issue with the search functionality
+            after parallel insertion. This should be fixed in future versions.
+
+        TODO: Fix search functionality after parallel insertion
         """
 
+        # Get initial indices and byte representations
         initial_idx, bytes = jax.vmap(
             partial(HashTable.get_new_idx_byterized, hash_func), in_axes=(None, 0, None)
         )(table, inputs, table.seed)
+
         batch_len = filled.shape[0]
+
+        # Find unique states to avoid duplicates
         unique_bytes_idx = jnp.unique(bytes, axis=0, size=batch_len, return_index=True)[1]
         unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_bytes_idx].set(True)
         unique_filled = jnp.logical_and(filled, unique)
+
+        # Look up each state
         seeds, idx, table_idx, found = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
         )(table, inputs, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~unique_filled)
+
         idxs = jnp.stack([idx, table_idx], axis=1, dtype=HASH_POINT_DTYPE)
         updatable = jnp.logical_and(~found, unique_filled)
 
+        # Perform parallel insertion
         table, idx, table_idx = HashTable._parallel_insert(
             hash_func, table, inputs, seeds, idxs, updatable, batch_len
         )
 
-        # get the idx and table_idx of the inputs
+        # Get final indices
         _, idx, table_idx, _ = jax.vmap(
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
         )(table, inputs, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~filled)
+
         return table, updatable, unique_filled, idx, table_idx
