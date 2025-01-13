@@ -144,6 +144,7 @@ class HashTable:
     n_table: int  # number of tables
     table: Puzzle.State  # shape = State("args" = (capacity, cuckoo_len, ...), ...)
     table_idx: chex.Array  # shape = (capacity, ) is the index of the table in the cuckoo table.
+    # hash_func: HASH_FUNC_TYPE
 
     @staticmethod
     def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
@@ -166,6 +167,7 @@ class HashTable:
         # Initialize table with default states
         table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity + 1, n_table)))
         table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
+        # hash_func = hash_func_builder(statecls)
         return HashTable(
             seed=seed,
             capacity=capacity,
@@ -174,6 +176,7 @@ class HashTable:
             n_table=n_table,
             table=table,
             table_idx=table_idx,
+            # hash_func=hash_func,
         )
 
     @staticmethod
@@ -286,8 +289,7 @@ class HashTable:
         )
         return update_seed, idx, table_idx, found
 
-    @staticmethod
-    def lookup(hash_func: HASH_FUNC_TYPE, table: "HashTable", input: Puzzle.State):
+    def lookup(table: "HashTable", hash_func: HASH_FUNC_TYPE, input: Puzzle.State):
         """
         find the index of the state in the table if it exists.
         if it exists return the index, cuckoo_idx and True
@@ -295,12 +297,11 @@ class HashTable:
         """
         index = HashTable.get_new_idx(hash_func, table, input, table.seed)
         _, idx, table_idx, found = HashTable._lookup(
-            hash_func, table, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
+            table, hash_func, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
         )
         return idx, table_idx, found
 
-    @staticmethod
-    def insert(hash_func: HASH_FUNC_TYPE, table: "HashTable", input: Puzzle.State):
+    def insert(table: "HashTable", hash_func: HASH_FUNC_TYPE, input: Puzzle.State):
         """
         insert the state in the table
         """
@@ -342,6 +343,7 @@ class HashTable:
         filled = jnp.concatenate([jnp.ones(count), jnp.zeros(batch_size - count)], dtype=jnp.bool_)
         return batched, filled
 
+    @staticmethod
     def _parallel_insert(
         hash_func: HASH_FUNC_TYPE,
         table: "HashTable",
@@ -422,9 +424,8 @@ class HashTable:
         table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
         return table, idx, table_idx
 
-    @staticmethod
     def parallel_insert(
-        hash_func: HASH_FUNC_TYPE, table: "HashTable", inputs: Puzzle.State, filled: chex.Array
+        table: "HashTable", hash_func: HASH_FUNC_TYPE, inputs: Puzzle.State, filled: chex.Array
     ):
         """
         Parallel insertion of multiple states into the hash table.
