@@ -146,6 +146,81 @@ class SearchResult:
         """Current number of states stored."""
         return self.hashtable.size
 
+    @property
+    def min_states(self):
+        """Minimum states in the priority queue."""
+        min_val = self.priority_queue.val_store[0]  # get the minimum value
+        return self.hashtable.table[min_val.index, min_val.table_index]
+
+    def pop_full(search_result):
+        """
+        Removes and returns the minimum elements from the priority queue while maintaining
+        the heap property. This function handles batched operations efficiently.
+
+        Args:
+            search_result (SearchResult): The current search state
+
+        Returns:
+            tuple: Contains:
+                - Updated SearchResult
+                - Minimum values removed from the queue
+                - Boolean mask indicating which entries were filled
+        """
+        # Delete minimum elements from the priority queue
+        search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
+
+        # Check if the states are in the open set
+        not_closed = search_result.not_closed[min_val.index, min_val.table_index]
+        min_key = jnp.where(not_closed, min_key, jnp.inf)  # Set closed states to inf
+
+        # Merge and sort with the buffer
+        (
+            min_key,
+            min_val,
+            search_result.min_key_buffer,
+            search_result.min_val_buffer,
+        ) = merge_sort_split(
+            min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer
+        )
+        filled = jnp.isfinite(min_key)
+
+        def _cond(val):
+            """Check if we need to continue popping elements."""
+            search_result, _, _, filled = val
+            return jnp.logical_and(search_result.priority_queue.size > 0, ~filled.all())
+
+        def _body(val):
+            """Process one batch of elements from the priority queue."""
+            search_result, min_key, min_val, filled = val
+            (
+                search_result.priority_queue,
+                new_key,
+                new_val,
+            ) = search_result.priority_queue.delete_mins()
+            not_closed = search_result.not_closed[new_val.index, new_val.table_index]
+            new_key = jnp.where(not_closed, new_key, jnp.inf)
+
+            # Merge new values with current minimum values
+            (
+                min_key,
+                min_val,
+                search_result.min_key_buffer,
+                search_result.min_val_buffer,
+            ) = merge_sort_split(min_key, min_val, new_key, new_val)
+            filled = jnp.isfinite(min_key)
+            return search_result, min_key, min_val, filled
+
+        # Continue popping elements until we have enough or queue is empty
+        search_result, min_key, min_val, filled = jax.lax.while_loop(
+            _cond, _body, (search_result, min_key, min_val, filled)
+        )
+
+        # Update the closed set
+        search_result.not_closed = search_result.not_closed.at[
+            min_val.index, min_val.table_index
+        ].set(~filled)
+        return search_result, min_val, filled
+
 
 def unique_mask(val: HashTableIdx_HeapValue, batch_len: int):
     """
@@ -196,66 +271,3 @@ def merge_sort_split(
     sorted_key = key[idx]
     sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
-
-
-def pop_full(search_result: SearchResult):
-    """
-    Removes and returns the minimum elements from the priority queue while maintaining
-    the heap property. This function handles batched operations efficiently.
-
-    Args:
-        search_result (SearchResult): The current search state
-
-    Returns:
-        tuple: Contains:
-            - Updated SearchResult
-            - Minimum values removed from the queue
-            - Boolean mask indicating which entries were filled
-    """
-    # Delete minimum elements from the priority queue
-    search_result.priority_queue, min_key, min_val = BGPQ.delete_mins(search_result.priority_queue)
-
-    # Check if the states are in the open set
-    not_closed = search_result.not_closed[min_val.index, min_val.table_index]
-    min_key = jnp.where(not_closed, min_key, jnp.inf)  # Set closed states to inf
-
-    # Merge and sort with the buffer
-    min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer = merge_sort_split(
-        min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer
-    )
-    filled = jnp.isfinite(min_key)
-
-    def _cond(val):
-        """Check if we need to continue popping elements."""
-        search_result, _, _, filled = val
-        return jnp.logical_and(search_result.priority_queue.size > 0, ~filled.all())
-
-    def _body(val):
-        """Process one batch of elements from the priority queue."""
-        search_result, min_key, min_val, filled = val
-        search_result.priority_queue, new_key, new_val = BGPQ.delete_mins(
-            search_result.priority_queue
-        )
-        not_closed = search_result.not_closed[new_val.index, new_val.table_index]
-        new_key = jnp.where(not_closed, new_key, jnp.inf)
-
-        # Merge new values with current minimum values
-        (
-            min_key,
-            min_val,
-            search_result.min_key_buffer,
-            search_result.min_val_buffer,
-        ) = merge_sort_split(min_key, min_val, new_key, new_val)
-        filled = jnp.isfinite(min_key)
-        return search_result, min_key, min_val, filled
-
-    # Continue popping elements until we have enough or queue is empty
-    search_result, min_key, min_val, filled = jax.lax.while_loop(
-        _cond, _body, (search_result, min_key, min_val, filled)
-    )
-
-    # Update the closed set
-    search_result.not_closed = search_result.not_closed.at[min_val.index, min_val.table_index].set(
-        ~filled
-    )
-    return search_result, min_val, filled

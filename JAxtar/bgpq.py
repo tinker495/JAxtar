@@ -346,7 +346,6 @@ class BGPQ:
         heap = jax.lax.cond(added, _size_not_full, lambda heap: heap, heap)
         return heap, added
 
-    @staticmethod
     @jax.jit
     def insert(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue, added_size: int = None):
         """
@@ -470,7 +469,6 @@ class BGPQ:
         )
         return heap
 
-    @staticmethod
     @jax.jit
     def delete_mins(heap: "BGPQ"):
         """
