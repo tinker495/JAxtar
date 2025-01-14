@@ -255,6 +255,7 @@ def astar(
     search_result, solved, solved_idx = astar_fn(inital_search_result, states, filled, target)
     end = time.time()
     single_search_time = end - start
+    states_per_second = search_result.hashtable.size / single_search_time
 
     if not has_target:
         if solved:
@@ -266,7 +267,7 @@ def astar(
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
         f"Search states: {human_format(search_result.hashtable.size)}"
-        f"({human_format(search_result.hashtable.size / single_search_time)} states/s)\n\n"
+        f"({human_format(states_per_second)} states/s)\n\n"
     )
     if profile:
         jax.profiler.stop_trace()
@@ -354,12 +355,15 @@ def astar(
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
 
     search_states = jnp.sum(search_result.hashtable.size)
+    vmapped_states_per_second = search_states / vmapped_search_time
 
     print(
         f"Time: {vmapped_search_time:6.2f} seconds (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})"
     )
     print(
-        f"Search states: {human_format(search_states)} ({human_format(search_states / vmapped_search_time)} states/s)"
+        f"Search states: {human_format(search_states)}"
+        f" ({human_format(vmapped_states_per_second)} states/s)"
+        f" (x{vmapped_states_per_second/states_per_second:.1f} faster)"
     )
     print("Solution found:", f"{jnp.mean(solved)*100:.2f}%")
     # this means astart_fn is completely vmapable and jitable
@@ -463,6 +467,7 @@ def qstar(
     search_result, solved, solved_idx = qstar_fn(inital_search_result, states, filled, target)
     end = time.time()
     single_search_time = end - start
+    states_per_second = search_result.hashtable.size / single_search_time
 
     if not has_target:
         if solved:
@@ -474,7 +479,7 @@ def qstar(
     print(f"Time: {single_search_time:6.2f} seconds")
     print(
         f"Search states: {human_format(search_result.hashtable.size)}"
-        f"({human_format(search_result.hashtable.size / single_search_time)} states/s)\n\n"
+        f"({human_format(states_per_second)} states/s)\n\n"
     )
     if profile:
         jax.profiler.stop_trace()
@@ -562,12 +567,15 @@ def qstar(
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
 
     search_states = jnp.sum(search_result.hashtable.size)
+    vmapped_states_per_second = search_states / vmapped_search_time
 
     print(
         f"Time: {vmapped_search_time:6.2f} seconds (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})"
     )
     print(
-        f"Search states: {human_format(search_states)} ({human_format(search_states / vmapped_search_time)} states/s)"
+        f"Search states: {human_format(search_states)}"
+        f" ({human_format(vmapped_states_per_second)} states/s)"
+        f" (x{vmapped_states_per_second/states_per_second:.1f} faster)"
     )
     print("Solution found:", f"{jnp.mean(solved)*100:.2f}%")
 
