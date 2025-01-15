@@ -170,7 +170,7 @@ class SearchResult:
     def min_states(self):
         """Minimum states in the priority queue."""
         min_val = self.priority_queue.val_store[0]  # get the minimum value
-        return self.hashtable.table[min_val.index, min_val.table_index]
+        return self.hashtable.table[min_val.current.index, min_val.current.table_index]
 
     def pop_full(search_result):
         """

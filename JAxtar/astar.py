@@ -18,9 +18,7 @@ from JAxtar.util import (
     flatten_array,
     flatten_tree,
     set_array,
-    set_array_as_condition,
     set_tree,
-    set_tree_as_condition,
     unflatten_array,
 )
 from puzzle.puzzle_base import Puzzle
@@ -123,7 +121,7 @@ def astar_builder(
                 idxs,
                 table_idxs,
             ) = search_result.hashtable.parallel_insert(
-                search_result.hashtable, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+                hash_func, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
             )
 
             idxs = unflatten_array(idxs, filleds.shape)
@@ -133,35 +131,6 @@ def astar_builder(
                 neighbour, neighbour_cost, filled, idx, table_idx, parent_action = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
                 neighbour_key = (cost_weight * neighbour_cost + neighbour_heur).astype(KEY_DTYPE)
-
-                (
-                    search_result.hashtable,
-                    _,
-                    _,
-                    idx,
-                    table_idx,
-                ) = search_result.hashtable.parallel_insert(hash_func, neighbour, filled)
-
-                optimal = jnp.less(neighbour_cost, search_result.cost[idx, table_idx])
-                search_result.cost = search_result.cost.at[idx, table_idx].min(
-                    neighbour_cost
-                )  # update the minimul cost
-
-                search_result.parent = set_tree_as_condition(
-                    search_result.parent,
-                    optimal,
-                    parent,
-                    idx,
-                    table_idx,
-                )
-
-                search_result.parent_action = set_array_as_condition(
-                    search_result.parent_action,
-                    optimal,
-                    parent_action,
-                    idx,
-                    table_idx,
-                )
 
                 vals = HashTableidx_with_Parent_HeapValue(
                     current=HashTableidx_with_Parent_HeapValue.Current(

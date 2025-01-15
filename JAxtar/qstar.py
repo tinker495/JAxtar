@@ -12,11 +12,7 @@ from JAxtar.annotate import (
     SIZE_DTYPE,
 )
 from JAxtar.hash import hash_func_builder
-from JAxtar.search_base import (
-    HashTableidx_with_Parent_HeapValue,
-    SearchResult,
-    pop_full,
-)
+from JAxtar.search_base import HashTableidx_with_Parent_HeapValue, SearchResult
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
@@ -107,7 +103,7 @@ def qstar_builder(
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(search_result: SearchResult):
-            search_result, parent, filled = pop_full(search_result)
+            search_result, parent, filled = search_result.pop_full()
 
             cost_val = parent.cost
             states = search_result.hashtable.table[parent.index, parent.table_index]
@@ -128,7 +124,7 @@ def qstar_builder(
                 idxs,
                 table_idxs,
             ) = search_result.hashtable.parallel_insert(
-                search_result.hashtable, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+                hash_func, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
             )
 
             idxs = unflatten_array(idxs, filleds.shape)
