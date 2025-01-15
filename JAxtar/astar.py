@@ -12,18 +12,15 @@ from JAxtar.annotate import (
     KEY_DTYPE,
     SIZE_DTYPE,
 )
-from JAxtar.bgpq import BGPQ
-from JAxtar.hash import HashTable, hash_func_builder
-from JAxtar.search_base import (
-    HashTableidx_with_Parent_HeapValue,
-    SearchResult,
-    pop_full,
-)
+from JAxtar.hash import hash_func_builder
+from JAxtar.search_base import HashTableidx_with_Parent_HeapValue, SearchResult
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
     set_array,
+    set_array_as_condition,
     set_tree,
+    set_tree_as_condition,
     unflatten_array,
 )
 from puzzle.puzzle_base import Puzzle
@@ -56,10 +53,9 @@ def astar_builder(
 
     batch_size = jnp.array(batch_size, dtype=SIZE_DTYPE)
     max_nodes = jnp.array(max_nodes, dtype=SIZE_DTYPE)
-    hash_func = hash_func_builder(puzzle.State)
+    hash_func = hash_func_builder(statecls)
     search_result_build = partial(SearchResult.build, statecls, batch_size, max_nodes)
 
-    parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
 
@@ -76,9 +72,13 @@ def astar_builder(
         states = start
 
         heur_val = heuristic.batched_distance(states, target)
-        search_result.hashtable, inserted, _, idx, table_idx = parallel_insert(
-            search_result.hashtable, states, filled
-        )
+        (
+            search_result.hashtable,
+            inserted,
+            _,
+            idx,
+            table_idx,
+        ) = search_result.hashtable.parallel_insert(hash_func, states, filled)
         first_val = HashTableidx_with_Parent_HeapValue(
             current=HashTableidx_with_Parent_HeapValue.Current(
                 index=idx, table_index=table_idx, cost=jnp.full_like(idx, 0, dtype=KEY_DTYPE)
@@ -93,9 +93,7 @@ def astar_builder(
         cost_val = jnp.where(filled, 0, jnp.inf)
 
         total_cost = (cost_val + heur_val).astype(KEY_DTYPE)
-        search_result.priority_queue = BGPQ.insert(
-            search_result.priority_queue, total_cost, first_val
-        )
+        search_result.priority_queue = search_result.priority_queue.insert(total_cost, first_val)
 
         def _cond(search_result: SearchResult):
             heap_size = search_result.priority_queue.size
@@ -104,15 +102,11 @@ def astar_builder(
             size_cond2 = hash_size < max_nodes  # hash table is not full
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
-            min_val = search_result.priority_queue.val_store[0]  # get the minimum value
-            states = search_result.hashtable.table[
-                min_val.current.index, min_val.current.table_index
-            ]
-            solved = solved_fn(states, target)
+            solved = solved_fn(search_result.min_states, target)
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(search_result: SearchResult):
-            search_result, parent, filled = pop_full(search_result)
+            search_result, parent, filled = search_result.pop_full()
 
             cost_val = parent.cost
             states = search_result.hashtable.table[parent.index, parent.table_index]
@@ -122,7 +116,13 @@ def astar_builder(
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
 
-            search_result.hashtable, _, _, idxs, table_idxs = parallel_insert(
+            (
+                search_result.hashtable,
+                _,
+                _,
+                idxs,
+                table_idxs,
+            ) = search_result.hashtable.parallel_insert(
                 search_result.hashtable, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
             )
 
@@ -133,6 +133,35 @@ def astar_builder(
                 neighbour, neighbour_cost, filled, idx, table_idx, parent_action = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
                 neighbour_key = (cost_weight * neighbour_cost + neighbour_heur).astype(KEY_DTYPE)
+
+                (
+                    search_result.hashtable,
+                    _,
+                    _,
+                    idx,
+                    table_idx,
+                ) = search_result.hashtable.parallel_insert(hash_func, neighbour, filled)
+
+                optimal = jnp.less(neighbour_cost, search_result.cost[idx, table_idx])
+                search_result.cost = search_result.cost.at[idx, table_idx].min(
+                    neighbour_cost
+                )  # update the minimul cost
+
+                search_result.parent = set_tree_as_condition(
+                    search_result.parent,
+                    optimal,
+                    parent,
+                    idx,
+                    table_idx,
+                )
+
+                search_result.parent_action = set_array_as_condition(
+                    search_result.parent_action,
+                    optimal,
+                    parent_action,
+                    idx,
+                    table_idx,
+                )
 
                 vals = HashTableidx_with_Parent_HeapValue(
                     current=HashTableidx_with_Parent_HeapValue.Current(
@@ -145,8 +174,7 @@ def astar_builder(
                     ),
                 )
 
-                search_result.priority_queue = BGPQ.insert(
-                    search_result.priority_queue,
+                search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
                     vals,
                     added_size=jnp.sum(filled, dtype=SIZE_DTYPE),

@@ -11,8 +11,7 @@ from JAxtar.annotate import (
     KEY_DTYPE,
     SIZE_DTYPE,
 )
-from JAxtar.bgpq import BGPQ
-from JAxtar.hash import HashTable, hash_func_builder
+from JAxtar.hash import hash_func_builder
 from JAxtar.search_base import (
     HashTableidx_with_Parent_HeapValue,
     SearchResult,
@@ -56,10 +55,9 @@ def qstar_builder(
 
     batch_size = jnp.array(batch_size, dtype=SIZE_DTYPE)
     max_nodes = jnp.array(max_nodes, dtype=SIZE_DTYPE)
-    hash_func = hash_func_builder(puzzle.State)
+    hash_func = hash_func_builder(statecls)
     search_result_build = partial(SearchResult.build, statecls, batch_size, max_nodes)
 
-    parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
 
@@ -75,9 +73,13 @@ def qstar_builder(
 
         states = start
 
-        search_result.hashtable, inserted, _, idx, table_idx = parallel_insert(
-            search_result.hashtable, states, filled
-        )
+        (
+            search_result.hashtable,
+            inserted,
+            _,
+            idx,
+            table_idx,
+        ) = search_result.hashtable.parallel_insert(hash_func, states, filled)
         first_val = HashTableidx_with_Parent_HeapValue(
             current=HashTableidx_with_Parent_HeapValue.Current(
                 index=idx, table_index=table_idx, cost=jnp.full_like(idx, 0, dtype=KEY_DTYPE)
@@ -92,9 +94,7 @@ def qstar_builder(
         cost_val = jnp.where(filled, 0, jnp.inf)
 
         total_cost = cost_val.astype(KEY_DTYPE)  # no heuristic in Q* and first key is no matter
-        search_result.priority_queue = BGPQ.insert(
-            search_result.priority_queue, total_cost, first_val
-        )
+        search_result.priority_queue = search_result.priority_queue.insert(total_cost, first_val)
 
         def _cond(search_result: SearchResult):
             heap_size = search_result.priority_queue.size
@@ -103,11 +103,7 @@ def qstar_builder(
             size_cond2 = hash_size < max_nodes  # hash table is not full
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
-            min_val = search_result.priority_queue.val_store[0]  # get the minimum value
-            states = search_result.hashtable.table[
-                min_val.current.index, min_val.current.table_index
-            ]
-            solved = solved_fn(states, target)
+            solved = solved_fn(search_result.min_states, target)
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(search_result: SearchResult):
@@ -125,7 +121,13 @@ def qstar_builder(
             ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbour_key = (cost_weight * nextcosts + q_vals).astype(KEY_DTYPE)
 
-            search_result.hashtable, _, _, idxs, table_idxs = parallel_insert(
+            (
+                search_result.hashtable,
+                _,
+                _,
+                idxs,
+                table_idxs,
+            ) = search_result.hashtable.parallel_insert(
                 search_result.hashtable, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
             )
 
@@ -146,8 +148,7 @@ def qstar_builder(
                     ),
                 )
 
-                search_result.priority_queue = BGPQ.insert(
-                    search_result.priority_queue,
+                search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
                     vals,
                     added_size=jnp.sum(filled, dtype=SIZE_DTYPE),
