@@ -146,12 +146,6 @@ class SearchResult:
         """Current number of states stored."""
         return self.hashtable.size
 
-    @property
-    def min_states(self):
-        """Minimum states in the priority queue."""
-        min_val = self.priority_queue.val_store[0]  # get the minimum value
-        return self.hashtable.table[min_val.index, min_val.table_index]
-
     def pop_full(search_result):
         """
         Removes and returns the minimum elements from the priority queue while maintaining
