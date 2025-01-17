@@ -79,18 +79,19 @@ def astar_builder(
         total_cost = (cost_val + heur_val).astype(KEY_DTYPE)
         search_result.priority_queue = search_result.priority_queue.insert(total_cost, hash_idxs)
 
-        def _cond(search_result: SearchResult):
-            heap_size = search_result.priority_queue.size
+        def _cond(input: tuple[SearchResult, HashTableIdx_HeapValue, chex.Array]):
+            search_result, parent, filled = input
             hash_size = search_result.hashtable.size
-            size_cond1 = heap_size > 0  # queue is not empty
+            size_cond1 = filled.any()  # queue is not empty
             size_cond2 = hash_size < max_nodes  # hash table is not full
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
-            solved = solved_fn(search_result.min_states, target)
+            states = search_result.hashtable.table[parent.index, parent.table_index]
+            solved = solved_fn(states, target)
             return jnp.logical_and(size_cond, ~solved.any())
 
-        def _body(search_result: SearchResult):
-            search_result, parent_idx, filled = search_result.pop_full()
+        def _body(input: tuple[SearchResult, HashTableIdx_HeapValue, chex.Array]):
+            search_result, parent_idx, filled = input
 
             cost_val = search_result.cost[parent_idx.index, parent_idx.table_index]
             states = search_result.hashtable.table[parent_idx.index, parent_idx.table_index]
@@ -146,13 +147,16 @@ def astar_builder(
             search_result, _ = jax.lax.scan(
                 _scan, search_result, (neighbours, nextcosts, filleds, parent_action)
             )
-            return search_result
+            search_result, parent, filled = search_result.pop_full()
+            return search_result, parent, filled
 
-        search_result = jax.lax.while_loop(_cond, _body, search_result)
-        min_val = search_result.priority_queue.val_store[0]  # get the minimum value
-        states = search_result.hashtable.table[min_val.index, min_val.table_index]
+        search_result, parent, filled = search_result.pop_full()
+        (search_result, parent, filled) = jax.lax.while_loop(
+            _cond, _body, (search_result, parent, filled)
+        )
+        states = search_result.hashtable.table[parent.index, parent.table_index]
         solved = solved_fn(states, target)
-        solved_idx = min_val[jnp.argmax(solved)]
+        solved_idx = parent[jnp.argmax(solved)]
         return search_result, solved.any(), solved_idx
 
     return search_result_build, jax.jit(astar)
