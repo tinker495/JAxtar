@@ -1,5 +1,8 @@
+from typing import Callable
+
 from heuristic import (
     DotKnotHeuristic,
+    Heuristic,
     LightsOutHeuristic,
     MazeHeuristic,
     RubiksCubeHeuristic,
@@ -15,17 +18,18 @@ from puzzle import (
     LightsOut,
     LightsOutHard,
     Maze,
+    Puzzle,
     RubiksCube,
     RubiksCubeHard,
     SlidePuzzle,
     SlidePuzzleHard,
 )
-from qfunction import DotKnotQ, LightsOutQ, MazeQ, RubiksCubeQ, SlidePuzzleQ
+from qfunction import DotKnotQ, LightsOutQ, MazeQ, QFunction, RubiksCubeQ, SlidePuzzleQ
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
 
 default_puzzle_sizes = {"n-puzzle": 4, "lightsout": 7, "rubikscube": 3, "maze": 20, "dotknot": 7}
 
-puzzle_dict = {
+puzzle_dict: dict[str, Callable[[int], Puzzle]] = {
     "n-puzzle": lambda n: SlidePuzzle(n),
     "lightsout": lambda n: LightsOut(n),
     "rubikscube": lambda n: RubiksCube(n),
@@ -33,14 +37,14 @@ puzzle_dict = {
     "dotknot": lambda n: DotKnot(n),
 }
 
-puzzle_dict_hard = {
+puzzle_dict_hard: dict[str, Callable[[int], Puzzle]] = {
     "n-puzzle": lambda n: SlidePuzzleHard(n),
     "lightsout": lambda n: LightsOutHard(n),
     "rubikscube": lambda n: RubiksCubeHard(n),
     "maze": lambda n: Maze(n),
 }
 
-puzzle_heuristic_dict = {
+puzzle_heuristic_dict: dict[str, Callable[[Puzzle], Heuristic]] = {
     "n-puzzle": lambda puzzle: SlidePuzzleHeuristic(puzzle),
     "lightsout": lambda puzzle: LightsOutHeuristic(puzzle),
     "rubikscube": lambda puzzle: RubiksCubeHeuristic(puzzle),
@@ -48,7 +52,7 @@ puzzle_heuristic_dict = {
     "dotknot": lambda puzzle: DotKnotHeuristic(puzzle),
 }
 
-puzzle_heuristic_dict_nn = {
+puzzle_heuristic_dict_nn: dict[str, Callable[[int, Puzzle, bool], Heuristic]] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralHeuristic(puzzle)
     if reset
     else SlidePuzzleNeuralHeuristic.load_model(
@@ -66,7 +70,7 @@ puzzle_heuristic_dict_nn = {
     ),
 }
 
-puzzle_q_dict = {
+puzzle_q_dict: dict[str, Callable[[Puzzle], QFunction]] = {
     "n-puzzle": lambda puzzle: SlidePuzzleQ(puzzle),
     "lightsout": lambda puzzle: LightsOutQ(puzzle),
     "rubikscube": lambda puzzle: RubiksCubeQ(puzzle),
@@ -74,7 +78,7 @@ puzzle_q_dict = {
     "dotknot": lambda puzzle: DotKnotQ(puzzle),
 }
 
-puzzle_q_dict_nn = {
+puzzle_q_dict_nn: dict[str, Callable[[int, Puzzle, bool], QFunction]] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralQ(puzzle)
     if reset
     else SlidePuzzleNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}.pkl"),

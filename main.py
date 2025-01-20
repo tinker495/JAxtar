@@ -9,6 +9,7 @@ from heuristic.heuristic_base import Heuristic
 from JAxtar.astar import astar_builder
 from JAxtar.hash import HashTable
 from JAxtar.qstar import qstar_builder
+from puzzle import Puzzle
 from puzzle_config import (
     default_puzzle_sizes,
     puzzle_dict,
@@ -169,19 +170,19 @@ def human_play(puzzle, hard, puzzle_size, start_state_seed, seed, debug):
 @heuristic_options
 @visualize_options
 def astar(
-    puzzle,
-    hard,
-    puzzle_size,
-    max_node_size,
-    batch_size,
-    cost_weight,
-    start_state_seed,
-    seed,
-    vmap_size,
-    debug,
-    profile,
-    neural_heuristic,
-    visualize,
+    puzzle: str,
+    hard: bool,
+    puzzle_size: int,
+    max_node_size: int,
+    batch_size: int,
+    cost_weight: float,
+    start_state_seed: int,
+    seed: int,
+    vmap_size: int,
+    debug: bool,
+    profile: bool,
+    neural_heuristic: bool,
+    visualize: bool,
 ):
     if debug:
         # disable jit
@@ -198,9 +199,9 @@ def astar(
 
     puzzle_name = puzzle
     if hard:
-        puzzle = puzzle_dict_hard[puzzle](puzzle_size)
+        puzzle: Puzzle = puzzle_dict_hard[puzzle](puzzle_size)
     else:
-        puzzle = puzzle_dict[puzzle](puzzle_size)
+        puzzle: Puzzle = puzzle_dict[puzzle](puzzle_size)
 
     has_target = puzzle.has_target
 
@@ -287,13 +288,6 @@ def astar(
             path = [solved_idx]
             parent_last = parents[solved_idx.index, solved_idx.table_index]
             while True:
-                print(parent_last)
-                print(table[parent_last.index, parent_last.table_index])
-                print(
-                    f"cost: {cost[parent_last.index, parent_last.table_index]}"
-                    f"| action: {parent_action[parent_last.index, parent_last.table_index]}"
-                )
-                time.sleep(1)
                 if parent_last.index == -1:
                     break
                 path.append(parent_last)
@@ -382,19 +376,19 @@ def astar(
 @qfunction_options
 @visualize_options
 def qstar(
-    puzzle,
-    hard,
-    puzzle_size,
-    max_node_size,
-    batch_size,
-    cost_weight,
-    start_state_seed,
-    seed,
-    vmap_size,
-    debug,
-    profile,
-    neural_qfunction,
-    visualize,
+    puzzle: str,
+    hard: bool,
+    puzzle_size: int,
+    max_node_size: int,
+    batch_size: int,
+    cost_weight: float,
+    start_state_seed: int,
+    seed: int,
+    vmap_size: int,
+    debug: bool,
+    profile: bool,
+    neural_qfunction: bool,
+    visualize: bool,
 ):
     if debug:
         # disable jit
@@ -411,9 +405,9 @@ def qstar(
 
     puzzle_name = puzzle
     if hard:
-        puzzle = puzzle_dict_hard[puzzle](puzzle_size)
+        puzzle: Puzzle = puzzle_dict_hard[puzzle](puzzle_size)
     else:
-        puzzle = puzzle_dict[puzzle](puzzle_size)
+        puzzle: Puzzle = puzzle_dict[puzzle](puzzle_size)
 
     has_target = puzzle.has_target
 
