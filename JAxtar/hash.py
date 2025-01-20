@@ -297,8 +297,22 @@ class HashTable:
         """
         index = HashTable.get_new_idx(hash_func, table, input, table.seed)
         _, idx, table_idx, found = HashTable._lookup(
-            table, hash_func, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
+            hash_func, table, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
         )
+        return idx, table_idx, found
+
+    def parallel_lookup(table: "HashTable", hash_func: HASH_FUNC_TYPE, input: Puzzle.State):
+        """
+        find the index of the state in the table if it exists.
+        if it exists return the index, cuckoo_idx and True
+        if is does not exist return the
+        """
+        index = jax.vmap(partial(HashTable.get_new_idx, hash_func), in_axes=(None, 0, None))(
+            table, input, table.seed
+        )
+        _, idx, table_idx, found = jax.vmap(
+            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, None)
+        )(table, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False)
         return idx, table_idx, found
 
     def insert(table: "HashTable", hash_func: HASH_FUNC_TYPE, input: Puzzle.State):
