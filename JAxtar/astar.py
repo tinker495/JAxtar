@@ -56,7 +56,7 @@ def astar_builder(
         start: Puzzle.State,
         filled: chex.Array,
         target: Puzzle.State,
-    ) -> tuple[SearchResult, chex.Array]:
+    ) -> tuple[SearchResult, chex.Array, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
         """
@@ -87,7 +87,9 @@ def astar_builder(
         total_cost = (cost_val + heur_val).astype(KEY_DTYPE)
         search_result.priority_queue = search_result.priority_queue.insert(total_cost, first_val)
 
-        def _cond(input: tuple[SearchResult, HashTableidx_with_Parent_HeapValue, chex.Array]):
+        def _cond(
+            input: tuple[SearchResult, HashTableidx_with_Parent_HeapValue.Current, chex.Array]
+        ):
             search_result, parent, filled = input
             hash_size = search_result.hashtable.size
             size_cond1 = filled.any()  # queue is not empty
@@ -98,7 +100,9 @@ def astar_builder(
             solved = solved_fn(states, target)
             return jnp.logical_and(size_cond, ~solved.any())
 
-        def _body(input: tuple[SearchResult, HashTableidx_with_Parent_HeapValue, chex.Array]):
+        def _body(
+            input: tuple[SearchResult, HashTableidx_with_Parent_HeapValue.Current, chex.Array]
+        ):
             search_result, parent, filled = input
 
             cost_val = parent.cost
@@ -122,7 +126,10 @@ def astar_builder(
             idxs = unflatten_array(idxs, filleds.shape)
             table_idxs = unflatten_array(table_idxs, filleds.shape)
 
-            def _scan(search_result: SearchResult, val):
+            def _scan(
+                search_result: SearchResult,
+                val: tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
+            ):
                 neighbour, neighbour_cost, filled, idx, table_idx, parent_action = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
                 neighbour_key = (cost_weight * neighbour_cost + neighbour_heur).astype(KEY_DTYPE)

@@ -8,6 +8,8 @@ Key features:
 - Generic puzzle-agnostic implementation
 """
 
+from typing import cast
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -166,7 +168,9 @@ class SearchResult:
         """Current number of states stored."""
         return self.hashtable.size
 
-    def pop_full(search_result):
+    def pop_full(
+        search_result: "SearchResult",
+    ) -> tuple["SearchResult", HashTableidx_with_Parent_HeapValue.Current, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently.
@@ -180,44 +184,56 @@ class SearchResult:
                 - Minimum values removed from the queue
                 - Boolean mask indicating which entries were filled
         """
-        search_result.priority_queue, min_key, min_val = BGPQ.delete_mins(
-            search_result.priority_queue
+        search_result.priority_queue, min_key, min_val = cast(
+            tuple[BGPQ, chex.Array, HashTableidx_with_Parent_HeapValue],
+            BGPQ.delete_mins(search_result.priority_queue),
         )
         min_val_cost = min_val.current.cost
         optimal = jnp.less(
             min_val_cost, search_result.cost[min_val.current.index, min_val.current.table_index]
         )
         min_key = jnp.where(optimal, min_key, jnp.inf)
-        (
-            min_key,
-            min_val,
-            search_result.min_key_buffer,
-            search_result.min_val_buffer,
-        ) = merge_sort_split(
-            min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer
+        (min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer,) = cast(
+            tuple[
+                chex.Array,
+                HashTableidx_with_Parent_HeapValue,
+                chex.Array,
+                HashTableidx_with_Parent_HeapValue,
+            ],
+            merge_sort_split(
+                min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer
+            ),
         )
         filled = jnp.isfinite(min_key)
 
-        def _cond(val):
+        def _cond(
+            val: tuple[SearchResult, chex.Array, HashTableidx_with_Parent_HeapValue, chex.Array]
+        ):
             search_result, _, _, filled = val
             return jnp.logical_and(search_result.priority_queue.size > 0, ~filled.all())
 
-        def _body(val):
+        def _body(
+            val: tuple[SearchResult, chex.Array, HashTableidx_with_Parent_HeapValue, chex.Array]
+        ):
             search_result, min_key, min_val, filled = val
-            search_result.priority_queue, new_key, new_val = BGPQ.delete_mins(
-                search_result.priority_queue
+            search_result.priority_queue, new_key, new_val = cast(
+                tuple[BGPQ, chex.Array, HashTableidx_with_Parent_HeapValue],
+                BGPQ.delete_mins(search_result.priority_queue),
             )
             new_val_cost = new_val.current.cost
             optimal = jnp.less(
                 new_val_cost, search_result.cost[new_val.current.index, new_val.current.table_index]
             )
             new_key = jnp.where(optimal, new_key, jnp.inf)
-            (
-                min_key,
-                min_val,
-                search_result.min_key_buffer,
-                search_result.min_val_buffer,
-            ) = merge_sort_split(min_key, min_val, new_key, new_val)
+            (min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer,) = cast(
+                tuple[
+                    chex.Array,
+                    HashTableidx_with_Parent_HeapValue,
+                    chex.Array,
+                    HashTableidx_with_Parent_HeapValue,
+                ],
+                merge_sort_split(min_key, min_val, new_key, new_val),
+            )
             filled = jnp.isfinite(min_key)
             return search_result, min_key, min_val, filled
 
