@@ -4,12 +4,12 @@
 
 # JA<sup>xtar</sup>: GPU-accelerated Batched parallel A\* & Q\* solver in pure Jax!
 
-JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizeable A\* solver for neural heuristic search research.
+JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizeable A\* & Q\* solver for neural heuristic search research.
 This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from google-deepmind. If mcts can be written in pure jax, so why not A\*?
 
-mcts, or tree search, is used in many RL algorithmic techniques, starting with AlphaGo, but graph search (not tree search) doesn't seem to have received much attention. Nevertheless, there are puzzle solving algorithms that use neural heuristics like [DeepcubeA](https://github.com/forestagostinelli/DeepCubeA) with A\* (graph search).
+mcts, or tree search, is used in many RL algorithmic techniques, starting with AlphaGo, but graph search (not tree search) doesn't seem to have received much attention. Nevertheless, there are puzzle solving algorithms that use neural heuristics like [DeepcubeA](https://github.com/forestagostinelli/DeepCubeA) with A\* or [Q\*](https://arxiv.org/abs/2102.04518)(graph search).
 
-However, the most frustrating aspect of my brief research(MSc) in this area is the time it takes to pass information back and forth between the GPU and CPU.
+However, the most frustrating aspect of [my brief research(MSc)](https://drive.google.com/file/d/1clo8OmuXvIHhJzOUhH__0ZWzAamgVK84/view?usp=drive_link) in this area is the time it takes to pass information back and forth between the GPU and CPU.
 When using neural heuristic as a heuristic to eval a single node, it uses almost 50-80% of the time. Because of this, DeepcubeA batches multiple nodes at the same time, which seems to work quite well.
 
 However, this is not a fundamental solution, and I needed to find a way to remove this bottleneck altogether. This led me to look for ways to perform A\* on the GPU, and I found quite a few implementations, but most of them suffer from the following problems.
@@ -45,7 +45,8 @@ This project was a real pain in the arse to write, and I almost felt like I was 
 
 ## Result
 
-We can find the optimal path using a jittable, batched A\* search as shown below. This is not a blazingly fast result, but it can be used for heuristics using neural networks.
+We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.
+However, due to the nature of JAX syntax, there are still unresolved bugs, which can lead to suboptimal results when the batch size is reduced. I am continuously exploring ways to resolve this issue. However, it generally works well.
 The tests below were performed on a single A100 80GB GPU.
 
 ### Test Run
@@ -113,7 +114,7 @@ Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
 
-### BWAS with neural heuristic
+### A\* with neural heuristic model
 
 ```bash
 $ python3 main.py astar -nn -h -p rubikscube -w 0.2
@@ -131,7 +132,7 @@ Cost: 24.0
 Solution found
 ```
 
-### BWQS with neural Q model
+### Q\* with neural Q model
 
 ```bash
 $ python3 main.py qstar -nn -h -p rubikscube -w 0.2
@@ -158,6 +159,8 @@ Solution found
 | ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) |
 
 ### Target not available puzzle
+
+These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. In conclusion, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
 
 | Dotknot                              |
 | ------------------------------------ |
