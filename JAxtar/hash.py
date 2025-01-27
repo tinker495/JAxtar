@@ -328,7 +328,7 @@ class HashTable:
             table.table_idx = table.table_idx.at[idx].add(1)
             return table
 
-        idx, table_idx, found = HashTable.lookup(hash_func, table, input)
+        idx, table_idx, found = HashTable.lookup(table, hash_func, input)
         return (
             jax.lax.cond(
                 found, lambda _: table, lambda _: _update_table(table, input, idx, table_idx), None
