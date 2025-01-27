@@ -313,7 +313,7 @@ class BGPQ:
                 - Updated heap
                 - Boolean indicating if insertion was successful
         """
-        last_node = heap.size // heap.batch_size
+        last_node = heap.size // heap.batch_size + 1
 
         def _cond(var):
             """Continue while not reached last node"""
