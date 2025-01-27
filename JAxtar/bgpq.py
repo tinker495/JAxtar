@@ -263,7 +263,7 @@ class BGPQ:
                 - Batched value array
         """
         n = key.shape[0]
-        m = n // batch_size + 1
+        m = (n + batch_size - 1) // batch_size
         # Pad arrays to match batch size
         key = jnp.concatenate([key, jnp.full((m * batch_size - n,), jnp.inf, dtype=KEY_DTYPE)])
         val = jax.tree_util.tree_map(
@@ -387,7 +387,7 @@ class BGPQ:
             block_key,
             block_val,
         )
-        heap.size = heap.size + added_size * added
+        heap.size = heap.size + added_size
         return heap
 
     @staticmethod

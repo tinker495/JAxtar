@@ -277,9 +277,7 @@ def unique_mask(val: HashTableidx_with_Parent_HeapValue, batch_len: int):
         jnp.ndarray: Boolean mask where True indicates unique values
     """
     min_val_stack = jnp.stack([val.current.index, val.current.table_index], axis=1)
-    unique_idxs = jnp.unique(min_val_stack, axis=0, size=batch_len, return_index=True)[
-        1
-    ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
+    unique_idxs = jnp.unique(min_val_stack, axis=0, size=batch_len, return_index=True)[1]
     uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
     return uniques
 

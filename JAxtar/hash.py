@@ -165,7 +165,7 @@ class HashTable:
         )  # Internal capacity is larger to reduce collision probability
         size = SIZE_DTYPE(0)
         # Initialize table with default states
-        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity + 1, n_table)))
+        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity, n_table)))
         table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
         # hash_func = hash_func_builder(statecls)
         return HashTable(
@@ -252,7 +252,7 @@ class HashTable:
         def _cond(val):
             seed, idx, table_idx, found = val
             filled_idx = table.table_idx[idx]
-            in_empty = table_idx >= filled_idx
+            in_empty = table_idx < filled_idx
             return jnp.logical_and(~found, ~in_empty)
 
         def _while(val):
@@ -328,7 +328,7 @@ class HashTable:
             table.table_idx = table.table_idx.at[idx].add(1)
             return table
 
-        idx, table_idx, found = HashTable.lookup(hash_func, table, input)
+        idx, table_idx, found = HashTable.lookup(table, hash_func, input)
         return (
             jax.lax.cond(
                 found, lambda _: table, lambda _: _update_table(table, input, idx, table_idx), None
