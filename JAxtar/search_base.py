@@ -181,7 +181,9 @@ class SearchResult:
         def _cond(val):
             """Check if we need to continue popping elements."""
             search_result, _, _, filled = val
-            return jnp.logical_and(search_result.priority_queue.size > 0, ~filled.all())
+            cond1 = search_result.priority_queue.size > 0  # if queue is empty, we are done
+            cond2 = ~filled.all()  # if all states are filled, we are done
+            return jnp.logical_and(cond1, cond2)
 
         def _body(val):
             """Process one batch of elements from the priority queue."""
@@ -195,6 +197,7 @@ class SearchResult:
             new_key = jnp.where(not_closed, new_key, jnp.inf)
 
             # Merge new values with current minimum values
+            # if filled is not all true, min buffer is will be empty(filled with inf keys)
             (
                 min_key,
                 min_val,
