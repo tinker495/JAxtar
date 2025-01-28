@@ -251,6 +251,8 @@ def astar(
         print("Profiling")
         jax.profiler.start_trace("tmp/tensorboard")
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
+    inital_search_result = search_result_build()
+
     start = time.time()
     search_result, solved, solved_idx = astar_fn(inital_search_result, states, filled, target)
     end = time.time()
@@ -463,6 +465,8 @@ def qstar(
         print("Profiling")
         jax.profiler.start_trace("tmp/tensorboard")
     states, filled = HashTable.make_batched(puzzle.State, states, batch_size)
+    inital_search_result = search_result_build()
+
     start = time.time()
     search_result, solved, solved_idx = qstar_fn(inital_search_result, states, filled, target)
     end = time.time()
