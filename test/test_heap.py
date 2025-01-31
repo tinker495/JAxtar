@@ -202,6 +202,21 @@ def test_heap_batch_operations(heap_setup):
 
     assert heap.size == 512 * batch_size, f"Expected size 512 * batch_size, got {heap.size}"
 
+    stacked_val = heap.val_store[:512]
+    stacked_key = heap.key_store[:512]
+
+    stacked_val_key = jax.vmap(_key_gen)(stacked_val)
+    isclose = jnp.isclose(stacked_key, stacked_val_key)
+    print(f"stacked_key: {stacked_key.shape}")
+    print(f"stacked_val_key: {stacked_val_key.shape}")
+    print(f"isclose: {jnp.sum(~isclose)}")
+    assert jnp.all(isclose), (
+        f"inserted keys and values mismatch, this means that insert is corrupted"
+        f"Key and value mismatch, \nstacked_key: \n{stacked_key},"
+        f"\nstacked_val_key: \n{stacked_val_key},"
+        f"\nidexs: \n{jnp.where(~isclose)}"
+    )
+
     # Test batch deletion
     all_keys = []
     while heap.size > 0:
@@ -211,6 +226,7 @@ def test_heap_batch_operations(heap_setup):
         isclose = jnp.isclose(min_key, _key_gen(min_val))
         # TODO: this is not passed, must be fixed
         assert jnp.all(isclose), (
+            f"delete_mins is corrupted"
             f"Key and value mismatch, \nmin_key: \n{min_key},"
             f"\nmin_val_key: \n{_key_gen(min_val)},"
             f"\nidexs: \n{jnp.where(~isclose)}"
