@@ -483,8 +483,8 @@ class BGPQ:
                 - Array of minimum keys removed
                 - HeapValue of corresponding values
         """
-        min_keys = heap.key_store[0].squeeze()
-        min_values = jax.tree_util.tree_map(lambda x: x.squeeze(), heap.val_store[0])
+        min_keys = heap.key_store[0]
+        min_values = heap.val_store[0]
         size = SIZE_DTYPE(heap.size // heap.batch_size)
 
         def make_empty(heap: "BGPQ"):
