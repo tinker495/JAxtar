@@ -297,7 +297,7 @@ class HashTable:
         """
         index = HashTable.get_new_idx(hash_func, table, input, table.seed)
         _, idx, table_idx, found = HashTable._lookup(
-            table, hash_func, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
+            hash_func, table, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
         )
         return idx, table_idx, found
 
