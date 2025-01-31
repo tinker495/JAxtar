@@ -124,11 +124,11 @@ JIT compiled
 
 ...
 
-Time:   1.87 seconds
-Search states: 1.7M(908K states/s)
+Time:   1.88 seconds
+Search states: 1.51M(802K states/s)
 
 
-Cost: 24.0
+Cost: 22.0
 Solution found
 ```
 
@@ -142,11 +142,11 @@ JIT compiled
 
 ...
 
-Time:   0.98 seconds
-Search states: 1.67M(1.71M states/s)
+Time:   0.99 seconds
+Search states: 1.46M(1.47M states/s)
 
 
-Cost: 24.0
+Cost: 22.0
 Solution found
 ```
 
