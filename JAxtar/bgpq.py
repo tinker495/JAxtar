@@ -408,6 +408,7 @@ class BGPQ:
         heap.key_store = set_array(
             set_array(heap.key_store, heap.key_store[last], 0), jnp.inf, last
         )
+        heap.val_store = set_tree(heap.val_store, heap.val_store[last], 0)
         root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
             heap.key_store[0], heap.val_store[0], heap.key_buffer, heap.val_buffer
         )
