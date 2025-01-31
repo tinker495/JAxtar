@@ -55,13 +55,13 @@ The tests below were performed on a single A100 80GB GPU.
 $ python main.py astar
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
-┃ 2 ┃ F ┃ 3 ┃ 4 ┃
+┃ 5 ┃ E ┃ 2 ┃ 3 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃   ┃ 5 ┃ 7 ┃ B ┃
+┃ D ┃ B ┃ 9 ┃ 7 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ C ┃ 9 ┃ 1 ┃ A ┃
+┃ A ┃ F ┃ 4 ┃ C ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 8 ┃ E ┃ D ┃ 6 ┃
+┃   ┃ 8 ┃ 6 ┃ 1 ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -74,8 +74,8 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Heuristic: 33.00
-Time:   0.49 seconds
-Search states: 594K(1.21M states/s)
+Time:   0.59 seconds
+Search states: 696K(1.17M states/s)
 
 Cost: 49.0
 Solution found
@@ -86,15 +86,15 @@ Solution found
 ```bash
 $ python main.py astar -m 1e6 --vmap_size 10
 Vmapped A* search, multiple initial state solution
-Start state
+Start states
 ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
-┃ 2 ┃ F ┃ 3 ┃ 4 ┃  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃  (batch : (10,))  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃
+┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  (batch : (10,))  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃   ┃ 5 ┃ 7 ┃ B ┃  ┃   ┃ 5 ┃ 7 ┃ B ┃                   ┃   ┃ 5 ┃ 7 ┃ B ┃  ┃   ┃ 5 ┃ 7 ┃ B ┃
+┃ D ┃ B ┃ 9 ┃ 7 ┃  ┃ D ┃ B ┃ 9 ┃ 7 ┃                   ┃ D ┃ B ┃ 9 ┃ 7 ┃  ┃ D ┃ B ┃ 9 ┃ 7 ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ C ┃ 9 ┃ 1 ┃ A ┃  ┃ C ┃ 9 ┃ 1 ┃ A ┃                   ┃ C ┃ 9 ┃ 1 ┃ A ┃  ┃ C ┃ 9 ┃ 1 ┃ A ┃
+┃ A ┃ F ┃ 4 ┃ C ┃  ┃ A ┃ F ┃ 4 ┃ C ┃                   ┃ A ┃ F ┃ 4 ┃ C ┃  ┃ A ┃ F ┃ 4 ┃ C ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ 8 ┃ E ┃ D ┃ 6 ┃  ┃ 8 ┃ E ┃ D ┃ 6 ┃                   ┃ 8 ┃ E ┃ D ┃ 6 ┃  ┃ 8 ┃ E ┃ D ┃ 6 ┃
+┃   ┃ 8 ┃ 6 ┃ 1 ┃  ┃   ┃ 8 ┃ 6 ┃ 1 ┃                   ┃   ┃ 8 ┃ 6 ┃ 1 ┃  ┃   ┃ 8 ┃ 6 ┃ 1 ┃
 ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -107,9 +107,9 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
-# search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(search_result_build(), states, filled, target)
-Time:   1.13 seconds (x2.7/10)
-Search states: 5.94M (5.24M states/s)
+# search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
+Time:   1.64 seconds (x2.3/10)
+Search states: 6.96M (4.25M states/s) (x4.4 faster)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -117,15 +117,16 @@ Solution found: 100.00%
 ### A\* with neural heuristic model
 
 ```bash
-$ python3 main.py astar -nn -h -p rubikscube -w 0.2
+$ python main.py astar -nn -h -p rubikscube -w 0.2
 initializing jit
-Time:  78.53 seconds
+Time: 100.10 seconds
 JIT compiled
 
 ...
 
-Time:   1.88 seconds
-Search states: 1.51M(802K states/s)
+Heuristic: 14.10
+Time:   1.81 seconds
+Search states: 1.51M(832K states/s)
 
 
 Cost: 22.0
@@ -135,15 +136,15 @@ Solution found
 ### Q\* with neural Q model
 
 ```bash
-$ python3 main.py qstar -nn -h -p rubikscube -w 0.2
+$ python main.py qstar -nn -h -p rubikscube -w 0.2
 initializing jit
-Time:  77.01 seconds
+Time: 113.38 seconds
 JIT compiled
 
 ...
-
-Time:   0.99 seconds
-Search states: 1.46M(1.47M states/s)
+qvalues: 'l_cw': 17.1 | 'l_ccw': 16.9 | 'd_cw': 16.8 | 'd_ccw': 16.7 | 'f_cw': 16.7 | 'f_ccw': 17.0 | 'r_cw': 17.5 | 'r_ccw': 17.3 | 'b_cw': 17.2 | 'b_ccw': 16.9 | 'u_cw': 16.5 | 'u_ccw': 16.1
+Time:   0.97 seconds
+Search states: 1.46M(1.51M states/s)
 
 
 Cost: 22.0
