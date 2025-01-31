@@ -210,7 +210,9 @@ class SearchResult:
             val: tuple[SearchResult, chex.Array, HashTableidx_with_Parent_HeapValue, chex.Array]
         ):
             search_result, _, _, filled = val
-            return jnp.logical_and(search_result.priority_queue.size > 0, ~filled.all())
+            cond1 = search_result.priority_queue.size > 0  # if queue is empty, we are done
+            cond2 = ~filled.all()  # if all states are filled, we are done
+            return jnp.logical_and(cond1, cond2)
 
         def _body(
             val: tuple[SearchResult, chex.Array, HashTableidx_with_Parent_HeapValue, chex.Array]

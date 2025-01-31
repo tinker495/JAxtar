@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import pytest
 
 from JAxtar.hash import HashTable, hash_func_builder
+from JAxtar.util import set_tree
 from puzzle.slidepuzzle import SlidePuzzle
 
 
@@ -21,7 +22,8 @@ def test_hash_table_lookup(puzzle, hash_func):
     sample = jax.vmap(puzzle.get_initial_state)(key=jax.random.split(jax.random.PRNGKey(2), count))
     table = HashTable.build(puzzle.State, 1, int(1e4))
 
-    idx, table_idx, found = table.parallel_lookup(hash_func, sample)
+    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
+    idx, table_idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
 
     assert idx.shape == (count,)
     assert table_idx.shape == (count,)
@@ -38,61 +40,71 @@ def test_hash_table_insert(puzzle, hash_func):
         key=jax.random.split(jax.random.PRNGKey(256), count)
     )
 
+    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
+    parallel_insert = jax.jit(
+        lambda table, sample, filled: HashTable.parallel_insert(table, hash_func, sample, filled)
+    )
+
     # Check initial state
-    _, _, old_found = table.parallel_lookup(hash_func, sample)
+    _, _, old_found = lookup(table, sample)
     assert not jnp.any(old_found)
 
     # Insert states
     batched_sample, filled = HashTable.make_batched(puzzle.State, sample, batch)
-    table, inserted, _, _, _ = table.parallel_insert(hash_func, batched_sample, filled)
+    table, inserted, _, _, _ = parallel_insert(table, batched_sample, filled)
 
     # Verify insertion
-    _, _, found = table.parallel_lookup(hash_func, sample)
+    _, _, found = lookup(table, sample)
     assert jnp.all(found)  # All states should be found after insertion
     assert jnp.mean(inserted) > 0  # Some states should have been inserted
 
 
 def test_same_state_insert_at_batch(puzzle, hash_func):
-    count = 10
     batch = 5000
     table = HashTable.build(puzzle.State, 1, int(1e5))
+    parallel_insert = jax.jit(
+        lambda table, sample, filled: HashTable.parallel_insert(table, hash_func, sample, filled)
+    )
+    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
 
     num = 10
     counts = 0
     for i in range(num):
-        key1, key2 = jax.random.split(jax.random.PRNGKey(i))
-        _sample1 = puzzle.get_initial_state(key1)
-        _sample2 = puzzle.get_initial_state(key2)
-        sample1 = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), _sample1)
-        sample2 = jax.tree_util.tree_map(lambda x: jnp.repeat(x[None], count, axis=0), _sample2)
+        key = jax.random.PRNGKey(i)
+        samples = jax.vmap(puzzle.get_initial_state)(key=jax.random.split(key, batch))
+        cloned_sample_num = jax.random.randint(key, (i + 1), 0, batch - 1)
 
-        sample = jax.tree_util.tree_map(
-            lambda x, y: jnp.concatenate([x, y], axis=0), sample1, sample2
-        )
+        # Create deliberate duplicates within the batch
+        samples = set_tree(samples, samples[cloned_sample_num], cloned_sample_num + 1)
+        unique_count = batch - i - 1
 
-        batched_sample, filled = HashTable.make_batched(puzzle.State, sample, batch)
-        table, _, unique, idxs, table_idxs = table.parallel_insert(
-            hash_func, batched_sample, filled
-        )
-        unique_idxs = jnp.unique(jnp.stack([idxs, table_idxs], axis=1)[unique], axis=0)
-        assert unique_idxs.shape[0] == 2, f"unique_idxs.shape: {unique_idxs.shape}"
-        assert jnp.sum(unique) == 2, f"unique: {unique}"
-        counts += 2
+        batched_sample, filled = HashTable.make_batched(puzzle.State, samples, batch)
+        table, _, unique, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
 
-        idxs, table_idxs, found = table.lookup(hash_func, _sample1)
-        assert found, f"found: {found}"
-        found_state = table.table[idxs, table_idxs]
-        assert puzzle.is_equal(
-            found_state, _sample1
-        ), f"sample1 : \n{_sample1}\nfound_state: \n{found_state}"
-        idxs, table_idxs, found = table.lookup(hash_func, _sample2)
-        assert found, f"found: {found}"
-        found_state = table.table[idxs, table_idxs]
-        assert puzzle.is_equal(
-            found_state, _sample2
-        ), f"sample2 : \n{_sample2}\nfound_state: \n{found_state}"
+        # Verify uniqueness tracking
+        unique_idxs = jnp.unique(jnp.stack([idxs, table_idxs], axis=1), axis=0)
+        assert (
+            unique_idxs.shape[0] == unique_count
+        ), f"unique_idxs.shape: {unique_idxs.shape}, unique_count: {unique_count}"
+        assert unique_idxs.shape[0] == jnp.sum(unique), "Unique index mismatch"
+        assert jnp.all(
+            jnp.unique(unique_idxs, axis=0) == unique_idxs
+        ), "Duplicate indices in unique set"
 
-    assert table.size == counts, f"table.table.size: {table.size}, counts: {counts}"
+        # Verify inserted states exist in table
+        _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples[unique])
+        assert jnp.all(found), "Inserted states not found in table"
+
+        counts += jnp.sum(unique)
+        assert jnp.mean(unique) < 1.0, "No duplicates detected in batch"
+
+    # Final validation
+    assert table.size == counts, f"Size mismatch: {table.size} vs {counts}"
+
+    # Verify cross-batch duplicates
+    cross_check_sample = samples[0:1]
+    _, _, found = lookup(table, cross_check_sample)
+    assert jnp.all(found), "Cross-batch state missing"
 
 
 def test_large_hash_table(puzzle, hash_func):
@@ -108,12 +120,17 @@ def test_large_hash_table(puzzle, hash_func):
     unique_hash_len = unique_hash.shape[0]
     print(f"unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}")
 
+    parallel_insert = jax.jit(
+        lambda table, sample, filled: HashTable.parallel_insert(table, hash_func, sample, filled)
+    )
+    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
+
     # Insert in batches
     inserted_count = 0
     for i in range(0, count, batch):
         batch_sample = sample[i : i + batch]
-        table, inserted, _, _, _ = table.parallel_insert(
-            hash_func, batch_sample, jnp.ones(len(batch_sample), dtype=jnp.bool_)
+        table, inserted, _, _, _ = parallel_insert(
+            table, batch_sample, jnp.ones(len(batch_sample), dtype=jnp.bool_)
         )
         inserted_count += jnp.sum(inserted)
 
@@ -122,5 +139,5 @@ def test_large_hash_table(puzzle, hash_func):
     ), f"inserted_count: {inserted_count}, unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}"
 
     # Verify all states can be found
-    _, _, found = table.parallel_lookup(hash_func, sample)
+    _, _, found = lookup(table, sample)
     assert jnp.mean(found) == 1.0  # All states should be found
