@@ -203,7 +203,7 @@ def test_heap_batch_operations(heap_setup):
     assert heap.size == 512 * batch_size, f"Expected size 512 * batch_size, got {heap.size}"
 
     # Test batch deletion
-    all_mins = []
+    all_keys = []
     while heap.size > 0:
         heap, min_key, min_val = BGPQ.delete_mins(heap)
 
@@ -215,7 +215,15 @@ def test_heap_batch_operations(heap_setup):
             f"\nmin_val_key: \n{_key_gen(min_val)},"
             f"\nidexs: \n{jnp.where(~isclose)}"
         )
-        all_mins.extend(min_key.tolist())
+        all_keys.append(min_key)
 
+    all_keys = jnp.concatenate(all_keys)
+    diff = all_keys[1:] - all_keys[:-1]
+    decreasing = diff < 0
     # Verify that elements are in ascending order
-    assert all(all_mins[i] <= all_mins[i + 1] for i in range(len(all_mins) - 1))
+    assert jnp.sum(decreasing) == 0, (
+        f"Keys are not in ascending order: {decreasing}"
+        f"\nfailed_idxs: {jnp.where(decreasing)}"
+        f"\nincorrect_keys: ({all_keys[jnp.where(decreasing)[0]]},"
+        f"{all_keys[jnp.where(decreasing)[0] + 1]})"
+    )
