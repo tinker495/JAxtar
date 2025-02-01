@@ -9,6 +9,7 @@ Key features:
 """
 
 from collections import namedtuple
+from functools import partial
 
 import chex
 import jax
@@ -248,6 +249,7 @@ class BGPQ:
         return blockk, blockv, bufferk, bufferv, buffer_overflow
 
     @staticmethod
+    @partial(jax.jit, static_argnums=(2))
     def make_batched(key: chex.Array, val: HeapValue, batch_size: int):
         """
         Convert unbatched arrays into batched format suitable for the queue.
@@ -263,18 +265,12 @@ class BGPQ:
                 - Batched value array
         """
         n = key.shape[0]
-        m = n // batch_size + 1
         # Pad arrays to match batch size
-        key = jnp.concatenate([key, jnp.full((m * batch_size - n,), jnp.inf, dtype=KEY_DTYPE)])
+        key = jnp.concatenate([key, jnp.full((batch_size - n,), jnp.inf, dtype=KEY_DTYPE)])
         val = jax.tree_util.tree_map(
             lambda x, y: jnp.concatenate([x, y]),
             val,
-            val.default((m * batch_size - n,)),
-        )
-        # Reshape into batched format
-        key = key[: m * batch_size].reshape((m, batch_size))
-        val = jax.tree_util.tree_map(
-            lambda x: x[: m * batch_size].reshape((m, batch_size) + x.shape[1:]), val
+            val.default((batch_size - n,)),
         )
         return key, val
 
@@ -313,7 +309,7 @@ class BGPQ:
                 - Updated heap
                 - Boolean indicating if insertion was successful
         """
-        last_node = heap.size // heap.batch_size + 1
+        last_node = heap.size // heap.batch_size
 
         def _cond(var):
             """Continue while not reached last node"""
@@ -405,12 +401,13 @@ class BGPQ:
         last = size - 1
 
         # Move last node to root and clear last position
-        heap.key_store = set_array(
-            set_array(heap.key_store, heap.key_store[last], 0), jnp.inf, last
-        )
-        heap.val_store = set_tree(heap.val_store, heap.val_store[last], 0)
+        last_key = heap.key_store[last]
+        last_val = heap.val_store[last]
+
+        heap.key_store = set_array(heap.key_store, jnp.inf, last)
+
         root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
-            heap.key_store[0], heap.val_store[0], heap.key_buffer, heap.val_buffer
+            last_key, last_val, heap.key_buffer, heap.val_buffer
         )
         heap.key_store = set_array(heap.key_store, root_key, 0)
         heap.val_store = set_tree(heap.val_store, root_val, 0)
@@ -451,13 +448,11 @@ class BGPQ:
                 key_store[right_child],
                 val_store[right_child],
             )
-            key_store = set_array(key_store, kx, x)
-            val_store = set_tree(val_store, vx, x)
             kc, vc, ky, vy = BGPQ.merge_sort_split(
                 key_store[current_node], val_store[current_node], ky, vy
             )
-            key_store = set_array(set_array(key_store, kc, current_node), ky, y)
-            val_store = set_tree(set_tree(val_store, vc, current_node), vy, y)
+            key_store = set_array(set_array(set_array(key_store, ky, y), kc, current_node), kx, x)
+            val_store = set_tree(set_tree(set_tree(val_store, vy, y), vc, current_node), vx, x)
 
             nc = y
             nl, nr = _lr(y)
