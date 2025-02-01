@@ -57,7 +57,7 @@ def puzzle_options(func: callable) -> callable:
 
 
 def search_options(func: callable) -> callable:
-    @click.option("-m", "--max_node_size", default=2e7, help="Size of the puzzle")
+    @click.option("-m", "--max_node_size", default=2e6, help="Size of the puzzle")
     @click.option("-b", "--batch_size", default=8192, help="Batch size for BGPQ")  # 1024 * 8 = 8192
     @click.option("-w", "--cost_weight", default=1.0 - 1e-3, help="Weight for the A* search")
     @click.option("-v", "--vmap_size", default=1, help="Size for the vmap")
