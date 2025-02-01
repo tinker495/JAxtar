@@ -138,7 +138,7 @@ Solution found
 ```bash
 $ python main.py qstar -nn -h -p rubikscube -w 0.2
 initializing jit
-Time: 113.38 seconds
+Time:  60.01 seconds
 JIT compiled
 
 ...
