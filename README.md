@@ -162,11 +162,11 @@ Solution found
 
 ### Target not available puzzle
 
-These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. In conclusion, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
+These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
 
-| Dotknot                              |
-| ------------------------------------ |
-| ![dotknot solve](images/dotknot.png) |
+| Dotknot                              | Sokoban |
+| ------------------------------------ | ------- |
+| ![dotknot solve](images/dotknot.png) | TODO    |
 
 ## Citation
 
