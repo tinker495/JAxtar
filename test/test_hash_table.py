@@ -72,14 +72,17 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
     for i in range(num):
         key = jax.random.PRNGKey(i)
         samples = jax.vmap(puzzle.get_initial_state)(key=jax.random.split(key, batch))
-        cloned_sample_num = jax.random.randint(key, (i + 1), 0, batch - 1)
+        cloned_sample_num = jax.random.randint(key, (), 1, 20)
+        cloned_sample_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch - 2)
+        cloned_sample_idx = jnp.sort(cloned_sample_idx)
 
         # Create deliberate duplicates within the batch
-        samples = set_tree(samples, samples[cloned_sample_num], cloned_sample_num + 1)
-        unique_count = batch - i - 1
+        samples = set_tree(samples, samples[cloned_sample_idx], cloned_sample_idx + 1)
+        unique_count = batch - cloned_sample_num
+        # after this, some states are duplicated
 
         batched_sample, filled = HashTable.make_batched(puzzle.State, samples, batch)
-        table, _, unique, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
+        table, updatable, unique, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
 
         # Verify uniqueness tracking
         unique_idxs = jnp.unique(jnp.stack([idxs, table_idxs], axis=1), axis=0)
@@ -92,8 +95,15 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
         ), "Duplicate indices in unique set"
 
         # Verify inserted states exist in table
-        _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples[unique])
-        assert jnp.all(found), "Inserted states not found in table"
+        _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
+        assert jnp.all(found), (
+            "Inserted states not found in table\n",
+            f"unique_count: {unique_count}\n",
+            f"unique_idxs.shape: {unique_idxs.shape}, unique: {jnp.sum(unique)}\n",
+            f"found: {jnp.sum(found)}\n",
+            f"not_found_idxs: {jnp.where(~found)[0]}\n",
+            f"cloned_sample_idx: {cloned_sample_idx}\n",
+        )
 
         counts += jnp.sum(unique)
         assert jnp.mean(unique) < 1.0, "No duplicates detected in batch"
@@ -102,8 +112,7 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
     assert table.size == counts, f"Size mismatch: {table.size} vs {counts}"
 
     # Verify cross-batch duplicates
-    cross_check_sample = samples[0:1]
-    _, _, found = lookup(table, cross_check_sample)
+    _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
     assert jnp.all(found), "Cross-batch state missing"
 
 
