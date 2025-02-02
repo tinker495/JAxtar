@@ -393,8 +393,8 @@ class HashTable:
             seeds, _idxs = _next_idx(seeds, _idxs, unupdated)
 
             overflowed = _idxs[:, 1] >= table.n_table  # Overflowed index must be updated
-            _idxs = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
-            unique_idxs = jnp.unique(_idxs, axis=0, size=batch_len, return_index=True)[
+            masked_idxs = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+            unique_idxs = jnp.unique(masked_idxs, axis=0, size=batch_len, return_index=True)[
                 1
             ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
             not_uniques = (
@@ -405,8 +405,8 @@ class HashTable:
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, _idxs, unupdated
 
-        _idxs = jnp.where(updatable[:, jnp.newaxis], index, jnp.full_like(index, -1))
-        unique_idxs = jnp.unique(_idxs, axis=0, size=batch_len, return_index=True)[
+        masked_idxs = jnp.where(updatable[:, jnp.newaxis], index, jnp.full_like(index, -1))
+        unique_idxs = jnp.unique(masked_idxs, axis=0, size=batch_len, return_index=True)[
             1
         ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
         not_uniques = (
@@ -416,7 +416,7 @@ class HashTable:
             updatable, not_uniques
         )  # remove the unique index from the unupdated index
 
-        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, _idxs, unupdated))
+        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, index, unupdated))
 
         idx, table_idx = index[:, 0], index[:, 1].astype(HASH_TABLE_IDX_DTYPE)
         table.table = set_tree_as_condition(table.table, updatable, inputs, idx, table_idx)
