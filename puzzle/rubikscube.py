@@ -143,7 +143,7 @@ class RubiksCube(Puzzle):
         """
         return f"{rotate_face_map[int(action // 2)]}_{'cw' if action % 2 == 0 else 'ccw'}"
 
-    def _get_random_state(self, key, num_shuffle=12):
+    def _get_random_state(self, key, num_shuffle=10):
         """
         This function should return a random state.
         """

@@ -46,7 +46,6 @@ This project was a real pain in the arse to write, and I almost felt like I was 
 ## Result
 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.
-However, due to the nature of JAX syntax, there are still unresolved bugs, which can lead to suboptimal results when the batch size is reduced. I am continuously exploring ways to resolve this issue. However, it generally works well.
 The tests below were performed on a single A100 80GB GPU.
 
 ### Test Run
@@ -55,13 +54,13 @@ The tests below were performed on a single A100 80GB GPU.
 $ python main.py astar
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
-┃ 2 ┃ F ┃ 3 ┃ 4 ┃
+┃ 5 ┃ E ┃ 2 ┃ 3 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃   ┃ 5 ┃ 7 ┃ B ┃
+┃ D ┃ B ┃ 9 ┃ 7 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ C ┃ 9 ┃ 1 ┃ A ┃
+┃ A ┃ F ┃ 4 ┃ C ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ 8 ┃ E ┃ D ┃ 6 ┃
+┃   ┃ 8 ┃ 6 ┃ 1 ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -74,8 +73,8 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Heuristic: 33.00
-Time:   0.49 seconds
-Search states: 594K(1.21M states/s)
+Time:   0.70 seconds
+Search states: 1.25M(1.78M states/s)
 
 Cost: 49.0
 Solution found
@@ -84,17 +83,17 @@ Solution found
 ### Test vmapped run
 
 ```bash
-$ python main.py astar -m 1e6 --vmap_size 10
+$ python main.py astar --vmap_size 10
 Vmapped A* search, multiple initial state solution
-Start state
+Start states
 ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
-┃ 2 ┃ F ┃ 3 ┃ 4 ┃  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃  (batch : (10,))  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃  ┃ 2 ┃ F ┃ 3 ┃ 4 ┃
+┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  (batch : (10,))  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃   ┃ 5 ┃ 7 ┃ B ┃  ┃   ┃ 5 ┃ 7 ┃ B ┃                   ┃   ┃ 5 ┃ 7 ┃ B ┃  ┃   ┃ 5 ┃ 7 ┃ B ┃
+┃ D ┃ B ┃ 9 ┃ 7 ┃  ┃ D ┃ B ┃ 9 ┃ 7 ┃                   ┃ D ┃ B ┃ 9 ┃ 7 ┃  ┃ D ┃ B ┃ 9 ┃ 7 ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ C ┃ 9 ┃ 1 ┃ A ┃  ┃ C ┃ 9 ┃ 1 ┃ A ┃                   ┃ C ┃ 9 ┃ 1 ┃ A ┃  ┃ C ┃ 9 ┃ 1 ┃ A ┃
+┃ A ┃ F ┃ 4 ┃ C ┃  ┃ A ┃ F ┃ 4 ┃ C ┃                   ┃ A ┃ F ┃ 4 ┃ C ┃  ┃ A ┃ F ┃ 4 ┃ C ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ 8 ┃ E ┃ D ┃ 6 ┃  ┃ 8 ┃ E ┃ D ┃ 6 ┃                   ┃ 8 ┃ E ┃ D ┃ 6 ┃  ┃ 8 ┃ E ┃ D ┃ 6 ┃
+┃   ┃ 8 ┃ 6 ┃ 1 ┃  ┃   ┃ 8 ┃ 6 ┃ 1 ┃                   ┃   ┃ 8 ┃ 6 ┃ 1 ┃  ┃   ┃ 8 ┃ 6 ┃ 1 ┃
 ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -107,9 +106,9 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
-# search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(search_result_build(), states, filled, target)
-Time:   1.13 seconds (x2.7/10)
-Search states: 5.94M (5.24M states/s)
+# search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
+Time:   3.66 seconds (x4.9/10)
+Search states: 13.4M (3.67M states/s) (x2.0 faster)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -117,15 +116,17 @@ Solution found: 100.00%
 ### A\* with neural heuristic model
 
 ```bash
-$ python3 main.py astar -nn -h -p rubikscube -w 0.2
+$ python main.py astar -nn -h -p rubikscube -w 0.2
 initializing jit
-Time:  78.53 seconds
+Time:  72.42 seconds
 JIT compiled
 
 ...
 
-Time:   1.87 seconds
-Search states: 1.7M(908K states/s)
+Heuristic: 14.10
+
+Time:   1.56 seconds
+Search states: 1.67M(1.07M states/s)
 
 
 Cost: 24.0
@@ -135,18 +136,19 @@ Solution found
 ### Q\* with neural Q model
 
 ```bash
-$ python3 main.py qstar -nn -h -p rubikscube -w 0.2
+$ python main.py qstar -nn -h -p rubikscube -w 0.2
 initializing jit
-Time:  77.01 seconds
+Time:  60.01 seconds
 JIT compiled
 
 ...
+qvalues: 'l_cw': 17.1 | 'l_ccw': 16.9 | 'd_cw': 16.8 | 'd_ccw': 16.7 | 'f_cw': 16.7 | 'f_ccw': 17.0 | 'r_cw': 17.5 | 'r_ccw': 17.3 | 'b_cw': 17.2 | 'b_ccw': 16.9 | 'u_cw': 16.5 | 'u_ccw': 16.1
 
-Time:   0.98 seconds
-Search states: 1.67M(1.71M states/s)
+Time:   0.54 seconds
+Search states: 1.46M(2.68M states/s)
 
 
-Cost: 24.0
+Cost: 22.0
 Solution found
 ```
 
@@ -160,11 +162,11 @@ Solution found
 
 ### Target not available puzzle
 
-These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. In conclusion, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
+These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
 
-| Dotknot                              |
-| ------------------------------------ |
-| ![dotknot solve](images/dotknot.png) |
+| Dotknot                              | Sokoban |
+| ------------------------------------ | ------- |
+| ![dotknot solve](images/dotknot.png) | TODO    |
 
 ## Citation
 
