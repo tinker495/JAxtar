@@ -73,8 +73,8 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Heuristic: 33.00
-Time:   1.04 seconds
-Search states: 1.3M(1.25M states/s)
+Time:   0.70 seconds
+Search states: 1.25M(1.78M states/s)
 
 Cost: 49.0
 Solution found
@@ -107,8 +107,8 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
 # search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
-Time:   3.68 seconds (x3.6/10)
-Search states: 13M (3.53M states/s) (x2.8 faster)
+Time:   3.66 seconds (x4.9/10)
+Search states: 13.4M (3.67M states/s) (x2.0 faster)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -118,18 +118,18 @@ Solution found: 100.00%
 ```bash
 $ python main.py astar -nn -h -p rubikscube -w 0.2
 initializing jit
-Time:  59.43 seconds
+Time:  72.42 seconds
 JIT compiled
 
 ...
 
 Heuristic: 14.10
 
-Time:   1.84 seconds
-Search states: 1.51M(819K states/s)
+Time:   1.56 seconds
+Search states: 1.67M(1.07M states/s)
 
 
-Cost: 22.0
+Cost: 24.0
 Solution found
 ```
 
@@ -144,8 +144,8 @@ JIT compiled
 ...
 qvalues: 'l_cw': 17.1 | 'l_ccw': 16.9 | 'd_cw': 16.8 | 'd_ccw': 16.7 | 'f_cw': 16.7 | 'f_ccw': 17.0 | 'r_cw': 17.5 | 'r_ccw': 17.3 | 'b_cw': 17.2 | 'b_ccw': 16.9 | 'u_cw': 16.5 | 'u_ccw': 16.1
 
-Time:   1.03 seconds
-Search states: 1.46M(1.42M states/s)
+Time:   0.54 seconds
+Search states: 1.46M(2.68M states/s)
 
 
 Cost: 22.0
