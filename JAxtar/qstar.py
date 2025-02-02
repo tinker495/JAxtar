@@ -7,7 +7,13 @@ import jax.numpy as jnp
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
 from JAxtar.hash import hash_func_builder
 from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult
-from JAxtar.util import set_array_as_condition, set_tree_as_condition
+from JAxtar.util import (
+    flatten_array,
+    flatten_tree,
+    set_array_as_condition,
+    set_tree_as_condition,
+    unflatten_array,
+)
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
@@ -104,16 +110,21 @@ def qstar_builder(
             ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbour_key = (cost_weight * nextcosts + q_vals).astype(KEY_DTYPE)
 
-            def _scan(search_result: SearchResult, val):
-                neighbour, neighbour_cost, neighbour_key, filled, parent_action = val
+            (
+                search_result.hashtable,
+                _,
+                _,
+                idxs,
+                table_idxs,
+            ) = search_result.hashtable.parallel_insert(
+                hash_func, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+            )
 
-                (
-                    search_result.hashtable,
-                    _,
-                    _,
-                    idx,
-                    table_idx,
-                ) = search_result.hashtable.parallel_insert(hash_func, neighbour, filled)
+            idxs = unflatten_array(idxs, filleds.shape)
+            table_idxs = unflatten_array(table_idxs, filleds.shape)
+
+            def _scan(search_result: SearchResult, val):
+                neighbour_cost, neighbour_key, filled, parent_action, idx, table_idx = val
 
                 optimal = jnp.less(neighbour_cost, search_result.cost[idx, table_idx])
                 search_result.cost = search_result.cost.at[idx, table_idx].min(
@@ -146,7 +157,9 @@ def qstar_builder(
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
-                _scan, search_result, (neighbours, nextcosts, neighbour_key, filleds, parent_action)
+                _scan,
+                search_result,
+                (nextcosts, neighbour_key, filleds, parent_action, idxs, table_idxs),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
