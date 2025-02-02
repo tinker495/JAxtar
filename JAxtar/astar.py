@@ -8,7 +8,13 @@ from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
 from JAxtar.hash import hash_func_builder
 from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult
-from JAxtar.util import set_array_as_condition, set_tree_as_condition
+from JAxtar.util import (
+    flatten_array,
+    flatten_tree,
+    set_array_as_condition,
+    set_tree_as_condition,
+    unflatten_array,
+)
 from puzzle.puzzle_base import Puzzle
 
 
@@ -101,18 +107,23 @@ def astar_builder(
             nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
 
+            (
+                search_result.hashtable,
+                _,
+                _,
+                idxs,
+                table_idxs,
+            ) = search_result.hashtable.parallel_insert(
+                hash_func, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+            )
+
+            idxs = unflatten_array(idxs, filleds.shape)
+            table_idxs = unflatten_array(table_idxs, filleds.shape)
+
             def _scan(search_result: SearchResult, val):
-                neighbour, neighbour_cost, filled, parent_action = val
+                neighbour, neighbour_cost, filled, parent_action, idx, table_idx = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
                 neighbour_key = (cost_weight * neighbour_cost + neighbour_heur).astype(KEY_DTYPE)
-
-                (
-                    search_result.hashtable,
-                    _,
-                    _,
-                    idx,
-                    table_idx,
-                ) = search_result.hashtable.parallel_insert(hash_func, neighbour, filled)
 
                 optimal = jnp.less(neighbour_cost, search_result.cost[idx, table_idx])
                 search_result.cost = search_result.cost.at[idx, table_idx].min(
@@ -145,7 +156,9 @@ def astar_builder(
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
-                _scan, search_result, (neighbours, nextcosts, filleds, parent_action)
+                _scan,
+                search_result,
+                (neighbours, nextcosts, filleds, parent_action, idxs, table_idxs),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
