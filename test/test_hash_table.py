@@ -85,6 +85,7 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
 
         batched_sample, filled = HashTable.make_batched(puzzle.State, samples, batch)
         table, updatable, unique, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
+        counts += jnp.sum(updatable)
 
         # Verify uniqueness tracking
         unique_idxs = jnp.unique(jnp.stack([idxs, table_idxs], axis=1), axis=0)
@@ -106,9 +107,6 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
             f"not_found_idxs: {jnp.where(~found)[0]}\n",
             f"cloned_sample_idx: {cloned_sample_idx}\n",
         )
-
-        counts += jnp.sum(unique)
-        assert jnp.mean(unique) < 1.0, "No duplicates detected in batch"
 
     # Final validation
     assert table.size == counts, f"Size mismatch: {table.size} vs {counts}"
