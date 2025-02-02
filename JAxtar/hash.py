@@ -392,9 +392,11 @@ class HashTable:
             seeds, _idxs, unupdated = val
             seeds, _idxs = _next_idx(seeds, _idxs, unupdated)
 
-            overflowed = _idxs[:, 1] >= table.n_table  # Overflowed index must be updated
-            masked_idx = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
-            unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True)[
+            overflowed = jnp.logical_and(
+                _idxs[:, 1] >= table.n_table, unupdated
+            )  # Overflowed index must be updated
+            _idxs = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+            unique_idxs = jnp.unique(_idxs, axis=0, size=batch_len, return_index=True)[
                 1
             ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
             not_uniques = (
@@ -405,8 +407,8 @@ class HashTable:
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, _idxs, unupdated
 
-        masked_idx = jnp.where(updatable[:, jnp.newaxis], index, jnp.full_like(index, -1))
-        unique_idxs = jnp.unique(masked_idx, axis=0, size=batch_len, return_index=True)[
+        _idxs = jnp.where(updatable[:, jnp.newaxis], index, jnp.full_like(index, -1))
+        unique_idxs = jnp.unique(_idxs, axis=0, size=batch_len, return_index=True)[
             1
         ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
         not_uniques = (
