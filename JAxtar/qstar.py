@@ -5,10 +5,15 @@ import jax
 import jax.numpy as jnp
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
-from JAxtar.bgpq import BGPQ
-from JAxtar.hash import HashTable, hash_func_builder
-from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult, pop_full
-from JAxtar.util import set_array_as_condition, set_tree_as_condition
+from JAxtar.hash import hash_func_builder
+from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult
+from JAxtar.util import (
+    flatten_array,
+    flatten_tree,
+    set_array_as_condition,
+    set_tree_as_condition,
+    unflatten_array,
+)
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
@@ -40,10 +45,9 @@ def qstar_builder(
 
     batch_size = jnp.array(batch_size, dtype=SIZE_DTYPE)
     max_nodes = jnp.array(max_nodes, dtype=SIZE_DTYPE)
-    hash_func = hash_func_builder(puzzle.State)
+    hash_func = hash_func_builder(statecls)
     search_result_build = partial(SearchResult.build, statecls, batch_size, max_nodes)
 
-    parallel_insert = partial(HashTable.parallel_insert, hash_func)
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
 
@@ -59,9 +63,13 @@ def qstar_builder(
 
         states = start
 
-        search_result.hashtable, inserted, _, idx, table_idx = parallel_insert(
-            search_result.hashtable, states, filled
-        )
+        (
+            search_result.hashtable,
+            inserted,
+            _,
+            idx,
+            table_idx,
+        ) = search_result.hashtable.parallel_insert(hash_func, states, filled)
         hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
 
         cost_val = jnp.where(filled, 0, jnp.inf)
@@ -74,24 +82,21 @@ def qstar_builder(
         )
 
         total_cost = cost_val.astype(KEY_DTYPE)  # no heuristic in Q* and first key is no matter
-        search_result.priority_queue = BGPQ.insert(
-            search_result.priority_queue, total_cost, hash_idxs
-        )
+        search_result.priority_queue = search_result.priority_queue.insert(total_cost, hash_idxs)
 
-        def _cond(search_result: SearchResult):
-            heap_size = search_result.priority_queue.size
+        def _cond(input: tuple[SearchResult, HashTableIdx_HeapValue, chex.Array]):
+            search_result, parent, filled = input
             hash_size = search_result.hashtable.size
-            size_cond1 = heap_size > 0  # queue is not empty
+            size_cond1 = filled.any()  # queue is not empty
             size_cond2 = hash_size < max_nodes  # hash table is not full
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
-            min_val = search_result.priority_queue.val_store[0]  # get the minimum value
-            states = search_result.hashtable.table[min_val.index, min_val.table_index]
+            states = search_result.hashtable.table[parent.index, parent.table_index]
             solved = solved_fn(states, target)
             return jnp.logical_and(size_cond, ~solved.any())
 
-        def _body(search_result: SearchResult):
-            search_result, parent_idx, filled = pop_full(search_result)
+        def _body(input: tuple[SearchResult, HashTableIdx_HeapValue, chex.Array]):
+            search_result, parent_idx, filled = input
 
             cost_val = search_result.cost[parent_idx.index, parent_idx.table_index]
             states = search_result.hashtable.table[parent_idx.index, parent_idx.table_index]
@@ -105,12 +110,21 @@ def qstar_builder(
             ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbour_key = (cost_weight * nextcosts + q_vals).astype(KEY_DTYPE)
 
-            def _scan(search_result: SearchResult, val):
-                neighbour, neighbour_cost, neighbour_key, filled, parent_action = val
+            (
+                search_result.hashtable,
+                _,
+                _,
+                idxs,
+                table_idxs,
+            ) = search_result.hashtable.parallel_insert(
+                hash_func, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+            )
 
-                search_result.hashtable, _, _, idx, table_idx = parallel_insert(
-                    search_result.hashtable, neighbour, filled
-                )
+            idxs = unflatten_array(idxs, filleds.shape)
+            table_idxs = unflatten_array(table_idxs, filleds.shape)
+
+            def _scan(search_result: SearchResult, val):
+                neighbour_cost, neighbour_key, filled, parent_action, idx, table_idx = val
 
                 optimal = jnp.less(neighbour_cost, search_result.cost[idx, table_idx])
                 search_result.cost = search_result.cost.at[idx, table_idx].min(
@@ -135,8 +149,7 @@ def qstar_builder(
 
                 vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
 
-                search_result.priority_queue = BGPQ.insert(
-                    search_result.priority_queue,
+                search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
                     vals,
                     added_size=jnp.sum(filled, dtype=SIZE_DTYPE),
@@ -144,15 +157,20 @@ def qstar_builder(
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
-                _scan, search_result, (neighbours, nextcosts, neighbour_key, filleds, parent_action)
+                _scan,
+                search_result,
+                (nextcosts, neighbour_key, filleds, parent_action, idxs, table_idxs),
             )
-            return search_result
+            search_result, parent, filled = search_result.pop_full()
+            return search_result, parent, filled
 
-        search_result = jax.lax.while_loop(_cond, _body, search_result)
-        min_val = search_result.priority_queue.val_store[0]  # get the minimum value
-        states = search_result.hashtable.table[min_val.index, min_val.table_index]
+        search_result, parent, filled = search_result.pop_full()
+        (search_result, parent, filled) = jax.lax.while_loop(
+            _cond, _body, (search_result, parent, filled)
+        )
+        states = search_result.hashtable.table[parent.index, parent.table_index]
         solved = solved_fn(states, target)
-        solved_idx = min_val[jnp.argmax(solved)]
+        solved_idx = parent[jnp.argmax(solved)]
         return search_result, solved.any(), solved_idx
 
     return search_result_build, jax.jit(qstar)
