@@ -74,11 +74,12 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
         key = jax.random.PRNGKey(i)
         samples = jax.vmap(puzzle.get_initial_state)(key=jax.random.split(key, batch))
         cloned_sample_num = jax.random.randint(key, (), 1, batch // 2)
-        cloned_sample_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch - 2)
+        cloned_sample_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
         cloned_sample_idx = jnp.sort(cloned_sample_idx)
+        new_clone_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
 
         # Create deliberate duplicates within the batch
-        samples = set_tree(samples, samples[cloned_sample_idx], cloned_sample_idx + 1)
+        samples = set_tree(samples, samples[cloned_sample_idx], new_clone_idx)
         h, bytesed = jax.vmap(hash_func, in_axes=(0, None))(samples, 0)
         unique_count = jnp.unique(bytesed, axis=0).shape[0]
         # after this, some states are duplicated
