@@ -418,7 +418,7 @@ class HashTable:
             updatable, not_uniques
         )  # remove the unique index from the unupdated index
 
-        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, index, unupdated))
+        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, _idxs, unupdated))
 
         idx, table_idx = index[:, 0], index[:, 1].astype(HASH_TABLE_IDX_DTYPE)
         table.table = set_tree_as_condition(table.table, updatable, inputs, idx, table_idx)

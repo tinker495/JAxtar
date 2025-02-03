@@ -174,7 +174,7 @@ class SearchResult:
             search_result.min_key_buffer,
             search_result.min_val_buffer,
         ) = merge_sort_split(
-            min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer
+            search_result.min_key_buffer, search_result.min_val_buffer, min_key, min_val
         )
         filled = jnp.isfinite(min_key)
 
