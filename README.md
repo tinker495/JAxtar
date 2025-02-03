@@ -46,7 +46,7 @@ This project was a real pain in the arse to write, and I almost felt like I was 
 ## Result
 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.
-The tests below were performed on a single A100 80GB GPU.
+The tests below were performed on a single Nvidia A100 40GB & RTX4080 SUPER GPU.
 
 ### Test Run
 
