@@ -125,11 +125,11 @@ JIT compiled
 
 Heuristic: 14.10
 
-Time:   1.56 seconds
-Search states: 1.67M(1.07M states/s)
+Time:   1.44 seconds
+Search states: 1.51M(1.05M states/s)
 
 
-Cost: 24.0
+Cost: 22.0
 Solution found
 ```
 
@@ -144,8 +144,8 @@ JIT compiled
 ...
 qvalues: 'l_cw': 17.1 | 'l_ccw': 16.9 | 'd_cw': 16.8 | 'd_ccw': 16.7 | 'f_cw': 16.7 | 'f_ccw': 17.0 | 'r_cw': 17.5 | 'r_ccw': 17.3 | 'b_cw': 17.2 | 'b_ccw': 16.9 | 'u_cw': 16.5 | 'u_ccw': 16.1
 
-Time:   0.54 seconds
-Search states: 1.46M(2.68M states/s)
+Time:   0.55 seconds
+Search states: 1.46M(2.65M states/s)
 
 
 Cost: 22.0
