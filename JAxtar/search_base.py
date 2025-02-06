@@ -8,6 +8,8 @@ Key features:
 - Generic puzzle-agnostic implementation
 """
 
+from functools import partial
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -15,6 +17,7 @@ import jax.numpy as jnp
 from JAxtar.annotate import (
     ACTION_DTYPE,
     HASH_POINT_DTYPE,
+    HASH_SIZE_MULTIPLIER,
     HASH_TABLE_IDX_DTYPE,
     KEY_DTYPE,
 )
@@ -90,6 +93,7 @@ class SearchResult:
     solved_idx: HashTableIdx_HeapValue
 
     @staticmethod
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
     def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=0, n_table=2):
         """
         Creates a new instance of SearchResult with initialized data structures.
@@ -106,8 +110,7 @@ class SearchResult:
         """
         # Initialize the hash table for state storage
         hashtable = HashTable.build(statecls, seed, max_nodes, n_table=n_table)
-        size_table = hashtable.capacity
-        n_table = hashtable.n_table
+        size_table = int(HASH_SIZE_MULTIPLIER * max_nodes / n_table)
 
         # Initialize priority queue for state expansion
         priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)

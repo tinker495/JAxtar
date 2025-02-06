@@ -99,7 +99,7 @@ def astar(
     max_node_size = int(max_node_size)
     batch_size = int(batch_size)
 
-    search_result_build, astar_fn = astar_builder(
+    astar_fn = astar_builder(
         puzzle,
         heuristic,
         batch_size,
@@ -125,10 +125,9 @@ def astar(
         if profile:
             print("Profiling")
             jax.profiler.start_trace("tmp/tensorboard")
-        inital_search_result = search_result_build()
 
         start = time.time()
-        search_result = astar_fn(inital_search_result, states, target)
+        search_result = astar_fn(states, target)
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
@@ -193,9 +192,7 @@ def astar(
     if vmap_size == 1:
         return
 
-    vmapped_astar = vmapping_search(
-        puzzle, search_result_build, astar_fn, vmap_size, show_compile_time
-    )
+    vmapped_astar = vmapping_search(puzzle, astar_fn, vmap_size, show_compile_time)
 
     # for benchmark, same initial states
     states, targets = vmapping_init_target(puzzle, vmap_size, start_state_seeds)
@@ -214,8 +211,7 @@ def astar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-
-    search_result = vmapped_astar(inital_search_result, states, targets)
+    search_result = vmapped_astar(states, targets)
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
     solved = search_result.solved
@@ -282,7 +278,7 @@ def qstar(
     max_node_size = int(max_node_size)
     batch_size = int(batch_size)
 
-    search_result_build, qstar_fn = qstar_builder(
+    qstar_fn = qstar_builder(
         puzzle,
         qfunction,
         batch_size,
@@ -314,10 +310,9 @@ def qstar(
         if profile:
             print("Profiling")
             jax.profiler.start_trace("tmp/tensorboard")
-        inital_search_result = search_result_build()
 
         start = time.time()
-        search_result = qstar_fn(inital_search_result, states, target)
+        search_result = qstar_fn(states, target)
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
@@ -382,9 +377,7 @@ def qstar(
     if vmap_size == 1:
         return
 
-    vmapped_qstar = vmapping_search(
-        puzzle, search_result_build, qstar_fn, vmap_size, show_compile_time
-    )
+    vmapped_qstar = vmapping_search(puzzle, qstar_fn, vmap_size, show_compile_time)
 
     # for benchmark, same initial states
     states, targets = vmapping_init_target(puzzle, vmap_size, start_state_seeds)
@@ -403,7 +396,7 @@ def qstar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-    search_result = vmapped_qstar(inital_search_result, states, targets)
+    search_result = vmapped_qstar(states, targets)
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
     solved = search_result.solved
