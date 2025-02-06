@@ -208,6 +208,7 @@ class Puzzle(ABC):
 
         self.get_initial_state = jax.jit(self.get_initial_state)
         self.get_target_state = jax.jit(self.get_target_state)
+        self.get_init_target_state_pair = jax.jit(self.get_init_target_state_pair)
         self.get_neighbours = jax.jit(self.get_neighbours)
         self.is_solved = jax.jit(self.is_solved)
         self.is_equal = jax.jit(self.is_equal)
@@ -241,6 +242,12 @@ class Puzzle(ABC):
         This function should return a target state.
         """
         pass
+
+    def get_init_target_state_pair(self, key=None) -> tuple[State, State]:
+        """
+        This function should return a initial state and target state.
+        """
+        return self.get_initial_state(key), self.get_target_state(key)
 
     @abstractmethod
     def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:

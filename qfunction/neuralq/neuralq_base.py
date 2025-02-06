@@ -99,7 +99,7 @@ class NeuralQFunctionBase(ABC):
         """
         This function should return the distance between the state and the target.
         """
-        return self.param_q_value(self.params, current, target)
+        return self.param_q_value(self.params, current, target)[0]
 
     def param_q_value(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
         x = self.pre_process(current, target)
