@@ -1,5 +1,4 @@
 import time
-from functools import partial
 
 import chex
 import jax
@@ -45,23 +44,19 @@ def qstar_builder(
 
     statecls = puzzle.State
 
-    _batch_size = jnp.array(batch_size, dtype=SIZE_DTYPE)
-    _max_nodes = jnp.array(max_nodes, dtype=SIZE_DTYPE)
     hash_func = hash_func_builder(statecls)
-    search_result_build = partial(SearchResult.build, statecls, _batch_size, _max_nodes)
 
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
 
     def qstar(
-        search_result: SearchResult,
         start: Puzzle.State,
         target: Puzzle.State,
     ) -> tuple[SearchResult, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
         """
-
+        search_result = SearchResult.build(statecls, batch_size, max_nodes)
         states, filled = HashTable.make_batched(puzzle.State, start[jnp.newaxis, ...], batch_size)
 
         (
@@ -176,7 +171,6 @@ def qstar_builder(
         return search_result
 
     qstar_fn = jax.jit(qstar)
-    inital_search_result = search_result_build()
     empty_target = puzzle.State.default()
     empty_states = puzzle.State.default()
 
@@ -188,11 +182,11 @@ def qstar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    qstar_fn(inital_search_result, empty_states, empty_target)
+    qstar_fn(empty_states, empty_target)
 
     if show_compile_time:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")
         print("JIT compiled\n\n")
 
-    return search_result_build, qstar_fn
+    return qstar_fn
