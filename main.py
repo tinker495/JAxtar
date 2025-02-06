@@ -5,10 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from JAxtar.astar import astar_builder
-from JAxtar.hash import HashTable
 from JAxtar.qstar import qstar_builder
-from JAxtar.search_base import SearchResult
-from JAxtar.util import set_tree
 from options import (
     heuristic_options,
     human_play_options,
@@ -17,7 +14,13 @@ from options import (
     search_options,
     visualize_options,
 )
-from util import human_format, vmapping_search, window
+from util import (
+    human_format,
+    vmapping_get_state,
+    vmapping_init_target,
+    vmapping_search,
+    window,
+)
 
 
 @click.group()
@@ -122,11 +125,10 @@ def astar(
         if profile:
             print("Profiling")
             jax.profiler.start_trace("tmp/tensorboard")
-        states, filled = HashTable.make_batched(puzzle.State, states[jnp.newaxis, ...], batch_size)
         inital_search_result = search_result_build()
 
         start = time.time()
-        search_result = astar_fn(inital_search_result, states, filled, target)
+        search_result = astar_fn(inital_search_result, states, target)
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
@@ -192,34 +194,11 @@ def astar(
         return
 
     vmapped_astar = vmapping_search(
-        puzzle, search_result_build, astar_fn, vmap_size, batch_size, show_compile_time
+        puzzle, search_result_build, astar_fn, vmap_size, show_compile_time
     )
 
     # for benchmark, same initial states
-    start_state_seed = start_state_seeds[0]
-    states, targets = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
-    states = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), states[jnp.newaxis, ...]
-    )
-    targets = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), targets[jnp.newaxis, ...]
-    )
-
-    if len(start_state_seeds) > 1:
-        for i, start_state_seed in enumerate(start_state_seeds[1:vmap_size]):
-            new_state, new_target = puzzle.get_init_target_state_pair(
-                jax.random.PRNGKey(start_state_seed)
-            )
-            states = set_tree(
-                states,
-                new_state,
-                i + 1,
-            )
-            targets = set_tree(
-                targets,
-                new_target,
-                i + 1,
-            )
+    states, targets = vmapping_init_target(puzzle, vmap_size, start_state_seeds)
 
     print("Vmapped A* search, multiple initial state solution")
     print("Start states")
@@ -227,10 +206,6 @@ def astar(
     if has_target:
         print("Target state")
         print(targets)
-
-    states, filled = jax.vmap(
-        lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0
-    )(states)
 
     print("vmap astar")
     print(
@@ -240,14 +215,14 @@ def astar(
     )
     start = time.time()
 
-    search_result = vmapped_astar(inital_search_result, states, filled, targets)
+    search_result = vmapped_astar(inital_search_result, states, targets)
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
     solved = search_result.solved
 
     if not has_target:
         if solved.any():
-            solved_st = jax.vmap(SearchResult.get_state)(search_result, search_result.solved_idx)
+            solved_st = vmapping_get_state(search_result, search_result.solved_idx)
             print("Solution state")
             print(solved_st)
             print()
@@ -339,11 +314,10 @@ def qstar(
         if profile:
             print("Profiling")
             jax.profiler.start_trace("tmp/tensorboard")
-        states, filled = HashTable.make_batched(puzzle.State, states[jnp.newaxis, ...], batch_size)
         inital_search_result = search_result_build()
 
         start = time.time()
-        search_result = qstar_fn(inital_search_result, states, filled, target)
+        search_result = qstar_fn(inital_search_result, states, target)
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
@@ -409,34 +383,11 @@ def qstar(
         return
 
     vmapped_qstar = vmapping_search(
-        puzzle, search_result_build, qstar_fn, vmap_size, batch_size, show_compile_time
+        puzzle, search_result_build, qstar_fn, vmap_size, show_compile_time
     )
 
     # for benchmark, same initial states
-    start_state_seed = start_state_seeds[0]
-    states, targets = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
-    states = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), states[jnp.newaxis, ...]
-    )
-    targets = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), targets[jnp.newaxis, ...]
-    )
-
-    if len(start_state_seeds) > 1:
-        for i, start_state_seed in enumerate(start_state_seeds[1:vmap_size]):
-            new_state, new_target = puzzle.get_init_target_state_pair(
-                jax.random.PRNGKey(start_state_seed)
-            )
-            states = set_tree(
-                states,
-                new_state,
-                i + 1,
-            )
-            targets = set_tree(
-                targets,
-                new_target,
-                i + 1,
-            )
+    states, targets = vmapping_init_target(puzzle, vmap_size, start_state_seeds)
 
     print("Vmapped Q* search, multiple initial state solution")
     print("Start states")
@@ -445,10 +396,6 @@ def qstar(
         print("Target state")
         print(targets)
 
-    states, filled = jax.vmap(
-        lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0
-    )(states)
-
     print("vmap qstar")
     print(
         "# search_result, solved, solved_idx ="
@@ -456,14 +403,14 @@ def qstar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-    search_result = vmapped_qstar(inital_search_result, states, filled, targets)
+    search_result = vmapped_qstar(inital_search_result, states, targets)
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
     solved = search_result.solved
 
     if not has_target:
         if solved.any():
-            solved_st = jax.vmap(SearchResult.get_state)(search_result, search_result.solved_idx)
+            solved_st = vmapping_get_state(search_result, search_result.solved_idx)
             print("Solution state")
             print(solved_st)
             print()

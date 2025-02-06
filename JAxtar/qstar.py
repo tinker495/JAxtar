@@ -56,14 +56,13 @@ def qstar_builder(
     def qstar(
         search_result: SearchResult,
         start: Puzzle.State,
-        filled: chex.Array,
         target: Puzzle.State,
     ) -> tuple[SearchResult, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
         """
 
-        states = start
+        states, filled = HashTable.make_batched(puzzle.State, start[jnp.newaxis, ...], batch_size)
 
         (
             search_result.hashtable,
@@ -179,9 +178,8 @@ def qstar_builder(
     qstar_fn = jax.jit(qstar)
     inital_search_result = search_result_build()
     empty_target = puzzle.State.default()
-    empty_states = puzzle.State.default()[jnp.newaxis, ...]
+    empty_states = puzzle.State.default()
 
-    empty_states, filled = HashTable.make_batched(puzzle.State, empty_states, batch_size)
     if show_compile_time:
         print("initializing jit")
         start = time.time()
@@ -190,7 +188,7 @@ def qstar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    qstar_fn(inital_search_result, empty_states, filled, empty_target)
+    qstar_fn(inital_search_result, empty_states, empty_target)
 
     if show_compile_time:
         end = time.time()
