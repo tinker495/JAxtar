@@ -86,6 +86,8 @@ class SearchResult:
     not_closed: chex.Array
     parent: chex.Array
     parent_action: chex.Array
+    solved: chex.Array
+    solved_idx: HashTableIdx_HeapValue
 
     @staticmethod
     def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=0, n_table=2):
@@ -119,6 +121,8 @@ class SearchResult:
         not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
         parent = HashTableIdx_HeapValue.default((size_table, n_table))
         parent_action = jnp.full((size_table, n_table), -1, dtype=ACTION_DTYPE)
+        solved = jnp.array(False)
+        solved_idx = HashTableIdx_HeapValue.default((1,))
 
         return SearchResult(
             hashtable=hashtable,
@@ -129,6 +133,8 @@ class SearchResult:
             not_closed=not_closed,
             parent=parent,
             parent_action=parent_action,
+            solved=solved,
+            solved_idx=solved_idx,
         )
 
     @property
@@ -140,6 +146,11 @@ class SearchResult:
     def n_table(self):
         """Number of cuckoo hash tables being used."""
         return self.hashtable.n_table
+
+    @property
+    def batch_size(self):
+        """Batch size of the search."""
+        return self.priority_queue.batch_size
 
     @property
     def size(self):
@@ -217,6 +228,42 @@ class SearchResult:
             min_val.index, min_val.table_index
         ].set(~filled)
         return search_result, min_val, filled
+
+    def get_solved_path(search_result):
+        """
+        Get the path to the solved state.
+        """
+        assert search_result.solved
+        parents = search_result.parent
+        solved_idx = search_result.solved_idx
+
+        path = [solved_idx]
+        parent_last = parents[solved_idx.index, solved_idx.table_index]
+        while True:
+            if parent_last.index == -1:
+                break
+            path.append(parent_last)
+            parent_last = parents[parent_last.index, parent_last.table_index]
+        path.reverse()
+        return path
+
+    def get_state(search_result, idx: HashTableIdx_HeapValue):
+        """
+        Get the state from the hash table.
+        """
+        return search_result.hashtable.table[idx.index, idx.table_index]
+
+    def get_cost(search_result, idx: HashTableIdx_HeapValue):
+        """
+        Get the cost of the state from the cost array.
+        """
+        return search_result.cost[idx.index, idx.table_index]
+
+    def get_parent_action(search_result, idx: HashTableIdx_HeapValue):
+        """
+        Get the parent action from the parent action array.
+        """
+        return search_result.parent_action[idx.index, idx.table_index]
 
 
 def unique_mask(val: HashTableIdx_HeapValue, batch_len: int):
