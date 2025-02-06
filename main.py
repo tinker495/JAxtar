@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from JAxtar.astar import astar_builder
 from JAxtar.hash import HashTable
 from JAxtar.qstar import qstar_builder
+from JAxtar.search_base import SearchResult
 from JAxtar.util import set_tree
 from options import (
     heuristic_options,
@@ -16,7 +17,7 @@ from options import (
     search_options,
     visualize_options,
 )
-from util import human_format, vmapping_search
+from util import human_format, vmapping_search, window
 
 
 @click.group()
@@ -125,14 +126,15 @@ def astar(
         inital_search_result = search_result_build()
 
         start = time.time()
-        search_result, solved, solved_idx = astar_fn(inital_search_result, states, filled, target)
+        search_result = astar_fn(inital_search_result, states, filled, target)
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
+        solved = search_result.solved
 
         if not has_target:
             if solved:
-                solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+                solved_st = search_result.get_state(search_result.solved_idx)
                 print("Solution state")
                 print(solved_st)
                 print()
@@ -149,44 +151,24 @@ def astar(
         if profile:
             jax.profiler.stop_trace()
 
-        if visualize:
-            if solved:
-                print("Solution found\n\n")
+        if solved:
+            solved_idx = search_result.solved_idx
+            solved_cost = search_result.get_cost(solved_idx)
 
-                parents = search_result.parent
-                parent_action = search_result.parent_action
-                table = search_result.hashtable.table
-                cost = search_result.cost
+            print(f"Cost: {solved_cost:.1f}")
+            print("Solution found\n\n")
+            if visualize:
+                path = search_result.get_solved_path()
+                for p0, p1 in window(path):
+                    print(search_result.get_state(p0))
+                    print(f"Cost: {search_result.get_cost(p0)}")
+                    print(f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}")
 
-                solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
-                solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index]
-
-                path = [solved_idx]
-                parent_last = parents[solved_idx.index, solved_idx.table_index]
-                while True:
-                    if parent_last.index == -1:
-                        break
-                    path.append(parent_last)
-                    parent_last = parents[parent_last.index, parent_last.table_index]
-                for (p0, p1) in zip(path[::-1], path[::-1][1:]):
-                    state = table[p0.index, p0.table_index]
-                    c = cost[p0.index, p0.table_index]
-                    a = parent_action[p1.index, p1.table_index]
-                    print(state)
-                    print(f"Cost: {c} | Action: {puzzle.action_to_string(a)}")
-                print(solved_st)
-                print(f"Cost: {solved_cost}")
-
+                print(search_result.get_state(path[-1]))
+                print(f"Cost: {search_result.get_cost(path[-1])}")
                 print("\n\n")
-            else:
-                print("No solution found\n\n")
         else:
-            if solved:
-                solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index]
-                print(f"Cost: {solved_cost:.1f}")
-                print("Solution found\n\n")
-            else:
-                print("No solution found\n\n")
+            print("No solution found\n\n")
 
     if len(start_state_seeds) > 1:
         total_search_times = jnp.array(total_search_times)
@@ -242,8 +224,9 @@ def astar(
     print("Vmapped A* search, multiple initial state solution")
     print("Start states")
     print(states)
-    print("Target state")
-    print(targets)
+    if has_target:
+        print("Target state")
+        print(targets)
 
     states, filled = jax.vmap(
         lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0
@@ -257,9 +240,17 @@ def astar(
     )
     start = time.time()
 
-    search_result, solved, solved_idx = vmapped_astar(inital_search_result, states, filled, targets)
+    search_result = vmapped_astar(inital_search_result, states, filled, targets)
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
+    solved = search_result.solved
+
+    if not has_target:
+        if solved.any():
+            solved_st = jax.vmap(SearchResult.get_state)(search_result, search_result.solved_idx)
+            print("Solution state")
+            print(solved_st)
+            print()
 
     search_states = jnp.sum(search_result.hashtable.size)
     vmapped_states_per_second = search_states / vmapped_search_time
@@ -352,14 +343,15 @@ def qstar(
         inital_search_result = search_result_build()
 
         start = time.time()
-        search_result, solved, solved_idx = qstar_fn(inital_search_result, states, filled, target)
+        search_result = qstar_fn(inital_search_result, states, filled, target)
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
+        solved = search_result.solved
 
         if not has_target:
             if solved:
-                solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
+                solved_st = search_result.get_state(search_result.solved_idx)
                 print("Solution state")
                 print(solved_st)
                 print()
@@ -376,44 +368,24 @@ def qstar(
         if profile:
             jax.profiler.stop_trace()
 
-        if visualize:
-            if solved:
-                print("Solution found\n\n")
+        if solved:
+            solved_idx = search_result.solved_idx
+            solved_cost = search_result.get_cost(solved_idx)
 
-                parents = search_result.parent
-                parent_action = search_result.parent_action
-                table = search_result.hashtable.table
-                cost = search_result.cost
+            print(f"Cost: {solved_cost:.1f}")
+            print("Solution found\n\n")
+            if visualize:
+                path = search_result.get_solved_path()
+                for p0, p1 in window(path):
+                    print(search_result.get_state(p0))
+                    print(f"Cost: {search_result.get_cost(p0)}")
+                    print(f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}")
 
-                solved_st = search_result.hashtable.table[solved_idx.index, solved_idx.table_index]
-                solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index]
-
-                path = [solved_idx]
-                parent_last = parents[solved_idx.index, solved_idx.table_index]
-                while True:
-                    if parent_last.index == -1:
-                        break
-                    path.append(parent_last)
-                    parent_last = parents[parent_last.index, parent_last.table_index]
-                for (p0, p1) in zip(path[::-1], path[::-1][1:]):
-                    state = table[p0.index, p0.table_index]
-                    c = cost[p0.index, p0.table_index]
-                    a = parent_action[p1.index, p1.table_index]
-                    print(state)
-                    print(f"Cost: {c} | Action: {puzzle.action_to_string(a)}")
-                print(solved_st)
-                print(f"Cost: {solved_cost}")
-
+                print(search_result.get_state(path[-1]))
+                print(f"Cost: {search_result.get_cost(path[-1])}")
                 print("\n\n")
-            else:
-                print("No solution found\n\n")
         else:
-            if solved:
-                solved_cost = search_result.cost[solved_idx.index, solved_idx.table_index]
-                print(f"Cost: {solved_cost:.1f}")
-                print("Solution found\n\n")
-            else:
-                print("No solution found\n\n")
+            print("No solution found\n\n")
 
     if len(start_state_seeds) > 1:
         total_search_times = jnp.array(total_search_times)
@@ -469,8 +441,9 @@ def qstar(
     print("Vmapped Q* search, multiple initial state solution")
     print("Start states")
     print(states)
-    print("Target state")
-    print(targets)
+    if has_target:
+        print("Target state")
+        print(targets)
 
     states, filled = jax.vmap(
         lambda x: HashTable.make_batched(puzzle.State, x[jnp.newaxis, ...], batch_size), in_axes=0
@@ -483,10 +456,17 @@ def qstar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-
-    search_result, solved, solved_idx = vmapped_qstar(inital_search_result, states, filled, targets)
+    search_result = vmapped_qstar(inital_search_result, states, filled, targets)
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
+    solved = search_result.solved
+
+    if not has_target:
+        if solved.any():
+            solved_st = jax.vmap(SearchResult.get_state)(search_result, search_result.solved_idx)
+            print("Solution state")
+            print(solved_st)
+            print()
 
     search_states = jnp.sum(search_result.hashtable.size)
     vmapped_states_per_second = search_states / vmapped_search_time

@@ -167,13 +167,14 @@ def qstar_builder(
             return search_result, parent, filled
 
         search_result, parent, filled = search_result.pop_full()
-        (search_result, parent, filled) = jax.lax.while_loop(
+        (search_result, idxes, filled) = jax.lax.while_loop(
             _cond, _body, (search_result, parent, filled)
         )
-        states = search_result.hashtable.table[parent.index, parent.table_index]
+        states = search_result.hashtable.table[idxes.index, idxes.table_index]
         solved = solved_fn(states, target)
-        solved_idx = parent[jnp.argmax(solved)]
-        return search_result, solved.any(), solved_idx
+        search_result.solved = solved.any()
+        search_result.solved_idx = idxes[jnp.argmax(solved)]
+        return search_result
 
     qstar_fn = jax.jit(qstar)
     inital_search_result = search_result_build()
