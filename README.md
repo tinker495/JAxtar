@@ -156,17 +156,17 @@ Solution found
 
 ### Target available puzzle
 
-| Rubikscube                                       | Slidepuzzle                                        | Lightsout                                      | Maze                                |
-| ------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |
-| ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) |
+| Rubikscube                                       | Slidepuzzle                                        | Lightsout                                      | Maze                                | Sokoban |
+| ------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------- | ----------------------------------- | ------- |
+| ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) | TODO    |
 
 ### Target not available puzzle
 
 These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
 
-| Dotknot                              | Sokoban |
-| ------------------------------------ | ------- |
-| ![dotknot solve](images/dotknot.png) | TODO    |
+| Dotknot                              |
+| ------------------------------------ |
+| ![dotknot solve](images/dotknot.png) |
 
 ## Citation
 
