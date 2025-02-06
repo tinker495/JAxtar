@@ -112,11 +112,11 @@ def astar(
     total_states = []
     total_solved = []
     for start_state_seed in start_state_seeds:
-        states, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
-        heuristic_values = heuristic.distance(states, target)
+        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
+        heuristic_values = heuristic.distance(state, target)
 
         print("Start state")
-        print(states)
+        print(state)
         if has_target:
             print("Target state")
             print(target)
@@ -127,7 +127,7 @@ def astar(
             jax.profiler.start_trace("tmp/tensorboard")
 
         start = time.time()
-        search_result = astar_fn(states, target)
+        search_result = astar_fn(state, target)
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
@@ -291,11 +291,11 @@ def qstar(
     total_states = []
     total_solved = []
     for start_state_seed in start_state_seeds:
-        states, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
-        qvalues = qfunction.q_value(states, target)
+        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
+        qvalues = qfunction.q_value(state, target)
 
         print("Start state")
-        print(states)
+        print(state)
         if has_target:
             print("Target state")
             print(target)
@@ -312,7 +312,7 @@ def qstar(
             jax.profiler.start_trace("tmp/tensorboard")
 
         start = time.time()
-        search_result = qstar_fn(states, target)
+        search_result = qstar_fn(state, target)
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
