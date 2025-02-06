@@ -10,13 +10,16 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from JAxtar.annotate import HASH_POINT_DTYPE, HASH_TABLE_IDX_DTYPE, SIZE_DTYPE
+from JAxtar.annotate import (
+    HASH_POINT_DTYPE,
+    HASH_SIZE_MULTIPLIER,
+    HASH_TABLE_IDX_DTYPE,
+    SIZE_DTYPE,
+)
 from JAxtar.util import set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 
 T = TypeVar("T")
-HASH_SIZE_MULTIPLIER = 2  # Multiplier for hash table size to reduce collision probability
-
 HASH_FUNC_TYPE = Callable[[Puzzle.State, int], Tuple[jnp.uint32, jnp.ndarray]]
 
 
@@ -147,6 +150,7 @@ class HashTable:
     # hash_func: HASH_FUNC_TYPE
 
     @staticmethod
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
     def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
         """
         Initialize a new hash table with specified parameters.
@@ -160,9 +164,7 @@ class HashTable:
         Returns:
             Initialized HashTable instance
         """
-        _capacity = jnp.array(
-            HASH_SIZE_MULTIPLIER * capacity / n_table, SIZE_DTYPE
-        )  # Internal capacity is larger to reduce collision probability
+        _capacity = int(HASH_SIZE_MULTIPLIER * capacity / n_table)  # Convert to concrete integer
         size = SIZE_DTYPE(0)
         # Initialize table with default states
         table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity + 1, n_table)))
