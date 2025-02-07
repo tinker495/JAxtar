@@ -9,3 +9,4 @@ from heuristic.neuralheuristic import (
 )
 from heuristic.rubikscube_heuristic import RubiksCubeHeuristic
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
+from heuristic.sokoban_heuristic import SokobanHeuristic
