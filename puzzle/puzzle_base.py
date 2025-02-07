@@ -6,6 +6,7 @@ from typing import Any, Dict, Type, TypeVar
 import chex
 import jax
 import jax.numpy as jnp
+import numpy as np
 from tabulate import tabulate
 
 T = TypeVar("T")
@@ -171,6 +172,35 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
     return cls
 
 
+def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:
+    """
+    This function is a decorator that adds a __str__ method to
+    the class that returns a string representation of the class.
+    """
+
+    def get_img(self) -> np.ndarray:
+        structured_type = self.structured_type
+
+        if structured_type == StructuredType.SINGLE:
+            return imgfunc(self)
+        elif structured_type == StructuredType.BATCHED:
+            batch_shape = self.batch_shape
+            batch_len = (
+                jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
+            )
+            results = []
+            for i in range(batch_len):
+                index = jnp.unravel_index(i, batch_shape)
+                current_state = jax.tree_util.tree_map(lambda x: x[index], self)
+                results.append(imgfunc(current_state))
+            return results
+        else:
+            raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
+
+    setattr(cls, "img", get_img)
+    return cls
+
+
 class Puzzle(ABC):
     @state_dataclass
     class State:
@@ -190,6 +220,10 @@ class Puzzle(ABC):
         def default(_=None) -> T:
             pass
 
+        @abstractmethod
+        def img(self) -> jnp.ndarray:
+            pass
+
     @property
     @abstractmethod
     def has_target(self) -> bool:
@@ -205,6 +239,7 @@ class Puzzle(ABC):
         super().__init__()
         self.State = add_string_parser(self.State, self.get_string_parser())
         self.State = add_default(self.State, self.get_default_gen())
+        self.State = add_img_parser(self.State, self.get_img_parser())
 
         self.get_initial_state = jax.jit(self.get_initial_state)
         self.get_target_state = jax.jit(self.get_target_state)
@@ -234,6 +269,14 @@ class Puzzle(ABC):
         """
         This function should return a callable that takes a state and returns a shape of it.
         function signature: (state: State) -> Dict[str, Any]
+        """
+        pass
+
+    @abstractmethod
+    def get_img_parser(self) -> callable:
+        """
+        This function should return a callable that takes a state and returns a image representation of it.
+        function signature: (state: State) -> jnp.ndarray
         """
         pass
 

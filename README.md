@@ -155,17 +155,19 @@ Solution found
 
 ### Target available puzzle
 
-| Rubikscube                                       | Slidepuzzle                                        | Lightsout                                      | Maze                                | Sokoban                                   |
-| ------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------- | ----------------------------------- | ----------------------------------------- |
-| ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) | ![Sokoban solve](images/sokobansolve.png) |
+| Rubikscube                                              | Slidepuzzle                                               | Lightsout                                             | Maze                                       | Sokoban                                          |
+| ------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| ![Rubiks cube solve](images/rubikscubesolve.png)        | ![Slide puzzle solve](images/slidepuzzlesolve.png)        | ![Lights out solve](images/lightsoutsolve.png)        | ![Maze solve](images/mazesolve.png)        | ![Sokoban solve](images/sokobansolve.png)        |
+| ![Rubiks cube animate](images/rubikscube_animation.gif) | ![Slide puzzle animate](images/slidepuzzle_animation.gif) | ![Lights out animate](images/lightsout_animation.gif) | ![Maze animate](images/maze_animation.gif) | ![Sokoban animate](images/sokoban_animation.gif) |
 
 ### Target not available puzzle
 
 These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
 
-| Dotknot                              |
-| ------------------------------------ |
-| ![dotknot solve](images/dotknot.png) |
+| Dotknot                                          |
+| ------------------------------------------------ |
+| ![dotknot solve](images/dotknotsolve.png)        |
+| ![dotknot animate](images/dotknot_animation.gif) |
 
 ## Citation
 

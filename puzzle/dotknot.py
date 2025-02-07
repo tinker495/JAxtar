@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 from termcolor import colored
 
+from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint8
@@ -11,16 +12,14 @@ COLORS = [
     "green",
     "yellow",
     "blue",
-    "magenta",
-    "cyan",
-    "light_red",
-    "light_green",
-    "light_yellow",
-    "light_blue",
-    "light_magenta",
-    "light_cyan",
-    "white",
 ]  # 13 colors
+
+COLOR_MAP = {
+    0: (255, 0, 0),  # Red
+    1: (0, 255, 0),  # Green
+    2: (255, 255, 0),  # Yellow
+    3: (0, 0, 255),  # Blue
+}
 
 
 class DotKnot(Puzzle):
@@ -241,3 +240,42 @@ class DotKnot(Puzzle):
         )
         packed_board = self.pack_board(board)
         return self.State(board=packed_board)
+
+    def get_img_parser(self):
+        """
+        This function is a decorator that adds an img_parser to the class.
+        """
+        import cv2
+        import numpy as np
+
+        def img_func(state: "DotKnot.State"):
+            imgsize = IMG_SIZE[0]
+            img = np.zeros(IMG_SIZE + (3,), np.uint8)
+            img[:] = (190, 190, 190)  # Background color (R144,G96,B8)
+            img = cv2.rectangle(
+                img,
+                (int(imgsize * 0.03), int(imgsize * 0.03)),
+                (int(imgsize - imgsize * 0.02), int(imgsize - imgsize * 0.02)),
+                (50, 50, 50),
+                -1,
+            )
+            board_flat = self.unpack_board(state.board)
+            knot_max = 2 * self.color_num  # Values <= knot_max represent knots
+            for idx, val in enumerate(board_flat):
+                if val == 0:
+                    continue
+                stx = int(imgsize * 0.04 + (imgsize * 0.95 / self.size) * (idx % self.size))
+                sty = int(imgsize * 0.04 + (imgsize * 0.95 / self.size) * (idx // self.size))
+                bs = int(imgsize * 0.87 / self.size)
+                center = (stx + bs // 2, sty + bs // 2)
+                color = COLOR_MAP[(int(val) - 1) % len(COLORS)]
+                if val <= knot_max:
+                    # Draw knot as a filled circle
+                    radius = int(bs * 0.6)
+                    img = cv2.circle(img, center, radius, color, -1)
+                else:
+                    # Draw path as a filled rectangle
+                    img = cv2.rectangle(img, (stx, sty), (stx + bs, sty + bs), color, -1)
+            return img
+
+        return img_func
