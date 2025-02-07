@@ -54,6 +54,9 @@ class RubiksCube(Puzzle):
 
     def get_string_parser(self):
         def parser(state):
+            # Unpack the state faces before printing
+            unpacked_faces = self.unpack_faces(state.faces)
+
             # Helper function to get face string
             def get_empty_face_string():
                 return "\n".join(["  " * (self.size + 2) for _ in range(self.size + 2)])
@@ -71,7 +74,9 @@ class RubiksCube(Puzzle):
                         "┃ "
                         + " ".join(
                             [
-                                colored("■", color_map[int(state.faces[face, j * self.size + i])])
+                                colored(
+                                    "■", color_map[int(unpacked_faces[face, j * self.size + i])]
+                                )
                                 for i in range(self.size)
                             ]
                         )
@@ -99,9 +104,31 @@ class RubiksCube(Puzzle):
 
         return parser
 
+    def pack_faces(self, faces: jnp.ndarray) -> jnp.ndarray:
+        """
+        Pack a board array of shape (6, size * size) with cell values in 0~5 into a compact representation.
+        Each color is packed into 4 bits, so two cells are stored in each uint8.
+        """
+        reshaped = jnp.reshape(faces, (-1, 2))  # Group every two cells together
+        shifts = jnp.array([0, 4], dtype=faces.dtype)
+        packed = jnp.sum(reshaped * (2**shifts), axis=1).astype(jnp.uint8)
+        return packed
+
+    def unpack_faces(self, packed: jnp.ndarray) -> jnp.ndarray:
+        """
+        Unpack a compact board representation back to a board of shape (6, size * size)
+        with cell values in {0, 1, 2, 3, 4, 5}. Each uint8 contains two color values stored in 4 bits.
+        """
+        shifts = jnp.array([0, 4], dtype=jnp.uint8)
+        cells = jnp.stack([(packed >> shift) & 0xF for shift in shifts], axis=1)
+        faces = jnp.reshape(cells, (6, self.size * self.size))
+        return faces
+
     def get_default_gen(self) -> callable:
         def gen():
-            return self.State(faces=jnp.full((6, self.size * self.size), -1).astype(TYPE))
+            raw = jnp.full((6, self.size * self.size), -1, dtype=TYPE)
+            packed = self.pack_faces(raw)
+            return self.State(faces=packed)
 
         return gen
 
@@ -109,9 +136,11 @@ class RubiksCube(Puzzle):
         return self._get_random_state(key)
 
     def get_target_state(self, key=None) -> State:
-        return self.State(
-            faces=jnp.repeat(jnp.arange(6)[:, None], self.size * self.size, axis=1).astype(TYPE)
+        raw_faces = jnp.repeat(jnp.arange(6)[:, None], self.size * self.size, axis=1).astype(
+            TYPE
         )  # 6 faces, 3x3 each
+        packed_faces = self.pack_faces(raw_faces)
+        return self.State(faces=packed_faces)
 
     def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
         def map_fn(face, axis, index, clockwise):
@@ -128,11 +157,17 @@ class RubiksCube(Puzzle):
         axis_grid = axis_grid.reshape(-1)
         index_grid = index_grid.reshape(-1)
         clockwise_grid = clockwise_grid.reshape(-1)
-        shaped_faces = state.faces.reshape((6, self.size, self.size))
-        shaped_faces, costs = jax.vmap(map_fn, in_axes=(None, 0, 0, 0))(
+
+        # Unpack the state faces before processing
+        unpacked_faces = self.unpack_faces(state.faces)
+        shaped_faces = unpacked_faces.reshape((6, self.size, self.size))
+
+        new_faces, costs = jax.vmap(map_fn, in_axes=(None, 0, 0, 0))(
             shaped_faces, axis_grid, index_grid, clockwise_grid
         )
-        return self.State(faces=shaped_faces.reshape((-1, 6, self.size * self.size))), costs
+        neighbour_unpacked = new_faces.reshape((-1, 6, self.size * self.size))
+        neighbour_packed = jax.vmap(lambda faces: self.pack_faces(faces))(neighbour_unpacked)
+        return self.State(faces=neighbour_packed), costs
 
     def is_solved(self, state: State, target: State) -> bool:
         return self.is_equal(state, target)

@@ -22,7 +22,7 @@ class DotKnotHeuristic(Heuristic):
         """
         Get distance for solving puzzle.
         """
-        unpacked = DotKnot.unpack_board(current.board)
+        unpacked = self.puzzle.unpack_board(current.board)
         point_a = unpacked == (color_idx + 1)
         point_a_available = jnp.any(point_a)
         point_a_pos = jnp.stack(

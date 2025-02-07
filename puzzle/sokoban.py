@@ -40,8 +40,7 @@ class Sokoban(Puzzle):
     def has_target(self) -> bool:
         return True
 
-    @staticmethod
-    def pack_board(board: jnp.ndarray) -> jnp.ndarray:
+    def pack_board(self, board: jnp.ndarray) -> jnp.ndarray:
         """
         Pack a board array of shape (100,) with cell values in {0, 1, 2, 3}
         into a compact representation using 25 uint8 values.
@@ -51,8 +50,7 @@ class Sokoban(Puzzle):
         packed = jnp.sum(reshaped * (2**shifts), axis=1).astype(jnp.uint8)
         return packed
 
-    @staticmethod
-    def unpack_board(packed: jnp.ndarray) -> jnp.ndarray:
+    def unpack_board(self, packed: jnp.ndarray) -> jnp.ndarray:
         """
         Unpack a compact board representation (25,)-shaped array back
         to a board of shape (100,) with cell values in {0, 1, 2, 3}.
