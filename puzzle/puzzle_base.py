@@ -212,6 +212,14 @@ class Puzzle(ABC):
         self.get_neighbours = jax.jit(self.get_neighbours)
         self.is_solved = jax.jit(self.is_solved)
         self.is_equal = jax.jit(self.is_equal)
+        self.data_init()
+
+    def data_init(self):
+        """
+        This function should be called in the __init__ of the subclass.
+        If the puzzle need to load dataset, this function should be filled.
+        """
+        pass
 
     @abstractmethod
     def get_string_parser(self) -> callable:

@@ -21,6 +21,7 @@ from puzzle import (
     SlidePuzzle,
     SlidePuzzleHard,
     Sokoban,
+    SokobanHard,
 )
 from qfunction import DotKnotQ, LightsOutQ, MazeQ, RubiksCubeQ, SlidePuzzleQ, SokobanQ
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
@@ -48,6 +49,7 @@ puzzle_dict_hard = {
     "lightsout": lambda n: LightsOutHard(n),
     "rubikscube": lambda n: RubiksCubeHard(n),
     "maze": lambda n: Maze(n),
+    "sokoban": lambda n: SokobanHard(),
 }
 
 puzzle_heuristic_dict = {
