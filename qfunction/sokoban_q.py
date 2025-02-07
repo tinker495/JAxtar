@@ -36,4 +36,4 @@ class SokobanQ(QFunction):
         )
 
         # The heuristic value is the boxes missing from their correct positions
-        return (target_box_count - matching_boxes) * 10
+        return (target_box_count - matching_boxes) * 5
