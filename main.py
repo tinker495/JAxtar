@@ -220,7 +220,7 @@ def astar(
                             cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
                         )
                     gif_path = f"tmp/{logging_name}/animation.gif"
-                    imageio.mimsave(gif_path, imgs, duration=0.1)
+                    imageio.mimsave(gif_path, imgs, fps=4)
         else:
             print("No solution found\n\n")
 
@@ -431,7 +431,7 @@ def qstar(
                             cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
                         )
                     gif_path = f"tmp/{logging_name}/animation.gif"
-                    imageio.mimsave(gif_path, imgs, duration=0.1)
+                    imageio.mimsave(gif_path, imgs, fps=4)
         else:
             print("No solution found\n\n")
 
