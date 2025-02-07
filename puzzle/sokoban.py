@@ -74,14 +74,7 @@ class Sokoban(Puzzle):
 
     @state_dataclass
     class State:
-        board: chex.Array
-        # 0: empty
-        # 1: wall
-        # 2: player
-        # 3: box
-        # goal is not included, it could be using the box on target states
-        # total 2 bits
-        # 2 x size x size
+        board: chex.Array  # Now stores a packed board representation of shape (25,)
 
     def __init__(self, size: int = 10):
         self.size = size
@@ -92,23 +85,54 @@ class Sokoban(Puzzle):
     def has_target(self) -> bool:
         return True
 
+    @staticmethod
+    def pack_board(board: jnp.ndarray) -> jnp.ndarray:
+        """
+        Pack a board array of shape (100,) with cell values in {0, 1, 2, 3}
+        into a compact representation using 25 uint8 values.
+        """
+        reshaped = jnp.reshape(board, (-1, 4))  # shape: (25, 4)
+        shifts = jnp.array([0, 2, 4, 6], dtype=board.dtype)
+        packed = jnp.sum(reshaped * (2**shifts), axis=1).astype(jnp.uint8)
+        return packed
+
+    @staticmethod
+    def unpack_board(packed: jnp.ndarray) -> jnp.ndarray:
+        """
+        Unpack a compact board representation (25,)-shaped array back
+        to a board of shape (100,) with cell values in {0, 1, 2, 3}.
+        """
+        shifts = jnp.array([0, 2, 4, 6], dtype=jnp.uint8)
+        cells = jnp.stack([(packed >> shift) & 3 for shift in shifts], axis=1)
+        board = jnp.reshape(cells, (-1,))
+        return board
+
     def get_default_gen(self) -> callable:
         def gen():
-            return self.State(board=jnp.ones(self.size**2, dtype=TYPE))
+            # Create a default flat board and pack it.
+            board = jnp.ones(self.size**2, dtype=TYPE)
+            packed_board = self.pack_board(board)
+            return self.State(board=packed_board)
 
         return gen
 
     def get_initial_state(self, key=None) -> State:
-        # Initialize the board with the player, boxes, and walls
-        return self.State(board=level1_init)
+        # Initialize the board with the player, boxes, and walls from level1 and pack it.
+        packed_board = self.pack_board(level1_init)
+        return self.State(board=packed_board)
 
     def get_target_state(self, key=None) -> State:
-        # Define the target state where all boxes are on goal positions
-        return self.State(board=level1_target)
+        # Define the target state and pack it.
+        packed_board = self.pack_board(level1_target)
+        return self.State(board=packed_board)
 
     def is_solved(self, state: State, target: State) -> bool:
-        rm_player = jnp.where(state.board == Object.PLAYER.value, Object.EMPTY.value, state.board)
-        return jnp.all(rm_player == target.board)
+        # Unpack boards for comparison.
+        board = self.unpack_board(state.board)
+        t_board = self.unpack_board(target.board)
+        # Remove the player from the current board.
+        rm_player = jnp.where(board == Object.PLAYER.value, Object.EMPTY.value, board)
+        return jnp.all(rm_player == t_board)
 
     def action_to_string(self, action: int) -> str:
         """
@@ -141,7 +165,9 @@ class Sokoban(Puzzle):
                 return "?"
 
         def parser(state):
-            return form.format(*map(to_char, state.board))
+            # Unpack the board before visualization.
+            board = self.unpack_board(state.board)
+            return form.format(*map(to_char, board))
 
         return parser
 
@@ -150,11 +176,11 @@ class Sokoban(Puzzle):
         Returns neighbour states along with the cost for each move.
         If a move isn't possible, it returns the original state with an infinite cost.
         """
-        # Retrieve player's current position and the board state
+        # Unpack the board so that we work on a flat representation.
+        board = self.unpack_board(state.board)
         x, y = self._getPlayerPosition(state)
         current_pos = jnp.array([x, y])
         moves = jnp.array([[0, -1], [0, 1], [-1, 0], [1, 0]])
-        board = state.board
 
         # Helper: convert (row, col) to flat index
         def flat_idx(i, j):
@@ -178,16 +204,17 @@ class Sokoban(Puzzle):
 
             def process_move(_):
                 target = board[flat_idx(new_x, new_y)]
-                # Case when target cell is empty: simply move the player
+                # Case when target cell is empty: simply move the player.
 
                 def move_empty(_):
                     new_board = board.at[flat_idx(current_pos[0], current_pos[1])].set(
                         Object.EMPTY.value
                     )
                     new_board = new_board.at[flat_idx(new_x, new_y)].set(Object.PLAYER.value)
-                    return self.State(board=new_board), 1.0
+                    # Pack the updated board.
+                    return self.State(board=self.pack_board(new_board)), 1.0
 
-                # Case when target cell contains a box: attempt to push it
+                # Case when target cell contains a box: attempt to push it.
                 def push_box(_):
                     push_pos = (new_pos + direction).astype(current_pos.dtype)
                     push_x, push_y = push_pos[0], push_pos[1]
@@ -201,7 +228,7 @@ class Sokoban(Puzzle):
                         )
                         new_board = new_board.at[flat_idx(new_x, new_y)].set(Object.PLAYER.value)
                         new_board = new_board.at[flat_idx(push_x, push_y)].set(Object.BOX.value)
-                        return self.State(board=new_board), 1.0
+                        return self.State(board=self.pack_board(new_board)), 1.0
 
                     return jax.lax.cond(valid_push, do_push, invalid_case, operand=None)
 
@@ -229,5 +256,6 @@ class Sokoban(Puzzle):
         return top_border + middle + bottom_border
 
     def _getPlayerPosition(self, state: State):
-        flat_index = jnp.argmax(state.board == Object.PLAYER.value)
+        board = self.unpack_board(state.board)
+        flat_index = jnp.argmax(board == Object.PLAYER.value)
         return jnp.unravel_index(flat_index, (self.size, self.size))
