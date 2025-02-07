@@ -111,6 +111,7 @@ def human_play(puzzle, start_state_seed):
 @visualize_options
 def astar(
     puzzle,
+    puzzle_name,
     heuristic,
     max_node_size,
     batch_size,
@@ -201,9 +202,25 @@ def astar(
                     print(f"Cost: {search_result.get_cost(path[-1])}")
                     print("\n\n")
                 elif visualize_imgs:
-                    for p in path:
+                    import os
+                    from datetime import datetime
+
+                    import cv2
+                    import imageio
+
+                    imgs = []
+                    logging_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+                    logging_name = f"{puzzle_name}_{logging_time}"
+                    os.makedirs(f"tmp/{logging_name}", exist_ok=True)
+                    for idx, p in enumerate(path):
                         img = search_result.get_state(p).img()
-                        img.save(f"tmp/img_{p}.png")
+                        imgs.append(img)
+                        cv2.imwrite(
+                            f"tmp/{logging_name}/img_{idx}.png",
+                            cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
+                        )
+                    gif_path = f"tmp/{logging_name}/animation.gif"
+                    imageio.mimsave(gif_path, imgs, duration=0.1)
         else:
             print("No solution found\n\n")
 
@@ -298,6 +315,7 @@ def astar(
 @visualize_options
 def qstar(
     puzzle,
+    puzzle_name,
     qfunction,
     max_node_size,
     batch_size,
@@ -395,9 +413,25 @@ def qstar(
                     print(f"Cost: {search_result.get_cost(path[-1])}")
                     print("\n\n")
                 elif visualize_imgs:
-                    for p in path:
+                    import os
+                    from datetime import datetime
+
+                    import cv2
+                    import imageio
+
+                    imgs = []
+                    logging_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+                    logging_name = f"{puzzle_name}_{logging_time}"
+                    os.makedirs(f"tmp/{logging_name}", exist_ok=True)
+                    for idx, p in enumerate(path):
                         img = search_result.get_state(p).img()
-                        img.save(f"tmp/img_{p}.png")
+                        imgs.append(img)
+                        cv2.imwrite(
+                            f"tmp/{logging_name}/img_{idx}.png",
+                            cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
+                        )
+                    gif_path = f"tmp/{logging_name}/animation.gif"
+                    imageio.mimsave(gif_path, imgs, duration=0.1)
         else:
             print("No solution found\n\n")
 
