@@ -156,9 +156,9 @@ Solution found
 
 ### Target available puzzle
 
-| Rubikscube                                       | Slidepuzzle                                        | Lightsout                                      | Maze                                | Sokoban |
-| ------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------- | ----------------------------------- | ------- |
-| ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) | TODO    |
+| Rubikscube                                       | Slidepuzzle                                        | Lightsout                                      | Maze                                | Sokoban                                   |
+| ------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) | ![Sokoban solve](images/sokobansolve.png) |
 
 ### Target not available puzzle
 
