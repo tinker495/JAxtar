@@ -119,7 +119,8 @@ def astar(
     vmap_size,
     profile,
     show_compile_time,
-    visualize,
+    visualize_terminal,
+    visualize_imgs,
 ):
     has_target = puzzle.has_target
 
@@ -185,16 +186,24 @@ def astar(
 
             print(f"Cost: {solved_cost:.1f}")
             print("Solution found\n\n")
-            if visualize:
+            if visualize_terminal or visualize_imgs:
                 path = search_result.get_solved_path()
-                for p0, p1 in window(path):
-                    print(search_result.get_state(p0))
-                    print(f"Cost: {search_result.get_cost(p0)}")
-                    print(f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}")
 
-                print(search_result.get_state(path[-1]))
-                print(f"Cost: {search_result.get_cost(path[-1])}")
-                print("\n\n")
+                if visualize_terminal:
+                    for p0, p1 in window(path):
+                        print(search_result.get_state(p0))
+                        print(f"Cost: {search_result.get_cost(p0)}")
+                        print(
+                            f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}"
+                        )
+
+                    print(search_result.get_state(path[-1]))
+                    print(f"Cost: {search_result.get_cost(path[-1])}")
+                    print("\n\n")
+                elif visualize_imgs:
+                    for p in path:
+                        img = search_result.get_state(p).img()
+                        img.save(f"tmp/img_{p}.png")
         else:
             print("No solution found\n\n")
 
@@ -297,7 +306,8 @@ def qstar(
     vmap_size,
     profile,
     show_compile_time,
-    visualize,
+    visualize_terminal,
+    visualize_imgs,
 ):
 
     has_target = puzzle.has_target
@@ -370,16 +380,24 @@ def qstar(
 
             print(f"Cost: {solved_cost:.1f}")
             print("Solution found\n\n")
-            if visualize:
+            if visualize_terminal or visualize_imgs:
                 path = search_result.get_solved_path()
-                for p0, p1 in window(path):
-                    print(search_result.get_state(p0))
-                    print(f"Cost: {search_result.get_cost(p0)}")
-                    print(f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}")
 
-                print(search_result.get_state(path[-1]))
-                print(f"Cost: {search_result.get_cost(path[-1])}")
-                print("\n\n")
+                if visualize_terminal:
+                    for p0, p1 in window(path):
+                        print(search_result.get_state(p0))
+                        print(f"Cost: {search_result.get_cost(p0)}")
+                        print(
+                            f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}"
+                        )
+
+                    print(search_result.get_state(path[-1]))
+                    print(f"Cost: {search_result.get_cost(path[-1])}")
+                    print("\n\n")
+                elif visualize_imgs:
+                    for p in path:
+                        img = search_result.get_state(p).img()
+                        img.save(f"tmp/img_{p}.png")
         else:
             print("No solution found\n\n")
 
