@@ -103,7 +103,6 @@ def heuristic_options(func: callable) -> callable:
             heuristic: Heuristic = puzzle_heuristic_dict[puzzle_name](puzzle)
         kwargs["heuristic"] = heuristic
         kwargs.pop("neural_heuristic")
-        kwargs.pop("puzzle_name")
         kwargs.pop("puzzle_size")
         return func(*args, **kwargs)
 
@@ -129,7 +128,6 @@ def qfunction_options(func: callable) -> callable:
             qfunction: QFunction = puzzle_q_dict[puzzle_name](puzzle)
         kwargs["qfunction"] = qfunction
         kwargs.pop("neural_qfunction")
-        kwargs.pop("puzzle_name")
         kwargs.pop("puzzle_size")
         return func(*args, **kwargs)
 
@@ -137,7 +135,12 @@ def qfunction_options(func: callable) -> callable:
 
 
 def visualize_options(func: callable) -> callable:
-    @click.option("-v", "--visualize", is_flag=True, help="Visualize the path")
+    @click.option(
+        "-vt", "--visualize_terminal", is_flag=True, help="Visualize the path with terminal"
+    )
+    @click.option(
+        "-vi", "--visualize_imgs", is_flag=True, help="Visualize the path with gif images"
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -149,7 +152,6 @@ def human_play_options(func: callable) -> callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
         kwargs.pop("puzzle_size")
-        kwargs.pop("puzzle_name")
         if len(kwargs["start_state_seeds"]) > 1:
             raise ValueError("human play is not supported multiple initial state")
         kwargs["start_state_seed"] = kwargs["start_state_seeds"][0]

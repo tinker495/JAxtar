@@ -6,9 +6,11 @@ import jax.numpy as jnp
 from tabulate import tabulate
 from termcolor import colored
 
+from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint8
+LINE_THICKNESS = 3
 
 UP = 0
 DOWN = 1
@@ -19,6 +21,14 @@ BACK = 5
 rotate_face_map = {0: "l", 1: "d", 2: "f", 3: "r", 4: "b", 5: "u"}
 face_map = {0: "up━", 1: "down━", 2: "left━", 3: "right", 4: "front", 5: "back━"}
 color_map = {0: "white", 1: "yellow", 2: "red", 3: "magenta", 4: "green", 5: "blue"}  # orange
+rgb_map = {
+    0: (255, 255, 255),
+    1: (255, 255, 0),
+    2: (255, 0, 0),
+    3: (255, 0, 255),
+    4: (0, 255, 0),
+    5: (0, 0, 255),
+}
 
 
 def rot90_traceable(m, k=1, axes=(0, 1)):
@@ -266,6 +276,134 @@ class RubiksCube(Puzzle):
             ],
         )
         return shaped_faces
+
+    def get_img_parser(self):
+        """
+        This function is a decorator that adds an img_parser to the class.
+        """
+        import math
+
+        import cv2
+        import numpy as np
+
+        def img_func(state: "RubiksCube.State"):
+            imgsize = IMG_SIZE[0]
+            # Create a blank image with a neutral background
+            img = np.zeros((imgsize, imgsize, 3), dtype=np.uint8)
+            img[:] = (190, 190, 190)
+
+            # Set up projection parameters for a 45° view from above
+            cos45 = math.cos(math.pi / 4)
+            sin45 = math.sin(math.pi / 4)
+
+            # Orthographic projection after a rotation: first around y then around x
+            def project(x, y, z):
+                u = cos45 * x - sin45 * z  # Changed sign for z component
+                v = cos45 * y + 0.5 * (x + z)  # Modified formula for correct orientation
+                return u, v
+
+            # Determine the cube's bounding box in projection to scale and center it on the image
+            vertices = []
+            # Top face (UP): shifted down by adjusting y coordinates
+            vertices += [(0, 0, 0), (self.size, 0, 0), (self.size, 0, self.size), (0, 0, self.size)]
+            # Front face (FRONT): shifted down
+            vertices += [
+                (0, 0, self.size),
+                (self.size, 0, self.size),
+                (self.size, -self.size, self.size),
+                (0, -self.size, self.size),
+            ]
+            # Right face (RIGHT): shifted down
+            vertices += [
+                (self.size, 0, self.size),
+                (self.size, -self.size, self.size),
+                (self.size, -self.size, 0),
+                (self.size, 0, 0),
+            ]
+
+            proj_pts = [project(x, y, z) for (x, y, z) in vertices]
+            us = [pt[0] for pt in proj_pts]
+            vs = [pt[1] for pt in proj_pts]
+            min_u, max_u = min(us), max(us)
+            min_v, max_v = min(vs), max(vs)
+            margin = imgsize * 0.05  # Increased margin to 15% to move image down
+            available_width = imgsize - 2 * margin
+            available_height = imgsize - 2 * margin
+            scale = min(available_width / (max_u - min_u), available_height / (max_v - min_v))
+            offset_x = margin - min_u * scale
+            offset_y = (
+                margin - min_v * scale - 0.25 * available_width
+            )  # Increased y offset by 50% to move image down
+
+            def transform(x, y, z):
+                u, v = project(x, y, z)
+                return int(u * scale + offset_x), int(v * scale + offset_y)
+
+            # Obtain the color data for each face and reshape them into grids
+            board = self.unpack_faces(state.faces)
+            board = np.array(board)
+            face_colors = {}
+            face_colors[UP] = board[UP].reshape((self.size, self.size))
+            face_colors[FRONT] = board[FRONT].reshape((self.size, self.size))
+            face_colors[RIGHT] = board[RIGHT].reshape((self.size, self.size))
+
+            # Draw faces in correct order for proper depth.
+            # 1. Draw the front face (FRONT)
+            for i in range(self.size):
+                for j in range(self.size):
+                    # Modified coordinates for correct orientation
+                    p0 = (j, i, self.size)
+                    p1 = (j + 1, i, self.size)
+                    p2 = (j + 1, i + 1, self.size)
+                    p3 = (j, i + 1, self.size)
+                    pts = np.array(
+                        [transform(*p0), transform(*p1), transform(*p2), transform(*p3)], np.int32
+                    ).reshape((-1, 1, 2))
+                    color_idx = int(face_colors[FRONT][i, j])
+                    color = rgb_map[color_idx]
+                    cv2.fillPoly(img, [pts], color)
+                    cv2.polylines(
+                        img, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                    )
+
+            # 2. Draw the right face (RIGHT)
+            for i in range(self.size):
+                for j in range(self.size):
+                    # Modified coordinates for correct orientation
+                    p0 = (self.size, i, self.size - j)
+                    p1 = (self.size, i, self.size - (j + 1))
+                    p2 = (self.size, i + 1, self.size - (j + 1))
+                    p3 = (self.size, i + 1, self.size - j)
+                    pts = np.array(
+                        [transform(*p0), transform(*p1), transform(*p2), transform(*p3)], np.int32
+                    ).reshape((-1, 1, 2))
+                    color_idx = int(face_colors[RIGHT][i, j])
+                    color = rgb_map[color_idx]
+                    cv2.fillPoly(img, [pts], color)
+                    cv2.polylines(
+                        img, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                    )
+
+            # 3. Draw the top face (UP) last so that it appears above the other faces
+            for i in range(self.size):
+                for j in range(self.size):
+                    p0 = (j, 0, self.size - i)
+                    p1 = (j + 1, 0, self.size - i)
+                    p2 = (j + 1, 0, self.size - (i + 1))
+                    p3 = (j, 0, self.size - (i + 1))
+                    pts = np.array(
+                        [transform(*p0), transform(*p1), transform(*p2), transform(*p3)], np.int32
+                    ).reshape((-1, 1, 2))
+                    color_idx = int(face_colors[UP][self.size - i - 1, j])
+                    color = rgb_map[color_idx]
+                    cv2.fillPoly(img, [pts], color)
+                    cv2.polylines(
+                        img, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                    )
+
+            return img
+
+        return img_func
 
 
 class RubiksCubeHard(RubiksCube):
