@@ -30,12 +30,13 @@ class DotKnotQ(QFunction):
         """
         Get distance for solving puzzle.
         """
-        point_a = current.board == (color_idx + 1)
+        unpacked = DotKnot.unpack_board(current.board)
+        point_a = unpacked == (color_idx + 1)
         point_a_available = jnp.any(point_a)
         point_a_pos = jnp.stack(
             jnp.unravel_index(jnp.argmax(point_a), (self.puzzle.size, self.puzzle.size))
         )
-        point_b = current.board == (color_idx + self.puzzle.color_num + 1)
+        point_b = unpacked == (color_idx + self.puzzle.color_num + 1)
         point_b_pos = jnp.stack(
             jnp.unravel_index(jnp.argmax(point_b), (self.puzzle.size, self.puzzle.size))
         )
