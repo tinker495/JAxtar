@@ -9,64 +9,12 @@ from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint8
 
-level1 = [
-    "##########",
-    "# @      #",
-    "# $    . #",
-    "#  $# .  #",
-    "#  .#$  # ",
-    "# . # $ # ",
-    "#        #",
-    "##########",
-    "##########",
-    "##########",
-]
-
-level2 = [
-    "##########",
-    "#        #",
-    "#$ #   . #",
-    "# # $ # .#",
-    "#  .# $  #",
-    "# @ # . $#",
-    "#        #",
-    "##########",
-    "##########",
-    "##########",
-]
-
-# Puzzles are grouped into sets of one thousand puzzles, each set encoded as a text file.
-# Each puzzle is a 10 by 10 ASCII string which uses the following encoding:
-# '#' for wall, '@' for the player character, '$' for a box, and '.' for a goal position.
-
 
 class Object(Enum):
     EMPTY = 0
     WALL = 1
     PLAYER = 2
     BOX = 3
-
-
-def convert_level(level: list[str]) -> tuple[chex.Array, chex.Array]:
-    init_level = jnp.zeros((10 * 10,), dtype=TYPE)
-    target_level = jnp.zeros((10 * 10,), dtype=TYPE)
-    for i, row in enumerate(level):
-        for j, col in enumerate(row):
-            idx = i * 10 + j
-            if col == "#":
-                init_level = init_level.at[idx].set(Object.WALL.value)
-                target_level = target_level.at[idx].set(Object.WALL.value)
-            elif col == "@":
-                init_level = init_level.at[idx].set(Object.PLAYER.value)
-            elif col == "$":
-                init_level = init_level.at[idx].set(Object.BOX.value)
-            elif col == ".":
-                target_level = target_level.at[idx].set(Object.BOX.value)
-    return init_level, target_level
-
-
-level1_init, level1_target = convert_level(level1)
-level2_init, level2_target = convert_level(level2)
 
 
 class Sokoban(Puzzle):
@@ -79,6 +27,9 @@ class Sokoban(Puzzle):
     def __init__(self, size: int = 10):
         self.size = size
         assert size == 10, "Boxoban dataset only supports size 10"
+        self.init_puzzles = jnp.load("init.npy")  # bring boxoban dataset here
+        self.target_puzzles = jnp.load("target.npy")  # bring boxoban dataset here
+        self.num_puzzles = self.init_puzzles.shape[0]
         super().__init__()
 
     @property
@@ -118,12 +69,14 @@ class Sokoban(Puzzle):
 
     def get_initial_state(self, key=None) -> State:
         # Initialize the board with the player, boxes, and walls from level1 and pack it.
-        packed_board = self.pack_board(level1_init)
+        idx = jax.random.randint(key, (), 0, self.num_puzzles)
+        packed_board = self.init_puzzles[idx, ...]
         return self.State(board=packed_board)
 
     def get_target_state(self, key=None) -> State:
         # Define the target state and pack it.
-        packed_board = self.pack_board(level1_target)
+        idx = jax.random.randint(key, (), 0, self.num_puzzles)
+        packed_board = self.target_puzzles[idx, ...]
         return self.State(board=packed_board)
 
     def is_solved(self, state: State, target: State) -> bool:
