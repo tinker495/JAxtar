@@ -32,7 +32,6 @@ def main():
 @puzzle_options
 @human_play_options
 def human_play(puzzle, start_state_seed):
-
     has_target = puzzle.has_target
 
     init_state, target_state = puzzle.get_init_target_state_pair(
@@ -40,29 +39,56 @@ def human_play(puzzle, start_state_seed):
     )
     _, costs = puzzle.get_neighbours(init_state)
     n_actions = costs.shape[0]
+
+    action_strs = [puzzle.action_to_string(i) for i in range(n_actions)]
+    arrow_characters = ["←", "→", "↑", "↓"]
+
+    # New WASD mapping for arrow controls
+    wasd_mapping = {
+        "w": "↑",
+        "a": "←",
+        "s": "↓",
+        "d": "→",
+    }
+
+    arrow_flag = any(arrow in s for s in action_strs for arrow in arrow_characters)
+
     print("Initial state")
     print(init_state)
     if has_target:
         print("Target state")
         print(target_state)
     print("Next states")
-
-    print("Use number keys to move the point.")
+    print("Use number keys, [WASD] or arrow keys to move the point.")
     print("Use ESC to exit.")
+
     current_state = init_state
     sum_cost = 0
     while True:
         print(current_state)
         print(f"Costs: {sum_cost}")
-        print(
-            f"Actions: {'|'.join(f'{i+1}: {puzzle.action_to_string(i)}' for i in range(n_actions))}"
-        )
+        if arrow_flag:
+            print(
+                f"Actions: {'|'.join(f'{k.upper()}: {v}' for k, v in list(wasd_mapping.items())[:n_actions])}"
+            )
+        else:
+            print(f"Actions: {'|'.join(f'{i+1}: {action_strs[i]}' for i in range(n_actions))}")
         neighbors, costs = puzzle.get_neighbours(current_state)
         key = click.getchar()
         if key == "\x1b":  # ESC
             break
         try:
-            action = int(key) - 1
+            print("Key pressed:", key)
+            if arrow_flag:
+                if key in arrow_characters:
+                    action = arrow_characters.index(key)
+                elif key.lower() in wasd_mapping:
+                    action = arrow_characters.index(wasd_mapping[key.lower()])
+                else:
+                    action = int(key) - 1
+            else:
+                action = int(key) - 1
+
             if costs[action] == jnp.inf:
                 print("Invalid move!")
                 continue
@@ -73,6 +99,7 @@ def human_play(puzzle, start_state_seed):
         except IndexError:
             print("Invalid action index!")
         if puzzle.is_solved(current_state, target_state):
+            print(current_state)
             print(f"Solution found! Cost: {sum_cost}")
             break
 

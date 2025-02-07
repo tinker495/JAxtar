@@ -63,7 +63,7 @@ class Maze(Puzzle):
         If impossible to move in a direction, cost should be inf and State should be same as input state.
         """
         # Define possible moves: up, down, left, right
-        moves = jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
+        moves = jnp.array([[0, -1], [0, 1], [-1, 0], [1, 0]])
 
         def move(state, move):
             new_pos = (state.pos + move).astype(TYPE)
