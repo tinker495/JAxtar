@@ -125,8 +125,8 @@ JIT compiled
 
 Heuristic: 14.10
 
-Time:   1.44 seconds
-Search states: 1.51M(1.05M states/s)
+Search Time:   1.31 seconds
+Search states: 1.51M(1.16M states/s)
 
 
 Cost: 22.0
@@ -142,10 +142,9 @@ Time:  60.01 seconds
 JIT compiled
 
 ...
-qvalues: 'l_cw': 17.1 | 'l_ccw': 16.9 | 'd_cw': 16.8 | 'd_ccw': 16.7 | 'f_cw': 16.7 | 'f_ccw': 17.0 | 'r_cw': 17.5 | 'r_ccw': 17.3 | 'b_cw': 17.2 | 'b_ccw': 16.9 | 'u_cw': 16.5 | 'u_ccw': 16.1
-
-Time:   0.55 seconds
-Search states: 1.46M(2.65M states/s)
+qvalues: 'l_cw': 16.9 | 'l_ccw': 17.5 | 'd_cw': 17.1 | 'd_ccw': 16.8 | 'f_cw': 17.4 | 'f_ccw': 17.9 | 'r_cw': 16.8 | 'r_ccw': 17.2 | 'b_cw': 17.3 | 'b_ccw': 16.3 | 'u_cw': 17.7 | 'u_ccw': 17.0
+Search Time:   0.42 seconds
+Search states: 1.46M(3.45M states/s)
 
 
 Cost: 22.0
