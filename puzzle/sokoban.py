@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 from termcolor import colored
 
+from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint8
@@ -214,6 +215,59 @@ class Sokoban(Puzzle):
         board = self.unpack_board(state.board)
         flat_index = jnp.argmax(board == Object.PLAYER.value)
         return jnp.unravel_index(flat_index, (self.size, self.size))
+
+    def get_img_parser(self):
+        """
+        This function is a decorator that adds an img_parser to the class.
+        """
+        import os
+
+        import cv2
+        import numpy as np
+
+        image_dir = os.path.join("puzzle", "data", "sokoban", "imgs")
+        assets = {
+            0: cv2.cvtColor(
+                cv2.imread(os.path.join(image_dir, "floor.png"), cv2.IMREAD_COLOR),
+                cv2.COLOR_BGR2RGB,
+            ),
+            1: cv2.cvtColor(
+                cv2.imread(os.path.join(image_dir, "wall.png"), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB
+            ),
+            2: cv2.cvtColor(
+                cv2.imread(os.path.join(image_dir, "agent.png"), cv2.IMREAD_COLOR),
+                cv2.COLOR_BGR2RGB,
+            ),
+            3: cv2.cvtColor(
+                cv2.imread(os.path.join(image_dir, "box.png"), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB
+            ),
+        }
+
+        def img_func(state: "Sokoban.State"):
+            img = np.zeros(IMG_SIZE + (3,), np.uint8)
+
+            cell_w = IMG_SIZE[0] // self.size
+            cell_h = IMG_SIZE[1] // self.size
+            board = self.unpack_board(state.board)
+            for i in range(self.size):
+                for j in range(self.size):
+                    cell_val = int(board[i * self.size + j])
+                    asset = assets.get(cell_val)
+                    if asset is not None:
+                        asset_resized = cv2.resize(asset, (cell_w, cell_h))
+                        img[
+                            i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w
+                        ] = asset_resized
+                    else:
+                        # Fallback: fill with a gray square if image not found
+                        img[i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w] = (
+                            127,
+                            127,
+                            127,
+                        )
+            return img
+
+        return img_func
 
 
 class SokobanHard(Sokoban):
