@@ -1,5 +1,6 @@
 from heuristic import (
     DotKnotHeuristic,
+    EmptyHeuristic,
     LightsOutHeuristic,
     MazeHeuristic,
     RubiksCubeHeuristic,
@@ -21,7 +22,14 @@ from puzzle import (
     SlidePuzzleHard,
     Sokoban,
 )
-from qfunction import DotKnotQ, LightsOutQ, MazeQ, RubiksCubeQ, SlidePuzzleQ
+from qfunction import (
+    DotKnotQ,
+    EmptyQFunction,
+    LightsOutQ,
+    MazeQ,
+    RubiksCubeQ,
+    SlidePuzzleQ,
+)
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
 
 default_puzzle_sizes = {
@@ -55,6 +63,7 @@ puzzle_heuristic_dict = {
     "rubikscube": lambda puzzle: RubiksCubeHeuristic(puzzle),
     "maze": lambda puzzle: MazeHeuristic(puzzle),
     "dotknot": lambda puzzle: DotKnotHeuristic(puzzle),
+    "sokoban": lambda puzzle: EmptyHeuristic(puzzle),
 }
 
 puzzle_heuristic_dict_nn = {
@@ -81,6 +90,7 @@ puzzle_q_dict = {
     "rubikscube": lambda puzzle: RubiksCubeQ(puzzle),
     "maze": lambda puzzle: MazeQ(puzzle),
     "dotknot": lambda puzzle: DotKnotQ(puzzle),
+    "sokoban": lambda puzzle: EmptyQFunction(puzzle),
 }
 
 puzzle_q_dict_nn = {

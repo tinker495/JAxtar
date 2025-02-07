@@ -94,7 +94,7 @@ class Sokoban(Puzzle):
 
     def get_default_gen(self) -> callable:
         def gen():
-            return self.State(board=jnp.ones(self.size**2, dtype=bool))
+            return self.State(board=jnp.ones(self.size**2, dtype=TYPE))
 
         return gen
 

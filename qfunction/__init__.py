@@ -1,4 +1,5 @@
 from qfunction.dotknot_q import DotKnotQ
+from qfunction.empty_q import EmptyQFunction
 from qfunction.lightsout_q import LightsOutQ
 from qfunction.maze_q import MazeQ
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
