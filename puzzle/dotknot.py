@@ -40,6 +40,8 @@ class DotKnot(Puzzle):
         return False
 
     def __init__(self, size: int, color_num: int = 4):
+        assert size % 2 == 0, "Size must be even"
+        assert size >= 4, "Size must be at least 4 for packing"
         self.size = size
         self.color_num = color_num
         super().__init__()
@@ -60,13 +62,38 @@ class DotKnot(Puzzle):
                 return "?"  # for debug and target
 
         def parser(state):
-            return form.format(*map(to_char, state.board))
+            unpacked = DotKnot.unpack_board(state.board)
+            return form.format(*map(to_char, unpacked))
 
         return parser
 
+    @staticmethod
+    def pack_board(board: jnp.ndarray) -> jnp.ndarray:
+        """
+        Pack a board array of shape (size * size) with cell values in 0 ~ 16
+        into a compact representation.
+        """
+        reshaped = jnp.reshape(board, (-1, 2))  # reshape to (num_pairs, 2)
+        shifts = jnp.array([0, 4], dtype=board.dtype)
+        packed = jnp.sum(reshaped * (2**shifts), axis=1).astype(jnp.uint8)
+        return packed
+
+    @staticmethod
+    def unpack_board(packed: jnp.ndarray) -> jnp.ndarray:
+        """
+        Unpack a compact board representation back to a board of shape (size * size)
+        with cell values in 0 ~ 16.
+        """
+        shifts = jnp.array([0, 4], dtype=jnp.uint8)
+        cells = jnp.stack([(packed >> shift) & 15 for shift in shifts], axis=1)
+        board = jnp.reshape(cells, (-1,))
+        return board
+
     def get_default_gen(self) -> callable:
         def gen():
-            return self.State(board=jnp.zeros((self.size * self.size), dtype=TYPE))
+            board = jnp.zeros((self.size * self.size), dtype=TYPE)
+            packed_board = DotKnot.pack_board(board)
+            return self.State(board=packed_board)
 
         return gen
 
@@ -74,9 +101,9 @@ class DotKnot(Puzzle):
         return self._get_random_state(key)
 
     def get_target_state(self, key=None) -> State:
-        return self.State(
-            board=jnp.full((self.size * self.size), -1, dtype=TYPE)
-        )  # this puzzle no target
+        board = jnp.full((self.size * self.size), -1, dtype=TYPE)
+        packed_board = DotKnot.pack_board(board)
+        return self.State(board=packed_board)  # this puzzle no target
 
     def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
         """
@@ -84,30 +111,28 @@ class DotKnot(Puzzle):
         If impossible to move in a direction, cost should be inf and State should be same as input state.
         """
         # Define possible moves: up, down, left, right
-        points = (
-            jnp.arange(self.color_num, dtype=TYPE) + 1
-        )  # 1 ~ color_num: point a, color_num + 1 ~ 2 * color_num + 1: point b
+        points = jnp.arange(self.color_num, dtype=TYPE) + 1  # 1 ~ color_num: point a, etc.
         moves = jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
-        points, moves_idx = jnp.meshgrid(
-            points,
-            jnp.arange(4),
-        )
+        points, moves_idx = jnp.meshgrid(points, jnp.arange(4))
         points = points.reshape(-1)
         moves = moves[moves_idx.reshape(-1)]
 
-        board = state.board
+        # Unpack the board for processing
+        unpacked_board = DotKnot.unpack_board(state.board)
 
         def is_valid(new_pos, color_idx):
-            not_blocked = board[new_pos[0] * self.size + new_pos[1]] == 0
-            new_pos_color_idx = (board[new_pos[0] * self.size + new_pos[1]] - 1) % self.color_num
-            new_pos_is_point = board[new_pos[0] * self.size + new_pos[1]] <= 2 * self.color_num
+            index = new_pos[0] * self.size + new_pos[1]
+            not_blocked = unpacked_board[index] == 0
+            new_pos_color_idx = (unpacked_board[index] - 1) % self.color_num
+            new_pos_is_point = unpacked_board[index] <= 2 * self.color_num
             is_merge = (new_pos_color_idx == color_idx) & new_pos_is_point & ~not_blocked
-            return is_merge, (
+            valid = (
                 (new_pos >= 0).all()
                 & (new_pos < self.size).all()
                 & (not_blocked | is_merge)
                 & filled
             )
+            return is_merge, valid
 
         def point_move(board, pos, new_pos, point_idx, color_idx, is_merge):
             flat_index = pos[0] * self.size + pos[1]
@@ -116,38 +141,34 @@ class DotKnot(Puzzle):
                 is_merge,
                 board.at[next_flat_index].set(color_idx + 2 * self.color_num + 1),
                 board.at[next_flat_index].set(point_idx),
-            )  # new point
-            return board.at[flat_index].set(color_idx + 2 * self.color_num + 1)  # old point is line
+            )
+            return board.at[flat_index].set(color_idx + 2 * self.color_num + 1)
 
-        def move(state, point, move):
+        def move(state, point, move_vector):
             point_idx = point
             color_idx = (point_idx - 1) % self.color_num
             available, pos = self._getBlankPosition(state, point_idx)
-            new_pos = (pos + move).astype(TYPE)
-
+            new_pos = (pos + move_vector).astype(TYPE)
             is_merge, valid_move = is_valid(new_pos, color_idx)
             valid_move = valid_move & available
             new_board = jax.lax.cond(
                 valid_move,
-                lambda _: point_move(board, pos, new_pos, point_idx, color_idx, is_merge),
-                lambda _: board,
-                None,
+                lambda _: point_move(unpacked_board, pos, new_pos, point_idx, color_idx, is_merge),
+                lambda _: unpacked_board,
+                operand=None,
             )
-            new_state = self.State(board=new_board)
-
-            # Cost is 1 for valid moves, inf for invalid moves
+            new_state = self.State(board=DotKnot.pack_board(new_board))
             cost = jnp.where(valid_move, 1.0, jnp.inf)
-
             return new_state, cost
 
-        # Apply the move function to all possible moves
         new_states, costs = jax.vmap(move, in_axes=(None, 0, 0))(state, points, moves)
         return new_states, costs
 
     def is_solved(self, state: State, target: State) -> bool:
-        empty = jnp.all(state.board == 0)  # ALL empty is not solved condition
-        gr = jnp.greater_equal(state.board, 1)  # ALL point a is solved condition
-        le = jnp.less_equal(state.board, self.color_num * 2)  # ALL point b is solved condition
+        unpacked = DotKnot.unpack_board(state.board)
+        empty = jnp.all(unpacked == 0)  # ALL empty is not solved condition
+        gr = jnp.greater_equal(unpacked, 1)  # ALL point a is solved condition
+        le = jnp.less_equal(unpacked, self.color_num * 2)  # ALL point b is solved condition
         points = gr & le
         no_point = ~jnp.any(points)  # if there is no point, it is solved
         return no_point & ~empty
@@ -177,24 +198,24 @@ class DotKnot(Puzzle):
             form += "┃ "
             for j in range(size):
                 form += "{:s} "
-            form += "┃"
-            form += "\n"
+            form += "┃" + "\n"
         form += "┗━"
         for i in range(size):
             form += "━━" if i != size - 1 else "━━┛"
         return form
 
     def _getBlankPosition(self, state: State, idx: int):
-        one_hot = state.board == idx
+        unpacked_board = DotKnot.unpack_board(state.board)
+        one_hot = unpacked_board == idx
         available = jnp.any(one_hot)
         flat_index = jnp.argmax(one_hot)
-        return available, jnp.stack(jnp.unravel_index(flat_index, (self.size, self.size)))
+        pos = jnp.stack(jnp.unravel_index(flat_index, (self.size, self.size)))
+        return available, pos
 
     def _get_random_state(self, key, num_shuffle=30):
         """
         This function should return a random state.
         """
-
         init_board = jnp.zeros((self.size * self.size), dtype=TYPE)
 
         def _while_loop(val):
@@ -206,7 +227,10 @@ class DotKnot(Puzzle):
             random_index = pos[0] * self.size + pos[1]
             is_already_filled = board[random_index] != 0
             board = jax.lax.cond(
-                is_already_filled, lambda _: board, lambda _: board.at[random_index].set(idx), None
+                is_already_filled,
+                lambda _: board,
+                lambda _: board.at[random_index].set(idx),
+                operand=None,
             )
             next_idx = jnp.where(is_already_filled, idx, idx + 1)
             return board, key, next_idx
@@ -214,5 +238,5 @@ class DotKnot(Puzzle):
         board, _, _ = jax.lax.while_loop(
             lambda val: val[2] < self.color_num * 2 + 1, _while_loop, (init_board, key, 1)
         )
-        state = self.State(board=board)
-        return state
+        packed_board = DotKnot.pack_board(board)
+        return self.State(board=packed_board)

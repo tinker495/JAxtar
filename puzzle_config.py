@@ -31,7 +31,7 @@ default_puzzle_sizes = {
     "lightsout": 7,
     "rubikscube": 3,
     "maze": 20,
-    "dotknot": 7,
+    "dotknot": 8,
     "sokoban": 10,
 }
 
