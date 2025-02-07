@@ -27,10 +27,14 @@ class Sokoban(Puzzle):
     def __init__(self, size: int = 10):
         self.size = size
         assert size == 10, "Boxoban dataset only supports size 10"
-        self.init_puzzles = jnp.load("init.npy")  # bring boxoban dataset here
-        self.target_puzzles = jnp.load("target.npy")  # bring boxoban dataset here
-        self.num_puzzles = self.init_puzzles.shape[0]
         super().__init__()
+
+    def data_init(self):
+        self.init_puzzles = jnp.load("puzzle/data/sokoban/init.npy")  # bring boxoban dataset here
+        self.target_puzzles = jnp.load(
+            "puzzle/data/sokoban/target.npy"
+        )  # bring boxoban dataset here
+        self.num_puzzles = self.init_puzzles.shape[0]
 
     @property
     def has_target(self) -> bool:
@@ -212,3 +216,10 @@ class Sokoban(Puzzle):
         board = self.unpack_board(state.board)
         flat_index = jnp.argmax(board == Object.PLAYER.value)
         return jnp.unravel_index(flat_index, (self.size, self.size))
+
+
+class SokobanHard(Sokoban):
+    def data_init(self):
+        self.init_puzzles = jnp.load("puzzle/data/sokoban/init_hard.npy")
+        self.target_puzzles = jnp.load("puzzle/data/sokoban/target_hard.npy")
+        self.num_puzzles = self.init_puzzles.shape[0]
