@@ -56,7 +56,7 @@ def qstar_builder(
         """
         astar is the implementation of the A* algorithm.
         """
-        search_result = SearchResult.build(statecls, batch_size, max_nodes)
+        search_result: SearchResult = SearchResult.build(statecls, batch_size, max_nodes)
         states, filled = HashTable.make_batched(puzzle.State, start[jnp.newaxis, ...], batch_size)
 
         (
@@ -164,7 +164,7 @@ def qstar_builder(
         (search_result, idxes, filled) = jax.lax.while_loop(
             _cond, _body, (search_result, parent, filled)
         )
-        states = search_result.hashtable.table[idxes.index, idxes.table_index]
+        states = search_result.get_state(idxes)
         solved = solved_fn(states, target)
         search_result.solved = solved.any()
         search_result.solved_idx = idxes[jnp.argmax(solved)]
