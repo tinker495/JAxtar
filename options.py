@@ -137,7 +137,12 @@ def qfunction_options(func: callable) -> callable:
 
 
 def visualize_options(func: callable) -> callable:
-    @click.option("-v", "--visualize", is_flag=True, help="Visualize the path")
+    @click.option(
+        "-vt", "--visualize_terminal", is_flag=True, help="Visualize the path with terminal"
+    )
+    @click.option(
+        "-vi", "--visualize_imgs", is_flag=True, help="Visualize the path with gif images"
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
