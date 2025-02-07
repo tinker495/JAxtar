@@ -141,26 +141,26 @@ class SearchResult:
         )
 
     @property
-    def capacity(self):
+    def capacity(self) -> int:
         """Maximum number of states that can be stored."""
         return self.hashtable.capacity
 
     @property
-    def n_table(self):
+    def n_table(self) -> int:
         """Number of cuckoo hash tables being used."""
         return self.hashtable.n_table
 
     @property
-    def batch_size(self):
+    def batch_size(self) -> int:
         """Batch size of the search."""
         return self.priority_queue.batch_size
 
     @property
-    def size(self):
+    def size(self) -> int:
         """Current number of states stored."""
         return self.hashtable.size
 
-    def pop_full(search_result):
+    def pop_full(search_result) -> tuple["SearchResult", HashTableIdx_HeapValue, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently.
@@ -232,7 +232,7 @@ class SearchResult:
         ].set(~filled)
         return search_result, min_val, filled
 
-    def get_solved_path(search_result):
+    def get_solved_path(search_result) -> list[HashTableIdx_HeapValue]:
         """
         Get the path to the solved state.
         """
@@ -250,26 +250,26 @@ class SearchResult:
         path.reverse()
         return path
 
-    def get_state(search_result, idx: HashTableIdx_HeapValue):
+    def get_state(search_result, idx: HashTableIdx_HeapValue) -> Puzzle.State:
         """
         Get the state from the hash table.
         """
         return search_result.hashtable.table[idx.index, idx.table_index]
 
-    def get_cost(search_result, idx: HashTableIdx_HeapValue):
+    def get_cost(search_result, idx: HashTableIdx_HeapValue) -> chex.Array:
         """
         Get the cost of the state from the cost array.
         """
         return search_result.cost[idx.index, idx.table_index]
 
-    def get_parent_action(search_result, idx: HashTableIdx_HeapValue):
+    def get_parent_action(search_result, idx: HashTableIdx_HeapValue) -> chex.Array:
         """
         Get the parent action from the parent action array.
         """
         return search_result.parent_action[idx.index, idx.table_index]
 
 
-def unique_mask(val: HashTableIdx_HeapValue, batch_len: int):
+def unique_mask(val: HashTableIdx_HeapValue, batch_len: int) -> chex.Array:
     """
     Creates a boolean mask identifying unique values in a HashTableIdx_HeapValue tensor.
     This function is used to filter out duplicate states in batched operations.
