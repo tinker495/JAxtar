@@ -171,6 +171,15 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
     return cls
 
 
+def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:
+    """
+    This function is a decorator that adds a __str__ method to
+    the class that returns a string representation of the class.
+    """
+    setattr(cls, "img", imgfunc)
+    return cls
+
+
 class Puzzle(ABC):
     @state_dataclass
     class State:
@@ -190,6 +199,10 @@ class Puzzle(ABC):
         def default(_=None) -> T:
             pass
 
+        @abstractmethod
+        def img(self) -> jnp.ndarray:
+            pass
+
     @property
     @abstractmethod
     def has_target(self) -> bool:
@@ -205,6 +218,7 @@ class Puzzle(ABC):
         super().__init__()
         self.State = add_string_parser(self.State, self.get_string_parser())
         self.State = add_default(self.State, self.get_default_gen())
+        self.State = add_img_parser(self.State, self.get_img_parser())
 
         self.get_initial_state = jax.jit(self.get_initial_state)
         self.get_target_state = jax.jit(self.get_target_state)
@@ -234,6 +248,14 @@ class Puzzle(ABC):
         """
         This function should return a callable that takes a state and returns a shape of it.
         function signature: (state: State) -> Dict[str, Any]
+        """
+        pass
+
+    @abstractmethod
+    def get_img_parser(self) -> callable:
+        """
+        This function should return a callable that takes a state and returns a image representation of it.
+        function signature: (state: State) -> jnp.ndarray
         """
         pass
 
