@@ -2,6 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint8
@@ -184,6 +185,44 @@ class SlidePuzzle(Puzzle):
             for j in range(i + 1, n * n):
                 inv_count += is_inv(arr[i], arr[j])
         return inv_count
+
+    def get_img_parser(self):
+        """
+        This function is a decorator that adds an img_parser to the class.
+        """
+        import cv2
+        import numpy as np
+
+        def img_func(state: "SlidePuzzle.State"):
+            imgsize = IMG_SIZE[0]
+            img = np.zeros(IMG_SIZE + (3,), np.uint8)
+            img[:] = (144, 96, 8)  # R144,G96,B8
+            img = cv2.rectangle(
+                img,
+                (int(imgsize * 0.03), int(imgsize * 0.03)),
+                (int(imgsize - imgsize * 0.02), int(imgsize - imgsize * 0.02)),
+                (104, 56, 8),
+                -1,
+            )
+            fontsize = 2.5
+            board_flat = state.board
+            for idx, val in enumerate(board_flat):
+                if val == 0:
+                    continue
+                stx = int(imgsize * 0.04 + (imgsize * 0.95 / self.size) * (idx % self.size))
+                sty = int(imgsize * 0.04 + (imgsize * 0.95 / self.size) * (idx // self.size))
+                bs = int(imgsize * 0.87 / self.size)
+                txt = str(val)
+                textsize = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, fontsize, 5)[0]
+                textX = int(stx + (bs - textsize[0]) / 2)
+                textY = int(sty + (bs + textsize[1]) / 2)
+                img = cv2.rectangle(img, (stx, sty), (stx + bs, sty + bs), (240, 240, 232), -1)
+                img = cv2.putText(
+                    img, txt, (textX, textY), cv2.FONT_HERSHEY_SIMPLEX, fontsize, (10, 10, 10), 5
+                )
+            return img
+
+        return img_func
 
 
 class SlidePuzzleHard(SlidePuzzle):
