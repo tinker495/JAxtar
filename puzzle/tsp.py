@@ -2,6 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint8
@@ -121,3 +122,73 @@ class TSP(Puzzle):
     def from_uint8(self, board: chex.Array) -> chex.Array:
         # from uint8 4 to boolean 32
         return jnp.unpackbits(board, axis=-1, count=self.number_of_points, bitorder="little")
+
+    def get_img_parser(self):
+        """
+        This function returns an img_parser that visualizes the TSP problem.
+        It draws all the points scaled to fit into the image, highlights the start point in green,
+        marks visited points in blue and unvisited in red, and outlines the current point with a black border.
+        If all points are visited, it draws a line from the current point back to the start point.
+        """
+        import cv2
+        import numpy as np
+
+        def img_func(state: "TSP.State"):
+            imgsize = IMG_SIZE[0]
+            # Create a white background image
+            img = np.ones(IMG_SIZE + (3,), np.uint8) * 255
+
+            # Get the visited mask as booleans
+            visited = self.from_uint8(state.mask)
+            # Convert the TSP points (assumed to be an array of shape [number_of_points, 2]) to a numpy array
+            points_np = np.array(self.points)
+
+            # Compute scaling parameters to fit all points within the image with a margin
+            margin = 20
+            if points_np.size > 0:
+                xmin, xmax = points_np[:, 0].min(), points_np[:, 0].max()
+                ymin, ymax = points_np[:, 1].min(), points_np[:, 1].max()
+            else:
+                xmin, xmax, ymin, ymax = 0, 1, 0, 1
+
+            # Scale points to image coordinates
+            scaled_points = []
+            for pt in points_np:
+                if xmax > xmin:
+                    x_coord = margin + int((pt[0] - xmin) / (xmax - xmin) * (imgsize - 2 * margin))
+                else:
+                    x_coord = imgsize // 2
+                if ymax > ymin:
+                    y_coord = margin + int((pt[1] - ymin) / (ymax - ymin) * (imgsize - 2 * margin))
+                else:
+                    y_coord = imgsize // 2
+                scaled_points.append((x_coord, y_coord))
+
+            # Draw each point with different colors based on status
+            for idx, (x, y) in enumerate(scaled_points):
+                # Color: green for start, blue for visited, red for unvisited
+                if idx == state.start:
+                    color = (0, 255, 0)
+                elif visited[idx]:
+                    color = (255, 0, 0)
+                else:
+                    color = (0, 0, 255)
+
+                cv2.circle(img, (x, y), 5, color, -1)
+
+                # Highlight the current point with an outer black circle
+                if idx == state.point:
+                    cv2.circle(img, (x, y), 8, (0, 0, 0), 2)
+
+                # Optionally, label the point with its index
+                cv2.putText(
+                    img, str(idx), (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (50, 50, 50), 1
+                )
+
+            # If all points are visited, draw a line from the current point to the start point to close the tour
+            if np.all(visited):
+                cv2.line(img, scaled_points[state.point], scaled_points[state.start], (0, 0, 0), 2)
+
+            return img
+
+        return img_func
