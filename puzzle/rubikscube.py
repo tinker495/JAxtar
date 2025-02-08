@@ -286,7 +286,7 @@ class RubiksCube(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "RubiksCube.State"):
+        def img_func(state: "RubiksCube.State", **kwargs):
             imgsize = IMG_SIZE[0]
             # Create a blank image with a neutral background
             img = np.zeros((imgsize, imgsize, 3), dtype=np.uint8)

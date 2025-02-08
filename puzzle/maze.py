@@ -167,7 +167,7 @@ class Maze(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "Maze.State"):
+        def img_func(state: "Maze.State", **kwargs):
             imgsize = IMG_SIZE[0]
             # Create a white background image for the maze
             img = np.full((imgsize, imgsize, 3), 255, np.uint8)
