@@ -178,11 +178,12 @@ def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:
     the class that returns a string representation of the class.
     """
 
-    def get_img(self) -> np.ndarray:
+    def get_img(self, **kwargs) -> np.ndarray:
         structured_type = self.structured_type
+        print(kwargs)
 
         if structured_type == StructuredType.SINGLE:
-            return imgfunc(self)
+            return imgfunc(self, **kwargs)
         elif structured_type == StructuredType.BATCHED:
             batch_shape = self.batch_shape
             batch_len = (
@@ -192,7 +193,7 @@ def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:
             for i in range(batch_len):
                 index = jnp.unravel_index(i, batch_shape)
                 current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                results.append(imgfunc(current_state))
+                results.append(imgfunc(current_state, **kwargs))
             return results
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
