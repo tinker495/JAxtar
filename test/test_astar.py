@@ -4,7 +4,6 @@ import pytest
 
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 from JAxtar.astar import astar_builder
-from JAxtar.hash import HashTable
 from puzzle.slidepuzzle import SlidePuzzle
 
 
@@ -31,14 +30,13 @@ def astar_setup():
 
 def test_astar_initialization(astar_setup):
     setup = astar_setup
-    search_result_build, astar_fn = astar_builder(
+    astar_fn = astar_builder(
         setup["puzzle"],
         setup["heuristic"],
         setup["batch_size"],
         setup["max_node_size"],
         cost_weight=setup["cost_weight"],
     )
-    assert search_result_build is not None
     assert astar_fn is not None
 
 
@@ -46,7 +44,7 @@ def test_astar_search(astar_setup):
     setup = astar_setup
 
     # Build A* search function
-    search_result_build, astar_fn = astar_builder(
+    astar_fn = astar_builder(
         setup["puzzle"],
         setup["heuristic"],
         setup["batch_size"],
@@ -57,17 +55,14 @@ def test_astar_search(astar_setup):
     # Create initial state
     states = setup["puzzle"].State(
         board=jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 14, 15], dtype=jnp.uint8)
-    )[jnp.newaxis, ...]
-    states, filled = HashTable.make_batched(setup["puzzle"].State, states, setup["batch_size"])
-
-    # Run search
-    search_result, solved, solved_idx = astar_fn(
-        search_result_build(), states, filled, setup["target"]
     )
 
+    # Run search
+    search_result = astar_fn(states, setup["target"])
+
     assert search_result is not None
-    assert solved, "Solution not found"
-    assert solved_idx is not None, "Solved index not found"
+    assert search_result.solved, "Solution not found"
+    assert search_result.solved_idx is not None, "Solved index not found"
 
 
 def test_heuristic_values(astar_setup):

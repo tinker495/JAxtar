@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 from termcolor import colored
 
+from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
 
 TYPE = jnp.uint16
@@ -55,7 +56,8 @@ class Maze(Puzzle):
         return self._get_random_state(key)
 
     def get_target_state(self, key=jax.random.PRNGKey(128)) -> State:
-        return self._get_random_state(key)
+        key1, _ = jax.random.split(key)
+        return self._get_random_state(key1)
 
     def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
         """
@@ -63,7 +65,7 @@ class Maze(Puzzle):
         If impossible to move in a direction, cost should be inf and State should be same as input state.
         """
         # Define possible moves: up, down, left, right
-        moves = jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
+        moves = jnp.array([[0, -1], [0, 1], [-1, 0], [1, 0]])
 
         def move(state, move):
             new_pos = (state.pos + move).astype(TYPE)
@@ -157,3 +159,51 @@ class Maze(Puzzle):
     def from_uint8(self, board: chex.Array) -> chex.Array:
         # from uint8 4 to boolean 32
         return jnp.unpackbits(board, axis=-1, count=self.size**2, bitorder="little")
+
+    def get_img_parser(self):
+        """
+        This function is a decorator that adds an img_parser to the class.
+        """
+        import cv2
+        import numpy as np
+
+        def img_func(state: "Maze.State"):
+            imgsize = IMG_SIZE[0]
+            # Create a white background image for the maze
+            img = np.full((imgsize, imgsize, 3), 255, np.uint8)
+
+            # Unpack the maze layout from state's board.
+            # Assume that each cell is represented by a binary value:
+            # 1 indicates a wall, 0 indicates an open path.
+            maze_flat = self.from_uint8(self.maze)
+            cell_size = imgsize / self.size
+
+            # Draw the maze walls as filled black rectangles.
+            for i in range(self.size):
+                for j in range(self.size):
+                    idx = i * self.size + j
+                    if maze_flat[idx] == 1:
+                        top_left = (int(j * cell_size), int(i * cell_size))
+                        bottom_right = (int((j + 1) * cell_size), int((i + 1) * cell_size))
+                        img = cv2.rectangle(img, top_left, bottom_right, (0, 0, 0), thickness=-1)
+
+            # Optionally, draw grid lines to highlight the maze cell boundaries.
+            for i in range(self.size + 1):
+                pt1 = (0, int(i * cell_size))
+                pt2 = (imgsize, int(i * cell_size))
+                cv2.line(img, pt1, pt2, (200, 200, 200), 1)
+            for j in range(self.size + 1):
+                pt1 = (int(j * cell_size), 0)
+                pt2 = (int(j * cell_size), imgsize)
+                cv2.line(img, pt1, pt2, (200, 200, 200), 1)
+
+            # Draw the player's current position.
+            # Assume state.pos is a two-element array [row, col].
+            pos = state.pos
+            center = (int((pos[1] + 0.5) * cell_size), int((pos[0] + 0.5) * cell_size))
+            radius = max(1, int(cell_size / 3))
+            img = cv2.circle(img, center, radius, (0, 0, 255), thickness=-1)
+
+            return img
+
+        return img_func

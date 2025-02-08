@@ -1,11 +1,11 @@
-from functools import partial
+import time
 
 import chex
 import jax
 import jax.numpy as jnp
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
-from JAxtar.hash import hash_func_builder
+from JAxtar.hash import HashTable, hash_func_builder
 from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult
 from JAxtar.util import (
     flatten_array,
@@ -24,6 +24,7 @@ def qstar_builder(
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
     cost_weight: float = 1.0 - 1e-6,
+    show_compile_time: bool = False,
 ):
     """
     astar_builder is a function that returns a partial function of astar.
@@ -43,25 +44,20 @@ def qstar_builder(
 
     statecls = puzzle.State
 
-    batch_size = jnp.array(batch_size, dtype=SIZE_DTYPE)
-    max_nodes = jnp.array(max_nodes, dtype=SIZE_DTYPE)
     hash_func = hash_func_builder(statecls)
-    search_result_build = partial(SearchResult.build, statecls, batch_size, max_nodes)
 
     solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
     neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
 
     def qstar(
-        search_result: SearchResult,
         start: Puzzle.State,
-        filled: chex.Array,
         target: Puzzle.State,
     ) -> tuple[SearchResult, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
         """
-
-        states = start
+        search_result: SearchResult = SearchResult.build(statecls, batch_size, max_nodes)
+        states, filled = HashTable.make_batched(puzzle.State, start[jnp.newaxis, ...], batch_size)
 
         (
             search_result.hashtable,
@@ -165,12 +161,32 @@ def qstar_builder(
             return search_result, parent, filled
 
         search_result, parent, filled = search_result.pop_full()
-        (search_result, parent, filled) = jax.lax.while_loop(
+        (search_result, idxes, filled) = jax.lax.while_loop(
             _cond, _body, (search_result, parent, filled)
         )
-        states = search_result.hashtable.table[parent.index, parent.table_index]
+        states = search_result.get_state(idxes)
         solved = solved_fn(states, target)
-        solved_idx = parent[jnp.argmax(solved)]
-        return search_result, solved.any(), solved_idx
+        search_result.solved = solved.any()
+        search_result.solved_idx = idxes[jnp.argmax(solved)]
+        return search_result
 
-    return search_result_build, jax.jit(qstar)
+    qstar_fn = jax.jit(qstar)
+    empty_target = puzzle.State.default()
+    empty_states = puzzle.State.default()
+
+    if show_compile_time:
+        print("initializing jit")
+        start = time.time()
+
+    # Pass empty states and target to JIT-compile the function with simple data.
+    # Using actual puzzles would cause extremely long compilation times due to
+    # tracing all possible functions. Empty inputs allow JAX to specialize the
+    # compiled code without processing complex puzzle structures.
+    qstar_fn(empty_states, empty_target)
+
+    if show_compile_time:
+        end = time.time()
+        print(f"Compile Time: {end - start:6.2f} seconds")
+        print("JIT compiled\n\n")
+
+    return qstar_fn

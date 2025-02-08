@@ -95,7 +95,7 @@ class NeuralHeuristicBase(ABC):
         """
         This function should return the distance between the state and the target.
         """
-        return self.param_distance(self.params, current, target)
+        return float(self.param_distance(self.params, current, target)[0])
 
     def param_distance(self, params, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
         x = self.pre_process(current, target)
