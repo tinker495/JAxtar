@@ -32,13 +32,3 @@ class QFunction(ABC):
         Get q value of the current state and target state.
         """
         return jax.vmap(self.q_value, in_axes=(0, None))(current, target)
-
-
-class EmptyQFunction(QFunction):
-    def q_value(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
-        neighbors, _ = self.puzzle.get_neighbours(current)
-        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, target)
-        return dists
-
-    def _distance(self, current: Puzzle.State, target: Puzzle.State) -> float:
-        return 0
