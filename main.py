@@ -213,7 +213,7 @@ def astar(
                     logging_name = f"{puzzle_name}_{logging_time}"
                     os.makedirs(f"tmp/{logging_name}", exist_ok=True)
                     for idx, p in enumerate(path):
-                        img = search_result.get_state(p).img()
+                        img = search_result.get_state(p).img(target=target)
                         imgs.append(img)
                         cv2.imwrite(
                             f"tmp/{logging_name}/img_{idx}.png",
@@ -424,7 +424,7 @@ def qstar(
                     logging_name = f"{puzzle_name}_{logging_time}"
                     os.makedirs(f"tmp/{logging_name}", exist_ok=True)
                     for idx, p in enumerate(path):
-                        img = search_result.get_state(p).img()
+                        img = search_result.get_state(p).img(target=target)
                         imgs.append(img)
                         cv2.imwrite(
                             f"tmp/{logging_name}/img_{idx}.png",
