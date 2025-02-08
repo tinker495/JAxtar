@@ -83,11 +83,11 @@ Solution found
 ### Test vmapped run
 
 ```bash
-$ python main.py astar --vmap_size 10
+$ python main.py astar --vmap_size 20
 Vmapped A* search, multiple initial state solution
 Start states
 ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
-┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  (batch : (10,))  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃
+┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  (batch : (20,))  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
 ┃ D ┃ B ┃ 9 ┃ 7 ┃  ┃ D ┃ B ┃ 9 ┃ 7 ┃                   ┃ D ┃ B ┃ 9 ┃ 7 ┃  ┃ D ┃ B ┃ 9 ┃ 7 ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
@@ -96,19 +96,19 @@ Start states
 ┃   ┃ 8 ┃ 6 ┃ 1 ┃  ┃   ┃ 8 ┃ 6 ┃ 1 ┃                   ┃   ┃ 8 ┃ 6 ┃ 1 ┃  ┃   ┃ 8 ┃ 6 ┃ 1 ┃
 ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 Target state
-┏━━━┳━━━┳━━━┳━━━┓
-┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ 9 ┃ A ┃ B ┃ C ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ D ┃ E ┃ F ┃   ┃
-┗━━━┻━━━┻━━━┻━━━┛
+┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
+┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  (batch : (20,))  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
+┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
+┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃                   ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃
+┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
+┃ 9 ┃ A ┃ B ┃ C ┃  ┃ 9 ┃ A ┃ B ┃ C ┃                   ┃ 9 ┃ A ┃ B ┃ C ┃  ┃ 9 ┃ A ┃ B ┃ C ┃
+┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
+┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃                   ┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃
+┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
 # search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
-Time:   3.66 seconds (x4.9/10)
-Search states: 13.4M (3.67M states/s) (x2.0 faster)
+Search Time:   6.17 seconds (x8.7/20)
+Search states: 25.7M (4.16M states/s) (x2.3 faster)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -125,11 +125,11 @@ JIT compiled
 
 Heuristic: 14.10
 
-Time:   1.56 seconds
-Search states: 1.67M(1.07M states/s)
+Search Time:   1.31 seconds
+Search states: 1.51M(1.16M states/s)
 
 
-Cost: 24.0
+Cost: 22.0
 Solution found
 ```
 
@@ -142,10 +142,9 @@ Time:  60.01 seconds
 JIT compiled
 
 ...
-qvalues: 'l_cw': 17.1 | 'l_ccw': 16.9 | 'd_cw': 16.8 | 'd_ccw': 16.7 | 'f_cw': 16.7 | 'f_ccw': 17.0 | 'r_cw': 17.5 | 'r_ccw': 17.3 | 'b_cw': 17.2 | 'b_ccw': 16.9 | 'u_cw': 16.5 | 'u_ccw': 16.1
-
-Time:   0.54 seconds
-Search states: 1.46M(2.68M states/s)
+qvalues: 'l_cw': 16.9 | 'l_ccw': 17.5 | 'd_cw': 17.1 | 'd_ccw': 16.8 | 'f_cw': 17.4 | 'f_ccw': 17.9 | 'r_cw': 16.8 | 'r_ccw': 17.2 | 'b_cw': 17.3 | 'b_ccw': 16.3 | 'u_cw': 17.7 | 'u_ccw': 17.0
+Search Time:   0.42 seconds
+Search states: 1.46M(3.45M states/s)
 
 
 Cost: 22.0
@@ -156,17 +155,19 @@ Solution found
 
 ### Target available puzzle
 
-| Rubikscube                                       | Slidepuzzle                                        | Lightsout                                      | Maze                                |
-| ------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------- | ----------------------------------- |
-| ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) | ![Maze solve](images/mazesolve.png) |
+| Rubikscube                                              | Slidepuzzle                                               | Lightsout                                             | Maze                                       | Sokoban                                          |
+| ------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| ![Rubiks cube solve](images/rubikscubesolve.png)        | ![Slide puzzle solve](images/slidepuzzlesolve.png)        | ![Lights out solve](images/lightsoutsolve.png)        | ![Maze solve](images/mazesolve.png)        | ![Sokoban solve](images/sokobansolve.png)        |
+| ![Rubiks cube animate](images/rubikscube_animation.gif) | ![Slide puzzle animate](images/slidepuzzle_animation.gif) | ![Lights out animate](images/lightsout_animation.gif) | ![Maze animate](images/maze_animation.gif) | ![Sokoban animate](images/sokoban_animation.gif) |
 
 ### Target not available puzzle
 
 These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
 
-| Dotknot                              | Sokoban |
-| ------------------------------------ | ------- |
-| ![dotknot solve](images/dotknot.png) | TODO    |
+| Dotknot                                          |
+| ------------------------------------------------ |
+| ![dotknot solve](images/dotknotsolve.png)        |
+| ![dotknot animate](images/dotknot_animation.gif) |
 
 ## Citation
 

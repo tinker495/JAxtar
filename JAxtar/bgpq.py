@@ -122,6 +122,7 @@ class BGPQ:
     val_buffer: HeapValue  # shape = (batch_size - 1, ...)
 
     @staticmethod
+    @partial(jax.jit, static_argnums=(0, 1, 2))
     def build(total_size, batch_size, value_class=HeapValue):
         """
         Create a new BGPQ instance with specified capacity.
@@ -136,9 +137,11 @@ class BGPQ:
         """
         total_size = total_size
         # Calculate branch size, rounding up if total_size not divisible by batch_size
-        branch_size = jnp.where(
-            total_size % batch_size == 0, total_size // batch_size, total_size // batch_size + 1
-        ).astype(SIZE_DTYPE)
+        branch_size = (
+            total_size // batch_size
+            if total_size % batch_size == 0
+            else total_size // batch_size + 1
+        )
         max_size = branch_size * batch_size
         size = SIZE_DTYPE(0)
 
