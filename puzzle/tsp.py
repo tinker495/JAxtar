@@ -133,7 +133,7 @@ class TSP(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "TSP.State"):
+        def img_func(state: "TSP.State", path: list["TSP.State"], **kwargs):
             imgsize = IMG_SIZE[0]
             # Create a white background image
             img = np.ones(IMG_SIZE + (3,), np.uint8) * 255
@@ -163,6 +163,17 @@ class TSP(Puzzle):
                 else:
                     y_coord = imgsize // 2
                 scaled_points.append((x_coord, y_coord))
+
+            # Visualize the given path by drawing lines connecting the successive points from 'paths'
+            if path and len(path) > 1:
+                route_points = [scaled_points[s.point] for s in path]
+                cv2.polylines(
+                    img,
+                    [np.array(route_points, dtype=np.int32)],
+                    isClosed=False,
+                    color=(0, 0, 0),
+                    thickness=2,
+                )
 
             # Draw each point with different colors based on status
             for idx, (x, y) in enumerate(scaled_points):
