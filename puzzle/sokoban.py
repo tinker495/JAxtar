@@ -200,6 +200,7 @@ class Sokoban(Puzzle):
             return jax.lax.cond(valid_move, process_move, invalid_case, operand=None)
 
         new_states, costs = jax.vmap(move)(moves)
+        costs = jnp.where(filled, costs, jnp.inf)
         return new_states, costs
 
     def _get_visualize_format(self):
@@ -241,18 +242,46 @@ class Sokoban(Puzzle):
             3: cv2.cvtColor(
                 cv2.imread(os.path.join(image_dir, "box.png"), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB
             ),
+            4: cv2.cvtColor(
+                cv2.imread(os.path.join(image_dir, "box_target.png"), cv2.IMREAD_COLOR),
+                cv2.COLOR_BGR2RGB,
+            ),
+            5: cv2.cvtColor(
+                cv2.imread(os.path.join(image_dir, "agent_on_target.png"), cv2.IMREAD_COLOR),
+                cv2.COLOR_BGR2RGB,
+            ),
+            6: cv2.cvtColor(
+                cv2.imread(os.path.join(image_dir, "box_on_target.png"), cv2.IMREAD_COLOR),
+                cv2.COLOR_BGR2RGB,
+            ),
         }
 
-        def img_func(state: "Sokoban.State"):
+        def img_func(state: "Sokoban.State", target: "Sokoban.State" = None):
             img = np.zeros(IMG_SIZE + (3,), np.uint8)
 
             cell_w = IMG_SIZE[0] // self.size
             cell_h = IMG_SIZE[1] // self.size
             board = self.unpack_board(state.board)
+            if target is not None:
+                goal = self.unpack_board(target.board)
+            else:
+                goal = None
             for i in range(self.size):
                 for j in range(self.size):
                     cell_val = int(board[i * self.size + j])
-                    asset = assets.get(cell_val)
+                    if (
+                        goal is not None and goal[i * self.size + j] != 0
+                    ):  # If this cell is marked as a target
+                        if cell_val == Object.PLAYER.value:
+                            asset = assets.get(5)  # agent on target
+                        elif cell_val == Object.BOX.value:
+                            asset = assets.get(6)  # box on target
+                        elif cell_val == Object.EMPTY.value:
+                            asset = assets.get(4)  # target floor (box target)
+                        else:
+                            asset = assets.get(cell_val)
+                    else:
+                        asset = assets.get(cell_val)
                     if asset is not None:
                         asset_resized = cv2.resize(asset, (cell_w, cell_h))
                         img[
