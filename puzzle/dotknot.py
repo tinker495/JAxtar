@@ -248,7 +248,7 @@ class DotKnot(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "DotKnot.State"):
+        def img_func(state: "DotKnot.State", **kwargs):
             imgsize = IMG_SIZE[0]
             img = np.zeros(IMG_SIZE + (3,), np.uint8)
             img[:] = (190, 190, 190)  # Background color (R144,G96,B8)

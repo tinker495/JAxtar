@@ -193,7 +193,7 @@ class SlidePuzzle(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "SlidePuzzle.State"):
+        def img_func(state: "SlidePuzzle.State", **kwargs):
             imgsize = IMG_SIZE[0]
             img = np.zeros(IMG_SIZE + (3,), np.uint8)
             img[:] = (144, 96, 8)  # R144,G96,B8

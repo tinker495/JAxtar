@@ -158,7 +158,7 @@ class LightsOut(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "LightsOut.State"):
+        def img_func(state: "LightsOut.State", **kwargs):
             imgsize = IMG_SIZE[0]
             # Create a background image with a dark gray base
             img = np.full((imgsize, imgsize, 3), fill_value=30, dtype=np.uint8)
