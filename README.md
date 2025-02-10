@@ -2,7 +2,7 @@
   <img src="images/JAxtar.png" alt="logo" width="200"></img>
 </div>
 
-# JA<sup>xtar</sup>: GPU-accelerated Batched parallel A\* & Q\* solver in pure Jax!
+# JA<sup>xtar</sup>: GPU-accelerated Batched parallel A\* & Q\* solver in pure JAX!
 
 JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizable a A\* & Q\* solver for neural heuristic search research.
 This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from Google DeepMind. If MCTS can be implemented entirely in pure JAX, why not A\*?
@@ -14,34 +14,35 @@ When using a neural heuristic to evaluate a single node, the communication betwe
 
 However, these issues indicate that a more fundamental solution is needed. This led me to search for ways to perform A\* directly on the GPU, but I discovered that most implementations suffer from the following problems.
 
-- They are written in pure c and cuda, which is not compatible with ML research
-- They are written in jax or torch, but which are 2d grid environments or connectivity matrices, which cannot scale to an infinite number of different states that cannot all be held in memory
-- The implementation itself is dependent on the definition of the state or problem.
+- Many are written in pure C and CUDA, which is not well-suited for machine learning research.
+- Some are written in JAX or PyTorch, but these are often limited to 2D grid environments or connectivity matrices, and cannot scale to an infinite number of different states that cannot all be held in memory.
+- The implementation itself is often dependent on the specific definition of the state or problem.
 
-To solve this problem, I decided to write code that adheres to the following principles and works.
+To address these challenges, I decided to develop code based on the following principles:
 
-- Only write in pure Jax
-  - For ML research.
-- Pure jax priority queue
-  - A\* needs to have a priority queue because it expends nodes in the order of the node with the smallest sum of heuristic and cost
-  - However, the heap used inside python uses list variables, which cannot be jitted, so we need to use a heap that can be iterated over in jax
-- A hashable with a state and a hashtable that operates on it.
-  - We need this to be able to know if a node in the A\* algorithm is closed, open, and what state its parent is in
-  - If the state is a simple matter of parsing and indexing, we don't need to hash it, but if it's not and there are nearly infinite states, we need to hash each state to index it and access its unique value
-- Everything is batched and parallelised
-  - GPUs have a lot of cores, but they are very slow compared to CPUs. To overcome this, algorithms running on GPUs should be written as parallel as possible.
-- The implementation should not change depending on the puzzle.
-  - The implementation should be able to handle any puzzle that has a defined state and a defined action space.
-  - This allows for the expansion of research and ensures that 'strict' behavior can be formalized in later implementations.
+- Pure JAX implementation
+  - Specifically for machine learning research.
+- JAX-native priority queue
+  - The A\* algorithm necessitates a priority queue to process nodes based on the lowest combined cost and heuristic estimate.
+  - However, standard Python heaps use lists, which are not JIT-compilable in JAX. Thus, a JAX-iterable heap is necessary.
+- Hashable state representation and a hashtable for JAX operations.
+  - This is crucial for tracking node status (open/closed) in A\* and efficiently retrieving parent state information.
+  - Hashing is optional for simple, indexable states. But for complex or infinite state spaces, hashing becomes essential for efficient indexing and retrieval of unique states.
+- Fully batched and parallelized operations
+  - GPUs provide massive parallelism but have slower cores than CPUs. Therefore, algorithms for GPUs must be highly parallelized to leverage their architecture.
+- Puzzle-agnostic implementation
+  - The implementation should be general enough to handle any puzzle with a defined state and action space.
+  - This generality enables wider research and allows for formalizing 'strict' behaviors in future implementations.
 
-Specially written components in this project include:
+This project features specially written components, including:
 
-- a hash_func_builder for convert defined states to hash keys
-- a hashtable to lookup and insert in a parallel way
-- a priority queue that can be batched, pushed and popped
-- a fully jitted A\* algorithm for puzzles.
+- a hash function builder to convert defined states into hash keys
+- a hashtable for parallel lookup and insertion operations
+- a priority queue that supports batching, push, and pop operations
+- Network heuristics and Q-functions fully integrated for use with the A\* & Q\* algorithm
+- a fully JIT-compiled A\* & Q\* algorithm for puzzles
 
-This project was a real pain in the arse to write, and I almost felt like I was doing acrobatics with Jax, but I managed to create a fully functional version, and hopefully it will inspire you to stumble upon something amazing when you travel to Jax.
+This project was quite challenging to develop, and it felt like performing acrobatics with JAX. However, I managed to create a fully functional version, and hopefully it will inspire you to discover something amazing as you delve into JAX.
 
 ## Result
 
@@ -175,7 +176,7 @@ Please use this citation to reference this project.
 
 ```bibtex
 @software{kyuseokjung2024jaxtar,
-  title = {JA^{xtar}: GPU-accelerated Batched parallel A* & Q* solver in pure Jax!},
+  title = {JA^{xtar}: GPU-accelerated Batched parallel A* & Q* solver in pure JAX!},
   author = {Kyuseok Jung},
   url = {https://github.com/tinker495/JAxtar},
   year = {2024},
