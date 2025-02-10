@@ -75,8 +75,8 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Heuristic: 33.00
-Time:   0.70 seconds
-Search states: 1.25M(1.78M states/s)
+Search Time:   0.57 seconds
+Search states: 1.26M(2.2M states/s)
 
 Cost: 49.0
 Solution found
@@ -109,8 +109,8 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 vmap astar
 # search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
-Search Time:   6.17 seconds (x8.7/20)
-Search states: 25.7M (4.16M states/s) (x2.3 faster)
+Search Time:   5.29 seconds (x9.3/20)
+Search states: 25.2M (4.76M states/s) (x2.2 faster)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -125,10 +125,10 @@ JIT compiled
 
 ...
 
-Heuristic: 14.10
+Heuristic: 14.51
 
-Search Time:   1.31 seconds
-Search states: 1.51M(1.16M states/s)
+Search Time:   1.28 seconds
+Search states: 1.52M(1.19M states/s)
 
 
 Cost: 22.0
@@ -145,8 +145,8 @@ JIT compiled
 
 ...
 qvalues: 'l_cw': 16.9 | 'l_ccw': 17.5 | 'd_cw': 17.1 | 'd_ccw': 16.8 | 'f_cw': 17.4 | 'f_ccw': 17.9 | 'r_cw': 16.8 | 'r_ccw': 17.2 | 'b_cw': 17.3 | 'b_ccw': 16.3 | 'u_cw': 17.7 | 'u_ccw': 17.0
-Search Time:   0.42 seconds
-Search states: 1.46M(3.45M states/s)
+Search Time:   0.38 seconds
+Search states: 1.47M(3.84M states/s)
 
 
 Cost: 22.0
