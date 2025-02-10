@@ -157,10 +157,10 @@ def astar(
 
         start = time.time()
         search_result = astar_fn(state, target)
+        solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
-        solved = search_result.solved
 
         if not has_target:
             if solved:
@@ -265,9 +265,9 @@ def astar(
     )
     start = time.time()
     search_result = vmapped_astar(states, targets)
+    solved = search_result.solved.block_until_ready()
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
-    solved = search_result.solved
 
     if not has_target:
         if solved.any():
@@ -368,10 +368,10 @@ def qstar(
 
         start = time.time()
         search_result = qstar_fn(state, target)
+        solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
-        solved = search_result.solved
 
         if not has_target:
             if solved:
@@ -476,9 +476,9 @@ def qstar(
     )
     start = time.time()
     search_result = vmapped_qstar(states, targets)
+    solved = search_result.solved.block_until_ready()
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
-    solved = search_result.solved
 
     if not has_target:
         if solved.any():
