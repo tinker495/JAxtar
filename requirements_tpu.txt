@@ -1,4 +1,4 @@
---find-links https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+--find-links https://storage.googleapis.com/jax-releases/libtpu_releases.html
 numpy==1.26.4
 opencv-python==4.11.0.86
 imageio
@@ -6,7 +6,7 @@ click
 tqdm
 pre-commit
 pytest
-jax
+jax[tpu]
 chex
 dm_pix
 dm-haiku
