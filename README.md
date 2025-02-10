@@ -48,7 +48,12 @@ This project was quite challenging to develop, and it felt like performing acrob
 ## Result
 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.
+
 The speed benchmarks below were measured on an Nvidia A100 40GB GPU. Correct operation was verified on an RTX4080 SUPER GPU, though performance was not formally measured.
+
+You can easily test it yourself with the colab link below.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1TJUazlkm9miP4sIKCXShExaRcT6oGD4K?usp=sharing)
 
 ### Test Run
 
