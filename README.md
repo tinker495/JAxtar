@@ -39,7 +39,8 @@ This project features specially written components, including:
 - a hash function builder to convert defined states into hash keys
 - a hashtable for parallel lookup and insertion operations
 - a priority queue that supports batching, push, and pop operations
-- Network heuristics and Q-functions fully integrated for use with the A\* & Q\* algorithm
+- Implementations for puzzles such as Rubik's Cube, Slide Puzzle, Lights Out, and Sokoban
+- Network heuristics and Q-functions designed for JIT-compilable integration with A\* & Q\* algorithm
 - a fully JIT-compiled A\* & Q\* algorithm for puzzles
 
 This project was quite challenging to develop, and it felt like performing acrobatics with JAX. However, I managed to create a fully functional version, and hopefully it will inspire you to discover something amazing as you delve into JAX.
