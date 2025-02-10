@@ -17,13 +17,6 @@ from qfunction.neuralq.qlearning import get_dataset_builder, qlearning_builder
 PyTree = Any
 
 
-@jax.jit
-def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
-    return jax.tree_util.tree_map(
-        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, old_tensors
-    )
-
-
 @click.command()
 @click.option(
     "-p",
