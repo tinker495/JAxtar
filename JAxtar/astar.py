@@ -125,6 +125,7 @@ def astar_builder(
                 search_result.cost = search_result.cost.at[idx, table_idx].min(
                     neighbour_cost
                 )  # update the minimul cost
+                neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
                 search_result.parent = set_tree_as_condition(
                     search_result.parent,
@@ -147,7 +148,7 @@ def astar_builder(
                 search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
                     vals,
-                    added_size=jnp.sum(filled, dtype=SIZE_DTYPE),
+                    added_size=jnp.sum(optimal, dtype=SIZE_DTYPE),
                 )
                 return search_result, None
 
