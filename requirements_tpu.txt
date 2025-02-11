@@ -1,6 +1,6 @@
 --find-links https://storage.googleapis.com/jax-releases/libtpu_releases.html
-numpy==1.26.4
-opencv-python==4.11.0.86
+numpy
+opencv-python
 imageio
 click
 tqdm
