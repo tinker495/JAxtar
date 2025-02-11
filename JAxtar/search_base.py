@@ -23,11 +23,42 @@ from JAxtar.annotate import (
 )
 from JAxtar.bgpq import BGPQ, HeapValue, bgpq_value_dataclass
 from JAxtar.hash import HashTable
+from JAxtar.util import set_array_as_condition, set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 
 
 @bgpq_value_dataclass
-class HashTableIdx_HeapValue:
+class Parent:
+    index: chex.Array
+    table_index: chex.Array
+    action: chex.Array
+
+    @staticmethod
+    def default(shape=()) -> "Parent":
+        return Parent(
+            index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
+            table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
+            action=jnp.full(shape, -1, dtype=ACTION_DTYPE),
+        )
+
+
+@bgpq_value_dataclass
+class Current:
+    index: chex.Array
+    table_index: chex.Array
+    cost: chex.Array
+
+    @staticmethod
+    def default(shape=()) -> "Current":
+        return Current(
+            index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
+            table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
+            cost=jnp.full(shape, jnp.inf, dtype=KEY_DTYPE),
+        )
+
+
+@bgpq_value_dataclass
+class Current_with_Parent:
     """
     A dataclass representing a hash table heap value for the priority queue.
     This class maintains the mapping between states in the hash table and their positions.
@@ -37,11 +68,11 @@ class HashTableIdx_HeapValue:
         table_index (chex.Array): The index of the cuckoo hash table (for collision resolution)
     """
 
-    index: chex.Array
-    table_index: chex.Array
+    parent: Parent
+    current: Current
 
     @staticmethod
-    def default(shape=()) -> "HashTableIdx_HeapValue":
+    def default(shape=()) -> "Current_with_Parent":
         """
         Creates a default instance with -1 values, indicating an invalid/empty entry.
 
@@ -49,11 +80,11 @@ class HashTableIdx_HeapValue:
             shape (tuple): The shape of the arrays to create
 
         Returns:
-            HashTableIdx_HeapValue: A new instance with default values
+            HashTableidx_with_Parent_HeapValue: A new instance with default values
         """
-        return HashTableIdx_HeapValue(
-            index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
+        return Current_with_Parent(
+            parent=Parent.default(shape),
+            current=Current.default(shape),
         )
 
 
@@ -84,13 +115,11 @@ class SearchResult:
     hashtable: HashTable
     priority_queue: BGPQ
     min_key_buffer: chex.Array
-    min_val_buffer: HashTableIdx_HeapValue
+    min_val_buffer: Current_with_Parent
     cost: chex.Array
-    not_closed: chex.Array
-    parent: chex.Array
-    parent_action: chex.Array
+    parent: Parent
     solved: chex.Array
-    solved_idx: HashTableIdx_HeapValue
+    solved_idx: Current
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
@@ -113,19 +142,17 @@ class SearchResult:
         size_table = int(HASH_SIZE_MULTIPLIER * max_nodes / n_table)
 
         # Initialize priority queue for state expansion
-        priority_queue = BGPQ.build(max_nodes, batch_size, HashTableIdx_HeapValue)
+        priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent)
 
         # Initialize buffers for minimum values
         min_key_buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
-        min_val_buffer = HashTableIdx_HeapValue.default((batch_size,))
+        min_val_buffer = Current_with_Parent.default((batch_size,))
 
         # Initialize arrays for tracking costs and state relationships
         cost = jnp.full((size_table, n_table), jnp.inf, dtype=KEY_DTYPE)
-        not_closed = jnp.ones((size_table, n_table), dtype=jnp.bool)
-        parent = HashTableIdx_HeapValue.default((size_table, n_table))
-        parent_action = jnp.full((size_table, n_table), -1, dtype=ACTION_DTYPE)
+        parent = Parent.default((size_table, n_table))
         solved = jnp.array(False)
-        solved_idx = HashTableIdx_HeapValue.default((1,))
+        solved_idx = Current.default((1,))
 
         return SearchResult(
             hashtable=hashtable,
@@ -133,9 +160,7 @@ class SearchResult:
             min_key_buffer=min_key_buffer,
             min_val_buffer=min_val_buffer,
             cost=cost,
-            not_closed=not_closed,
             parent=parent,
-            parent_action=parent_action,
             solved=solved,
             solved_idx=solved_idx,
         )
@@ -160,7 +185,7 @@ class SearchResult:
         """Current number of states stored."""
         return self.hashtable.size
 
-    def pop_full(search_result) -> tuple["SearchResult", HashTableIdx_HeapValue, chex.Array]:
+    def pop_full(search_result) -> tuple["SearchResult", Current, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently.
@@ -178,8 +203,11 @@ class SearchResult:
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
 
         # Check if the states are in the open set
-        not_closed = search_result.not_closed[min_val.index, min_val.table_index]
-        min_key = jnp.where(not_closed, min_key, jnp.inf)  # Set closed states to inf
+        min_val_cost = min_val.current.cost
+        optimal = jnp.less(
+            min_val_cost, search_result.cost[min_val.current.index, min_val.current.table_index]
+        )
+        min_key = jnp.where(optimal, min_key, jnp.inf)  # Set closed states to inf
 
         # Merge and sort with the buffer
         (
@@ -207,8 +235,11 @@ class SearchResult:
                 new_key,
                 new_val,
             ) = search_result.priority_queue.delete_mins()
-            not_closed = search_result.not_closed[new_val.index, new_val.table_index]
-            new_key = jnp.where(not_closed, new_key, jnp.inf)
+            new_val_cost = new_val.current.cost
+            optimal = jnp.less(
+                new_val_cost, search_result.cost[new_val.current.index, new_val.current.table_index]
+            )
+            new_key = jnp.where(optimal, new_key, jnp.inf)
 
             # Merge new values with current minimum values
             # if filled is not all true, min buffer is will be empty(filled with inf keys)
@@ -227,12 +258,23 @@ class SearchResult:
         )
 
         # Update the closed set
-        search_result.not_closed = search_result.not_closed.at[
-            min_val.index, min_val.table_index
-        ].set(~filled)
-        return search_result, min_val, filled
+        search_result.cost = set_array_as_condition(
+            search_result.cost,
+            filled,
+            min_val.current.cost,
+            min_val.current.index,
+            min_val.current.table_index,
+        )
+        search_result.parent = set_tree_as_condition(
+            search_result.parent,
+            filled,
+            min_val.parent,
+            min_val.current.index,
+            min_val.current.table_index,
+        )
+        return search_result, min_val.current, filled
 
-    def get_solved_path(search_result) -> list[HashTableIdx_HeapValue]:
+    def get_solved_path(search_result) -> list[Current]:
         """
         Get the path to the solved state.
         """
@@ -250,26 +292,26 @@ class SearchResult:
         path.reverse()
         return path
 
-    def get_state(search_result, idx: HashTableIdx_HeapValue) -> Puzzle.State:
+    def get_state(search_result, idx: Current) -> Puzzle.State:
         """
         Get the state from the hash table.
         """
         return search_result.hashtable.table[idx.index, idx.table_index]
 
-    def get_cost(search_result, idx: HashTableIdx_HeapValue) -> chex.Array:
+    def get_cost(search_result, idx: Current) -> chex.Array:
         """
         Get the cost of the state from the cost array.
         """
         return search_result.cost[idx.index, idx.table_index]
 
-    def get_parent_action(search_result, idx: HashTableIdx_HeapValue) -> chex.Array:
+    def get_parent_action(search_result, idx: Current) -> chex.Array:
         """
         Get the parent action from the parent action array.
         """
         return search_result.parent_action[idx.index, idx.table_index]
 
 
-def unique_mask(val: HashTableIdx_HeapValue, batch_len: int) -> chex.Array:
+def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
     """
     Creates a boolean mask identifying unique values in a HashTableIdx_HeapValue tensor.
     This function is used to filter out duplicate states in batched operations.
@@ -281,7 +323,7 @@ def unique_mask(val: HashTableIdx_HeapValue, batch_len: int) -> chex.Array:
     Returns:
         jnp.ndarray: Boolean mask where True indicates unique values
     """
-    min_val_stack = jnp.stack([val.index, val.table_index], axis=1)
+    min_val_stack = jnp.stack([val.current.index, val.current.table_index], axis=1)
     unique_idxs = jnp.unique(min_val_stack, axis=0, size=batch_len, return_index=True)[1]
     uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
     return uniques
