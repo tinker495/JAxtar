@@ -4,7 +4,7 @@ from itertools import islice
 import jax
 import jax.numpy as jnp
 
-from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult
+from JAxtar.search_base import Current, SearchResult
 from JAxtar.util import set_tree
 from puzzle.puzzle_base import Puzzle
 
@@ -74,8 +74,8 @@ def vmapping_search(
     return vmapped_star
 
 
-def vmapping_get_state(search_result: SearchResult, idx: HashTableIdx_HeapValue):
-    return jax.vmap(SearchResult.get_state, in_axes=(None, 0))(search_result, idx)
+def vmapping_get_state(search_result: SearchResult, idx: Current):
+    return jax.vmap(SearchResult.get_state, in_axes=(0, 0))(search_result, idx)
 
 
 def window(seq, n=2):
