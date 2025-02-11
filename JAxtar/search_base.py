@@ -204,9 +204,7 @@ class SearchResult:
 
         # Check if the states are in the open set
         min_val_cost = min_val.current.cost
-        optimal = jnp.less(
-            min_val_cost, search_result.cost[min_val.current.index, min_val.current.table_index]
-        )
+        optimal = jnp.less(min_val_cost, search_result.get_cost(min_val.current))
         min_key = jnp.where(optimal, min_key, jnp.inf)  # Set closed states to inf
 
         # Merge and sort with the buffer
@@ -236,9 +234,7 @@ class SearchResult:
                 new_val,
             ) = search_result.priority_queue.delete_mins()
             new_val_cost = new_val.current.cost
-            optimal = jnp.less(
-                new_val_cost, search_result.cost[new_val.current.index, new_val.current.table_index]
-            )
+            optimal = jnp.less(new_val_cost, search_result.get_cost(new_val.current))
             new_key = jnp.where(optimal, new_key, jnp.inf)
 
             # Merge new values with current minimum values
