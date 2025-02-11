@@ -51,8 +51,8 @@ class TSP(Puzzle):
 
         def gen():
             mask = jnp.zeros(number_of_points, dtype=jnp.bool_)
-            start = jnp.array(-1, dtype=TYPE)
-            point = jnp.array(-1, dtype=TYPE)
+            start = jnp.array(0, dtype=TYPE)
+            point = jnp.array(0, dtype=TYPE)
             return self.State(mask=self.to_uint8(mask), start=start, point=point)
 
         return gen
@@ -68,7 +68,7 @@ class TSP(Puzzle):
     def get_target_state(self, key=jax.random.PRNGKey(128)) -> State:
         # this puzzle no target state
         mask = jnp.zeros(self.number_of_points, dtype=jnp.bool_)
-        point = jnp.array(-1, dtype=TYPE)
+        point = jnp.array(0, dtype=TYPE)
         return self.State(mask=self.to_uint8(mask), start=point, point=point)
 
     def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:

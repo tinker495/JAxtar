@@ -180,7 +180,6 @@ def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:
 
     def get_img(self, **kwargs) -> np.ndarray:
         structured_type = self.structured_type
-        print(kwargs)
 
         if structured_type == StructuredType.SINGLE:
             return imgfunc(self, **kwargs)
