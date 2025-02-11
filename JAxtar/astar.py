@@ -7,12 +7,11 @@ import jax.numpy as jnp
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
 from JAxtar.hash import HashTable, hash_func_builder
-from JAxtar.search_base import HashTableIdx_HeapValue, SearchResult
+from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
     set_array_as_condition,
-    set_tree_as_condition,
     unflatten_array,
 )
 from puzzle.puzzle_base import Puzzle
@@ -59,7 +58,6 @@ def astar_builder(
         search_result: SearchResult = SearchResult.build(statecls, batch_size, max_nodes)
         states, filled = HashTable.make_batched(puzzle.State, start[jnp.newaxis, ...], batch_size)
 
-        heur_val = heuristic.batched_distance(states, target)
         (
             search_result.hashtable,
             inserted,
@@ -67,40 +65,37 @@ def astar_builder(
             idx,
             table_idx,
         ) = search_result.hashtable.parallel_insert(hash_func, states, filled)
-        hash_idxs = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
 
-        cost_val = jnp.where(filled, 0, jnp.inf)
+        cost = jnp.where(filled, 0, jnp.inf)
         search_result.cost = set_array_as_condition(
             search_result.cost,
             inserted,
-            cost_val,
+            cost,
             idx,
             table_idx,
         )
+        hash_idxs = Current(index=idx, table_index=table_idx, cost=cost)
 
-        total_cost = (cost_val + heur_val).astype(KEY_DTYPE)
-        search_result.priority_queue = search_result.priority_queue.insert(total_cost, hash_idxs)
-
-        def _cond(input: tuple[SearchResult, HashTableIdx_HeapValue, chex.Array]):
+        def _cond(input: tuple[SearchResult, Current, chex.Array]):
             search_result, parent, filled = input
             hash_size = search_result.hashtable.size
             size_cond1 = filled.any()  # queue is not empty
             size_cond2 = hash_size < max_nodes  # hash table is not full
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
-            states = search_result.hashtable.table[parent.index, parent.table_index]
+            states = search_result.get_state(parent)
             solved = solved_fn(states, target)
             return jnp.logical_and(size_cond, ~solved.any())
 
-        def _body(input: tuple[SearchResult, HashTableIdx_HeapValue, chex.Array]):
-            search_result, parent_idx, filled = input
+        def _body(input: tuple[SearchResult, Current, chex.Array]):
+            search_result, parent, filled = input
 
-            cost_val = search_result.cost[parent_idx.index, parent_idx.table_index]
-            states = search_result.hashtable.table[parent_idx.index, parent_idx.table_index]
+            cost = search_result.get_cost(parent)
+            states = search_result.get_state(parent)
 
             neighbours, ncost = neighbours_fn(states, filled)
             parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
-            nextcosts = cost_val[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
+            nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
 
             (
@@ -115,35 +110,25 @@ def astar_builder(
 
             idxs = unflatten_array(idxs, filleds.shape)
             table_idxs = unflatten_array(table_idxs, filleds.shape)
+            current = Current(index=idxs, table_index=table_idxs, cost=nextcosts)
 
             def _scan(search_result: SearchResult, val):
-                neighbour, neighbour_cost, filled, parent_action, idx, table_idx = val
+                neighbour, parent_action, current = val
                 neighbour_heur = heuristic.batched_distance(neighbour, target)
-                neighbour_key = (cost_weight * neighbour_cost + neighbour_heur).astype(KEY_DTYPE)
+                neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
 
-                optimal = jnp.less(neighbour_cost, search_result.cost[idx, table_idx])
-                search_result.cost = search_result.cost.at[idx, table_idx].min(
-                    neighbour_cost
-                )  # update the minimul cost
+                optimal = jnp.less(
+                    current.cost, search_result.cost[current.index, current.table_index]
+                )
                 neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
-                search_result.parent = set_tree_as_condition(
-                    search_result.parent,
-                    optimal,
-                    parent_idx,
-                    idx,
-                    table_idx,
+                parent_action = jnp.tile(parent_action, (neighbour_key.shape[0],))
+                vals = Current_with_Parent(
+                    current=current,
+                    parent=Parent(
+                        action=parent_action, index=parent.index, table_index=parent.table_index
+                    ),
                 )
-
-                search_result.parent_action = set_array_as_condition(
-                    search_result.parent_action,
-                    optimal,
-                    parent_action,
-                    idx,
-                    table_idx,
-                )
-
-                vals = HashTableIdx_HeapValue(index=idx, table_index=table_idx)
 
                 search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
@@ -155,14 +140,13 @@ def astar_builder(
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbours, nextcosts, filleds, parent_action, idxs, table_idxs),
+                (neighbours, parent_action, current),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
 
-        search_result, parent, filled = search_result.pop_full()
         (search_result, idxes, filled) = jax.lax.while_loop(
-            _cond, _body, (search_result, parent, filled)
+            _cond, _body, (search_result, hash_idxs, filled)
         )
         states = search_result.get_state(idxes)
         solved = solved_fn(states, target)
