@@ -133,7 +133,7 @@ class TSP(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "TSP.State", path: list["TSP.State"], **kwargs):
+        def img_func(state: "TSP.State", path: list["TSP.State"], idx: int, **kwargs):
             imgsize = IMG_SIZE[0]
             # Create a white background image
             img = np.ones(IMG_SIZE + (3,), np.uint8) * 255
@@ -165,8 +165,9 @@ class TSP(Puzzle):
                 scaled_points.append((x_coord, y_coord))
 
             # Visualize the given path by drawing lines connecting the successive points from 'paths'
+            # up to the current index 'idx'
             if path and len(path) > 1:
-                route_points = [scaled_points[s.point] for s in path]
+                route_points = [scaled_points[path[i].point] for i in range(idx + 1)]
                 cv2.polylines(
                     img,
                     [np.array(route_points, dtype=np.int32)],
@@ -176,11 +177,11 @@ class TSP(Puzzle):
                 )
 
             # Draw each point with different colors based on status
-            for idx, (x, y) in enumerate(scaled_points):
+            for i, (x, y) in enumerate(scaled_points):  # Renamed idx to i for clarity
                 # Color: green for start, blue for visited, red for unvisited
-                if idx == state.start:
+                if i == state.start:
                     color = (0, 255, 0)
-                elif visited[idx]:
+                elif visited[i]:
                     color = (255, 0, 0)
                 else:
                     color = (0, 0, 255)
@@ -188,12 +189,12 @@ class TSP(Puzzle):
                 cv2.circle(img, (x, y), 5, color, -1)
 
                 # Highlight the current point with an outer black circle
-                if idx == state.point:
+                if i == state.point:
                     cv2.circle(img, (x, y), 8, (0, 0, 0), 2)
 
                 # Optionally, label the point with its index
                 cv2.putText(
-                    img, str(idx), (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (50, 50, 50), 1
+                    img, str(i), (x + 5, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (50, 50, 50), 1
                 )
 
             # If all points are visited, draw a line from the current point to the start point to close the tour
