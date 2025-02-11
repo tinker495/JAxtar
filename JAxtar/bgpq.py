@@ -112,10 +112,10 @@ class BGPQ:
         val_buffer: Buffer for values waiting to be inserted
     """
 
-    max_size: int
-    size: int
-    branch_size: int
-    batch_size: int
+    max_size: SIZE_DTYPE
+    size: SIZE_DTYPE
+    branch_size: SIZE_DTYPE
+    batch_size: SIZE_DTYPE
     key_store: chex.Array  # shape = (total_size, batch_size)
     val_store: HeapValue  # shape = (total_size, batch_size, ...)
     key_buffer: chex.Array  # shape = (batch_size - 1,)
@@ -499,5 +499,5 @@ class BGPQ:
             return heap
 
         heap = jax.lax.cond(size > 1, BGPQ.delete_heapify, make_empty, heap)
-        heap.size = heap.size - jnp.sum(jnp.isfinite(min_keys))
+        heap.size = SIZE_DTYPE(heap.size - jnp.sum(jnp.isfinite(min_keys)))
         return heap, min_keys, min_values
