@@ -212,8 +212,9 @@ def astar(
                     logging_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
                     logging_name = f"{puzzle_name}_{logging_time}"
                     os.makedirs(f"tmp/{logging_name}", exist_ok=True)
+                    path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
-                        img = search_result.get_state(p).img(target=target)
+                        img = search_result.get_state(p).img(path=path_states, target=target)
                         imgs.append(img)
                         cv2.imwrite(
                             f"tmp/{logging_name}/img_{idx}.png",
@@ -423,8 +424,9 @@ def qstar(
                     logging_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
                     logging_name = f"{puzzle_name}_{logging_time}"
                     os.makedirs(f"tmp/{logging_name}", exist_ok=True)
+                    path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
-                        img = search_result.get_state(p).img(target=target)
+                        img = search_result.get_state(p).img(path=path_states, target=target)
                         imgs.append(img)
                         cv2.imwrite(
                             f"tmp/{logging_name}/img_{idx}.png",

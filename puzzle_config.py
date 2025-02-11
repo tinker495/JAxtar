@@ -1,5 +1,6 @@
 from heuristic import (
     DotKnotHeuristic,
+    EmptyHeuristic,
     LightsOutHeuristic,
     MazeHeuristic,
     RubiksCubeHeuristic,
@@ -12,6 +13,7 @@ from heuristic.neuralheuristic import (
     SlidePuzzleNeuralHeuristic,
 )
 from puzzle import (
+    TSP,
     DotKnot,
     LightsOut,
     LightsOutHard,
@@ -23,7 +25,15 @@ from puzzle import (
     Sokoban,
     SokobanHard,
 )
-from qfunction import DotKnotQ, LightsOutQ, MazeQ, RubiksCubeQ, SlidePuzzleQ, SokobanQ
+from qfunction import (
+    DotKnotQ,
+    EmptyQFunction,
+    LightsOutQ,
+    MazeQ,
+    RubiksCubeQ,
+    SlidePuzzleQ,
+    SokobanQ,
+)
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
 
 default_puzzle_sizes = {
@@ -31,6 +41,7 @@ default_puzzle_sizes = {
     "lightsout": 7,
     "rubikscube": 3,
     "maze": 20,
+    "tsp": 12,
     "dotknot": 8,
     "sokoban": 10,
 }
@@ -41,6 +52,7 @@ puzzle_dict = {
     "rubikscube": lambda n: RubiksCube(n),
     "maze": lambda n: Maze(n),
     "dotknot": lambda n: DotKnot(n),
+    "tsp": lambda n: TSP(n),
     "sokoban": lambda n: Sokoban(),
 }
 
@@ -49,6 +61,8 @@ puzzle_dict_hard = {
     "lightsout": lambda n: LightsOutHard(n),
     "rubikscube": lambda n: RubiksCubeHard(n),
     "maze": lambda n: Maze(n),
+    "dotknot": lambda n: DotKnot(n),
+    "tsp": lambda n: TSP(n),
     "sokoban": lambda n: SokobanHard(),
 }
 
@@ -58,6 +72,7 @@ puzzle_heuristic_dict = {
     "rubikscube": lambda puzzle: RubiksCubeHeuristic(puzzle),
     "maze": lambda puzzle: MazeHeuristic(puzzle),
     "dotknot": lambda puzzle: DotKnotHeuristic(puzzle),
+    "tsp": lambda puzzle: EmptyHeuristic(puzzle),
     "sokoban": lambda puzzle: SokobanHeuristic(puzzle),
 }
 
@@ -85,6 +100,7 @@ puzzle_q_dict = {
     "rubikscube": lambda puzzle: RubiksCubeQ(puzzle),
     "maze": lambda puzzle: MazeQ(puzzle),
     "dotknot": lambda puzzle: DotKnotQ(puzzle),
+    "tsp": lambda puzzle: EmptyQFunction(puzzle),
     "sokoban": lambda puzzle: SokobanQ(puzzle),
 }
 
