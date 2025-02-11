@@ -214,7 +214,9 @@ def astar(
                     os.makedirs(f"tmp/{logging_name}", exist_ok=True)
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
-                        img = search_result.get_state(p).img(path=path_states, target=target)
+                        img = search_result.get_state(p).img(
+                            idx=idx, path=path_states, target=target
+                        )
                         imgs.append(img)
                         cv2.imwrite(
                             f"tmp/{logging_name}/img_{idx}.png",
@@ -426,7 +428,9 @@ def qstar(
                     os.makedirs(f"tmp/{logging_name}", exist_ok=True)
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
-                        img = search_result.get_state(p).img(path=path_states, target=target)
+                        img = search_result.get_state(p).img(
+                            idx=idx, path=path_states, target=target
+                        )
                         imgs.append(img)
                         cv2.imwrite(
                             f"tmp/{logging_name}/img_{idx}.png",
