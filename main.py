@@ -14,13 +14,7 @@ from options import (
     search_options,
     visualize_options,
 )
-from util import (
-    human_format,
-    vmapping_get_state,
-    vmapping_init_target,
-    vmapping_search,
-    window,
-)
+from util import human_format, vmapping_get_state, vmapping_init_target, vmapping_search
 
 
 @click.group()
@@ -143,7 +137,7 @@ def astar(
         heuristic_values = heuristic.distance(solve_config, state)
 
         print("Start state")
-        print(state)
+        print(state.str(solve_config=solve_config))
         if has_target:
             print("Target state")
             print(solve_config)
@@ -189,14 +183,12 @@ def astar(
                 path = search_result.get_solved_path()
 
                 if visualize_terminal:
-                    for p0, p1 in window(path):
-                        print(search_result.get_state(p0))
-                        print(f"Cost: {search_result.get_cost(p0)}")
-                        print(
-                            f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}"
-                        )
+                    for p in path[:-1]:
+                        print(search_result.get_state(p).str(solve_config=solve_config))
+                        print(f"Cost: {search_result.get_cost(p)}")
+                        print(f"Action: {puzzle.action_to_string(p.action)}")
 
-                    print(search_result.get_state(path[-1]))
+                    print(search_result.get_state(path[-1]).str(solve_config=solve_config))
                     print(f"Cost: {search_result.get_cost(path[-1])}")
                     print("\n\n")
                 elif visualize_imgs:
@@ -213,7 +205,7 @@ def astar(
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
                         img = search_result.get_state(p).img(
-                            idx=idx, path=path_states, target=solve_config
+                            idx=idx, path=path_states, solve_config=solve_config
                         )
                         imgs.append(img)
                         cv2.imwrite(
@@ -351,7 +343,7 @@ def qstar(
         qvalues = qfunction.q_value(solve_config, state)
 
         print("Start state")
-        print(state)
+        print(state.str(solve_config=solve_config))
         if has_target:
             print("Target state")
             print(solve_config)
@@ -403,14 +395,12 @@ def qstar(
                 path = search_result.get_solved_path()
 
                 if visualize_terminal:
-                    for p0, p1 in window(path):
-                        print(search_result.get_state(p0))
-                        print(f"Cost: {search_result.get_cost(p0)}")
-                        print(
-                            f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}"
-                        )
+                    for p in path[:-1]:
+                        print(search_result.get_state(p).str(solve_config=solve_config))
+                        print(f"Cost: {search_result.get_cost(p)}")
+                        print(f"Action: {puzzle.action_to_string(p.action)}")
 
-                    print(search_result.get_state(path[-1]))
+                    print(search_result.get_state(path[-1]).str(solve_config=solve_config))
                     print(f"Cost: {search_result.get_cost(path[-1])}")
                     print("\n\n")
                 elif visualize_imgs:
@@ -427,7 +417,7 @@ def qstar(
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
                         img = search_result.get_state(p).img(
-                            idx=idx, path=path_states, target=solve_config
+                            idx=idx, path=path_states, solve_config=solve_config
                         )
                         imgs.append(img)
                         cv2.imwrite(

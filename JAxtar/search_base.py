@@ -270,21 +270,20 @@ class SearchResult:
         )
         return search_result, min_val.current, filled
 
-    def get_solved_path(search_result) -> list[Current]:
+    def get_solved_path(search_result) -> list[Parent]:
         """
         Get the path to the solved state.
         """
         assert search_result.solved
-        parents = search_result.parent
         solved_idx = search_result.solved_idx
 
         path = [solved_idx]
-        parent_last = parents[solved_idx.index, solved_idx.table_index]
+        parent_last = search_result.get_parent(solved_idx)
         while True:
             if parent_last.index == -1:
                 break
             path.append(parent_last)
-            parent_last = parents[parent_last.index, parent_last.table_index]
+            parent_last = search_result.get_parent(parent_last)
         path.reverse()
         return path
 
@@ -300,11 +299,11 @@ class SearchResult:
         """
         return search_result.cost[idx.index, idx.table_index]
 
-    def get_parent_action(search_result, idx: Current) -> chex.Array:
+    def get_parent(search_result, idx: Current) -> Parent:
         """
         Get the parent action from the parent action array.
         """
-        return search_result.parent_action[idx.index, idx.table_index]
+        return search_result.parent[idx.index, idx.table_index]
 
 
 def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:

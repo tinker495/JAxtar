@@ -42,7 +42,7 @@ class LightsOut(Puzzle):
         def to_char(x):
             return "□" if x == 0 else "■"
 
-        def parser(state):
+        def parser(state: "LightsOut.State", **kwargs):
             return form.format(*map(to_char, self.from_uint8(state.board)))
 
         return parser

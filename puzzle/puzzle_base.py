@@ -74,11 +74,11 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
     the class that returns a string representation of the class.
     """
 
-    def get_str(self) -> str:
+    def get_str(self, **kwargs) -> str:
         structured_type = self.structured_type
 
         if structured_type == StructuredType.SINGLE:
-            return parsfunc(self)
+            return parsfunc(self, **kwargs)
         elif structured_type == StructuredType.BATCHED:
             batch_shape = self.batch_shape
             batch_len = (
@@ -89,23 +89,24 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
                 for i in range(batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state))
+                    results.append(parsfunc(current_state, **kwargs))
                 results.append(f"batch : {batch_shape}")
             else:
                 for i in range(SHOW_BATCH_SIZE):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state))
+                    results.append(parsfunc(current_state, **kwargs))
                 results.append("...\n(batch : " + f"{batch_shape})")
                 for i in range(batch_len - SHOW_BATCH_SIZE, batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state))
+                    results.append(parsfunc(current_state, **kwargs))
             return tabulate([results], tablefmt="plain")
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
 
     setattr(cls, "__str__", get_str)
+    setattr(cls, "str", get_str)
     return cls
 
 

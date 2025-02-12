@@ -30,7 +30,7 @@ class SlidePuzzle(Puzzle):
                 return chr(x + 55)
             return str(x)
 
-        def parser(state):
+        def parser(state: "SlidePuzzle.State", **kwargs):
             return form.format(*map(to_char, state.board))
 
         return parser
