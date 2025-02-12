@@ -19,10 +19,6 @@ class TSP(Puzzle):
         start: chex.Array  # idx of the point that is the start
         point: chex.Array  # idx of the point that is currently visited
 
-    @property
-    def has_target(self) -> bool:
-        return False
-
     def __init__(self, number_of_points: int, key=jax.random.PRNGKey(0), **kwargs):
         self.number_of_points = number_of_points
         self.points = self.create_points(number_of_points, key)
