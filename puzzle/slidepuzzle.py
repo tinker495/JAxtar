@@ -16,10 +16,6 @@ class SlidePuzzle(Puzzle):
     class State:
         board: chex.Array
 
-    @property
-    def has_target(self) -> bool:
-        return True
-
     def __init__(self, size: int, **kwargs):
         self.size = size
         super().__init__(**kwargs)

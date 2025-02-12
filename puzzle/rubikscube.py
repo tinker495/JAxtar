@@ -50,10 +50,6 @@ class RubiksCube(Puzzle):
         # 0 - up, 1 - down, 2 - left, 3 - right, 4 - front, 5 - back
         faces: chex.Array
 
-    @property
-    def has_target(self) -> bool:
-        return True
-
     def __init__(self, size: int = 3, **kwargs):
         self.size = size
         is_even = size % 2 == 0

@@ -34,10 +34,6 @@ class DotKnot(Puzzle):
         # color_num + 1 ~ 2 * color_num + 1 : point b
         # 2 * color_num + 2 ~ 3 * color_num + 2 : lines
 
-    @property
-    def has_target(self) -> bool:
-        return False
-
     def __init__(self, size: int, color_num: int = 4, **kwargs):
         assert size >= 4, "Size must be at least 4 for packing"
         self.size = size

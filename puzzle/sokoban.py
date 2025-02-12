@@ -37,10 +37,6 @@ class Sokoban(Puzzle):
         )  # bring boxoban dataset here
         self.num_puzzles = self.init_puzzles.shape[0]
 
-    @property
-    def has_target(self) -> bool:
-        return True
-
     def pack_board(self, board: jnp.ndarray) -> jnp.ndarray:
         """
         Pack a board array of shape (100,) with cell values in {0, 1, 2, 3}
