@@ -255,15 +255,12 @@ class Puzzle(ABC):
 
         TargetState: "Puzzle.State"
 
-        @abstractmethod
         def dtype(self):
             pass
 
-        @abstractmethod
         def shape(self):
             pass
 
-        @abstractmethod
         def default(_=None) -> T:
             pass
 
