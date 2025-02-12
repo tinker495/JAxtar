@@ -10,14 +10,14 @@ class SokobanQ(QFunction):
     def __init__(self, puzzle: Sokoban):
         super().__init__(puzzle)
 
-    def q_value(self, current: Sokoban.State, target: Sokoban.State) -> chex.Array:
+    def q_value(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> chex.Array:
         """
         Get Q values for all possible actions from the current state.
         Computes Q values as the distances between each neighboring state (generated from current)
         and the target state.
         """
-        neighbors, _ = self.puzzle.get_neighbours(current)
-        return jax.vmap(self._distance, in_axes=(0, None))(neighbors, target)
+        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
+        return jax.vmap(self._distance, in_axes=(0, None))(neighbors, solve_config.TargetState)
 
     def _distance(self, current: Sokoban.State, target: Sokoban.State) -> float:
         """
