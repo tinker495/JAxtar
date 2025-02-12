@@ -241,14 +241,14 @@ def astar(
     vmapped_astar = vmapping_search(puzzle, astar_fn, vmap_size, show_compile_time)
 
     # for benchmark, same initial states
-    states, targets = vmapping_init_target(puzzle, vmap_size, seeds)
+    states, solve_configs = vmapping_init_target(puzzle, vmap_size, seeds)
 
     print("Vmapped A* search, multiple initial state solution")
     print("Start states")
     print(states)
     if has_target:
         print("Target state")
-        print(targets)
+        print(solve_configs.TargetState)
 
     print("vmap astar")
     print(
@@ -257,7 +257,7 @@ def astar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-    search_result = vmapped_astar(states, targets)
+    search_result = vmapped_astar(states, solve_configs)
     solved = search_result.solved.block_until_ready()
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
@@ -453,14 +453,14 @@ def qstar(
     vmapped_qstar = vmapping_search(puzzle, qstar_fn, vmap_size, show_compile_time)
 
     # for benchmark, same initial states
-    states, targets = vmapping_init_target(puzzle, vmap_size, seeds)
+    states, solve_configs = vmapping_init_target(puzzle, vmap_size, seeds)
 
     print("Vmapped Q* search, multiple initial state solution")
     print("Start states")
     print(states)
     if has_target:
         print("Target state")
-        print(targets)
+        print(solve_configs.TargetState)
 
     print("vmap qstar")
     print(
@@ -469,7 +469,7 @@ def qstar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-    search_result = vmapped_qstar(states, targets)
+    search_result = vmapped_qstar(states, solve_configs)
     solved = search_result.solved.block_until_ready()
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
