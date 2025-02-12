@@ -1,6 +1,7 @@
 from heuristic import (
     DotKnotHeuristic,
     EmptyHeuristic,
+    Heuristic,
     LightsOutHeuristic,
     MazeHeuristic,
     RubiksCubeHeuristic,
@@ -18,6 +19,7 @@ from puzzle import (
     LightsOut,
     LightsOutHard,
     Maze,
+    Puzzle,
     RubiksCube,
     RubiksCubeHard,
     SlidePuzzle,
@@ -30,13 +32,14 @@ from qfunction import (
     EmptyQFunction,
     LightsOutQ,
     MazeQ,
+    QFunction,
     RubiksCubeQ,
     SlidePuzzleQ,
     SokobanQ,
 )
 from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
 
-default_puzzle_sizes = {
+default_puzzle_sizes: dict[str, int] = {
     "n-puzzle": 4,
     "lightsout": 7,
     "rubikscube": 3,
@@ -46,37 +49,38 @@ default_puzzle_sizes = {
     "sokoban": 10,
 }
 
-puzzle_dict = {
-    "n-puzzle": lambda n: SlidePuzzle(n),
-    "lightsout": lambda n: LightsOut(n),
-    "rubikscube": lambda n: RubiksCube(n),
-    "maze": lambda n: Maze(n),
-    "dotknot": lambda n: DotKnot(n),
-    "tsp": lambda n: TSP(n),
-    "sokoban": lambda n: Sokoban(),
+puzzle_dict: dict[str, Puzzle] = {
+    "n-puzzle": SlidePuzzle,
+    "lightsout": LightsOut,
+    "rubikscube": RubiksCube,
+    "maze": Maze,
+    "dotknot": DotKnot,
+    "tsp": TSP,
+    "sokoban": Sokoban,
 }
 
-puzzle_dict_hard = {
-    "n-puzzle": lambda n: SlidePuzzleHard(n),
-    "lightsout": lambda n: LightsOutHard(n),
-    "rubikscube": lambda n: RubiksCubeHard(n),
-    "maze": lambda n: Maze(n),
-    "dotknot": lambda n: DotKnot(n),
-    "tsp": lambda n: TSP(n),
-    "sokoban": lambda n: SokobanHard(),
+puzzle_dict_hard: dict[str, Puzzle] = {
+    "n-puzzle": SlidePuzzleHard,
+    "lightsout": LightsOutHard,
+    "rubikscube": RubiksCubeHard,
+    "maze": Maze,
+    "dotknot": DotKnot,
+    "tsp": TSP,
+    "sokoban": SokobanHard,
 }
 
-puzzle_heuristic_dict = {
-    "n-puzzle": lambda puzzle: SlidePuzzleHeuristic(puzzle),
-    "lightsout": lambda puzzle: LightsOutHeuristic(puzzle),
-    "rubikscube": lambda puzzle: RubiksCubeHeuristic(puzzle),
-    "maze": lambda puzzle: MazeHeuristic(puzzle),
-    "dotknot": lambda puzzle: DotKnotHeuristic(puzzle),
-    "tsp": lambda puzzle: EmptyHeuristic(puzzle),
-    "sokoban": lambda puzzle: SokobanHeuristic(puzzle),
+puzzle_heuristic_dict: dict[str, Heuristic] = {
+    "n-puzzle": SlidePuzzleHeuristic,
+    "lightsout": LightsOutHeuristic,
+    "rubikscube": RubiksCubeHeuristic,
+    "maze": MazeHeuristic,
+    "dotknot": DotKnotHeuristic,
+    "tsp": EmptyHeuristic,
+    "sokoban": SokobanHeuristic,
 }
 
-puzzle_heuristic_dict_nn = {
+# nn option need to be callable, for loading model
+puzzle_heuristic_dict_nn: dict[str, callable] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralHeuristic(puzzle)
     if reset
     else SlidePuzzleNeuralHeuristic.load_model(
@@ -94,17 +98,18 @@ puzzle_heuristic_dict_nn = {
     ),
 }
 
-puzzle_q_dict = {
-    "n-puzzle": lambda puzzle: SlidePuzzleQ(puzzle),
-    "lightsout": lambda puzzle: LightsOutQ(puzzle),
-    "rubikscube": lambda puzzle: RubiksCubeQ(puzzle),
-    "maze": lambda puzzle: MazeQ(puzzle),
-    "dotknot": lambda puzzle: DotKnotQ(puzzle),
-    "tsp": lambda puzzle: EmptyQFunction(puzzle),
-    "sokoban": lambda puzzle: SokobanQ(puzzle),
+puzzle_q_dict: dict[str, QFunction] = {
+    "n-puzzle": SlidePuzzleQ,
+    "lightsout": LightsOutQ,
+    "rubikscube": RubiksCubeQ,
+    "maze": MazeQ,
+    "dotknot": DotKnotQ,
+    "tsp": EmptyQFunction,
+    "sokoban": SokobanQ,
 }
 
-puzzle_q_dict_nn = {
+# nn option need to be callable, for loading model
+puzzle_q_dict_nn: dict[str, callable] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralQ(puzzle)
     if reset
     else SlidePuzzleNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}.pkl"),

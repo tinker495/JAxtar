@@ -23,10 +23,10 @@ class TSP(Puzzle):
     def has_target(self) -> bool:
         return False
 
-    def __init__(self, number_of_points: int, key=jax.random.PRNGKey(0)):
+    def __init__(self, number_of_points: int, key=jax.random.PRNGKey(0), **kwargs):
         self.number_of_points = number_of_points
         self.points = self.create_points(number_of_points, key)
-        super().__init__()
+        super().__init__(**kwargs)
 
     def create_points(self, number_of_points, key=None):
         return jax.random.uniform(
