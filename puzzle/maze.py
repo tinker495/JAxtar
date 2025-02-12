@@ -22,10 +22,10 @@ class Maze(Puzzle):
     def has_target(self) -> bool:
         return True
 
-    def __init__(self, size: int, p=0.3, key=jax.random.PRNGKey(0)):
+    def __init__(self, size: int, p=0.3, key=jax.random.PRNGKey(0), **kwargs):
         self.size = size
         self.maze = self.create_maze(size, p, key)
-        super().__init__()
+        super().__init__(**kwargs)
 
     def create_maze(self, size, p=0.3, key=None):
         maze = jax.random.bernoulli(key, p=jnp.float32(p), shape=(size**2,)).astype(jnp.uint8)

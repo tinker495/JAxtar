@@ -54,13 +54,13 @@ class RubiksCube(Puzzle):
     def has_target(self) -> bool:
         return True
 
-    def __init__(self, size: int = 3):
+    def __init__(self, size: int = 3, **kwargs):
         self.size = size
         is_even = size % 2 == 0
         self.index_grid = jnp.asarray(
             [i for i in range(size) if is_even or not i == (size // 2)], dtype=jnp.uint8
         )
-        super().__init__()
+        super().__init__(**kwargs)
 
     def get_string_parser(self):
         def parser(state):

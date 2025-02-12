@@ -38,11 +38,11 @@ class DotKnot(Puzzle):
     def has_target(self) -> bool:
         return False
 
-    def __init__(self, size: int, color_num: int = 4):
+    def __init__(self, size: int, color_num: int = 4, **kwargs):
         assert size >= 4, "Size must be at least 4 for packing"
         self.size = size
         self.color_num = color_num
-        super().__init__()
+        super().__init__(**kwargs)
 
     def get_string_parser(self):
         form = self._get_visualize_format()
