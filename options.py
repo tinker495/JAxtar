@@ -26,8 +26,7 @@ def puzzle_options(func: callable) -> callable:
     )
     @click.option("-h", "--hard", default=False, is_flag=True, help="Use the hard puzzle")
     @click.option("-ps", "--puzzle_size", default="default", type=str, help="Size of the puzzle")
-    @click.option("--start_state_seeds", default="32", type=str, help="Seed for the random puzzle")
-    @click.option("--seed", default=0, help="Seed for the random puzzle")
+    @click.option("--seeds", default="32", type=str, help="Seed for the random puzzle")
     @wraps(func)
     def wrapper(*args, **kwargs):
         if kwargs["puzzle_size"] == "default":
@@ -38,21 +37,18 @@ def puzzle_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle"]
         kwargs["puzzle_name"] = puzzle_name
         if kwargs["hard"]:
-            kwargs["puzzle"] = puzzle_dict_hard[puzzle_name](kwargs["puzzle_size"])
+            kwargs["puzzle"] = puzzle_dict_hard[puzzle_name](size=kwargs["puzzle_size"])
         else:
-            kwargs["puzzle"] = puzzle_dict[puzzle_name](kwargs["puzzle_size"])
+            kwargs["puzzle"] = puzzle_dict[puzzle_name](size=kwargs["puzzle_size"])
         kwargs.pop("hard")
-        kwargs.pop("seed")
 
-        if kwargs["start_state_seeds"].isdigit():
-            kwargs["start_state_seeds"] = [int(kwargs["start_state_seeds"])]
+        if kwargs["seeds"].isdigit():
+            kwargs["seeds"] = [int(kwargs["seeds"])]
         else:
             try:
-                kwargs["start_state_seeds"] = [
-                    int(s) for s in kwargs["start_state_seeds"].split(",")
-                ]
+                kwargs["seeds"] = [int(s) for s in kwargs["seeds"].split(",")]
             except ValueError:
-                raise ValueError("Invalid start state seeds")
+                raise ValueError("Invalid seeds")
         return func(*args, **kwargs)
 
     return wrapper

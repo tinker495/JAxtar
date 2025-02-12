@@ -20,9 +20,9 @@ class SlidePuzzle(Puzzle):
     def has_target(self) -> bool:
         return True
 
-    def __init__(self, size: int):
+    def __init__(self, size: int, **kwargs):
         self.size = size
-        super().__init__()
+        super().__init__(**kwargs)
 
     def get_string_parser(self):
         form = self._get_visualize_format()

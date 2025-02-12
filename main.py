@@ -31,12 +31,10 @@ def main():
 @main.command()
 @puzzle_options
 @human_play_options
-def human_play(puzzle, start_state_seed):
+def human_play(puzzle, seeds):
     has_target = puzzle.has_target
 
-    init_state, target_state = puzzle.get_init_target_state_pair(
-        jax.random.PRNGKey(start_state_seed)
-    )
+    init_state, target_state = puzzle.get_init_target_state_pair(jax.random.PRNGKey(seeds[0]))
     _, costs = puzzle.get_neighbours(init_state)
     n_actions = costs.shape[0]
 
@@ -116,7 +114,7 @@ def astar(
     max_node_size,
     batch_size,
     cost_weight,
-    start_state_seeds,
+    seeds,
     vmap_size,
     profile,
     show_compile_time,
@@ -140,8 +138,8 @@ def astar(
     total_search_times = []
     total_states = []
     total_solved = []
-    for start_state_seed in start_state_seeds:
-        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
+    for seed in seeds:
+        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(seed))
         heuristic_values = heuristic.distance(state, target)
 
         print("Start state")
@@ -227,11 +225,11 @@ def astar(
         else:
             print("No solution found\n\n")
 
-    if len(start_state_seeds) > 1:
+    if len(seeds) > 1:
         total_search_times = jnp.array(total_search_times)
         total_states = jnp.array(total_states)
         total_solved = jnp.array(total_solved)
-        print(f"Seed: {', '.join(str(x) for x in start_state_seeds)}")
+        print(f"Seed: {', '.join(str(x) for x in seeds)}")
         print(
             f"Search time: {', '.join(f'{x:.2f}' for x in total_search_times)} seconds "
             f"(total: {jnp.sum(total_search_times):.2f}, avg: {jnp.mean(total_search_times):.2f})"
@@ -251,7 +249,7 @@ def astar(
     vmapped_astar = vmapping_search(puzzle, astar_fn, vmap_size, show_compile_time)
 
     # for benchmark, same initial states
-    states, targets = vmapping_init_target(puzzle, vmap_size, start_state_seeds)
+    states, targets = vmapping_init_target(puzzle, vmap_size, seeds)
 
     print("Vmapped A* search, multiple initial state solution")
     print("Start states")
@@ -282,7 +280,7 @@ def astar(
     search_states = jnp.sum(search_result.hashtable.size)
     vmapped_states_per_second = search_states / vmapped_search_time
 
-    if len(start_state_seeds) > 1:
+    if len(seeds) > 1:
         sizes = search_result.hashtable.size
         print(
             f"Search Time: {vmapped_search_time:6.2f} seconds "
@@ -323,7 +321,7 @@ def qstar(
     max_node_size,
     batch_size,
     cost_weight,
-    start_state_seeds,
+    seeds,
     vmap_size,
     profile,
     show_compile_time,
@@ -348,8 +346,8 @@ def qstar(
     total_search_times = []
     total_states = []
     total_solved = []
-    for start_state_seed in start_state_seeds:
-        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
+    for seed in seeds:
+        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(seed))
         qvalues = qfunction.q_value(state, target)
 
         print("Start state")
@@ -441,11 +439,11 @@ def qstar(
         else:
             print("No solution found\n\n")
 
-    if len(start_state_seeds) > 1:
+    if len(seeds) > 1:
         total_search_times = jnp.array(total_search_times)
         total_states = jnp.array(total_states)
         total_solved = jnp.array(total_solved)
-        print(f"Seed: {', '.join(str(x) for x in start_state_seeds)}")
+        print(f"Seed: {', '.join(str(x) for x in seeds)}")
         print(
             f"Search time: {', '.join(f'{x:.2f}' for x in total_search_times)} seconds "
             f"(total: {jnp.sum(total_search_times):.2f}, avg: {jnp.mean(total_search_times):.2f})"
@@ -465,7 +463,7 @@ def qstar(
     vmapped_qstar = vmapping_search(puzzle, qstar_fn, vmap_size, show_compile_time)
 
     # for benchmark, same initial states
-    states, targets = vmapping_init_target(puzzle, vmap_size, start_state_seeds)
+    states, targets = vmapping_init_target(puzzle, vmap_size, seeds)
 
     print("Vmapped Q* search, multiple initial state solution")
     print("Start states")
@@ -496,7 +494,7 @@ def qstar(
     search_states = jnp.sum(search_result.hashtable.size)
     vmapped_states_per_second = search_states / vmapped_search_time
 
-    if len(start_state_seeds) > 1:
+    if len(seeds) > 1:
         sizes = search_result.hashtable.size
         print(
             f"Search Time: {vmapped_search_time:6.2f} seconds "

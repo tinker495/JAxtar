@@ -25,10 +25,10 @@ class Sokoban(Puzzle):
     class State:
         board: chex.Array  # Now stores a packed board representation of shape (25,)
 
-    def __init__(self, size: int = 10):
+    def __init__(self, size: int = 10, **kwargs):
         self.size = size
         assert size == 10, "Boxoban dataset only supports size 10"
-        super().__init__()
+        super().__init__(**kwargs)
 
     def data_init(self):
         self.init_puzzles = jnp.load("puzzle/data/sokoban/init.npy")  # bring boxoban dataset here
@@ -256,7 +256,7 @@ class Sokoban(Puzzle):
             ),
         }
 
-        def img_func(state: "Sokoban.State", target: "Sokoban.State" = None):
+        def img_func(state: "Sokoban.State", target: "Sokoban.State" = None, **kwargs):
             img = np.zeros(IMG_SIZE + (3,), np.uint8)
 
             cell_w = IMG_SIZE[0] // self.size

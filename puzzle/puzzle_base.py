@@ -232,7 +232,7 @@ class Puzzle(ABC):
         """
         pass
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         """
         This function should be called in the __init__ of the subclass.
         """
