@@ -21,30 +21,29 @@ def human_format(num):
 
 def vmapping_init_target(puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]):
     start_state_seed = start_state_seeds[0]
-    states, targets = puzzle.get_init_target_state_pair(jax.random.PRNGKey(start_state_seed))
+    states, solve_configs = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
     states = jax.tree_util.tree_map(
         lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), states[jnp.newaxis, ...]
     )
-    targets = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), targets[jnp.newaxis, ...]
+    solve_configs = jax.tree_util.tree_map(
+        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])),
+        solve_configs[jnp.newaxis, ...],
     )
 
     if len(start_state_seeds) > 1:
         for i, start_state_seed in enumerate(start_state_seeds[1:vmap_size]):
-            new_state, new_target = puzzle.get_init_target_state_pair(
-                jax.random.PRNGKey(start_state_seed)
-            )
+            new_state, new_solve_config = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
             states = set_tree(
                 states,
                 new_state,
                 i + 1,
             )
-            targets = set_tree(
-                targets,
-                new_target,
+            solve_configs = set_tree(
+                solve_configs,
+                new_solve_config,
                 i + 1,
             )
-    return states, targets
+    return states, solve_configs
 
 
 def vmapping_search(
@@ -61,11 +60,15 @@ def vmapping_search(
     empty_states = jax.tree_util.tree_map(
         lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), empty_states
     )
+    empty_solve_configs = puzzle.SolveConfig.default()[jnp.newaxis, ...]
+    empty_solve_configs = jax.tree_util.tree_map(
+        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), empty_solve_configs
+    )
     vmapped_star = jax.jit(jax.vmap(star_fn, in_axes=(0, 0)))
     if show_compile_time:
         print("initializing vmapped jit")
         start = time.time()
-    vmapped_star(empty_states, empty_states)
+    vmapped_star(empty_states, empty_solve_configs)
     if show_compile_time:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")
