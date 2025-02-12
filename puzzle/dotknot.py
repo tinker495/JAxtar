@@ -126,18 +126,21 @@ class DotKnot(Puzzle):
         self, solve_config: "DotKnot.SolveConfig", state: State, filled: bool = True
     ) -> tuple[State, chex.Array]:
         """
-        This function should return neighbours, and the cost of the move.
+        This function returns neighbours and the cost of each move.
         If impossible to move in a direction, cost should be inf and State should be same as input state.
         """
-        # Define possible moves: up, down, left, right
-        points = jnp.arange(self.color_num, dtype=TYPE) + 1  # 1 ~ color_num: point a, etc.
-        moves = jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
-        points, moves_idx = jnp.meshgrid(points, jnp.arange(4))
-        points = points.reshape(-1)
-        moves = moves[moves_idx.reshape(-1)]
-
-        # Unpack the board for processing
+        # Unpack the board for processing.
         unpacked_board = self.unpack_board(state.board)
+
+        # Determine the smallest available color among {1, 2, ..., self.color_num}.
+        colors = jnp.arange(1, self.color_num + 1, dtype=TYPE)
+        # For each candidate color, check if that point is present in the board.
+        available_mask = jnp.any(unpacked_board[None, :] == colors[:, None], axis=1)
+        # If a color is not available, we replace it with a value greater than any valid color;
+        # then, taking the minimum gives us the smallest valid color.
+        selected_color = jnp.min(jnp.where(available_mask, colors, self.color_num + 1))
+        # Define the 4 directional moves: up, down, left, right.
+        moves = jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
 
         def is_valid(new_pos, color_idx):
             index = new_pos[0] * self.size + new_pos[1]
@@ -163,8 +166,8 @@ class DotKnot(Puzzle):
             )
             return board.at[flat_index].set(color_idx + 2 * self.color_num + 1)
 
-        def move(state, point, move_vector):
-            point_idx = point
+        def move(state, move_vector):
+            point_idx = selected_color
             color_idx = (point_idx - 1) % self.color_num
             available, pos = self._getBlankPosition(state, point_idx)
             new_pos = (pos + move_vector).astype(TYPE)
@@ -180,7 +183,7 @@ class DotKnot(Puzzle):
             cost = jnp.where(valid_move, 1.0, jnp.inf)
             return new_state, cost
 
-        new_states, costs = jax.vmap(move, in_axes=(None, 0, 0))(state, points, moves)
+        new_states, costs = jax.vmap(move, in_axes=(None, 0))(state, moves)
         return new_states, costs
 
     def is_solved(self, solve_config: "DotKnot.SolveConfig", state: State) -> bool:
