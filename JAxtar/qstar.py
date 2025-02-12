@@ -45,12 +45,12 @@ def qstar_builder(
 
     hash_func = hash_func_builder(statecls)
 
-    solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
-    neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
+    solved_fn = jax.vmap(puzzle.is_solved, in_axes=(None, 0))
+    neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(None, 0, 0), out_axes=(1, 1))
 
     def qstar(
         start: Puzzle.State,
-        target: Puzzle.State,
+        solve_config: Puzzle.SolveConfig,
     ) -> tuple[SearchResult, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
@@ -84,7 +84,7 @@ def qstar_builder(
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
             states = search_result.get_state(parent)
-            solved = solved_fn(states, target)
+            solved = solved_fn(solve_config, states)
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(input: tuple[SearchResult, Current, chex.Array]):
@@ -93,12 +93,12 @@ def qstar_builder(
             cost = search_result.get_cost(parent)
             states = search_result.get_state(parent)
 
-            neighbours, ncost = neighbours_fn(states, filled)
+            neighbours, ncost = neighbours_fn(solve_config, states, filled)
             parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
             nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             q_vals = q_fn.batched_q_value(
-                states, target
+                solve_config, states
             ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbour_key = (cost_weight * nextcosts + q_vals).astype(KEY_DTYPE)
 
@@ -151,13 +151,13 @@ def qstar_builder(
             _cond, _body, (search_result, hash_idxs, filled)
         )
         states = search_result.get_state(idxes)
-        solved = solved_fn(states, target)
+        solved = solved_fn(solve_config, states)
         search_result.solved = solved.any()
         search_result.solved_idx = idxes[jnp.argmax(solved)]
         return search_result
 
     qstar_fn = jax.jit(qstar)
-    empty_target = puzzle.State.default()
+    empty_solve_config = puzzle.SolveConfig.default()
     empty_states = puzzle.State.default()
 
     if show_compile_time:
@@ -168,7 +168,7 @@ def qstar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    qstar_fn(empty_states, empty_target)
+    qstar_fn(empty_states, empty_solve_config)
 
     if show_compile_time:
         end = time.time()

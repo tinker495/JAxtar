@@ -9,7 +9,7 @@ class DotKnotHeuristic(Heuristic):
     def __init__(self, puzzle: DotKnot):
         super().__init__(puzzle)
 
-    def distance(self, current: DotKnot.State, target: DotKnot.State) -> float:
+    def distance(self, solve_config: "DotKnot.SolveConfig", current: DotKnot.State) -> float:
         """
         Get distance for solving puzzle.
         """

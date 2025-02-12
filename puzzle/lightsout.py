@@ -32,10 +32,6 @@ class LightsOut(Puzzle):
     class State:
         board: chex.Array
 
-    @property
-    def has_target(self) -> bool:
-        return True
-
     def __init__(self, size: int, **kwargs):
         self.size = size
         super().__init__(**kwargs)
@@ -46,7 +42,7 @@ class LightsOut(Puzzle):
         def to_char(x):
             return "□" if x == 0 else "■"
 
-        def parser(state):
+        def parser(state: "LightsOut.State", **kwargs):
             return form.format(*map(to_char, self.from_uint8(state.board)))
 
         return parser
@@ -57,13 +53,18 @@ class LightsOut(Puzzle):
 
         return gen
 
-    def get_initial_state(self, key=None) -> State:
-        return self._get_random_state(key)
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> State:
+        return self._get_random_state(solve_config, key)
 
     def get_target_state(self, key=None) -> State:
         return self.State(board=self.to_uint8(jnp.zeros(self.size**2, dtype=bool)))
 
-    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
+        return self.SolveConfig(TargetState=self.get_target_state(key))
+
+    def get_neighbours(
+        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
@@ -90,8 +91,8 @@ class LightsOut(Puzzle):
         next_boards, costs = jax.vmap(map_fn, in_axes=(0, None))(actions, filled)
         return self.State(board=next_boards), costs
 
-    def is_solved(self, state: State, target: State) -> bool:
-        return self.is_equal(state, target)
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+        return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:
         """
@@ -125,7 +126,7 @@ class LightsOut(Puzzle):
         form += "━━┛"
         return form
 
-    def _get_random_state(self, key, num_shuffle=8):
+    def _get_random_state(self, solve_config: Puzzle.SolveConfig, key, num_shuffle=8):
         """
         This function should return a random state.
         """
@@ -133,7 +134,7 @@ class LightsOut(Puzzle):
 
         def random_flip(carry, _):
             state, key = carry
-            neighbor_states, _ = self.get_neighbours(state, filled=True)
+            neighbor_states, _ = self.get_neighbours(solve_config, state, filled=True)
             key, subkey = jax.random.split(key)
             idx = jax.random.choice(subkey, jnp.arange(self.size**2))
             next_state = neighbor_states[idx]
