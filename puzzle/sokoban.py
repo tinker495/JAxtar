@@ -66,22 +66,21 @@ class Sokoban(Puzzle):
 
         return gen
 
-    def get_initial_state(self, key=None) -> State:
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> State:
         # Initialize the board with the player, boxes, and walls from level1 and pack it.
         idx = jax.random.randint(key, (), 0, self.num_puzzles)
         packed_board = self.init_puzzles[idx, ...]
         return self.State(board=packed_board)
 
-    def get_target_state(self, key=None) -> State:
-        # Define the target state and pack it.
+    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
         idx = jax.random.randint(key, (), 0, self.num_puzzles)
         packed_board = self.target_puzzles[idx, ...]
-        return self.State(board=packed_board)
+        return self.SolveConfig(TargetState=self.State(board=packed_board))
 
-    def is_solved(self, state: State, target: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
         # Unpack boards for comparison.
         board = self.unpack_board(state.board)
-        t_board = self.unpack_board(target.board)
+        t_board = self.unpack_board(solve_config.TargetState.board)
         # Remove the player from the current board.
         rm_player = jnp.where(board == Object.PLAYER.value, Object.EMPTY.value, board)
         return jnp.all(rm_player == t_board)
@@ -116,14 +115,16 @@ class Sokoban(Puzzle):
             else:
                 return "?"
 
-        def parser(state):
+        def parser(state: "Sokoban.State", **kwargs):
             # Unpack the board before visualization.
             board = self.unpack_board(state.board)
             return form.format(*map(to_char, board))
 
         return parser
 
-    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_neighbours(
+        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
         """
         Returns neighbour states along with the cost for each move.
         If a move isn't possible, it returns the original state with an infinite cost.
@@ -252,14 +253,14 @@ class Sokoban(Puzzle):
             ),
         }
 
-        def img_func(state: "Sokoban.State", target: "Sokoban.State" = None, **kwargs):
+        def img_func(state: "Sokoban.State", solve_config: "Sokoban.SolveConfig" = None, **kwargs):
             img = np.zeros(IMG_SIZE + (3,), np.uint8)
 
             cell_w = IMG_SIZE[0] // self.size
             cell_h = IMG_SIZE[1] // self.size
             board = self.unpack_board(state.board)
-            if target is not None:
-                goal = self.unpack_board(target.board)
+            if solve_config is not None:
+                goal = self.unpack_board(solve_config.TargetState.board)
             else:
                 goal = None
             for i in range(self.size):
