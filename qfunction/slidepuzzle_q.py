@@ -19,12 +19,12 @@ class SlidePuzzleQ(QFunction):
         )
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
 
-    def q_value(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> float:
+    def q_value(self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State) -> float:
         """
         This function should return the q value of the current state and target state.
         """
-        neighbors, _ = self.puzzle.get_neighbours(current)
-        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, target)
+        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
+        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, solve_config.TargetState)
         return dists
 
     def _distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> float:
