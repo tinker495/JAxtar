@@ -13,13 +13,13 @@ class QFunction(ABC):
         self.puzzle = puzzle
 
     @abstractmethod
-    def q_value(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+    def q_value(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
         """
         Get q value of the current state and target state.
 
         Args:
+            solve_config: The solve config.
             current: The current state.
-            target: The target state.
 
         Returns:
             The q value of the current state and target state.
@@ -27,8 +27,10 @@ class QFunction(ABC):
         """
         pass
 
-    def batched_q_value(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+    def batched_q_value(
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+    ) -> chex.Array:
         """
         Get q value of the current state and target state.
         """
-        return jax.vmap(self.q_value, in_axes=(0, None))(current, target)
+        return jax.vmap(self.q_value, in_axes=(None, 0))(solve_config, current)
