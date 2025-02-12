@@ -112,23 +112,24 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
                 jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
             )
             results = []
-            if batch_len < MAX_PRINT_BATCH_SIZE:
-                print(batch_shape)
+            if batch_len <= MAX_PRINT_BATCH_SIZE:
                 for i in range(batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state, **kwargs))
-                results.append(f"batch : {batch_shape}")
+                    kwargs_idx = {k: v[index] for k, v in kwargs.items()}
+                    results.append(parsfunc(current_state, **kwargs_idx))
             else:
                 for i in range(SHOW_BATCH_SIZE):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state, **kwargs))
+                    kwargs_idx = {k: v[index] for k, v in kwargs.items()}
+                    results.append(parsfunc(current_state, **kwargs_idx))
                 results.append("...\n(batch : " + f"{batch_shape})")
                 for i in range(batch_len - SHOW_BATCH_SIZE, batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state, **kwargs))
+                    kwargs_idx = {k: v[index] for k, v in kwargs.items()}
+                    results.append(parsfunc(current_state, **kwargs_idx))
             return tabulate([results], tablefmt="plain")
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
@@ -167,7 +168,7 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
         if shape == default_shape:
             return StructuredType.SINGLE
         elif all(
-            ds == s[-len(ds) :]
+            ds == s[-max(len(ds), 1) :] or (ds == () and len(s) == 1)
             for ds, s in zip(get_leaf_elements(default_shape), get_leaf_elements(shape))
         ):
             return StructuredType.BATCHED
