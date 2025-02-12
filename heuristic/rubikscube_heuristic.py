@@ -14,12 +14,12 @@ class RubiksCubeHeuristic(Heuristic):
         else:
             self.heur_modify = 1 / (puzzle.size**2)
 
-    def distance(self, current: RubiksCube.State, target: RubiksCube.State) -> float:
+    def distance(self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State) -> float:
         """
         Get distance between current state and target state.
         """
         current_faces = self.puzzle.unpack_faces(current.faces)
-        target_faces = self.puzzle.unpack_faces(target.faces)
+        target_faces = self.puzzle.unpack_faces(solve_config.TargetState.faces)
         equal_faces = 1 - (jnp.equal(current_faces, target_faces).mean(1) - self.heur_modify) / (
             1 - self.heur_modify
         )
