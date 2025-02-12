@@ -10,8 +10,7 @@ TYPE = jnp.uint8
 
 class TSP(Puzzle):
 
-    number_of_points: int
-    points: chex.Array
+    size: int
 
     @state_dataclass
     class State:
@@ -19,15 +18,19 @@ class TSP(Puzzle):
         start: chex.Array  # idx of the point that is the start
         point: chex.Array  # idx of the point that is currently visited
 
-    def __init__(self, number_of_points: int, key=jax.random.PRNGKey(0), **kwargs):
-        self.number_of_points = number_of_points
-        self.points = self.create_points(number_of_points, key)
+    @state_dataclass
+    class SolveConfig:
+        points: chex.Array
+
+    def __init__(self, size: int, **kwargs):
+        self.size = size
         super().__init__(**kwargs)
 
-    def create_points(self, number_of_points, key=None):
-        return jax.random.uniform(
-            key, shape=(number_of_points, 2), minval=0, maxval=1, dtype=jnp.float16
-        )
+    def get_solve_config_string_parser(self) -> callable:
+        def parser(solve_config: "TSP.SolveConfig", **kwargs):
+            return print(solve_config.points)
+
+        return parser
 
     def get_string_parser(self):
         form = self._get_visualize_format()
@@ -35,42 +38,49 @@ class TSP(Puzzle):
         def to_char(x):
             return "☐" if x == 0 else "■"  # 0: not visited, 1: visited
 
-        def parser(state):
+        def parser(state: "TSP.State", **kwargs):
             mask = self.from_uint8(state.mask)
             return form.format(*map(to_char, mask), state.point)
 
         return parser
 
+    def get_solve_config_default_gen(self) -> Puzzle.SolveConfig:
+        def gen():
+            points = jnp.zeros((self.size, 2), dtype=jnp.float16)
+            return self.SolveConfig(points=points)
+
+        return gen
+
     def get_default_gen(self) -> callable:
 
-        number_of_points = self.number_of_points
+        size = self.size
 
         def gen():
-            mask = jnp.zeros(number_of_points, dtype=jnp.bool_)
+            mask = jnp.zeros(size, dtype=jnp.bool_)
             start = jnp.array(0, dtype=TYPE)
             point = jnp.array(0, dtype=TYPE)
             return self.State(mask=self.to_uint8(mask), start=start, point=point)
 
         return gen
 
-    def get_initial_state(self, key=jax.random.PRNGKey(0)) -> State:
-        mask = jnp.zeros(self.number_of_points, dtype=jnp.bool_)
-        point = jax.random.randint(
-            key, shape=(), minval=0, maxval=self.number_of_points, dtype=TYPE
-        )
+    def get_initial_state(self, solve_config: SolveConfig, key=jax.random.PRNGKey(0)) -> State:
+        mask = jnp.zeros(self.size, dtype=jnp.bool_)
+        point = jax.random.randint(key, shape=(), minval=0, maxval=self.size, dtype=TYPE)
         mask = mask.at[point].set(True)
         return self.State(mask=self.to_uint8(mask), start=point, point=point)
 
-    def get_target_state(self, key=jax.random.PRNGKey(128)) -> State:
-        # this puzzle no target state
-        mask = jnp.zeros(self.number_of_points, dtype=jnp.bool_)
-        point = jnp.array(0, dtype=TYPE)
-        return self.State(mask=self.to_uint8(mask), start=point, point=point)
+    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
+        points = jax.random.uniform(
+            key, shape=(self.size, 2), minval=0, maxval=1, dtype=jnp.float16
+        )
+        return self.SolveConfig(points=points)
 
-    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_neighbours(
+        self, solve_config: SolveConfig, state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
         """
-        This function should return neighbours, and the cost of the move.
-        If impossible to move in a direction, cost should be inf and State should be same as input state.
+        This function returns neighbours and the cost of the move.
+        If moving to a point already visited, the cost is infinity.
         """
         # Define possible moves: up, down, left, right
         mask = self.from_uint8(
@@ -82,21 +92,25 @@ class TSP(Puzzle):
             masked = mask[idx] & filled
             new_mask = mask.at[idx].set(True)
             all_visited = jnp.all(new_mask)
-
-            cost = jnp.linalg.norm(self.points[point] - self.points[idx], axis=-1)
+            cost = jnp.linalg.norm(solve_config.points[point] - solve_config.points[idx], axis=-1)
             cost = jnp.where(masked, jnp.inf, cost) + jnp.where(
                 all_visited,
-                jnp.linalg.norm(self.points[state.start] - self.points[idx], axis=-1),
+                jnp.linalg.norm(
+                    solve_config.points[state.start] - solve_config.points[idx], axis=-1
+                ),
                 0,
             )
             new_state = self.State(mask=self.to_uint8(new_mask), start=state.start, point=idx)
             return new_state, cost
 
         # Apply the move function to all possible moves
-        new_states, costs = jax.vmap(move)(jnp.arange(self.number_of_points, dtype=TYPE))
+        new_states, costs = jax.vmap(move)(jnp.arange(self.size, dtype=TYPE))
         return new_states, costs
 
-    def is_solved(self, state: State, target: State) -> bool:
+    def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
+        """
+        TSP is solved when all points have been visited.
+        """
         return jnp.all(self.from_uint8(state.mask))
 
     def action_to_string(self, action: int) -> str:
@@ -106,7 +120,7 @@ class TSP(Puzzle):
         return f"{action:02d}"
 
     def _get_visualize_format(self):
-        size = self.number_of_points
+        size = self.size
         form = "[" + "{:s} " * size + "]\n" + "point : [{:02d}]"
         return form
 
@@ -117,7 +131,13 @@ class TSP(Puzzle):
 
     def from_uint8(self, board: chex.Array) -> chex.Array:
         # from uint8 4 to boolean 32
-        return jnp.unpackbits(board, axis=-1, count=self.number_of_points, bitorder="little")
+        return jnp.unpackbits(board, axis=-1, count=self.size, bitorder="little")
+
+    def get_solve_config_img_parser(self) -> callable:
+        def parser(solve_config: "TSP.SolveConfig", **kwargs):
+            raise NotImplementedError("TSP does not support image visualization")
+
+        return parser
 
     def get_img_parser(self):
         """
@@ -129,7 +149,13 @@ class TSP(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "TSP.State", path: list["TSP.State"], idx: int, **kwargs):
+        def img_func(
+            state: "TSP.State",
+            path: list["TSP.State"],
+            idx: int,
+            solve_config: "TSP.SolveConfig",
+            **kwargs,
+        ):
             imgsize = IMG_SIZE[0]
             # Create a white background image
             img = np.ones(IMG_SIZE + (3,), np.uint8) * 255
@@ -137,7 +163,7 @@ class TSP(Puzzle):
             # Get the visited mask as booleans
             visited = self.from_uint8(state.mask)
             # Convert the TSP points (assumed to be an array of shape [number_of_points, 2]) to a numpy array
-            points_np = np.array(self.points)
+            points_np = np.array(solve_config.points)
 
             # Compute scaling parameters to fit all points within the image with a margin
             margin = 20
