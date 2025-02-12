@@ -245,10 +245,10 @@ def astar(
 
     print("Vmapped A* search, multiple initial state solution")
     print("Start states")
-    print(states)
+    print(states.str(solve_config=solve_configs))
     if has_target:
         print("Target state")
-        print(solve_configs.TargetState)
+        print(solve_configs)
 
     print("vmap astar")
     print(
@@ -457,10 +457,10 @@ def qstar(
 
     print("Vmapped Q* search, multiple initial state solution")
     print("Start states")
-    print(states)
+    print(states.str(solve_config=solve_configs))
     if has_target:
         print("Target state")
-        print(solve_configs.TargetState)
+        print(solve_configs)
 
     print("vmap qstar")
     print(
