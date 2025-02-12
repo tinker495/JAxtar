@@ -248,7 +248,7 @@ def astar(
     print(states)
     if has_target:
         print("Target state")
-        print(solve_configs.TargetState)
+        print(solve_configs)
 
     print("vmap astar")
     print(
@@ -460,7 +460,7 @@ def qstar(
     print(states)
     if has_target:
         print("Target state")
-        print(solve_configs.TargetState)
+        print(solve_configs)
 
     print("vmap qstar")
     print(
