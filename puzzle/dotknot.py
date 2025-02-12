@@ -34,11 +34,21 @@ class DotKnot(Puzzle):
         # color_num + 1 ~ 2 * color_num + 1 : point b
         # 2 * color_num + 2 ~ 3 * color_num + 2 : lines
 
+    @state_dataclass
+    class SolveConfig:
+        pass
+
     def __init__(self, size: int, color_num: int = 4, **kwargs):
         assert size >= 4, "Size must be at least 4 for packing"
         self.size = size
         self.color_num = color_num
         super().__init__(**kwargs)
+
+    def get_solve_config_string_parser(self):
+        def parser(solve_config: "DotKnot.SolveConfig"):
+            return ""
+
+        return parser
 
     def get_string_parser(self):
         form = self._get_visualize_format()
@@ -55,7 +65,7 @@ class DotKnot(Puzzle):
             else:
                 return "?"  # for debug and target
 
-        def parser(state):
+        def parser(state, **kwargs):
             unpacked = self.unpack_board(state.board)
             return form.format(*map(to_char, unpacked))
 
@@ -85,6 +95,12 @@ class DotKnot(Puzzle):
             board = board[:-1]
         return board
 
+    def get_solve_config_default_gen(self):
+        def gen():
+            return self.SolveConfig()
+
+        return gen
+
     def get_default_gen(self) -> callable:
         def gen():
             board = jnp.zeros((self.size * self.size), dtype=TYPE)
@@ -93,15 +109,22 @@ class DotKnot(Puzzle):
 
         return gen
 
-    def get_initial_state(self, key=jax.random.PRNGKey(128)) -> State:
+    def get_initial_state(
+        self, solve_config: "DotKnot.SolveConfig", key=jax.random.PRNGKey(128)
+    ) -> State:
         return self._get_random_state(key)
 
-    def get_target_state(self, key=None) -> State:
+    def get_target_state(self, key=jax.random.PRNGKey(128)) -> State:
         board = jnp.full((self.size * self.size), -1, dtype=TYPE)
         packed_board = self.pack_board(board)
         return self.State(board=packed_board)  # this puzzle no target
 
-    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_solve_config(self, key=jax.random.PRNGKey(128)) -> Puzzle.SolveConfig:
+        return self.SolveConfig()
+
+    def get_neighbours(
+        self, solve_config: "DotKnot.SolveConfig", state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
         """
         This function should return neighbours, and the cost of the move.
         If impossible to move in a direction, cost should be inf and State should be same as input state.
@@ -160,7 +183,7 @@ class DotKnot(Puzzle):
         new_states, costs = jax.vmap(move, in_axes=(None, 0, 0))(state, points, moves)
         return new_states, costs
 
-    def is_solved(self, state: State, target: State) -> bool:
+    def is_solved(self, solve_config: "DotKnot.SolveConfig", state: State) -> bool:
         unpacked = self.unpack_board(state.board)
         empty = jnp.all(unpacked == 0)  # ALL empty is not solved condition
         gr = jnp.greater_equal(unpacked, 1)  # ALL point a is solved condition
@@ -236,6 +259,12 @@ class DotKnot(Puzzle):
         )
         packed_board = self.pack_board(board)
         return self.State(board=packed_board)
+
+    def get_solve_config_img_parser(self):
+        def parser(solve_config: "DotKnot.SolveConfig"):
+            pass
+
+        return parser
 
     def get_img_parser(self):
         """
