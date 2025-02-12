@@ -19,11 +19,11 @@ class SlidePuzzleHeuristic(Heuristic):
         )
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
 
-    def distance(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> float:
+    def distance(self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State) -> float:
         """
         This function should return the distance between the state and the target.
         """
-        diff, tpos = self._diff_pos(current, target)
+        diff, tpos = self._diff_pos(current, solve_config.TargetState)
         not_empty = current.board != 0
         return (
             self._manhattan_distance(not_empty, diff) + self._linear_conflict(tpos, not_empty, diff)

@@ -9,15 +9,15 @@ class DotKnotQ(QFunction):
     def __init__(self, puzzle: DotKnot):
         super().__init__(puzzle)
 
-    def q_value(self, current: DotKnot.State, target: DotKnot.State) -> float:
+    def q_value(self, solve_config: "DotKnot.SolveConfig", current: DotKnot.State) -> float:
         """
         Get q values for all possible actions from current state.
         """
-        neighbors, _ = self.puzzle.get_neighbours(current)
-        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, target)
+        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
+        dists = jax.vmap(self._distance, in_axes=(0))(neighbors)
         return dists
 
-    def _distance(self, current: DotKnot.State, target: DotKnot.State) -> float:
+    def _distance(self, current: DotKnot.State) -> float:
         """
         Get distance for solving puzzle.
         """

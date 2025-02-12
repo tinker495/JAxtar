@@ -74,11 +74,11 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
     the class that returns a string representation of the class.
     """
 
-    def get_str(self) -> str:
+    def get_str(self, **kwargs) -> str:
         structured_type = self.structured_type
 
         if structured_type == StructuredType.SINGLE:
-            return parsfunc(self)
+            return parsfunc(self, **kwargs)
         elif structured_type == StructuredType.BATCHED:
             batch_shape = self.batch_shape
             batch_len = (
@@ -89,23 +89,24 @@ def add_string_parser(cls: Type[T], parsfunc: callable) -> Type[T]:
                 for i in range(batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state))
+                    results.append(parsfunc(current_state, **kwargs))
                 results.append(f"batch : {batch_shape}")
             else:
                 for i in range(SHOW_BATCH_SIZE):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state))
+                    results.append(parsfunc(current_state, **kwargs))
                 results.append("...\n(batch : " + f"{batch_shape})")
                 for i in range(batch_len - SHOW_BATCH_SIZE, batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state = jax.tree_util.tree_map(lambda x: x[index], self)
-                    results.append(parsfunc(current_state))
+                    results.append(parsfunc(current_state, **kwargs))
             return tabulate([results], tablefmt="plain")
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
 
     setattr(cls, "__str__", get_str)
+    setattr(cls, "str", get_str)
     return cls
 
 
@@ -118,8 +119,17 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
     def get_default(_=None) -> T:
         return defaultfunc()
 
+    setattr(cls, "default", staticmethod(jax.jit(get_default)))
+
     default_shape = defaultfunc().shape
-    default_dim = len(default_shape[0])
+    try:
+        default_dim = len(default_shape[0])
+    except IndexError:
+        default_dim = None
+        """
+        if default_dim is None, it means that the default shape is not a batch.
+        """
+        return cls
 
     def get_default_shape(self) -> Dict[str, Any]:
         return default_shape
@@ -163,7 +173,6 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
         )
 
     # add method based on default state
-    setattr(cls, "default", staticmethod(jax.jit(get_default)))
     setattr(cls, "default_shape", property(get_default_shape))
     setattr(cls, "structured_type", property(get_structured_type))
     setattr(cls, "batch_shape", property(batch_shape))
@@ -224,13 +233,59 @@ class Puzzle(ABC):
         def img(self) -> jnp.ndarray:
             pass
 
+    @state_dataclass
+    class SolveConfig:
+        """
+        This class should be a dataclass that represents the configuration for solving the puzzle.
+
+        Generally, most puzzles terminate when the current state is equal to the target state.
+        However, there are many cases where this is not true.
+        Some problems have independent, fixed variables separate from the state.
+        For example, in TSP, the positions of the points are independent and fixed,
+        but the state consists of the path traversed and the current index.
+        In TSP, we don't know the target state (optimal path), but we do know the locations of the points.
+        We define these fixed parameters as the SolveConfig.
+
+        To manage these cases, we use SolveConfig, a broader concept that encompasses the idea of a TargetState.
+
+        # noqa: E501
+        Ex) n_puzzle, rubikscube: We know the solvable configuration (TargetState) and the entire logic of the environment.
+                In this case, SolveConfig only needs TargetState.
+                Variables: TargetState.
+        Ex) maze: The map can vary for each maze problem, so the map must be included in SolveConfig.
+                A TargetState can also be defined, so it should be included.
+                Variables: Map, TargetState.
+        Ex) TSP: We don't know the TargetState (optimal path), but the positions of the points, which are specified for each problem, must vary.
+                Therefore, SolveConfig should contain the points.
+                Variables: Points.
+        Ex) Dotknot: We don't know the TargetState, and there are no specific values assigned for each problem, so SolveConfig should be empty.
+                Variables: None.
+        """
+
+        TargetState: "Puzzle.State"
+
+        def dtype(self):
+            pass
+
+        def shape(self):
+            pass
+
+        def default(_=None) -> T:
+            pass
+
     @property
-    @abstractmethod
     def has_target(self) -> bool:
         """
         This function should return a boolean that indicates whether the environment has a target state or not.
         """
-        pass
+        return "TargetState" in self.SolveConfig.__annotations__.keys()
+
+    @property
+    def only_target(self) -> bool:
+        """
+        This function should return a boolean that indicates whether the environment has only a target state or not.
+        """
+        return self.has_target and len(self.SolveConfig.__annotations__.keys()) == 1
 
     def __init__(self, **kwargs):
         """
@@ -240,10 +295,15 @@ class Puzzle(ABC):
         self.State = add_string_parser(self.State, self.get_string_parser())
         self.State = add_default(self.State, self.get_default_gen())
         self.State = add_img_parser(self.State, self.get_img_parser())
+        self.SolveConfig = add_string_parser(
+            self.SolveConfig, self.get_solve_config_string_parser()
+        )
+        self.SolveConfig = add_default(self.SolveConfig, self.get_solve_config_default_gen())
+        self.SolveConfig = add_img_parser(self.SolveConfig, self.get_solve_config_img_parser())
 
         self.get_initial_state = jax.jit(self.get_initial_state)
-        self.get_target_state = jax.jit(self.get_target_state)
-        self.get_init_target_state_pair = jax.jit(self.get_init_target_state_pair)
+        self.get_solve_config = jax.jit(self.get_solve_config)
+        self.get_inits = jax.jit(self.get_inits)
         self.get_neighbours = jax.jit(self.get_neighbours)
         self.is_solved = jax.jit(self.is_solved)
         self.is_equal = jax.jit(self.is_equal)
@@ -256,6 +316,23 @@ class Puzzle(ABC):
         """
         pass
 
+    def get_solve_config_string_parser(self) -> callable:
+        """
+        This function should return a callable that takes a solve config and returns a string representation of it.
+        function signature: (solve_config: SolveConfig) -> str
+        """
+        assert self.only_target, (
+            "You should redefine this function, because this function is only for target state"
+            f"has_target: {self.has_target}, only_target: {self.only_target}"
+            f"SolveConfig: {self.SolveConfig.__annotations__.keys()}"
+        )
+        stringparser_state = self.get_string_parser()
+
+        def stringparser(solve_config: "Puzzle.SolveConfig") -> str:
+            return stringparser_state(solve_config.TargetState)
+
+        return stringparser
+
     @abstractmethod
     def get_string_parser(self) -> callable:
         """
@@ -264,6 +341,22 @@ class Puzzle(ABC):
         """
         pass
 
+    def get_solve_config_default_gen(self) -> SolveConfig:
+        """
+        This function should return a default solve config.
+        """
+        assert self.only_target, (
+            "You should redefine this function, because this function is only for target state"
+            f"has_target: {self.has_target}, only_target: {self.only_target}"
+            f"SolveConfig: {self.SolveConfig.__annotations__.keys()}"
+        )
+        default_state = self.State.default()
+
+        def default_gen():
+            return self.SolveConfig(TargetState=default_state)
+
+        return default_gen
+
     @abstractmethod
     def get_default_gen(self) -> callable:
         """
@@ -271,6 +364,23 @@ class Puzzle(ABC):
         function signature: (state: State) -> Dict[str, Any]
         """
         pass
+
+    def get_solve_config_img_parser(self) -> callable:
+        """
+        This function should return a callable that takes a solve config and returns a image representation of it.
+        function signature: (solve_config: SolveConfig) -> jnp.ndarray
+        """
+        assert self.only_target, (
+            "You should redefine this function, because this function is only for target state"
+            f"has_target: {self.has_target}, only_target: {self.only_target}"
+            f"SolveConfig: {self.SolveConfig.__annotations__.keys()}"
+        )
+        imgparser_state = self.get_img_parser()
+
+        def imgparser(solve_config: "Puzzle.SolveConfig") -> jnp.ndarray:
+            return imgparser_state(solve_config.TargetState)
+
+        return imgparser
 
     @abstractmethod
     def get_img_parser(self) -> callable:
@@ -281,27 +391,30 @@ class Puzzle(ABC):
         pass
 
     @abstractmethod
-    def get_initial_state(self, key=None) -> State:
+    def get_solve_config(self, key=None) -> SolveConfig:
+        """
+        This function should return a solve config.
+        """
+        pass
+
+    @abstractmethod
+    def get_initial_state(self, solve_config: SolveConfig, key=None) -> State:
         """
         This function should return a initial state.
         """
         pass
 
-    @abstractmethod
-    def get_target_state(self, key=None) -> State:
+    def get_inits(self, key=None) -> tuple[State, SolveConfig]:
         """
-        This function should return a target state.
+        This function should return a initial state and solve config.
         """
-        pass
-
-    def get_init_target_state_pair(self, key=None) -> tuple[State, State]:
-        """
-        This function should return a initial state and target state.
-        """
-        return self.get_initial_state(key), self.get_target_state(key)
+        solve_config = self.get_solve_config(key)
+        return self.get_initial_state(solve_config, key), solve_config
 
     @abstractmethod
-    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_neighbours(
+        self, solve_config: SolveConfig, state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
@@ -309,7 +422,7 @@ class Puzzle(ABC):
         pass
 
     @abstractmethod
-    def is_solved(self, state: State, target: State) -> bool:
+    def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
         """
         This function should return True if the state is the target state.
         if the puzzle has multiple target states, this function should return

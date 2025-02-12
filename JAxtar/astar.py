@@ -45,12 +45,12 @@ def astar_builder(
 
     hash_func = hash_func_builder(statecls)
 
-    solved_fn = jax.vmap(puzzle.is_solved, in_axes=(0, None))
-    neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0), out_axes=(1, 1))
+    solved_fn = jax.vmap(puzzle.is_solved, in_axes=(None, 0))
+    neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(None, 0, 0), out_axes=(1, 1))
 
     def astar(
         start: Puzzle.State,
-        target: Puzzle.State,
+        solve_config: Puzzle.SolveConfig,
     ) -> tuple[SearchResult, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
@@ -84,7 +84,7 @@ def astar_builder(
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
             states = search_result.get_state(parent)
-            solved = solved_fn(states, target)
+            solved = solved_fn(solve_config, states)
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(input: tuple[SearchResult, Current, chex.Array]):
@@ -93,7 +93,7 @@ def astar_builder(
             cost = search_result.get_cost(parent)
             states = search_result.get_state(parent)
 
-            neighbours, ncost = neighbours_fn(states, filled)
+            neighbours, ncost = neighbours_fn(solve_config, states, filled)
             parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
             nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
@@ -114,7 +114,7 @@ def astar_builder(
 
             def _scan(search_result: SearchResult, val):
                 neighbour, parent_action, current = val
-                neighbour_heur = heuristic.batched_distance(neighbour, target)
+                neighbour_heur = heuristic.batched_distance(solve_config, neighbour)
                 neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
 
                 optimal = jnp.less(
@@ -149,13 +149,13 @@ def astar_builder(
             _cond, _body, (search_result, hash_idxs, filled)
         )
         states = search_result.get_state(idxes)
-        solved = solved_fn(states, target)
+        solved = solved_fn(solve_config, states)
         search_result.solved = solved.any()
         search_result.solved_idx = idxes[jnp.argmax(solved)]
         return search_result
 
     astar_fn = jax.jit(astar)
-    empty_target = puzzle.State.default()
+    empty_solve_config = puzzle.SolveConfig.default()
     empty_states = puzzle.State.default()
 
     if show_compile_time:
@@ -166,7 +166,7 @@ def astar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    astar_fn(empty_states, empty_target)
+    astar_fn(empty_states, empty_solve_config)
 
     if show_compile_time:
         end = time.time()

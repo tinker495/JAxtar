@@ -14,13 +14,7 @@ from options import (
     search_options,
     visualize_options,
 )
-from util import (
-    human_format,
-    vmapping_get_state,
-    vmapping_init_target,
-    vmapping_search,
-    window,
-)
+from util import human_format, vmapping_get_state, vmapping_init_target, vmapping_search
 
 
 @click.group()
@@ -139,14 +133,14 @@ def astar(
     total_states = []
     total_solved = []
     for seed in seeds:
-        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(seed))
-        heuristic_values = heuristic.distance(state, target)
+        state, solve_config = puzzle.get_inits(jax.random.PRNGKey(seed))
+        heuristic_values = heuristic.distance(solve_config, state)
 
         print("Start state")
-        print(state)
+        print(state.str(solve_config=solve_config))
         if has_target:
             print("Target state")
-            print(target)
+            print(solve_config)
         print(f"Heuristic: {heuristic_values:.2f}")
 
         if profile:
@@ -154,7 +148,7 @@ def astar(
             jax.profiler.start_trace("tmp/tensorboard")
 
         start = time.time()
-        search_result = astar_fn(state, target)
+        search_result = astar_fn(state, solve_config)
         solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
@@ -189,14 +183,12 @@ def astar(
                 path = search_result.get_solved_path()
 
                 if visualize_terminal:
-                    for p0, p1 in window(path):
-                        print(search_result.get_state(p0))
-                        print(f"Cost: {search_result.get_cost(p0)}")
-                        print(
-                            f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}"
-                        )
+                    for p in path[:-1]:
+                        print(search_result.get_state(p).str(solve_config=solve_config))
+                        print(f"Cost: {search_result.get_cost(p)}")
+                        print(f"Action: {puzzle.action_to_string(p.action)}")
 
-                    print(search_result.get_state(path[-1]))
+                    print(search_result.get_state(path[-1]).str(solve_config=solve_config))
                     print(f"Cost: {search_result.get_cost(path[-1])}")
                     print("\n\n")
                 elif visualize_imgs:
@@ -213,7 +205,7 @@ def astar(
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
                         img = search_result.get_state(p).img(
-                            idx=idx, path=path_states, target=target
+                            idx=idx, path=path_states, solve_config=solve_config
                         )
                         imgs.append(img)
                         cv2.imwrite(
@@ -249,14 +241,14 @@ def astar(
     vmapped_astar = vmapping_search(puzzle, astar_fn, vmap_size, show_compile_time)
 
     # for benchmark, same initial states
-    states, targets = vmapping_init_target(puzzle, vmap_size, seeds)
+    states, solve_configs = vmapping_init_target(puzzle, vmap_size, seeds)
 
     print("Vmapped A* search, multiple initial state solution")
     print("Start states")
     print(states)
     if has_target:
         print("Target state")
-        print(targets)
+        print(solve_configs.TargetState)
 
     print("vmap astar")
     print(
@@ -265,7 +257,7 @@ def astar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-    search_result = vmapped_astar(states, targets)
+    search_result = vmapped_astar(states, solve_configs)
     solved = search_result.solved.block_until_ready()
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
@@ -347,14 +339,14 @@ def qstar(
     total_states = []
     total_solved = []
     for seed in seeds:
-        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(seed))
-        qvalues = qfunction.q_value(state, target)
+        state, solve_config = puzzle.get_inits(jax.random.PRNGKey(seed))
+        qvalues = qfunction.q_value(solve_config, state)
 
         print("Start state")
-        print(state)
+        print(state.str(solve_config=solve_config))
         if has_target:
             print("Target state")
-            print(target)
+            print(solve_config)
         print("qvalues: ", end="")
         print(
             " | ".join(
@@ -368,7 +360,7 @@ def qstar(
             jax.profiler.start_trace("tmp/tensorboard")
 
         start = time.time()
-        search_result = qstar_fn(state, target)
+        search_result = qstar_fn(state, solve_config)
         solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
@@ -403,14 +395,12 @@ def qstar(
                 path = search_result.get_solved_path()
 
                 if visualize_terminal:
-                    for p0, p1 in window(path):
-                        print(search_result.get_state(p0))
-                        print(f"Cost: {search_result.get_cost(p0)}")
-                        print(
-                            f"Action: {puzzle.action_to_string(search_result.get_parent_action(p1))}"
-                        )
+                    for p in path[:-1]:
+                        print(search_result.get_state(p).str(solve_config=solve_config))
+                        print(f"Cost: {search_result.get_cost(p)}")
+                        print(f"Action: {puzzle.action_to_string(p.action)}")
 
-                    print(search_result.get_state(path[-1]))
+                    print(search_result.get_state(path[-1]).str(solve_config=solve_config))
                     print(f"Cost: {search_result.get_cost(path[-1])}")
                     print("\n\n")
                 elif visualize_imgs:
@@ -427,7 +417,7 @@ def qstar(
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
                         img = search_result.get_state(p).img(
-                            idx=idx, path=path_states, target=target
+                            idx=idx, path=path_states, solve_config=solve_config
                         )
                         imgs.append(img)
                         cv2.imwrite(
@@ -463,14 +453,14 @@ def qstar(
     vmapped_qstar = vmapping_search(puzzle, qstar_fn, vmap_size, show_compile_time)
 
     # for benchmark, same initial states
-    states, targets = vmapping_init_target(puzzle, vmap_size, seeds)
+    states, solve_configs = vmapping_init_target(puzzle, vmap_size, seeds)
 
     print("Vmapped Q* search, multiple initial state solution")
     print("Start states")
     print(states)
     if has_target:
         print("Target state")
-        print(targets)
+        print(solve_configs.TargetState)
 
     print("vmap qstar")
     print(
@@ -479,7 +469,7 @@ def qstar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-    search_result = vmapped_qstar(states, targets)
+    search_result = vmapped_qstar(states, solve_configs)
     solved = search_result.solved.block_until_ready()
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time

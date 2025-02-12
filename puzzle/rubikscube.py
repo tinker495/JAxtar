@@ -50,10 +50,6 @@ class RubiksCube(Puzzle):
         # 0 - up, 1 - down, 2 - left, 3 - right, 4 - front, 5 - back
         faces: chex.Array
 
-    @property
-    def has_target(self) -> bool:
-        return True
-
     def __init__(self, size: int = 3, **kwargs):
         self.size = size
         is_even = size % 2 == 0
@@ -63,7 +59,7 @@ class RubiksCube(Puzzle):
         super().__init__(**kwargs)
 
     def get_string_parser(self):
-        def parser(state):
+        def parser(state: "RubiksCube.State", **kwargs):
             # Unpack the state faces before printing
             unpacked_faces = self.unpack_faces(state.faces)
 
@@ -142,8 +138,8 @@ class RubiksCube(Puzzle):
 
         return gen
 
-    def get_initial_state(self, key=None) -> State:
-        return self._get_random_state(key)
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> State:
+        return self._get_random_state(solve_config, key)
 
     def get_target_state(self, key=None) -> State:
         raw_faces = jnp.repeat(jnp.arange(6)[:, None], self.size * self.size, axis=1).astype(
@@ -152,7 +148,12 @@ class RubiksCube(Puzzle):
         packed_faces = self.pack_faces(raw_faces)
         return self.State(faces=packed_faces)
 
-    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_solve_config(self, key=None) -> State:
+        return self.SolveConfig(TargetState=self.get_target_state(key))
+
+    def get_neighbours(
+        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
         def map_fn(face, axis, index, clockwise):
             return jax.lax.cond(
                 filled,
@@ -179,8 +180,8 @@ class RubiksCube(Puzzle):
         neighbour_packed = jax.vmap(lambda faces: self.pack_faces(faces))(neighbour_unpacked)
         return self.State(faces=neighbour_packed), costs
 
-    def is_solved(self, state: State, target: State) -> bool:
-        return self.is_equal(state, target)
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+        return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:
         """
@@ -188,7 +189,7 @@ class RubiksCube(Puzzle):
         """
         return f"{rotate_face_map[int(action // 2)]}_{'cw' if action % 2 == 0 else 'ccw'}"
 
-    def _get_random_state(self, key, num_shuffle=10):
+    def _get_random_state(self, solve_config: Puzzle.SolveConfig, key, num_shuffle=10):
         """
         This function should return a random state.
         """
@@ -196,7 +197,7 @@ class RubiksCube(Puzzle):
 
         def random_flip(carry, _):
             state, key = carry
-            neighbor_states, costs = self.get_neighbours(state, filled=True)
+            neighbor_states, costs = self.get_neighbours(solve_config, state, filled=True)
             key, subkey = jax.random.split(key)
             idx = jax.random.choice(subkey, jnp.arange(costs.shape[0]))
             next_state = neighbor_states[idx]

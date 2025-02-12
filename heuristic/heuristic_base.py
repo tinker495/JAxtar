@@ -12,20 +12,22 @@ class Heuristic(ABC):
     def __init__(self, puzzle: Puzzle):
         self.puzzle = puzzle
 
-    def batched_distance(self, current: Puzzle.State, target: Puzzle.State) -> chex.Array:
+    def batched_distance(
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+    ) -> chex.Array:
         """
         This function should return the distance between the state and the target.
         """
-        return jax.vmap(self.distance, in_axes=(0, None))(current, target)
+        return jax.vmap(self.distance, in_axes=(None, 0))(solve_config, current)
 
     @abstractmethod
-    def distance(self, current: Puzzle.State, target: Puzzle.State) -> float:
+    def distance(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
         """
         This function should return the distance between the state and the target.
 
         Args:
+            solve_config: The solve config.
             current: The current state.
-            target: The target state.
 
         Returns:
             The distance between the state and the target.

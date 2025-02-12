@@ -9,12 +9,12 @@ class LightsOutQ(QFunction):
     def __init__(self, puzzle: LightsOut):
         super().__init__(puzzle)
 
-    def q_value(self, current: LightsOut.State, target: LightsOut.State) -> float:
+    def q_value(self, solve_config: LightsOut.SolveConfig, current: LightsOut.State) -> float:
         """
         Get q values for all possible actions from current state.
         """
-        neighbors, _ = self.puzzle.get_neighbours(current)
-        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, target)
+        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
+        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, solve_config.TargetState)
         return dists
 
     def _distance(self, current: LightsOut.State, target: LightsOut.State) -> float:

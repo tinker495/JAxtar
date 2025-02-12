@@ -18,18 +18,20 @@ class Maze(Puzzle):
     class State:
         pos: chex.Array
 
-    @property
-    def has_target(self) -> bool:
-        return True
+    @state_dataclass
+    class SolveConfig:
+        TargetState: "Maze.State"
+        Maze: chex.Array
 
     def __init__(self, size: int, p=0.3, key=jax.random.PRNGKey(0), **kwargs):
         self.size = size
-        self.maze = self.create_maze(size, p, key)
         super().__init__(**kwargs)
 
-    def create_maze(self, size, p=0.3, key=None):
-        maze = jax.random.bernoulli(key, p=jnp.float32(p), shape=(size**2,)).astype(jnp.uint8)
-        return self.to_uint8(maze)
+    def get_solve_config_string_parser(self):
+        def parser(solve_config: "Maze.SolveConfig", **kwargs):
+            return solve_config.TargetState.str(solve_config=solve_config)
+
+        return parser
 
     def get_string_parser(self):
         form = self._get_visualize_format()
@@ -39,27 +41,45 @@ class Maze(Puzzle):
                 " " if x == 0 else "■" if x == 1 else colored("●", "red")
             )  # 0: empty, 1: wall, 2: player
 
-        def parser(state):
-            maze_with_pos = self.from_uint8(self.maze)
+        def parser(state: "Maze.State", solve_config: "Maze.SolveConfig", **kwargs):
+            maze_with_pos = self.from_uint8(solve_config.Maze)
             maze_with_pos = maze_with_pos.at[state.pos[0] * self.size + state.pos[1]].set(2)
             return form.format(*map(to_char, maze_with_pos))
 
         return parser
 
-    def get_default_gen(self) -> callable:
+    def get_solve_config_default_gen(self):
         def gen():
-            return self.State(pos=jnp.array([-1, -1], dtype=TYPE))
+            maze = jnp.zeros((self.size**2), dtype=jnp.bool_)
+            maze = self.to_uint8(maze)
+            return self.SolveConfig(
+                TargetState=self.State(pos=jnp.array([0, 0], dtype=TYPE)), Maze=maze
+            )
 
         return gen
 
-    def get_initial_state(self, key=jax.random.PRNGKey(0)) -> State:
-        return self._get_random_state(key)
+    def get_default_gen(self) -> callable:
+        def gen():
+            return self.State(pos=jnp.array([0, 0], dtype=TYPE))
 
-    def get_target_state(self, key=jax.random.PRNGKey(128)) -> State:
+        return gen
+
+    def get_initial_state(
+        self, solve_config: "Maze.SolveConfig", key=jax.random.PRNGKey(0)
+    ) -> State:
+        return self._get_random_state(solve_config.Maze, key)
+
+    def get_solve_config(self, key=jax.random.PRNGKey(128)) -> Puzzle.SolveConfig:
+        maze = jax.random.bernoulli(key, p=jnp.float32(0.3), shape=(self.size**2,)).astype(
+            jnp.uint8
+        )
+        maze = self.to_uint8(maze)
         key1, _ = jax.random.split(key)
-        return self._get_random_state(key1)
+        return self.SolveConfig(TargetState=self._get_random_state(maze, key1), Maze=maze)
 
-    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_neighbours(
+        self, solve_config: "Maze.SolveConfig", state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
         """
         This function should return neighbours, and the cost of the move.
         If impossible to move in a direction, cost should be inf and State should be same as input state.
@@ -70,7 +90,7 @@ class Maze(Puzzle):
         def move(state, move):
             new_pos = (state.pos + move).astype(TYPE)
 
-            maze = self.from_uint8(self.maze)
+            maze = self.from_uint8(solve_config.Maze)
             # Check if the new position is within the maze bounds and not a wall
             valid_move = (
                 (new_pos >= 0).all()
@@ -92,8 +112,8 @@ class Maze(Puzzle):
 
         return new_states, costs
 
-    def is_solved(self, state: State, target: State) -> bool:
-        return self.is_equal(state, target)
+    def is_solved(self, solve_config: "Maze.SolveConfig", state: State) -> bool:
+        return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:
         """
@@ -127,17 +147,17 @@ class Maze(Puzzle):
             form += "━━" if i != size - 1 else "━━┛"
         return form
 
-    def _get_random_state(self, key):
+    def _get_random_state(self, maze: chex.Array, key):
         """
         This function should return a random state.
         """
+        maze = self.from_uint8(maze)
 
         def get_random_state(key):
             return self.State(pos=jax.random.randint(key, (2,), 0, self.size, dtype=TYPE))
 
         def is_not_wall(x):
             state = x[0]
-            maze = self.from_uint8(self.maze)
             return maze[state.pos[0] * self.size + state.pos[1]] != 0
 
         def while_loop(x):
@@ -167,7 +187,8 @@ class Maze(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "Maze.State", **kwargs):
+        def img_func(state: "Maze.State", solve_config: "Maze.SolveConfig" = None, **kwargs):
+            assert solve_config is not None, "This puzzle requires a solve_config"
             imgsize = IMG_SIZE[0]
             # Create a white background image for the maze
             img = np.full((imgsize, imgsize, 3), 255, np.uint8)
@@ -175,7 +196,7 @@ class Maze(Puzzle):
             # Unpack the maze layout from state's board.
             # Assume that each cell is represented by a binary value:
             # 1 indicates a wall, 0 indicates an open path.
-            maze_flat = self.from_uint8(self.maze)
+            maze_flat = self.from_uint8(solve_config.Maze)
             cell_size = imgsize / self.size
 
             # Draw the maze walls as filled black rectangles.
@@ -207,3 +228,9 @@ class Maze(Puzzle):
             return img
 
         return img_func
+
+    def get_solve_config_img_parser(self):
+        def parser(solve_config: "Maze.SolveConfig"):
+            return self.get_img_parser()(solve_config.TargetState, solve_config)
+
+        return parser
