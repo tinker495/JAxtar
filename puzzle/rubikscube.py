@@ -59,7 +59,7 @@ class RubiksCube(Puzzle):
         super().__init__(**kwargs)
 
     def get_string_parser(self):
-        def parser(state):
+        def parser(state: "RubiksCube.State", **kwargs):
             # Unpack the state faces before printing
             unpacked_faces = self.unpack_faces(state.faces)
 
