@@ -139,14 +139,14 @@ def astar(
     total_states = []
     total_solved = []
     for seed in seeds:
-        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(seed))
-        heuristic_values = heuristic.distance(state, target)
+        state, solve_config = puzzle.get_inits(jax.random.PRNGKey(seed))
+        heuristic_values = heuristic.distance(solve_config, state)
 
         print("Start state")
         print(state)
         if has_target:
             print("Target state")
-            print(target)
+            print(solve_config)
         print(f"Heuristic: {heuristic_values:.2f}")
 
         if profile:
@@ -154,7 +154,7 @@ def astar(
             jax.profiler.start_trace("tmp/tensorboard")
 
         start = time.time()
-        search_result = astar_fn(state, target)
+        search_result = astar_fn(state, solve_config)
         solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
@@ -213,7 +213,7 @@ def astar(
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
                         img = search_result.get_state(p).img(
-                            idx=idx, path=path_states, target=target
+                            idx=idx, path=path_states, target=solve_config
                         )
                         imgs.append(img)
                         cv2.imwrite(
@@ -347,14 +347,14 @@ def qstar(
     total_states = []
     total_solved = []
     for seed in seeds:
-        state, target = puzzle.get_init_target_state_pair(jax.random.PRNGKey(seed))
-        qvalues = qfunction.q_value(state, target)
+        state, solve_config = puzzle.get_inits(jax.random.PRNGKey(seed))
+        qvalues = qfunction.q_value(solve_config, state)
 
         print("Start state")
         print(state)
         if has_target:
             print("Target state")
-            print(target)
+            print(solve_config)
         print("qvalues: ", end="")
         print(
             " | ".join(
@@ -368,7 +368,7 @@ def qstar(
             jax.profiler.start_trace("tmp/tensorboard")
 
         start = time.time()
-        search_result = qstar_fn(state, target)
+        search_result = qstar_fn(state, solve_config)
         solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
@@ -427,7 +427,7 @@ def qstar(
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
                         img = search_result.get_state(p).img(
-                            idx=idx, path=path_states, target=target
+                            idx=idx, path=path_states, target=solve_config
                         )
                         imgs.append(img)
                         cv2.imwrite(
