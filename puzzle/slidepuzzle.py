@@ -16,10 +16,6 @@ class SlidePuzzle(Puzzle):
     class State:
         board: chex.Array
 
-    @property
-    def has_target(self) -> bool:
-        return True
-
     def __init__(self, size: int, **kwargs):
         self.size = size
         super().__init__(**kwargs)
@@ -34,7 +30,7 @@ class SlidePuzzle(Puzzle):
                 return chr(x + 55)
             return str(x)
 
-        def parser(state):
+        def parser(state: "SlidePuzzle.State", **kwargs):
             return form.format(*map(to_char, state.board))
 
         return parser
@@ -45,13 +41,17 @@ class SlidePuzzle(Puzzle):
 
         return gen
 
-    def get_initial_state(self, key=None) -> State:
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> State:
         return self._get_random_state(key)
 
-    def get_target_state(self, key=None) -> State:
-        return self.State(board=jnp.array([*range(1, self.size**2), 0], dtype=TYPE))
+    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
+        return self.SolveConfig(
+            TargetState=self.State(board=jnp.array([*range(1, self.size**2), 0], dtype=TYPE))
+        )
 
-    def get_neighbours(self, state: State, filled: bool = True) -> tuple[State, chex.Array]:
+    def get_neighbours(
+        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
@@ -86,8 +86,8 @@ class SlidePuzzle(Puzzle):
         next_boards, costs = jax.vmap(map_fn, in_axes=(0, None))(next_pos, filled)
         return self.State(board=next_boards), costs
 
-    def is_solved(self, state: State, target: State) -> bool:
-        return self.is_equal(state, target)
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+        return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:
         """
