@@ -119,8 +119,17 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
     def get_default(_=None) -> T:
         return defaultfunc()
 
+    setattr(cls, "default", staticmethod(jax.jit(get_default)))
+
     default_shape = defaultfunc().shape
-    default_dim = len(default_shape[0])
+    try:
+        default_dim = len(default_shape[0])
+    except IndexError:
+        default_dim = None
+        """
+        if default_dim is None, it means that the default shape is not a batch.
+        """
+        return cls
 
     def get_default_shape(self) -> Dict[str, Any]:
         return default_shape
@@ -164,7 +173,6 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
         )
 
     # add method based on default state
-    setattr(cls, "default", staticmethod(jax.jit(get_default)))
     setattr(cls, "default_shape", property(get_default_shape))
     setattr(cls, "structured_type", property(get_structured_type))
     setattr(cls, "batch_shape", property(batch_shape))
