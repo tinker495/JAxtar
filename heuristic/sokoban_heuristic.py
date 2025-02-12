@@ -8,7 +8,7 @@ class SokobanHeuristic(Heuristic):
     def __init__(self, puzzle: Sokoban):
         super().__init__(puzzle)
 
-    def distance(self, current: Sokoban.State, target: Sokoban.State) -> float:
+    def distance(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> float:
         """
         Simple heuristic for the Sokoban puzzle.
         It computes the distance as the total number of boxes in the target state
@@ -16,7 +16,7 @@ class SokobanHeuristic(Heuristic):
         Assumes that boxes are represented by 1 in both current and target arrays.
         """
         # Count the total number of boxes in the target state
-        target_board = self.puzzle.unpack_board(target.board)
+        target_board = self.puzzle.unpack_board(solve_config.TargetState.board)
         target_box_count = jnp.sum(target_board == Object.BOX.value)
 
         # Count the number of boxes in the same position in both current and target
