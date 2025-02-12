@@ -143,6 +143,7 @@ def add_default(cls: Type[T], defaultfunc: callable) -> Type[T]:
         ):
             return StructuredType.BATCHED
         else:
+            breakpoint()
             return StructuredType.UNSTRUCTURED
 
     def batch_shape(self) -> tuple[int, ...]:
