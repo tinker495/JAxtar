@@ -57,8 +57,10 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: LightsOut, init_params: bool = True):
         super().__init__(puzzle, model=Model(), init_params=init_params)
 
-    def pre_process(self, current: LightsOut.State, target: LightsOut.State) -> chex.Array:
-        x = self.to_2d(self._diff(current, target))
+    def pre_process(
+        self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
+    ) -> chex.Array:
+        x = self.to_2d(self._diff(current, solve_config.TargetState))
         return x
 
     def to_2d(self, x: chex.Array) -> chex.Array:
