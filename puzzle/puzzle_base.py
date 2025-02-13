@@ -211,7 +211,7 @@ class Puzzle(ABC):
         This function should return a initial state and solve config.
         """
         solve_config = self.get_solve_config(key)
-        return self.get_initial_state(solve_config, key), solve_config
+        return solve_config, self.get_initial_state(solve_config, key)
 
     def batched_get_neighbours(
         self, solve_config: SolveConfig, states: State, filleds: bool = True
