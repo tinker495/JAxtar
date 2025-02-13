@@ -87,15 +87,15 @@ def _get_datasets(
     target_heuristic_params: jax.tree_util.PyTreeDef,
     key: chex.PRNGKey,
 ):
-    tiled_targets, shuffled_path, move_costs = create_shuffled_path_fn(key)
+    solve_configs, shuffled_path, move_costs = create_shuffled_path_fn(key)
     neighbors, cost = jax.vmap(puzzle.get_neighbours)(
-        shuffled_path
+        solve_configs, shuffled_path
     )  # [batch_size, shuffle_length, 4] [batch_size, shuffle_length, 4]
-    equal = jax.vmap(jax.vmap(puzzle.is_solved, in_axes=(0, None)), in_axes=(0, 0))(
-        neighbors, tiled_targets
+    equal = jax.vmap(jax.vmap(puzzle.is_solved, in_axes=(None, 0)), in_axes=(0, 0))(
+        solve_configs, neighbors
     )  # if equal, return 0
-    preproc_neighbors = jax.vmap(jax.vmap(preproc_fn, in_axes=(0, None)), in_axes=(0, 0))(
-        neighbors, tiled_targets
+    preproc_neighbors = jax.vmap(jax.vmap(preproc_fn, in_axes=(None, 0)), in_axes=(0, 0))(
+        solve_configs, neighbors
     )
     flatten_neighbors = jnp.reshape(
         preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
@@ -118,7 +118,7 @@ def _get_datasets(
     # heuristic's definition is the optimal cost to reach the target state
     # so it doesn't make sense to have a heuristic greater than the number of moves
     target_heuristic = jnp.minimum(target_heuristic, move_costs)
-    states = jax.vmap(preproc_fn)(shuffled_path, tiled_targets)
+    states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
     return states, target_heuristic
 
 
@@ -168,39 +168,45 @@ def create_shuffled_path(
     dataset_minibatch_size: int,
     key: chex.PRNGKey,
 ):
-    targets = jax.vmap(puzzle.get_target_state)(jax.random.split(key, shuffle_parallel))
+    solve_configs = jax.vmap(puzzle.get_solve_config)(jax.random.split(key, shuffle_parallel))
+    targets = solve_configs.TargetState
 
-    def get_trajectory_key(target: Puzzle.State, key: chex.PRNGKey):
+    def get_trajectory_key(targets: Puzzle.State, key: chex.PRNGKey):
         def _scan(carry, _):
             state, key, move_cost = carry
-            neighbor_states, cost = puzzle.get_neighbours(state, filled=True)
-            is_target = jax.vmap(puzzle.is_equal, in_axes=(None, 0))(target, neighbor_states)
+            neighbor_states, cost = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0))(
+                solve_configs, state
+            )
+            is_target = jax.vmap(jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 0))(
+                targets, neighbor_states
+            )
             filled = jnp.isfinite(cost).astype(jnp.float32)
             filled = jnp.where(is_target, 0.0, filled)
             prob = filled / jnp.sum(filled)
             key, subkey = jax.random.split(key)
-            idx = jax.random.choice(subkey, jnp.arange(cost.shape[0]), p=prob)
-            next_state = neighbor_states[idx]
-            cost = cost[idx]
+            choices = jnp.arange(cost.shape[1])
+            idx = jax.vmap(
+                lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 0)
+            )(jax.random.split(subkey, prob.shape[0]), prob)
+            next_state = jax.vmap(lambda x, y: x[y], in_axes=(0, 0))(neighbor_states, idx)
+            cost = jax.vmap(lambda x, y: x[y], in_axes=(0, 0))(cost, idx)
             move_cost = move_cost + cost
             return (next_state, key, move_cost), (next_state, move_cost)
 
         _, (moves, move_costs) = jax.lax.scan(
-            _scan, (target, key, 0.0), None, length=shuffle_length
+            _scan, (targets, key, jnp.zeros(shuffle_parallel)), None, length=shuffle_length
         )
         return moves, move_costs
 
-    moves, move_costs = jax.vmap(get_trajectory_key)(
-        targets, jax.random.split(key, shuffle_parallel)
-    )  # [batch_size, shuffle_length][state...]
-    tiled_targets = jax.tree_util.tree_map(
+    moves, move_costs = get_trajectory_key(targets, key)  # [batch_size, shuffle_length][state...]
+    solve_configs = jax.tree_util.tree_map(
         lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length) + (x.ndim - 1) * (1,)),
-        targets,
+        solve_configs,
     )
-    tiled_targets = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), tiled_targets)
+    solve_configs = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), solve_configs)
     moves = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), moves)
     move_costs = jnp.reshape(move_costs, (-1))
-    tiled_targets = tiled_targets[:dataset_minibatch_size]
+    solve_configs = solve_configs[:dataset_minibatch_size]
     moves = moves[:dataset_minibatch_size]
     move_costs = move_costs[:dataset_minibatch_size]
-    return tiled_targets, moves, move_costs
+    return solve_configs, moves, move_costs
