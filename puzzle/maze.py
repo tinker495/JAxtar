@@ -51,14 +51,12 @@ class Maze(Puzzle):
                 case _:
                     raise ValueError(f"Invalid value: {x}")
 
-        def parser(state: "Maze.State", solve_config: "Maze.SolveConfig" = None, **kwargs):
-            if solve_config is not None:
-                maze_with_pos = self.from_uint8(solve_config.Maze)
-                maze_with_pos = maze_with_pos.at[
-                    solve_config.TargetState.pos[0] * self.size + solve_config.TargetState.pos[1]
-                ].set(3)
-            else:
-                maze_with_pos = jnp.zeros((self.size**2), dtype=jnp.bool_)
+        def parser(state: "Maze.State", solve_config: "Maze.SolveConfig", **kwargs):
+            assert solve_config is not None, "This puzzle requires a solve_config"
+            maze_with_pos = self.from_uint8(solve_config.Maze)
+            maze_with_pos = maze_with_pos.at[
+                solve_config.TargetState.pos[0] * self.size + solve_config.TargetState.pos[1]
+            ].set(3)
             idx = state.pos[0] * self.size + state.pos[1]
             if maze_with_pos[idx] == 0:
                 maze_with_pos = maze_with_pos.at[idx].set(2)
