@@ -191,7 +191,7 @@ def astar(
                     print(search_result.get_state(path[-1]).str(solve_config=solve_config))
                     print(f"Cost: {search_result.get_cost(path[-1])}")
                     print("\n\n")
-                elif visualize_imgs:
+                if visualize_imgs:
                     import os
                     from datetime import datetime
 
@@ -403,7 +403,7 @@ def qstar(
                     print(search_result.get_state(path[-1]).str(solve_config=solve_config))
                     print(f"Cost: {search_result.get_cost(path[-1])}")
                     print("\n\n")
-                elif visualize_imgs:
+                if visualize_imgs:
                     import os
                     from datetime import datetime
 
