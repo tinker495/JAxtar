@@ -37,12 +37,23 @@ class Maze(Puzzle):
         form = self._get_visualize_format()
 
         def to_char(x):
-            return (
-                " " if x == 0 else "■" if x == 1 else colored("●", "red")
-            )  # 0: empty, 1: wall, 2: player
+            match x:
+                case 0:
+                    return " "
+                case 1:
+                    return "■"
+                case 2:
+                    return colored("●", "red")  # player
+                case 3:
+                    return colored("x", "red")  # target
+                case _:
+                    raise ValueError(f"Invalid value: {x}")
 
         def parser(state: "Maze.State", solve_config: "Maze.SolveConfig", **kwargs):
             maze_with_pos = self.from_uint8(solve_config.Maze)
+            maze_with_pos = maze_with_pos.at[
+                solve_config.TargetState.pos[0] * self.size + solve_config.TargetState.pos[1]
+            ].set(3)
             maze_with_pos = maze_with_pos.at[state.pos[0] * self.size + state.pos[1]].set(2)
             return form.format(*map(to_char, maze_with_pos))
 
