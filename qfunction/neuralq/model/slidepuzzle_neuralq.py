@@ -64,10 +64,12 @@ class SlidePuzzleNeuralQ(NeuralQFunctionBase):
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
         super().__init__(puzzle, model=Model, init_params=init_params)
 
-    def pre_process(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
-        diff = self.to_2d(self._diff_pos(current, target))  # [n, n, 2]
+    def pre_process(
+        self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
+    ) -> chex.Array:
+        diff = self.to_2d(self._diff_pos(current, solve_config.TargetState))  # [n, n, 2]
         c_zero = self.to_2d(self._zero_pos(current))  # [n, n, 1]
-        t_zero = self.to_2d(self._zero_pos(target))  # [n, n, 1]
+        t_zero = self.to_2d(self._zero_pos(solve_config.TargetState))  # [n, n, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1)  # [n, n, 4]
         return x
 

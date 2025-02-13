@@ -245,5 +245,5 @@ class SlidePuzzleHard(SlidePuzzle):
                 board=jnp.array([0, 12, 9, 13, 15, 11, 10, 14, 3, 7, 2, 5, 4, 8, 6, 1], dtype=TYPE)
             )
 
-    def get_initial_state(self, key=None) -> SlidePuzzle.State:
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> SlidePuzzle.State:
         return self.hardest_state
