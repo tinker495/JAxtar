@@ -103,6 +103,12 @@ class Sokoban(Puzzle):
         else:
             raise ValueError(f"Invalid action: {action}")
 
+    def get_solve_config_string_parser(self):
+        def parser(solve_config: "Sokoban.SolveConfig", **kwargs):
+            return solve_config.TargetState.str(solve_config=solve_config)
+
+        return parser
+
     def get_string_parser(self):
         form = self._get_visualize_format()
 
