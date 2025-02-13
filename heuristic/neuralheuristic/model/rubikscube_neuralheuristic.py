@@ -13,7 +13,9 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: RubiksCube, init_params: bool = True):
         super().__init__(puzzle, init_params=init_params)
 
-    def pre_process(self, current: RubiksCube.State, target: RubiksCube.State) -> chex.Array:
+    def pre_process(
+        self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
+    ) -> chex.Array:
         flatten_face = self.puzzle.unpack_faces(current.faces).flatten()  # (3,3,6) -> (54,)
         # Create a one-hot encoding of the flattened face
         one_hot = jax.nn.one_hot(flatten_face, num_classes=6).flatten()  # 6 colors in Rubik's Cube
