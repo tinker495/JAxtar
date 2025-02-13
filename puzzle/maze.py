@@ -46,15 +46,24 @@ class Maze(Puzzle):
                     return colored("●", "red")  # player
                 case 3:
                     return colored("x", "red")  # target
+                case 4:
+                    return colored("●", "green")  # player on target
                 case _:
                     raise ValueError(f"Invalid value: {x}")
 
-        def parser(state: "Maze.State", solve_config: "Maze.SolveConfig", **kwargs):
-            maze_with_pos = self.from_uint8(solve_config.Maze)
-            maze_with_pos = maze_with_pos.at[
-                solve_config.TargetState.pos[0] * self.size + solve_config.TargetState.pos[1]
-            ].set(3)
-            maze_with_pos = maze_with_pos.at[state.pos[0] * self.size + state.pos[1]].set(2)
+        def parser(state: "Maze.State", solve_config: "Maze.SolveConfig" = None, **kwargs):
+            if solve_config is not None:
+                maze_with_pos = self.from_uint8(solve_config.Maze)
+                maze_with_pos = maze_with_pos.at[
+                    solve_config.TargetState.pos[0] * self.size + solve_config.TargetState.pos[1]
+                ].set(3)
+            else:
+                maze_with_pos = jnp.zeros((self.size**2), dtype=jnp.bool_)
+            idx = state.pos[0] * self.size + state.pos[1]
+            if maze_with_pos[idx] == 0:
+                maze_with_pos = maze_with_pos.at[idx].set(2)
+            else:
+                maze_with_pos = maze_with_pos.at[idx].set(4)
             return form.format(*map(to_char, maze_with_pos))
 
         return parser
@@ -230,11 +239,27 @@ class Maze(Puzzle):
                 cv2.line(img, pt1, pt2, (200, 200, 200), 1)
 
             # Draw the player's current position.
-            # Assume state.pos is a two-element array [row, col].
-            pos = state.pos
-            center = (int((pos[1] + 0.5) * cell_size), int((pos[0] + 0.5) * cell_size))
-            radius = max(1, int(cell_size / 3))
-            img = cv2.circle(img, center, radius, (0, 0, 255), thickness=-1)
+            pos_player = state.pos
+            pos_target = solve_config.TargetState.pos
+            player_center = (
+                int((pos_player[1] + 0.5) * cell_size),
+                int((pos_player[0] + 0.5) * cell_size),
+            )
+            player_radius = max(1, int(cell_size / 3))
+            if (state.pos == solve_config.TargetState.pos).all():
+                img = cv2.circle(img, player_center, player_radius, (0, 255, 0), thickness=-1)
+            else:
+                img = cv2.circle(img, player_center, player_radius, (255, 0, 0), thickness=-1)
+                # Otherwise, draw the target as an "X".
+                top_left = (int(pos_target[1] * cell_size), int(pos_target[0] * cell_size))
+                bottom_right = (
+                    int((pos_target[1] + 1) * cell_size),
+                    int((pos_target[0] + 1) * cell_size),
+                )
+                top_right = (int((pos_target[1] + 1) * cell_size), int(pos_target[0] * cell_size))
+                bottom_left = (int(pos_target[1] * cell_size), int((pos_target[0] + 1) * cell_size))
+                img = cv2.line(img, top_left, bottom_right, (255, 0, 0), thickness=2)
+                img = cv2.line(img, top_right, bottom_left, (255, 0, 0), thickness=2)
 
             return img
 
