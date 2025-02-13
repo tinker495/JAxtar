@@ -45,12 +45,9 @@ def astar_builder(
 
     hash_func = hash_func_builder(statecls)
 
-    solved_fn = jax.vmap(puzzle.is_solved, in_axes=(None, 0))
-    neighbours_fn = jax.vmap(puzzle.get_neighbours, in_axes=(None, 0, 0), out_axes=(1, 1))
-
     def astar(
-        start: Puzzle.State,
         solve_config: Puzzle.SolveConfig,
+        start: Puzzle.State,
     ) -> tuple[SearchResult, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
@@ -84,7 +81,7 @@ def astar_builder(
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
             states = search_result.get_state(parent)
-            solved = solved_fn(solve_config, states)
+            solved = puzzle.batched_is_solved(solve_config, states)
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(input: tuple[SearchResult, Current, chex.Array]):
@@ -93,7 +90,7 @@ def astar_builder(
             cost = search_result.get_cost(parent)
             states = search_result.get_state(parent)
 
-            neighbours, ncost = neighbours_fn(solve_config, states, filled)
+            neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
             parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
             nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
@@ -149,7 +146,7 @@ def astar_builder(
             _cond, _body, (search_result, hash_idxs, filled)
         )
         states = search_result.get_state(idxes)
-        solved = solved_fn(solve_config, states)
+        solved = puzzle.batched_is_solved(solve_config, states)
         search_result.solved = solved.any()
         search_result.solved_idx = idxes[jnp.argmax(solved)]
         return search_result
@@ -166,7 +163,7 @@ def astar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    astar_fn(empty_states, empty_solve_config)
+    astar_fn(empty_solve_config, empty_states)
 
     if show_compile_time:
         end = time.time()

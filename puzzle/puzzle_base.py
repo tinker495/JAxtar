@@ -105,8 +105,10 @@ class Puzzle(ABC):
         self.get_solve_config = jax.jit(self.get_solve_config)
         self.get_inits = jax.jit(self.get_inits)
         self.get_neighbours = jax.jit(self.get_neighbours)
+        self.batched_get_neighbours = jax.jit(self.batched_get_neighbours)
         self.is_solved = jax.jit(self.is_solved)
         self.is_equal = jax.jit(self.is_equal)
+        self.batched_is_solved = jax.jit(self.batched_is_solved)
         self.data_init()
 
     def data_init(self):
@@ -211,6 +213,16 @@ class Puzzle(ABC):
         solve_config = self.get_solve_config(key)
         return self.get_initial_state(solve_config, key), solve_config
 
+    def batched_get_neighbours(
+        self, solve_config: SolveConfig, states: State, filleds: bool = True
+    ) -> tuple[State, chex.Array]:
+        """
+        This function should return a neighbours, and the cost of the move.
+        """
+        return jax.vmap(self.get_neighbours, in_axes=(None, 0, 0), out_axes=(1, 1))(
+            solve_config, states, filleds
+        )
+
     @abstractmethod
     def get_neighbours(
         self, solve_config: SolveConfig, state: State, filled: bool = True
@@ -220,6 +232,12 @@ class Puzzle(ABC):
         if impossible to move in a direction cost should be inf and State should be same as input state.
         """
         pass
+
+    def batched_is_solved(self, solve_config: SolveConfig, states: State) -> bool:
+        """
+        This function should return a boolean array that indicates whether the state is the target state.
+        """
+        return jax.vmap(self.is_solved, in_axes=(None, 0))(solve_config, states)
 
     @abstractmethod
     def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
