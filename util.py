@@ -68,7 +68,7 @@ def vmapping_search(
     if show_compile_time:
         print("initializing vmapped jit")
         start = time.time()
-    vmapped_star(empty_states, empty_solve_configs)
+    vmapped_star(empty_solve_configs, empty_states)
     if show_compile_time:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")

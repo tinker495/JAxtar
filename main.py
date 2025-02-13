@@ -148,7 +148,7 @@ def astar(
             jax.profiler.start_trace("tmp/tensorboard")
 
         start = time.time()
-        search_result = astar_fn(state, solve_config)
+        search_result = astar_fn(solve_config, state)
         solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
@@ -257,7 +257,7 @@ def astar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-    search_result = vmapped_astar(states, solve_configs)
+    search_result = vmapped_astar(solve_configs, states)
     solved = search_result.solved.block_until_ready()
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
@@ -360,7 +360,7 @@ def qstar(
             jax.profiler.start_trace("tmp/tensorboard")
 
         start = time.time()
-        search_result = qstar_fn(state, solve_config)
+        search_result = qstar_fn(solve_config, state)
         solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
@@ -469,7 +469,7 @@ def qstar(
         "(inital_search_result, states, filled, target)"
     )
     start = time.time()
-    search_result = vmapped_qstar(states, solve_configs)
+    search_result = vmapped_qstar(solve_configs, states)
     solved = search_result.solved.block_until_ready()
     end = time.time()
     vmapped_search_time = end - start  # subtract jit time from the vmapped search time
