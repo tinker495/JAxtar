@@ -147,11 +147,12 @@ def visualize_options(func: callable) -> callable:
 def human_play_options(func: callable) -> callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
+        kwargs.pop("puzzle_name")
         kwargs.pop("puzzle_size")
-        if len(kwargs["start_state_seeds"]) > 1:
+        if len(kwargs["seeds"]) > 1:
             raise ValueError("human play is not supported multiple initial state")
-        kwargs["start_state_seed"] = kwargs["start_state_seeds"][0]
-        kwargs.pop("start_state_seeds")
+        kwargs["seed"] = kwargs["seeds"][0]
+        kwargs.pop("seeds")
         return func(*args, **kwargs)
 
     return wrapper

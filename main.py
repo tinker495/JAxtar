@@ -25,11 +25,11 @@ def main():
 @main.command()
 @puzzle_options
 @human_play_options
-def human_play(puzzle, seeds):
+def human_play(puzzle, seed):
     has_target = puzzle.has_target
 
-    init_state, target_state = puzzle.get_init_target_state_pair(jax.random.PRNGKey(seeds[0]))
-    _, costs = puzzle.get_neighbours(init_state)
+    init_state, solve_config = puzzle.get_inits(jax.random.PRNGKey(seed))
+    _, costs = puzzle.get_neighbours(solve_config, init_state)
     n_actions = costs.shape[0]
 
     action_strs = [puzzle.action_to_string(i) for i in range(n_actions)]
@@ -46,10 +46,10 @@ def human_play(puzzle, seeds):
     arrow_flag = any(arrow in s for s in action_strs for arrow in arrow_characters)
 
     print("Initial state")
-    print(init_state)
+    print(init_state.str(solve_config=solve_config))
     if has_target:
         print("Target state")
-        print(target_state)
+        print(solve_config)
     print("Next states")
     print("Use number keys, [WASD] or arrow keys to move the point.")
     print("Use ESC to exit.")
@@ -57,7 +57,7 @@ def human_play(puzzle, seeds):
     current_state = init_state
     sum_cost = 0
     while True:
-        print(current_state)
+        print(current_state.str(solve_config=solve_config))
         print(f"Costs: {sum_cost}")
         if arrow_flag:
             print(
@@ -65,7 +65,7 @@ def human_play(puzzle, seeds):
             )
         else:
             print(f"Actions: {'|'.join(f'{i+1}: {action_strs[i]}' for i in range(n_actions))}")
-        neighbors, costs = puzzle.get_neighbours(current_state)
+        neighbors, costs = puzzle.get_neighbours(solve_config, current_state)
         key = click.getchar()
         if key == "\x1b":  # ESC
             break
@@ -90,8 +90,8 @@ def human_play(puzzle, seeds):
             print("Invalid input!")
         except IndexError:
             print("Invalid action index!")
-        if puzzle.is_solved(current_state, target_state):
-            print(current_state)
+        if puzzle.is_solved(solve_config, current_state):
+            print(current_state.str(solve_config=solve_config))
             print(f"Solution found! Cost: {sum_cost}")
             break
 

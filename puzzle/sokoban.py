@@ -16,6 +16,9 @@ class Object(Enum):
     WALL = 1
     PLAYER = 2
     BOX = 3
+    TARGET = 4
+    PLAYER_ON_TARGET = 5
+    BOX_ON_TARGET = 6
 
 
 class Sokoban(Puzzle):
@@ -104,20 +107,44 @@ class Sokoban(Puzzle):
         form = self._get_visualize_format()
 
         def to_char(x):
-            if x == Object.EMPTY.value:  # empty
-                return " "
-            elif x == Object.WALL.value:  # wall
-                return colored("■", "white")
-            elif x == Object.PLAYER.value:  # player
-                return colored("●", "red")
-            elif x == Object.BOX.value:  # box
-                return colored("■", "yellow")
-            else:
-                return "?"
+            match x:
+                case Object.EMPTY.value:
+                    return " "
+                case Object.WALL.value:
+                    return colored("■", "white")
+                case Object.PLAYER.value:
+                    return colored("●", "red")
+                case Object.BOX.value:
+                    return colored("■", "yellow")
+                case Object.TARGET.value:
+                    return colored("x", "red")
+                case Object.PLAYER_ON_TARGET.value:
+                    return colored("ⓧ", "red")
+                case Object.BOX_ON_TARGET.value:
+                    return colored("■", "green")
+                case _:
+                    return "?"
 
-        def parser(state: "Sokoban.State", **kwargs):
+        def parser(state: "Sokoban.State", solve_config: "Sokoban.SolveConfig" = None, **kwargs):
             # Unpack the board before visualization.
             board = self.unpack_board(state.board)
+            if solve_config is not None:
+                goal = self.unpack_board(solve_config.TargetState.board)
+                for i in range(self.size):
+                    for j in range(self.size):
+                        if goal[i * self.size + j] == Object.BOX.value:
+                            match board[i * self.size + j]:
+                                case Object.PLAYER.value:
+                                    board = board.at[i * self.size + j].set(
+                                        Object.PLAYER_ON_TARGET.value
+                                    )
+                                case Object.BOX.value:
+                                    board = board.at[i * self.size + j].set(
+                                        Object.BOX_ON_TARGET.value
+                                    )
+                                case Object.EMPTY.value:
+                                    board = board.at[i * self.size + j].set(Object.TARGET.value)
+
             return form.format(*map(to_char, board))
 
         return parser
