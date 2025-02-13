@@ -16,7 +16,7 @@ def astar_setup():
 
     puzzle = SlidePuzzle(puzzle_size)
     heuristic = SlidePuzzleHeuristic(puzzle)
-    target = puzzle.get_target_state()
+    solve_config = puzzle.get_solve_config()
 
     return {
         "puzzle": puzzle,
@@ -24,7 +24,7 @@ def astar_setup():
         "batch_size": batch_size,
         "max_node_size": max_node_size,
         "cost_weight": cost_weight,
-        "target": target,
+        "solve_config": solve_config,
     }
 
 
@@ -58,7 +58,7 @@ def test_astar_search(astar_setup):
     )
 
     # Run search
-    search_result = astar_fn(states, setup["target"])
+    search_result = astar_fn(setup["solve_config"], states)
 
     assert search_result is not None
     assert search_result.solved, "Solution not found"
@@ -70,10 +70,12 @@ def test_heuristic_values(astar_setup):
 
     # Create test state
     key = jax.random.PRNGKey(0)
-    states = jax.vmap(setup["puzzle"].get_initial_state, in_axes=0)(key=jax.random.split(key, 1))
+    states = jax.vmap(setup["puzzle"].get_initial_state, in_axes=(None, 0))(
+        setup["solve_config"], jax.random.split(key, 1)
+    )
 
     # Calculate heuristic values
-    heuristic_values = setup["heuristic"].batched_distance(states, setup["target"])
+    heuristic_values = setup["heuristic"].batched_distance(setup["solve_config"], states)
 
     assert heuristic_values.shape[0] == 1
     assert jnp.all(heuristic_values >= 0)  # Heuristic should be non-negative

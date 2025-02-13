@@ -28,7 +28,7 @@ def main():
 def human_play(puzzle, seed):
     has_target = puzzle.has_target
 
-    init_state, solve_config = puzzle.get_inits(jax.random.PRNGKey(seed))
+    solve_config, init_state = puzzle.get_inits(jax.random.PRNGKey(seed))
     _, costs = puzzle.get_neighbours(solve_config, init_state)
     n_actions = costs.shape[0]
 
@@ -133,7 +133,7 @@ def astar(
     total_states = []
     total_solved = []
     for seed in seeds:
-        state, solve_config = puzzle.get_inits(jax.random.PRNGKey(seed))
+        solve_config, state = puzzle.get_inits(jax.random.PRNGKey(seed))
         heuristic_values = heuristic.distance(solve_config, state)
 
         print("Start state")
@@ -339,7 +339,7 @@ def qstar(
     total_states = []
     total_solved = []
     for seed in seeds:
-        state, solve_config = puzzle.get_inits(jax.random.PRNGKey(seed))
+        solve_config, state = puzzle.get_inits(jax.random.PRNGKey(seed))
         qvalues = qfunction.q_value(solve_config, state)
 
         print("Start state")
