@@ -19,7 +19,7 @@ def hash_func(puzzle):
 
 def test_hash_table_lookup(puzzle, hash_func):
     count = 1000
-    sample = jax.vmap(puzzle.get_initial_state)(key=jax.random.split(jax.random.PRNGKey(2), count))
+    _, sample = jax.vmap(puzzle.get_inits)(key=jax.random.split(jax.random.PRNGKey(2), count))
     table = HashTable.build(puzzle.State, 1, int(1e4))
 
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
@@ -36,9 +36,7 @@ def test_hash_table_insert(puzzle, hash_func):
     batch = 4000
     table = HashTable.build(puzzle.State, 1, int(1e4))
 
-    sample = jax.vmap(puzzle.get_initial_state)(
-        key=jax.random.split(jax.random.PRNGKey(256), count)
-    )
+    _, sample = jax.vmap(puzzle.get_inits)(key=jax.random.split(jax.random.PRNGKey(256), count))
 
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
     parallel_insert = jax.jit(
@@ -72,7 +70,7 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
     all_samples = []
     for i in range(num):
         key = jax.random.PRNGKey(i)
-        samples = jax.vmap(puzzle.get_initial_state)(key=jax.random.split(key, batch))
+        _, samples = jax.vmap(puzzle.get_inits)(key=jax.random.split(key, batch))
         cloned_sample_num = jax.random.randint(key, (), 1, batch // 2)
         cloned_sample_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
         cloned_sample_idx = jnp.sort(cloned_sample_idx)
@@ -128,7 +126,7 @@ def test_large_hash_table(puzzle, hash_func):
     batch = int(1e4)
     table = HashTable.build(puzzle.State, 1, count)
 
-    sample = jax.vmap(puzzle.get_initial_state)(key=jax.random.split(jax.random.PRNGKey(2), count))
+    _, sample = jax.vmap(puzzle.get_inits)(key=jax.random.split(jax.random.PRNGKey(2), count))
     hash, bytes = jax.vmap(hash_func, in_axes=(0, None))(sample, 0)
     unique_bytes = jnp.unique(bytes, axis=0, return_index=True)[1]
     unique_bytes_len = unique_bytes.shape[0]

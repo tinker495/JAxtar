@@ -21,7 +21,7 @@ def human_format(num):
 
 def vmapping_init_target(puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]):
     start_state_seed = start_state_seeds[0]
-    states, solve_configs = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
+    solve_configs, states = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
     states = jax.tree_util.tree_map(
         lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), states[jnp.newaxis, ...]
     )
@@ -32,7 +32,7 @@ def vmapping_init_target(puzzle: Puzzle, vmap_size: int, start_state_seeds: list
 
     if len(start_state_seeds) > 1:
         for i, start_state_seed in enumerate(start_state_seeds[1:vmap_size]):
-            new_state, new_solve_config = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
+            new_solve_config, new_state = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
             states = set_tree(
                 states,
                 new_state,
