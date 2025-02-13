@@ -111,6 +111,7 @@ def _get_datasets(
     heur = jnp.concatenate(heur, axis=0)
     heur = jnp.reshape(heur, (preproc_neighbors.shape[0], -1))
     heur = jnp.maximum(jnp.where(equal, 0.0, heur), 0.0)
+    heur = jnp.round(heur)
     target_heuristic = jnp.min(heur + cost, axis=1)
 
     # target_heuristic must be less than the number of moves
