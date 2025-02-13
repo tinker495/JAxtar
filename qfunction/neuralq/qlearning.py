@@ -122,6 +122,7 @@ def _get_datasets(
     target_q = jnp.concatenate(target_q, axis=0)
     target_q = jnp.reshape(target_q, (preproc_neighbors.shape[0], -1))
     target_q = jnp.maximum(jnp.where(equal, 0.0, target_q), 0.0)
+    target_q = jnp.round(target_q)
     states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
     return states, target_q
 
