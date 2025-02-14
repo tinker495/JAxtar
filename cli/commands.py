@@ -106,9 +106,7 @@ def search_samples(
     dist_fn,
     dist_fn_format,
     seeds,
-    vmap_size,
     profile,
-    show_compile_time,
     visualize_terminal,
     visualize_imgs,
     **kwargs,
@@ -221,10 +219,20 @@ def search_samples(
             f"(total: {jnp.sum(total_solved)}, avg: {jnp.mean(total_solved)*100:.2f}%)"
         )
 
-    if vmap_size == 1:
-        return
+    return total_search_times, states_per_second, single_search_time
 
-    vmapped_search = vmapping_search(puzzle, search_fn, vmap_size, show_compile_time)
+
+def vmapped_search_samples(
+    vmapped_search,
+    puzzle,
+    seeds,
+    vmap_size,
+    total_search_times,
+    states_per_second,
+    single_search_time,
+    **kwargs,
+):
+    has_target = puzzle.has_target
 
     # for benchmark, same initial states
     states, solve_configs = vmapping_init_target(puzzle, vmap_size, seeds)
@@ -293,8 +301,9 @@ def search_samples(
 @heuristic_options
 @visualize_options
 def astar(**kwargs):
+    puzzle = kwargs["puzzle"]
     astar_fn = astar_builder(
-        kwargs["puzzle"],
+        puzzle,
         kwargs["heuristic"],
         kwargs["batch_size"],
         kwargs["max_node_size"],
@@ -304,7 +313,20 @@ def astar(**kwargs):
     dist_fn = kwargs["heuristic"].distance
     kwargs["dist_fn"] = dist_fn
     kwargs["dist_fn_format"] = heuristic_dist_format
-    search_samples(astar_fn, **kwargs)
+    total_search_times, states_per_second, single_search_time = search_samples(astar_fn, **kwargs)
+
+    if kwargs["vmap_size"] == 1:
+        return
+
+    vmapped_search_samples(
+        vmapping_search(puzzle, astar_fn, kwargs["vmap_size"], kwargs["show_compile_time"]),
+        puzzle,
+        kwargs["seeds"],
+        kwargs["vmap_size"],
+        total_search_times,
+        states_per_second,
+        single_search_time,
+    )
 
 
 @click.command()
@@ -313,8 +335,9 @@ def astar(**kwargs):
 @qfunction_options
 @visualize_options
 def qstar(**kwargs):
+    puzzle = kwargs["puzzle"]
     qstar_fn = qstar_builder(
-        kwargs["puzzle"],
+        puzzle,
         kwargs["qfunction"],
         kwargs["batch_size"],
         kwargs["max_node_size"],
@@ -324,4 +347,17 @@ def qstar(**kwargs):
     dist_fn = kwargs["qfunction"].q_value
     kwargs["dist_fn"] = dist_fn
     kwargs["dist_fn_format"] = qfunction_dist_format
-    search_samples(qstar_fn, **kwargs)
+    total_search_times, states_per_second, single_search_time = search_samples(qstar_fn, **kwargs)
+
+    if kwargs["vmap_size"] == 1:
+        return
+
+    vmapped_search_samples(
+        vmapping_search(puzzle, qstar_fn, kwargs["vmap_size"], kwargs["show_compile_time"]),
+        puzzle,
+        kwargs["seeds"],
+        kwargs["vmap_size"],
+        total_search_times,
+        states_per_second,
+        single_search_time,
+    )
