@@ -10,7 +10,7 @@ import optax
 import tensorboardX
 from tqdm import trange
 
-from helpers.puzzle_config import (
+from config.puzzle_config import (
     default_puzzle_sizes,
     puzzle_dict,
     puzzle_heuristic_dict_nn,
@@ -19,13 +19,6 @@ from heuristic.neuralheuristic.davi import davi_builder, get_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 
 PyTree = Any
-
-
-@jax.jit
-def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
-    return jax.tree_util.tree_map(
-        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, old_tensors
-    )
 
 
 @click.command()

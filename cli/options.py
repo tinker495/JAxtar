@@ -3,10 +3,7 @@ from functools import wraps
 import click
 import jax
 
-from heuristic.heuristic_base import Heuristic
-from qfunction.q_base import QFunction
-
-from .puzzle_config import (
+from config import (
     default_puzzle_sizes,
     puzzle_dict,
     puzzle_dict_hard,
@@ -15,6 +12,8 @@ from .puzzle_config import (
     puzzle_q_dict,
     puzzle_q_dict_nn,
 )
+from heuristic.heuristic_base import Heuristic
+from qfunction.q_base import QFunction
 
 
 def puzzle_options(func: callable) -> callable:
@@ -56,8 +55,12 @@ def puzzle_options(func: callable) -> callable:
 
 
 def search_options(func: callable) -> callable:
-    @click.option("-m", "--max_node_size", default=2e6, help="Size of the puzzle")
-    @click.option("-b", "--batch_size", default=8192, help="Batch size for BGPQ")  # 1024 * 8 = 8192
+    @click.option(
+        "-m", "--max_node_size", default=2e6, help="Size of the puzzle"
+    )  # this is a float for input like 2e6
+    @click.option(
+        "-b", "--batch_size", default=8192, type=int, help="Batch size for BGPQ"
+    )  # 1024 * 8 = 8192
     @click.option("-w", "--cost_weight", default=1.0 - 1e-3, help="Weight for the A* search")
     @click.option("-vm", "--vmap_size", default=1, help="Size for the vmap")
     @click.option("--debug", is_flag=True, help="Debug mode")
@@ -74,6 +77,7 @@ def search_options(func: callable) -> callable:
             kwargs["max_node_size"] = 10000
             kwargs["batch_size"] = 100
         kwargs.pop("debug")
+        kwargs["max_node_size"] = int(kwargs["max_node_size"])
         return func(*args, **kwargs)
 
     return wrapper

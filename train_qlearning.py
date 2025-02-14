@@ -10,18 +10,11 @@ import optax
 import tensorboardX
 from tqdm import trange
 
-from helpers.puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_q_dict_nn
+from config.puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_q_dict_nn
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_dataset_builder, qlearning_builder
 
 PyTree = Any
-
-
-@jax.jit
-def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
-    return jax.tree_util.tree_map(
-        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, old_tensors
-    )
 
 
 @click.command()
