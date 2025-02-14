@@ -4,7 +4,9 @@ import click
 import jax
 
 from heuristic.heuristic_base import Heuristic
-from puzzle_config import (
+from qfunction.q_base import QFunction
+
+from .puzzle_config import (
     default_puzzle_sizes,
     puzzle_dict,
     puzzle_dict_hard,
@@ -13,7 +15,6 @@ from puzzle_config import (
     puzzle_q_dict,
     puzzle_q_dict_nn,
 )
-from qfunction.q_base import QFunction
 
 
 def puzzle_options(func: callable) -> callable:
