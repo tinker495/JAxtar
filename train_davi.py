@@ -77,7 +77,10 @@ def train_davi(
     shuffle_parallel = int(math.ceil(dataset_minibatch_size / shuffle_length))
     minibatch_size = 1000
 
-    optimizer = optax.adabelief(1e-3)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(10.0),  # Clip gradients to a maximum global norm of 1.0
+        optax.adam(1e-3, nesterov=True),
+    )
     opt_state = optimizer.init(heuristic_params)
 
     davi_fn = davi_builder(minibatch_size, heuristic_fn, optimizer)
