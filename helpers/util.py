@@ -8,17 +8,6 @@ from JAxtar.util import set_tree
 from puzzle.puzzle_base import Puzzle
 
 
-def human_format(num):
-    num = float("{:.3g}".format(num))
-    magnitude = 0
-    while abs(num) >= 1000:
-        magnitude += 1
-        num /= 1000.0
-    return "{}{}".format(
-        "{:f}".format(num).rstrip("0").rstrip("."), ["", "K", "M", "B", "T"][magnitude]
-    )
-
-
 def vmapping_init_target(puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]):
     start_state_seed = start_state_seeds[0]
     solve_configs, states = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
