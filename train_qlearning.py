@@ -10,7 +10,7 @@ import optax
 import tensorboardX
 from tqdm import trange
 
-from puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_q_dict_nn
+from helpers.puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_q_dict_nn
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_dataset_builder, qlearning_builder
 

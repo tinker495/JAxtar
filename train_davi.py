@@ -10,9 +10,13 @@ import optax
 import tensorboardX
 from tqdm import trange
 
+from helpers.puzzle_config import (
+    default_puzzle_sizes,
+    puzzle_dict,
+    puzzle_heuristic_dict_nn,
+)
 from heuristic.neuralheuristic.davi import davi_builder, get_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from puzzle_config import default_puzzle_sizes, puzzle_dict, puzzle_heuristic_dict_nn
 
 PyTree = Any
 
