@@ -140,7 +140,7 @@ class DotKnot(Puzzle):
         # then, taking the minimum gives us the smallest valid color.
         selected_color = jnp.min(jnp.where(available_mask, colors, self.color_num + 1))
         # Define the 4 directional moves: up, down, left, right.
-        moves = jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
+        moves = jnp.array([[0, -1], [0, 1], [-1, 0], [1, 0]])
 
         def is_valid(new_pos, color_idx):
             index = new_pos[0] * self.size + new_pos[1]
@@ -199,16 +199,17 @@ class DotKnot(Puzzle):
         """
         This function should return a string representation of the action.
         """
-        color = action // 4
-        direction = action % 4
-        if direction == 0:
-            return f"{COLORS[color]}↑"
-        elif direction == 1:
-            return f"{COLORS[color]}↓"
-        elif direction == 2:
-            return f"{COLORS[color]}←"
-        elif direction == 3:
-            return f"{COLORS[color]}→"
+        match action:
+            case 0:
+                return "←"
+            case 1:
+                return "→"
+            case 2:
+                return "↑"
+            case 3:
+                return "↓"
+            case _:
+                raise ValueError(f"Invalid action: {action}")
 
     def _get_visualize_format(self):
         size = self.size

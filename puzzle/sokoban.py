@@ -92,16 +92,17 @@ class Sokoban(Puzzle):
         """
         This function should return a string representation of the action.
         """
-        if action == 0:
-            return "←"
-        elif action == 1:
-            return "→"
-        elif action == 2:
-            return "↑"
-        elif action == 3:
-            return "↓"
-        else:
-            raise ValueError(f"Invalid action: {action}")
+        match action:
+            case 0:
+                return "←"
+            case 1:
+                return "→"
+            case 2:
+                return "↑"
+            case 3:
+                return "↓"
+            case _:
+                raise ValueError(f"Invalid action: {action}")
 
     def get_solve_config_string_parser(self):
         def parser(solve_config: "Sokoban.SolveConfig", **kwargs):
