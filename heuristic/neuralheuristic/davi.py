@@ -174,15 +174,15 @@ def create_shuffled_path(
 
     def get_trajectory_key(targets: Puzzle.State, key: chex.PRNGKey):
         def _scan(carry, _):
-            state, key, move_cost = carry
+            old_state, state, key, move_cost = carry
             neighbor_states, cost = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0))(
                 solve_configs, state
             )
-            is_target = jax.vmap(jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 0))(
-                targets, neighbor_states
+            is_past = jax.vmap(jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 0))(
+                old_state, neighbor_states
             )
             filled = jnp.isfinite(cost).astype(jnp.float32)
-            filled = jnp.where(is_target, 0.0, filled)
+            filled = jnp.where(is_past, 0.0, filled)
             prob = filled / jnp.sum(filled)
             key, subkey = jax.random.split(key)
             choices = jnp.arange(cost.shape[1])
@@ -192,10 +192,10 @@ def create_shuffled_path(
             next_state = jax.vmap(lambda x, y: x[y], in_axes=(0, 0))(neighbor_states, idx)
             cost = jax.vmap(lambda x, y: x[y], in_axes=(0, 0))(cost, idx)
             move_cost = move_cost + cost
-            return (next_state, key, move_cost), (next_state, move_cost)
+            return (state, next_state, key, move_cost), (next_state, move_cost)
 
         _, (moves, move_costs) = jax.lax.scan(
-            _scan, (targets, key, jnp.zeros(shuffle_parallel)), None, length=shuffle_length
+            _scan, (targets, targets, key, jnp.zeros(shuffle_parallel)), None, length=shuffle_length
         )
         return moves, move_costs
 
