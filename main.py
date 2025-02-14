@@ -4,9 +4,7 @@ import click
 import jax
 import jax.numpy as jnp
 
-from JAxtar.astar import astar_builder
-from JAxtar.qstar import qstar_builder
-from options import (
+from helpers.options import (
     heuristic_options,
     human_play_options,
     puzzle_options,
@@ -14,7 +12,14 @@ from options import (
     search_options,
     visualize_options,
 )
-from util import human_format, vmapping_get_state, vmapping_init_target, vmapping_search
+from helpers.util import (
+    human_format,
+    vmapping_get_state,
+    vmapping_init_target,
+    vmapping_search,
+)
+from JAxtar.astar import astar_builder
+from JAxtar.qstar import qstar_builder
 
 
 @click.group()
