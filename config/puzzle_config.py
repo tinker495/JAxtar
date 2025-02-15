@@ -21,6 +21,7 @@ from puzzle import (
     Maze,
     Puzzle,
     RubiksCube,
+    RubiksCubeDS,
     RubiksCubeHard,
     SlidePuzzle,
     SlidePuzzleHard,
@@ -59,6 +60,11 @@ puzzle_dict: dict[str, Puzzle] = {
     "tsp": TSP,
     "sokoban": Sokoban,
     "worldmodel": WorldModelPuzzleBase,
+}
+
+puzzle_dict_ds: dict[str, Puzzle] = {
+    "rubikscube": RubiksCubeDS,
+    "sokoban": Sokoban,
 }
 
 puzzle_dict_hard: dict[str, Puzzle] = {

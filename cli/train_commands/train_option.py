@@ -95,3 +95,16 @@ def qfunction_options(func: callable) -> callable:
         return func(*args, **kwargs)
 
     return wrapper
+
+
+def dataset_options(func: callable) -> callable:
+    @click.option("--dataset_size", type=int, default=300000)
+    @click.option("--dataset_minibatch_size", type=int, default=30000)
+    @click.option("--shuffle_length", type=int, default=30)
+    @click.option("--img_size", nargs=2, type=click.Tuple([int, int]), default=(32, 32))
+    @click.option("--key", type=int, default=0)
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    return wrapper
