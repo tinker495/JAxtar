@@ -257,41 +257,72 @@ class Sokoban(Puzzle):
         import cv2
         import numpy as np
 
+        cell_w = IMG_SIZE[0] // self.size
+        cell_h = IMG_SIZE[1] // self.size
+
         image_dir = os.path.join("puzzle", "data", "sokoban", "imgs")
         assets = {
-            0: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "floor.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            0: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "floor.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            1: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "wall.png"), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB
+            1: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "wall.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            2: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "agent.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            2: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "agent.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            3: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "box.png"), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB
+            3: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "box.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            4: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "box_target.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            4: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "box_target.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            5: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "agent_on_target.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            5: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "agent_on_target.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            6: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "box_on_target.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            6: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "box_on_target.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
         }
 
         def img_func(state: "Sokoban.State", solve_config: "Sokoban.SolveConfig" = None, **kwargs):
             img = np.zeros(IMG_SIZE + (3,), np.uint8)
 
-            cell_w = IMG_SIZE[0] // self.size
-            cell_h = IMG_SIZE[1] // self.size
             board = self.unpack_board(state.board)
             if solve_config is not None:
                 goal = self.unpack_board(solve_config.TargetState.board)
@@ -301,23 +332,21 @@ class Sokoban(Puzzle):
                 for j in range(self.size):
                     cell_val = int(board[i * self.size + j])
                     if (
-                        goal is not None and goal[i * self.size + j] != 0
+                        goal is not None and goal[i * self.size + j] == Object.BOX.value
                     ):  # If this cell is marked as a target
-                        if cell_val == Object.PLAYER.value:
-                            asset = assets.get(5)  # agent on target
-                        elif cell_val == Object.BOX.value:
-                            asset = assets.get(6)  # box on target
-                        elif cell_val == Object.EMPTY.value:
-                            asset = assets.get(4)  # target floor (box target)
-                        else:
-                            asset = assets.get(cell_val)
+                        match cell_val:
+                            case Object.PLAYER.value:
+                                asset = assets.get(Object.PLAYER_ON_TARGET.value)  # agent on target
+                            case Object.BOX.value:
+                                asset = assets.get(Object.BOX_ON_TARGET.value)  # box on target
+                            case Object.EMPTY.value:
+                                asset = assets.get(Object.TARGET.value)  # target floor (box target)
+                            case _:
+                                asset = assets.get(cell_val)
                     else:
                         asset = assets.get(cell_val)
                     if asset is not None:
-                        asset_resized = cv2.resize(asset, (cell_w, cell_h))
-                        img[
-                            i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w
-                        ] = asset_resized
+                        img[i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w] = asset
                     else:
                         # Fallback: fill with a gray square if image not found
                         img[i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w] = (
