@@ -1,5 +1,5 @@
 import pickle
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 import chex
 import jax
@@ -8,6 +8,7 @@ import numpy as np
 from flax import linen as nn
 
 from puzzle.puzzle_base import Puzzle
+from qfunction.q_base import QFunction
 
 
 # Residual Block
@@ -43,7 +44,7 @@ class DefaultModel(nn.Module):
         return x
 
 
-class NeuralQFunctionBase(ABC):
+class NeuralQFunctionBase(QFunction):
     def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True):
         self.puzzle = puzzle
         dummy_solve_config = self.puzzle.SolveConfig.default()
