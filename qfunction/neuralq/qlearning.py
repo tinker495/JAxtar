@@ -127,7 +127,7 @@ def _get_datasets(
     return states, target_q
 
 
-def get_dataset_builder(
+def get_qlearning_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
     q_fn: Callable,

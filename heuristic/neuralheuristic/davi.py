@@ -123,7 +123,7 @@ def _get_datasets(
     return states, target_heuristic
 
 
-def get_dataset_builder(
+def get_heuristic_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
     heuristic_fn: Callable,
