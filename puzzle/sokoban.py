@@ -323,9 +323,9 @@ class Sokoban(Puzzle):
         def img_func(state: "Sokoban.State", solve_config: "Sokoban.SolveConfig" = None, **kwargs):
             img = np.zeros(IMG_SIZE + (3,), np.uint8)
 
-            board = self.unpack_board(state.board)
+            board = np.array(self.unpack_board(state.board))
             if solve_config is not None:
-                goal = self.unpack_board(solve_config.TargetState.board)
+                goal = np.array(self.unpack_board(solve_config.TargetState.board))
             else:
                 goal = None
             for i in range(self.size):

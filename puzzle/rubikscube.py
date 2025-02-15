@@ -344,15 +344,15 @@ class RubiksCube(Puzzle):
             board = self.unpack_faces(state.faces)
             board = np.array(board)
             face_colors = {}
-            face_colors[UP] = board[UP].reshape((self.size, self.size))
-            face_colors[FRONT] = board[FRONT].reshape((self.size, self.size))
-            face_colors[RIGHT] = board[RIGHT].reshape((self.size, self.size))
+            face_colors[UP] = np.array(board[UP].reshape((self.size, self.size)))
+            face_colors[FRONT] = np.array(board[FRONT].reshape((self.size, self.size)))
+            face_colors[RIGHT] = np.array(board[RIGHT].reshape((self.size, self.size)))
 
             # If another_faces is True, get additional faces: DOWN, BACK, LEFT
             if another_faces:
-                face_colors[DOWN] = board[DOWN].reshape((self.size, self.size))
-                face_colors[BACK] = board[BACK].reshape((self.size, self.size))
-                face_colors[LEFT] = board[LEFT].reshape((self.size, self.size))
+                face_colors[DOWN] = np.array(board[DOWN].reshape((self.size, self.size)))
+                face_colors[BACK] = np.array(board[BACK].reshape((self.size, self.size)))
+                face_colors[LEFT] = np.array(board[LEFT].reshape((self.size, self.size)))
 
             # Draw faces in correct order for proper depth.
             # 1. Draw the front face (FRONT)
