@@ -287,7 +287,7 @@ class RubiksCube(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "RubiksCube.State", **kwargs):
+        def img_func(state: "RubiksCube.State", another_faces: bool = True, **kwargs):
             imgsize = IMG_SIZE[0]
             # Create a blank image with a neutral background
             img = np.zeros((imgsize, imgsize, 3), dtype=np.uint8)
@@ -348,6 +348,12 @@ class RubiksCube(Puzzle):
             face_colors[FRONT] = board[FRONT].reshape((self.size, self.size))
             face_colors[RIGHT] = board[RIGHT].reshape((self.size, self.size))
 
+            # If another_faces is True, get additional faces: DOWN, BACK, LEFT
+            if another_faces:
+                face_colors[DOWN] = board[DOWN].reshape((self.size, self.size))
+                face_colors[BACK] = board[BACK].reshape((self.size, self.size))
+                face_colors[LEFT] = board[LEFT].reshape((self.size, self.size))
+
             # Draw faces in correct order for proper depth.
             # 1. Draw the front face (FRONT)
             for i in range(self.size):
@@ -395,12 +401,77 @@ class RubiksCube(Puzzle):
                     pts = np.array(
                         [transform(*p0), transform(*p1), transform(*p2), transform(*p3)], np.int32
                     ).reshape((-1, 1, 2))
+                    # Note: for UP, flip the row order to match orientation
                     color_idx = int(face_colors[UP][self.size - i - 1, j])
                     color = rgb_map[color_idx]
                     cv2.fillPoly(img, [pts], color)
                     cv2.polylines(
                         img, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
                     )
+
+            # If another_faces is True, draw additional faces (DOWN, BACK, LEFT) as flat squares
+            if another_faces:
+                img2 = np.zeros((imgsize, imgsize, 3), dtype=np.uint8)
+                img2[:] = (190, 190, 190)
+
+                # 4. Draw the back face (BACK)
+                for i in range(self.size):
+                    for j in range(self.size):
+                        # Modified coordinates for correct orientation
+                        p0 = (self.size - j - 1, i, 0)
+                        p1 = (self.size - j, i, 0)
+                        p2 = (self.size - j, i + 1, 0)
+                        p3 = (self.size - j - 1, i + 1, 0)
+                        pts = np.array(
+                            [transform(*p0), transform(*p1), transform(*p2), transform(*p3)],
+                            np.int32,
+                        ).reshape((-1, 1, 2))
+                        color_idx = int(face_colors[BACK][i, j])
+                        color = rgb_map[color_idx]
+                        cv2.fillPoly(img2, [pts], color)
+                        cv2.polylines(
+                            img2, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                        )
+
+                # 2. Draw the down face (DOWN)
+                for i in range(self.size):
+                    for j in range(self.size):
+                        # Modified coordinates for correct orientation
+                        p0 = (i, self.size, j)
+                        p1 = (i, self.size, j + 1)
+                        p2 = (i + 1, self.size, j + 1)
+                        p3 = (i + 1, self.size, j)
+                        pts = np.array(
+                            [transform(*p0), transform(*p1), transform(*p2), transform(*p3)],
+                            np.int32,
+                        ).reshape((-1, 1, 2))
+                        color_idx = int(face_colors[DOWN][i, j])
+                        color = rgb_map[color_idx]
+                        cv2.fillPoly(img2, [pts], color)
+                        cv2.polylines(
+                            img2, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                        )
+
+                # 3. Draw the left face (LEFT) last so that it appears above the other faces
+                for i in range(self.size):
+                    for j in range(self.size):
+                        # Modified coordinates for correct orientation
+                        p0 = (0, i, j)
+                        p1 = (0, i, j + 1)
+                        p2 = (0, i + 1, j + 1)
+                        p3 = (0, i + 1, j)
+                        pts = np.array(
+                            [transform(*p0), transform(*p1), transform(*p2), transform(*p3)],
+                            np.int32,
+                        ).reshape((-1, 1, 2))
+                        color_idx = int(face_colors[LEFT][i, j])
+                        color = rgb_map[color_idx]
+                        cv2.fillPoly(img2, [pts], color)
+                        cv2.polylines(
+                            img2, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                        )
+
+                img = np.concatenate([img, img2], axis=1)
 
             return img
 
