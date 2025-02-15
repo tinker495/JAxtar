@@ -27,6 +27,7 @@ from puzzle import (
     Sokoban,
     SokobanHard,
 )
+from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 from qfunction import (
     DotKnotQ,
     EmptyQFunction,
@@ -57,15 +58,13 @@ puzzle_dict: dict[str, Puzzle] = {
     "dotknot": DotKnot,
     "tsp": TSP,
     "sokoban": Sokoban,
+    "worldmodel": WorldModelPuzzleBase,
 }
 
 puzzle_dict_hard: dict[str, Puzzle] = {
     "n-puzzle": SlidePuzzleHard,
     "lightsout": LightsOutHard,
     "rubikscube": RubiksCubeHard,
-    "maze": Maze,
-    "dotknot": DotKnot,
-    "tsp": TSP,
     "sokoban": SokobanHard,
 }
 
@@ -77,6 +76,7 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "dotknot": DotKnotHeuristic,
     "tsp": EmptyHeuristic,
     "sokoban": SokobanHeuristic,
+    "worldmodel": EmptyHeuristic,
 }
 
 # nn option need to be callable, for loading model
@@ -106,6 +106,7 @@ puzzle_q_dict: dict[str, QFunction] = {
     "dotknot": DotKnotQ,
     "tsp": EmptyQFunction,
     "sokoban": SokobanQ,
+    "worldmodel": EmptyQFunction,
 }
 
 # nn option need to be callable, for loading model
