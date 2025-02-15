@@ -1,5 +1,5 @@
 import pickle
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 import chex
 import jax
@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
 
+from heuristic.heuristic_base import Heuristic
 from puzzle.puzzle_base import Puzzle
 
 
@@ -41,7 +42,7 @@ class DefaultModel(nn.Module):
         return x
 
 
-class NeuralHeuristicBase(ABC):
+class NeuralHeuristicBase(Heuristic):
     def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel(), init_params: bool = True):
         self.puzzle = puzzle
         self.model = model
