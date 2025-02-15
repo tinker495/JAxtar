@@ -92,6 +92,8 @@ class Puzzle(ABC):
         This function should be called in the __init__ of the subclass.
         """
         super().__init__()
+        self.data_init()
+
         self.State = add_string_parser(self.State, self.get_string_parser())
         self.State = add_default(self.State, self.get_default_gen())
         self.State = add_img_parser(self.State, self.get_img_parser())
@@ -109,7 +111,6 @@ class Puzzle(ABC):
         self.is_solved = jax.jit(self.is_solved)
         self.is_equal = jax.jit(self.is_equal)
         self.batched_is_solved = jax.jit(self.batched_is_solved)
-        self.data_init()
 
     def data_init(self):
         """
