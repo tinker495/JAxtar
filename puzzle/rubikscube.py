@@ -485,3 +485,12 @@ class RubiksCubeHard(RubiksCube):
 
     def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> RubiksCube.State:
         return self._get_random_state(solve_config, key, num_shuffle=50)
+
+
+class RubiksCubeDS(RubiksCube):
+    """
+    This class is a extension of RubiksCube, it will generate the state with the most moves for making dataset.
+    """
+
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> RubiksCube.State:
+        return self._get_random_state(solve_config, key, num_shuffle=200)

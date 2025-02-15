@@ -117,13 +117,20 @@ class WorldModelPuzzleBase(Puzzle):
         """
         This function should return a neighbours, and the cost of the move.
         """
-        latent = states.latent
-        next_latent = self.world_model(
-            latent, training=False
+        uint8_latent = states.latent
+        bit_latent = jax.vmap(self.from_uint8)(uint8_latent)
+        next_bit_latent = self.world_model(
+            bit_latent, training=False
         )  # (batch_size, action_size, latent_size)
-        next_latent = jnp.swapaxes(next_latent, 0, 1)  # (action_size, batch_size, latent_size)
+        next_bit_latent = jnp.round(next_bit_latent).astype(jnp.bool_)
+        next_bit_latent = jnp.swapaxes(
+            next_bit_latent, 0, 1
+        )  # (action_size, batch_size, latent_size)
+        next_uint8_latent = jax.vmap(jax.vmap(self.to_uint8))(
+            next_bit_latent
+        )  # (action_size, batch_size, latent_size)
         return (
-            self.State(latent=next_latent),
+            self.State(latent=next_uint8_latent),
             jnp.ones((self.action_size, states.latent.shape[0])) * filleds,
         )  # (action_size, batch_size, latent_size), (action_size, batch_size)
 
@@ -154,3 +161,12 @@ class WorldModelPuzzleBase(Puzzle):
         """
         target_state = solve_config.TargetState
         return self.is_equal(state, target_state)
+
+    def to_uint8(self, bit_latent: chex.Array) -> chex.Array:
+        # from booleans to uint8
+        # boolean 32 to uint8 4
+        return jnp.packbits(bit_latent, axis=-1, bitorder="little")
+
+    def from_uint8(self, uint8_latent: chex.Array) -> chex.Array:
+        # from uint8 4 to boolean 32
+        return jnp.unpackbits(uint8_latent, axis=-1, count=self.latent_size, bitorder="little")

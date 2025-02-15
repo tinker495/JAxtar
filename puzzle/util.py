@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from tabulate import tabulate
+from tqdm import trange
 
 MAX_PRINT_BATCH_SIZE = 4
 SHOW_BATCH_SIZE = 2
@@ -229,10 +230,11 @@ def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:
                 jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
             )
             results = []
-            for i in range(batch_len):
+            for i in trange(batch_len):
                 index = jnp.unravel_index(i, batch_shape)
                 current_state = jax.tree_util.tree_map(lambda x: x[index], self)
                 results.append(imgfunc(current_state, **kwargs))
+            results = np.stack(results, axis=0)
             return results
         else:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
