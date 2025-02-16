@@ -155,7 +155,7 @@ class WorldModelPuzzleBase(Puzzle):
             latent = state.latent
             latent = jnp.reshape(latent, shape=(-1,))
             latent = np.array(latent)
-            return f"0x{latent.tobytes().hex()}"
+            return f"latent: 0x{latent.tobytes().hex()}"
 
         return parser
 
