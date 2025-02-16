@@ -6,8 +6,8 @@ class SokobanWorldModel(WorldModelPuzzleBase):
 
         super().__init__(
             data_path="puzzle/world_model/data/sokoban",
-            data_shape=(64, 32, 3),
-            latent_shape=(400,),
-            action_size=12,
+            data_shape=(40, 40, 3),
+            latent_shape=(200,),
+            action_size=4,
             **kwargs
         )
