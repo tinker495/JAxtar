@@ -120,5 +120,5 @@ def make_puzzle_sample_data(
         target_images_stack.append(small_target_img)
     initial_images_stack = np.stack(initial_images_stack, axis=0)
     target_images_stack = np.stack(target_images_stack, axis=0)
-    np.save(f"tmp/{puzzle_name}/initial_images.npy", initial_images_stack)
-    np.save(f"tmp/{puzzle_name}/target_images.npy", target_images_stack)
+    np.save(f"tmp/{puzzle_name}/inits.npy", initial_images_stack)
+    np.save(f"tmp/{puzzle_name}/targets.npy", target_images_stack)
