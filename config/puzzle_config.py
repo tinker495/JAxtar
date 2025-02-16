@@ -26,6 +26,7 @@ from puzzle import (
     SlidePuzzle,
     SlidePuzzleHard,
     Sokoban,
+    SokobanDS,
     SokobanHard,
 )
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
@@ -64,7 +65,7 @@ puzzle_dict: dict[str, Puzzle] = {
 
 puzzle_dict_ds: dict[str, Puzzle] = {
     "rubikscube": RubiksCubeDS,
-    "sokoban": Sokoban,
+    "sokoban": SokobanDS,
 }
 
 puzzle_dict_hard: dict[str, Puzzle] = {

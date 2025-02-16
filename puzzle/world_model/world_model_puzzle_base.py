@@ -72,6 +72,7 @@ class WorldModelPuzzleBase(Puzzle):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        self.autoencoder = AutoEncoder(latent_size=self.latent_size)
         self.world_model = WorldModel(latent_size=self.latent_size, action_size=self.action_size)
 
     def data_init(self):

@@ -364,3 +364,48 @@ class SokobanHard(Sokoban):
         self.init_puzzles = jnp.load("puzzle/data/sokoban/init_hard.npy")
         self.target_puzzles = jnp.load("puzzle/data/sokoban/target_hard.npy")
         self.num_puzzles = self.init_puzzles.shape[0]
+
+
+class SokobanDS(Sokoban):
+    def get_box_positions(self, board: jnp.ndarray, number_of_boxes: int = 4) -> jnp.ndarray:
+        """
+        Get the positions of all boxes on the board.
+        """
+        flat_index = jnp.argsort(board == Object.BOX.value)[-number_of_boxes:]
+        return jnp.unravel_index(flat_index, (self.size, self.size))
+
+    def place_agent_randomly(self, board: jnp.ndarray, key: jax.random.PRNGKey) -> jnp.ndarray:
+        """
+        Place the agent randomly on the board.
+        """
+        board = self.unpack_board(board)
+        box_xs, box_ys = self.get_box_positions(board)
+        box_positions = jnp.expand_dims(jnp.stack([box_xs, box_ys], axis=1), 0)  # shape: (1, 4, 2)
+        _near = jnp.expand_dims(
+            jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]]), 1
+        )  # shape: (4, 1, 2)
+        near_positions = box_positions + _near  # shape: (4, 4, 2)
+        near_positions = near_positions.reshape((-1, 2))  # shape: (16, 2)
+        mask = jnp.ones(near_positions.shape[0])
+        mask = jnp.where(near_positions[:, 0] < 0, 0, mask)
+        mask = jnp.where(near_positions[:, 0] >= self.size, 0, mask)
+        mask = jnp.where(near_positions[:, 1] < 0, 0, mask)
+        mask = jnp.where(near_positions[:, 1] >= self.size, 0, mask)
+        mask = jnp.where(
+            board[near_positions[:, 0] * self.size + near_positions[:, 1]] != Object.EMPTY.value,
+            0,
+            mask,
+        )
+        prob = mask / jnp.sum(mask)
+        idx = jax.random.choice(key, jnp.arange(near_positions.shape[0]), p=prob)
+        new_board = board.at[near_positions[idx, 0] * self.size + near_positions[idx, 1]].set(
+            Object.PLAYER.value
+        )
+        packed_board = self.pack_board(new_board)
+        return packed_board
+
+    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
+        idx = jax.random.randint(key, (), 0, self.num_puzzles)
+        packed_board = self.target_puzzles[idx, ...]
+        packed_board = self.place_agent_randomly(packed_board, key)
+        return self.SolveConfig(TargetState=self.State(board=packed_board))
