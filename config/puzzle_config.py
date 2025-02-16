@@ -29,7 +29,8 @@ from puzzle import (
     SokobanDS,
     SokobanHard,
 )
-from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
+from puzzle.world_model.model.rubikscube_world_model import RubiksCubeWorldModel
+from puzzle.world_model.model.sokoban_world_model import SokobanWorldModel
 from qfunction import (
     DotKnotQ,
     EmptyQFunction,
@@ -50,6 +51,8 @@ default_puzzle_sizes: dict[str, int] = {
     "tsp": 16,
     "dotknot": 8,
     "sokoban": 10,
+    "rubikscube_world_model": None,
+    "sokoban_world_model": None,
 }
 
 puzzle_dict: dict[str, Puzzle] = {
@@ -60,7 +63,8 @@ puzzle_dict: dict[str, Puzzle] = {
     "dotknot": DotKnot,
     "tsp": TSP,
     "sokoban": Sokoban,
-    "worldmodel": WorldModelPuzzleBase,
+    "rubikscube_world_model": RubiksCubeWorldModel,
+    "sokoban_world_model": SokobanWorldModel,
 }
 
 puzzle_dict_ds: dict[str, Puzzle] = {
@@ -83,7 +87,8 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "dotknot": DotKnotHeuristic,
     "tsp": EmptyHeuristic,
     "sokoban": SokobanHeuristic,
-    "worldmodel": EmptyHeuristic,
+    "rubikscube_world_model": EmptyHeuristic,
+    "sokoban_world_model": EmptyHeuristic,
 }
 
 # nn option need to be callable, for loading model
