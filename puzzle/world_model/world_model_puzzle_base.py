@@ -22,6 +22,7 @@ class AutoEncoder(nn.Module):
     @nn.compact
     def encode(self, data, training=False):
         shape = data.shape
+        data = (data / 255.0) * 2 - 1
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(1000)(flatten)
@@ -47,7 +48,8 @@ class WorldModel(nn.Module):
 
     @nn.compact
     def __call__(self, latent, training=False):
-        x = nn.Dense(500)(latent)
+        x = (latent - 0.5) * 2.0
+        x = nn.Dense(500)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Dense(500)(x)
