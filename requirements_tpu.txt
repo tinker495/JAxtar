@@ -10,6 +10,7 @@ jax[tpu]
 chex
 dm_pix
 dm-haiku
+huggingface_hub
 flax
 optax
 termcolor
