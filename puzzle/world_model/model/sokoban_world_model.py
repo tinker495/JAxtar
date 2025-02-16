@@ -19,6 +19,7 @@ class AutoEncoder(nn.Module):
     @nn.compact
     def encode(self, data, training=False):
         # (batch_size, 40, 40, 3)
+        data = (data / 255.0) * 2 - 1
         x = nn.Conv(16, (2, 2), strides=(2, 2))(data)  # (batch_size, 20, 20, 16)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
@@ -43,7 +44,8 @@ class WorldModel(nn.Module):
 
     @nn.compact
     def __call__(self, latent, training=False):
-        x = nn.Conv(32, (3, 3), strides=(1, 1))(latent)  # (batch_size, 10, 10, 32)
+        x = (latent - 0.5) * 2.0
+        x = nn.Conv(32, (3, 3), strides=(1, 1))(x)  # (batch_size, 10, 10, 32)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Conv(32, (3, 3), strides=(1, 1))(x)  # (batch_size, 10, 10, 32)
@@ -56,6 +58,7 @@ class WorldModel(nn.Module):
             x, shape=(x.shape[0], *self.latent_shape) + (self.action_size,)
         )  # (batch_size, 10, 10, 16, 4)
         x = jnp.swapaxes(x, 4, 1)  # (batch_size, 4, 10, 10, 16)
+        x = nn.sigmoid(x)
         return x
 
 
