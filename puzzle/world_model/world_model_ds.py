@@ -81,3 +81,39 @@ def create_shuffled_path(
     actions = actions[:dataset_minibatch_size]
     next_states = next_states[:dataset_minibatch_size]
     return states, actions, next_states
+
+
+def get_sample_data_builder(
+    puzzle: Puzzle,
+    dataset_size: int,
+    shuffle_parallel: int,
+):
+    steps = math.ceil(dataset_size / shuffle_parallel)
+    create_sample_data_fn = partial(create_sample_data, puzzle, shuffle_parallel)
+
+    def get_datasets(
+        key: chex.PRNGKey,
+    ):
+        dataset = []
+        for _ in trange(steps):
+            key, subkey = jax.random.split(key)
+            dataset.append(create_sample_data_fn(subkey))
+        flatten_dataset = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *dataset)
+        assert (
+            flatten_dataset[0].shape[0][0] == dataset_size
+        ), f"{flatten_dataset[0].shape[0][0]} != {dataset_size}"
+        return flatten_dataset
+
+    return get_datasets
+
+
+def create_sample_data(
+    puzzle: Puzzle,
+    shuffle_parallel: int,
+    key: chex.PRNGKey,
+):
+    solve_configs, initial_states = jax.vmap(puzzle.get_inits)(
+        jax.random.split(key, shuffle_parallel)
+    )
+    target_states = solve_configs.TargetState
+    return target_states, initial_states
