@@ -1,4 +1,7 @@
+import os
+
 import chex
+import huggingface_hub
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -141,6 +144,15 @@ class WorldModelPuzzleBase(Puzzle):
         This function should be called in the __init__ of the subclass.
         If the puzzle need to load dataset, this function should be filled.
         """
+        if not os.path.exists(self.data_path + "/inits.npy") or not os.path.exists(
+            self.data_path + "/targets.npy"
+        ):
+            huggingface_hub.snapshot_download(
+                repo_id="Tinker/puzzle_world_model_ds",
+                repo_type="dataset",
+                local_dir="puzzle/world_model/",
+            )
+
         self.inits = jnp.load(self.data_path + "/inits.npy")
         self.targets = jnp.load(self.data_path + "/targets.npy")
         self.num_puzzles = self.inits.shape[0]
