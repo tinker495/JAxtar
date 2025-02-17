@@ -61,8 +61,12 @@ puzzle_dict: dict[str, Puzzle] = {
     "dotknot": DotKnot,
     "tsp": TSP,
     "sokoban": Sokoban,
-    "rubikscube_world_model": RubiksCubeWorldModel,
-    "sokoban_world_model": SokobanWorldModel,
+    "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel.load_model(
+        "puzzle/world_model/model/params/rubikscube.pkl"
+    ),
+    "sokoban_world_model": lambda **kwargs: SokobanWorldModel.load_model(
+        "puzzle/world_model/model/params/sokoban.pkl"
+    ),
 }
 
 puzzle_dict_hard: dict[str, Puzzle] = {
