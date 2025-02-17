@@ -257,67 +257,96 @@ class Sokoban(Puzzle):
         import cv2
         import numpy as np
 
+        cell_w = IMG_SIZE[0] // self.size
+        cell_h = IMG_SIZE[1] // self.size
+
         image_dir = os.path.join("puzzle", "data", "sokoban", "imgs")
         assets = {
-            0: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "floor.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            0: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "floor.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            1: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "wall.png"), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB
+            1: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "wall.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            2: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "agent.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            2: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "agent.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            3: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "box.png"), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB
+            3: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "box.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            4: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "box_target.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            4: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "box_target.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            5: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "agent_on_target.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            5: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "agent_on_target.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
-            6: cv2.cvtColor(
-                cv2.imread(os.path.join(image_dir, "box_on_target.png"), cv2.IMREAD_COLOR),
-                cv2.COLOR_BGR2RGB,
+            6: cv2.resize(
+                cv2.cvtColor(
+                    cv2.imread(os.path.join(image_dir, "box_on_target.png"), cv2.IMREAD_COLOR),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                (cell_w, cell_h),
+                interpolation=cv2.INTER_AREA,
             ),
         }
 
         def img_func(state: "Sokoban.State", solve_config: "Sokoban.SolveConfig" = None, **kwargs):
             img = np.zeros(IMG_SIZE + (3,), np.uint8)
 
-            cell_w = IMG_SIZE[0] // self.size
-            cell_h = IMG_SIZE[1] // self.size
-            board = self.unpack_board(state.board)
+            board = np.array(self.unpack_board(state.board))
             if solve_config is not None:
-                goal = self.unpack_board(solve_config.TargetState.board)
+                goal = np.array(self.unpack_board(solve_config.TargetState.board))
             else:
                 goal = None
             for i in range(self.size):
                 for j in range(self.size):
                     cell_val = int(board[i * self.size + j])
                     if (
-                        goal is not None and goal[i * self.size + j] != 0
+                        goal is not None and goal[i * self.size + j] == Object.BOX.value
                     ):  # If this cell is marked as a target
-                        if cell_val == Object.PLAYER.value:
-                            asset = assets.get(5)  # agent on target
-                        elif cell_val == Object.BOX.value:
-                            asset = assets.get(6)  # box on target
-                        elif cell_val == Object.EMPTY.value:
-                            asset = assets.get(4)  # target floor (box target)
-                        else:
-                            asset = assets.get(cell_val)
+                        match cell_val:
+                            case Object.PLAYER.value:
+                                asset = assets.get(Object.PLAYER_ON_TARGET.value)  # agent on target
+                            case Object.BOX.value:
+                                asset = assets.get(Object.BOX_ON_TARGET.value)  # box on target
+                            case Object.EMPTY.value:
+                                asset = assets.get(Object.TARGET.value)  # target floor (box target)
+                            case _:
+                                asset = assets.get(cell_val)
                     else:
                         asset = assets.get(cell_val)
                     if asset is not None:
-                        asset_resized = cv2.resize(asset, (cell_w, cell_h))
-                        img[
-                            i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w
-                        ] = asset_resized
+                        img[i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w] = asset
                     else:
                         # Fallback: fill with a gray square if image not found
                         img[i * cell_h : (i + 1) * cell_h, j * cell_w : (j + 1) * cell_w] = (
@@ -335,3 +364,48 @@ class SokobanHard(Sokoban):
         self.init_puzzles = jnp.load("puzzle/data/sokoban/init_hard.npy")
         self.target_puzzles = jnp.load("puzzle/data/sokoban/target_hard.npy")
         self.num_puzzles = self.init_puzzles.shape[0]
+
+
+class SokobanDS(Sokoban):
+    def get_box_positions(self, board: jnp.ndarray, number_of_boxes: int = 4) -> jnp.ndarray:
+        """
+        Get the positions of all boxes on the board.
+        """
+        flat_index = jnp.argsort(board == Object.BOX.value)[-number_of_boxes:]
+        return jnp.unravel_index(flat_index, (self.size, self.size))
+
+    def place_agent_randomly(self, board: jnp.ndarray, key: jax.random.PRNGKey) -> jnp.ndarray:
+        """
+        Place the agent randomly on the board.
+        """
+        board = self.unpack_board(board)
+        box_xs, box_ys = self.get_box_positions(board)
+        box_positions = jnp.expand_dims(jnp.stack([box_xs, box_ys], axis=1), 0)  # shape: (1, 4, 2)
+        _near = jnp.expand_dims(
+            jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]]), 1
+        )  # shape: (4, 1, 2)
+        near_positions = box_positions + _near  # shape: (4, 4, 2)
+        near_positions = near_positions.reshape((-1, 2))  # shape: (16, 2)
+        mask = jnp.ones(near_positions.shape[0])
+        mask = jnp.where(near_positions[:, 0] < 0, 0, mask)
+        mask = jnp.where(near_positions[:, 0] >= self.size, 0, mask)
+        mask = jnp.where(near_positions[:, 1] < 0, 0, mask)
+        mask = jnp.where(near_positions[:, 1] >= self.size, 0, mask)
+        mask = jnp.where(
+            board[near_positions[:, 0] * self.size + near_positions[:, 1]] != Object.EMPTY.value,
+            0,
+            mask,
+        )
+        prob = mask / jnp.sum(mask)
+        idx = jax.random.choice(key, jnp.arange(near_positions.shape[0]), p=prob)
+        new_board = board.at[near_positions[idx, 0] * self.size + near_positions[idx, 1]].set(
+            Object.PLAYER.value
+        )
+        packed_board = self.pack_board(new_board)
+        return packed_board
+
+    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
+        idx = jax.random.randint(key, (), 0, self.num_puzzles)
+        packed_board = self.target_puzzles[idx, ...]
+        packed_board = self.place_agent_randomly(packed_board, key)
+        return self.SolveConfig(TargetState=self.State(board=packed_board))

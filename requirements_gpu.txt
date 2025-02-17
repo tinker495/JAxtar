@@ -9,6 +9,7 @@ jax[cuda12]
 chex
 dm_pix
 dm-haiku
+huggingface_hub
 flax
 optax
 termcolor
