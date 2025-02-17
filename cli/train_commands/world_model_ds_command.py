@@ -7,7 +7,10 @@ import jax
 import numpy as np
 from tqdm import trange
 
-from cli.train_commands.train_option import dataset_options, puzzle_ds_options
+from cli.train_commands.world_model_train_option import (
+    dataset_options,
+    puzzle_ds_options,
+)
 from puzzle.puzzle_base import Puzzle
 from puzzle.world_model.world_model_ds import (
     get_sample_data_builder,
