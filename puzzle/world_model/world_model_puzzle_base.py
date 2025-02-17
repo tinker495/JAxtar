@@ -21,7 +21,7 @@ class Encoder(nn.Module):
     @nn.compact
     def __call__(self, data, training=False):
         shape = data.shape
-        data = (data / 255.0) * 2 - 1
+        data = (data / 255.0) * 2.0 - 1.0
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(5000)(flatten)
@@ -223,11 +223,12 @@ class WorldModelPuzzleBase(Puzzle):
             latent = np.array(latent)
             latent = np.reshape(latent, newshape=(-1,))
             latent_str = latent.tobytes().hex()
-            if len(latent_str) >= 25:
+            latent_str_len = len(latent_str)
+            if latent_str_len >= 25:
                 prefix = latent_str[:10]
                 suffix = latent_str[-10:]
                 latent_str = prefix + "..." + suffix
-            return f"latent: 0x{latent_str}"
+            return f"latent: 0x{latent_str}[{latent_str_len // 2} bytes]"
 
         return parser
 
