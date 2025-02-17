@@ -14,6 +14,8 @@ from puzzle.world_model.util import (
     round_through_gradient,
 )
 
+SHOW_PRINTED_LATENT_IMG = False
+
 
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
@@ -228,6 +230,26 @@ class WorldModelPuzzleBase(Puzzle):
                 prefix = latent_str[:10]
                 suffix = latent_str[-10:]
                 latent_str = prefix + "..." + suffix
+
+            if SHOW_PRINTED_LATENT_IMG:
+                # out latent image to file
+                import cv2
+
+                latent = state.latent
+                latent = self.from_uint8(latent)
+                latent = jnp.expand_dims(latent, axis=0)
+                data = self.model.apply(
+                    self.params, latent, training=False, method=self.model.decode
+                ).squeeze(0)
+                data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
+                width, height = data.shape[:2]
+                img = cv2.resize(
+                    data,
+                    (IMG_SIZE[0], int(IMG_SIZE[1] * width / height)),
+                    interpolation=cv2.INTER_AREA,
+                )
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(f"latent_{latent_str}.png", img)
             return f"latent: 0x{latent_str}[{latent_str_len // 2} bytes]"
 
         return parser
