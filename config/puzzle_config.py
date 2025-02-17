@@ -21,12 +21,10 @@ from puzzle import (
     Maze,
     Puzzle,
     RubiksCube,
-    RubiksCubeDS,
     RubiksCubeHard,
     SlidePuzzle,
     SlidePuzzleHard,
     Sokoban,
-    SokobanDS,
     SokobanHard,
 )
 from puzzle.world_model.model.rubikscube_world_model import RubiksCubeWorldModel
@@ -65,11 +63,6 @@ puzzle_dict: dict[str, Puzzle] = {
     "sokoban": Sokoban,
     "rubikscube_world_model": RubiksCubeWorldModel,
     "sokoban_world_model": SokobanWorldModel,
-}
-
-puzzle_dict_ds: dict[str, Puzzle] = {
-    "rubikscube": RubiksCubeDS,
-    "sokoban": SokobanDS,
 }
 
 puzzle_dict_hard: dict[str, Puzzle] = {
