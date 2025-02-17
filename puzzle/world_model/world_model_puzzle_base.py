@@ -15,6 +15,7 @@ from puzzle.world_model.util import (
 )
 
 SHOW_PRINTED_LATENT_IMG = False
+SHOW_TARGET_STATE_IMG = False
 
 
 class Encoder(nn.Module):
@@ -274,7 +275,11 @@ class WorldModelPuzzleBase(Puzzle):
         """
         import cv2
 
-        def img_parser(state: WorldModelPuzzleBase.State, **kwargs) -> jnp.ndarray:
+        def img_parser(
+            state: WorldModelPuzzleBase.State,
+            solve_config: WorldModelPuzzleBase.SolveConfig,
+            **kwargs,
+        ) -> jnp.ndarray:
             latent = state.latent
             latent = self.from_uint8(latent)
             latent = jnp.expand_dims(latent, axis=0)
@@ -286,6 +291,23 @@ class WorldModelPuzzleBase(Puzzle):
             img = cv2.resize(
                 data, (IMG_SIZE[0], int(IMG_SIZE[1] * width / height)), interpolation=cv2.INTER_AREA
             )
+            if SHOW_TARGET_STATE_IMG:
+                latent = solve_config.TargetState.latent
+                latent = self.from_uint8(latent)
+                latent = jnp.expand_dims(latent, axis=0)
+                data = self.model.apply(
+                    self.params, latent, training=False, method=self.model.decode
+                ).squeeze(0)
+                data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
+                width, height = data.shape[:2]
+                img2 = cv2.resize(
+                    data,
+                    (IMG_SIZE[0], int(IMG_SIZE[1] * width / height)),
+                    interpolation=cv2.INTER_AREA,
+                )
+                line = np.ones((10, IMG_SIZE[0], 3), dtype=np.uint8) * 255
+                img = np.concatenate([img, line, img2], axis=0)
+
             return img
 
         return img_parser
