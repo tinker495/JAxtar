@@ -27,7 +27,10 @@ from puzzle import (
     Sokoban,
     SokobanHard,
 )
-from puzzle.world_model.model.rubikscube_world_model import RubiksCubeWorldModel
+from puzzle.world_model.model.rubikscube_world_model import (
+    RubiksCubeWorldModel,
+    RubiksCubeWorldModel_test,
+)
 from puzzle.world_model.model.sokoban_world_model import SokobanWorldModel
 from qfunction import (
     DotKnotQ,
@@ -50,6 +53,7 @@ default_puzzle_sizes: dict[str, int] = {
     "dotknot": 8,
     "sokoban": 10,
     "rubikscube_world_model": None,
+    "rubikscube_world_model_test": None,
     "sokoban_world_model": None,
 }
 
@@ -62,6 +66,9 @@ puzzle_dict: dict[str, Puzzle] = {
     "tsp": TSP,
     "sokoban": Sokoban,
     "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel.load_model(
+        "puzzle/world_model/model/params/rubikscube.pkl"
+    ),
+    "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModel_test.load_model(
         "puzzle/world_model/model/params/rubikscube.pkl"
     ),
     "sokoban_world_model": lambda **kwargs: SokobanWorldModel.load_model(
@@ -85,6 +92,7 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "tsp": EmptyHeuristic,
     "sokoban": SokobanHeuristic,
     "rubikscube_world_model": EmptyHeuristic,
+    "rubikscube_world_model_test": EmptyHeuristic,
     "sokoban_world_model": EmptyHeuristic,
 }
 

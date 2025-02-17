@@ -196,14 +196,19 @@ class RubiksCube(Puzzle):
         init_state = self.get_target_state()
 
         def random_flip(carry, _):
-            state, key = carry
+            old_state, state, key = carry
             neighbor_states, costs = self.get_neighbours(solve_config, state, filled=True)
+            old_eq = jax.vmap(self.is_equal, in_axes=(None, 0))(old_state, neighbor_states)
+            mask = jnp.where(old_eq, 0, 1)
             key, subkey = jax.random.split(key)
-            idx = jax.random.choice(subkey, jnp.arange(costs.shape[0]))
+            p = mask / jnp.sum(mask)
+            idx = jax.random.choice(subkey, jnp.arange(costs.shape[0]), p=p)
             next_state = neighbor_states[idx]
-            return (next_state, key), None
+            return (state, next_state, key), None
 
-        (last_state, _), _ = jax.lax.scan(random_flip, (init_state, key), None, length=num_shuffle)
+        (_, last_state, _), _ = jax.lax.scan(
+            random_flip, (init_state, init_state, key), None, length=num_shuffle
+        )
         return last_state
 
     @staticmethod
@@ -493,4 +498,4 @@ class RubiksCubeDS(RubiksCube):
     """
 
     def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> RubiksCube.State:
-        return self._get_random_state(solve_config, key, num_shuffle=4)
+        return self._get_random_state(solve_config, key, num_shuffle=200)
