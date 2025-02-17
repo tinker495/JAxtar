@@ -172,6 +172,12 @@ These types of puzzles are not strictly the kind that are typically solved with 
 | ![dotknot solve](images/dotknotsolve.png)        | ![tsp solve](images/tspsolve.png)        |
 | ![dotknot animate](images/dotknot_animation.gif) | ![tsp animate](images/tsp_animation.gif) |
 
+### World Model Puzzle
+
+| Terminal View                                | Rubiks Cube                                               | Sokoban                                             |
+| -------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------- |
+| ![terminal view](images/worldmodelsolve.png) | ![rubiks cube](images/worldmodel_rubiscube_animation.gif) | ![sokoban](images/worldmodel_sokoban_animation.gif) |
+
 ## Citation
 
 Please use this citation to reference this project.
