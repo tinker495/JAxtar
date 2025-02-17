@@ -8,7 +8,49 @@ from flax import linen as nn
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
-from puzzle.world_model.util import download_dataset, is_dataset_downloaded
+from puzzle.world_model.util import (
+    download_dataset,
+    is_dataset_downloaded,
+    round_through_gradient,
+)
+
+
+class Encoder(nn.Module):
+    latent_shape: tuple[int, ...]
+
+    @nn.compact
+    def __call__(self, data, training=False):
+        shape = data.shape
+        data = (data / 255.0) * 2 - 1
+        flatten = jnp.reshape(data, shape=(shape[0], -1))
+        latent_size = np.prod(self.latent_shape)
+        x = nn.Dense(5000)(flatten)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = nn.Dense(1000)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = nn.Dense(latent_size)(x)
+        x = jnp.reshape(x, shape=(-1, *self.latent_shape))
+        latent = nn.sigmoid(x)
+        return latent
+
+
+class Decoder(nn.Module):
+    data_shape: tuple[int, ...]
+
+    @nn.compact
+    def __call__(self, latent, training=False):
+        output_size = np.prod(self.data_shape)
+        x = nn.Dense(1000)(latent)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = nn.Dense(5000)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = nn.Dense(output_size)(x)
+        output = jnp.reshape(x, (-1, *self.data_shape))
+        return output
 
 
 # Residual Block
@@ -16,33 +58,14 @@ class AutoEncoder(nn.Module):
     data_shape: tuple[int, ...]
     latent_shape: tuple[int, ...]
 
-    @nn.compact
+    def setup(self):
+        self.encoder = Encoder(self.latent_shape)
+        self.decoder = Decoder(self.data_shape)
+
     def __call__(self, x0, training=False):
-        latent = self.encode(x0, training)
-        output = self.decode(latent, training)
+        latent = self.encoder(x0, training)
+        output = self.decoder(latent, training)
         return latent, output
-
-    @nn.compact
-    def encode(self, data, training=False):
-        shape = data.shape
-        data = (data / 255.0) * 2 - 1
-        flatten = jnp.reshape(data, shape=(shape[0], -1))
-        latent_size = np.prod(self.latent_shape)
-        x = nn.Dense(1000)(flatten)
-        x = nn.relu(x)
-        x = nn.Dense(latent_size)(x)
-        x = jnp.reshape(x, shape=(-1, *self.latent_shape))
-        latent = nn.sigmoid(x)
-        return latent
-
-    @nn.compact
-    def decode(self, latent, training=False):
-        output_size = np.prod(self.data_shape)
-        x = nn.Dense(1000)(latent)
-        x = nn.relu(x)
-        x = nn.Dense(output_size)(x)
-        output = jnp.reshape(x, (-1, *self.data_shape))
-        return output
 
 
 class WorldModel(nn.Module):
@@ -114,13 +137,36 @@ class WorldModelPuzzleBase(Puzzle):
                 return self.world_model(latent, training), decoded
 
             def decode(self, latent, training=False):
-                return self.autoencoder.decode(latent, training)
+                return self.autoencoder.decoder(latent, training)
 
             def encode(self, data, training=False):
-                return self.autoencoder.encode(data, training)
+                return self.autoencoder.encoder(data, training)
 
             def transition(self, latent, training=False):
                 return self.world_model(latent, training)
+
+            def train_info(self, data, next_data, training=True):
+                latent = self.encode(data, training)
+                rounded_latent = round_through_gradient(latent)
+                decoded = self.decode(rounded_latent, training)
+
+                next_latent = self.encode(next_data, training)
+                rounded_next_latent = round_through_gradient(next_latent)
+                next_decoded = self.decode(rounded_next_latent, training)
+
+                next_latent_preds = self.transition(rounded_latent, training)
+                rounded_next_latent_preds = round_through_gradient(next_latent_preds)
+
+                return (
+                    latent,
+                    rounded_latent,
+                    decoded,
+                    next_latent,
+                    rounded_next_latent,
+                    next_decoded,
+                    next_latent_preds,
+                    rounded_next_latent_preds,
+                )
 
         self.model = total_model(
             autoencoder=AE(data_shape=self.data_shape, latent_shape=self.latent_shape),
@@ -157,6 +203,10 @@ class WorldModelPuzzleBase(Puzzle):
             puzzle = cls()
         return puzzle
 
+    def save_model(self, path: str):
+        with open(path, "wb") as f:
+            pickle.dump(self.params, f)
+
     def data_init(self):
         """
         This function should be called in the __init__ of the subclass.
@@ -183,6 +233,16 @@ class WorldModelPuzzleBase(Puzzle):
                 prefix = latent_str[:10]
                 suffix = latent_str[-10:]
                 latent_str = prefix + "..." + suffix
+            import cv2
+
+            latent = self.from_uint8(latent)
+            latent = jnp.expand_dims(latent, axis=0)
+            data = self.model.apply(
+                self.params, latent, training=False, method=self.model.decode
+            ).squeeze(0)
+            data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
+            data = cv2.cvtColor(data, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(f"latent_{latent_str}.png", data)
             return f"latent: 0x{latent_str}"
 
         return parser
@@ -272,9 +332,10 @@ class WorldModelPuzzleBase(Puzzle):
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
         """
-        states = jax.tree.tree_map(lambda x: x[jnp.newaxis, ...], state)
-        filleds = filled[jnp.newaxis, ...]
-        return self.batched_get_neighbours(solve_config, states, filleds)
+        states = state[jnp.newaxis, ...]
+        # filleds = filled[jnp.newaxis, ...]
+        next_states, costs = self.batched_get_neighbours(solve_config, states, filled)
+        return next_states[:, 0], costs[:, 0]
 
     def batched_is_solved(self, solve_config: SolveConfig, states: State) -> bool:
         """
