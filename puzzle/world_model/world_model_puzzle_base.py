@@ -27,9 +27,6 @@ class Encoder(nn.Module):
         x = nn.Dense(5000)(flatten)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
-        x = nn.Dense(1000)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
         x = nn.Dense(latent_size)(x)
         x = jnp.reshape(x, shape=(-1, *self.latent_shape))
         latent = nn.sigmoid(x)
@@ -43,9 +40,6 @@ class Decoder(nn.Module):
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
         x = nn.Dense(1000)(latent)
-        x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
-        x = nn.Dense(5000)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Dense(output_size)(x)
@@ -227,22 +221,12 @@ class WorldModelPuzzleBase(Puzzle):
             # Unpack the board before visualization.
             latent = state.latent
             latent = np.array(latent)
-            latent = np.reshape(latent, shape=(-1,))
+            latent = np.reshape(latent, newshape=(-1,))
             latent_str = latent.tobytes().hex()
             if len(latent_str) >= 25:
                 prefix = latent_str[:10]
                 suffix = latent_str[-10:]
                 latent_str = prefix + "..." + suffix
-            import cv2
-
-            latent = self.from_uint8(latent)
-            latent = jnp.expand_dims(latent, axis=0)
-            data = self.model.apply(
-                self.params, latent, training=False, method=self.model.decode
-            ).squeeze(0)
-            data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
-            data = cv2.cvtColor(data, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(f"latent_{latent_str}.png", data)
             return f"latent: 0x{latent_str}"
 
         return parser
@@ -267,10 +251,18 @@ class WorldModelPuzzleBase(Puzzle):
         """
         import cv2
 
-        def img_parser(state: WorldModelPuzzleBase.State) -> jnp.ndarray:
-            latent = jnp.expand_dims(state.latent, axis=0)
-            data = self.model.autoencoder.decode(latent).squeeze(0)
-            img = cv2.resize(data, (IMG_SIZE, IMG_SIZE))
+        def img_parser(state: WorldModelPuzzleBase.State, **kwargs) -> jnp.ndarray:
+            latent = state.latent
+            latent = self.from_uint8(latent)
+            latent = jnp.expand_dims(latent, axis=0)
+            data = self.model.apply(
+                self.params, latent, training=False, method=self.model.decode
+            ).squeeze(0)
+            data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
+            width, height = data.shape[:2]
+            img = cv2.resize(
+                data, (IMG_SIZE[0], int(IMG_SIZE[1] * width / height)), interpolation=cv2.INTER_AREA
+            )
             return img
 
         return img_parser

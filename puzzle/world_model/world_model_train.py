@@ -9,6 +9,17 @@ import optax
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 
+def binary_cross_entropy(logits: chex.Array, labels: chex.Array) -> chex.Array:
+    return -jnp.sum(
+        labels * jax.nn.log_sigmoid(logits) + (1 - labels) * jax.nn.log_sigmoid(-logits),
+        axis=tuple(range(1, logits.ndim)),
+    )
+
+
+def l2_loss(preds: chex.Array, labels: chex.Array) -> chex.Array:
+    return jnp.mean(jnp.square(preds - labels), axis=tuple(range(1, preds.ndim)))
+
+
 def world_model_train_builder(
     minibatch_size: int,
     train_info_fn: Callable,
@@ -25,7 +36,7 @@ def world_model_train_builder(
             _,
             _,
             decoded,
-            _,
+            next_latent,
             rounded_next_latent,
             next_decoded,
             next_latent_preds,
@@ -49,8 +60,8 @@ def world_model_train_builder(
             axis=1
         )  # [batch_size, ...]
         WM_loss = jnp.mean(
-            jnp.square(rounded_next_latent - jax.lax.stop_gradient(rounded_next_latent_pred))
-            + jnp.square(jax.lax.stop_gradient(rounded_next_latent) - next_latent_pred)
+            l2_loss(next_latent, jax.lax.stop_gradient(rounded_next_latent_pred))
+            + l2_loss(next_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
         )
         return (1 - loss_weight) * AE_loss + loss_weight * WM_loss, (params, AE_loss, WM_loss)
 
