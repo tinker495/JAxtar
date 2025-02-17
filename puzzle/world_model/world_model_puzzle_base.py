@@ -1,7 +1,6 @@
-import os
+import pickle
 
 import chex
-import huggingface_hub
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -9,6 +8,7 @@ from flax import linen as nn
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.world_model.util import download_dataset, is_dataset_downloaded
 
 
 # Residual Block
@@ -139,22 +139,33 @@ class WorldModelPuzzleBase(Puzzle):
             dummy_data,
         )
 
+    @classmethod
+    def load_model(cls, path: str):
+
+        try:
+            with open(path, "rb") as f:
+                params = pickle.load(f)
+            puzzle = cls(init_params=False)
+            dummy_data = jnp.zeros((1, *puzzle.data_shape))
+            puzzle.model.apply(
+                params,
+                dummy_data,
+            )  # check if the params are compatible with the model
+            puzzle.params = params
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            puzzle = cls()
+        return puzzle
+
     def data_init(self):
         """
         This function should be called in the __init__ of the subclass.
         If the puzzle need to load dataset, this function should be filled.
         """
-        if not os.path.exists(self.data_path + "/inits.npy") or not os.path.exists(
-            self.data_path + "/targets.npy"
-        ):
-            huggingface_hub.snapshot_download(
-                repo_id="Tinker/puzzle_world_model_ds",
-                repo_type="dataset",
-                local_dir="puzzle/world_model/",
-            )
-
-        self.inits = jnp.load(self.data_path + "/inits.npy")
-        self.targets = jnp.load(self.data_path + "/targets.npy")
+        if not is_dataset_downloaded():
+            download_dataset()
+        self.inits = jnp.load(self.data_path + "/inits.npy").to_device(jax.devices("gpu")[0])
+        self.targets = jnp.load(self.data_path + "/targets.npy").to_device(jax.devices("gpu")[0])
         self.num_puzzles = self.inits.shape[0]
 
     def get_string_parser(self):
@@ -165,9 +176,14 @@ class WorldModelPuzzleBase(Puzzle):
         ):
             # Unpack the board before visualization.
             latent = state.latent
-            latent = jnp.reshape(latent, shape=(-1,))
             latent = np.array(latent)
-            return f"latent: 0x{latent.tobytes().hex()}"
+            latent = np.reshape(latent, shape=(-1,))
+            latent_str = latent.tobytes().hex()
+            if len(latent_str) >= 25:
+                prefix = latent_str[:10]
+                suffix = latent_str[-10:]
+                latent_str = prefix + "..." + suffix
+            return f"latent: 0x{latent_str}"
 
         return parser
 
