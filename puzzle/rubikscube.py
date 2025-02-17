@@ -196,14 +196,19 @@ class RubiksCube(Puzzle):
         init_state = self.get_target_state()
 
         def random_flip(carry, _):
-            state, key = carry
+            old_state, state, key = carry
             neighbor_states, costs = self.get_neighbours(solve_config, state, filled=True)
+            old_eq = jax.vmap(self.is_equal, in_axes=(None, 0))(old_state, neighbor_states)
+            mask = jnp.where(old_eq, 0, 1)
             key, subkey = jax.random.split(key)
-            idx = jax.random.choice(subkey, jnp.arange(costs.shape[0]))
+            p = mask / jnp.sum(mask)
+            idx = jax.random.choice(subkey, jnp.arange(costs.shape[0]), p=p)
             next_state = neighbor_states[idx]
-            return (next_state, key), None
+            return (state, next_state, key), None
 
-        (last_state, _), _ = jax.lax.scan(random_flip, (init_state, key), None, length=num_shuffle)
+        (_, last_state, _), _ = jax.lax.scan(
+            random_flip, (init_state, init_state, key), None, length=num_shuffle
+        )
         return last_state
 
     @staticmethod
@@ -287,7 +292,7 @@ class RubiksCube(Puzzle):
         import cv2
         import numpy as np
 
-        def img_func(state: "RubiksCube.State", **kwargs):
+        def img_func(state: "RubiksCube.State", another_faces: bool = True, **kwargs):
             imgsize = IMG_SIZE[0]
             # Create a blank image with a neutral background
             img = np.zeros((imgsize, imgsize, 3), dtype=np.uint8)
@@ -344,9 +349,15 @@ class RubiksCube(Puzzle):
             board = self.unpack_faces(state.faces)
             board = np.array(board)
             face_colors = {}
-            face_colors[UP] = board[UP].reshape((self.size, self.size))
-            face_colors[FRONT] = board[FRONT].reshape((self.size, self.size))
-            face_colors[RIGHT] = board[RIGHT].reshape((self.size, self.size))
+            face_colors[UP] = np.array(board[UP].reshape((self.size, self.size)))
+            face_colors[FRONT] = np.array(board[FRONT].reshape((self.size, self.size)))
+            face_colors[RIGHT] = np.array(board[RIGHT].reshape((self.size, self.size)))
+
+            # If another_faces is True, get additional faces: DOWN, BACK, LEFT
+            if another_faces:
+                face_colors[DOWN] = np.array(board[DOWN].reshape((self.size, self.size)))
+                face_colors[BACK] = np.array(board[BACK].reshape((self.size, self.size)))
+                face_colors[LEFT] = np.array(board[LEFT].reshape((self.size, self.size)))
 
             # Draw faces in correct order for proper depth.
             # 1. Draw the front face (FRONT)
@@ -395,12 +406,77 @@ class RubiksCube(Puzzle):
                     pts = np.array(
                         [transform(*p0), transform(*p1), transform(*p2), transform(*p3)], np.int32
                     ).reshape((-1, 1, 2))
+                    # Note: for UP, flip the row order to match orientation
                     color_idx = int(face_colors[UP][self.size - i - 1, j])
                     color = rgb_map[color_idx]
                     cv2.fillPoly(img, [pts], color)
                     cv2.polylines(
                         img, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
                     )
+
+            # If another_faces is True, draw additional faces (DOWN, BACK, LEFT) as flat squares
+            if another_faces:
+                img2 = np.zeros((imgsize, imgsize, 3), dtype=np.uint8)
+                img2[:] = (190, 190, 190)
+
+                # 4. Draw the back face (BACK)
+                for i in range(self.size):
+                    for j in range(self.size):
+                        # Modified coordinates for correct orientation
+                        p0 = (self.size - j - 1, i, 0)
+                        p1 = (self.size - j, i, 0)
+                        p2 = (self.size - j, i + 1, 0)
+                        p3 = (self.size - j - 1, i + 1, 0)
+                        pts = np.array(
+                            [transform(*p0), transform(*p1), transform(*p2), transform(*p3)],
+                            np.int32,
+                        ).reshape((-1, 1, 2))
+                        color_idx = int(face_colors[BACK][i, j])
+                        color = rgb_map[color_idx]
+                        cv2.fillPoly(img2, [pts], color)
+                        cv2.polylines(
+                            img2, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                        )
+
+                # 2. Draw the down face (DOWN)
+                for i in range(self.size):
+                    for j in range(self.size):
+                        # Modified coordinates for correct orientation
+                        p0 = (i, self.size, j)
+                        p1 = (i, self.size, j + 1)
+                        p2 = (i + 1, self.size, j + 1)
+                        p3 = (i + 1, self.size, j)
+                        pts = np.array(
+                            [transform(*p0), transform(*p1), transform(*p2), transform(*p3)],
+                            np.int32,
+                        ).reshape((-1, 1, 2))
+                        color_idx = int(face_colors[DOWN][j, i])
+                        color = rgb_map[color_idx]
+                        cv2.fillPoly(img2, [pts], color)
+                        cv2.polylines(
+                            img2, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                        )
+
+                # 3. Draw the left face (LEFT) last so that it appears above the other faces
+                for i in range(self.size):
+                    for j in range(self.size):
+                        # Modified coordinates for correct orientation
+                        p0 = (0, i, j)
+                        p1 = (0, i, j + 1)
+                        p2 = (0, i + 1, j + 1)
+                        p3 = (0, i + 1, j)
+                        pts = np.array(
+                            [transform(*p0), transform(*p1), transform(*p2), transform(*p3)],
+                            np.int32,
+                        ).reshape((-1, 1, 2))
+                        color_idx = int(face_colors[LEFT][i, j])
+                        color = rgb_map[color_idx]
+                        cv2.fillPoly(img2, [pts], color)
+                        cv2.polylines(
+                            img2, [pts], isClosed=True, color=(0, 0, 0), thickness=LINE_THICKNESS
+                        )
+
+                img = np.concatenate([img, img2], axis=1)
 
             return img
 
@@ -414,3 +490,12 @@ class RubiksCubeHard(RubiksCube):
 
     def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> RubiksCube.State:
         return self._get_random_state(solve_config, key, num_shuffle=50)
+
+
+class RubiksCubeDS(RubiksCube):
+    """
+    This class is a extension of RubiksCube, it will generate the state with the most moves for making dataset.
+    """
+
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> RubiksCube.State:
+        return self._get_random_state(solve_config, key, num_shuffle=200)

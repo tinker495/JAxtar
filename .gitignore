@@ -130,3 +130,6 @@ dmypy.json
 
 tmp/
 runs/
+
+# ignore data folder this is quite large
+puzzle/world_model/data/

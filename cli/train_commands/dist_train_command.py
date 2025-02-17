@@ -16,7 +16,7 @@ from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 
-from .train_option import (
+from .dist_train_option import (
     heuristic_options,
     puzzle_options,
     qfunction_options,
