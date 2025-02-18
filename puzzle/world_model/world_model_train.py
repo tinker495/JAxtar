@@ -9,17 +9,6 @@ import optax
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 
-def binary_cross_entropy(logits: chex.Array, labels: chex.Array) -> chex.Array:
-    return -jnp.mean(
-        labels * jax.nn.log_sigmoid(logits) + (1 - labels) * jax.nn.log_sigmoid(-logits),
-        axis=tuple(range(1, logits.ndim)),
-    )
-
-
-def l2_loss(preds: chex.Array, labels: chex.Array) -> chex.Array:
-    return jnp.mean(jnp.square(preds - labels), axis=tuple(range(1, preds.ndim)))
-
-
 def accuracy_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
     return jnp.mean(jnp.sum(jnp.logical_xor(preds, labels), axis=tuple(range(1, preds.ndim))) == 0)
 
@@ -28,7 +17,7 @@ def world_model_train_builder(
     minibatch_size: int,
     train_info_fn: Callable,
     optimizer: optax.GradientTransformation = optax.adam(1e-4),
-    loss_weight: float = 0.5,
+    loss_weight: float = 0.1,
 ):
     def loss_fn(
         params: jax.tree_util.PyTreeDef,
@@ -50,7 +39,8 @@ def world_model_train_builder(
         data_scaled = (data / 255.0) * 2 - 1
         next_data_scaled = (next_data / 255.0) * 2 - 1
         AE_loss = jnp.mean(
-            0.5 * l2_loss(data_scaled, decoded) + 0.5 * l2_loss(next_data_scaled, next_decoded)
+            0.5 * optax.l2_loss(data_scaled, decoded)
+            + 0.5 * optax.l2_loss(next_data_scaled, next_decoded)
         )
         action = jnp.reshape(
             action, (-1,) + (1,) * (next_latent_preds.ndim - 1)
@@ -64,11 +54,12 @@ def world_model_train_builder(
             axis=1
         )  # [batch_size, ...]
         WM_loss = jnp.mean(
-            0.5 * l2_loss(next_latent, jax.lax.stop_gradient(rounded_next_latent_pred))
-            + 0.5 * l2_loss(next_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
+            0.5 * optax.l2_loss(next_latent, jax.lax.stop_gradient(rounded_next_latent_pred))
+            + 0.5 * optax.l2_loss(next_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
         )
+        total_loss = 0.5 * AE_loss + 0.5 * WM_loss
         accuracy = accuracy_fn(rounded_next_latent, rounded_next_latent_pred)
-        return (1 - loss_weight) * AE_loss + loss_weight * WM_loss, (
+        return total_loss, (
             params,
             AE_loss,
             WM_loss,
