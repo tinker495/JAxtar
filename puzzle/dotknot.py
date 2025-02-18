@@ -110,16 +110,11 @@ class DotKnot(Puzzle):
         return gen
 
     def get_initial_state(
-        self, solve_config: "DotKnot.SolveConfig", key=jax.random.PRNGKey(128)
+        self, solve_config: "DotKnot.SolveConfig", key=jax.random.PRNGKey(128), data=None
     ) -> State:
         return self._get_random_state(key)
 
-    def get_target_state(self, key=jax.random.PRNGKey(128)) -> State:
-        board = jnp.full((self.size * self.size), -1, dtype=TYPE)
-        packed_board = self.pack_board(board)
-        return self.State(board=packed_board)  # this puzzle no target
-
-    def get_solve_config(self, key=jax.random.PRNGKey(128)) -> Puzzle.SolveConfig:
+    def get_solve_config(self, key=jax.random.PRNGKey(128), data=None) -> Puzzle.SolveConfig:
         return self.SolveConfig()
 
     def get_neighbours(

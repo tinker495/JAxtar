@@ -41,10 +41,10 @@ class SlidePuzzle(Puzzle):
 
         return gen
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> State:
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
         return self._get_random_state(key)
 
-    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         return self.SolveConfig(
             TargetState=self.State(board=jnp.array([*range(1, self.size**2), 0], dtype=TYPE))
         )

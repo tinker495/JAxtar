@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import chex
 import jax
@@ -193,15 +193,22 @@ class Puzzle(ABC):
         """
         pass
 
+    def get_data(self, key=None) -> Any:
+        """
+        This function should be called in the __init__ of the subclass.
+        If the puzzle need to load dataset, this function should be filled.
+        """
+        return None
+
     @abstractmethod
-    def get_solve_config(self, key=None) -> SolveConfig:
+    def get_solve_config(self, key=None, data=None) -> SolveConfig:
         """
         This function should return a solve config.
         """
         pass
 
     @abstractmethod
-    def get_initial_state(self, solve_config: SolveConfig, key=None) -> State:
+    def get_initial_state(self, solve_config: SolveConfig, key=None, data=None) -> State:
         """
         This function should return a initial state.
         """
@@ -211,8 +218,9 @@ class Puzzle(ABC):
         """
         This function should return a initial state and solve config.
         """
-        solve_config = self.get_solve_config(key)
-        return solve_config, self.get_initial_state(solve_config, key)
+        data = self.get_data(key)
+        solve_config = self.get_solve_config(key, data)
+        return solve_config, self.get_initial_state(solve_config, key, data)
 
     def batched_get_neighbours(
         self, solve_config: SolveConfig, states: State, filleds: bool = True

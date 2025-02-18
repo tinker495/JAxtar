@@ -83,11 +83,11 @@ class Maze(Puzzle):
         return gen
 
     def get_initial_state(
-        self, solve_config: "Maze.SolveConfig", key=jax.random.PRNGKey(0)
+        self, solve_config: "Maze.SolveConfig", key=jax.random.PRNGKey(0), data=None
     ) -> State:
         return self._get_random_state(solve_config.Maze, key)
 
-    def get_solve_config(self, key=jax.random.PRNGKey(128)) -> Puzzle.SolveConfig:
+    def get_solve_config(self, key=jax.random.PRNGKey(128), data=None) -> Puzzle.SolveConfig:
         maze = jax.random.bernoulli(key, p=jnp.float32(0.3), shape=(self.size**2,)).astype(
             jnp.uint8
         )
