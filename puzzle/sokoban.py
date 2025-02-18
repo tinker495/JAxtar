@@ -69,16 +69,18 @@ class Sokoban(Puzzle):
 
         return gen
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> State:
-        # Initialize the board with the player, boxes, and walls from level1 and pack it.
+    def get_data(self, key: jax.random.PRNGKey) -> tuple[chex.Array, chex.Array]:
         idx = jax.random.randint(key, (), 0, self.num_puzzles)
-        packed_board = self.init_puzzles[idx, ...]
-        return self.State(board=packed_board)
+        return self.target_puzzles[idx, ...], self.init_puzzles[idx, ...]
 
-    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
-        idx = jax.random.randint(key, (), 0, self.num_puzzles)
-        packed_board = self.target_puzzles[idx, ...]
-        return self.SolveConfig(TargetState=self.State(board=packed_board))
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+        # Initialize the board with the player, boxes, and walls from level1 and pack it.
+        _, init_data = data
+        return self.State(board=init_data)
+
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
+        _, target_data = data
+        return self.SolveConfig(TargetState=self.State(board=target_data))
 
     def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
         # Unpack boards for comparison.
