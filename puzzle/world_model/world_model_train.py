@@ -57,7 +57,7 @@ def world_model_train_builder(
             0.5 * optax.l2_loss(next_latent, jax.lax.stop_gradient(rounded_next_latent_pred))
             + 0.5 * optax.l2_loss(next_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
         )
-        total_loss = 0.5 * AE_loss + 0.5 * WM_loss
+        total_loss = (1 - loss_weight) * AE_loss + loss_weight * WM_loss
         accuracy = accuracy_fn(rounded_next_latent, rounded_next_latent_pred)
         return total_loss, (
             params,
