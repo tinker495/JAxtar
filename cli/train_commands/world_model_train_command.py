@@ -82,19 +82,22 @@ def train(
     print("training")
     pbar = trange(train_steps)
     eval_data = (datas[0], next_datas[0], actions[0])
-    writer.add_image("Data", eval_data[0], 0, dataformats="HWC")
-    writer.add_image("Next Data", eval_data[1], 0, dataformats="HWC")
+    writer.add_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
+    writer.add_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
 
     for i in pbar:
         key, subkey = jax.random.split(key)
-        params, opt_state, loss, AE_loss, WM_loss = train_fn(
+        params, opt_state, loss, AE_loss, WM_loss, accuracy = train_fn(
             subkey, (datas, next_datas, actions), params, opt_state
         )
-        pbar.set_description(f"Loss: {loss:.4f}, AE Loss: {AE_loss:.4f}, WM Loss: {WM_loss:.4f}")
+        pbar.set_description(
+            f"Loss: {loss:.4f}, AE Loss: {AE_loss:.4f}, WM Loss: {WM_loss:.4f}, Accuracy: {accuracy:.4f}"
+        )
         if i % 10 == 0:
-            writer.add_scalar("Loss", loss, i)
-            writer.add_scalar("AE Loss", AE_loss, i)
-            writer.add_scalar("WM Loss", WM_loss, i)
+            writer.add_scalar("Losses/Loss", loss, i)
+            writer.add_scalar("Losses/AE Loss", AE_loss, i)
+            writer.add_scalar("Losses/WM Loss", WM_loss, i)
+            writer.add_scalar("Metrics/Accuracy", accuracy, i)
 
             data = jnp.expand_dims(eval_data[0], axis=0)
             latent = model.apply(params, data, training=False, method=model.encode)
@@ -107,7 +110,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Decoded", decoded[0], i, dataformats="HWC")
+            writer.add_image("Current/Decoded", decoded[0], i, dataformats="HWC")
 
             next_data = jnp.expand_dims(eval_data[1], axis=0)
             next_latent = model.apply(params, next_data, training=False, method=model.encode)
@@ -120,7 +123,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Next Decoded", next_decoded[0], i, dataformats="HWC")
+            writer.add_image("Next/Decoded", next_decoded[0], i, dataformats="HWC")
 
             next_latent_pred = model.apply(
                 params, rounded_latent, training=False, method=model.transition
@@ -140,7 +143,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Next Decoded Pred", next_decoded_pred[0], i, dataformats="HWC")
+            writer.add_image("Next/Decoded Pred", next_decoded_pred[0], i, dataformats="HWC")
 
             world_model.params = params
             world_model.save_model(f"puzzle/world_model/model/params/{dataset}.pkl")

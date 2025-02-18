@@ -20,6 +20,10 @@ def l2_loss(preds: chex.Array, labels: chex.Array) -> chex.Array:
     return jnp.mean(jnp.square(preds - labels), axis=tuple(range(1, preds.ndim)))
 
 
+def accuracy_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
+    return jnp.mean(jnp.sum(jnp.logical_xor(preds, labels), axis=tuple(range(1, preds.ndim))) == 0)
+
+
 def world_model_train_builder(
     minibatch_size: int,
     train_info_fn: Callable,
@@ -63,7 +67,13 @@ def world_model_train_builder(
             0.5 * l2_loss(next_latent, jax.lax.stop_gradient(rounded_next_latent_pred))
             + 0.5 * l2_loss(next_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
         )
-        return (1 - loss_weight) * AE_loss + loss_weight * WM_loss, (params, AE_loss, WM_loss)
+        accuracy = accuracy_fn(rounded_next_latent, rounded_next_latent_pred)
+        return (1 - loss_weight) * AE_loss + loss_weight * WM_loss, (
+            params,
+            AE_loss,
+            WM_loss,
+            accuracy,
+        )
 
     def train_fn(
         key: chex.PRNGKey,
@@ -96,7 +106,9 @@ def world_model_train_builder(
         def train_loop(carry, batched_dataset):
             params, opt_state = carry
             states, next_states, actions = batched_dataset
-            (loss, (params, AE_loss, WM_loss)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
+            (loss, (params, AE_loss, WM_loss, accuracy)), grads = jax.value_and_grad(
+                loss_fn, has_aux=True
+            )(
                 params,
                 states,
                 next_states,
@@ -104,9 +116,9 @@ def world_model_train_builder(
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=params)
             params = optax.apply_updates(params, updates)
-            return (params, opt_state), (loss, AE_loss, WM_loss)
+            return (params, opt_state), (loss, AE_loss, WM_loss, accuracy)
 
-        (params, opt_state), (losses, AE_losses, WM_losses) = jax.lax.scan(
+        (params, opt_state), (losses, AE_losses, WM_losses, accuracies) = jax.lax.scan(
             train_loop,
             (params, opt_state),
             (batched_states, batched_next_states, batched_actions),
@@ -114,6 +126,7 @@ def world_model_train_builder(
         loss = jnp.mean(losses)
         AE_loss = jnp.mean(AE_losses)
         WM_loss = jnp.mean(WM_losses)
-        return params, opt_state, loss, AE_loss, WM_loss
+        accuracy = jnp.mean(accuracies)
+        return params, opt_state, loss, AE_loss, WM_loss, accuracy
 
     return jax.jit(train_fn)
