@@ -138,7 +138,7 @@ class RubiksCube(Puzzle):
 
         return gen
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> State:
+    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
         return self._get_random_state(solve_config, key)
 
     def get_target_state(self, key=None) -> State:
@@ -148,7 +148,7 @@ class RubiksCube(Puzzle):
         packed_faces = self.pack_faces(raw_faces)
         return self.State(faces=packed_faces)
 
-    def get_solve_config(self, key=None) -> State:
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         return self.SolveConfig(TargetState=self.get_target_state(key))
 
     def get_neighbours(

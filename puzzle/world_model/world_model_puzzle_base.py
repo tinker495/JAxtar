@@ -90,6 +90,11 @@ class WorldModel(nn.Module):
 
 
 class WorldModelPuzzleBase(Puzzle):
+
+    inits: jnp.ndarray
+    targets: jnp.ndarray
+    num_puzzles: int
+
     @state_dataclass
     class State:
         """
@@ -312,27 +317,31 @@ class WorldModelPuzzleBase(Puzzle):
 
         return img_parser
 
-    def get_solve_config(self, key=None) -> SolveConfig:
+    def get_data(self, key=None) -> tuple[chex.Array, chex.Array]:
+        idx = jax.random.randint(key, (), 0, self.num_puzzles)
+        target_data = jnp.expand_dims(self.targets[idx, ...], axis=0)
+        init_data = jnp.expand_dims(self.inits[idx, ...], axis=0)
+        return target_data, init_data
+
+    def get_solve_config(self, key=None, data=None) -> SolveConfig:
         """
         This function should return a solve config.
         """
-        idx = jax.random.randint(key, (), 0, self.num_puzzles)
-        data = jnp.expand_dims(self.targets[idx, ...], axis=0)
+        target_data, _ = data
         latent = self.model.apply(
-            self.params, data, training=False, method=self.model.encode
+            self.params, target_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
         latent = self.to_uint8(latent)
         return self.SolveConfig(TargetState=self.State(latent=latent))
 
-    def get_initial_state(self, solve_config: SolveConfig, key=None) -> State:
+    def get_initial_state(self, solve_config: SolveConfig, key=None, data=None) -> State:
         """
         This function should return a initial state.
         """
-        idx = jax.random.randint(key, (), 0, self.num_puzzles)
-        data = jnp.expand_dims(self.inits[idx, ...], axis=0)
+        _, init_data = data
         latent = self.model.apply(
-            self.params, data, training=False, method=self.model.encode
+            self.params, init_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
         latent = self.to_uint8(latent)
