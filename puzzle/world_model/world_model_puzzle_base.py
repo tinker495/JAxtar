@@ -27,7 +27,7 @@ class Encoder(nn.Module):
         data = (data / 255.0) * 2.0 - 1.0
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
-        x = nn.Dense(5000)(flatten)
+        x = nn.Dense(1000)(flatten)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Dense(latent_size)(x)

@@ -7,7 +7,7 @@ class RubiksCubeWorldModel_test(WorldModelPuzzleBase):
         super().__init__(
             data_path="puzzle/world_model/data/rubikscube_test",
             data_shape=(32, 64, 3),
-            latent_shape=(400,),
+            latent_shape=(200,),
             action_size=12,
             **kwargs
         )
@@ -19,7 +19,7 @@ class RubiksCubeWorldModel(WorldModelPuzzleBase):
         super().__init__(
             data_path="puzzle/world_model/data/rubikscube",
             data_shape=(32, 64, 3),
-            latent_shape=(400,),
+            latent_shape=(200,),
             action_size=12,
             **kwargs
         )
