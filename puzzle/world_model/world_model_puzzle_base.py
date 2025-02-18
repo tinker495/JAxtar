@@ -15,7 +15,7 @@ from puzzle.world_model.util import (
 )
 
 SHOW_PRINTED_LATENT_IMG = False
-SHOW_TARGET_STATE_IMG = False
+SHOW_TARGET_STATE_IMG = True
 
 
 class Encoder(nn.Module):
