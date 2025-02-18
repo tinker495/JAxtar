@@ -54,7 +54,7 @@ def get_world_model_options(func: callable) -> callable:
 
 def train_options(func: callable) -> callable:
     @click.option("--train_steps", type=int, default=10000, help="Number of training steps")
-    @click.option("--mini_batch_size", type=int, default=100, help="Batch size")
+    @click.option("--mini_batch_size", type=int, default=1000, help="Batch size")
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
