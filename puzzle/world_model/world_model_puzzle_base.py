@@ -127,6 +127,11 @@ class WorldModelPuzzleBase(Puzzle):
         self.data_path = data_path
         self.data_shape = data_shape
         self.latent_shape = latent_shape
+        self.latent_size = int(np.prod(latent_shape))
+        if self.latent_size % 8 != 0:
+            self.pad_size = int(np.ceil(self.latent_size / 8) * 8 - self.latent_size)
+        else:
+            self.pad_size = 0
         self.action_size = action_size
 
         class total_model(nn.Module):
@@ -404,10 +409,15 @@ class WorldModelPuzzleBase(Puzzle):
         # from booleans to uint8
         # boolean 32 to uint8 4
         bit_latent = jnp.reshape(bit_latent, shape=(-1,))
+        bit_latent = jnp.pad(
+            bit_latent, pad_width=(0, self.pad_size), mode="constant", constant_values=0
+        )
         return jnp.packbits(bit_latent, axis=-1, bitorder="little")
 
     def from_uint8(self, uint8_latent: chex.Array) -> chex.Array:
         # from uint8 4 to boolean 32
-        latent_size = np.prod(self.latent_shape)
-        bit_latent = jnp.unpackbits(uint8_latent, axis=-1, count=latent_size, bitorder="little")
+        bit_latent = jnp.unpackbits(
+            uint8_latent, axis=-1, count=self.latent_size, bitorder="little"
+        )
+        bit_latent = bit_latent[: self.latent_size]
         return jnp.reshape(bit_latent, shape=self.latent_shape)
