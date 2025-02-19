@@ -370,7 +370,11 @@ class WorldModelPuzzleBase(Puzzle):
         next_uint8_latent = jax.vmap(jax.vmap(self.to_uint8))(
             next_bit_latent
         )  # (action_size, batch_size, latent_size)
-        cost = jnp.ones((self.action_size, states.latent.shape[0]), dtype=jnp.float16) * filleds
+        cost = jnp.where(
+            filleds,
+            jnp.ones((self.action_size, states.latent.shape[0]), dtype=jnp.float16),
+            jnp.inf,
+        )
         return (
             self.State(latent=next_uint8_latent),
             cost,
