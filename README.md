@@ -174,6 +174,10 @@ These types of puzzles are not strictly the kind that are typically solved with 
 
 ### World Model Puzzle
 
+This is an implementation of learning a world model, as introduced in the paper ["Learning Discrete World Models for Heuristic Search"](https://rlj.cs.umass.edu/2024/papers/RLJ_RLC_2024_225.pdf), and performing A\* & Q\* search within that world model.
+
+<!-- Currently, this implementation achieves node search speeds that are basically more than 10 times faster than those presented in the paper. -->
+
 | Terminal View                                | Rubiks Cube                                               | Sokoban                                             |
 | -------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------- |
 | ![terminal view](images/worldmodelsolve.png) | ![rubiks cube](images/worldmodel_rubiscube_animation.gif) | ![sokoban](images/worldmodel_sokoban_animation.gif) |
