@@ -89,11 +89,11 @@ def davi(
         if i % 100 == 0:
             target_heuristic = dataset[1]
             mean_target_heuristic = jnp.mean(target_heuristic)
-            writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, i)
-            writer.add_histogram("Target Heuristic", target_heuristic, i)
-            writer.add_histogram("Diff", diffs, i)
-            writer.add_scalar("Loss", loss, i)
-            writer.add_scalar("Mean Abs Diff", mean_abs_diff, i)
+            writer.add_scalar("Losses/Loss", loss, i)
+            writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+            writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_histogram("Losses/Diff", diffs, i)
+            writer.add_histogram("Metrics/Target", target_heuristic, i)
 
         if (i % 500 == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
@@ -157,11 +157,11 @@ def qlearning(
         if i % 100 == 0:
             target_heuristic = dataset[1]
             mean_target_heuristic = jnp.mean(target_heuristic)
-            writer.add_scalar("Mean Target Heuristic", mean_target_heuristic, i)
-            writer.add_histogram("Target Heuristic", target_heuristic, i)
-            writer.add_histogram("Diff", diffs, i)
-            writer.add_scalar("Loss", loss, i)
-            writer.add_scalar("Mean Abs Diff", mean_abs_diff, i)
+            writer.add_scalar("Losses/Loss", loss, i)
+            writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+            writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_histogram("Losses/Diff", diffs, i)
+            writer.add_histogram("Metrics/Target", target_heuristic, i)
 
         if (i % 500 == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1

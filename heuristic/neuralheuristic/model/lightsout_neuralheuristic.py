@@ -45,10 +45,10 @@ class Model(nn.Module):
         x = nn.relu(x)
         x = ConvResBlock(64, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(512)(x)
+        x = nn.Dense(1024)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
-        x = ResBlock(512)(x, training)
+        x = ResBlock(1024)(x, training)
         x = nn.Dense(1)(x)
         return x
 
@@ -72,4 +72,5 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
         """
         current_map = self.puzzle.from_uint8(current.board)
         target_map = self.puzzle.from_uint8(target.board)
-        return jnp.not_equal(current_map, target_map).astype(jnp.float32)
+        diff = jnp.not_equal(current_map, target_map).astype(jnp.float32)
+        return (diff - 0.5) * 2.0  # normalize to [-1, 1]

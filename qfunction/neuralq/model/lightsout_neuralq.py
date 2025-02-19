@@ -74,4 +74,5 @@ class LightsOutNeuralQ(NeuralQFunctionBase):
         """
         current_map = self.puzzle.from_uint8(current.board)
         target_map = self.puzzle.from_uint8(target.board)
-        return jnp.not_equal(current_map, target_map).astype(jnp.float32)
+        diff = jnp.not_equal(current_map, target_map).astype(jnp.float32)
+        return (diff - 0.5) * 2.0  # normalize to [-1, 1]
