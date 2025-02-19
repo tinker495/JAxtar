@@ -117,3 +117,30 @@ def create_sample_data(
     )
     target_states = solve_configs.TargetState
     return target_states, initial_states
+
+
+def create_eval_trajectory(
+    puzzle: Puzzle,
+    shuffle_length: int,
+    key: chex.PRNGKey,
+):
+    solve_config, initial_state = puzzle.get_inits(key)
+
+    def _scan(carry, _):
+        state, key = carry
+        neighbor_states, cost = puzzle.get_neighbours(solve_config, state)
+        key, subkey = jax.random.split(key)
+        choices = jnp.arange(cost.shape[0])
+        action = jax.random.choice(subkey, choices)
+        next_state = neighbor_states[action]
+        return (next_state, key), (state, action)
+
+    (next_state, _), (states, actions) = jax.lax.scan(
+        _scan, (initial_state, key), None, length=shuffle_length
+    )
+    next_state = next_state[jnp.newaxis, ...]
+    states = jax.tree_util.tree_map(
+        lambda x, y: jnp.concatenate([x, y], axis=0), states, next_state
+    )
+
+    return states, actions

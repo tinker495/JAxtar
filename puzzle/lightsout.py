@@ -190,5 +190,7 @@ class LightsOutHard(LightsOut):
     This class is a extension of LightsOut, it will generate the hardest state for the puzzle.
     """
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None) -> LightsOut.State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> LightsOut.State:
         return self._get_random_state(solve_config, key, num_shuffle=50)
