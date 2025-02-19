@@ -30,6 +30,8 @@ from puzzle import (
 from puzzle.world_model import (
     RubiksCubeWorldModel,
     RubiksCubeWorldModel_test,
+    RubiksCubeWorldModelOptimized,
+    RubiksCubeWorldModelOptimized_test,
     SokobanWorldModel,
     SokobanWorldModelOptimized,
 )
@@ -55,6 +57,8 @@ default_puzzle_sizes: dict[str, int] = {
     "sokoban": 10,
     "rubikscube_world_model": None,
     "rubikscube_world_model_test": None,
+    "rubikscube_world_model_optimized": None,
+    "rubikscube_world_model_optimized_test": None,
     "sokoban_world_model": None,
     "sokoban_world_model_optimized": None,
 }
@@ -72,6 +76,12 @@ puzzle_dict: dict[str, Puzzle] = {
     ),
     "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModel_test.load_model(
         "puzzle/world_model/model/params/rubikscube.pkl"
+    ),
+    "rubikscube_world_model_optimized": lambda **kwargs: RubiksCubeWorldModelOptimized.load_model(
+        "puzzle/world_model/model/params/rubikscube_optimized.pkl"
+    ),
+    "rubikscube_world_model_optimized_test": lambda **kwargs: RubiksCubeWorldModelOptimized_test.load_model(
+        "puzzle/world_model/model/params/rubikscube_optimized.pkl"
     ),
     "sokoban_world_model": lambda **kwargs: SokobanWorldModel.load_model(
         "puzzle/world_model/model/params/sokoban.pkl"
@@ -98,6 +108,8 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "sokoban": SokobanHeuristic,
     "rubikscube_world_model": EmptyHeuristic,
     "rubikscube_world_model_test": EmptyHeuristic,
+    "rubikscube_world_model_optimized": EmptyHeuristic,
+    "rubikscube_world_model_optimized_test": EmptyHeuristic,
     "sokoban_world_model": EmptyHeuristic,
     "sokoban_world_model_optimized": EmptyHeuristic,
 }
@@ -132,6 +144,8 @@ puzzle_q_dict: dict[str, QFunction] = {
     "worldmodel": EmptyQFunction,
     "rubikscube_world_model": EmptyQFunction,
     "rubikscube_world_model_test": EmptyQFunction,
+    "rubikscube_world_model_optimized": EmptyQFunction,
+    "rubikscube_world_model_optimized_test": EmptyQFunction,
     "sokoban_world_model": EmptyQFunction,
     "sokoban_world_model_optimized": EmptyQFunction,
 }
