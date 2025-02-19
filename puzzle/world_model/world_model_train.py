@@ -17,13 +17,13 @@ def world_model_train_builder(
     minibatch_size: int,
     train_info_fn: Callable,
     optimizer: optax.GradientTransformation = optax.adam(1e-4),
-    loss_weight: float = 0.5,
 ):
     def loss_fn(
         params: jax.tree_util.PyTreeDef,
         data: chex.Array,
         next_data: chex.Array,
         action: chex.Array,
+        loss_weight: float = 0.5,
     ):
         (
             _,
@@ -73,6 +73,7 @@ def world_model_train_builder(
         ],  # (state, next_state, action)
         params: jax.tree_util.PyTreeDef,
         opt_state: optax.OptState,
+        epoch: int,
     ):
         """
         Q-learning is a heuristic for the sliding puzzle problem.
@@ -93,6 +94,7 @@ def world_model_train_builder(
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_next_states = jnp.take(next_states, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
+        loss_weight = jnp.clip(epoch / 100.0, 0.0001, 1.0) * 0.5
 
         def train_loop(carry, batched_dataset):
             params, opt_state = carry
@@ -104,6 +106,7 @@ def world_model_train_builder(
                 states,
                 next_states,
                 actions,
+                loss_weight,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=params)
             params = optax.apply_updates(params, updates)
@@ -121,3 +124,59 @@ def world_model_train_builder(
         return params, opt_state, loss, AE_loss, WM_loss, accuracy
 
     return jax.jit(train_fn)
+
+
+def world_model_eval_builder(
+    train_info_fn: Callable,
+    minibatch_size: int,
+):
+    def eval_fn(
+        params: jax.tree_util.PyTreeDef,
+        trajetory: tuple[chex.Array, chex.Array],
+    ):
+        states_all, actions = trajetory
+        data_size = actions.shape[0]
+        batch_size = math.ceil(data_size / minibatch_size)
+
+        states = states_all[:-1]
+        next_states = states_all[1:]
+
+        batch_indexs = jnp.arange(data_size)
+        batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
+
+        batched_states = jnp.take(states, batch_indexs, axis=0)
+        batched_next_states = jnp.take(next_states, batch_indexs, axis=0)
+        batched_actions = jnp.take(actions, batch_indexs, axis=0)
+
+        def eval_loop(_, batched_dataset):
+            states, next_states, actions = batched_dataset
+            (
+                _,
+                _,
+                _,
+                _,
+                rounded_next_latent,
+                _,
+                next_latent_preds,
+                rounded_next_latent_preds,
+            ), _ = train_info_fn(params, states, next_states, training=False)
+
+            actions = jnp.reshape(
+                actions, (-1,) + (1,) * (next_latent_preds.ndim - 1)
+            )  # [batch_size, 1, ...]
+            rounded_next_latent_pred = jnp.take_along_axis(
+                rounded_next_latent_preds, actions, axis=1
+            ).squeeze(
+                axis=1
+            )  # [batch_size, ...]
+            accuracy = accuracy_fn(rounded_next_latent, rounded_next_latent_pred)
+            return None, accuracy
+
+        _, accuracies = jax.lax.scan(
+            eval_loop,
+            None,
+            (batched_states, batched_next_states, batched_actions),
+        )
+        return jnp.mean(accuracies)
+
+    return jax.jit(eval_fn)

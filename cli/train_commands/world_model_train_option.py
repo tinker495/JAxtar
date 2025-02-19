@@ -30,6 +30,10 @@ def get_ds_options(func: callable) -> callable:
         kwargs["datas"] = datas
         kwargs["next_datas"] = next_datas
         kwargs["actions"] = actions
+
+        eval_trajectory = jnp.load(dataset_path + "/eval_traj_images.npy")
+        eval_actions = jnp.load(dataset_path + "/eval_actions.npy")
+        kwargs["eval_trajectory"] = (eval_trajectory, eval_actions)
         return func(*args, **kwargs)
 
     return wrapper
@@ -53,7 +57,7 @@ def get_world_model_options(func: callable) -> callable:
 
 
 def train_options(func: callable) -> callable:
-    @click.option("--train_steps", type=int, default=10000, help="Number of training steps")
+    @click.option("--train_epochs", type=int, default=2000, help="Number of training steps")
     @click.option("--mini_batch_size", type=int, default=1000, help="Batch size")
     @wraps(func)
     def wrapper(*args, **kwargs):

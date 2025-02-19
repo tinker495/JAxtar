@@ -12,7 +12,10 @@ from tqdm import trange
 
 from puzzle.world_model.util import round_through_gradient
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
-from puzzle.world_model.world_model_train import world_model_train_builder
+from puzzle.world_model.world_model_train import (
+    world_model_eval_builder,
+    world_model_train_builder,
+)
 
 from .world_model_train_option import (
     get_ds_options,
@@ -45,8 +48,9 @@ def train(
     datas: chex.Array,
     next_datas: chex.Array,
     actions: chex.Array,
+    eval_trajectory: tuple[chex.Array, chex.Array],
     world_model: WorldModelPuzzleBase,
-    train_steps: int,
+    train_epochs: int,
     mini_batch_size: int,
     **kwargs,
 ):
@@ -76,28 +80,41 @@ def train(
         optimizer,
     )
 
+    print("initializing eval function")
+    eval_fn = world_model_eval_builder(
+        train_info_fn,
+        mini_batch_size,
+    )
+
     print("initializing key")
     key = jax.random.PRNGKey(0)
 
     print("training")
-    pbar = trange(train_steps)
-    eval_data = (datas[0], next_datas[0], actions[0])
+    pbar = trange(train_epochs)
+    eval_data = (eval_trajectory[0][0], eval_trajectory[0][1], eval_trajectory[1][0])
     writer.add_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
     writer.add_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
+    eval_accuracy = eval_fn(params, eval_trajectory)
+    writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, 0)
 
-    for i in pbar:
+    for epoch in pbar:
         key, subkey = jax.random.split(key)
         params, opt_state, loss, AE_loss, WM_loss, accuracy = train_fn(
-            subkey, (datas, next_datas, actions), params, opt_state
+            subkey, (datas, next_datas, actions), params, opt_state, epoch
         )
         pbar.set_description(
-            f"Loss: {loss:.4f}, AE Loss: {AE_loss:.4f}, WM Loss: {WM_loss:.4f}, Accuracy: {accuracy:.4f}"
+            f"Loss: {loss:.4f},"
+            f"AE Loss: {AE_loss:.4f}, WM Loss: {WM_loss:.4f},"
+            f"Accuracy: {accuracy:.4f}, Eval Accuracy: {eval_accuracy:.4f}"
         )
-        if i % 10 == 0:
-            writer.add_scalar("Losses/Loss", loss, i)
-            writer.add_scalar("Losses/AE Loss", AE_loss, i)
-            writer.add_scalar("Losses/WM Loss", WM_loss, i)
-            writer.add_scalar("Metrics/Accuracy", accuracy, i)
+        if epoch % 10 == 0:
+            writer.add_scalar("Losses/Loss", loss, epoch)
+            writer.add_scalar("Losses/AE Loss", AE_loss, epoch)
+            writer.add_scalar("Losses/WM Loss", WM_loss, epoch)
+            writer.add_scalar("Metrics/Accuracy", accuracy, epoch)
+
+            eval_accuracy = eval_fn(params, eval_trajectory)
+            writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
 
             data = jnp.expand_dims(eval_data[0], axis=0)
             latent = model.apply(params, data, training=False, method=model.encode)
@@ -110,7 +127,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Current/Decoded", decoded[0], i, dataformats="HWC")
+            writer.add_image("Current/Decoded", decoded[0], epoch, dataformats="HWC")
 
             next_data = jnp.expand_dims(eval_data[1], axis=0)
             next_latent = model.apply(params, next_data, training=False, method=model.encode)
@@ -123,7 +140,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Next/Decoded", next_decoded[0], i, dataformats="HWC")
+            writer.add_image("Next/Decoded", next_decoded[0], epoch, dataformats="HWC")
 
             next_latent_pred = model.apply(
                 params, rounded_latent, training=False, method=model.transition
@@ -143,7 +160,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Next/Decoded Pred", next_decoded_pred[0], i, dataformats="HWC")
+            writer.add_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
 
             world_model.params = params
             world_model.save_model(f"puzzle/world_model/model/params/{dataset}.pkl")

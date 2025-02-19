@@ -406,8 +406,7 @@ class SokobanDS(Sokoban):
         packed_board = self.pack_board(new_board)
         return packed_board
 
-    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
-        idx = jax.random.randint(key, (), 0, self.num_puzzles)
-        packed_board = self.target_puzzles[idx, ...]
-        packed_board = self.place_agent_randomly(packed_board, key)
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
+        target_board, _ = data
+        packed_board = self.place_agent_randomly(target_board, key)
         return self.SolveConfig(TargetState=self.State(board=packed_board))

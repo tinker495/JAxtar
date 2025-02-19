@@ -13,6 +13,7 @@ from cli.train_commands.world_model_train_option import (
 )
 from puzzle.puzzle_base import Puzzle
 from puzzle.world_model.world_model_ds import (
+    create_eval_trajectory,
     get_sample_data_builder,
     get_world_model_dataset_builder,
 )
@@ -125,3 +126,40 @@ def make_puzzle_sample_data(
     target_images_stack = np.stack(target_images_stack, axis=0)
     np.save(f"tmp/{puzzle_name}/inits.npy", initial_images_stack)
     np.save(f"tmp/{puzzle_name}/targets.npy", target_images_stack)
+
+
+@click.command()
+@puzzle_ds_options
+@dataset_options
+def make_puzzle_eval_trajectory(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    img_size: tuple,
+    key: int,
+    **kwargs,
+):
+
+    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    shuffle_length = 10000
+    states, actions = create_eval_trajectory(puzzle, shuffle_length, key)
+    print(f"states.shape: {states.shape}")
+    print(f"actions.shape: {actions.shape}")
+
+    os.makedirs(f"tmp/{puzzle_name}", exist_ok=True)
+    np.save(f"tmp/{puzzle_name}/eval_actions.npy", actions)
+    state_images_stack = []
+    for i in trange(len(states)):
+        state_img = states[i].img()
+        small_state_img = cv2.resize(state_img, img_size, interpolation=cv2.INTER_AREA)
+        if i < 3:
+            cv2.imwrite(
+                f"tmp/{puzzle_name}/state_img_{i}.png",
+                cv2.cvtColor(state_img, cv2.COLOR_BGR2RGB),
+            )
+            cv2.imwrite(
+                f"tmp/{puzzle_name}/small_state_img_{i}.png",
+                cv2.cvtColor(small_state_img, cv2.COLOR_BGR2RGB),
+            )
+        state_images_stack.append(small_state_img)
+    state_images_stack = np.stack(state_images_stack, axis=0)
+    np.save(f"tmp/{puzzle_name}/eval_traj_images.npy", state_images_stack)
