@@ -57,7 +57,7 @@ def qstar_builder(
 
         (
             search_result.hashtable,
-            inserted,
+            _,
             _,
             idx,
             table_idx,
@@ -66,7 +66,7 @@ def qstar_builder(
         cost = jnp.where(filled, 0, jnp.inf)
         search_result.cost = set_array_as_condition(
             search_result.cost,
-            inserted,
+            filled,
             cost,
             idx,
             table_idx,
