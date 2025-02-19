@@ -26,8 +26,8 @@ from .world_model_train_option import (
 PyTree = Any
 
 
-def setup_logging(dataset: str) -> tensorboardX.SummaryWriter:
-    log_dir = f"runs/{dataset}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
+    log_dir = f"runs/{world_model_name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     return tensorboardX.SummaryWriter(log_dir)
 
 
@@ -44,7 +44,7 @@ def setup_optimizer(params: PyTree) -> optax.OptState:
 @get_world_model_options
 @train_options
 def train(
-    dataset: str,
+    world_model_name: str,
     datas: chex.Array,
     next_datas: chex.Array,
     actions: chex.Array,
@@ -55,7 +55,7 @@ def train(
     **kwargs,
 ):
 
-    writer = setup_logging(dataset)
+    writer = setup_logging(world_model_name)
     model: nn.Model = world_model.model
 
     def train_info_fn(params, data, next_data, training):
@@ -163,6 +163,6 @@ def train(
             writer.add_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
 
             world_model.params = params
-            world_model.save_model(f"puzzle/world_model/model/params/{dataset}.pkl")
+            world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")
 
     writer.close()

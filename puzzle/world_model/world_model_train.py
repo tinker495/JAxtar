@@ -94,7 +94,7 @@ def world_model_train_builder(
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_next_states = jnp.take(next_states, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
-        loss_weight = jnp.clip(epoch / 100.0, 0.0001, 1.0) * 0.5
+        loss_weight = jnp.clip((epoch - 10) / 100.0, 0.0, 1.0) * 0.5
 
         def train_loop(carry, batched_dataset):
             params, opt_state = carry
