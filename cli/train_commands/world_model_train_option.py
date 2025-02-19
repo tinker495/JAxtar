@@ -51,6 +51,7 @@ def get_world_model_options(func: callable) -> callable:
         world_model_name = kwargs["world_model"]
         world_model = world_model_dict[world_model_name]
         kwargs["world_model"] = world_model(reset=True)
+        kwargs["world_model_name"] = world_model_name
         return func(*args, **kwargs)
 
     return wrapper
