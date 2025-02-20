@@ -450,7 +450,7 @@ class RubiksCube(Puzzle):
                             [transform(*p0), transform(*p1), transform(*p2), transform(*p3)],
                             np.int32,
                         ).reshape((-1, 1, 2))
-                        color_idx = int(face_colors[DOWN][j, i])
+                        color_idx = int(face_colors[DOWN][self.size - j - 1, i])
                         color = rgb_map[color_idx]
                         cv2.fillPoly(img2, [pts], color)
                         cv2.polylines(
