@@ -175,9 +175,7 @@ def search_samples(
                         print(f"Action: {puzzle.action_to_string(p.action)}")
 
                     print(search_result.get_state(path[-1]).str(solve_config=solve_config))
-                    print(
-                        f"Cost: {search_result.get_cost(path[-1]):.1f}, Dist: {search_result.get_dist(path[-1]):.1f}"
-                    )
+                    print(f"Cost: {search_result.get_cost(path[-1]):.1f}, Dist: {0.0:.1f}")
                     print("\n\n")
                 if visualize_imgs:
                     import os
