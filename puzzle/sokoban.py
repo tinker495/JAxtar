@@ -79,7 +79,7 @@ class Sokoban(Puzzle):
         return self.State(board=init_data)
 
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
-        _, target_data = data
+        target_data, _ = data
         return self.SolveConfig(TargetState=self.State(board=target_data))
 
     def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
