@@ -286,10 +286,10 @@ class WorldModelPuzzleBase(Puzzle):
                 self.params, latent, training=False, method=self.model.decode
             ).squeeze(0)
             data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
-            width, height = data.shape[:2]
+            height, width = data.shape[:2]
             if resize_img:
                 width, height = int(target_height * width / height), target_height
-                img = cv2.resize(data, (height, width), interpolation=cv2.INTER_AREA)
+                img = cv2.resize(data, (width, height), interpolation=cv2.INTER_AREA)
             else:
                 img = data
             if solve_config is not None and show_target_state_img:
@@ -303,7 +303,7 @@ class WorldModelPuzzleBase(Puzzle):
                 if resize_img:
                     img2 = cv2.resize(
                         data,
-                        (height, width),
+                        (width, height),
                         interpolation=cv2.INTER_AREA,
                     )
                 else:
