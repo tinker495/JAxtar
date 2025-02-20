@@ -169,11 +169,15 @@ def search_samples(
                 if visualize_terminal:
                     for p in path[:-1]:
                         print(search_result.get_state(p).str(solve_config=solve_config))
-                        print(f"Cost: {search_result.get_cost(p)}")
+                        print(
+                            f"Cost: {search_result.get_cost(p):.1f}, Dist: {search_result.get_dist(p):.1f}"
+                        )
                         print(f"Action: {puzzle.action_to_string(p.action)}")
 
                     print(search_result.get_state(path[-1]).str(solve_config=solve_config))
-                    print(f"Cost: {search_result.get_cost(path[-1])}")
+                    print(
+                        f"Cost: {search_result.get_cost(path[-1]):.1f}, Dist: {search_result.get_dist(path[-1]):.1f}"
+                    )
                     print("\n\n")
                 if visualize_imgs:
                     import os

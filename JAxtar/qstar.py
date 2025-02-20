@@ -94,19 +94,30 @@ def qstar_builder(
             parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
             nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
-            q_vals = q_fn.batched_q_value(
-                solve_config, states
-            ).transpose()  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
+            q_vals = (
+                q_fn.batched_q_value(solve_config, states).transpose().astype(KEY_DTYPE)
+            )  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbour_key = (cost_weight * nextcosts + q_vals).astype(KEY_DTYPE)
 
+            flatten_filleds = flatten_array(filleds, 2)
+            flatten_q_vals = flatten_array(q_vals, 2)
             (
                 search_result.hashtable,
-                _,
+                inserted,
                 _,
                 idxs,
                 table_idxs,
             ) = search_result.hashtable.parallel_insert(
-                hash_func, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+                hash_func, flatten_tree(neighbours, 2), flatten_filleds
+            )
+
+            # cache the q value but this is not using in search
+            search_result.dist = set_array_as_condition(
+                search_result.dist,
+                flatten_filleds,
+                flatten_q_vals,
+                idxs,
+                table_idxs,
             )
 
             idxs = unflatten_array(idxs, filleds.shape)
@@ -132,7 +143,7 @@ def qstar_builder(
                 search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
                     vals,
-                    added_size=jnp.sum(optimal, dtype=SIZE_DTYPE),
+                    added_size=jnp.sum(jnp.isfinite(neighbour_key), dtype=SIZE_DTYPE),
                 )
                 return search_result, None
 
