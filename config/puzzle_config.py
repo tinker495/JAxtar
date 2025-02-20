@@ -7,6 +7,7 @@ from heuristic import (
     RubiksCubeHeuristic,
     SlidePuzzleHeuristic,
     SokobanHeuristic,
+    TSPHeuristic,
 )
 from heuristic.neuralheuristic import (
     LightsOutNeuralHeuristic,
@@ -36,6 +37,7 @@ from puzzle.world_model import (
     SokobanWorldModelOptimized,
 )
 from qfunction import (
+    TSPQ,
     DotKnotQ,
     EmptyQFunction,
     LightsOutQ,
@@ -104,7 +106,7 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "rubikscube": RubiksCubeHeuristic,
     "maze": MazeHeuristic,
     "dotknot": DotKnotHeuristic,
-    "tsp": EmptyHeuristic,
+    "tsp": TSPHeuristic,
     "sokoban": SokobanHeuristic,
     "rubikscube_world_model": EmptyHeuristic,
     "rubikscube_world_model_test": EmptyHeuristic,
@@ -139,7 +141,7 @@ puzzle_q_dict: dict[str, QFunction] = {
     "rubikscube": RubiksCubeQ,
     "maze": MazeQ,
     "dotknot": DotKnotQ,
-    "tsp": EmptyQFunction,
+    "tsp": TSPQ,
     "sokoban": SokobanQ,
     "worldmodel": EmptyQFunction,
     "rubikscube_world_model": EmptyQFunction,

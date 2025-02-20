@@ -11,6 +11,7 @@ TYPE = jnp.uint8
 class TSP(Puzzle):
 
     size: int
+    pad_size: int
 
     @state_dataclass
     class State:
@@ -21,9 +22,11 @@ class TSP(Puzzle):
     @state_dataclass
     class SolveConfig:
         points: chex.Array
+        distance_matrix: chex.Array
 
     def __init__(self, size: int, **kwargs):
         self.size = size
+        self.pad_size = int(jnp.ceil(size / 8) * 8 - size)
         super().__init__(**kwargs)
 
     def get_solve_config_string_parser(self) -> callable:
@@ -47,7 +50,8 @@ class TSP(Puzzle):
     def get_solve_config_default_gen(self) -> Puzzle.SolveConfig:
         def gen():
             points = jnp.zeros((self.size, 2), dtype=jnp.float16)
-            return self.SolveConfig(points=points)
+            distance_matrix = jnp.zeros((self.size, self.size), dtype=jnp.float16)
+            return self.SolveConfig(points=points, distance_matrix=distance_matrix)
 
         return gen
 
@@ -75,7 +79,10 @@ class TSP(Puzzle):
         points = jax.random.uniform(
             key, shape=(self.size, 2), minval=0, maxval=1, dtype=jnp.float16
         )
-        return self.SolveConfig(points=points)
+        distance_matrix = jnp.linalg.norm(points[:, None] - points[None, :], axis=-1).astype(
+            jnp.float16
+        )
+        return self.SolveConfig(points=points, distance_matrix=distance_matrix)
 
     def get_neighbours(
         self, solve_config: SolveConfig, state: State, filled: bool = True
@@ -94,7 +101,7 @@ class TSP(Puzzle):
             masked = mask[idx] & filled
             new_mask = mask.at[idx].set(True)
             all_visited = jnp.all(new_mask)
-            cost = jnp.linalg.norm(solve_config.points[point] - solve_config.points[idx], axis=-1)
+            cost = solve_config.distance_matrix[point, idx]
             cost = jnp.where(masked, jnp.inf, cost) + jnp.where(
                 all_visited,
                 jnp.linalg.norm(
@@ -126,14 +133,16 @@ class TSP(Puzzle):
         form = "[" + "{:s} " * size + "]\n" + "point : [{:02d}]"
         return form
 
-    def to_uint8(self, board: chex.Array) -> chex.Array:
+    def to_uint8(self, mask: chex.Array) -> chex.Array:
         # from booleans to uint8
         # boolean 32 to uint8 4
-        return jnp.packbits(board, axis=-1, bitorder="little")
+        padded = jnp.concatenate([mask, jnp.zeros(self.pad_size, dtype=jnp.bool_)], axis=-1)
+        return jnp.packbits(padded, axis=-1, bitorder="little")
 
-    def from_uint8(self, board: chex.Array) -> chex.Array:
+    def from_uint8(self, mask: chex.Array) -> chex.Array:
         # from uint8 4 to boolean 32
-        return jnp.unpackbits(board, axis=-1, count=self.size, bitorder="little")
+        padded = jnp.unpackbits(mask, axis=-1, bitorder="little")
+        return padded[: self.size]
 
     def get_solve_config_img_parser(self) -> callable:
         def parser(solve_config: "TSP.SolveConfig", **kwargs):
