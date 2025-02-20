@@ -241,3 +241,8 @@ def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:
 
     setattr(cls, "img", get_img)
     return cls
+
+
+def coloring_str(string: str, color: tuple[int, int, int]) -> str:
+    r, g, b = color
+    return f"\x1b[38;2;{r};{g};{b}m{string}\x1b[0m"
