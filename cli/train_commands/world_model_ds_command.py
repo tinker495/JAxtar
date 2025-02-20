@@ -19,6 +19,12 @@ from puzzle.world_model.world_model_ds import (
 )
 
 
+def convert_to_imgs(state: Puzzle.State, img_size: tuple):
+    state_img = state.img()
+    small_state_img = cv2.resize(state_img, img_size, interpolation=cv2.INTER_AREA)
+    return state_img, small_state_img
+
+
 @click.command()
 @puzzle_ds_options
 @dataset_options
@@ -39,17 +45,15 @@ def make_puzzle_transition_dataset(
 
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
-    dataset = get_datasets(subkey)
+    states, actions, next_states = get_datasets(subkey)
 
     os.makedirs(f"tmp/{puzzle_name}", exist_ok=True)
-    np.save(f"tmp/{puzzle_name}/actions.npy", dataset[1])
+    np.save(f"tmp/{puzzle_name}/actions.npy", actions)
     images_stack = []
     next_images_stack = []
-    for i in trange(len(dataset[0])):
-        state_img = dataset[0][i].img()
-        next_state_img = dataset[2][i].img()
-        small_state_img = cv2.resize(state_img, img_size, interpolation=cv2.INTER_AREA)
-        small_next_state_img = cv2.resize(next_state_img, img_size, interpolation=cv2.INTER_AREA)
+    for i in trange(len(actions)):
+        state_img, small_state_img = convert_to_imgs(states[i], img_size)
+        next_state_img, small_next_state_img = convert_to_imgs(next_states[i], img_size)
         if i < 3:
             cv2.imwrite(
                 f"tmp/{puzzle_name}/state_img_{i}.png", cv2.cvtColor(state_img, cv2.COLOR_BGR2RGB)
@@ -92,16 +96,14 @@ def make_puzzle_sample_data(
 
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
-    dataset = get_datasets(subkey)
+    target_states, initial_states = get_datasets(subkey)
 
     os.makedirs(f"tmp/{puzzle_name}", exist_ok=True)
     target_images_stack = []
     initial_images_stack = []
-    for i in trange(len(dataset[0])):
-        target_img = dataset[0][i].img()
-        initial_img = dataset[1][i].img()
-        small_target_img = cv2.resize(target_img, img_size, interpolation=cv2.INTER_AREA)
-        small_initial_img = cv2.resize(initial_img, img_size, interpolation=cv2.INTER_AREA)
+    for i in trange(len(target_states)):
+        target_img, small_target_img = convert_to_imgs(target_states[i], img_size)
+        initial_img, small_initial_img = convert_to_imgs(initial_states[i], img_size)
         if i < 3:
             cv2.imwrite(
                 f"tmp/{puzzle_name}/initial_img_{i}.png",
@@ -149,8 +151,7 @@ def make_puzzle_eval_trajectory(
     np.save(f"tmp/{puzzle_name}/eval_actions.npy", actions)
     state_images_stack = []
     for i in trange(len(states)):
-        state_img = states[i].img()
-        small_state_img = cv2.resize(state_img, img_size, interpolation=cv2.INTER_AREA)
+        state_img, small_state_img = convert_to_imgs(states[i], img_size)
         if i < 3:
             cv2.imwrite(
                 f"tmp/{puzzle_name}/state_img_{i}.png",
