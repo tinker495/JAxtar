@@ -13,6 +13,7 @@ from JAxtar.util import (
     flatten_tree,
     set_array_as_condition,
     unflatten_array,
+    unflatten_tree,
 )
 from puzzle.puzzle_base import Puzzle
 
@@ -91,27 +92,82 @@ def astar_builder(
             states = search_result.get_state(parent)
 
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
-            parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
+            parent_action = jnp.tile(
+                jnp.expand_dims(jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE), axis=1),
+                (1, ncost.shape[1]),
+            )  # [n_neighbours, batch_size]
             nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
+            parent_index = jnp.tile(
+                jnp.expand_dims(jnp.arange(ncost.shape[1]), axis=0), (ncost.shape[0],)
+            )  # [n_neighbours, batch_size]
 
+            flatten_neighbours = flatten_tree(neighbours, 2)
+            flatten_filleds = flatten_array(filleds, 2)
+            flatten_nextcosts = flatten_array(nextcosts, 2)
+            flatten_parent_index = flatten_array(parent_index, 2)
+            flatten_parent_action = flatten_array(parent_action, 2)
             (
                 search_result.hashtable,
-                _,
+                flatten_inserted,
                 _,
                 idxs,
                 table_idxs,
             ) = search_result.hashtable.parallel_insert(
-                hash_func, flatten_tree(neighbours, 2), flatten_array(filleds, 2)
+                hash_func, flatten_neighbours, flatten_filleds
             )
+
+            argsort_idx = jnp.argsort(flatten_inserted, axis=0)  # sort by inserted
+
+            flatten_inserted = flatten_inserted[argsort_idx]
+            flatten_neighbours = flatten_neighbours[argsort_idx]
+            flatten_nextcosts = flatten_nextcosts[argsort_idx]
+            flatten_parent_index = flatten_parent_index[argsort_idx]
+            flatten_parent_action = flatten_parent_action[argsort_idx]
+
+            idxs = idxs[argsort_idx]
+            table_idxs = table_idxs[argsort_idx]
 
             idxs = unflatten_array(idxs, filleds.shape)
             table_idxs = unflatten_array(table_idxs, filleds.shape)
+            nextcosts = unflatten_array(flatten_nextcosts, filleds.shape)
             current = Current(index=idxs, table_index=table_idxs, cost=nextcosts)
+            parent_indexs = unflatten_array(flatten_parent_index, filleds.shape)
+            parent_action = unflatten_array(flatten_parent_action, filleds.shape)
+            neighbours = unflatten_tree(flatten_neighbours, filleds.shape)
+            inserted = unflatten_array(flatten_inserted, filleds.shape)
+
+            def _inserted(search_result: SearchResult, neighbour, current, inserted):
+                neighbour_heur = heuristic.batched_distance(solve_config, neighbour).astype(
+                    KEY_DTYPE
+                )
+                # cache the heuristic value
+                search_result.dist = set_array_as_condition(
+                    search_result.dist,
+                    inserted,
+                    neighbour_heur,
+                    current.index,
+                    current.table_index,
+                )
+                return search_result, neighbour_heur
+
+            def _not_inserted(search_result: SearchResult, neighbour, current, inserted):
+                # get cached heuristic value
+                neighbour_heur = search_result.get_dist(current)
+                return search_result, neighbour_heur
 
             def _scan(search_result: SearchResult, val):
-                neighbour, parent_action, current = val
-                neighbour_heur = heuristic.batched_distance(solve_config, neighbour)
+                neighbour, parent_action, current, inserted, parent_index = val
+
+                search_result, neighbour_heur = jax.lax.cond(
+                    jnp.any(inserted),
+                    _inserted,
+                    _not_inserted,
+                    search_result,
+                    neighbour,
+                    current,
+                    inserted,
+                )
                 neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
 
                 optimal = jnp.less(
@@ -119,25 +175,27 @@ def astar_builder(
                 )
                 neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
-                parent_action = jnp.tile(parent_action, (neighbour_key.shape[0],))
+                aranged_parent = parent[parent_index]
                 vals = Current_with_Parent(
                     current=current,
                     parent=Parent(
-                        action=parent_action, index=parent.index, table_index=parent.table_index
+                        action=parent_action,
+                        index=aranged_parent.index,
+                        table_index=aranged_parent.table_index,
                     ),
                 )
 
                 search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
                     vals,
-                    added_size=jnp.sum(optimal, dtype=SIZE_DTYPE),
+                    added_size=jnp.sum(jnp.isfinite(neighbour_key), dtype=SIZE_DTYPE),
                 )
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbours, parent_action, current),
+                (neighbours, parent_action, current, inserted, parent_indexs),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
