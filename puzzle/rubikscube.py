@@ -4,10 +4,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from tabulate import tabulate
-from termcolor import colored
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.util import coloring_str
 
 TYPE = jnp.uint8
 LINE_THICKNESS = 3
@@ -19,12 +19,12 @@ RIGHT = 3
 FRONT = 4
 BACK = 5
 rotate_face_map = {0: "l", 1: "d", 2: "f", 3: "r", 4: "b", 5: "u"}
+face_map_legend = {0: "up", 1: "down", 2: "left", 3: "right", 4: "front", 5: "back"}
 face_map = {0: "up━", 1: "down━", 2: "left━", 3: "right", 4: "front", 5: "back━"}
-color_map = {0: "white", 1: "yellow", 2: "magenta", 3: "red", 4: "green", 5: "blue"}
 rgb_map = {
     0: (255, 255, 255),  # white
     1: (255, 255, 0),  # yellow
-    2: (255, 0, 165),  # magenta
+    2: (255, 165, 0),  # orange
     3: (255, 0, 0),  # red
     4: (0, 255, 0),  # green
     5: (0, 0, 255),  # blue
@@ -69,7 +69,7 @@ class RubiksCube(Puzzle):
 
             def color_legend():
                 return "\n".join(
-                    [f"{face_map[i]:<6}:{colored('■', color_map[i])}" for i in range(6)]
+                    [f"{face_map_legend[i]:<6}:{coloring_str('■', rgb_map[i])}" for i in range(6)]
                 )
 
             def get_face_string(face):
@@ -80,8 +80,8 @@ class RubiksCube(Puzzle):
                         "┃ "
                         + " ".join(
                             [
-                                colored(
-                                    "■", color_map[int(unpacked_faces[face, j * self.size + i])]
+                                coloring_str(
+                                    "■", rgb_map[int(unpacked_faces[face, j * self.size + i])]
                                 )
                                 for i in range(self.size)
                             ]
@@ -94,7 +94,7 @@ class RubiksCube(Puzzle):
             # Create the cube string representation
             cube_str = tabulate(
                 [
-                    [color_legend(), ".\n" + get_face_string(0)],
+                    [color_legend(), (".\n" + get_face_string(0))],
                     [
                         get_face_string(2),
                         get_face_string(4),
