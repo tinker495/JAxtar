@@ -232,7 +232,6 @@ class WorldModelPuzzleBase(Puzzle):
             **kwargs,
         ):
             if STR_PARSE_IMG:
-                # Unpack the board before visualization.
                 state_img = state.img(
                     show_target_state_img=False, resize_img=False, target_height=16
                 )
