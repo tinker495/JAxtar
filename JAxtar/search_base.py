@@ -112,14 +112,15 @@ class SearchResult:
         parent_action (chex.Array): Array storing actions that led to each state
     """
 
-    hashtable: HashTable
-    priority_queue: BGPQ
-    min_key_buffer: chex.Array
-    min_val_buffer: Current_with_Parent
-    cost: chex.Array
-    parent: Parent
-    solved: chex.Array
-    solved_idx: Current
+    hashtable: HashTable  # hash table
+    priority_queue: BGPQ  # priority queue
+    min_key_buffer: chex.Array  # buffer for minimum keys
+    min_val_buffer: Current_with_Parent  # buffer for minimum values
+    cost: chex.Array  # cost array - g value
+    dist: chex.Array  # distance array - calculated heuristic or Q value
+    parent: Parent  # parent array
+    solved: chex.Array  # solved array
+    solved_idx: Current  # solved index
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
@@ -150,6 +151,7 @@ class SearchResult:
 
         # Initialize arrays for tracking costs and state relationships
         cost = jnp.full((size_table, n_table), jnp.inf, dtype=KEY_DTYPE)
+        dist = jnp.full((size_table, n_table), jnp.inf, dtype=KEY_DTYPE)
         parent = Parent.default((size_table, n_table))
         solved = jnp.array(False)
         solved_idx = Current.default((1,))
@@ -160,6 +162,7 @@ class SearchResult:
             min_key_buffer=min_key_buffer,
             min_val_buffer=min_val_buffer,
             cost=cost,
+            dist=dist,
             parent=parent,
             solved=solved,
             solved_idx=solved_idx,
@@ -298,6 +301,12 @@ class SearchResult:
         Get the cost of the state from the cost array.
         """
         return search_result.cost[idx.index, idx.table_index]
+
+    def get_dist(search_result, idx: Current) -> chex.Array:
+        """
+        Get the distance of the state from the distance array.
+        """
+        return search_result.dist[idx.index, idx.table_index]
 
     def get_parent(search_result, idx: Current) -> Parent:
         """
