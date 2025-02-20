@@ -210,6 +210,7 @@ class Sokoban(Puzzle):
                     valid_push = jnp.logical_and(
                         is_valid_pos(push_x, push_y), is_empty(push_x, push_y)
                     )
+                    valid_push = jnp.logical_and(valid_push, filled)
 
                     def do_push(_):
                         new_board = board.at[flat_idx(current_pos[0], current_pos[1])].set(
