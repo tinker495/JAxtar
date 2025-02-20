@@ -10,12 +10,12 @@ from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
 from puzzle.world_model.util import (
     download_dataset,
+    img_to_colored_str,
     is_dataset_downloaded,
     round_through_gradient,
 )
 
-SHOW_PRINTED_LATENT_IMG = False
-SHOW_TARGET_STATE_IMG = True
+STR_PARSE_IMG = True
 
 
 class Encoder(nn.Module):
@@ -231,37 +231,24 @@ class WorldModelPuzzleBase(Puzzle):
             solve_config: "WorldModelPuzzleBase.SolveConfig" = None,
             **kwargs,
         ):
-            # Unpack the board before visualization.
-            latent = state.latent
-            latent = np.array(latent)
-            latent = np.reshape(latent, newshape=(-1,))
-            latent_str = latent.tobytes().hex()
-            latent_str_len = len(latent_str)
-            if latent_str_len >= 25:
-                prefix = latent_str[:10]
-                suffix = latent_str[-10:]
-                latent_str = prefix + "..." + suffix
-
-            if SHOW_PRINTED_LATENT_IMG:
-                # out latent image to file
-                import cv2
-
-                latent = state.latent
-                latent = self.from_uint8(latent)
-                latent = jnp.expand_dims(latent, axis=0)
-                data = self.model.apply(
-                    self.params, latent, training=False, method=self.model.decode
-                ).squeeze(0)
-                data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
-                width, height = data.shape[:2]
-                img = cv2.resize(
-                    data,
-                    (IMG_SIZE[0], int(IMG_SIZE[1] * width / height)),
-                    interpolation=cv2.INTER_AREA,
+            if STR_PARSE_IMG:
+                # Unpack the board before visualization.
+                state_img = state.img(
+                    show_target_state_img=False, resize_img=False, target_height=16
                 )
-                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(f"latent_{latent_str}.png", img)
-            return f"latent: 0x{latent_str}[{latent_str_len // 2} bytes]"
+                ascii_img = img_to_colored_str(state_img)
+                return ascii_img
+            else:
+                latent = state.latent
+                latent = np.array(latent)
+                latent = np.reshape(latent, newshape=(-1,))
+                latent_str = latent.tobytes().hex()
+                latent_str_len = len(latent_str)
+                if latent_str_len >= 25:
+                    prefix = latent_str[:10]
+                    suffix = latent_str[-10:]
+                    latent_str = prefix + "..." + suffix
+                return f"latent: 0x{latent_str}[{latent_str_len // 2} bytes]"
 
         return parser
 
@@ -287,7 +274,10 @@ class WorldModelPuzzleBase(Puzzle):
 
         def img_parser(
             state: WorldModelPuzzleBase.State,
-            solve_config: WorldModelPuzzleBase.SolveConfig,
+            solve_config: WorldModelPuzzleBase.SolveConfig = None,
+            show_target_state_img: bool = True,
+            resize_img: bool = True,
+            target_height: int = IMG_SIZE[1],
             **kwargs,
         ) -> jnp.ndarray:
             latent = state.latent
@@ -298,10 +288,12 @@ class WorldModelPuzzleBase(Puzzle):
             ).squeeze(0)
             data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
             width, height = data.shape[:2]
-            img = cv2.resize(
-                data, (IMG_SIZE[0], int(IMG_SIZE[1] * width / height)), interpolation=cv2.INTER_AREA
-            )
-            if SHOW_TARGET_STATE_IMG:
+            if resize_img:
+                width, height = int(target_height * width / height), target_height
+                img = cv2.resize(data, (height, width), interpolation=cv2.INTER_AREA)
+            else:
+                img = data
+            if solve_config is not None and show_target_state_img:
                 latent = solve_config.TargetState.latent
                 latent = self.from_uint8(latent)
                 latent = jnp.expand_dims(latent, axis=0)
@@ -309,13 +301,15 @@ class WorldModelPuzzleBase(Puzzle):
                     self.params, latent, training=False, method=self.model.decode
                 ).squeeze(0)
                 data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
-                width, height = data.shape[:2]
-                img2 = cv2.resize(
-                    data,
-                    (IMG_SIZE[0], int(IMG_SIZE[1] * width / height)),
-                    interpolation=cv2.INTER_AREA,
-                )
-                line = np.ones((10, IMG_SIZE[0], 3), dtype=np.uint8) * 255
+                if resize_img:
+                    img2 = cv2.resize(
+                        data,
+                        (height, width),
+                        interpolation=cv2.INTER_AREA,
+                    )
+                else:
+                    img2 = data
+                line = np.ones((10, width, 3), dtype=np.uint8) * 255
                 img = np.concatenate([img, line, img2], axis=0)
 
             return img
