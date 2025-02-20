@@ -63,13 +63,15 @@ class TSP(Puzzle):
 
         return gen
 
-    def get_initial_state(self, solve_config: SolveConfig, key=jax.random.PRNGKey(0)) -> State:
+    def get_initial_state(
+        self, solve_config: SolveConfig, key=jax.random.PRNGKey(0), data=None
+    ) -> State:
         mask = jnp.zeros(self.size, dtype=jnp.bool_)
         point = jax.random.randint(key, shape=(), minval=0, maxval=self.size, dtype=TYPE)
         mask = mask.at[point].set(True)
         return self.State(mask=self.to_uint8(mask), start=point, point=point)
 
-    def get_solve_config(self, key=None) -> Puzzle.SolveConfig:
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         points = jax.random.uniform(
             key, shape=(self.size, 2), minval=0, maxval=1, dtype=jnp.float16
         )
