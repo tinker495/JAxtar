@@ -114,6 +114,7 @@ class TSP(Puzzle):
 
         # Apply the move function to all possible moves
         new_states, costs = jax.vmap(move)(jnp.arange(self.size, dtype=TYPE))
+        costs = jnp.where(filled, costs, jnp.inf)
         return new_states, costs
 
     def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
