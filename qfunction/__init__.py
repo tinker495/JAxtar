@@ -7,3 +7,4 @@ from qfunction.q_base import QFunction
 from qfunction.rubikscube_q import RubiksCubeQ
 from qfunction.slidepuzzle_q import SlidePuzzleQ
 from qfunction.sokoban_q import SokobanQ
+from qfunction.tsp_q import TSPQ
