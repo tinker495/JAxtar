@@ -93,8 +93,14 @@ def _get_datasets(
         solve_configs, shuffled_path, multi_solve_config=True
     )  # [batch_size]
     neighbors, cost = puzzle.batched_get_neighbours(
-        solve_configs, shuffled_path, multi_solve_config=True
+        solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
     )  # [action_size, batch_size] [action_size, batch_size]
+    neighbors_equal = jax.vmap(
+        lambda x, y: puzzle.batched_is_solved(x, y, multi_solve_config=True),
+        in_axes=(None, 0),
+    )(
+        solve_configs, neighbors
+    )  # [action_size, batch_size]
 
     # _, neighbors_neighbor_cost = jax.vmap(
     #     lambda x, y: puzzle.batched_get_neighbours(x, y, multi_solve_config=True),
@@ -105,12 +111,6 @@ def _get_datasets(
     # this is actually correct, but is large to compute
     # so we use 1 as the cost of the neighbors
 
-    neighbors_equal = jax.vmap(
-        lambda x, y: puzzle.batched_is_solved(x, y, multi_solve_config=True),
-        in_axes=(None, 0),
-    )(
-        solve_configs, neighbors
-    )  # [action_size, batch_size]
     preproc_neighbors = jax.vmap(jax.vmap(preproc_fn, in_axes=(0, 0)), in_axes=(None, 0))(
         solve_configs, neighbors
     )
@@ -207,7 +207,7 @@ def create_target_shuffled_path(
     def _scan(carry, _):
         old_state, state, key, move_cost = carry
         neighbor_states, cost = puzzle.batched_get_neighbours(
-            solve_configs, state, multi_solve_config=True
+            solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
             jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
@@ -260,7 +260,7 @@ def create_initial_shuffled_path(
     def _scan(carry, _):
         old_state, state, key, move_cost = carry
         neighbor_states, cost = puzzle.batched_get_neighbours(
-            solve_configs, state, multi_solve_config=True
+            solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
             jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
@@ -288,7 +288,7 @@ def create_initial_shuffled_path(
         None,
         length=shuffle_length + 1,
     )
-    move_costs = shuffle_length - move_costs
+    move_costs = move_costs[-1] - move_costs
 
     solve_configs.TargetState = moves[-1]
     moves = moves[:-1]
