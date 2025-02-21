@@ -26,8 +26,12 @@ from .dist_train_option import (
 PyTree = Any
 
 
-def setup_logging(puzzle_name: str, puzzle_size: int) -> tensorboardX.SummaryWriter:
-    log_dir = f"runs/{puzzle_name}_{puzzle_size}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+def setup_logging(
+    puzzle_name: str, puzzle_size: int, train_type: str
+) -> tensorboardX.SummaryWriter:
+    log_dir = (
+        f"runs/{puzzle_name}_{puzzle_size}_{train_type}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    )
     return tensorboardX.SummaryWriter(log_dir)
 
 
@@ -57,7 +61,7 @@ def davi(
     **kwargs,
 ):
 
-    writer = setup_logging(puzzle_name, puzzle_size)
+    writer = setup_logging(puzzle_name, puzzle_size, "davi")
     heuristic_fn = heuristic.model.apply
     heuristic_params = heuristic.get_new_params()
     target_heuristic_params = heuristic.params
@@ -128,7 +132,7 @@ def qlearning(
     using_initial_states: bool,
     **kwargs,
 ):
-    writer = setup_logging(puzzle_name, puzzle_size)
+    writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
     qfunc_fn = qfunction.model.apply
     qfunc_params = qfunction.get_new_params()
     target_qfunc_params = qfunction.params
