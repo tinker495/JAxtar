@@ -52,6 +52,8 @@ def davi(
     shuffle_length: int,
     key: int,
     loss_threshold: float,
+    update_interval: int,
+    using_initial_states: bool,
     **kwargs,
 ):
 
@@ -72,6 +74,7 @@ def davi(
         int(math.ceil(10000 / shuffle_length)),
         shuffle_length,
         10000,
+        using_initial_states,
     )
 
     pbar = trange(steps)
@@ -95,7 +98,7 @@ def davi(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        if (i % 500 == 0 and i != 0) and loss <= loss_threshold:
+        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
             target_heuristic_params, heuristic_params = (heuristic_params, target_heuristic_params)
             opt_state = optimizer.init(heuristic_params)
@@ -121,6 +124,8 @@ def qlearning(
     shuffle_length: int,
     key: int,
     loss_threshold: float,
+    update_interval: int,
+    using_initial_states: bool,
     **kwargs,
 ):
     writer = setup_logging(puzzle_name, puzzle_size)
@@ -140,6 +145,7 @@ def qlearning(
         int(math.ceil(10000 / shuffle_length)),
         shuffle_length,
         10000,
+        using_initial_states,
     )
 
     pbar = trange(steps)
@@ -163,7 +169,7 @@ def qlearning(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        if (i % 500 == 0 and i != 0) and loss <= loss_threshold:
+        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
             target_qfunc_params, qfunc_params = (qfunc_params, target_qfunc_params)
             opt_state = optimizer.init(qfunc_params)

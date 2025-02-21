@@ -346,7 +346,11 @@ class WorldModelPuzzleBase(Puzzle):
         return self.State(latent=latent)
 
     def batched_get_neighbours(
-        self, solve_config: SolveConfig, states: State, filleds: bool = True
+        self,
+        solve_configs: SolveConfig,
+        states: State,
+        filleds: bool = True,
+        multi_solve_config: bool = False,
     ) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
@@ -385,11 +389,16 @@ class WorldModelPuzzleBase(Puzzle):
         next_states, costs = self.batched_get_neighbours(solve_config, states, filled)
         return next_states[:, 0], costs[:, 0]
 
-    def batched_is_solved(self, solve_config: SolveConfig, states: State) -> bool:
+    def batched_is_solved(
+        self, solve_configs: SolveConfig, states: State, multi_solve_config: bool = False
+    ) -> bool:
         """
         This function should return a boolean array that indicates whether the state is the target state.
         """
-        return jax.vmap(self.is_solved, in_axes=(None, 0))(solve_config, states)
+        if multi_solve_config:
+            return jax.vmap(self.is_solved, in_axes=(0, 0))(solve_configs, states)
+        else:
+            return jax.vmap(self.is_solved, in_axes=(None, 0))(solve_configs, states)
 
     def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
         """

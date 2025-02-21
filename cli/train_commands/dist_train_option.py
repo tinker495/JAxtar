@@ -50,6 +50,8 @@ def train_option(func: callable) -> callable:
     @click.option("--key", type=int, default=0)
     @click.option("--reset", is_flag=True, help="Reset the target heuristic params")
     @click.option("-l", "--loss_threshold", type=float, default=0.05)
+    @click.option("-u", "--update_interval", type=int, default=500)
+    @click.option("--using_initial_states", is_flag=True, help="Use initial states")
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)

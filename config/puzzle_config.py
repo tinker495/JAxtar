@@ -13,6 +13,7 @@ from heuristic.neuralheuristic import (
     LightsOutNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
+    WorldModelNeuralHeuristic,
 )
 from puzzle import (
     TSP,
@@ -47,7 +48,12 @@ from qfunction import (
     SlidePuzzleQ,
     SokobanQ,
 )
-from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
+from qfunction.neuralq import (
+    LightsOutNeuralQ,
+    RubiksCubeNeuralQ,
+    SlidePuzzleNeuralQ,
+    WorldModelNeuralQ,
+)
 
 default_puzzle_sizes: dict[str, int] = {
     "n-puzzle": 4,
@@ -133,6 +139,38 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
     else RubiksCubeNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/rubikscube_{n}.pkl"
     ),
+    "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
+    if reset
+    else WorldModelNeuralHeuristic.load_model(
+        puzzle, "puzzle/neuralheuristic/model/params/rubikscube_world_model.pkl"
+    ),
+    "rubikscube_world_model_test": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
+    if reset
+    else WorldModelNeuralHeuristic.load_model(
+        puzzle, "puzzle/neuralheuristic/model/params/rubikscube_world_model.pkl"
+    ),
+    "rubikscube_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
+    if reset
+    else WorldModelNeuralHeuristic.load_model(
+        puzzle, "puzzle/neuralheuristic/model/params/rubikscube_world_model_optimized.pkl"
+    ),
+    "rubikscube_world_model_optimized_test": lambda n, puzzle, reset: WorldModelNeuralHeuristic(
+        puzzle
+    )
+    if reset
+    else WorldModelNeuralHeuristic.load_model(
+        puzzle, "puzzle/neuralheuristic/model/params/rubikscube_world_model_optimized.pkl"
+    ),
+    "sokoban_world_model": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
+    if reset
+    else WorldModelNeuralHeuristic.load_model(
+        puzzle, "puzzle/neuralheuristic/model/params/sokoban_world_model.pkl"
+    ),
+    "sokoban_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
+    if reset
+    else WorldModelNeuralHeuristic.load_model(
+        puzzle, "puzzle/neuralheuristic/model/params/sokoban_world_model_optimized.pkl"
+    ),
 }
 
 puzzle_q_dict: dict[str, QFunction] = {
@@ -163,4 +201,24 @@ puzzle_q_dict_nn: dict[str, callable] = {
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralQ(puzzle)
     if reset
     else RubiksCubeNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/rubikscube_{n}.pkl"),
+    "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
+    if reset
+    else WorldModelNeuralQ.load_model(
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model.pkl"
+    ),
+    "rubikscube_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
+    if reset
+    else WorldModelNeuralQ.load_model(
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized.pkl"
+    ),
+    "sokoban_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
+    if reset
+    else WorldModelNeuralQ.load_model(
+        puzzle, "qfunction/neuralq/model/params/sokoban_world_model.pkl"
+    ),
+    "sokoban_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
+    if reset
+    else WorldModelNeuralQ.load_model(
+        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_optimized.pkl"
+    ),
 }
