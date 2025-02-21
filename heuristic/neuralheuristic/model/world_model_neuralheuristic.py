@@ -21,5 +21,5 @@ class WorldModelNeuralHeuristic(NeuralHeuristicBase):
         concat_latent = jnp.concatenate([current_latent, target_latent], axis=-1).astype(
             jnp.float32
         )
-        flatten_latent = jnp.reshape(concat_latent, (concat_latent.shape[0], -1))
+        flatten_latent = jnp.reshape(concat_latent, (-1))
         return (flatten_latent - 0.5) * 2.0  # normalize to [-1, 1]

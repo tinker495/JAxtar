@@ -7,3 +7,6 @@ from heuristic.neuralheuristic.model.rubikscube_neuralheuristic import (
 from heuristic.neuralheuristic.model.slidepuzzle_neuralheuristic import (
     SlidePuzzleNeuralHeuristic,
 )
+from heuristic.neuralheuristic.model.world_model_neuralheuristic import (
+    WorldModelNeuralHeuristic,
+)

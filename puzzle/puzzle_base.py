@@ -107,10 +107,10 @@ class Puzzle(ABC):
         self.get_solve_config = jax.jit(self.get_solve_config)
         self.get_inits = jax.jit(self.get_inits)
         self.get_neighbours = jax.jit(self.get_neighbours)
-        self.batched_get_neighbours = jax.jit(self.batched_get_neighbours)
+        self.batched_get_neighbours = jax.jit(self.batched_get_neighbours, static_argnums=(3,))
         self.is_solved = jax.jit(self.is_solved)
+        self.batched_is_solved = jax.jit(self.batched_is_solved, static_argnums=(2,))
         self.is_equal = jax.jit(self.is_equal)
-        self.batched_is_solved = jax.jit(self.batched_is_solved)
 
     def data_init(self):
         """
@@ -223,14 +223,23 @@ class Puzzle(ABC):
         return solve_config, self.get_initial_state(solve_config, key, data)
 
     def batched_get_neighbours(
-        self, solve_config: SolveConfig, states: State, filleds: bool = True
+        self,
+        solve_configs: SolveConfig,
+        states: State,
+        filleds: bool = True,
+        multi_solve_config: bool = False,
     ) -> tuple[State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         """
-        return jax.vmap(self.get_neighbours, in_axes=(None, 0, 0), out_axes=(1, 1))(
-            solve_config, states, filleds
-        )
+        if multi_solve_config:
+            return jax.vmap(self.get_neighbours, in_axes=(0, 0, 0), out_axes=(1, 1))(
+                solve_configs, states, filleds
+            )
+        else:
+            return jax.vmap(self.get_neighbours, in_axes=(None, 0, 0), out_axes=(1, 1))(
+                solve_configs, states, filleds
+            )
 
     @abstractmethod
     def get_neighbours(
@@ -242,11 +251,16 @@ class Puzzle(ABC):
         """
         pass
 
-    def batched_is_solved(self, solve_config: SolveConfig, states: State) -> bool:
+    def batched_is_solved(
+        self, solve_configs: SolveConfig, states: State, multi_solve_config: bool = False
+    ) -> bool:
         """
         This function should return a boolean array that indicates whether the state is the target state.
         """
-        return jax.vmap(self.is_solved, in_axes=(None, 0))(solve_config, states)
+        if multi_solve_config:
+            return jax.vmap(self.is_solved, in_axes=(0, 0))(solve_configs, states)
+        else:
+            return jax.vmap(self.is_solved, in_axes=(None, 0))(solve_configs, states)
 
     @abstractmethod
     def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
