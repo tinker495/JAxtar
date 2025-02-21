@@ -38,7 +38,11 @@ class DefaultModel(nn.Module):
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
-        x = nn.Dense(1)(x)
+        x = nn.Dense(
+            1,
+            bias_init=nn.initializers.constant(-10),
+            # this is for initialize davi target to be close to 0
+        )(x)
         return x
 
 
