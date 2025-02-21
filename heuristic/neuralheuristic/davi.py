@@ -201,7 +201,7 @@ def create_target_shuffled_path(
     def _scan(carry, _):
         old_state, state, key, move_cost = carry
         neighbor_states, cost = puzzle.batched_get_neighbours(
-            solve_configs, state, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+            solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
             jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
@@ -254,7 +254,7 @@ def create_initial_shuffled_path(
     def _scan(carry, _):
         old_state, state, key, move_cost = carry
         neighbor_states, cost = puzzle.batched_get_neighbours(
-            solve_configs, state, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+            solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
             jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
