@@ -1,3 +1,4 @@
+import chex
 import flax.linen as nn
 import jax.numpy as jnp
 
@@ -94,6 +95,21 @@ class SokobanWorldModel(WorldModelPuzzleBase):
             AE=AutoEncoder,
             WM=WorldModel,
             **kwargs
+        )
+
+    def batched_get_inverse_neighbours(
+        self,
+        solve_configs: WorldModelPuzzleBase.SolveConfig,
+        states: WorldModelPuzzleBase.State,
+        filleds: bool = True,
+        multi_solve_config: bool = False,
+    ) -> tuple[WorldModelPuzzleBase.State, chex.Array]:
+        """
+        This function should return a neighbours, and the cost of the move.
+        """
+        raise NotImplementedError(
+            "Sokoban is not reversible,"
+            "but sokoban world model's inverse neighbours is not implemented"
         )
 
 
@@ -203,4 +219,19 @@ class SokobanWorldModelOptimized(WorldModelPuzzleBase):
             AE=AutoEncoderOptimized,
             WM=WorldModel,
             **kwargs
+        )
+
+    def batched_get_inverse_neighbours(
+        self,
+        solve_configs: WorldModelPuzzleBase.SolveConfig,
+        states: WorldModelPuzzleBase.State,
+        filleds: bool = True,
+        multi_solve_config: bool = False,
+    ) -> tuple[WorldModelPuzzleBase.State, chex.Array]:
+        """
+        This function should return a neighbours, and the cost of the move.
+        """
+        raise NotImplementedError(
+            "Sokoban is not reversible,"
+            "but sokoban world model's inverse neighbours is not implemented"
         )
