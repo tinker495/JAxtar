@@ -195,7 +195,7 @@ def create_target_shuffled_path(
     dataset_minibatch_size: int,
     key: chex.PRNGKey,
 ):
-    solve_configs = jax.vmap(puzzle.get_solve_config)(jax.random.split(key, shuffle_parallel))
+    solve_configs, _ = jax.vmap(puzzle.get_inits)(jax.random.split(key, shuffle_parallel))
     targets = solve_configs.TargetState
 
     def _scan(carry, _):
@@ -284,9 +284,9 @@ def create_initial_shuffled_path(
     )
     move_costs = move_costs[-1] - move_costs
 
-    solve_configs.TargetState = moves[-1]
-    moves = moves[:-1]
-    move_costs = move_costs[:-1]
+    solve_configs.TargetState = moves[-1, ...]
+    moves = moves[:-1, ...]
+    move_costs = move_costs[:-1, ...]
 
     solve_configs = jax.tree_util.tree_map(
         lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length) + (x.ndim - 1) * (1,)),
@@ -295,7 +295,6 @@ def create_initial_shuffled_path(
     solve_configs = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), solve_configs)
     moves = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), moves)
     move_costs = jnp.reshape(move_costs, (-1))
-
     solve_configs = solve_configs[:dataset_minibatch_size]
     moves = moves[:dataset_minibatch_size]
     move_costs = move_costs[:dataset_minibatch_size]
