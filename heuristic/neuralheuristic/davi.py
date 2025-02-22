@@ -88,13 +88,13 @@ def _get_datasets(
     key: chex.PRNGKey,
 ):
     solve_configs, shuffled_path, move_costs = create_shuffled_path
-    equal = puzzle.batched_is_solved(
+    solved = puzzle.batched_is_solved(
         solve_configs, shuffled_path, multi_solve_config=True
     )  # [batch_size]
     neighbors, cost = puzzle.batched_get_neighbours(
         solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
     )  # [action_size, batch_size] [action_size, batch_size]
-    neighbors_equal = jax.vmap(
+    neighbors_solved = jax.vmap(
         lambda x, y: puzzle.batched_is_solved(x, y, multi_solve_config=True),
         in_axes=(None, 0),
     )(
@@ -116,11 +116,11 @@ def _get_datasets(
 
     _, heur = jax.lax.scan(heur_scan, None, flatten_neighbors)
     heur = jnp.vstack(heur)
-    heur = jnp.maximum(jnp.where(neighbors_equal, 0.0, heur), 0.0)
+    heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
     heur = jnp.round(heur)
     target_heuristic = jnp.min(heur + cost, axis=0)
     target_heuristic = jnp.where(
-        equal, 0.0, target_heuristic
+        solved, 0.0, target_heuristic
     )  # if the puzzle is already solved, the heuristic is 0
 
     # target_heuristic must be less than the number of moves
