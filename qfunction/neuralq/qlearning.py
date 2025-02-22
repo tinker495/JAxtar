@@ -133,7 +133,7 @@ def _get_datasets(
     target_q = jnp.maximum(jnp.where(neighbors_equal, 0.0, target_q), 0.0)
     target_q = jnp.round(target_q)
     target_q = jnp.where(equal, 0.0, target_q)  # if the puzzle is already solved, the all q is 0
-    target_q = jnp.transpose(target_q, (1, 0))
+    target_q = jnp.swapaxes(target_q, 1, 0)
 
     states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
     return states, target_q
