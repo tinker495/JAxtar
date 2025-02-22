@@ -74,7 +74,7 @@ def davi(
         puzzle,
         heuristic.pre_process,
         heuristic_fn,
-        int(3e4),
+        int(3e5),
         int(math.ceil(10000 / shuffle_length)),
         shuffle_length,
         10000,
