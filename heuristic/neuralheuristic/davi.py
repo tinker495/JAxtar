@@ -276,7 +276,7 @@ def create_hindsight_target_shuffled_path(
 
     def _scan(carry, _):
         old_state, state, key, move_cost = carry
-        neighbor_states, cost = puzzle.batched_get_inverse_neighbours(
+        neighbor_states, cost = puzzle.batched_get_neighbours(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
