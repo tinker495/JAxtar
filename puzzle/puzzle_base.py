@@ -293,7 +293,20 @@ class Puzzle(ABC):
         """
         return jax.vmap(self.hindsight_transform)(states)
 
-    def hindsight_transform(self, states: State) -> SolveConfig:
+    def solve_config_to_state_transform(
+        self, solve_config: SolveConfig, key: jax.random.PRNGKey = None
+    ) -> State:
+        """
+        This function shoulde transformt the solve config to the state.
+        """
+        assert self.has_target, "This puzzle does not have target state"
+        assert self.only_target, (
+            "Default solve config to state transform is for only target state,"
+            "you should redefine this function"
+        )
+        return solve_config.TargetState
+
+    def hindsight_transform(self, states: State, key: jax.random.PRNGKey = None) -> SolveConfig:
         """
         This function shoulde transformt the state to the solve config.
         """
@@ -304,3 +317,34 @@ class Puzzle(ABC):
         )
         solve_config = self.SolveConfig(TargetState=states)
         return solve_config
+
+    def get_inverse_neighbours(
+        self, solve_config: SolveConfig, state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
+        """
+        This function should return inverse neighbours and the cost of the move.
+        For puzzles that are reversible, this function can simply return the same neighbours as `get_neighbours`.
+        However, for puzzles like Sokoban, which are not reversible (pushing a box is not easily reversed),
+        this function needs to be implemented specifically to return the actual inverse neighbours.
+        By default, it can just use the `get_neighbours` function if inverse neighbours are not explicitly defined.
+        """
+        return self.get_neighbours(solve_config, state, filled)
+
+    def batched_get_inverse_neighbours(
+        self,
+        solve_configs: SolveConfig,
+        states: State,
+        filleds: bool = True,
+        multi_solve_config: bool = False,
+    ) -> tuple[State, chex.Array]:
+        """
+        This function should return inverse neighbours and the cost of the move.
+        """
+        if multi_solve_config:
+            return jax.vmap(self.get_inverse_neighbours, in_axes=(0, 0, 0), out_axes=(1, 1))(
+                solve_configs, states, filleds
+            )
+        else:
+            return jax.vmap(self.get_inverse_neighbours, in_axes=(None, 0, 0), out_axes=(1, 1))(
+                solve_configs, states, filleds
+            )

@@ -361,37 +361,19 @@ class Sokoban(Puzzle):
 
         return img_func
 
-    def hindsight_transform(self, state: "Sokoban.State") -> "Sokoban.SolveConfig":
-        """
-        This function shoulde transformt the state to the solve config.
-        """
-        board = self.unpack_board(state.board)
-        rm_player = jnp.where(board == Object.PLAYER.value, Object.EMPTY.value, board)
-        solve_config = self.SolveConfig(TargetState=self.State(board=self.pack_board(rm_player)))
-        return solve_config
-
-
-class SokobanHard(Sokoban):
-    def data_init(self):
-        self.init_puzzles = jnp.load("puzzle/data/sokoban/init_hard.npy")
-        self.target_puzzles = jnp.load("puzzle/data/sokoban/target_hard.npy")
-        self.num_puzzles = self.init_puzzles.shape[0]
-
-
-class SokobanDS(Sokoban):
-    def get_box_positions(self, board: jnp.ndarray, number_of_boxes: int = 4) -> jnp.ndarray:
+    def _get_box_positions(self, board: jnp.ndarray, number_of_boxes: int = 4) -> jnp.ndarray:
         """
         Get the positions of all boxes on the board.
         """
         flat_index = jnp.argsort(board == Object.BOX.value)[-number_of_boxes:]
         return jnp.unravel_index(flat_index, (self.size, self.size))
 
-    def place_agent_randomly(self, board: jnp.ndarray, key: jax.random.PRNGKey) -> jnp.ndarray:
+    def _place_agent_randomly(self, board: jnp.ndarray, key: jax.random.PRNGKey) -> jnp.ndarray:
         """
         Place the agent randomly on the board.
         """
         board = self.unpack_board(board)
-        box_xs, box_ys = self.get_box_positions(board)
+        box_xs, box_ys = self._get_box_positions(board)
         box_positions = jnp.expand_dims(jnp.stack([box_xs, box_ys], axis=1), 0)  # shape: (1, 4, 2)
         _near = jnp.expand_dims(
             jnp.array([[-1, 0], [1, 0], [0, -1], [0, 1]]), 1
@@ -416,7 +398,123 @@ class SokobanDS(Sokoban):
         packed_board = self.pack_board(new_board)
         return packed_board
 
+    def solve_config_to_state_transform(
+        self, solve_config: "Sokoban.SolveConfig", key: jax.random.PRNGKey = None
+    ) -> "Sokoban.State":
+        """
+        This function shoulde transformt the solve config to the state.
+        """
+        packed_board = self._place_agent_randomly(solve_config.TargetState.board, key)
+        return self.State(board=packed_board)
+
+    def hindsight_transform(
+        self, state: "Sokoban.State", key: jax.random.PRNGKey = None
+    ) -> "Sokoban.SolveConfig":
+        """
+        This function shoulde transformt the state to the solve config.
+        """
+        board = self.unpack_board(state.board)
+        rm_player = jnp.where(board == Object.PLAYER.value, Object.EMPTY.value, board)
+        solve_config = self.SolveConfig(TargetState=self.State(board=self.pack_board(rm_player)))
+        return solve_config
+
+    def get_inverse_neighbours(
+        self, solve_config: "Sokoban.SolveConfig", state: "Sokoban.State", filled: bool = True
+    ) -> tuple["Sokoban.State", chex.Array]:
+        """
+        Returns possible previous states and their associated costs.
+        In Sokoban, inverse moves correspond to 'pulling' a box or simply moving back
+        to the previous position if no box is involved.
+        If an inverse move is not possible, it returns the original state with an infinite cost.
+        """
+
+        board = self.unpack_board(state.board)
+        x, y = self._getPlayerPosition(state)
+        current_pos = jnp.array([x, y])
+        moves = jnp.array([[0, -1], [0, 1], [-1, 0], [1, 0]])
+
+        def flat_idx(i, j):
+            return i * self.size + j
+
+        def is_empty(i, j):
+            return board[flat_idx(i, j)] == Object.EMPTY.value
+
+        def is_valid_pos(i, j):
+            return jnp.logical_and(
+                jnp.logical_and(i >= 0, i < self.size), jnp.logical_and(j >= 0, j < self.size)
+            )
+
+        def inv_move(direction):
+            direction = direction.astype(current_pos.dtype)
+            # Candidate previous player's position (i.e. where the player came from)
+            prev_pos = current_pos - direction
+            valid_prev = is_valid_pos(prev_pos[0], prev_pos[1])
+            # For a pull move, consider the cell in front of the current player.
+            front_pos = current_pos + direction
+            valid_front = is_valid_pos(front_pos[0], front_pos[1])
+            box_at_front = jnp.logical_and(
+                valid_front, board[flat_idx(front_pos[0], front_pos[1])] == Object.BOX.value
+            )
+            empty_prev = jnp.logical_and(valid_prev, is_empty(prev_pos[0], prev_pos[1]))
+
+            def invalid(_):
+                return state, 1.0
+
+            # Inverse pull: the forward push is inverted by pulling the box from ahead.
+            # In a forward push, the player moved from prev_pos
+            # to current_pos and pushed the box from current_pos to front_pos.
+            # Here, we "pull" the box from front_pos back into current_pos while moving the player to prev_pos.
+            def do_pull(_):
+                new_board = board
+                new_board = new_board.at[flat_idx(front_pos[0], front_pos[1])].set(
+                    Object.EMPTY.value
+                )
+                new_board = new_board.at[flat_idx(current_pos[0], current_pos[1])].set(
+                    Object.BOX.value
+                )
+                new_board = new_board.at[flat_idx(prev_pos[0], prev_pos[1])].set(
+                    Object.PLAYER.value
+                )
+                return self.State(board=self.pack_board(new_board)), 1.0
+
+            # Inverse simple move: simply move the player back if no box is involved.
+            def do_simple(_):
+                new_board = board
+                new_board = new_board.at[flat_idx(current_pos[0], current_pos[1])].set(
+                    Object.EMPTY.value
+                )
+                new_board = new_board.at[flat_idx(prev_pos[0], prev_pos[1])].set(
+                    Object.PLAYER.value
+                )
+                return self.State(board=self.pack_board(new_board)), 1.0
+
+            def branch_fn(_):
+                # Only allow a move if the previous cell is empty.
+                return jax.lax.cond(
+                    empty_prev,
+                    lambda _: jax.lax.cond(
+                        box_at_front, do_pull, lambda _: do_simple(None), operand=None
+                    ),
+                    invalid,
+                    operand=None,
+                )
+
+            return jax.lax.cond(valid_prev, branch_fn, invalid, operand=None)
+
+        new_states, costs = jax.vmap(inv_move)(moves)
+        costs = jnp.where(filled, costs, jnp.inf)
+        return new_states, costs
+
+
+class SokobanHard(Sokoban):
+    def data_init(self):
+        self.init_puzzles = jnp.load("puzzle/data/sokoban/init_hard.npy")
+        self.target_puzzles = jnp.load("puzzle/data/sokoban/target_hard.npy")
+        self.num_puzzles = self.init_puzzles.shape[0]
+
+
+class SokobanDS(Sokoban):
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         target_board, _ = data
-        packed_board = self.place_agent_randomly(target_board, key)
+        packed_board = self._place_agent_randomly(target_board, key)
         return self.SolveConfig(TargetState=self.State(board=packed_board))

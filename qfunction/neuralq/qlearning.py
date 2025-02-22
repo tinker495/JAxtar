@@ -202,11 +202,13 @@ def create_target_shuffled_path(
     key: chex.PRNGKey,
 ):
     solve_configs, _ = jax.vmap(puzzle.get_inits)(jax.random.split(key, shuffle_parallel))
-    targets = solve_configs.TargetState
+    targets = jax.vmap(puzzle.solve_config_to_state_transform, in_axes=(0, 0))(
+        solve_configs, jax.random.split(key, shuffle_parallel)
+    )
 
     def _scan(carry, _):
         old_state, state, key, move_cost = carry
-        neighbor_states, cost = puzzle.batched_get_neighbours(
+        neighbor_states, cost = puzzle.batched_get_inverse_neighbours(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
