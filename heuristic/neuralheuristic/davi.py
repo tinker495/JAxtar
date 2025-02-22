@@ -82,12 +82,12 @@ def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
     heuristic_fn: Callable,
-    create_shuffled_path_fn: Callable,
     minibatch_size: int,
     target_heuristic_params: jax.tree_util.PyTreeDef,
+    create_shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
-    solve_configs, shuffled_path, move_costs = create_shuffled_path_fn(key)
+    solve_configs, shuffled_path, move_costs = create_shuffled_path
     equal = puzzle.batched_is_solved(
         solve_configs, shuffled_path, multi_solve_config=True
     )  # [batch_size]
@@ -162,30 +162,42 @@ def get_heuristic_dataset_builder(
             dataset_minibatch_size,
         )
 
+    jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
+
     jited_get_datasets = jax.jit(
         partial(
             _get_datasets,
             puzzle,
             preproc_fn,
             heuristic_fn,
-            create_shuffled_path_fn,
             dataset_minibatch_size,
         )
     )
 
+    def get_paths(
+        key: chex.PRNGKey,
+    ) -> list[tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array]]:
+        paths = []
+        for _ in range(steps):
+            key, subkey = jax.random.split(key)
+            path = jited_create_shuffled_path(subkey)
+            paths.append(path)
+        return paths
+
     def get_datasets(
+        paths: list[tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array]],
         heuristic_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
         dataset = []
-        for _ in range(steps):
+        for path in paths:
             key, subkey = jax.random.split(key)
-            dataset.append(jited_get_datasets(heuristic_params, subkey))
+            dataset.append(jited_get_datasets(heuristic_params, path, subkey))
         flatten_dataset = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *dataset)
         assert flatten_dataset[0].shape[0] == dataset_size
         return flatten_dataset
 
-    return get_datasets
+    return get_paths, get_datasets
 
 
 def create_target_shuffled_path(

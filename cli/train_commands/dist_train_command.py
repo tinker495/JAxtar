@@ -70,11 +70,11 @@ def davi(
 
     optimizer, opt_state = setup_optimizer(heuristic_params)
     davi_fn = davi_builder(1000, heuristic_fn, optimizer)
-    get_datasets = get_heuristic_dataset_builder(
+    get_paths, get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
         heuristic_fn,
-        int(1e5),
+        int(3e5),
         int(math.ceil(10000 / shuffle_length)),
         shuffle_length,
         10000,
@@ -84,9 +84,10 @@ def davi(
     pbar = trange(steps)
     mean_target_heuristic = 0
     save_count = 0
+    paths = get_paths(key)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_heuristic_params, subkey)
+        dataset = get_datasets(paths, target_heuristic_params, subkey)
         heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
@@ -113,6 +114,7 @@ def davi(
                     f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
                 save_count = 0
+                paths = get_paths(key)
 
 
 @click.command()
@@ -141,11 +143,11 @@ def qlearning(
 
     optimizer, opt_state = setup_optimizer(qfunc_params)
     qlearning_fn = qlearning_builder(1000, qfunc_fn, optimizer)
-    get_datasets = get_qlearning_dataset_builder(
+    get_paths, get_datasets = get_qlearning_dataset_builder(
         puzzle,
         qfunction.pre_process,
         qfunc_fn,
-        int(1e5),
+        int(3e5),
         int(math.ceil(10000 / shuffle_length)),
         shuffle_length,
         10000,
@@ -155,9 +157,10 @@ def qlearning(
     pbar = trange(steps)
     mean_target_heuristic = 0
     save_count = 0
+    paths = get_paths(key)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_qfunc_params, subkey)
+        dataset = get_datasets(paths, target_qfunc_params, subkey)
         qfunc_params, opt_state, loss, mean_abs_diff, diffs = qlearning_fn(
             key, dataset, qfunc_params, opt_state
         )
@@ -184,3 +187,4 @@ def qlearning(
                     f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
                 save_count = 0
+                paths = get_paths(key)
