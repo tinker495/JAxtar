@@ -38,7 +38,7 @@ def setup_logging(
 def setup_optimizer(params: PyTree) -> optax.OptState:
     optimizer = optax.chain(
         optax.clip_by_global_norm(10.0),  # Clip gradients to a maximum global norm of 1.0
-        optax.adam(1e-4, nesterov=True),
+        optax.adam(1e-3, nesterov=True),
     )
     return optimizer, optimizer.init(params)
 
@@ -74,7 +74,7 @@ def davi(
         puzzle,
         heuristic.pre_process,
         heuristic_fn,
-        int(3e5),
+        int(3e4),
         int(math.ceil(10000 / shuffle_length)),
         shuffle_length,
         10000,
@@ -96,7 +96,7 @@ def davi(
         pbar.set_description(
             f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
         )
-        if i % 100 == 0:
+        if i % 10 == 0:
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
@@ -173,7 +173,7 @@ def qlearning(
         pbar.set_description(
             f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
         )
-        if i % 100 == 0:
+        if i % 10 == 0:
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
