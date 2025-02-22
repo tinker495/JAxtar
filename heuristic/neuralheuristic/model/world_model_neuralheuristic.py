@@ -18,6 +18,6 @@ class WorldModelNeuralHeuristic(NeuralHeuristicBase):
     ) -> chex.Array:
         target_latent = self.puzzle.from_uint8(solve_config.TargetState.latent).astype(jnp.float32)
         current_latent = self.puzzle.from_uint8(current.latent).astype(jnp.float32)
-        latent_diff = target_latent - current_latent
-        latent_diff = jnp.reshape(latent_diff, (-1,))
-        return latent_diff
+        latent_stack = jnp.concatenate([current_latent, target_latent], axis=-1)
+        latent_stack = jnp.reshape(latent_stack, (-1,))
+        return (latent_stack - 0.5) * 2.0
