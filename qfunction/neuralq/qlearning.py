@@ -128,8 +128,7 @@ def _get_datasets(
         return None, min_q
 
     _, target_q = jax.lax.scan(q_scan, None, flatten_neighbors)
-    target_q = jnp.concatenate(target_q, axis=0)
-    target_q = jnp.reshape(target_q, (preproc_neighbors.shape[0], -1))
+    target_q = jnp.vstack(target_q)
     target_q = jnp.maximum(jnp.where(neighbors_equal, 0.0, target_q), 0.0)
     target_q = jnp.round(target_q)
     target_q = jnp.where(equal, 0.0, target_q)  # if the puzzle is already solved, the all q is 0
