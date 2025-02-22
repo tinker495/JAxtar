@@ -286,3 +286,21 @@ class Puzzle(ABC):
         """
         tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
         return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
+
+    def batched_hindsight_transform(self, states: State) -> SolveConfig:
+        """
+        This function shoulde transformt the state to the solve config.
+        """
+        return jax.vmap(self.hindsight_transform)(states)
+
+    def hindsight_transform(self, states: State) -> SolveConfig:
+        """
+        This function shoulde transformt the state to the solve config.
+        """
+        assert self.has_target, "This puzzle does not have target state"
+        assert self.only_target, (
+            "Default hindsight transform is for only target state,"
+            "you should redefine this function"
+        )
+        solve_config = self.SolveConfig(TargetState=states)
+        return solve_config
