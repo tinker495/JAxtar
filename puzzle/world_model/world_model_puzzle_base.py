@@ -427,3 +427,23 @@ class WorldModelPuzzleBase(Puzzle):
         )
         bit_latent = bit_latent[: self.latent_size]
         return jnp.reshape(bit_latent, shape=self.latent_shape)
+
+    def get_inverse_neighbours(
+        self, solve_config: SolveConfig, state: State, filled: bool = True
+    ) -> tuple[State, chex.Array]:
+        """
+        This function should return inverse neighbours and the cost of the move.
+        """
+        states = state[jnp.newaxis, ...]
+        # filleds = filled[jnp.newaxis, ...]
+        next_states, costs = self.batched_get_inverse_neighbours(solve_config, states, filled)
+        return next_states[:, 0], costs[:, 0]
+
+    def batched_get_inverse_neighbours(
+        self,
+        solve_configs: SolveConfig,
+        states: State,
+        filleds: bool = True,
+        multi_solve_config: bool = False,
+    ) -> tuple[State, chex.Array]:
+        return self.get_batched_neighbours(solve_configs, states, filleds, multi_solve_config)
