@@ -13,6 +13,7 @@ from heuristic.neuralheuristic import (
     LightsOutNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
+    SokobanNeuralHeuristic,
     WorldModelNeuralHeuristic,
 )
 from puzzle import (
@@ -52,6 +53,7 @@ from qfunction.neuralq import (
     LightsOutNeuralQ,
     RubiksCubeNeuralQ,
     SlidePuzzleNeuralQ,
+    SokobanNeuralQ,
     WorldModelNeuralQ,
 )
 
@@ -139,6 +141,11 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
     else RubiksCubeNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/rubikscube_{n}.pkl"
     ),
+    "sokoban": lambda n, puzzle, reset: SokobanNeuralHeuristic(puzzle)
+    if reset
+    else SokobanNeuralHeuristic.load_model(
+        puzzle, f"heuristic/neuralheuristic/model/params/sokoban_{n}.pkl"
+    ),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
     if reset
     else WorldModelNeuralHeuristic.load_model(
@@ -201,6 +208,9 @@ puzzle_q_dict_nn: dict[str, callable] = {
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralQ(puzzle)
     if reset
     else RubiksCubeNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/rubikscube_{n}.pkl"),
+    "sokoban": lambda n, puzzle, reset: SokobanNeuralQ(puzzle)
+    if reset
+    else SokobanNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/sokoban_{n}.pkl"),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(

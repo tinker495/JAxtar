@@ -1,6 +1,7 @@
 from functools import wraps
 
 import click
+import jax
 
 from config import (
     default_puzzle_sizes,
@@ -51,9 +52,14 @@ def train_option(func: callable) -> callable:
     @click.option("--reset", is_flag=True, help="Reset the target heuristic params")
     @click.option("-l", "--loss_threshold", type=float, default=0.05)
     @click.option("-u", "--update_interval", type=int, default=500)
-    @click.option("--using_initial_states", is_flag=True, help="Use initial states")
+    @click.option("--using_hindsight_target", is_flag=True, help="Use hindsight target")
+    @click.option("--debug", is_flag=True, help="Debug mode")
     @wraps(func)
     def wrapper(*args, **kwargs):
+        if kwargs["debug"]:
+            # disable jit
+            print("Disabling JIT")
+            jax.config.update("jax_disable_jit", True)
         return func(*args, **kwargs)
 
     return wrapper
