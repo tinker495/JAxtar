@@ -19,4 +19,5 @@ class WorldModelNeuralQ(NeuralQFunctionBase):
         target_latent = self.puzzle.from_uint8(solve_config.TargetState.latent).astype(jnp.float32)
         current_latent = self.puzzle.from_uint8(current.latent).astype(jnp.float32)
         latent_diff = target_latent - current_latent
+        latent_diff = jnp.reshape(latent_diff, (-1,))
         return latent_diff
