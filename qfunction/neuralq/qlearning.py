@@ -25,7 +25,7 @@ def qlearning_builder(
         )
         heuristic_params["batch_stats"] = variable_updates["batch_stats"]
         diff = target_qs - q_values
-        loss = jnp.mean(jnp.square(diff))
+        loss = jnp.mean(optax.l2_loss(q_values, target_qs))
         return loss, (heuristic_params, diff)
 
     def qlearning(
@@ -89,13 +89,13 @@ def _get_datasets(
     key: chex.PRNGKey,
 ):
     solve_configs, shuffled_path, move_costs = create_shuffled_path
-    equal = puzzle.batched_is_solved(
+    solved = puzzle.batched_is_solved(
         solve_configs, shuffled_path, multi_solve_config=True
     )  # [batch_size]
     neighbors, cost = puzzle.batched_get_neighbours(
         solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
     )  # [action_size, batch_size] [action_size, batch_size]
-    neighbors_equal = jax.vmap(
+    neighbors_solved = jax.vmap(
         lambda x, y: puzzle.batched_is_solved(x, y, multi_solve_config=True),
         in_axes=(None, 0),
     )(
@@ -129,11 +129,16 @@ def _get_datasets(
 
     _, target_q = jax.lax.scan(q_scan, None, flatten_neighbors)
     target_q = jnp.vstack(target_q)
-    target_q = jnp.maximum(jnp.where(neighbors_equal, 0.0, target_q), 0.0)
+    target_q = jnp.maximum(jnp.where(neighbors_solved, 0.0, target_q), 0.0)
     target_q = jnp.round(target_q)
-    target_q = jnp.where(equal, 0.0, target_q)  # if the puzzle is already solved, the all q is 0
+    target_q = jnp.where(solved, 0.0, target_q)  # if the puzzle is already solved, the all q is 0
     target_q = jnp.swapaxes(target_q, 1, 0)
 
+    # target_heuristic must be less than the number of moves
+    # it just doesn't make sense to have a heuristic greater than the number of moves
+    # heuristic's definition is the optimal cost to reach the target state
+    # so it doesn't make sense to have a heuristic greater than the number of moves
+    target_q = jnp.minimum(target_q, jnp.expand_dims(move_costs + 1, axis=1))
     states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
     return states, target_q
 
