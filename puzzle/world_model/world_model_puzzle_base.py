@@ -446,4 +446,4 @@ class WorldModelPuzzleBase(Puzzle):
         filleds: bool = True,
         multi_solve_config: bool = False,
     ) -> tuple[State, chex.Array]:
-        return self.get_batched_neighbours(solve_configs, states, filleds, multi_solve_config)
+        return self.batched_get_neighbours(solve_configs, states, filleds, multi_solve_config)
