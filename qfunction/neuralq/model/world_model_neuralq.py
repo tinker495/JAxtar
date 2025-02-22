@@ -16,10 +16,7 @@ class WorldModelNeuralQ(NeuralQFunctionBase):
     def pre_process(
         self, solve_config: WorldModelPuzzleBase.SolveConfig, current: WorldModelPuzzleBase.State
     ) -> chex.Array:
-        current_latent = self.puzzle.from_uint8(current.latent)
-        target_latent = self.puzzle.from_uint8(solve_config.TargetState.latent)
-        concat_latent = jnp.concatenate([current_latent, target_latent], axis=-1).astype(
-            jnp.float32
-        )
-        flatten_latent = jnp.reshape(concat_latent, (-1))
-        return (flatten_latent - 0.5) * 2.0  # normalize to [-1, 1]
+        target_latent = self.puzzle.from_uint8(solve_config.TargetState.latent).astype(jnp.float32)
+        current_latent = self.puzzle.from_uint8(current.latent).astype(jnp.float32)
+        latent_diff = target_latent - current_latent
+        return latent_diff
