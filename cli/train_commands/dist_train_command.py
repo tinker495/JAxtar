@@ -85,9 +85,9 @@ def davi(
     mean_target_heuristic = 0
     save_count = 0
     paths = get_paths(key)
+    dataset = get_datasets(paths, target_heuristic_params, subkey)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(paths, target_heuristic_params, subkey)
         heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
@@ -106,6 +106,7 @@ def davi(
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
             target_heuristic_params, heuristic_params = (heuristic_params, target_heuristic_params)
+            dataset = get_datasets(paths, target_heuristic_params, subkey)
             opt_state = optimizer.init(heuristic_params)
 
             if save_count >= 5:
@@ -158,9 +159,9 @@ def qlearning(
     mean_target_heuristic = 0
     save_count = 0
     paths = get_paths(key)
+    dataset = get_datasets(paths, target_qfunc_params, subkey)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(paths, target_qfunc_params, subkey)
         qfunc_params, opt_state, loss, mean_abs_diff, diffs = qlearning_fn(
             key, dataset, qfunc_params, opt_state
         )
@@ -179,6 +180,7 @@ def qlearning(
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
             target_qfunc_params, qfunc_params = (qfunc_params, target_qfunc_params)
+            dataset = get_datasets(paths, target_qfunc_params, subkey)
             opt_state = optimizer.init(qfunc_params)
 
             if save_count >= 5:
