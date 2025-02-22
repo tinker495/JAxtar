@@ -147,13 +147,13 @@ def get_qlearning_dataset_builder(
     shuffle_parallel: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
-    using_initial_states: bool = True,
+    using_hindsight_target: bool = True,
 ):
     steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
 
-    if using_initial_states:
+    if using_hindsight_target:
         create_shuffled_path_fn = partial(
-            create_initial_shuffled_path,
+            create_hindsight_target_shuffled_path,
             puzzle,
             shuffle_length,
             shuffle_parallel,
@@ -246,7 +246,7 @@ def create_target_shuffled_path(
     return solve_configs, moves, move_costs
 
 
-def create_initial_shuffled_path(
+def create_hindsight_target_shuffled_path(
     puzzle: Puzzle,
     shuffle_length: int,
     shuffle_parallel: int,
@@ -290,7 +290,7 @@ def create_initial_shuffled_path(
     )
     move_costs = move_costs[-1] - move_costs
 
-    solve_configs.TargetState = moves[-1, ...]
+    solve_configs = puzzle.batched_hindsight_transform(moves[-1, ...])
     moves = moves[:-1, ...]
     move_costs = move_costs[:-1, ...]
 

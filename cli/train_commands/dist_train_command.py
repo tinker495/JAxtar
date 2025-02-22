@@ -57,7 +57,7 @@ def davi(
     key: int,
     loss_threshold: float,
     update_interval: int,
-    using_initial_states: bool,
+    using_hindsight_target: bool,
     **kwargs,
 ):
 
@@ -78,7 +78,7 @@ def davi(
         int(math.ceil(10000 / shuffle_length)),
         shuffle_length,
         10000,
-        using_initial_states,
+        using_hindsight_target,
     )
 
     pbar = trange(steps)
@@ -129,7 +129,7 @@ def qlearning(
     key: int,
     loss_threshold: float,
     update_interval: int,
-    using_initial_states: bool,
+    using_hindsight_target: bool,
     **kwargs,
 ):
     writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
@@ -149,7 +149,7 @@ def qlearning(
         int(math.ceil(10000 / shuffle_length)),
         shuffle_length,
         10000,
-        using_initial_states,
+        using_hindsight_target,
     )
 
     pbar = trange(steps)

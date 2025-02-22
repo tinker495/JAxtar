@@ -189,7 +189,7 @@ class Sokoban(Puzzle):
             valid_move = is_valid_pos(new_x, new_y)
 
             def invalid_case(_):
-                return state, jnp.inf
+                return state, 1.0
 
             def process_move(_):
                 target = board[flat_idx(new_x, new_y)]
@@ -360,6 +360,15 @@ class Sokoban(Puzzle):
             return img
 
         return img_func
+
+    def hindsight_transform(self, state: "Sokoban.State") -> "Sokoban.SolveConfig":
+        """
+        This function shoulde transformt the state to the solve config.
+        """
+        board = self.unpack_board(state.board)
+        rm_player = jnp.where(board == Object.PLAYER.value, Object.EMPTY.value, board)
+        solve_config = self.SolveConfig(TargetState=self.State(board=self.pack_board(rm_player)))
+        return solve_config
 
 
 class SokobanHard(Sokoban):
