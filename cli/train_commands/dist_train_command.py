@@ -1,4 +1,3 @@
-import math
 from datetime import datetime
 from typing import Any
 
@@ -54,6 +53,8 @@ def davi(
     puzzle_size: int,
     steps: int,
     shuffle_length: int,
+    batch_size: int,
+    minibatch_size: int,
     key: int,
     loss_threshold: float,
     update_interval: int,
@@ -70,14 +71,13 @@ def davi(
 
     optimizer, opt_state = setup_optimizer(heuristic_params)
     davi_fn = davi_builder(1000, heuristic_fn, optimizer)
-    get_paths, get_datasets = get_heuristic_dataset_builder(
+    get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
         heuristic_fn,
-        int(1e5),
-        int(math.ceil(10000 / shuffle_length)),
+        batch_size,
         shuffle_length,
-        10000,
+        minibatch_size,
         using_hindsight_target,
     )
 
@@ -85,9 +85,7 @@ def davi(
     save_count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
-
-        paths = get_paths(key)
-        dataset = get_datasets(paths, target_heuristic_params, subkey)
+        dataset = get_datasets(target_heuristic_params, subkey)
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
@@ -128,6 +126,8 @@ def qlearning(
     puzzle_size: int,
     steps: int,
     shuffle_length: int,
+    batch_size: int,
+    minibatch_size: int,
     key: int,
     loss_threshold: float,
     update_interval: int,
@@ -143,14 +143,13 @@ def qlearning(
 
     optimizer, opt_state = setup_optimizer(qfunc_params)
     qlearning_fn = qlearning_builder(1000, qfunc_fn, optimizer)
-    get_paths, get_datasets = get_qlearning_dataset_builder(
+    get_datasets = get_qlearning_dataset_builder(
         puzzle,
         qfunction.pre_process,
         qfunc_fn,
-        int(1e5),
-        int(math.ceil(10000 / shuffle_length)),
+        batch_size,
         shuffle_length,
-        10000,
+        minibatch_size,
         using_hindsight_target,
     )
 
@@ -158,9 +157,7 @@ def qlearning(
     save_count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
-
-        paths = get_paths(key)
-        dataset = get_datasets(paths, target_qfunc_params, qfunc_params, subkey)
+        dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
