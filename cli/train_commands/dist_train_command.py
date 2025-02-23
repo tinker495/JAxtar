@@ -82,14 +82,15 @@ def davi(
     )
 
     pbar = trange(steps)
-    mean_target_heuristic = 0
     save_count = 0
-    paths = get_paths(key)
-    dataset = get_datasets(paths, target_heuristic_params, subkey)
-    target_heuristic = dataset[1]
-    mean_target_heuristic = jnp.mean(target_heuristic)
     for i in pbar:
         key, subkey = jax.random.split(key)
+
+        paths = get_paths(key)
+        dataset = get_datasets(paths, target_heuristic_params, subkey)
+        target_heuristic = dataset[1]
+        mean_target_heuristic = jnp.mean(target_heuristic)
+
         heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
@@ -114,11 +115,6 @@ def davi(
                     f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
                 save_count = 0
-                paths = get_paths(key)
-
-            dataset = get_datasets(paths, target_heuristic_params, subkey)
-            target_heuristic = dataset[1]
-            mean_target_heuristic = jnp.mean(target_heuristic)
 
 
 @click.command()
@@ -159,14 +155,15 @@ def qlearning(
     )
 
     pbar = trange(steps)
-    mean_target_heuristic = 0
     save_count = 0
-    paths = get_paths(key)
-    dataset = get_datasets(paths, target_qfunc_params, subkey)
-    target_heuristic = dataset[1]
-    mean_target_heuristic = jnp.mean(target_heuristic)
     for i in pbar:
         key, subkey = jax.random.split(key)
+
+        paths = get_paths(key)
+        dataset = get_datasets(paths, target_qfunc_params, subkey)
+        target_heuristic = dataset[1]
+        mean_target_heuristic = jnp.mean(target_heuristic)
+
         qfunc_params, opt_state, loss, mean_abs_diff, diffs = qlearning_fn(
             key, dataset, qfunc_params, opt_state
         )
@@ -191,7 +188,3 @@ def qlearning(
                     f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
                 save_count = 0
-                paths = get_paths(key)
-            dataset = get_datasets(paths, target_qfunc_params, subkey)
-            target_heuristic = dataset[1]
-            mean_target_heuristic = jnp.mean(target_heuristic)
