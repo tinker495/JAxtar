@@ -34,7 +34,7 @@ def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
 def setup_optimizer(params: PyTree) -> optax.OptState:
     optimizer = optax.chain(
         optax.clip_by_global_norm(10.0),  # Clip gradients to a maximum global norm of 1.0
-        optax.adam(1e-3, nesterov=True),
+        optax.adamw(1e-3, nesterov=True, weight_decay=1e-4),
     )
     return optimizer, optimizer.init(params)
 
