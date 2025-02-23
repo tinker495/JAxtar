@@ -99,51 +99,76 @@ def _get_datasets(
     minibatch_size: int,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
-    create_shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
+    shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
-    solve_configs, shuffled_path, move_costs = create_shuffled_path
-    solved = puzzle.batched_is_solved(
-        solve_configs, shuffled_path, multi_solve_config=True
-    )  # [batch_size]
+    solve_configs, shuffled_path, move_costs = shuffled_path
 
-    path_preproc = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, shuffled_path)
-    q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
-    probs = boltzmann_action_selection(q_values)
-    idxs = jnp.arange(q_values.shape[1])  # action_size
-    actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
-        jax.random.split(key, q_values.shape[0]), probs
+    minibatched_solve_configs = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
+    )
+    minibatched_shuffled_path = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), shuffled_path
+    )
+    minibatched_move_costs = jnp.reshape(move_costs, (-1, minibatch_size))
+
+    def get_minibatched_datasets(_, vals):
+        solve_configs, shuffled_path, move_costs = vals
+        solved = puzzle.batched_is_solved(
+            solve_configs, shuffled_path, multi_solve_config=True
+        )  # [batch_size]
+
+        path_preproc = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, shuffled_path)
+        q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
+        probs = boltzmann_action_selection(q_values)
+        idxs = jnp.arange(q_values.shape[1])  # action_size
+        actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
+            jax.random.split(key, q_values.shape[0]), probs
+        )
+
+        neighbors, cost = puzzle.batched_get_neighbours(
+            solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+        )  # [action_size, batch_size] [action_size, batch_size]
+        batch_size = actions.shape[0]
+        selected_neighbors = jax.tree_util.tree_map(
+            lambda x: x[actions, jnp.arange(batch_size), :],
+            neighbors,
+        )
+        selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
+        selected_neighbors_solved = puzzle.batched_is_solved(
+            solve_configs, selected_neighbors, multi_solve_config=True
+        )
+
+        preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
+
+        q, _ = q_fn(
+            target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+        )  # [minibatch_size, action_shape]
+        target_q = jnp.min(q, axis=1) + selected_costs
+        target_q = jnp.maximum(jnp.where(selected_neighbors_solved, 0.0, target_q), 0.0)
+        target_q = jnp.round(target_q)
+        target_q = jnp.where(
+            solved, 0.0, target_q
+        )  # if the puzzle is already solved, the all q is 0
+
+        # target_heuristic must be less than the number of moves
+        # it just doesn't make sense to have a heuristic greater than the number of moves
+        # heuristic's definition is the optimal cost to reach the target state
+        # so it doesn't make sense to have a heuristic greater than the number of moves
+        # target_q = jnp.minimum(target_q, jnp.expand_dims(move_costs + 1, axis=1))
+        states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
+        return None, (states, target_q, actions)
+
+    _, (states, target_q, actions) = jax.lax.scan(
+        get_minibatched_datasets,
+        None,
+        (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
     )
 
-    neighbors, cost = puzzle.batched_get_neighbours(
-        solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
-    )  # [action_size, batch_size] [action_size, batch_size]
-    batch_size = actions.shape[0]
-    selected_neighbors = jax.tree_util.tree_map(
-        lambda x: x[actions, jnp.arange(batch_size), :],
-        neighbors,
-    )
-    selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
-    selected_neighbors_solved = puzzle.batched_is_solved(
-        solve_configs, selected_neighbors, multi_solve_config=True
-    )
+    states = states.reshape((-1, *states.shape[2:]))
+    target_q = target_q.reshape((-1, *target_q.shape[2:]))
+    actions = actions.reshape((-1, *actions.shape[2:]))
 
-    preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
-
-    q, _ = q_fn(
-        target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
-    )  # [minibatch_size, action_shape]
-    target_q = jnp.min(q, axis=1) + selected_costs
-    target_q = jnp.maximum(jnp.where(selected_neighbors_solved, 0.0, target_q), 0.0)
-    target_q = jnp.round(target_q)
-    target_q = jnp.where(solved, 0.0, target_q)  # if the puzzle is already solved, the all q is 0
-
-    # target_heuristic must be less than the number of moves
-    # it just doesn't make sense to have a heuristic greater than the number of moves
-    # heuristic's definition is the optimal cost to reach the target state
-    # so it doesn't make sense to have a heuristic greater than the number of moves
-    # target_q = jnp.minimum(target_q, jnp.expand_dims(move_costs + 1, axis=1))
-    states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
     return states, target_q, actions
 
 
@@ -152,12 +177,13 @@ def get_qlearning_dataset_builder(
     preproc_fn: Callable,
     q_fn: Callable,
     dataset_size: int,
-    shuffle_parallel: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
 ):
+    shuffle_parallel = int(min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size))
     steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
+    shuffle_size = dataset_size // steps
 
     if using_hindsight_target:
         create_shuffled_path_fn = partial(
@@ -165,7 +191,7 @@ def get_qlearning_dataset_builder(
             puzzle,
             shuffle_length,
             shuffle_parallel,
-            dataset_minibatch_size,
+            shuffle_size,
         )
     else:
         create_shuffled_path_fn = partial(
@@ -173,7 +199,7 @@ def get_qlearning_dataset_builder(
             puzzle,
             shuffle_length,
             shuffle_parallel,
-            dataset_minibatch_size,
+            shuffle_size,
         )
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
@@ -188,38 +214,31 @@ def get_qlearning_dataset_builder(
         )
     )
 
-    def get_paths(
-        key: chex.PRNGKey,
-    ) -> list[tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array]]:
-        paths = []
-        for _ in range(steps):
-            key, subkey = jax.random.split(key)
-            path = jited_create_shuffled_path(subkey)
-            paths.append(path)
-        return paths
-
     def get_datasets(
-        paths: list[tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array]],
         target_q_params: jax.tree_util.PyTreeDef,
         q_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
-        dataset = []
-        for path in paths:
+        paths = []
+        for _ in range(steps):
             key, subkey = jax.random.split(key)
-            dataset.append(jited_get_datasets(target_q_params, q_params, path, subkey))
-        flatten_dataset = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *dataset)
-        assert flatten_dataset[0].shape[0] == dataset_size
+            paths.append(jited_create_shuffled_path(subkey))
+        paths = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *paths)
+
+        flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
+        assert (
+            flatten_dataset[0].shape[0] == dataset_size
+        ), f"{flatten_dataset[0].shape[0]} != {dataset_size}"
         return flatten_dataset
 
-    return get_paths, get_datasets
+    return get_datasets
 
 
 def create_target_shuffled_path(
     puzzle: Puzzle,
     shuffle_length: int,
     shuffle_parallel: int,
-    dataset_minibatch_size: int,
+    shuffle_size: int,
     key: chex.PRNGKey,
 ):
     solve_configs, _ = jax.vmap(puzzle.get_inits)(jax.random.split(key, shuffle_parallel))
@@ -273,9 +292,9 @@ def create_target_shuffled_path(
         lambda x: x.reshape((-1, *x.shape[2:])), moves
     )  # [batch_size * shuffle_length, ...]
     move_costs = jnp.reshape(move_costs, (-1))  # [batch_size * shuffle_length]
-    solve_configs = solve_configs[:dataset_minibatch_size]
-    moves = moves[:dataset_minibatch_size]
-    move_costs = move_costs[:dataset_minibatch_size]
+    solve_configs = solve_configs[:shuffle_size]
+    moves = moves[:shuffle_size]
+    move_costs = move_costs[:shuffle_size]
     return solve_configs, moves, move_costs
 
 
@@ -283,7 +302,7 @@ def create_hindsight_target_shuffled_path(
     puzzle: Puzzle,
     shuffle_length: int,
     shuffle_parallel: int,
-    dataset_minibatch_size: int,
+    shuffle_size: int,
     key: chex.PRNGKey,
 ):
     solve_configs, initial_states = jax.vmap(puzzle.get_inits)(
@@ -342,7 +361,7 @@ def create_hindsight_target_shuffled_path(
     solve_configs = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), solve_configs)
     moves = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), moves)
     move_costs = jnp.reshape(move_costs, (-1))
-    solve_configs = solve_configs[:dataset_minibatch_size]
-    moves = moves[:dataset_minibatch_size]
-    move_costs = move_costs[:dataset_minibatch_size]
+    solve_configs = solve_configs[:shuffle_size]
+    moves = moves[:shuffle_size]
+    move_costs = move_costs[:shuffle_size]
     return solve_configs, moves, move_costs
