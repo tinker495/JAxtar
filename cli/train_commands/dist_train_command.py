@@ -160,7 +160,7 @@ def qlearning(
         key, subkey = jax.random.split(key)
 
         paths = get_paths(key)
-        dataset = get_datasets(paths, target_qfunc_params, subkey)
+        dataset = get_datasets(paths, target_qfunc_params, qfunc_params, subkey)
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
