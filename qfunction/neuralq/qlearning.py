@@ -10,6 +10,13 @@ import optax
 from puzzle.puzzle_base import Puzzle
 
 
+def boltzmann_action_selection(q_values: chex.Array, temperature: float = 1.0 / 3.0) -> chex.Array:
+    q_values = -q_values / temperature
+    q_values = jnp.exp(q_values)
+    probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
+    return probs
+
+
 def qlearning_builder(
     minibatch_size: int,
     q_fn: Callable,
@@ -19,13 +26,21 @@ def qlearning_builder(
         heuristic_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
         target_qs: chex.Array,
+        key: chex.PRNGKey,
     ):
         q_values, variable_updates = q_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
         heuristic_params["batch_stats"] = variable_updates["batch_stats"]
-        diff = target_qs - q_values
-        loss = jnp.mean(optax.l2_loss(q_values, target_qs))
+        probs = boltzmann_action_selection(q_values)
+        actions = jax.vmap(
+            lambda key, p: jax.random.choice(key, jnp.arange(q_values.shape[1]), p=p),
+            in_axes=(0, 0),
+        )(jax.random.split(key, q_values.shape[0]), probs)
+        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
+        target_qs_at_actions = jnp.take_along_axis(target_qs, actions[:, jnp.newaxis], axis=1)
+        diff = target_qs_at_actions - q_values_at_actions
+        loss = jnp.mean(optax.l2_loss(q_values_at_actions, target_qs_at_actions))
         return loss, (heuristic_params, diff)
 
     def qlearning(
@@ -54,22 +69,24 @@ def qlearning_builder(
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
-            heuristic_params, opt_state = carry
+            heuristic_params, opt_state, key = carry
             states, target_q = batched_dataset
+            key, subkey = jax.random.split(key)
             (loss, (heuristic_params, diff)), grads = jax.value_and_grad(
                 qlearning_loss, has_aux=True
             )(
                 heuristic_params,
                 states,
                 target_q,
+                subkey,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
-            return (heuristic_params, opt_state), (loss, diff)
+            return (heuristic_params, opt_state, key), (loss, diff)
 
-        (heuristic_params, opt_state), (losses, diffs) = jax.lax.scan(
+        (heuristic_params, opt_state, key), (losses, diffs) = jax.lax.scan(
             train_loop,
-            (heuristic_params, opt_state),
+            (heuristic_params, opt_state, key),
             (batched_states, batched_target_q),
         )
         loss = jnp.mean(losses)
