@@ -10,13 +10,6 @@ import optax
 from puzzle.puzzle_base import Puzzle
 
 
-def boltzmann_action_selection(q_values: chex.Array, temperature: float = 1.0 / 3.0) -> chex.Array:
-    q_values = -q_values / temperature
-    q_values = jnp.exp(q_values)
-    probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
-    return probs
-
-
 def qlearning_builder(
     minibatch_size: int,
     q_fn: Callable,
@@ -25,34 +18,30 @@ def qlearning_builder(
     def qlearning_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
+        actions: chex.Array,
         target_qs: chex.Array,
-        key: chex.PRNGKey,
     ):
         q_values, variable_updates = q_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
         heuristic_params["batch_stats"] = variable_updates["batch_stats"]
-        probs = boltzmann_action_selection(q_values)
-        actions = jax.vmap(
-            lambda key, p: jax.random.choice(key, jnp.arange(q_values.shape[1]), p=p),
-            in_axes=(0, 0),
-        )(jax.random.split(key, q_values.shape[0]), probs)
-        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
-        target_qs_at_actions = jnp.take_along_axis(target_qs, actions[:, jnp.newaxis], axis=1)
-        diff = target_qs_at_actions - q_values_at_actions
-        loss = jnp.mean(optax.l2_loss(q_values_at_actions, target_qs_at_actions))
+        q_values_at_actions = jnp.take_along_axis(
+            q_values, actions[:, jnp.newaxis], axis=1
+        ).squeeze(1)
+        diff = target_qs - q_values_at_actions
+        loss = jnp.mean(optax.l2_loss(q_values_at_actions, target_qs))
         return loss, (heuristic_params, diff)
 
     def qlearning(
         key: chex.PRNGKey,
-        dataset: tuple[chex.Array, chex.Array],
+        dataset: tuple[chex.Array, chex.Array, chex.Array],
         heuristic_params: jax.tree_util.PyTreeDef,
         opt_state: optax.OptState,
     ):
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q = dataset
+        states, target_q, actions = dataset
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -67,27 +56,27 @@ def qlearning_builder(
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
+        batched_actions = jnp.take(actions, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
-            heuristic_params, opt_state, key = carry
-            states, target_q = batched_dataset
-            key, subkey = jax.random.split(key)
+            heuristic_params, opt_state = carry
+            states, target_q, actions = batched_dataset
             (loss, (heuristic_params, diff)), grads = jax.value_and_grad(
                 qlearning_loss, has_aux=True
             )(
                 heuristic_params,
                 states,
+                actions,
                 target_q,
-                subkey,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
-            return (heuristic_params, opt_state, key), (loss, diff)
+            return (heuristic_params, opt_state), (loss, diff)
 
-        (heuristic_params, opt_state, key), (losses, diffs) = jax.lax.scan(
+        (heuristic_params, opt_state), (losses, diffs) = jax.lax.scan(
             train_loop,
-            (heuristic_params, opt_state, key),
-            (batched_states, batched_target_q),
+            (heuristic_params, opt_state),
+            (batched_states, batched_target_q, batched_actions),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -96,12 +85,20 @@ def qlearning_builder(
     return jax.jit(qlearning)
 
 
+def boltzmann_action_selection(q_values: chex.Array, temperature: float = 1.0 / 3.0) -> chex.Array:
+    q_values = -q_values / temperature
+    q_values = jnp.exp(q_values)
+    probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
+    return probs
+
+
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
     q_fn: Callable,
     minibatch_size: int,
-    target_heuristic_params: jax.tree_util.PyTreeDef,
+    target_q_params: jax.tree_util.PyTreeDef,
+    q_params: jax.tree_util.PyTreeDef,
     create_shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
@@ -109,47 +106,37 @@ def _get_datasets(
     solved = puzzle.batched_is_solved(
         solve_configs, shuffled_path, multi_solve_config=True
     )  # [batch_size]
+
+    path_preproc = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, shuffled_path)
+    q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
+    probs = boltzmann_action_selection(q_values)
+    idxs = jnp.arange(q_values.shape[1])  # action_size
+    actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
+        jax.random.split(key, q_values.shape[0]), probs
+    )
+
     neighbors, cost = puzzle.batched_get_neighbours(
         solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
     )  # [action_size, batch_size] [action_size, batch_size]
-    neighbors_solved = jax.vmap(
-        lambda x, y: puzzle.batched_is_solved(x, y, multi_solve_config=True),
-        in_axes=(None, 0),
-    )(
-        solve_configs, neighbors
-    )  # [action_size, batch_size]
-
-    # _, neighbors_neighbor_cost = jax.vmap(
-    #     lambda x, y: puzzle.batched_get_neighbours(x, y, multi_solve_config=True),
-    #     in_axes=(None, 0),
-    # )(
-    #     solve_configs, neighbors
-    # )  # [action_size, action_size, batch_size]
-    # this is actually correct, but is large to compute
-    # so we use 1 as the cost of the neighbors
-
-    preproc_neighbors = jax.vmap(jax.vmap(preproc_fn, in_axes=(0, 0)), in_axes=(None, 0))(
-        solve_configs, neighbors
+    batch_size = actions.shape[0]
+    selected_neighbors = jax.tree_util.tree_map(
+        lambda x: x[actions, jnp.arange(batch_size), :],
+        neighbors,
     )
-    # preproc_neighbors: [action, batch, ...]
-    flatten_neighbors = jnp.reshape(
-        preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
+    selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
+    selected_neighbors_solved = puzzle.batched_is_solved(
+        solve_configs, selected_neighbors, multi_solve_config=True
     )
 
-    def q_scan(_, data):
-        neighbors = data
-        q, _ = q_fn(
-            target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
-        )  # [minibatch_size, action_shape]
-        min_q = jnp.min(q + 1, axis=1)
-        return None, min_q
+    preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
-    _, target_q = jax.lax.scan(q_scan, None, flatten_neighbors)
-    target_q = jnp.vstack(target_q)
-    target_q = jnp.maximum(jnp.where(neighbors_solved, 0.0, target_q), 0.0)
+    q, _ = q_fn(
+        target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+    )  # [minibatch_size, action_shape]
+    target_q = jnp.min(q, axis=1) + selected_costs
+    target_q = jnp.maximum(jnp.where(selected_neighbors_solved, 0.0, target_q), 0.0)
     target_q = jnp.round(target_q)
     target_q = jnp.where(solved, 0.0, target_q)  # if the puzzle is already solved, the all q is 0
-    target_q = jnp.swapaxes(target_q, 1, 0)
 
     # target_heuristic must be less than the number of moves
     # it just doesn't make sense to have a heuristic greater than the number of moves
@@ -157,7 +144,7 @@ def _get_datasets(
     # so it doesn't make sense to have a heuristic greater than the number of moves
     # target_q = jnp.minimum(target_q, jnp.expand_dims(move_costs + 1, axis=1))
     states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-    return states, target_q
+    return states, target_q, actions
 
 
 def get_qlearning_dataset_builder(
@@ -213,13 +200,14 @@ def get_qlearning_dataset_builder(
 
     def get_datasets(
         paths: list[tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array]],
-        heuristic_params: jax.tree_util.PyTreeDef,
+        target_q_params: jax.tree_util.PyTreeDef,
+        q_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
         dataset = []
         for path in paths:
             key, subkey = jax.random.split(key)
-            dataset.append(jited_get_datasets(heuristic_params, path, subkey))
+            dataset.append(jited_get_datasets(target_q_params, q_params, path, subkey))
         flatten_dataset = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *dataset)
         assert flatten_dataset[0].shape[0] == dataset_size
         return flatten_dataset
