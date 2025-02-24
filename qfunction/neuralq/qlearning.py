@@ -157,7 +157,7 @@ def _get_datasets(
         # so it doesn't make sense to have a heuristic greater than the number of moves
         # Q-learning needs to predict values larger than move_costs based on actions
         # because it needs to account for future costs beyond just the immediate move
-        target_q = jnp.minimum(target_q, move_costs + selected_costs)
+        # target_q = jnp.minimum(target_q, move_costs + selected_costs)
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
         return None, (states, target_q, actions)
 
