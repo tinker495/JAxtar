@@ -109,7 +109,8 @@ class SokobanWorldModel(WorldModelPuzzleBase):
         """
         raise NotImplementedError(
             "Sokoban is not reversible,"
-            "but sokoban world model's inverse neighbours is not implemented"
+            "so sokoban world model's inverse neighbours is not implemented for now\n"
+            "Please use '--using_hindsight_target' to train distance"
         )
 
 
@@ -233,5 +234,6 @@ class SokobanWorldModelOptimized(WorldModelPuzzleBase):
         """
         raise NotImplementedError(
             "Sokoban is not reversible,"
-            "but sokoban world model's inverse neighbours is not implemented"
+            "so sokoban world model's inverse neighbours is not implemented for now\n"
+            "Please use '--using_hindsight_target' to train distance"
         )
