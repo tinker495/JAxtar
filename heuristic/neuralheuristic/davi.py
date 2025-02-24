@@ -237,8 +237,14 @@ def create_target_shuffled_path(
         )(
             old_state, neighbor_states
         )  # [action_size, batch_size]
+        is_same = jax.vmap(
+            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+        )(
+            state, neighbor_states
+        )  # [action_size, batch_size]
         filled = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
         filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
+        filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
         prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
         key, subkey = jax.random.split(key)
         choices = jnp.arange(cost.shape[0])  # [action]
@@ -300,8 +306,14 @@ def create_hindsight_target_shuffled_path(
         )(
             old_state, neighbor_states
         )  # [action_size, batch_size]
+        is_same = jax.vmap(
+            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+        )(
+            state, neighbor_states
+        )  # [action_size, batch_size]
         filled = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
         filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
+        filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
         prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
         key, subkey = jax.random.split(key)
         choices = jnp.arange(cost.shape[0])  # [action]
