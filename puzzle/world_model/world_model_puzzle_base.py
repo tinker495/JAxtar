@@ -10,8 +10,10 @@ from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
 from puzzle.world_model.util import (
     download_dataset,
+    download_model,
     img_to_colored_str,
     is_dataset_downloaded,
+    is_model_downloaded,
     round_through_gradient,
 )
 
@@ -196,6 +198,8 @@ class WorldModelPuzzleBase(Puzzle):
     def load_model(cls, path: str):
 
         try:
+            if not is_model_downloaded(path):
+                download_model(path)
             with open(path, "rb") as f:
                 params = pickle.load(f)
             puzzle = cls(init_params=False)

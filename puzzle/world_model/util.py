@@ -19,6 +19,19 @@ def download_dataset():
     )
 
 
+def is_model_downloaded(filename: str):
+    return os.path.exists(filename)
+
+
+def download_model(filename: str):
+    huggingface_hub.hf_hub_download(
+        repo_id="Tinker/JAxtar_models",
+        repo_type="model",
+        filename=filename,
+        local_dir="",
+    )
+
+
 def round_through_gradient(x: chex.Array) -> chex.Array:
     # x is a sigmoided value in the range [0, 1]. Use a straight-through estimator:
     # the forward pass returns jnp.round(x) while the gradient flows as if it were the identity.
