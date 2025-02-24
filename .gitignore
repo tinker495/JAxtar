@@ -134,5 +134,8 @@ runs/
 # ignore data folder this is quite large
 puzzle/world_model/data/
 puzzle/world_model/.gitattributes
+
+# ignore model params
 heuristic/neuralheuristic/model/params
 qfunction/neuralq/model/params
+puzzle/world_model/model/params
