@@ -70,7 +70,7 @@ def davi(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(heuristic_params)
-    davi_fn = davi_builder(1000, heuristic_fn, optimizer)
+    davi_fn = davi_builder(minibatch_size, heuristic_fn, optimizer)
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
@@ -142,7 +142,7 @@ def qlearning(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(qfunc_params)
-    qlearning_fn = qlearning_builder(1000, qfunc_fn, optimizer)
+    qlearning_fn = qlearning_builder(minibatch_size, qfunc_fn, optimizer)
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
         qfunction.pre_process,
