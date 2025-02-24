@@ -10,6 +10,8 @@ from flax import linen as nn
 from heuristic.heuristic_base import Heuristic
 from puzzle.puzzle_base import Puzzle
 
+from .util import download_model, is_model_downloaded
+
 
 # Residual Block
 class ResBlock(nn.Module):
@@ -63,6 +65,8 @@ class NeuralHeuristicBase(Heuristic):
     def load_model(cls, puzzle: Puzzle, path: str):
 
         try:
+            if not is_model_downloaded(path):
+                download_model(path)
             with open(path, "rb") as f:
                 params = pickle.load(f)
             heuristic = cls(puzzle, init_params=False)
