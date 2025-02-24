@@ -138,7 +138,7 @@ def _get_datasets(
         # it just doesn't make sense to have a heuristic greater than the number of moves
         # heuristic's definition is the optimal cost to reach the target state
         # so it doesn't make sense to have a heuristic greater than the number of moves
-        # target_heuristic = jnp.minimum(target_heuristic, move_costs)
+        target_heuristic = jnp.minimum(target_heuristic, move_costs)
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
         return None, (states, target_heuristic)
 
