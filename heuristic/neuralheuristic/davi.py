@@ -348,12 +348,17 @@ def create_hindsight_target_shuffled_path(
         moves,
     )  # [batch_size, shuffle_length, ...]
 
-    idxs = jnp.where(move_costs > 0, size=(shuffle_length * (shuffle_length + 1) // 2))
-    solve_configs = solve_configs[idxs[0], idxs[1], ...]
-    moves = moves[idxs[0], idxs[1], ...]
-    move_costs = move_costs[idxs[0], idxs[1]]
+    # Create an explicit lower triangular mask
+    lower_tri_mask = jnp.expand_dims(
+        jnp.tril(jnp.ones((shuffle_length + 1, shuffle_length + 1)), k=-1), axis=-1
+    )
+    # Combine with positive cost condition
+    valid_indices = (move_costs > 0) & (lower_tri_mask > 0)
 
-    solve_configs = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), solve_configs)
-    moves = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), moves)
-    move_costs = jnp.reshape(move_costs, (-1))
+    idxs = jnp.where(
+        valid_indices, size=(shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel)
+    )
+    solve_configs = solve_configs[idxs[0], idxs[1], idxs[2], ...]
+    moves = moves[idxs[0], idxs[1], idxs[2], ...]
+    move_costs = move_costs[idxs[0], idxs[1], idxs[2]]
     return solve_configs, moves, move_costs
