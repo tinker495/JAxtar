@@ -42,6 +42,7 @@ class DefaultModel(nn.Module):
         x = ResBlock(1000)(x, training)
         x = nn.Dense(
             1,
+            bias_init=nn.initializers.constant(-2.0),
         )(x)
         return x
 
