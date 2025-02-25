@@ -32,7 +32,7 @@ def gray_world_model_train_builder(
             next_latent,
             rounded_next_latent,
             next_decoded,
-            flipped,
+            flipped,  # softmaxed one-hot encoded flipped
         ), variable_updates = train_info_fn(params, data, next_data, training=True)
         params["batch_stats"] = variable_updates["batch_stats"]
         data_scaled = (data / 255.0) * 2 - 1
@@ -45,17 +45,24 @@ def gray_world_model_train_builder(
         next_flipped = jnp.take_along_axis(flipped, action, axis=1).squeeze(
             axis=1
         )  # [batch_size, latent_size + 1]
-        flipped_one_hot = jax.nn.one_hot(jnp.argmax(flipped, axis=-1), next_flipped.shape[-1])[
+        flipped_one_hot = jax.nn.one_hot(
+            jnp.argmax(next_flipped, axis=-1), next_flipped.shape[-1], dtype=jnp.bool_
+        )[
             ..., :-1
         ]  # (batch_size, action_size, latent_size)
-        pred_latent = jnp.logical_xor(next_flipped, flipped_one_hot)
-        next_rounded_latent = jnp.take_along_axis(rounded_next_latent, action, axis=1).squeeze(
-            axis=1
-        )  # [batch_size, latent_size]
-        pred_diff = jnp.logical_xor(rounded_latent, next_rounded_latent)
+        pred_latent = jnp.logical_xor(rounded_latent.astype(jnp.bool_), flipped_one_hot).astype(
+            jnp.float32
+        )
+
+        pred_diff = jnp.logical_xor(
+            rounded_latent.astype(jnp.bool_), rounded_next_latent.astype(jnp.bool_)
+        )
+        pred_diff = jnp.concatenate(
+            [pred_diff, jnp.logical_not(jnp.any(pred_diff, axis=-1, keepdims=True))], axis=-1
+        )
         WM_loss = jnp.mean(
-            0.5 * optax.l2_loss(next_latent, jax.lax.stop_gradient(pred_latent))
-            + 0.5 * optax.l2_loss(pred_diff, jax.lax.stop_gradient(pred_diff))
+            0.5 * jnp.mean(optax.l2_loss(next_latent, jax.lax.stop_gradient(pred_latent)), axis=-1)
+            + 0.5 * optax.softmax_cross_entropy(next_flipped, pred_diff)
         )
         total_loss = (1 - loss_weight) * AE_loss + loss_weight * WM_loss
         accuracy = accuracy_fn(rounded_next_latent, pred_latent)
@@ -152,24 +159,27 @@ def gray_world_model_eval_builder(
             states, next_states, actions = batched_dataset
             (
                 _,
-                _,
+                rounded_latent,
                 _,
                 _,
                 rounded_next_latent,
                 _,
-                next_latent_preds,
-                rounded_next_latent_preds,
+                flipped,
             ), _ = train_info_fn(params, states, next_states, training=False)
 
             actions = jnp.reshape(
-                actions, (-1,) + (1,) * (next_latent_preds.ndim - 1)
+                actions, (-1,) + (1,) * (flipped.ndim - 1)
             )  # [batch_size, 1, ...]
-            rounded_next_latent_pred = jnp.take_along_axis(
-                rounded_next_latent_preds, actions, axis=1
-            ).squeeze(
+            next_flipped = jnp.take_along_axis(flipped, actions, axis=1).squeeze(
                 axis=1
-            )  # [batch_size, ...]
-            accuracy = accuracy_fn(rounded_next_latent, rounded_next_latent_pred)
+            )  # [batch_size, latent_size + 1]
+            flipped_one_hot = jax.nn.one_hot(
+                jnp.argmax(next_flipped, axis=-1), next_flipped.shape[-1]
+            )[
+                ..., :-1
+            ]  # (batch_size, action_size, latent_size)
+            pred_latent = jnp.logical_xor(rounded_latent, flipped_one_hot).astype(jnp.float32)
+            accuracy = accuracy_fn(rounded_next_latent, pred_latent)
             return None, accuracy
 
         _, accuracies = jax.lax.scan(

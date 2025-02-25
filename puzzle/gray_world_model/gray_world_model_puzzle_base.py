@@ -20,6 +20,19 @@ from puzzle.world_model.util import (
 STR_PARSE_IMG = True
 
 
+class ResBlock(nn.Module):
+    node_size: int
+
+    @nn.compact
+    def __call__(self, x0, training=False):
+        x = nn.Dense(self.node_size)(x0)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = nn.Dense(self.node_size)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        return nn.relu(x + x0)
+
+
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
 
@@ -32,6 +45,10 @@ class Encoder(nn.Module):
         x = nn.Dense(1000)(flatten)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
         x = nn.Dense(latent_size)(x)
         x = jnp.reshape(x, shape=(-1, *self.latent_shape))
         latent = nn.sigmoid(x)
@@ -47,6 +64,10 @@ class Decoder(nn.Module):
         x = nn.Dense(1000)(latent)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
         x = nn.Dense(output_size)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
         return output
