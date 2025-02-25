@@ -104,7 +104,7 @@ def davi(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
-            target_heuristic_params, heuristic_params = (heuristic_params, target_heuristic_params)
+            target_heuristic_params = heuristic_params
             opt_state = optimizer.init(heuristic_params)
 
             if save_count >= 5:
@@ -176,7 +176,7 @@ def qlearning(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
-            target_qfunc_params, qfunc_params = (qfunc_params, target_qfunc_params)
+            target_qfunc_params = qfunc_params
             opt_state = optimizer.init(qfunc_params)
 
             if save_count >= 5:
