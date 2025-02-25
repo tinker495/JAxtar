@@ -35,7 +35,7 @@ def world_model_train_builder(
             next_latent_preds,
             rounded_next_latent_preds,
         ), variable_updates = train_info_fn(params, data, next_data, training=True)
-        params["batch_stats"] = variable_updates["batch_stats"]
+        new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
         data_scaled = (data / 255.0) * 2 - 1
         next_data_scaled = (next_data / 255.0) * 2 - 1
         AE_loss = jnp.mean(
@@ -60,7 +60,7 @@ def world_model_train_builder(
         total_loss = (1 - loss_weight) * AE_loss + loss_weight * WM_loss
         accuracy = accuracy_fn(rounded_next_latent, rounded_next_latent_pred)
         return total_loss, (
-            params,
+            new_params,
             AE_loss,
             WM_loss,
             accuracy,
