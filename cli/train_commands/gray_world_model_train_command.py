@@ -27,7 +27,7 @@ PyTree = Any
 
 
 def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
-    log_dir = f"runs/{world_model_name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    log_dir = f"runs/gray_world_model_{world_model_name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     return tensorboardX.SummaryWriter(log_dir)
 
 
@@ -142,20 +142,19 @@ def gray_world_model_train(
             ).astype(jnp.uint8)
             writer.add_image("Next/Decoded", next_decoded[0], epoch, dataformats="HWC")
 
-            next_latent_pred = model.apply(
-                params, rounded_latent, training=False, method=model.transition
-            )
+            flipped = model.apply(params, rounded_latent, training=False, method=model.flipped)
             action = jnp.reshape(
-                eval_data[2], (-1,) + (1,) * (next_latent_pred.ndim - 1)
+                eval_data[2], (-1,) + (1,) * (flipped.ndim - 1)
             )  # [batch_size, 1, ...]
-            next_latent_pred = jnp.take_along_axis(next_latent_pred, action, axis=1).squeeze(
+            next_flipped = jnp.take_along_axis(flipped, action, axis=1).squeeze(
                 axis=1
-            )  # [batch_size, ...]
-            next_latent_pred = round_through_gradient(next_latent_pred)
+            )  # [batch_size, latent_size + 1]
+            flipped_one_hot = jax.nn.one_hot(jnp.argmax(flipped, axis=-1), next_flipped.shape[-1])[
+                ..., :-1
+            ]  # (batch_size, action_size, latent_size)
+            pred_latent = jnp.logical_xor(rounded_latent, flipped_one_hot).astype(jnp.float32)
             next_decoded_pred = jnp.clip(
-                model.apply(params, next_latent_pred, training=False, method=model.decode)
-                * 255.0
-                / 2.0
+                model.apply(params, pred_latent, training=False, method=model.decode) * 255.0 / 2.0
                 + 128.0,
                 0,
                 255,
@@ -163,6 +162,6 @@ def gray_world_model_train(
             writer.add_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
 
             world_model.params = params
-            world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")
+            world_model.save_model(f"puzzle/gray_world_model/model/params/{world_model_name}.pkl")
 
     writer.close()
