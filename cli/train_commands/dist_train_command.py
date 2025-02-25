@@ -35,10 +35,7 @@ def setup_logging(
 
 
 def setup_optimizer(params: PyTree) -> optax.OptState:
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(10.0),  # Clip gradients to a maximum global norm of 1.0
-        optax.adamw(1e-3, nesterov=True, weight_decay=1e-5),
-    )
+    optimizer = optax.adamw(1e-3, nesterov=True, weight_decay=1e-5)
     return optimizer, optimizer.init(params)
 
 
@@ -53,8 +50,9 @@ def davi(
     puzzle_size: int,
     steps: int,
     shuffle_length: int,
-    batch_size: int,
-    minibatch_size: int,
+    dataset_batch_size: int,
+    dataset_minibatch_size: int,
+    train_minibatch_size: int,
     key: int,
     loss_threshold: float,
     update_interval: int,
@@ -70,14 +68,14 @@ def davi(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(heuristic_params)
-    davi_fn = davi_builder(minibatch_size, heuristic_fn, optimizer)
+    davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer)
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
         heuristic_fn,
-        batch_size,
+        dataset_batch_size,
         shuffle_length,
-        minibatch_size,
+        dataset_minibatch_size,
         using_hindsight_target,
     )
 
@@ -104,7 +102,7 @@ def davi(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
-            target_heuristic_params, heuristic_params = (heuristic_params, target_heuristic_params)
+            target_heuristic_params = heuristic_params
             opt_state = optimizer.init(heuristic_params)
 
             if save_count >= 5:
@@ -126,8 +124,9 @@ def qlearning(
     puzzle_size: int,
     steps: int,
     shuffle_length: int,
-    batch_size: int,
-    minibatch_size: int,
+    dataset_batch_size: int,
+    dataset_minibatch_size: int,
+    train_minibatch_size: int,
     key: int,
     loss_threshold: float,
     update_interval: int,
@@ -142,14 +141,14 @@ def qlearning(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(qfunc_params)
-    qlearning_fn = qlearning_builder(minibatch_size, qfunc_fn, optimizer)
+    qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_fn, optimizer)
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
         qfunction.pre_process,
         qfunc_fn,
-        batch_size,
+        dataset_batch_size,
         shuffle_length,
-        minibatch_size,
+        dataset_minibatch_size,
         using_hindsight_target,
     )
 
@@ -176,7 +175,7 @@ def qlearning(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
-            target_qfunc_params, qfunc_params = (qfunc_params, target_qfunc_params)
+            target_qfunc_params = qfunc_params
             opt_state = optimizer.init(qfunc_params)
 
             if save_count >= 5:
