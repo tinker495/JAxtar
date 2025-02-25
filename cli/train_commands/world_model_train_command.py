@@ -27,7 +27,7 @@ PyTree = Any
 
 
 def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
-    log_dir = f"runs/{world_model_name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    log_dir = f"runs/world_model_{world_model_name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     return tensorboardX.SummaryWriter(log_dir)
 
 
