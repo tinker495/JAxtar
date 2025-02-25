@@ -50,8 +50,9 @@ def davi(
     puzzle_size: int,
     steps: int,
     shuffle_length: int,
-    batch_size: int,
-    minibatch_size: int,
+    dataset_batch_size: int,
+    dataset_minibatch_size: int,
+    train_minibatch_size: int,
     key: int,
     loss_threshold: float,
     update_interval: int,
@@ -67,14 +68,14 @@ def davi(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(heuristic_params)
-    davi_fn = davi_builder(minibatch_size, heuristic_fn, optimizer)
+    davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer)
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
         heuristic_fn,
-        batch_size,
+        dataset_batch_size,
         shuffle_length,
-        minibatch_size,
+        dataset_minibatch_size,
         using_hindsight_target,
     )
 
@@ -123,8 +124,9 @@ def qlearning(
     puzzle_size: int,
     steps: int,
     shuffle_length: int,
-    batch_size: int,
-    minibatch_size: int,
+    dataset_batch_size: int,
+    dataset_minibatch_size: int,
+    train_minibatch_size: int,
     key: int,
     loss_threshold: float,
     update_interval: int,
@@ -139,14 +141,14 @@ def qlearning(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(qfunc_params)
-    qlearning_fn = qlearning_builder(minibatch_size, qfunc_fn, optimizer)
+    qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_fn, optimizer)
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
         qfunction.pre_process,
         qfunc_fn,
-        batch_size,
+        dataset_batch_size,
         shuffle_length,
-        minibatch_size,
+        dataset_minibatch_size,
         using_hindsight_target,
     )
 

@@ -46,13 +46,14 @@ def puzzle_options(func: callable) -> callable:
 
 
 def train_option(func: callable) -> callable:
-    @click.option("--steps", type=int, default=50000)
+    @click.option("--steps", type=int, default=int(1e6))
     @click.option("--shuffle_length", type=int, default=30)
-    @click.option("--batch_size", type=int, default=int(1e5))
-    @click.option("--minibatch_size", type=int, default=int(1e4))
+    @click.option("--dataset_batch_size", type=int, default=int(3e5))
+    @click.option("--dataset_minibatch_size", type=int, default=int(1e4))
+    @click.option("--train_minibatch_size", type=int, default=int(1e4))
     @click.option("--key", type=int, default=0)
     @click.option("--reset", is_flag=True, help="Reset the target heuristic params")
-    @click.option("-l", "--loss_threshold", type=float, default=0.05)
+    @click.option("-l", "--loss_threshold", type=float, default=float("inf"))
     @click.option("-u", "--update_interval", type=int, default=500)
     @click.option("--using_hindsight_target", is_flag=True, help="Use hindsight target")
     @click.option("--debug", is_flag=True, help="Debug mode")
