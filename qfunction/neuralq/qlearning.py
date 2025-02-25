@@ -179,7 +179,6 @@ def get_qlearning_dataset_builder(
 ):
     shuffle_parallel = int(min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size))
     steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
-    shuffle_size = dataset_size // steps
 
     if using_hindsight_target:
         create_shuffled_path_fn = partial(
@@ -187,7 +186,6 @@ def get_qlearning_dataset_builder(
             puzzle,
             shuffle_length,
             shuffle_parallel,
-            shuffle_size,
         )
     else:
         create_shuffled_path_fn = partial(
@@ -195,7 +193,6 @@ def get_qlearning_dataset_builder(
             puzzle,
             shuffle_length,
             shuffle_parallel,
-            shuffle_size,
         )
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
@@ -222,9 +219,6 @@ def get_qlearning_dataset_builder(
         paths = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *paths)
 
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
-        assert (
-            flatten_dataset[0].shape[0] == dataset_size
-        ), f"{flatten_dataset[0].shape[0]} != {dataset_size}"
         return flatten_dataset
 
     return get_datasets
@@ -234,7 +228,6 @@ def create_target_shuffled_path(
     puzzle: Puzzle,
     shuffle_length: int,
     shuffle_parallel: int,
-    shuffle_size: int,
     key: chex.PRNGKey,
 ):
     solve_configs, _ = jax.vmap(puzzle.get_inits)(jax.random.split(key, shuffle_parallel))
@@ -294,9 +287,6 @@ def create_target_shuffled_path(
         lambda x: x.reshape((-1, *x.shape[2:])), moves
     )  # [batch_size * shuffle_length, ...]
     move_costs = jnp.reshape(move_costs, (-1))  # [batch_size * shuffle_length]
-    solve_configs = solve_configs[:shuffle_size]
-    moves = moves[:shuffle_size]
-    move_costs = move_costs[:shuffle_size]
     return solve_configs, moves, move_costs
 
 
@@ -304,7 +294,6 @@ def create_hindsight_target_shuffled_path(
     puzzle: Puzzle,
     shuffle_length: int,
     shuffle_parallel: int,
-    shuffle_size: int,
     key: chex.PRNGKey,
 ):
     solve_configs, initial_states = jax.vmap(puzzle.get_inits)(
@@ -369,7 +358,4 @@ def create_hindsight_target_shuffled_path(
     solve_configs = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), solve_configs)
     moves = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), moves)
     move_costs = jnp.reshape(move_costs, (-1))
-    solve_configs = solve_configs[:shuffle_size]
-    moves = moves[:shuffle_size]
-    move_costs = move_costs[:shuffle_size]
     return solve_configs, moves, move_costs
