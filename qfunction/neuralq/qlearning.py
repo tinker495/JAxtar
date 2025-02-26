@@ -140,7 +140,6 @@ def _get_datasets(
         )  # [minibatch_size, action_shape]
         target_q = jnp.min(q, axis=1) + selected_costs
         target_q = jnp.maximum(jnp.where(selected_neighbors_solved, 0.0, target_q), 0.0)
-        target_q = jnp.round(target_q)
         target_q = jnp.where(
             solved, 0.0, target_q
         )  # if the puzzle is already solved, the all q is 0
