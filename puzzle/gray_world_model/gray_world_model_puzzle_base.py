@@ -375,13 +375,11 @@ class GrayWorldModelPuzzleBase(Puzzle):
         flipped = self.model.apply(
             self.params, bit_latent, training=False, method=self.model.flipped
         )  # (batch_size, action_size, latent_size)
-        flipped_one_hot = jax.nn.one_hot(jnp.argmax(flipped, axis=-1), self.latent_size + 1)[
-            ..., :-1
-        ]  # (batch_size, action_size, latent_size)
+        flipped_rounded = jnp.round(flipped).astype(jnp.bool_)
         latent_tile = jnp.tile(
             jnp.expand_dims(bit_latent, axis=1), (1, self.action_size, 1)
         )  # (batch_size, action_size, latent_size)
-        next_bit_latent = jnp.logical_xor(latent_tile, flipped_one_hot)
+        next_bit_latent = jnp.logical_xor(latent_tile, flipped_rounded)
         next_bit_latent = jnp.swapaxes(
             next_bit_latent, 0, 1
         )  # (action_size, batch_size, latent_size)
