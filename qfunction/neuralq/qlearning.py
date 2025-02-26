@@ -360,12 +360,12 @@ def create_hindsight_target_shuffled_path(
         moves,
     )  # [batch_size, shuffle_length, ...]
 
-    # Create an explicit lower triangular mask
-    lower_tri_mask = jnp.expand_dims(
-        jnp.tril(jnp.ones((shuffle_length + 1, shuffle_length + 1)), k=-1), axis=-1
+    # Create an explicit upper triangular mask
+    upper_tri_mask = jnp.expand_dims(
+        jnp.triu(jnp.ones((shuffle_length + 1, shuffle_length + 1)), k=1), axis=-1
     )
     # Combine with positive cost condition
-    valid_indices = (move_costs > 0) & (lower_tri_mask > 0)
+    valid_indices = (move_costs > 0) & (upper_tri_mask > 0)
 
     idxs = jnp.where(
         valid_indices, size=(shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel)
