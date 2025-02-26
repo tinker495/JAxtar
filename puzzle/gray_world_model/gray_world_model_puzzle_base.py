@@ -99,7 +99,7 @@ class GrayWorldModel(nn.Module):
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(latent_size * self.action_size)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + (latent_size,))
+        x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + self.latent_shape)
         flipped = nn.sigmoid(x)  # [batch_size, action_size, latent_size]
         return flipped
 
