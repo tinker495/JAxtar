@@ -352,13 +352,13 @@ def create_hindsight_target_shuffled_path(
     move_costs = move_costs[jnp.newaxis, ...] - move_costs[:, jnp.newaxis, ...]
 
     solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length + 1) + (x.ndim - 1) * (1,)),
+        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length + 1, 1) + (x.ndim - 1) * (1,)),
         solve_configs,
     )
     moves = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length + 1, 1) + (x.ndim - 1) * (1,)),
+        lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length + 1) + (x.ndim - 1) * (1,)),
         moves,
-    )  # [batch_size, shuffle_length, ...]
+    )
 
     # Create an explicit upper triangular mask
     upper_tri_mask = jnp.expand_dims(
