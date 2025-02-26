@@ -131,7 +131,6 @@ def _get_datasets(
         _, heur = jax.lax.scan(heur_scan, None, flatten_neighbors)
         heur = jnp.vstack(heur)
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
-        heur = jnp.round(heur)
         target_heuristic = jnp.min(heur + cost, axis=0)
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
