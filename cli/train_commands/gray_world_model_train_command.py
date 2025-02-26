@@ -148,11 +148,9 @@ def gray_world_model_train(
             )  # [batch_size, 1, ...]
             next_flipped = jnp.take_along_axis(flipped, action, axis=1).squeeze(
                 axis=1
-            )  # [batch_size, latent_size + 1]
-            flipped_one_hot = jax.nn.one_hot(jnp.argmax(flipped, axis=-1), next_flipped.shape[-1])[
-                ..., :-1
-            ]  # (batch_size, action_size, latent_size)
-            pred_latent = jnp.logical_xor(rounded_latent, flipped_one_hot).astype(jnp.float32)
+            )  # [batch_size, latent_size]
+            rounded_flipped = jnp.round(next_flipped)
+            pred_latent = jnp.logical_xor(rounded_latent, rounded_flipped).astype(jnp.float32)
             next_decoded_pred = jnp.clip(
                 model.apply(params, pred_latent, training=False, method=model.decode) * 255.0 / 2.0
                 + 128.0,

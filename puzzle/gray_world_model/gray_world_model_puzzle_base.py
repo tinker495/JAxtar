@@ -45,10 +45,6 @@ class Encoder(nn.Module):
         x = nn.Dense(1000)(flatten)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
         x = nn.Dense(latent_size)(x)
         x = jnp.reshape(x, shape=(-1, *self.latent_shape))
         latent = nn.sigmoid(x)
@@ -64,10 +60,6 @@ class Decoder(nn.Module):
         x = nn.Dense(1000)(latent)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
         x = nn.Dense(output_size)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
         return output
@@ -105,10 +97,10 @@ class GrayWorldModel(nn.Module):
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
-        x = nn.Dense((latent_size + 1) * self.action_size)(x)
+        x = nn.Dense(latent_size * self.action_size)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + (latent_size + 1,))
-        flipped = nn.softmax(x, axis=-1)  # [batch_size, action_size, latent_size + 1]
+        x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + (latent_size,))
+        flipped = nn.sigmoid(x)  # [batch_size, action_size, latent_size]
         return flipped
 
 
