@@ -42,17 +42,11 @@ def world_model_train_builder(
         loss_weight: float = 0.5,
     ):
         (
-            latent,
-            rounded_latent,
-            decoded,
-            next_latent,
-            rounded_next_latent,
-            next_decoded,
-            forward_latent_preds,
-            rounded_forward_latent_preds,
-            backward_latent_preds,
-            rounded_backward_latent_preds,
-        ), variable_updates = train_info_fn(params, data, next_data, training=True)
+            (latent, rounded_latent, decoded),
+            (next_latent, rounded_next_latent, next_decoded),
+            (forward_latent_pred, rounded_forward_latent_pred),
+            (backward_latent_pred, rounded_backward_latent_pred),
+        ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
         new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
         data_scaled = (data / 255.0) * 2 - 1
         next_data_scaled = (next_data / 255.0) * 2 - 1
@@ -60,30 +54,12 @@ def world_model_train_builder(
             0.5 * optax.l2_loss(data_scaled, decoded)
             + 0.5 * optax.l2_loss(next_data_scaled, next_decoded)
         )
-        action = jnp.reshape(
-            action, (-1,) + (1,) * (forward_latent_preds.ndim - 1)
-        )  # [batch_size, 1, ...]
-        forward_latent_pred = jnp.take_along_axis(forward_latent_preds, action, axis=1).squeeze(
-            axis=1
-        )  # [batch_size, ...]
-        rounded_forward_latent_pred = jnp.take_along_axis(
-            rounded_forward_latent_preds, action, axis=1
-        ).squeeze(
-            axis=1
-        )  # [batch_size, ...]
+
         forward_loss = jnp.mean(
             0.5 * sigmoid_loss_fn(next_latent, jax.lax.stop_gradient(rounded_forward_latent_pred))
             + 0.5 * sigmoid_loss_fn(forward_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
         )
 
-        backward_latent_pred = jnp.take_along_axis(backward_latent_preds, action, axis=1).squeeze(
-            axis=1
-        )  # [batch_size, ...]
-        rounded_backward_latent_pred = jnp.take_along_axis(
-            rounded_backward_latent_preds, action, axis=1
-        ).squeeze(
-            axis=1
-        )  # [batch_size, ...]
         backward_loss = jnp.mean(
             0.5 * sigmoid_loss_fn(latent, jax.lax.stop_gradient(rounded_backward_latent_pred))
             + 0.5 * sigmoid_loss_fn(backward_latent_pred, jax.lax.stop_gradient(rounded_latent))
@@ -212,31 +188,11 @@ def world_model_eval_builder(
         def eval_loop(_, batched_dataset):
             states, next_states, actions = batched_dataset
             (
-                _,
-                rounded_latent,
-                _,
-                _,
-                rounded_next_latent,
-                _,
-                _,
-                rounded_forward_latent_preds,
-                _,
-                rounded_backward_latent_preds,
-            ), _ = train_info_fn(params, states, next_states, training=False)
-
-            actions = jnp.reshape(
-                actions, (-1,) + (1,) * (rounded_forward_latent_preds.ndim - 1)
-            )  # [batch_size, 1, ...]
-            rounded_forward_latent_pred = jnp.take_along_axis(
-                rounded_forward_latent_preds, actions, axis=1
-            ).squeeze(
-                axis=1
-            )  # [batch_size, ...]
-            rounded_backward_latent_pred = jnp.take_along_axis(
-                rounded_backward_latent_preds, actions, axis=1
-            ).squeeze(
-                axis=1
-            )  # [batch_size, ...]
+                (_, rounded_latent, _),
+                (_, rounded_next_latent, _),
+                (_, rounded_forward_latent_pred),
+                (_, rounded_backward_latent_pred),
+            ), _ = train_info_fn(params, states, next_states, actions, training=False)
             forward_accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
             backward_accuracy = accuracy_fn(rounded_backward_latent_pred, rounded_latent)
             return None, (forward_accuracy, backward_accuracy)

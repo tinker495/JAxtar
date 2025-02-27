@@ -67,6 +67,31 @@ class AutoEncoder(nn.Module):
         return latent, output
 
 
+class Projector(nn.Module):
+    latent_dim: int = 250
+
+    @nn.compact
+    def __call__(self, binary_latent, training=False):
+        x = (binary_latent - 0.5) * 2.0
+        x = nn.Dense(500)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = nn.Dense(self.latent_dim)(x)
+        return x
+
+
+class Predictor(nn.Module):
+    latent_dim: int = 250
+
+    @nn.compact
+    def __call__(self, latent, training=False):
+        x = nn.Dense(500)(latent)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.relu(x)
+        x = nn.Dense(self.latent_dim)(x)
+        return x
+
+
 class WorldModel(nn.Module):
     latent_shape: tuple[int, ...]
     action_size: int
@@ -139,13 +164,23 @@ class WorldModelPuzzleBase(Puzzle):
             autoencoder: AutoEncoder
             forward_model: WorldModel
             backward_model: WorldModel
+            projector: Projector = Projector()
+            predictor: Predictor = Predictor()
 
             @nn.compact
             def __call__(self, x, training=False):
                 latent, decoded = self.autoencoder(x, training)
                 forward_latents = self.forward_model(latent, training)
                 backward_latents = self.backward_model(latent, training)
-                return forward_latents, backward_latents, decoded
+                projected_latents = self.projector(latent, training)
+                predicted_latents = self.predictor(projected_latents, training)
+                return (
+                    forward_latents,
+                    backward_latents,
+                    decoded,
+                    projected_latents,
+                    predicted_latents,
+                )
 
             def decode(self, latent, training=False):
                 return self.autoencoder.decoder(latent, training)
@@ -159,7 +194,14 @@ class WorldModelPuzzleBase(Puzzle):
             def backward_transition(self, latent, training=False):
                 return self.backward_model(latent, training)
 
-            def train_info(self, data, next_data, training=True):
+            def project(self, binary_latent, training=False):
+                return self.projector(binary_latent, training)
+
+            def predict(self, projected_latent, training=False):
+                return self.predictor(projected_latent, training)
+
+            def train_info(self, data, next_data, actions, training=True):
+
                 latent = self.encode(data, training)
                 rounded_latent = round_through_gradient(latent)
                 decoded = self.decode(rounded_latent, training)
@@ -168,22 +210,30 @@ class WorldModelPuzzleBase(Puzzle):
                 rounded_next_latent = round_through_gradient(next_latent)
                 next_decoded = self.decode(rounded_next_latent, training)
 
+                actions = jnp.reshape(
+                    actions, (-1,) + (1,) * (next_latent.ndim)
+                )  # [batch_size, 1, ...]
+
                 forward_latent_preds = self.forward_transition(rounded_latent, training)
+                forward_latent_pred = jnp.take_along_axis(
+                    forward_latent_preds, actions, axis=1
+                ).squeeze(
+                    axis=1
+                )  # [batch_size, ...]
                 backward_latent_preds = self.backward_transition(rounded_next_latent, training)
-                rounded_forward_latent_preds = round_through_gradient(forward_latent_preds)
-                rounded_backward_latent_preds = round_through_gradient(backward_latent_preds)
+                backward_latent_pred = jnp.take_along_axis(
+                    backward_latent_preds, actions, axis=1
+                ).squeeze(
+                    axis=1
+                )  # [batch_size, ...]
+                rounded_forward_latent_pred = round_through_gradient(forward_latent_pred)
+                rounded_backward_latent_pred = round_through_gradient(backward_latent_pred)
 
                 return (
-                    latent,
-                    rounded_latent,
-                    decoded,
-                    next_latent,
-                    rounded_next_latent,
-                    next_decoded,
-                    forward_latent_preds,
-                    rounded_forward_latent_preds,
-                    backward_latent_preds,
-                    rounded_backward_latent_preds,
+                    (latent, rounded_latent, decoded),
+                    (next_latent, rounded_next_latent, next_decoded),
+                    (forward_latent_pred, rounded_forward_latent_pred),
+                    (backward_latent_pred, rounded_backward_latent_pred),
                 )
 
         self.model = total_model(
