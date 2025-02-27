@@ -85,7 +85,6 @@ class WorldModel(nn.Module):
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(latent_size * self.action_size)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.sigmoid(x)
         x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + self.latent_shape)
         return x
@@ -138,12 +137,15 @@ class WorldModelPuzzleBase(Puzzle):
 
         class total_model(nn.Module):
             autoencoder: AutoEncoder
-            world_model: WorldModel
+            forward_model: WorldModel
+            backward_model: WorldModel
 
             @nn.compact
             def __call__(self, x, training=False):
                 latent, decoded = self.autoencoder(x, training)
-                return self.world_model(latent, training), decoded
+                forward_latents = self.forward_model(latent, training)
+                backward_latents = self.backward_model(latent, training)
+                return forward_latents, backward_latents, decoded
 
             def decode(self, latent, training=False):
                 return self.autoencoder.decoder(latent, training)
@@ -151,8 +153,11 @@ class WorldModelPuzzleBase(Puzzle):
             def encode(self, data, training=False):
                 return self.autoencoder.encoder(data, training)
 
-            def transition(self, latent, training=False):
-                return self.world_model(latent, training)
+            def forward_transition(self, latent, training=False):
+                return self.forward_model(latent, training)
+
+            def backward_transition(self, latent, training=False):
+                return self.backward_model(latent, training)
 
             def train_info(self, data, next_data, training=True):
                 latent = self.encode(data, training)
@@ -163,8 +168,10 @@ class WorldModelPuzzleBase(Puzzle):
                 rounded_next_latent = round_through_gradient(next_latent)
                 next_decoded = self.decode(rounded_next_latent, training)
 
-                next_latent_preds = self.transition(rounded_latent, training)
-                rounded_next_latent_preds = round_through_gradient(next_latent_preds)
+                forward_latent_preds = self.forward_transition(rounded_latent, training)
+                backward_latent_preds = self.backward_transition(rounded_next_latent, training)
+                rounded_forward_latent_preds = round_through_gradient(forward_latent_preds)
+                rounded_backward_latent_preds = round_through_gradient(backward_latent_preds)
 
                 return (
                     latent,
@@ -173,13 +180,16 @@ class WorldModelPuzzleBase(Puzzle):
                     next_latent,
                     rounded_next_latent,
                     next_decoded,
-                    next_latent_preds,
-                    rounded_next_latent_preds,
+                    forward_latent_preds,
+                    rounded_forward_latent_preds,
+                    backward_latent_preds,
+                    rounded_backward_latent_preds,
                 )
 
         self.model = total_model(
             autoencoder=AE(data_shape=self.data_shape, latent_shape=self.latent_shape),
-            world_model=WM(latent_shape=self.latent_shape, action_size=self.action_size),
+            forward_model=WM(latent_shape=self.latent_shape, action_size=self.action_size),
+            backward_model=WM(latent_shape=self.latent_shape, action_size=self.action_size),
         )
 
         if init_params:

@@ -9,6 +9,22 @@ import optax
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 
+def sigmoid_loss_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
+    """
+    Binary cross entropy loss function for sigmoid outputs.
+
+    Args:
+        preds: Predictions after sigmoid activation (values between 0 and 1)
+        labels: Binary labels (0 or 1)
+
+    Returns:
+        Binary cross entropy loss
+    """
+    # Clip predictions to avoid numerical instability
+    preds = jnp.clip(preds, 1e-7, 1 - 1e-7)
+    return -jnp.mean(labels * jnp.log(preds) + (1 - labels) * jnp.log(1 - preds))
+
+
 def accuracy_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
     return jnp.mean(jnp.sum(jnp.logical_xor(preds, labels), axis=tuple(range(1, preds.ndim))) == 0)
 
@@ -26,14 +42,16 @@ def world_model_train_builder(
         loss_weight: float = 0.5,
     ):
         (
-            _,
-            _,
+            latent,
+            rounded_latent,
             decoded,
             next_latent,
             rounded_next_latent,
             next_decoded,
-            next_latent_preds,
-            rounded_next_latent_preds,
+            forward_latent_preds,
+            rounded_forward_latent_preds,
+            backward_latent_preds,
+            rounded_backward_latent_preds,
         ), variable_updates = train_info_fn(params, data, next_data, training=True)
         new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
         data_scaled = (data / 255.0) * 2 - 1
@@ -43,27 +61,44 @@ def world_model_train_builder(
             + 0.5 * optax.l2_loss(next_data_scaled, next_decoded)
         )
         action = jnp.reshape(
-            action, (-1,) + (1,) * (next_latent_preds.ndim - 1)
+            action, (-1,) + (1,) * (forward_latent_preds.ndim - 1)
         )  # [batch_size, 1, ...]
-        next_latent_pred = jnp.take_along_axis(next_latent_preds, action, axis=1).squeeze(
+        forward_latent_pred = jnp.take_along_axis(forward_latent_preds, action, axis=1).squeeze(
             axis=1
         )  # [batch_size, ...]
-        rounded_next_latent_pred = jnp.take_along_axis(
-            rounded_next_latent_preds, action, axis=1
+        rounded_forward_latent_pred = jnp.take_along_axis(
+            rounded_forward_latent_preds, action, axis=1
         ).squeeze(
             axis=1
         )  # [batch_size, ...]
-        WM_loss = jnp.mean(
-            0.5 * optax.l2_loss(next_latent, jax.lax.stop_gradient(rounded_next_latent_pred))
-            + 0.5 * optax.l2_loss(next_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
+        forward_loss = jnp.mean(
+            0.5 * sigmoid_loss_fn(next_latent, jax.lax.stop_gradient(rounded_forward_latent_pred))
+            + 0.5 * sigmoid_loss_fn(forward_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
         )
-        total_loss = (1 - loss_weight) * AE_loss + loss_weight * WM_loss
-        accuracy = accuracy_fn(rounded_next_latent, rounded_next_latent_pred)
+
+        backward_latent_pred = jnp.take_along_axis(backward_latent_preds, action, axis=1).squeeze(
+            axis=1
+        )  # [batch_size, ...]
+        rounded_backward_latent_pred = jnp.take_along_axis(
+            rounded_backward_latent_preds, action, axis=1
+        ).squeeze(
+            axis=1
+        )  # [batch_size, ...]
+        backward_loss = jnp.mean(
+            0.5 * sigmoid_loss_fn(latent, jax.lax.stop_gradient(rounded_backward_latent_pred))
+            + 0.5 * sigmoid_loss_fn(backward_latent_pred, jax.lax.stop_gradient(rounded_latent))
+        )
+
+        total_loss = (1 - loss_weight) * AE_loss + loss_weight * (forward_loss + backward_loss)
+        forward_accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
+        backward_accuracy = accuracy_fn(rounded_backward_latent_pred, rounded_latent)
         return total_loss, (
             new_params,
             AE_loss,
-            WM_loss,
-            accuracy,
+            forward_loss,
+            backward_loss,
+            forward_accuracy,
+            backward_accuracy,
         )
 
     def train_fn(
@@ -99,9 +134,10 @@ def world_model_train_builder(
         def train_loop(carry, batched_dataset):
             params, opt_state = carry
             states, next_states, actions = batched_dataset
-            (loss, (params, AE_loss, WM_loss, accuracy)), grads = jax.value_and_grad(
-                loss_fn, has_aux=True
-            )(
+            (
+                loss,
+                (params, AE_loss, forward_loss, backward_loss, forward_accuracy, backward_accuracy),
+            ), grads = jax.value_and_grad(loss_fn, has_aux=True)(
                 params,
                 states,
                 next_states,
@@ -110,18 +146,43 @@ def world_model_train_builder(
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=params)
             params = optax.apply_updates(params, updates)
-            return (params, opt_state), (loss, AE_loss, WM_loss, accuracy)
+            return (params, opt_state), (
+                loss,
+                AE_loss,
+                forward_loss,
+                backward_loss,
+                forward_accuracy,
+                backward_accuracy,
+            )
 
-        (params, opt_state), (losses, AE_losses, WM_losses, accuracies) = jax.lax.scan(
+        (params, opt_state), (
+            losses,
+            AE_losses,
+            forward_losses,
+            backward_losses,
+            forward_accuracies,
+            backward_accuracies,
+        ) = jax.lax.scan(
             train_loop,
             (params, opt_state),
             (batched_states, batched_next_states, batched_actions),
         )
         loss = jnp.mean(losses)
         AE_loss = jnp.mean(AE_losses)
-        WM_loss = jnp.mean(WM_losses)
-        accuracy = jnp.mean(accuracies)
-        return params, opt_state, loss, AE_loss, WM_loss, accuracy
+        forward_loss = jnp.mean(forward_losses)
+        backward_loss = jnp.mean(backward_losses)
+        forward_accuracy = jnp.mean(forward_accuracies)
+        backward_accuracy = jnp.mean(backward_accuracies)
+        return (
+            params,
+            opt_state,
+            loss,
+            AE_loss,
+            forward_loss,
+            backward_loss,
+            forward_accuracy,
+            backward_accuracy,
+        )
 
     return jax.jit(train_fn)
 
@@ -152,31 +213,39 @@ def world_model_eval_builder(
             states, next_states, actions = batched_dataset
             (
                 _,
-                _,
+                rounded_latent,
                 _,
                 _,
                 rounded_next_latent,
                 _,
-                next_latent_preds,
-                rounded_next_latent_preds,
+                _,
+                rounded_forward_latent_preds,
+                _,
+                rounded_backward_latent_preds,
             ), _ = train_info_fn(params, states, next_states, training=False)
 
             actions = jnp.reshape(
-                actions, (-1,) + (1,) * (next_latent_preds.ndim - 1)
+                actions, (-1,) + (1,) * (rounded_forward_latent_preds.ndim - 1)
             )  # [batch_size, 1, ...]
-            rounded_next_latent_pred = jnp.take_along_axis(
-                rounded_next_latent_preds, actions, axis=1
+            rounded_forward_latent_pred = jnp.take_along_axis(
+                rounded_forward_latent_preds, actions, axis=1
             ).squeeze(
                 axis=1
             )  # [batch_size, ...]
-            accuracy = accuracy_fn(rounded_next_latent, rounded_next_latent_pred)
-            return None, accuracy
+            rounded_backward_latent_pred = jnp.take_along_axis(
+                rounded_backward_latent_preds, actions, axis=1
+            ).squeeze(
+                axis=1
+            )  # [batch_size, ...]
+            forward_accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
+            backward_accuracy = accuracy_fn(rounded_backward_latent_pred, rounded_latent)
+            return None, (forward_accuracy, backward_accuracy)
 
-        _, accuracies = jax.lax.scan(
+        _, (forward_accuracies, backward_accuracies) = jax.lax.scan(
             eval_loop,
             None,
             (batched_states, batched_next_states, batched_actions),
         )
-        return jnp.mean(accuracies)
+        return jnp.mean(forward_accuracies), jnp.mean(backward_accuracies)
 
     return jax.jit(eval_fn)
