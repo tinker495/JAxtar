@@ -7,12 +7,7 @@ from .puzzle_config import (
     puzzle_q_dict,
     puzzle_q_dict_nn,
 )
-from .world_model_config import (
-    gray_world_model_dict,
-    puzzle_dict_ds,
-    world_model_dict,
-    world_model_ds_dict,
-)
+from .world_model_config import puzzle_dict_ds, world_model_dict, world_model_ds_dict
 
 __all__ = [
     "default_puzzle_sizes",
@@ -25,5 +20,4 @@ __all__ = [
     "puzzle_dict_ds",
     "world_model_dict",
     "world_model_ds_dict",
-    "gray_world_model_dict",
 ]

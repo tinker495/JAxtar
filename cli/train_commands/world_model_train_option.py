@@ -5,7 +5,6 @@ import jax.numpy as jnp
 
 from config import (
     default_puzzle_sizes,
-    gray_world_model_dict,
     puzzle_dict_ds,
     world_model_dict,
     world_model_ds_dict,
@@ -51,24 +50,6 @@ def get_world_model_options(func: callable) -> callable:
     def wrapper(*args, **kwargs):
         world_model_name = kwargs["world_model"]
         world_model = world_model_dict[world_model_name]
-        kwargs["world_model"] = world_model(reset=True)
-        kwargs["world_model_name"] = world_model_name
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def get_gray_world_model_options(func: callable) -> callable:
-    @click.option(
-        "--world_model",
-        default="rubikscube",
-        type=click.Choice(world_model_dict.keys()),
-        help="World model to use",
-    )
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        world_model_name = kwargs["world_model"]
-        world_model = gray_world_model_dict[world_model_name]
         kwargs["world_model"] = world_model(reset=True)
         kwargs["world_model_name"] = world_model_name
         return func(*args, **kwargs)

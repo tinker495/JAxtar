@@ -1,7 +1,6 @@
 import click
 
 from .dist_train_command import davi, qlearning
-from .gray_world_model_train_command import gray_world_model_train
 from .world_model_ds_command import (
     make_puzzle_eval_trajectory,
     make_puzzle_sample_data,
@@ -26,4 +25,3 @@ world_model_train.add_command(make_puzzle_transition_dataset, name="make_transit
 world_model_train.add_command(make_puzzle_sample_data, name="make_sample_data")
 world_model_train.add_command(make_puzzle_eval_trajectory, name="make_eval_trajectory")
 world_model_train.add_command(train, name="train")
-world_model_train.add_command(gray_world_model_train, name="gray_train")

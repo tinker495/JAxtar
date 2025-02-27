@@ -30,10 +30,6 @@ from puzzle import (
     Sokoban,
     SokobanHard,
 )
-from puzzle.gray_world_model import (
-    RubiksCubeGrayWorldModel,
-    RubiksCubeGrayWorldModel_test,
-)
 from puzzle.world_model import (
     RubiksCubeWorldModel,
     RubiksCubeWorldModel_test,
@@ -75,8 +71,6 @@ default_puzzle_sizes: dict[str, int] = {
     "rubikscube_world_model_optimized_test": None,
     "sokoban_world_model": None,
     "sokoban_world_model_optimized": None,
-    "rubikscube_gray_world_model": None,
-    "rubikscube_gray_world_model_test": None,
 }
 
 puzzle_dict: dict[str, Puzzle] = {
@@ -105,12 +99,6 @@ puzzle_dict: dict[str, Puzzle] = {
     "sokoban_world_model_optimized": lambda **kwargs: SokobanWorldModelOptimized.load_model(
         "puzzle/world_model/model/params/sokoban_optimized.pkl"
     ),
-    "rubikscube_gray_world_model": lambda **kwargs: RubiksCubeGrayWorldModel.load_model(
-        "puzzle/gray_world_model/model/params/rubikscube.pkl"
-    ),
-    "rubikscube_gray_world_model_test": lambda **kwargs: RubiksCubeGrayWorldModel_test.load_model(
-        "puzzle/gray_world_model/model/params/rubikscube.pkl"
-    ),
 }
 
 puzzle_dict_hard: dict[str, Puzzle] = {
@@ -134,8 +122,6 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "rubikscube_world_model_optimized_test": EmptyHeuristic,
     "sokoban_world_model": EmptyHeuristic,
     "sokoban_world_model_optimized": EmptyHeuristic,
-    "rubikscube_gray_world_model": EmptyHeuristic,
-    "rubikscube_gray_world_model_test": EmptyHeuristic,
 }
 
 # nn option need to be callable, for loading model
@@ -209,8 +195,6 @@ puzzle_q_dict: dict[str, QFunction] = {
     "rubikscube_world_model_optimized_test": EmptyQFunction,
     "sokoban_world_model": EmptyQFunction,
     "sokoban_world_model_optimized": EmptyQFunction,
-    "rubikscube_gray_world_model": EmptyQFunction,
-    "rubikscube_gray_world_model_test": EmptyQFunction,
 }
 
 # nn option need to be callable, for loading model

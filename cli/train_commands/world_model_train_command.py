@@ -94,27 +94,39 @@ def train(
     eval_data = (eval_trajectory[0][0], eval_trajectory[0][1], eval_trajectory[1][0])
     writer.add_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
     writer.add_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
-    eval_accuracy = eval_fn(params, eval_trajectory)
-    writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, 0)
+    eval_forward_accuracy, eval_backward_accuracy = eval_fn(params, eval_trajectory)
+    writer.add_scalar("Metrics/Eval Forward Accuracy", eval_forward_accuracy, 0)
+    writer.add_scalar("Metrics/Eval Backward Accuracy", eval_backward_accuracy, 0)
 
     for epoch in pbar:
         key, subkey = jax.random.split(key)
-        params, opt_state, loss, AE_loss, WM_loss, accuracy = train_fn(
-            subkey, (datas, next_datas, actions), params, opt_state, epoch
-        )
+        (
+            params,
+            opt_state,
+            loss,
+            AE_loss,
+            forward_loss,
+            backward_loss,
+            forward_accuracy,
+            backward_accuracy,
+        ) = train_fn(subkey, (datas, next_datas, actions), params, opt_state, epoch)
         pbar.set_description(
             f"Loss: {loss:.4f},"
-            f"AE Loss: {AE_loss:.4f}, WM Loss: {WM_loss:.4f},"
-            f"Accuracy: {accuracy:.4f}, Eval Accuracy: {eval_accuracy:.4f}"
+            f"AE Loss: {AE_loss:.4f}, WM Loss: (F: {forward_loss:.4f}, B: {backward_loss:.4f}),"
+            f"Accuracy: (F: {forward_accuracy*100:3.1f}, B: {backward_accuracy*100:3.1f})"
+            f"Eval: (F: {eval_forward_accuracy*100:3.1f}, B: {eval_backward_accuracy*100:3.1f})"
         )
         if epoch % 10 == 0:
             writer.add_scalar("Losses/Loss", loss, epoch)
             writer.add_scalar("Losses/AE Loss", AE_loss, epoch)
-            writer.add_scalar("Losses/WM Loss", WM_loss, epoch)
-            writer.add_scalar("Metrics/Accuracy", accuracy, epoch)
+            writer.add_scalar("Losses/Forward Loss", forward_loss, epoch)
+            writer.add_scalar("Losses/Backward Loss", backward_loss, epoch)
+            writer.add_scalar("Metrics/Forward Accuracy", forward_accuracy, epoch)
+            writer.add_scalar("Metrics/Backward Accuracy", backward_accuracy, epoch)
 
-            eval_accuracy = eval_fn(params, eval_trajectory)
-            writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
+            eval_forward_accuracy, eval_backward_accuracy = eval_fn(params, eval_trajectory)
+            writer.add_scalar("Metrics/Eval Forward Accuracy", eval_forward_accuracy, epoch)
+            writer.add_scalar("Metrics/Eval Backward Accuracy", eval_backward_accuracy, epoch)
 
             data = jnp.expand_dims(eval_data[0], axis=0)
             latent = model.apply(params, data, training=False, method=model.encode)
@@ -143,7 +155,7 @@ def train(
             writer.add_image("Next/Decoded", next_decoded[0], epoch, dataformats="HWC")
 
             next_latent_pred = model.apply(
-                params, rounded_latent, training=False, method=model.transition
+                params, rounded_latent, training=False, method=model.forward_transition
             )
             action = jnp.reshape(
                 eval_data[2], (-1,) + (1,) * (next_latent_pred.ndim - 1)
@@ -160,7 +172,30 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
+            writer.add_image(
+                "Next/Decoded Forward Pred", next_decoded_pred[0], epoch, dataformats="HWC"
+            )
+
+            backward_latent_pred = model.apply(
+                params, next_rounded_latent, training=False, method=model.backward_transition
+            )
+            backward_latent_pred = jnp.take_along_axis(
+                backward_latent_pred, action, axis=1
+            ).squeeze(
+                axis=1
+            )  # [batch_size, ...]
+            backward_latent_pred = round_through_gradient(backward_latent_pred)
+            backward_decoded_pred = jnp.clip(
+                model.apply(params, backward_latent_pred, training=False, method=model.decode)
+                * 255.0
+                / 2.0
+                + 128.0,
+                0,
+                255,
+            ).astype(jnp.uint8)
+            writer.add_image(
+                "Current/Decoded Backward Pred", backward_decoded_pred[0], epoch, dataformats="HWC"
+            )
 
             world_model.params = params
             world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")

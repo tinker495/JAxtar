@@ -1,5 +1,4 @@
 from puzzle import Puzzle, RubiksCubeDS, SokobanDS
-from puzzle.gray_world_model import RubiksCubeGrayWorldModel
 from puzzle.world_model import (
     RubiksCubeWorldModel,
     RubiksCubeWorldModelOptimized,
@@ -29,12 +28,6 @@ world_model_dict: dict[str, callable] = {
     else SokobanWorldModelOptimized.load_model(
         "puzzle/world_model/model/params/sokoban_optimized.pkl"
     ),
-}
-
-gray_world_model_dict: dict[str, callable] = {
-    "rubikscube": lambda reset: RubiksCubeGrayWorldModel()
-    if reset
-    else RubiksCubeGrayWorldModel.load_model("puzzle/gray_world_model/model/params/rubikscube.pkl"),
 }
 
 world_model_ds_dict: dict[str, str] = {
