@@ -75,7 +75,6 @@ class Projector(nn.Module):
         normalized_latent = (binary_latent - 0.5) * 2.0
         normalized_latent = jnp.reshape(normalized_latent, shape=(normalized_latent.shape[0], -1))
         x = nn.Dense(500)(normalized_latent)
-        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
         x = nn.Dense(self.latent_dim)(x)
         return x
