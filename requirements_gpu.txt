@@ -13,3 +13,5 @@ huggingface_hub
 flax
 optax
 tensorboardX
+scikit-learn
+matplotlib
