@@ -44,6 +44,7 @@ class Decoder(nn.Module):
     @nn.compact
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
+        latent = (latent - 0.5) * 2.0
         x = nn.Dense(1000)(latent)
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.relu(x)
@@ -175,12 +176,6 @@ class WorldModelPuzzleBase(Puzzle):
 
             def transition(self, latent, training=False):
                 return self.world_model(latent, training)
-
-            def project(self, binary_latent, training=False):
-                return self.projector(binary_latent, training)
-
-            def predict(self, projected_latent, training=False):
-                return self.predictor(projected_latent, training)
 
             def train_info(self, data, next_data, actions, training=True):
 
