@@ -79,7 +79,7 @@ def qlearning_builder(
     return jax.jit(qlearning)
 
 
-def boltzmann_action_selection(q_values: chex.Array, temperature: float = 1.0 / 3.0) -> chex.Array:
+def boltzmann_action_selection(q_values: chex.Array, temperature: float = 3.0) -> chex.Array:
     q_values = -q_values / temperature
     q_values = jnp.exp(q_values)
     probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
@@ -140,7 +140,6 @@ def _get_datasets(
         )  # [minibatch_size, action_shape]
         target_q = jnp.min(q, axis=1) + selected_costs
         target_q = jnp.maximum(jnp.where(selected_neighbors_solved, 0.0, target_q), 0.0)
-        target_q = jnp.round(target_q)
         target_q = jnp.where(
             solved, 0.0, target_q
         )  # if the puzzle is already solved, the all q is 0
@@ -177,10 +176,14 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
 ):
-    shuffle_parallel = int(min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size))
-    steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
 
     if using_hindsight_target:
+        # Calculate appropriate shuffle_parallel for hindsight sampling
+        # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
+        triangle_size = shuffle_length * (shuffle_length + 1) // 2
+        needed_parallel = math.ceil(dataset_size / triangle_size)
+        shuffle_parallel = int(min(needed_parallel, dataset_minibatch_size))
+        steps = math.ceil(dataset_size / (shuffle_parallel * triangle_size))
         create_shuffled_path_fn = partial(
             create_hindsight_target_shuffled_path,
             puzzle,
@@ -188,6 +191,10 @@ def get_qlearning_dataset_builder(
             shuffle_parallel,
         )
     else:
+        shuffle_parallel = int(
+            min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
+        )
+        steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
         create_shuffled_path_fn = partial(
             create_target_shuffled_path,
             puzzle,
@@ -217,6 +224,7 @@ def get_qlearning_dataset_builder(
             key, subkey = jax.random.split(key)
             paths.append(jited_create_shuffled_path(subkey))
         paths = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *paths)
+        paths = jax.tree_util.tree_map(lambda x: x[:dataset_size], paths)
 
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
         return flatten_dataset
@@ -339,23 +347,29 @@ def create_hindsight_target_shuffled_path(
         None,
         length=shuffle_length + 1,
     )  # [shuffle_length, batch_size, ...]
-    solve_configs = puzzle.batched_hindsight_transform(moves[-1, ...])
-
-    move_costs = move_costs[-1] - move_costs
-
-    moves = moves[:-1, ...]
-    move_costs = move_costs[:-1, ...]
-
-    moves = jax.tree_util.tree_map(
-        lambda x: jnp.swapaxes(x, 0, 1), moves
-    )  # [batch_size, shuffle_length, ...]
-    move_costs = jnp.swapaxes(move_costs, 0, 1)  # [shuffle_length, batch_size]
+    solve_configs = jax.vmap(puzzle.batched_hindsight_transform)(moves)
+    move_costs = move_costs[jnp.newaxis, ...] - move_costs[:, jnp.newaxis, ...]
 
     solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length) + (x.ndim - 1) * (1,)),
+        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length + 1, 1) + (x.ndim - 1) * (1,)),
         solve_configs,
     )
-    solve_configs = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), solve_configs)
-    moves = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), moves)
-    move_costs = jnp.reshape(move_costs, (-1))
+    moves = jax.tree_util.tree_map(
+        lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length + 1) + (x.ndim - 1) * (1,)),
+        moves,
+    )
+
+    # Create an explicit upper triangular mask
+    upper_tri_mask = jnp.expand_dims(
+        jnp.triu(jnp.ones((shuffle_length + 1, shuffle_length + 1)), k=1), axis=-1
+    )
+    # Combine with positive cost condition
+    valid_indices = (move_costs > 0) & (upper_tri_mask > 0)
+
+    idxs = jnp.where(
+        valid_indices, size=(shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel)
+    )
+    solve_configs = solve_configs[idxs[0], idxs[1], idxs[2], ...]
+    moves = moves[idxs[0], idxs[1], idxs[2], ...]
+    move_costs = move_costs[idxs[0], idxs[1], idxs[2]]
     return solve_configs, moves, move_costs
