@@ -25,6 +25,30 @@ def sigmoid_loss_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
     return -jnp.mean(labels * jnp.log(preds) + (1 - labels) * jnp.log(1 - preds))
 
 
+def similarity_loss_fn(A: chex.Array, B: chex.Array):
+    """
+    Compute similarity loss between two arrays.
+
+    Args:
+        A: First array [batch_size, n_features]
+        B: Second array [batch_size, n_features]
+    """
+    B = jax.lax.stop_gradient(B)
+    # Compute cosine similarity
+    A_norm = jnp.sqrt(
+        jnp.sum(A**2, axis=-1, keepdims=True) + 1e-8
+    )  # Add epsilon for numerical stability
+    B_norm = jnp.sqrt(
+        jnp.sum(B**2, axis=-1, keepdims=True) + 1e-8
+    )  # Add epsilon for numerical stability
+    dot_product = jnp.sum(A * B, axis=-1, keepdims=True)
+    similarity = dot_product / (A_norm * B_norm)
+    similarity = similarity.squeeze(-1)  # Remove the last dimension after calculation
+    # Convert to loss (1 - similarity)
+    loss = 1.0 - similarity
+    return jnp.mean(loss)
+
+
 def accuracy_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
     return jnp.mean(jnp.sum(jnp.logical_xor(preds, labels), axis=tuple(range(1, preds.ndim))) == 0)
 
@@ -45,7 +69,7 @@ def world_model_train_builder(
             (latent, rounded_latent, decoded),
             (next_latent, rounded_next_latent, next_decoded),
             (forward_latent_pred, rounded_forward_latent_pred),
-            (backward_latent_pred, rounded_backward_latent_pred),
+            (forward_projected_latents, backward_projected_latents),
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
         new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
         data_scaled = (data / 255.0) * 2 - 1
@@ -55,26 +79,35 @@ def world_model_train_builder(
             + 0.5 * optax.l2_loss(next_data_scaled, next_decoded)
         )
 
-        forward_loss = jnp.mean(
+        world_model_loss = jnp.mean(
             0.5 * sigmoid_loss_fn(next_latent, jax.lax.stop_gradient(rounded_forward_latent_pred))
             + 0.5 * sigmoid_loss_fn(forward_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
         )
 
-        backward_loss = jnp.mean(
-            0.5 * sigmoid_loss_fn(latent, jax.lax.stop_gradient(rounded_backward_latent_pred))
-            + 0.5 * sigmoid_loss_fn(backward_latent_pred, jax.lax.stop_gradient(rounded_latent))
+        forward_similarity = similarity_loss_fn(
+            forward_projected_latents,
+            backward_projected_latents,
         )
 
-        total_loss = (1 - loss_weight) * AE_loss + loss_weight * (forward_loss + backward_loss)
-        forward_accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
-        backward_accuracy = accuracy_fn(rounded_backward_latent_pred, rounded_latent)
+        backward_similarity = similarity_loss_fn(
+            backward_projected_latents,
+            forward_projected_latents,
+        )
+
+        similarity_loss = 0.5 * forward_similarity + 0.5 * backward_similarity
+
+        total_loss = (1 - loss_weight) * AE_loss + loss_weight * (
+            world_model_loss + similarity_loss
+        )
+        accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
         return total_loss, (
             new_params,
             AE_loss,
-            forward_loss,
-            backward_loss,
-            forward_accuracy,
-            backward_accuracy,
+            world_model_loss,
+            similarity_loss,
+            accuracy,
+            forward_similarity,
+            backward_similarity,
         )
 
     def train_fn(
@@ -112,7 +145,15 @@ def world_model_train_builder(
             states, next_states, actions = batched_dataset
             (
                 loss,
-                (params, AE_loss, forward_loss, backward_loss, forward_accuracy, backward_accuracy),
+                (
+                    params,
+                    AE_loss,
+                    world_model_loss,
+                    similarity_loss,
+                    accuracy,
+                    forward_similarity,
+                    backward_similarity,
+                ),
             ), grads = jax.value_and_grad(loss_fn, has_aux=True)(
                 params,
                 states,
@@ -125,19 +166,21 @@ def world_model_train_builder(
             return (params, opt_state), (
                 loss,
                 AE_loss,
-                forward_loss,
-                backward_loss,
-                forward_accuracy,
-                backward_accuracy,
+                world_model_loss,
+                similarity_loss,
+                accuracy,
+                forward_similarity,
+                backward_similarity,
             )
 
         (params, opt_state), (
             losses,
             AE_losses,
-            forward_losses,
-            backward_losses,
-            forward_accuracies,
-            backward_accuracies,
+            world_model_losses,
+            similarity_losses,
+            accuracies,
+            forward_similarity_losses,
+            backward_similarity_losses,
         ) = jax.lax.scan(
             train_loop,
             (params, opt_state),
@@ -145,19 +188,21 @@ def world_model_train_builder(
         )
         loss = jnp.mean(losses)
         AE_loss = jnp.mean(AE_losses)
-        forward_loss = jnp.mean(forward_losses)
-        backward_loss = jnp.mean(backward_losses)
-        forward_accuracy = jnp.mean(forward_accuracies)
-        backward_accuracy = jnp.mean(backward_accuracies)
+        world_model_loss = jnp.mean(world_model_losses)
+        similarity_loss = jnp.mean(similarity_losses)
+        forward_similarity = jnp.mean(forward_similarity_losses)
+        backward_similarity = jnp.mean(backward_similarity_losses)
+        accuracy = jnp.mean(accuracies)
         return (
             params,
             opt_state,
             loss,
             AE_loss,
-            forward_loss,
-            backward_loss,
-            forward_accuracy,
-            backward_accuracy,
+            world_model_loss,
+            similarity_loss,
+            forward_similarity,
+            backward_similarity,
+            accuracy,
         )
 
     return jax.jit(train_fn)
@@ -188,20 +233,28 @@ def world_model_eval_builder(
         def eval_loop(_, batched_dataset):
             states, next_states, actions = batched_dataset
             (
-                (_, rounded_latent, _),
+                (_, _, _),
                 (_, rounded_next_latent, _),
                 (_, rounded_forward_latent_pred),
-                (_, rounded_backward_latent_pred),
+                (forward_projected_latents, backward_projected_latents),
             ), _ = train_info_fn(params, states, next_states, actions, training=False)
-            forward_accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
-            backward_accuracy = accuracy_fn(rounded_backward_latent_pred, rounded_latent)
-            return None, (forward_accuracy, backward_accuracy)
+            accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
+            return None, (accuracy, forward_projected_latents, backward_projected_latents)
 
-        _, (forward_accuracies, backward_accuracies) = jax.lax.scan(
+        _, (accuracies, forward_projected_latents, backward_projected_latents) = jax.lax.scan(
             eval_loop,
             None,
             (batched_states, batched_next_states, batched_actions),
         )
-        return jnp.mean(forward_accuracies), jnp.mean(backward_accuracies)
+        forward_projected_latents = forward_projected_latents.reshape(
+            -1, forward_projected_latents.shape[-1]
+        )
+        backward_projected_latents = backward_projected_latents.reshape(
+            -1, backward_projected_latents.shape[-1]
+        )
+
+        forward_projected_latents = forward_projected_latents[:1000]
+        backward_projected_latents = backward_projected_latents[:1000]
+        return jnp.mean(accuracies), forward_projected_latents, backward_projected_latents
 
     return jax.jit(eval_fn)

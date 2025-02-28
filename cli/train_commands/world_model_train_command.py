@@ -6,8 +6,11 @@ import click
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
 import optax
 import tensorboardX
+from sklearn.manifold import TSNE
 from tqdm import trange
 
 from puzzle.world_model.util import round_through_gradient
@@ -37,6 +40,38 @@ def setup_optimizer(params: PyTree) -> optax.OptState:
         optax.adamw(1e-3, nesterov=True, weight_decay=1e-4),
     )
     return optimizer, optimizer.init(params)
+
+
+def visualize_latents_tsne(latents, epoch, prefix="Latents", sample_size=1000):
+    # Convert to numpy for sklearn
+    latents_np = np.array(latents)
+
+    # Reshape if needed to 2D array [n_samples, n_features]
+    if len(latents_np.shape) > 2:
+        latents_np = latents_np.reshape(latents_np.shape[0], -1)
+
+    latents_var = np.var(latents_np, axis=0)
+    latents_var = np.mean(latents_var)
+
+    # Apply TSNE dimensionality reduction
+    tsne = TSNE(n_components=2, random_state=42)
+    latents_2d = tsne.fit_transform(latents_np)
+
+    # Create plot
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.scatter(latents_2d[:, 0], latents_2d[:, 1], alpha=0.7)
+    ax.set_title(f"{prefix} TSNE Visualization (Variance: {latents_var:.4f})")
+    ax.set_xlabel("Dimension 1")
+    ax.set_ylabel("Dimension 2")
+
+    # Convert plot to image for tensorboard
+    fig.canvas.draw()
+    width, height = fig.canvas.get_width_height()
+    image = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)
+    image = image.reshape((height, width, 4))[:, :, 1:]  # ARGB to RGB
+    plt.close(fig)
+
+    return image
 
 
 @click.command()
@@ -95,9 +130,20 @@ def train(
     eval_data = (eval_trajectory[0][0], eval_trajectory[0][1], eval_trajectory[1][0])
     writer.add_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
     writer.add_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
-    eval_forward_accuracy, eval_backward_accuracy = eval_fn(params, eval_trajectory)
-    writer.add_scalar("Metrics/Eval Forward Accuracy", eval_forward_accuracy, 0)
-    writer.add_scalar("Metrics/Eval Backward Accuracy", eval_backward_accuracy, 0)
+    eval_accuracy, eval_forward_projected_latents, eval_backward_projected_latents = eval_fn(
+        params, eval_trajectory
+    )
+    writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, 0)
+
+    forward_tsne_img = visualize_latents_tsne(
+        eval_forward_projected_latents, 0, "Forward Projected Latents"
+    )
+    writer.add_image("TSNE/Forward_Projected_Latents", forward_tsne_img, 0, dataformats="HWC")
+
+    backward_tsne_img = visualize_latents_tsne(
+        eval_backward_projected_latents, 0, "Backward Projected Latents"
+    )
+    writer.add_image("TSNE/Backward_Projected_Latents", backward_tsne_img, 0, dataformats="HWC")
 
     for epoch in pbar:
         key, subkey = jax.random.split(key)
@@ -106,28 +152,49 @@ def train(
             opt_state,
             loss,
             AE_loss,
-            forward_loss,
-            backward_loss,
-            forward_accuracy,
-            backward_accuracy,
+            world_model_loss,
+            similarity_loss,
+            forward_similarity,
+            backward_similarity,
+            accuracy,
         ) = train_fn(subkey, (datas, next_datas, actions), params, opt_state, epoch)
         pbar.set_description(
-            f"Loss: {loss:.4f},"
-            f"AE Loss: {AE_loss:.4f}, WM Loss: (F: {forward_loss:.4f}, B: {backward_loss:.4f}),"
-            f"Accuracy: (F: {forward_accuracy*100:3.1f}, B: {backward_accuracy*100:3.1f})"
-            f"Eval: (F: {eval_forward_accuracy*100:3.1f}, B: {eval_backward_accuracy*100:3.1f})"
+            f"Loss: {loss:.4f}, "
+            f"AE Loss: {AE_loss:.4f}, "
+            f"WM Loss: {world_model_loss:.4f}, "
+            f"Similarity Loss: {similarity_loss:.4f}(F: {forward_similarity:.4f}, B: {backward_similarity:.4f}), "
+            f"Accuracy: {accuracy*100:3.1f}, "
+            f"Eval Accuracy: {eval_accuracy*100:3.1f}"
         )
-        if epoch % 10 == 0:
+        if epoch % 10 == 0 and epoch != 0:
             writer.add_scalar("Losses/Loss", loss, epoch)
             writer.add_scalar("Losses/AE Loss", AE_loss, epoch)
-            writer.add_scalar("Losses/Forward Loss", forward_loss, epoch)
-            writer.add_scalar("Losses/Backward Loss", backward_loss, epoch)
-            writer.add_scalar("Metrics/Forward Accuracy", forward_accuracy, epoch)
-            writer.add_scalar("Metrics/Backward Accuracy", backward_accuracy, epoch)
+            writer.add_scalar("Losses/World Model Loss", world_model_loss, epoch)
+            writer.add_scalar("Losses/Similarity Loss", similarity_loss, epoch)
+            writer.add_scalar("Losses/Forward Similarity", forward_similarity, epoch)
+            writer.add_scalar("Losses/Backward Similarity", backward_similarity, epoch)
+            writer.add_scalar("Metrics/Accuracy", accuracy, epoch)
 
-            eval_forward_accuracy, eval_backward_accuracy = eval_fn(params, eval_trajectory)
-            writer.add_scalar("Metrics/Eval Forward Accuracy", eval_forward_accuracy, epoch)
-            writer.add_scalar("Metrics/Eval Backward Accuracy", eval_backward_accuracy, epoch)
+            (
+                eval_accuracy,
+                eval_forward_projected_latents,
+                eval_backward_projected_latents,
+            ) = eval_fn(params, eval_trajectory)
+            writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
+
+            forward_tsne_img = visualize_latents_tsne(
+                eval_forward_projected_latents, epoch, "Forward Projected Latents"
+            )
+            writer.add_image(
+                "TSNE/Forward_Projected_Latents", forward_tsne_img, epoch, dataformats="HWC"
+            )
+
+            backward_tsne_img = visualize_latents_tsne(
+                eval_backward_projected_latents, epoch, "Backward Projected Latents"
+            )
+            writer.add_image(
+                "TSNE/Backward_Projected_Latents", backward_tsne_img, epoch, dataformats="HWC"
+            )
 
             data = jnp.expand_dims(eval_data[0], axis=0)
             latent = model.apply(params, data, training=False, method=model.encode)
@@ -156,7 +223,7 @@ def train(
             writer.add_image("Next/Decoded", next_decoded[0], epoch, dataformats="HWC")
 
             next_latent_pred = model.apply(
-                params, rounded_latent, training=False, method=model.forward_transition
+                params, rounded_latent, training=False, method=model.transition
             )
             action = jnp.reshape(
                 eval_data[2], (-1,) + (1,) * (next_latent_pred.ndim - 1)
@@ -173,30 +240,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image(
-                "Next/Decoded Forward Pred", next_decoded_pred[0], epoch, dataformats="HWC"
-            )
-
-            backward_latent_pred = model.apply(
-                params, next_rounded_latent, training=False, method=model.backward_transition
-            )
-            backward_latent_pred = jnp.take_along_axis(
-                backward_latent_pred, action, axis=1
-            ).squeeze(
-                axis=1
-            )  # [batch_size, ...]
-            backward_latent_pred = round_through_gradient(backward_latent_pred)
-            backward_decoded_pred = jnp.clip(
-                model.apply(params, backward_latent_pred, training=False, method=model.decode)
-                * 255.0
-                / 2.0
-                + 128.0,
-                0,
-                255,
-            ).astype(jnp.uint8)
-            writer.add_image(
-                "Current/Decoded Backward Pred", backward_decoded_pred[0], epoch, dataformats="HWC"
-            )
+            writer.add_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
 
             world_model.params = params
             world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")
