@@ -42,7 +42,7 @@ def setup_optimizer(params: PyTree) -> optax.OptState:
     return optimizer, optimizer.init(params)
 
 
-def visualize_latents_tsne(latents, epoch, prefix="Latents", sample_size=1000):
+def visualize_latents_tsne(latents, epoch, prefix="Latents"):
     # Convert to numpy for sklearn
     latents_np = np.array(latents)
 
@@ -58,9 +58,22 @@ def visualize_latents_tsne(latents, epoch, prefix="Latents", sample_size=1000):
     latents_2d = tsne.fit_transform(latents_np)
 
     # Create plot
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.scatter(latents_2d[:, 0], latents_2d[:, 1], alpha=0.7)
-    ax.set_title(f"{prefix} TSNE Visualization (Variance: {latents_var:.4f})")
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Color points according to their original ordering
+    num_points = latents_np.shape[0]
+    point_order = np.arange(num_points)
+
+    # Use a colormap to represent ordering
+    scatter = ax.scatter(
+        latents_2d[:, 0], latents_2d[:, 1], c=point_order, cmap="viridis", alpha=0.7, s=30
+    )
+
+    # Add colorbar to show the relationship between colors and ordering
+    cbar = fig.colorbar(scatter, ax=ax)
+    cbar.set_label("Point order in original sequence")
+
+    ax.set_title(f"{prefix}(Epoch: {epoch}) TSNE (Variance: {latents_var:.4f})")
     ax.set_xlabel("Dimension 1")
     ax.set_ylabel("Dimension 2")
 
