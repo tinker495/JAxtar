@@ -131,7 +131,6 @@ def _get_datasets(
         _, heur = jax.lax.scan(heur_scan, None, flatten_neighbors)
         heur = jnp.vstack(heur)
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
-        heur = jnp.round(heur)
         target_heuristic = jnp.min(heur + cost, axis=0)
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
@@ -166,10 +165,14 @@ def get_heuristic_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
 ):
-    shuffle_parallel = int(min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size))
-    steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
 
     if using_hindsight_target:
+        # Calculate appropriate shuffle_parallel for hindsight sampling
+        # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
+        triangle_size = shuffle_length * (shuffle_length + 1) // 2
+        needed_parallel = math.ceil(dataset_size / triangle_size)
+        shuffle_parallel = int(min(needed_parallel, dataset_minibatch_size))
+        steps = math.ceil(dataset_size / (shuffle_parallel * triangle_size))
         create_shuffled_path_fn = partial(
             create_hindsight_target_shuffled_path,
             puzzle,
@@ -177,6 +180,10 @@ def get_heuristic_dataset_builder(
             shuffle_parallel,
         )
     else:
+        shuffle_parallel = int(
+            min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
+        )
+        steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
         create_shuffled_path_fn = partial(
             create_target_shuffled_path,
             puzzle,
@@ -205,6 +212,7 @@ def get_heuristic_dataset_builder(
             key, subkey = jax.random.split(key)
             paths.append(jited_create_shuffled_path(subkey))
         paths = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *paths)
+        paths = jax.tree_util.tree_map(lambda x: x[:dataset_size], paths)
 
         flatten_dataset = jited_get_datasets(heuristic_params, paths, key)
         return flatten_dataset
@@ -327,23 +335,29 @@ def create_hindsight_target_shuffled_path(
         None,
         length=shuffle_length + 1,
     )  # [shuffle_length, batch_size, ...]
-    solve_configs = puzzle.batched_hindsight_transform(moves[-1, ...])
-
-    move_costs = move_costs[-1] - move_costs
-
-    moves = moves[:-1, ...]
-    move_costs = move_costs[:-1, ...]
-
-    moves = jax.tree_util.tree_map(
-        lambda x: jnp.swapaxes(x, 0, 1), moves
-    )  # [batch_size, shuffle_length, ...]
-    move_costs = jnp.swapaxes(move_costs, 0, 1)  # [shuffle_length, batch_size]
+    solve_configs = jax.vmap(puzzle.batched_hindsight_transform)(moves)
+    move_costs = move_costs[jnp.newaxis, ...] - move_costs[:, jnp.newaxis, ...]
 
     solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length) + (x.ndim - 1) * (1,)),
+        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length + 1, 1) + (x.ndim - 1) * (1,)),
         solve_configs,
     )
-    solve_configs = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), solve_configs)
-    moves = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), moves)
-    move_costs = jnp.reshape(move_costs, (-1))
+    moves = jax.tree_util.tree_map(
+        lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length + 1) + (x.ndim - 1) * (1,)),
+        moves,
+    )
+
+    # Create an explicit upper triangular mask
+    upper_tri_mask = jnp.expand_dims(
+        jnp.triu(jnp.ones((shuffle_length + 1, shuffle_length + 1)), k=1), axis=-1
+    )
+    # Combine with positive cost condition
+    valid_indices = (move_costs > 0) & (upper_tri_mask > 0)
+
+    idxs = jnp.where(
+        valid_indices, size=(shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel)
+    )
+    solve_configs = solve_configs[idxs[0], idxs[1], idxs[2], ...]
+    moves = moves[idxs[0], idxs[1], idxs[2], ...]
+    move_costs = move_costs[idxs[0], idxs[1], idxs[2]]
     return solve_configs, moves, move_costs
