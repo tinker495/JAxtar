@@ -82,22 +82,22 @@ puzzle_dict: dict[str, Puzzle] = {
     "tsp": TSP,
     "sokoban": Sokoban,
     "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel.load_model(
-        "puzzle/world_model/model/params/rubikscube.pkl"
+        "puzzle/world_model/model/params/rubikscube_repr.pkl"
     ),
     "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModel_test.load_model(
-        "puzzle/world_model/model/params/rubikscube.pkl"
+        "puzzle/world_model/model/params/rubikscube_repr.pkl"
     ),
     "rubikscube_world_model_optimized": lambda **kwargs: RubiksCubeWorldModelOptimized.load_model(
-        "puzzle/world_model/model/params/rubikscube_optimized.pkl"
+        "puzzle/world_model/model/params/rubikscube_optimized_repr.pkl"
     ),
     "rubikscube_world_model_optimized_test": lambda **kwargs: RubiksCubeWorldModelOptimized_test.load_model(
-        "puzzle/world_model/model/params/rubikscube_optimized.pkl"
+        "puzzle/world_model/model/params/rubikscube_optimized_repr.pkl"
     ),
     "sokoban_world_model": lambda **kwargs: SokobanWorldModel.load_model(
-        "puzzle/world_model/model/params/sokoban.pkl"
+        "puzzle/world_model/model/params/sokoban_repr.pkl"
     ),
     "sokoban_world_model_optimized": lambda **kwargs: SokobanWorldModelOptimized.load_model(
-        "puzzle/world_model/model/params/sokoban_optimized.pkl"
+        "puzzle/world_model/model/params/sokoban_optimized_repr.pkl"
     ),
 }
 

@@ -452,6 +452,28 @@ class WorldModelPuzzleBase(Puzzle):
         target_state = solve_config.TargetState
         return self.is_equal(state, target_state)
 
+    def representation_state(self, state: State) -> jnp.ndarray:
+        """
+        This function should return a representation of the state.
+        """
+        binary_latent = self.from_uint8(state.latent).astype(jnp.float32)
+        binary_latent = jnp.expand_dims(binary_latent, axis=0)
+        projected_latent = self.model.apply(
+            self.params, binary_latent, training=False, method=self.model.forward_projector
+        )
+        return projected_latent
+
+    def representation_solve_config(self, solve_config: SolveConfig) -> jnp.ndarray:
+        """
+        This function should return a representation of the solve config.
+        """
+        target_latent = self.from_uint8(solve_config.TargetState.latent).astype(jnp.float32)
+        target_latent = jnp.expand_dims(target_latent, axis=0)
+        projected_latent = self.model.apply(
+            self.params, target_latent, training=False, method=self.model.backward_projector
+        )
+        return projected_latent
+
     def to_uint8(self, bit_latent: chex.Array) -> chex.Array:
         # from booleans to uint8
         # boolean 32 to uint8 4

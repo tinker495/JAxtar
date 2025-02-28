@@ -14,19 +14,19 @@ puzzle_dict_ds: dict[str, Puzzle] = {
 world_model_dict: dict[str, callable] = {
     "rubikscube": lambda reset: RubiksCubeWorldModel()
     if reset
-    else RubiksCubeWorldModel.load_model("puzzle/world_model/model/params/rubikscube.pkl"),
+    else RubiksCubeWorldModel.load_model("puzzle/world_model/model/params/rubikscube_repr.pkl"),
     "rubikscube_optimized": lambda reset: RubiksCubeWorldModelOptimized()
     if reset
     else RubiksCubeWorldModelOptimized.load_model(
-        "puzzle/world_model/model/params/rubikscube_optimized.pkl"
+        "puzzle/world_model/model/params/rubikscube_optimized_repr.pkl"
     ),
     "sokoban": lambda reset: SokobanWorldModel()
     if reset
-    else SokobanWorldModel.load_model("puzzle/world_model/model/params/sokoban.pkl"),
+    else SokobanWorldModel.load_model("puzzle/world_model/model/params/sokoban_repr.pkl"),
     "sokoban_optimized": lambda reset: SokobanWorldModelOptimized()
     if reset
     else SokobanWorldModelOptimized.load_model(
-        "puzzle/world_model/model/params/sokoban_optimized.pkl"
+        "puzzle/world_model/model/params/sokoban_optimized_repr.pkl"
     ),
 }
 

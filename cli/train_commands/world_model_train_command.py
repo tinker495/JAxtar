@@ -256,6 +256,6 @@ def train(
             writer.add_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
 
             world_model.params = params
-            world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")
+            world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}_repr.pkl")
 
     writer.close()
