@@ -16,8 +16,8 @@ class WorldModelNeuralHeuristic(NeuralHeuristicBase):
     def pre_process(
         self, solve_config: WorldModelPuzzleBase.SolveConfig, current: WorldModelPuzzleBase.State
     ) -> chex.Array:
-        target_latent = self.puzzle.from_uint8(solve_config.TargetState.latent).astype(jnp.float32)
-        current_latent = self.puzzle.from_uint8(current.latent).astype(jnp.float32)
+        target_latent = self.puzzle.representation_solve_config(solve_config.TargetState)
+        current_latent = self.puzzle.representation_state(current)
         latent_stack = jnp.concatenate([current_latent, target_latent], axis=-1)
         latent_stack = jnp.reshape(latent_stack, (-1,))
-        return (latent_stack - 0.5) * 2.0
+        return latent_stack

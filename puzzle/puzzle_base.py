@@ -273,6 +273,18 @@ class Puzzle(ABC):
         """
         pass
 
+    def representation_state(self, state: State) -> jnp.ndarray:
+        """
+        This function should return a representation of the state.
+        """
+        return state
+
+    def representation_solve_config(self, solve_config: SolveConfig) -> jnp.ndarray:
+        """
+        This function should return a representation of the solve config.
+        """
+        return solve_config
+
     def action_to_string(self, action: int) -> str:
         """
         This function should return a string representation of the action.
