@@ -22,7 +22,7 @@ def sigmoid_loss_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
     """
     # Clip predictions to avoid numerical instability
     preds = jnp.clip(preds, 1e-7, 1 - 1e-7)
-    return -jnp.mean(labels * jnp.log(preds) + (1 - labels) * jnp.log(1 - preds))
+    return -jnp.mean(labels * jnp.log(preds) + (1 - labels) * jnp.log(1 - preds), axis=-1)
 
 
 def similarity_loss_fn(A: chex.Array, B: chex.Array):
@@ -102,7 +102,7 @@ def world_model_train_builder(
         similarity_loss = 0.5 * forward_similarity + 0.5 * backward_similarity
 
         total_loss = (1 - loss_weight) * AE_loss + loss_weight * (
-            world_model_loss + 0.1 * similarity_loss
+            world_model_loss + similarity_loss
         )
         accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
         return total_loss, (
