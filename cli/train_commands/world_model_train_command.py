@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import tensorboardX
-from sklearn.manifold import TSNE
+import umap
 from tqdm import trange
 
 from puzzle.world_model.util import round_through_gradient
@@ -41,7 +41,7 @@ def setup_optimizer(params: PyTree) -> optax.OptState:
     return optimizer, optimizer.init(params)
 
 
-def visualize_latents_tsne(latents, epoch, prefix="Latents"):
+def visualize_latents(latents, epoch, prefix="Latents"):
     # Convert to numpy for sklearn
     latents_np = np.array(latents)
 
@@ -53,7 +53,7 @@ def visualize_latents_tsne(latents, epoch, prefix="Latents"):
     latents_var = np.mean(latents_var)
 
     # Apply TSNE dimensionality reduction
-    tsne = TSNE(n_components=2, random_state=42)
+    tsne = umap.UMAP(n_components=2, random_state=42)
     latents_2d = tsne.fit_transform(latents_np)
 
     # Create plot
@@ -147,12 +147,12 @@ def train(
     )
     writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, 0)
 
-    forward_tsne_img = visualize_latents_tsne(
+    forward_tsne_img = visualize_latents(
         eval_forward_projected_latents, 0, "Forward Projected Latents"
     )
     writer.add_image("TSNE/Forward_Projected_Latents", forward_tsne_img, 0, dataformats="HWC")
 
-    backward_tsne_img = visualize_latents_tsne(
+    backward_tsne_img = visualize_latents(
         eval_backward_projected_latents, 0, "Backward Projected Latents"
     )
     writer.add_image("TSNE/Backward_Projected_Latents", backward_tsne_img, 0, dataformats="HWC")
@@ -194,14 +194,14 @@ def train(
             ) = eval_fn(params, eval_trajectory)
             writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
 
-            forward_tsne_img = visualize_latents_tsne(
+            forward_tsne_img = visualize_latents(
                 eval_forward_projected_latents, epoch, "Forward Projected Latents"
             )
             writer.add_image(
                 "TSNE/Forward_Projected_Latents", forward_tsne_img, epoch, dataformats="HWC"
             )
 
-            backward_tsne_img = visualize_latents_tsne(
+            backward_tsne_img = visualize_latents(
                 eval_backward_projected_latents, epoch, "Backward Projected Latents"
             )
             writer.add_image(
