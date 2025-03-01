@@ -34,7 +34,10 @@ class Encoder(nn.Module):
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(1000)(flatten)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
+        x = nn.swish(x)
+        x = nn.Dense(1000)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.swish(x)
         x = nn.Dense(latent_size)(x)
         x = jnp.reshape(x, shape=(-1, *self.latent_shape))
         latent = nn.sigmoid(x)
@@ -50,7 +53,10 @@ class Decoder(nn.Module):
         latent = (latent - 0.5) * 2.0
         x = nn.Dense(1000)(latent)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
+        x = nn.swish(x)
+        x = nn.Dense(1000)(x)
+        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = nn.swish(x)
         x = nn.Dense(output_size)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
         return output
@@ -80,7 +86,7 @@ class Projector(nn.Module):
         normalized_latent = jnp.reshape(normalized_latent, shape=(normalized_latent.shape[0], -1))
         x = nn.Dense(500)(normalized_latent)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
+        x = nn.swish(x)
         x = nn.Dense(self.latent_dim)(x)
         return x
 
@@ -92,7 +98,7 @@ class Predictor(nn.Module):
     def __call__(self, projected_latent, training=False):
         x = nn.Dense(500)(projected_latent)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
+        x = nn.swish(x)
         x = nn.Dense(self.latent_dim)(x)
         return x
 
@@ -106,13 +112,13 @@ class WorldModel(nn.Module):
         x = (latent - 0.5) * 2.0
         x = nn.Dense(500)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
+        x = nn.swish(x)
         x = nn.Dense(500)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
+        x = nn.swish(x)
         x = nn.Dense(500)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.relu(x)
+        x = nn.swish(x)
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(latent_size * self.action_size)(x)
         x = nn.sigmoid(x)
