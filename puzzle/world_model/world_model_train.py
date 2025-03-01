@@ -102,7 +102,7 @@ def world_model_train_builder(
         similarity_loss = 0.5 * forward_similarity + 0.5 * backward_similarity
 
         total_loss = (1 - loss_weight) * AE_loss + loss_weight * (
-            world_model_loss + similarity_loss
+            world_model_loss + 0.01 * similarity_loss
         )
         accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
         return total_loss, (
