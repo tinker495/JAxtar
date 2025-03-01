@@ -15,10 +15,12 @@ from puzzle.world_model.util import (
     is_dataset_downloaded,
     is_model_downloaded,
     latents_to_tsne_img,
+    latents_to_umap_img,
     round_through_gradient,
 )
 
 STR_PARSE_IMG = True
+USE_UMAP = True
 
 
 class Encoder(nn.Module):
@@ -362,21 +364,30 @@ class WorldModelPuzzleBase(Puzzle):
                     self.params, latents, training=False, method=self.model.forward_proj
                 )
                 np_projected_latents = np.array(projected_latents)
-                tsne_img = latents_to_tsne_img(np_projected_latents, idx=idx, img_width=width)
+                if USE_UMAP:
+                    visualization_img = latents_to_umap_img(
+                        np_projected_latents, idx=idx, img_width=width
+                    )
+                else:
+                    visualization_img = latents_to_tsne_img(
+                        np_projected_latents, idx=idx, img_width=width
+                    )
 
                 # Add the t-SNE visualization to the main image
                 if show_target_state_img:
                     # If we're already showing target state, add t-SNE below
-                    line = np.ones((10, tsne_img.shape[1], 3), dtype=np.uint8) * 255
-                    img = np.concatenate([img, line, tsne_img], axis=0)
+                    line = np.ones((10, visualization_img.shape[1], 3), dtype=np.uint8) * 255
+                    img = np.concatenate([img, line, visualization_img], axis=0)
                 else:
                     # Otherwise, add t-SNE to the right
                     line = np.ones((img.shape[0], 10, 3), dtype=np.uint8) * 255
                     # Ensure tsne_img height matches img height
-                    tsne_img_resized = cv2.resize(
-                        tsne_img, (tsne_img.shape[1], img.shape[0]), interpolation=cv2.INTER_AREA
+                    visualization_img_resized = cv2.resize(
+                        visualization_img,
+                        (visualization_img.shape[1], img.shape[0]),
+                        interpolation=cv2.INTER_AREA,
                     )
-                    img = np.concatenate([img, line, tsne_img_resized], axis=1)
+                    img = np.concatenate([img, line, visualization_img_resized], axis=1)
 
             return img
 

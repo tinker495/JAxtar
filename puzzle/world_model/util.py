@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import umap
 from sklearn.manifold import TSNE
 
 matplotlib.use("Agg")  # Use the 'Agg' backend which doesn't require a display
@@ -121,6 +122,9 @@ def latents_to_tsne_img(
     # Mark the start point
     ax.scatter(tsne_results[0, 0], tsne_results[0, 1], c="green", s=50, label="Start")
 
+    # Mark the target point
+    ax.scatter(tsne_results[-1, 0], tsne_results[-1, 1], c="blue", s=50, label="Target")
+
     # Mark the current point
     ax.scatter(tsne_results[idx, 0], tsne_results[idx, 1], c="red", s=50, label="Current")
 
@@ -137,10 +141,77 @@ def latents_to_tsne_img(
     width, height = fig.canvas.get_width_height()
     tsne_img = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)
     tsne_img = tsne_img.reshape((height, width, 4))[:, :, 1:]  # ARGB to RGB
-    tsne_img = cv2.cvtColor(tsne_img, cv2.COLOR_RGB2BGR)
 
     # Resize the t-SNE image to match the width of the main image
     tsne_img = cv2.resize(
         tsne_img, (img_width, int(width * img_width / width)), interpolation=cv2.INTER_AREA
     )
+    fig.clear()
     return tsne_img
+
+
+@np_cache
+def umap_fit_transform(latents):
+    # Create a UMAP embedding of the projected latents
+    reducer = umap.UMAP()
+    umap_results = reducer.fit_transform(latents)
+    return umap_results
+
+
+def latents_to_umap_img(
+    latents: np.ndarray, idx: int = None, figsize=(4, 4), dpi=100, img_width: int = 32
+) -> np.ndarray:
+    """
+    Convert latent vectors to a UMAP visualization image.
+
+    Args:
+        latents: Array of latent vectors to visualize
+        idx: Index of the current point to highlight (if None, no point is highlighted)
+        figsize: Size of the matplotlib figure
+        dpi: DPI of the matplotlib figure
+        img_width: Width of the output image
+
+    Returns:
+        np.ndarray: BGR image of the UMAP visualization
+    """
+
+    umap_results = umap_fit_transform(latents)
+    # Create a matplotlib figure for the UMAP visualization
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ax = fig.add_subplot(111)
+
+    # Plot all points
+    ax.scatter(umap_results[:, 0], umap_results[:, 1], c="lightgray", s=30)
+
+    # Highlight the path with a line
+    ax.plot(umap_results[:, 0], umap_results[:, 1], "b-", linewidth=1, alpha=0.7)
+
+    # Mark the start point
+    ax.scatter(umap_results[0, 0], umap_results[0, 1], c="green", s=50, label="Start")
+
+    # Mark the target point
+    ax.scatter(umap_results[-1, 0], umap_results[-1, 1], c="blue", s=50, label="Target")
+
+    # Mark the current point
+    ax.scatter(umap_results[idx, 0], umap_results[idx, 1], c="red", s=50, label="Current")
+
+    # Add a legend
+    ax.legend(loc="best", fontsize=8)
+
+    # Remove axes
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title("UMAP of Latent Space", fontsize=10)
+
+    # Convert the matplotlib figure to an image for visualization
+    fig.canvas.draw()
+    width, height = fig.canvas.get_width_height()
+    umap_img = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)
+    umap_img = umap_img.reshape((height, width, 4))[:, :, 1:]  # ARGB to RGB
+
+    # Resize the UMAP image to match the width of the main image
+    umap_img = cv2.resize(
+        umap_img, (img_width, int(height * img_width / width)), interpolation=cv2.INTER_AREA
+    )
+    fig.clear()
+    return umap_img
