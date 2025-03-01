@@ -52,8 +52,25 @@ def visualize_latents(latents, epoch, prefix="Latents"):
     latents_var = np.var(latents_np, axis=0)
     latents_var = np.mean(latents_var)
 
+    # Calculate the angle variance of latent vectors
+    # First normalize the latent vectors
+    latents_normalized = latents_np / (np.linalg.norm(latents_np, axis=1, keepdims=True) + 1e-8)
+
+    # Calculate the dot products between consecutive latent vectors
+    dot_products = np.sum(latents_normalized[:-1] * latents_normalized[1:], axis=1)
+
+    # Clip dot products to valid range for arccos
+    dot_products = np.clip(dot_products, -1.0, 1.0)
+
+    # Calculate angles in radians and convert to degrees
+    angles = np.arccos(dot_products) * (180.0 / np.pi)
+
+    # Calculate angle variance
+    angle_variance = np.var(angles)
+
     # Apply TSNE dimensionality reduction
-    reducer = umap.UMAP(n_components=2, random_state=42)
+    # Create a UMAP embedding of the projected latents
+    reducer = umap.UMAP()
     latents_2d = reducer.fit_transform(latents_np)
 
     # Create plot
@@ -72,7 +89,11 @@ def visualize_latents(latents, epoch, prefix="Latents"):
     cbar = fig.colorbar(scatter, ax=ax)
     cbar.set_label("Point order in original sequence")
 
-    ax.set_title(f"{prefix}(Epoch: {epoch}) TSNE (Variance: {latents_var:.4f})")
+    ax.set_title(
+        f"{prefix}(Epoch: {epoch}) UMAP\n"
+        f"Variance: {latents_var:.4f}, "
+        f"Angle Variance: {angle_variance:.4f}"
+    )
     ax.set_xlabel("Dimension 1")
     ax.set_ylabel("Dimension 2")
 
@@ -150,12 +171,12 @@ def train(
     forward_tsne_img = visualize_latents(
         eval_forward_projected_latents, 0, "Forward Projected Latents"
     )
-    writer.add_image("TSNE/Forward_Projected_Latents", forward_tsne_img, 0, dataformats="HWC")
+    writer.add_image("Latent/Forward_Projected_Latents", forward_tsne_img, 0, dataformats="HWC")
 
     backward_tsne_img = visualize_latents(
         eval_backward_projected_latents, 0, "Backward Projected Latents"
     )
-    writer.add_image("TSNE/Backward_Projected_Latents", backward_tsne_img, 0, dataformats="HWC")
+    writer.add_image("Latent/Backward_Projected_Latents", backward_tsne_img, 0, dataformats="HWC")
 
     for epoch in pbar:
         key, subkey = jax.random.split(key)
@@ -198,14 +219,14 @@ def train(
                 eval_forward_projected_latents, epoch, "Forward Projected Latents"
             )
             writer.add_image(
-                "TSNE/Forward_Projected_Latents", forward_tsne_img, epoch, dataformats="HWC"
+                "Latent/Forward_Projected_Latents", forward_tsne_img, epoch, dataformats="HWC"
             )
 
             backward_tsne_img = visualize_latents(
                 eval_backward_projected_latents, epoch, "Backward Projected Latents"
             )
             writer.add_image(
-                "TSNE/Backward_Projected_Latents", backward_tsne_img, epoch, dataformats="HWC"
+                "Latent/Backward_Projected_Latents", backward_tsne_img, epoch, dataformats="HWC"
             )
 
             data = jnp.expand_dims(eval_data[0], axis=0)
