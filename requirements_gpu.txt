@@ -15,3 +15,4 @@ optax
 tensorboardX
 scikit-learn
 matplotlib
+umap-learn
