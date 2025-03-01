@@ -14,6 +14,7 @@ from puzzle.world_model.util import (
     img_to_colored_str,
     is_dataset_downloaded,
     is_model_downloaded,
+    latents_to_tsne_img,
     round_through_gradient,
 )
 
@@ -177,17 +178,23 @@ class WorldModelPuzzleBase(Puzzle):
             def transition(self, latent, training=False):
                 return self.world_model(latent, training)
 
+            def forward_proj(self, latent, training=False):
+                return self.forward_projector(latent, training)
+
+            def backward_proj(self, latent, training=False):
+                return self.backward_projector(latent, training)
+
             def train_info(self, data, next_data, actions, training=True):
 
                 latent = self.encode(data, training)
                 rounded_latent = round_through_gradient(latent)
                 decoded = self.decode(rounded_latent, training)
-                forward_projected_latents = self.forward_projector(rounded_latent, training)
+                forward_projected_latents = self.forward_proj(rounded_latent, training)
 
                 next_latent = self.encode(next_data, training)
                 rounded_next_latent = round_through_gradient(next_latent)
                 next_decoded = self.decode(rounded_next_latent, training)
-                backward_projected_latents = self.backward_projector(rounded_next_latent, training)
+                backward_projected_latents = self.backward_proj(rounded_next_latent, training)
 
                 actions = jnp.reshape(
                     actions, (-1,) + (1,) * (next_latent.ndim)
@@ -312,6 +319,8 @@ class WorldModelPuzzleBase(Puzzle):
             show_target_state_img: bool = True,
             resize_img: bool = True,
             target_height: int = IMG_SIZE[1],
+            path: list["WorldModelPuzzleBase.State"] = None,
+            idx: int = None,
             **kwargs,
         ) -> jnp.ndarray:
             latent = state.latent
@@ -345,6 +354,29 @@ class WorldModelPuzzleBase(Puzzle):
                     img2 = data
                 line = np.ones((10, width, 3), dtype=np.uint8) * 255
                 img = np.concatenate([img, line, img2], axis=0)
+            if path is not None and idx is not None and len(path) > 1:
+                # Visualize the latent space using t-SNE if path is provided
+                latents = [self.from_uint8(state.latent) for state in path]
+                latents = jnp.stack(latents, axis=0)
+                projected_latents = self.model.apply(
+                    self.params, latents, training=False, method=self.model.forward_proj
+                )
+                np_projected_latents = np.array(projected_latents)
+                tsne_img = latents_to_tsne_img(np_projected_latents, idx=idx, img_width=width)
+
+                # Add the t-SNE visualization to the main image
+                if show_target_state_img:
+                    # If we're already showing target state, add t-SNE below
+                    line = np.ones((10, tsne_img.shape[1], 3), dtype=np.uint8) * 255
+                    img = np.concatenate([img, line, tsne_img], axis=0)
+                else:
+                    # Otherwise, add t-SNE to the right
+                    line = np.ones((img.shape[0], 10, 3), dtype=np.uint8) * 255
+                    # Ensure tsne_img height matches img height
+                    tsne_img_resized = cv2.resize(
+                        tsne_img, (tsne_img.shape[1], img.shape[0]), interpolation=cv2.INTER_AREA
+                    )
+                    img = np.concatenate([img, line, tsne_img_resized], axis=1)
 
             return img
 
