@@ -101,8 +101,25 @@ def world_model_train_builder(
 
         similarity_loss = 0.5 * forward_similarity + 0.5 * backward_similarity
 
+        rolled_projected_latent = jnp.roll(projected_latent, 1, axis=0)
+        rolled_next_projected_latent = jnp.roll(next_projected_latent, 1, axis=0)
+
+        negative_forward_similarity_rolled = 1.0 - similarity_loss_fn(
+            forward_predicted_latents,
+            rolled_next_projected_latent,
+        )
+
+        negative_backward_similarity_rolled = 1.0 - similarity_loss_fn(
+            backward_predicted_latents,
+            rolled_projected_latent,
+        )
+
+        negative_similarity_loss = (
+            0.5 * negative_forward_similarity_rolled + 0.5 * negative_backward_similarity_rolled
+        )
+
         total_loss = (1 - loss_weight) * AE_loss + loss_weight * (
-            world_model_loss + 0.01 * similarity_loss
+            world_model_loss + 0.01 * similarity_loss + 0.01 * negative_similarity_loss
         )
         accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
         return total_loss, (
@@ -110,9 +127,8 @@ def world_model_train_builder(
             AE_loss,
             world_model_loss,
             similarity_loss,
+            negative_similarity_loss,
             accuracy,
-            forward_similarity,
-            backward_similarity,
         )
 
     def train_fn(
@@ -155,9 +171,8 @@ def world_model_train_builder(
                     AE_loss,
                     world_model_loss,
                     similarity_loss,
+                    negative_similarity_loss,
                     accuracy,
-                    forward_similarity,
-                    backward_similarity,
                 ),
             ), grads = jax.value_and_grad(loss_fn, has_aux=True)(
                 params,
@@ -173,9 +188,8 @@ def world_model_train_builder(
                 AE_loss,
                 world_model_loss,
                 similarity_loss,
+                negative_similarity_loss,
                 accuracy,
-                forward_similarity,
-                backward_similarity,
             )
 
         (params, opt_state), (
@@ -183,9 +197,8 @@ def world_model_train_builder(
             AE_losses,
             world_model_losses,
             similarity_losses,
+            negative_similarity_losses,
             accuracies,
-            forward_similarity_losses,
-            backward_similarity_losses,
         ) = jax.lax.scan(
             train_loop,
             (params, opt_state),
@@ -195,8 +208,7 @@ def world_model_train_builder(
         AE_loss = jnp.mean(AE_losses)
         world_model_loss = jnp.mean(world_model_losses)
         similarity_loss = jnp.mean(similarity_losses)
-        forward_similarity = jnp.mean(forward_similarity_losses)
-        backward_similarity = jnp.mean(backward_similarity_losses)
+        negative_similarity_loss = jnp.mean(negative_similarity_losses)
         accuracy = jnp.mean(accuracies)
         return (
             params,
@@ -205,8 +217,7 @@ def world_model_train_builder(
             AE_loss,
             world_model_loss,
             similarity_loss,
-            forward_similarity,
-            backward_similarity,
+            negative_similarity_loss,
             accuracy,
         )
 
