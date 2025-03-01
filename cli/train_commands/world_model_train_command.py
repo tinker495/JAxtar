@@ -53,8 +53,8 @@ def visualize_latents(latents, epoch, prefix="Latents"):
     latents_var = np.mean(latents_var)
 
     # Apply TSNE dimensionality reduction
-    tsne = umap.UMAP(n_components=2, random_state=42)
-    latents_2d = tsne.fit_transform(latents_np)
+    reducer = umap.UMAP(n_components=2, random_state=42)
+    latents_2d = reducer.fit_transform(latents_np)
 
     # Create plot
     fig, ax = plt.subplots(figsize=(10, 8))
