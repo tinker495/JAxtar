@@ -9,7 +9,6 @@ import jax.numpy as jnp
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import umap
 from sklearn.manifold import TSNE
 
 matplotlib.use("Agg")  # Use the 'Agg' backend which doesn't require a display
@@ -152,6 +151,8 @@ def latents_to_tsne_img(
 
 @np_cache
 def umap_fit_transform(latents):
+    import umap
+
     # Create a UMAP embedding of the projected latents
     reducer = umap.UMAP()
     umap_results = reducer.fit_transform(latents)

@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import tensorboardX
-import umap
 from tqdm import trange
 
 from puzzle.world_model.util import round_through_gradient
@@ -43,6 +42,8 @@ def setup_optimizer(params: PyTree) -> optax.OptState:
 
 def visualize_latents(latents, epoch, prefix="Latents"):
     # Convert to numpy for sklearn
+    import umap
+
     latents_np = np.array(latents)
 
     # Reshape if needed to 2D array [n_samples, n_features]
