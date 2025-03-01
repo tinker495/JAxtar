@@ -69,7 +69,12 @@ def world_model_train_builder(
             (latent, rounded_latent, decoded),
             (next_latent, rounded_next_latent, next_decoded),
             (forward_latent_pred, rounded_forward_latent_pred),
-            (forward_projected_latents, backward_projected_latents),
+            (
+                projected_latent,
+                next_projected_latent,
+                forward_predicted_latents,
+                backward_predicted_latents,
+            ),
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
         new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
         data_scaled = (data / 255.0) * 2 - 1
@@ -85,19 +90,19 @@ def world_model_train_builder(
         )
 
         forward_similarity = similarity_loss_fn(
-            forward_projected_latents,
-            backward_projected_latents,
+            forward_predicted_latents,
+            next_projected_latent,
         )
 
         backward_similarity = similarity_loss_fn(
-            backward_projected_latents,
-            forward_projected_latents,
+            backward_predicted_latents,
+            projected_latent,
         )
 
         similarity_loss = 0.5 * forward_similarity + 0.5 * backward_similarity
 
         total_loss = (1 - loss_weight) * AE_loss + loss_weight * (
-            world_model_loss + similarity_loss
+            world_model_loss + 0.1 * similarity_loss
         )
         accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
         return total_loss, (
@@ -236,25 +241,24 @@ def world_model_eval_builder(
                 (_, _, _),
                 (_, rounded_next_latent, _),
                 (_, rounded_forward_latent_pred),
-                (forward_projected_latents, backward_projected_latents),
+                (
+                    projected_latent,
+                    next_projected_latent,
+                    forward_predicted_latents,
+                    backward_predicted_latents,
+                ),
             ), _ = train_info_fn(params, states, next_states, actions, training=False)
             accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
-            return None, (accuracy, forward_projected_latents, backward_projected_latents)
+            return None, (accuracy, projected_latent)
 
-        _, (accuracies, forward_projected_latents, backward_projected_latents) = jax.lax.scan(
+        _, (accuracies, projected_latents) = jax.lax.scan(
             eval_loop,
             None,
             (batched_states, batched_next_states, batched_actions),
         )
-        forward_projected_latents = forward_projected_latents.reshape(
-            -1, forward_projected_latents.shape[-1]
-        )
-        backward_projected_latents = backward_projected_latents.reshape(
-            -1, backward_projected_latents.shape[-1]
-        )
+        projected_latents = projected_latents.reshape(-1, projected_latents.shape[-1])
 
-        forward_projected_latents = forward_projected_latents[:1000]
-        backward_projected_latents = backward_projected_latents[:1000]
-        return jnp.mean(accuracies), forward_projected_latents, backward_projected_latents
+        projected_latents = projected_latents[:1000]
+        return jnp.mean(accuracies), projected_latents
 
     return jax.jit(eval_fn)

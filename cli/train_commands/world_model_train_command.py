@@ -164,20 +164,11 @@ def train(
     eval_data = (eval_trajectory[0][0], eval_trajectory[0][1], eval_trajectory[1][0])
     writer.add_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
     writer.add_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
-    eval_accuracy, eval_forward_projected_latents, eval_backward_projected_latents = eval_fn(
-        params, eval_trajectory
-    )
+    eval_accuracy, eval_projected_latents = eval_fn(params, eval_trajectory)
     writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, 0)
 
-    forward_tsne_img = visualize_latents(
-        eval_forward_projected_latents, 0, "Forward Projected Latents"
-    )
-    writer.add_image("Latent/Forward_Projected_Latents", forward_tsne_img, 0, dataformats="HWC")
-
-    backward_tsne_img = visualize_latents(
-        eval_backward_projected_latents, 0, "Backward Projected Latents"
-    )
-    writer.add_image("Latent/Backward_Projected_Latents", backward_tsne_img, 0, dataformats="HWC")
+    forward_tsne_img = visualize_latents(eval_projected_latents, 0, "Projected Latents")
+    writer.add_image("Latent/Projected_Latents", forward_tsne_img, 0, dataformats="HWC")
 
     for epoch in pbar:
         key, subkey = jax.random.split(key)
@@ -211,24 +202,12 @@ def train(
 
             (
                 eval_accuracy,
-                eval_forward_projected_latents,
-                eval_backward_projected_latents,
+                eval_projected_latents,
             ) = eval_fn(params, eval_trajectory)
             writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
 
-            forward_tsne_img = visualize_latents(
-                eval_forward_projected_latents, epoch, "Forward Projected Latents"
-            )
-            writer.add_image(
-                "Latent/Forward_Projected_Latents", forward_tsne_img, epoch, dataformats="HWC"
-            )
-
-            backward_tsne_img = visualize_latents(
-                eval_backward_projected_latents, epoch, "Backward Projected Latents"
-            )
-            writer.add_image(
-                "Latent/Backward_Projected_Latents", backward_tsne_img, epoch, dataformats="HWC"
-            )
+            forward_tsne_img = visualize_latents(eval_projected_latents, epoch, "Projected Latents")
+            writer.add_image("Latent/Projected_Latents", forward_tsne_img, epoch, dataformats="HWC")
 
             data = jnp.expand_dims(eval_data[0], axis=0)
             latent = model.apply(params, data, training=False, method=model.encode)
