@@ -16,9 +16,10 @@ class Encoder(nn.Module):
         x = nn.swish(x)
         x = nn.Conv(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 10, 10, 16)
         x = nn.swish(x)
-        x = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1))(x)  # (batch_size, 10, 10, 16)
-        latent = nn.sigmoid(x)
-        return latent
+        logits = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1))(
+            x
+        )  # (batch_size, 10, 10, 16)
+        return logits
 
 
 class Decoder(nn.Module):
@@ -80,7 +81,6 @@ class WorldModel(nn.Module):
             x, shape=(x.shape[0], *self.latent_shape) + (self.action_size,)
         )  # (batch_size, 10, 10, 16, 4)
         x = jnp.transpose(x, (0, 4, 1, 2, 3))  # (batch_size, 4, 10, 10, 16)
-        x = nn.sigmoid(x)
         return x
 
 
@@ -159,13 +159,12 @@ class EncoderOptimized(nn.Module):
         x = nn.swish(x)
         x = ResidualBlock(16)(x, training)
         x = ResidualBlock(16)(x, training)
-        x = nn.Conv(
+        logits = nn.Conv(
             self.latent_shape[-1], (1, 1), strides=(1, 1), kernel_init=nn.initializers.orthogonal()
         )(
             x
         )  # (batch_size, 10, 10, 2)
-        latent = nn.sigmoid(x)
-        return latent
+        return logits
 
 
 class DecoderOptimized(nn.Module):
