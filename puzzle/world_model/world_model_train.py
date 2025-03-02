@@ -9,22 +9,6 @@ import optax
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 
-def sigmoid_loss_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
-    """
-    Binary cross entropy loss function for sigmoid outputs.
-
-    Args:
-        preds: Predictions after sigmoid activation (values between 0 and 1)
-        labels: Binary labels (0 or 1)
-
-    Returns:
-        Binary cross entropy loss
-    """
-    # Clip predictions to avoid numerical instability
-    preds = jnp.clip(preds, 1e-7, 1 - 1e-7)
-    return -jnp.mean(labels * jnp.log(preds) + (1 - labels) * jnp.log(1 - preds), axis=-1)
-
-
 def similarity_loss_fn(A: chex.Array, B: chex.Array):
     """
     Compute similarity loss between two arrays.
@@ -66,9 +50,9 @@ def world_model_train_builder(
         loss_weight: float = 0.5,
     ):
         (
-            (latent, rounded_latent, decoded),
-            (next_latent, rounded_next_latent, next_decoded),
-            (forward_latent_pred, rounded_forward_latent_pred),
+            (logits, rounded_latent, decoded),
+            (next_logits, rounded_next_latent, next_decoded),
+            (forward_logits_preds, rounded_forward_latent_pred),
             (
                 projected_latent,
                 next_projected_latent,
@@ -85,8 +69,14 @@ def world_model_train_builder(
         )
 
         world_model_loss = jnp.mean(
-            0.5 * sigmoid_loss_fn(next_latent, jax.lax.stop_gradient(rounded_forward_latent_pred))
-            + 0.5 * sigmoid_loss_fn(forward_latent_pred, jax.lax.stop_gradient(rounded_next_latent))
+            0.5
+            * optax.sigmoid_binary_cross_entropy(
+                next_logits, jax.lax.stop_gradient(rounded_forward_latent_pred)
+            )
+            + 0.5
+            * optax.sigmoid_binary_cross_entropy(
+                forward_logits_preds, jax.lax.stop_gradient(rounded_next_latent)
+            )
         )
 
         forward_similarity = similarity_loss_fn(

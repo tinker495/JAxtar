@@ -39,9 +39,8 @@ class Encoder(nn.Module):
         x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.swish(x)
         x = nn.Dense(latent_size)(x)
-        x = jnp.reshape(x, shape=(-1, *self.latent_shape))
-        latent = nn.sigmoid(x)
-        return latent
+        logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
+        return logits
 
 
 class Decoder(nn.Module):
@@ -121,7 +120,6 @@ class WorldModel(nn.Module):
         x = nn.swish(x)
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(latent_size * self.action_size)(x)
-        x = nn.sigmoid(x)
         x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + self.latent_shape)
         return x
 
@@ -196,10 +194,12 @@ class WorldModelPuzzleBase(Puzzle):
                 return self.autoencoder.decoder(latent, training)
 
             def encode(self, data, training=False):
-                return self.autoencoder.encoder(data, training)
+                logits = self.autoencoder.encoder(data, training)
+                return nn.sigmoid(logits)
 
             def transition(self, latent, training=False):
-                return self.world_model(latent, training)
+                logits = self.world_model(latent, training)
+                return nn.sigmoid(logits)
 
             def project(self, latent, training=False):
                 return self.projector(latent, training)
@@ -212,34 +212,37 @@ class WorldModelPuzzleBase(Puzzle):
 
             def train_info(self, data, next_data, actions, training=True):
 
-                latent = self.encode(data, training)
+                logits = self.autoencoder.encoder(data, training)
+                latent = nn.sigmoid(logits)
                 rounded_latent = round_through_gradient(latent)
-                decoded = self.decode(rounded_latent, training)
-                projected_latent = self.project(rounded_latent, training)
-                forward_predicted_latents = self.forward_predict(projected_latent, training)
+                decoded = self.autoencoder.decoder(rounded_latent, training)
+                projected_latent = self.projector(rounded_latent, training)
+                forward_predicted_latents = self.forward_predictor(projected_latent, training)
 
-                next_latent = self.encode(next_data, training)
+                next_logits = self.autoencoder.encoder(next_data, training)
+                next_latent = nn.sigmoid(next_logits)
                 rounded_next_latent = round_through_gradient(next_latent)
-                next_decoded = self.decode(rounded_next_latent, training)
-                next_projected_latent = self.project(rounded_next_latent, training)
+                next_decoded = self.autoencoder.decoder(rounded_next_latent, training)
+                next_projected_latent = self.projector(rounded_next_latent, training)
                 backward_predicted_latents = self.backward_predict(next_projected_latent, training)
 
                 actions = jnp.reshape(
                     actions, (-1,) + (1,) * (next_latent.ndim)
                 )  # [batch_size, 1, ...]
 
-                forward_latent_preds = self.transition(rounded_latent, training)
-                forward_latent_pred = jnp.take_along_axis(
-                    forward_latent_preds, actions, axis=1
+                forward_logits_preds = self.world_model(latent, training)
+                forward_logits_pred = jnp.take_along_axis(
+                    forward_logits_preds, actions, axis=1
                 ).squeeze(
                     axis=1
                 )  # [batch_size, ...]
+                forward_latent_pred = nn.sigmoid(forward_logits_pred)
                 rounded_forward_latent_pred = round_through_gradient(forward_latent_pred)
 
                 return (
-                    (latent, rounded_latent, decoded),
-                    (next_latent, rounded_next_latent, next_decoded),
-                    (forward_latent_pred, rounded_forward_latent_pred),
+                    (logits, rounded_latent, decoded),
+                    (next_logits, rounded_next_latent, next_decoded),
+                    (forward_logits_pred, rounded_forward_latent_pred),
                     (
                         projected_latent,
                         next_projected_latent,
