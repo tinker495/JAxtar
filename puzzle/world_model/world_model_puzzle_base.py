@@ -129,6 +129,7 @@ class WorldModelPuzzleBase(Puzzle):
     inits: jnp.ndarray
     targets: jnp.ndarray
     num_puzzles: int
+    set_solveconfig_only_targetstate: bool = True
 
     @state_dataclass
     class State:
@@ -147,6 +148,7 @@ class WorldModelPuzzleBase(Puzzle):
         """
 
         TargetState: "WorldModelPuzzleBase.State"
+        projected_latent: jnp.ndarray
 
     def __init__(
         self,
@@ -342,6 +344,20 @@ class WorldModelPuzzleBase(Puzzle):
 
         return default_gen
 
+    def get_solve_config_default_gen(self) -> SolveConfig:
+        """
+        This function should return a default solve config.
+        """
+        default_state = self.State.default()
+        default_projected_latent = jnp.zeros(self.model.projector.latent_dim, dtype=jnp.float32)
+
+        def default_gen():
+            return self.SolveConfig(
+                TargetState=default_state, projected_latent=default_projected_latent
+            )
+
+        return default_gen
+
     def get_img_parser(self) -> callable:
         """
         This function should return a callable that takes a state and returns a image representation of it.
@@ -440,10 +456,15 @@ class WorldModelPuzzleBase(Puzzle):
         target_data, _ = data
         latent = self.model.apply(
             self.params, target_data, training=False, method=self.model.encode
-        ).squeeze(0)
-        latent = jnp.round(latent).astype(jnp.bool_)
+        )
+        projected_latent = self.model.apply(
+            self.params, latent, training=False, method=self.model.project
+        )[0]
+        latent = jnp.round(latent).astype(jnp.bool_)[0]
         latent = self.to_uint8(latent)
-        return self.SolveConfig(TargetState=self.State(latent=latent))
+        return self.SolveConfig(
+            TargetState=self.State(latent=latent), projected_latent=projected_latent
+        )
 
     def get_initial_state(self, solve_config: SolveConfig, key=None, data=None) -> State:
         """

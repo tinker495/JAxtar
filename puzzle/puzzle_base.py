@@ -11,6 +11,9 @@ T = TypeVar("T")
 
 
 class Puzzle(ABC):
+
+    set_solveconfig_only_targetstate: bool = False
+
     @state_dataclass
     class State:
         """
@@ -85,7 +88,9 @@ class Puzzle(ABC):
         """
         This function should return a boolean that indicates whether the environment has only a target state or not.
         """
-        return self.has_target and len(self.SolveConfig.__annotations__.keys()) == 1
+        return self.set_solveconfig_only_targetstate or (
+            self.has_target and len(self.SolveConfig.__annotations__.keys()) == 1
+        )
 
     def __init__(self, **kwargs):
         """
@@ -125,8 +130,8 @@ class Puzzle(ABC):
         function signature: (solve_config: SolveConfig) -> str
         """
         assert self.only_target, (
-            "You should redefine this function, because this function is only for target state"
-            f"has_target: {self.has_target}, only_target: {self.only_target}"
+            "You should redefine this function, because this function is only for target state, "
+            f"has_target: {self.has_target}, only_target: {self.only_target} ,"
             f"SolveConfig: {self.SolveConfig.__annotations__.keys()}"
         )
         stringparser_state = self.get_string_parser()
@@ -149,8 +154,8 @@ class Puzzle(ABC):
         This function should return a default solve config.
         """
         assert self.only_target, (
-            "You should redefine this function, because this function is only for target state"
-            f"has_target: {self.has_target}, only_target: {self.only_target}"
+            "You should redefine this function, because this function is only for target state, "
+            f"has_target: {self.has_target}, only_target: {self.only_target}, "
             f"SolveConfig: {self.SolveConfig.__annotations__.keys()}"
         )
         default_state = self.State.default()
@@ -174,8 +179,8 @@ class Puzzle(ABC):
         function signature: (solve_config: SolveConfig) -> jnp.ndarray
         """
         assert self.only_target, (
-            "You should redefine this function, because this function is only for target state"
-            f"has_target: {self.has_target}, only_target: {self.only_target}"
+            "You should redefine this function, because this function is only for target state, "
+            f"has_target: {self.has_target}, only_target: {self.only_target}, "
             f"SolveConfig: {self.SolveConfig.__annotations__.keys()}"
         )
         imgparser_state = self.get_img_parser()
