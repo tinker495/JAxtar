@@ -92,7 +92,12 @@ def tsne_fit_transform(latents):
 
 
 def latents_to_tsne_img(
-    latents: np.ndarray, idx: int = None, figsize=(4, 4), dpi=100, img_width: int = 32
+    latents: np.ndarray,
+    idx: int = None,
+    figsize=(4, 4),
+    dpi=100,
+    img_width: int = 32,
+    title: str = "t-SNE of Latent Space",
 ) -> np.ndarray:
     """
     Convert latent vectors to a t-SNE visualization image.
@@ -133,7 +138,7 @@ def latents_to_tsne_img(
     # Remove axes
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title("t-SNE of Latent Space", fontsize=10)
+    ax.set_title(title, fontsize=10)
 
     # Convert the matplotlib figure to an image for visualization
     fig.canvas.draw()
@@ -160,7 +165,12 @@ def umap_fit_transform(latents):
 
 
 def latents_to_umap_img(
-    latents: np.ndarray, idx: int = None, figsize=(4, 4), dpi=100, img_width: int = 32
+    latents: np.ndarray,
+    idx: int = None,
+    figsize=(4, 4),
+    dpi=100,
+    img_width: int = 32,
+    title: str = "UMAP of Latent Space",
 ) -> np.ndarray:
     """
     Convert latent vectors to a UMAP visualization image.
@@ -202,7 +212,7 @@ def latents_to_umap_img(
     # Remove axes
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title("UMAP of Latent Space", fontsize=10)
+    ax.set_title(title, fontsize=10)
 
     # Convert the matplotlib figure to an image for visualization
     fig.canvas.draw()

@@ -373,6 +373,8 @@ class WorldModelPuzzleBase(Puzzle):
             target_height: int = IMG_SIZE[1],
             path: list["WorldModelPuzzleBase.State"] = None,
             idx: int = None,
+            cost: float = None,
+            dist: float = None,
             **kwargs,
         ) -> jnp.ndarray:
             latent = state.latent
@@ -416,11 +418,17 @@ class WorldModelPuzzleBase(Puzzle):
                 np_projected_latents = np.array(projected_latents)
                 if USE_UMAP:
                     visualization_img = latents_to_umap_img(
-                        np_projected_latents, idx=idx, img_width=width
+                        np_projected_latents,
+                        idx=idx,
+                        img_width=width,
+                        title=f"idx: {idx}, cost: {cost:.1f}, dist: {dist:.1f}",
                     )
                 else:
                     visualization_img = latents_to_tsne_img(
-                        np_projected_latents, idx=idx, img_width=width
+                        np_projected_latents,
+                        idx=idx,
+                        img_width=width,
+                        title=f"idx: {idx}, cost: {cost:.1f}, dist: {dist:.1f}",
                     )
 
                 # Add the t-SNE visualization to the main image
