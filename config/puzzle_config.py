@@ -1,7 +1,7 @@
 from heuristic import (
     DotKnotHeuristic,
-    EmptyHeuristic,
     Heuristic,
+    LatentDiffHeuristic,
     LightsOutHeuristic,
     MazeHeuristic,
     RubiksCubeHeuristic,
@@ -116,12 +116,12 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "dotknot": DotKnotHeuristic,
     "tsp": TSPHeuristic,
     "sokoban": SokobanHeuristic,
-    "rubikscube_world_model": EmptyHeuristic,
-    "rubikscube_world_model_test": EmptyHeuristic,
-    "rubikscube_world_model_optimized": EmptyHeuristic,
-    "rubikscube_world_model_optimized_test": EmptyHeuristic,
-    "sokoban_world_model": EmptyHeuristic,
-    "sokoban_world_model_optimized": EmptyHeuristic,
+    "rubikscube_world_model": LatentDiffHeuristic,
+    "rubikscube_world_model_test": LatentDiffHeuristic,
+    "rubikscube_world_model_optimized": LatentDiffHeuristic,
+    "rubikscube_world_model_optimized_test": LatentDiffHeuristic,
+    "sokoban_world_model": LatentDiffHeuristic,
+    "sokoban_world_model_optimized": LatentDiffHeuristic,
 }
 
 # nn option need to be callable, for loading model
