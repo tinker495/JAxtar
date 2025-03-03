@@ -9,6 +9,10 @@ import optax
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 
+def accuracy_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
+    return jnp.mean(jnp.sum(jnp.logical_xor(preds, labels), axis=tuple(range(1, preds.ndim))) == 0)
+
+
 def similarity_loss_fn(A: chex.Array, B: chex.Array):
     """
     Compute similarity loss between two arrays.
@@ -33,8 +37,34 @@ def similarity_loss_fn(A: chex.Array, B: chex.Array):
     return jnp.mean(loss)
 
 
-def accuracy_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
-    return jnp.mean(jnp.sum(jnp.logical_xor(preds, labels), axis=tuple(range(1, preds.ndim))) == 0)
+def orthonormality_loss_fn(latent: chex.Array, other_latent: chex.Array):
+    """
+    Compute orthonormality regularization loss between two arrays.
+
+    Args:
+        latent: First array [batch_size, n_features] corresponding to B_ω(s_i, a_i)
+        other_latent: Second array [batch_size, n_features] corresponding to B_ω(s'_j, a'_j)
+    """
+    batch_size = latent.shape[0]
+
+    # Calculate dot products between all pairs
+    dot_products = jnp.einsum("bd,cd->bc", latent, other_latent)  # [batch_size, batch_size]
+
+    # First part of the regularization loss
+    stopped_dot_products = jax.lax.stop_gradient(dot_products)
+    stopped_other_latent = jax.lax.stop_gradient(other_latent)
+
+    first_term = jnp.einsum(
+        "bd,cd,bc->b", latent, stopped_other_latent, stopped_dot_products
+    )  # [batch_size]
+    first_term = jnp.sum(first_term) / (batch_size**2)
+
+    # Second part: (1/b) * ∑_{i∈I} B_ω(s_i, a_i)^T * stop-gradient(B_ω(s_i, a_i))
+    stopped_latent = jax.lax.stop_gradient(latent)
+    second_term = jnp.sum(jnp.einsum("bd,bd->b", latent, stopped_latent)) / batch_size
+
+    # Final orthonormality regularization loss
+    return first_term - second_term
 
 
 def world_model_train_builder(
@@ -84,32 +114,17 @@ def world_model_train_builder(
             next_projected_latent,
         )
 
-        backward_similarity = similarity_loss_fn(
-            backward_predicted_latents,
-            projected_latent,
-        )
-
-        similarity_loss = 0.5 * forward_similarity + 0.5 * backward_similarity
+        similarity_loss = forward_similarity
 
         rolled_projected_latent = jnp.roll(projected_latent, 1, axis=0)
-        rolled_next_projected_latent = jnp.roll(next_projected_latent, 1, axis=0)
 
-        negative_forward_similarity_rolled = 1.0 - similarity_loss_fn(
-            forward_predicted_latents,
-            rolled_next_projected_latent,
-        )
-
-        negative_backward_similarity_rolled = 1.0 - similarity_loss_fn(
-            backward_predicted_latents,
-            rolled_projected_latent,
-        )
-
-        negative_similarity_loss = (
-            0.5 * negative_forward_similarity_rolled + 0.5 * negative_backward_similarity_rolled
+        # orthonormality regularization
+        orthonormality_regularization_loss = (
+            orthonormality_loss_fn(projected_latent, rolled_projected_latent) * 0.1
         )
 
         total_loss = (1 - loss_weight) * AE_loss + loss_weight * (
-            world_model_loss + 0.01 * similarity_loss + 0.01 * negative_similarity_loss
+            world_model_loss + 0.01 * similarity_loss + 0.01 * orthonormality_regularization_loss
         )
         accuracy = accuracy_fn(rounded_forward_latent_pred, rounded_next_latent)
         return total_loss, (
@@ -117,7 +132,7 @@ def world_model_train_builder(
             AE_loss,
             world_model_loss,
             similarity_loss,
-            negative_similarity_loss,
+            orthonormality_regularization_loss,
             accuracy,
         )
 
@@ -161,7 +176,7 @@ def world_model_train_builder(
                     AE_loss,
                     world_model_loss,
                     similarity_loss,
-                    negative_similarity_loss,
+                    orthonormality_regularization_loss,
                     accuracy,
                 ),
             ), grads = jax.value_and_grad(loss_fn, has_aux=True)(
@@ -178,7 +193,7 @@ def world_model_train_builder(
                 AE_loss,
                 world_model_loss,
                 similarity_loss,
-                negative_similarity_loss,
+                orthonormality_regularization_loss,
                 accuracy,
             )
 
@@ -187,7 +202,7 @@ def world_model_train_builder(
             AE_losses,
             world_model_losses,
             similarity_losses,
-            negative_similarity_losses,
+            orthonormality_regularization_losses,
             accuracies,
         ) = jax.lax.scan(
             train_loop,
@@ -198,7 +213,7 @@ def world_model_train_builder(
         AE_loss = jnp.mean(AE_losses)
         world_model_loss = jnp.mean(world_model_losses)
         similarity_loss = jnp.mean(similarity_losses)
-        negative_similarity_loss = jnp.mean(negative_similarity_losses)
+        orthonormality_regularization_loss = jnp.mean(orthonormality_regularization_losses)
         accuracy = jnp.mean(accuracies)
         return (
             params,
@@ -207,7 +222,7 @@ def world_model_train_builder(
             AE_loss,
             world_model_loss,
             similarity_loss,
-            negative_similarity_loss,
+            orthonormality_regularization_loss,
             accuracy,
         )
 

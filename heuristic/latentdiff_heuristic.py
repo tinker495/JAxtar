@@ -32,14 +32,7 @@ class LatentDiffHeuristic(Heuristic):
             self.puzzle.params, current_latents, training=False, method=self.puzzle.model.project
         )
 
-        current_predicted_latents = self.puzzle.model.apply(
-            self.puzzle.params,
-            current_projected_latents,
-            training=False,
-            method=self.puzzle.model.forward_predict,
-        )
-
-        similarity_loss = similarity_loss_fn(target_projected_latents, current_predicted_latents)[
+        similarity_loss = similarity_loss_fn(target_projected_latents, current_projected_latents)[
             :, 0
         ]
         return similarity_loss * 100

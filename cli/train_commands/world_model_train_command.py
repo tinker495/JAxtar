@@ -179,7 +179,7 @@ def train(
             AE_loss,
             world_model_loss,
             similarity_loss,
-            negative_similarity_loss,
+            orthonormality_regularization_loss,
             accuracy,
         ) = train_fn(subkey, (datas, next_datas, actions), params, opt_state, epoch)
         pbar.set_description(
@@ -187,16 +187,20 @@ def train(
             f"AE Loss: {AE_loss:.4f}, "
             f"WM Loss: {world_model_loss:.4f}, "
             f"Similarity Loss: {similarity_loss:.4f}, "
-            f"Negative Similarity Loss: {negative_similarity_loss:.4f}, "
+            f"Orthonormality Regularization Loss: {orthonormality_regularization_loss:.4f}, "
             f"Accuracy: {accuracy*100:3.1f}, "
             f"Eval Accuracy: {eval_accuracy*100:3.1f}"
         )
-        if epoch % 10 == 0 and epoch != 0:
+        if epoch % 10 == 0:
             writer.add_scalar("Losses/Loss", loss, epoch)
             writer.add_scalar("Losses/AE Loss", AE_loss, epoch)
             writer.add_scalar("Losses/World Model Loss", world_model_loss, epoch)
             writer.add_scalar("Losses/Similarity Loss", similarity_loss, epoch)
-            writer.add_scalar("Losses/Negative Similarity Loss", negative_similarity_loss, epoch)
+            writer.add_scalar(
+                "Losses/Orthonormality Regularization Loss",
+                orthonormality_regularization_loss,
+                epoch,
+            )
             writer.add_scalar("Metrics/Accuracy", accuracy, epoch)
 
             (
