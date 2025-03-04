@@ -109,9 +109,8 @@ def world_model_train_builder(
             (next_logits_pred, rounded_next_latent_pred),  # for WorldModel
             (forward_projected_latent, backward_projected_latent),  # for Projection Distance
             (
-                _,
-                _,
-                _,
+                forward_projected_next_latent,
+                backward_projected_next_latent,
                 _,
             ),  # for Projection Distance
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
@@ -120,12 +119,11 @@ def world_model_train_builder(
             (_, _, _),  # for AutoEncoder and WorldModel
             (_, _, _),  # for AutoEncoder and WorldModel
             (_, _),  # for WorldModel
-            (_, backward_projected_latent_prime),  # for Projection Distance
+            (_, _),  # for Projection Distance
             (
                 _,
-                _,
-                forward_projected_next_latent_preds,
-                _,
+                backward_projected_next_latent_prime,
+                forward_projected_next_latent_preds_prime,
             ),  # for Projection Distance
         ), _ = train_info_fn(target_params, data, next_data, action, training=False)
         data_scaled = (data / 255.0) * 2 - 1
@@ -147,18 +145,17 @@ def world_model_train_builder(
         )
 
         rolled_backward_projected_latent = jnp.roll(backward_projected_latent, 1, axis=0)
-        rolled_backward_projected_latent_prime = jnp.roll(
-            backward_projected_latent_prime, 1, axis=0
-        )
 
         projection_distance_loss, target_Qs, current_Qs = projection_distance_loss_fn(
             forward_projected_latent,
-            rolled_backward_projected_latent,
-            forward_projected_next_latent_preds,
-            rolled_backward_projected_latent_prime,
+            backward_projected_next_latent,
+            forward_projected_next_latent_preds_prime,
+            backward_projected_next_latent_prime,
         )
         self_projection_distance_loss = self_projection_distance_loss_fn(
             forward_projected_latent, backward_projected_latent
+        ) + self_projection_distance_loss_fn(
+            forward_projected_next_latent, backward_projected_next_latent
         )
 
         total_projection_distance_loss = (
@@ -332,7 +329,6 @@ def world_model_eval_builder(
                     forward_projected_next_latent,
                     backward_projected_next_latent,
                     forward_projected_next_latent_preds,
-                    backward_projected_next_latent_preds,
                 ),  # for Projection Distance
             ), variable_updates = train_info_fn(
                 params, states, next_states, actions, training=False
