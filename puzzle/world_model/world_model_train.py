@@ -8,6 +8,8 @@ import optax
 
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
+from .util import soft_update
+
 
 def accuracy_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:
     return jnp.mean(jnp.sum(jnp.logical_xor(preds, labels), axis=tuple(range(1, preds.ndim))) == 0)
@@ -22,15 +24,16 @@ def Q_fn(forward_projected_latent: chex.Array, backward_projected_target_latent:
 
 def projection_distance_loss_fn(
     forward_projected_latent: chex.Array,
-    forward_projected_next_prim_latent_preds: chex.Array,
     backward_projected_target_latent: chex.Array,
+    forward_projected_next_prim_latent_preds: chex.Array,
+    backward_projected_target_latent_prime: chex.Array,
 ):
     # forward_projected_latent: [batch_size, latent_size]
     # forward_projected_next_prim_latent_preds: [batch_size, action_size, latent_size]
     # backward_projected_target_latent: [batch_size, latent_size]
 
     target_Qs = jax.vmap(Q_fn, in_axes=(1, None), out_axes=0)(
-        forward_projected_next_prim_latent_preds, backward_projected_target_latent
+        forward_projected_next_prim_latent_preds, backward_projected_target_latent_prime
     )  # [action_size, batch_size, batch_size]
     target_Qs = jax.lax.stop_gradient(1.0 + jnp.min(target_Qs, axis=0))  # [batch_size, batch_size]
     target_Qs = jnp.maximum(target_Qs, 0.0)
@@ -94,6 +97,7 @@ def world_model_train_builder(
 ):
     def loss_fn(
         params: jax.tree_util.PyTreeDef,
+        target_params: jax.tree_util.PyTreeDef,
         data: chex.Array,
         next_data: chex.Array,
         action: chex.Array,
@@ -109,11 +113,25 @@ def world_model_train_builder(
                 backward_projected_next_latent,
             ),  # for Projection Distance
             (
-                forward_projected_next_prim_latent_preds,
-                backward_projected_next_prim_latent_preds,
+                _,
+                _,
             ),  # for Projection Distance
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
         new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
+        (
+            (_, _, _),  # for AutoEncoder and WorldModel
+            (_, _, _),  # for AutoEncoder and WorldModel
+            (_, _),  # for WorldModel
+            (_, backward_projected_latent_prime),  # for Projection Distance
+            (
+                _,
+                _,
+            ),  # for Projection Distance
+            (
+                forward_projected_next_prim_latent_preds,
+                _,
+            ),  # for Projection Distance
+        ), _ = train_info_fn(target_params, data, next_data, action, training=False)
         data_scaled = (data / 255.0) * 2 - 1
         next_data_scaled = (next_data / 255.0) * 2 - 1
         AE_loss = jnp.mean(
@@ -133,11 +151,15 @@ def world_model_train_builder(
         )
 
         rolled_backward_projected_latent = jnp.roll(backward_projected_latent, 1, axis=0)
+        rolled_backward_projected_latent_prime = jnp.roll(
+            backward_projected_latent_prime, 1, axis=0
+        )
 
         projection_distance_loss, target_Qs, current_Qs = projection_distance_loss_fn(
             forward_projected_latent,
-            forward_projected_next_prim_latent_preds,
             rolled_backward_projected_latent,
+            forward_projected_next_prim_latent_preds,
+            rolled_backward_projected_latent_prime,
         )
         self_projection_distance_loss = self_projection_distance_loss_fn(
             forward_projected_latent, backward_projected_latent
@@ -177,6 +199,7 @@ def world_model_train_builder(
             WorldModelPuzzleBase.State, WorldModelPuzzleBase.State, chex.Array
         ],  # (state, next_state, action)
         params: jax.tree_util.PyTreeDef,
+        target_params: jax.tree_util.PyTreeDef,
         opt_state: optax.OptState,
         epoch: int,
     ):
@@ -202,7 +225,7 @@ def world_model_train_builder(
         loss_weight = jnp.clip((epoch - 10) / 100.0, 0.0, 1.0) * 0.5
 
         def train_loop(carry, batched_dataset):
-            params, opt_state = carry
+            params, opt_state, target_params = carry
             states, next_states, actions = batched_dataset
 
             # Use value_and_grad with has_aux=True to properly handle the auxiliary outputs
@@ -220,6 +243,7 @@ def world_model_train_builder(
                 ),
             ), grads = jax.value_and_grad(loss_fn, has_aux=True)(
                 params,
+                target_params,
                 states,
                 next_states,
                 actions,
@@ -229,8 +253,8 @@ def world_model_train_builder(
             # Ensure we're not capturing any tracers in the update step
             updates, new_opt_state = optimizer.update(grads, opt_state, params=params)
             new_params = optax.apply_updates(params, updates)
-
-            return (new_params, new_opt_state), (
+            target_params = soft_update(new_params, target_params, 0.0001)
+            return (new_params, new_opt_state, target_params), (
                 loss,
                 AE_loss,
                 world_model_loss,
@@ -241,7 +265,7 @@ def world_model_train_builder(
                 current_Qs,
             )
 
-        (params, opt_state), (
+        (params, opt_state, target_params), (
             losses,
             AE_losses,
             world_model_losses,
@@ -252,7 +276,7 @@ def world_model_train_builder(
             current_Qs,
         ) = jax.lax.scan(
             train_loop,
-            (params, opt_state),
+            (params, opt_state, target_params),
             (batched_states, batched_next_states, batched_actions),
         )
         loss = jnp.mean(losses)
@@ -265,6 +289,7 @@ def world_model_train_builder(
         current_Qs = jnp.reshape(current_Qs, (-1,))
         return (
             params,
+            target_params,
             opt_state,
             loss,
             AE_loss,
