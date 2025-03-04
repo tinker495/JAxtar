@@ -222,33 +222,33 @@ class WorldModelPuzzleBase(Puzzle):
 
                 next_prim_logits_preds = self.world_model(
                     rounded_next_latent, training
-                )  # [batch_size, action_size, latent_size]
+                )  # [batch_size, action_size, latent_shape]
                 next_prim_latent_preds = nn.sigmoid(
                     next_prim_logits_preds
-                )  # [batch_size, action_size, latent_size]
+                )  # [batch_size, action_size, latent_shape]
                 rounded_next_prim_latent_preds = round_through_gradient(
                     next_prim_latent_preds
-                )  # [batch_size, action_size, latent_size]
+                )  # [batch_size, action_size, latent_shape]
                 flattened_next_prim_latent_preds = jnp.reshape(
                     rounded_next_prim_latent_preds,
-                    shape=(-1, rounded_next_prim_latent_preds.shape[-1]),
-                )  # [batch_size * action_size, latent_size]
+                    shape=(-1, *rounded_next_prim_latent_preds.shape[2:]),
+                )  # [batch_size * action_size, ...]
 
                 forward_projected_next_prim_latent_preds = self.forward_project(
                     flattened_next_prim_latent_preds, training
-                )  # [batch_size, action_size, latent_size]
+                )  # [batch_size, action_size, projector_latent_dim]
                 backward_projected_next_prim_latent_preds = self.backward_project(
                     flattened_next_prim_latent_preds, training
-                )  # [batch_size, action_size, latent_size]
+                )  # [batch_size, action_size, projector_latent_dim]
 
                 forward_projected_next_prim_latent_preds = jnp.reshape(
                     forward_projected_next_prim_latent_preds,
                     shape=(*next_prim_latent_preds.shape[:2], -1),
-                )  # [batch_size, action_size, latent_size]
+                )  # [batch_size, action_size, projector_latent_dim]
                 backward_projected_next_prim_latent_preds = jnp.reshape(
                     backward_projected_next_prim_latent_preds,
                     shape=(*next_prim_latent_preds.shape[:2], -1),
-                )  # [batch_size, action_size, latent_size]
+                )  # [batch_size, action_size, projector_latent_dim]
 
                 return (
                     (logits, rounded_latent, decoded),  # for AutoEncoder and WorldModel
