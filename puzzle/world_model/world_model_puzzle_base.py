@@ -218,40 +218,33 @@ class WorldModelPuzzleBase(Puzzle):
                 )  # [batch_size, 1, ...]
 
                 next_logits_preds = self.world_model(rounded_latent, training)
+                next_latent_preds = nn.sigmoid(next_logits_preds)
+                rounded_next_latent_preds = round_through_gradient(next_latent_preds)
                 next_logits_pred = jnp.take_along_axis(next_logits_preds, actions, axis=1).squeeze(
                     axis=1
                 )  # [batch_size, ...]
                 next_latent_pred = nn.sigmoid(next_logits_pred)
                 rounded_next_latent_pred = round_through_gradient(next_latent_pred)
 
-                next_prim_logits_preds = self.world_model(
-                    rounded_next_latent, training
-                )  # [batch_size, action_size, latent_shape]
-                next_prim_latent_preds = nn.sigmoid(
-                    next_prim_logits_preds
-                )  # [batch_size, action_size, latent_shape]
-                rounded_next_prim_latent_preds = round_through_gradient(
-                    next_prim_latent_preds
-                )  # [batch_size, action_size, latent_shape]
-                flattened_next_prim_latent_preds = jnp.reshape(
-                    rounded_next_prim_latent_preds,
-                    shape=(-1, *rounded_next_prim_latent_preds.shape[2:]),
+                flattened_next_latent_preds = jnp.reshape(
+                    rounded_next_latent_preds,
+                    shape=(-1, *rounded_next_latent_preds.shape[2:]),
                 )  # [batch_size * action_size, ...]
 
-                forward_projected_next_prim_latent_preds = self.forward_project(
-                    flattened_next_prim_latent_preds, training
+                forward_projected_next_latent_preds = self.forward_project(
+                    flattened_next_latent_preds, training
                 )  # [batch_size, action_size, projector_latent_dim]
-                backward_projected_next_prim_latent_preds = self.backward_project(
-                    flattened_next_prim_latent_preds, training
+                backward_projected_next_latent_preds = self.backward_project(
+                    flattened_next_latent_preds, training
                 )  # [batch_size, action_size, projector_latent_dim]
 
-                forward_projected_next_prim_latent_preds = jnp.reshape(
-                    forward_projected_next_prim_latent_preds,
-                    shape=(*next_prim_latent_preds.shape[:2], -1),
+                forward_projected_next_latent_preds = jnp.reshape(
+                    forward_projected_next_latent_preds,
+                    shape=(*rounded_next_latent_preds.shape[:2], -1),
                 )  # [batch_size, action_size, projector_latent_dim]
-                backward_projected_next_prim_latent_preds = jnp.reshape(
-                    backward_projected_next_prim_latent_preds,
-                    shape=(*next_prim_latent_preds.shape[:2], -1),
+                backward_projected_next_latent_preds = jnp.reshape(
+                    backward_projected_next_latent_preds,
+                    shape=(*rounded_next_latent_preds.shape[:2], -1),
                 )  # [batch_size, action_size, projector_latent_dim]
 
                 return (
@@ -269,10 +262,8 @@ class WorldModelPuzzleBase(Puzzle):
                     (
                         forward_projected_next_latent,
                         backward_projected_next_latent,
-                    ),  # for Projection Distance
-                    (
-                        forward_projected_next_prim_latent_preds,
-                        backward_projected_next_prim_latent_preds,
+                        forward_projected_next_latent_preds,
+                        backward_projected_next_latent_preds,
                     ),  # for Projection Distance
                 )
 
