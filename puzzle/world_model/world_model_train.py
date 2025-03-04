@@ -108,7 +108,6 @@ def world_model_train_builder(
                 forward_projected_next_latent,
                 backward_projected_next_latent,
                 forward_projected_next_latent_preds,
-                backward_projected_next_latent_preds,
             ),  # for Projection Distance
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
         new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
@@ -139,6 +138,8 @@ def world_model_train_builder(
         )
         self_projection_distance_loss = self_projection_distance_loss_fn(
             forward_projected_latent, backward_projected_latent
+        ) + self_projection_distance_loss_fn(
+            forward_projected_next_latent, backward_projected_next_latent
         )
 
         total_projection_distance_loss = (
@@ -309,7 +310,6 @@ def world_model_eval_builder(
                     forward_projected_next_latent,
                     backward_projected_next_latent,
                     forward_projected_next_latent_preds,
-                    backward_projected_next_latent_preds,
                 ),  # for Projection Distance
             ), variable_updates = train_info_fn(
                 params, states, next_states, actions, training=False
