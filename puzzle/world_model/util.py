@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache, wraps
+from typing import Any
 
 import chex
 import cv2
@@ -12,6 +13,12 @@ import numpy as np
 from sklearn.manifold import TSNE
 
 matplotlib.use("Agg")  # Use the 'Agg' backend which doesn't require a display
+
+PyTree = Any
+
+
+def soft_update(new_tensors: PyTree, old_tensors: PyTree, tau: float):
+    return jax.tree_map(lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, old_tensors)
 
 
 def is_dataset_downloaded():

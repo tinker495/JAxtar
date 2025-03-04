@@ -145,7 +145,7 @@ def train(
         )
 
     params = world_model.params
-
+    target_params = world_model.params
     print("initializing optimizer")
     optimizer, opt_state = setup_optimizer(params)
 
@@ -189,6 +189,7 @@ def train(
         key, subkey = jax.random.split(key)
         (
             params,
+            target_params,
             opt_state,
             loss,
             AE_loss,
@@ -198,7 +199,7 @@ def train(
             accuracy,
             target_Qs,
             current_Qs,
-        ) = train_fn(subkey, (datas, next_datas, actions), params, opt_state, epoch)
+        ) = train_fn(subkey, (datas, next_datas, actions), params, target_params, opt_state, epoch)
         mean_target_Qs = jnp.mean(target_Qs)
         mean_current_Qs = jnp.mean(current_Qs)
         pbar.set_description(
