@@ -45,7 +45,7 @@ def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
 
 
 def setup_optimizer(params: PyTree) -> optax.OptState:
-    optimizer = optax.adamw(1e-4, nesterov=True, weight_decay=1e-6)
+    optimizer = optax.adamw(1e-3, nesterov=True, weight_decay=1e-6)
     return optimizer, optimizer.init(params)
 
 
