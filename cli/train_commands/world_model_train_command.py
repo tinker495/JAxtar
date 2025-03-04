@@ -45,9 +45,7 @@ def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
 
 
 def setup_optimizer(params: PyTree) -> optax.OptState:
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(10.0), optax.adamw(1e-3, nesterov=True, weight_decay=1e-6)
-    )
+    optimizer = optax.adamw(1e-4, nesterov=True, weight_decay=1e-6)
     return optimizer, optimizer.init(params)
 
 
@@ -230,10 +228,10 @@ def train(
             writer.add_scalar("Metrics/Mean Target Qs", mean_target_Qs, epoch)
             writer.add_scalar("Metrics/Mean Current Qs", mean_current_Qs, epoch)
 
-        if epoch % 100 == 0:
             writer.add_histogram("Target Qs", target_Qs[:1000], epoch)
             writer.add_histogram("Current Qs", current_Qs[:1000], epoch)
 
+        if epoch % 100 == 0:
             (
                 eval_accuracy,
                 eval_forward_projected_latents,
