@@ -71,7 +71,7 @@ class AutoEncoder(nn.Module):
 
 
 class Projector(nn.Module):
-    latent_dim: int = 250
+    projection_dim: int = 250
 
     @nn.compact
     def __call__(self, binary_latent, training=False):
@@ -84,7 +84,7 @@ class Projector(nn.Module):
         x = nn.Dense(1000)(x)
         x = nn.LayerNorm()(x)
         x = nn.swish(x)
-        x = nn.Dense(self.latent_dim)(x)
+        x = nn.Dense(self.projection_dim)(x)
         return x
 
 
@@ -145,6 +145,7 @@ class WorldModelPuzzleBase(Puzzle):
         AE=AutoEncoder,
         WM=WorldModel,
         init_params=True,
+        projection_dim=250,
         **kwargs,
     ):
         self.data_path = data_path
@@ -160,8 +161,11 @@ class WorldModelPuzzleBase(Puzzle):
         class total_model(nn.Module):
             autoencoder: AutoEncoder
             world_model: WorldModel
-            forward_projector: Projector = Projector()
-            backward_projector: Projector = Projector()
+            projection_dim: int
+
+            def setup(self):
+                self.forward_projector = Projector(self.projection_dim)
+                self.backward_projector = Projector(self.projection_dim)
 
             @nn.compact
             def __call__(self, x, training=False):
@@ -275,6 +279,7 @@ class WorldModelPuzzleBase(Puzzle):
         self.model = total_model(
             autoencoder=AE(data_shape=self.data_shape, latent_shape=self.latent_shape),
             world_model=WM(latent_shape=self.latent_shape, action_size=self.action_size),
+            projection_dim=projection_dim,
         )
 
         if init_params:
@@ -368,9 +373,7 @@ class WorldModelPuzzleBase(Puzzle):
         This function should return a default solve config.
         """
         default_state = self.State.default()
-        default_projected_latent = jnp.zeros(
-            self.model.backward_projector.latent_dim, dtype=jnp.float32
-        )
+        default_projected_latent = jnp.zeros(self.model.projection_dim, dtype=jnp.float32)
 
         def default_gen():
             return self.SolveConfig(

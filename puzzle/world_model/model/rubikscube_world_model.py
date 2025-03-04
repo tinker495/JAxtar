@@ -9,6 +9,7 @@ class RubiksCubeWorldModel_test(WorldModelPuzzleBase):
             data_shape=(32, 64, 3),
             latent_shape=(400,),
             action_size=12,
+            projection_dim=1000,
             **kwargs
         )
 
@@ -21,6 +22,7 @@ class RubiksCubeWorldModel(WorldModelPuzzleBase):
             data_shape=(32, 64, 3),
             latent_shape=(400,),
             action_size=12,
+            projection_dim=1000,
             **kwargs
         )
 
@@ -33,6 +35,7 @@ class RubiksCubeWorldModelOptimized_test(WorldModelPuzzleBase):
             data_shape=(32, 64, 3),
             latent_shape=(144,),  # almost optimal is 144 bits
             action_size=12,
+            projection_dim=1000,
             **kwargs
         )
 
@@ -53,5 +56,6 @@ class RubiksCubeWorldModelOptimized(WorldModelPuzzleBase):
             data_shape=(32, 64, 3),
             latent_shape=(144,),  # almost optimal is 144 bits
             action_size=12,
+            projection_dim=1000,
             **kwargs
         )
