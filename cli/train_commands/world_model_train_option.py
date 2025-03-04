@@ -60,7 +60,7 @@ def get_world_model_options(func: callable) -> callable:
 
 def train_options(func: callable) -> callable:
     @click.option("--train_epochs", type=int, default=2000, help="Number of training steps")
-    @click.option("--mini_batch_size", type=int, default=1000, help="Batch size")
+    @click.option("--mini_batch_size", type=int, default=100, help="Batch size")
     @click.option("--debug", is_flag=True, help="Debug mode")
     @wraps(func)
     def wrapper(*args, **kwargs):
