@@ -1,6 +1,7 @@
 from functools import wraps
 
 import click
+import jax
 import jax.numpy as jnp
 
 from config import (
@@ -60,8 +61,13 @@ def get_world_model_options(func: callable) -> callable:
 def train_options(func: callable) -> callable:
     @click.option("--train_epochs", type=int, default=2000, help="Number of training steps")
     @click.option("--mini_batch_size", type=int, default=1000, help="Batch size")
+    @click.option("--debug", is_flag=True, help="Debug mode")
     @wraps(func)
     def wrapper(*args, **kwargs):
+        if kwargs["debug"]:
+            # disable jit
+            print("Disabling JIT")
+            jax.config.update("jax_disable_jit", True)
         return func(*args, **kwargs)
 
     return wrapper
