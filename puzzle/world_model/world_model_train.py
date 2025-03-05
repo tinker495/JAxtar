@@ -103,12 +103,6 @@ def world_model_train_builder(
             (logits, rounded_latent, decoded),  # for AutoEncoder and WorldModel
             (next_logits, rounded_next_latent, next_decoded),  # for AutoEncoder and WorldModel
             (next_logits_pred, rounded_next_latent_pred),  # for WorldModel
-            (forward_projected_latent, backward_projected_latent),  # for Projection Distance
-            (
-                forward_projected_next_latent,
-                backward_projected_next_latent,
-                forward_projected_next_latent_preds,
-            ),  # for Projection Distance
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
         new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
         data_scaled = (data / 255.0) * 2 - 1
@@ -129,44 +123,14 @@ def world_model_train_builder(
             )
         )
 
-        rolled_backward_projected_latent = jnp.roll(backward_projected_latent, 1, axis=0)
-
-        projection_distance_loss, target_Qs, current_Qs = projection_distance_loss_fn(
-            forward_projected_latent,
-            forward_projected_next_latent_preds,
-            backward_projected_next_latent,
-        )
-        self_projection_distance_loss = self_projection_distance_loss_fn(
-            forward_projected_latent, backward_projected_latent
-        ) + self_projection_distance_loss_fn(
-            forward_projected_next_latent, backward_projected_next_latent
-        )
-
-        total_projection_distance_loss = (
-            projection_distance_loss + self_projection_distance_loss
-        )  # self_projection_distance_loss
-
-        # orthonormality regularization
-        orthonormality_regularization_loss = orthonormality_loss_fn(
-            backward_projected_latent, rolled_backward_projected_latent
-        )
-
-        total_loss = (1 - loss_weight) * AE_loss + loss_weight * (
-            world_model_loss
-            + total_projection_distance_loss
-            + 0.01 * orthonormality_regularization_loss
-        )
+        total_loss = (1 - loss_weight) * AE_loss + loss_weight * world_model_loss
         accuracy = accuracy_fn(rounded_next_latent_pred, rounded_next_latent)
 
         return total_loss, (
             new_params,
             AE_loss,
             world_model_loss,
-            total_projection_distance_loss,
-            orthonormality_regularization_loss,
             accuracy,
-            target_Qs,
-            current_Qs,
         )
 
     def train_fn(
@@ -185,13 +149,18 @@ def world_model_train_builder(
         data_size = actions.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        batch_indexs = jnp.concatenate(
-            [
-                jax.random.permutation(key, jnp.arange(data_size)),
-                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
+        batch_indexs = jax.random.permutation(
+            key,
+            jnp.concatenate(
+                [
+                    jnp.arange(data_size),
+                    jax.random.randint(
+                        key, (batch_size * minibatch_size - data_size,), 0, data_size
+                    ),
+                ],
+                axis=0,
+            ),
+        )
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
@@ -204,19 +173,9 @@ def world_model_train_builder(
             states, next_states, actions = batched_dataset
 
             # Use value_and_grad with has_aux=True to properly handle the auxiliary outputs
-            (
-                loss,
-                (
-                    params,
-                    AE_loss,
-                    world_model_loss,
-                    total_projection_distance_loss,
-                    orthonormality_regularization_loss,
-                    accuracy,
-                    target_Qs,
-                    current_Qs,
-                ),
-            ), grads = jax.value_and_grad(loss_fn, has_aux=True)(
+            (loss, (params, AE_loss, world_model_loss, accuracy,),), grads = jax.value_and_grad(
+                loss_fn, has_aux=True
+            )(
                 params,
                 states,
                 next_states,
@@ -232,23 +191,10 @@ def world_model_train_builder(
                 loss,
                 AE_loss,
                 world_model_loss,
-                total_projection_distance_loss,
-                orthonormality_regularization_loss,
                 accuracy,
-                target_Qs,
-                current_Qs,
             )
 
-        (params, opt_state), (
-            losses,
-            AE_losses,
-            world_model_losses,
-            total_projection_distance_losses,
-            orthonormality_regularization_losses,
-            accuracies,
-            target_Qs,
-            current_Qs,
-        ) = jax.lax.scan(
+        (params, opt_state), (losses, AE_losses, world_model_losses, accuracies,) = jax.lax.scan(
             train_loop,
             (params, opt_state),
             (batched_states, batched_next_states, batched_actions),
@@ -256,22 +202,14 @@ def world_model_train_builder(
         loss = jnp.mean(losses)
         AE_loss = jnp.mean(AE_losses)
         world_model_loss = jnp.mean(world_model_losses)
-        total_projection_distance_loss = jnp.mean(total_projection_distance_losses)
-        orthonormality_regularization_loss = jnp.mean(orthonormality_regularization_losses)
         accuracy = jnp.mean(accuracies)
-        target_Qs = jnp.reshape(target_Qs, (-1,))
-        current_Qs = jnp.reshape(current_Qs, (-1,))
         return (
             params,
             opt_state,
             loss,
             AE_loss,
             world_model_loss,
-            total_projection_distance_loss,
-            orthonormality_regularization_loss,
             accuracy,
-            target_Qs,
-            current_Qs,
         )
 
     return jax.jit(train_fn)
@@ -305,32 +243,17 @@ def world_model_eval_builder(
                 (logits, rounded_latent, decoded),  # for AutoEncoder and WorldModel
                 (next_logits, rounded_next_latent, next_decoded),  # for AutoEncoder and WorldModel
                 (next_logits_pred, rounded_next_latent_pred),  # for WorldModel
-                (forward_projected_latent, backward_projected_latent),  # for Projection Distance
-                (
-                    forward_projected_next_latent,
-                    backward_projected_next_latent,
-                    forward_projected_next_latent_preds,
-                ),  # for Projection Distance
             ), variable_updates = train_info_fn(
                 params, states, next_states, actions, training=False
             )
             accuracy = accuracy_fn(rounded_next_latent_pred, rounded_next_latent)
-            return None, (accuracy, forward_projected_latent, backward_projected_latent)
+            return None, (accuracy,)
 
-        _, (accuracies, forward_projected_latents, backward_projected_latents) = jax.lax.scan(
+        _, (accuracies,) = jax.lax.scan(
             eval_loop,
             None,
             (batched_states, batched_next_states, batched_actions),
         )
-        forward_projected_latents = forward_projected_latents.reshape(
-            -1, forward_projected_latents.shape[-1]
-        )
-        backward_projected_latents = backward_projected_latents.reshape(
-            -1, backward_projected_latents.shape[-1]
-        )
-
-        forward_projected_latents = forward_projected_latents[:1000]
-        backward_projected_latents = backward_projected_latents[:1000]
-        return jnp.mean(accuracies), forward_projected_latents, backward_projected_latents
+        return jnp.mean(accuracies)
 
     return jax.jit(eval_fn)

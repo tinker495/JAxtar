@@ -13,9 +13,9 @@ class Encoder(nn.Module):
         x = (data / 255.0) * 2.0 - 1.0
         x = nn.Conv(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 20, 20, 16)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Conv(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 10, 10, 16)
-        x = nn.swish(x)
+        x = nn.relu(x)
         logits = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1))(
             x
         )  # (batch_size, 10, 10, 16)
@@ -30,9 +30,9 @@ class Decoder(nn.Module):
         # batch
         x = (latent - 0.5) * 2.0
         x = nn.ConvTranspose(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 20, 20, 16)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.ConvTranspose(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 40, 40, 16)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Conv(3, (1, 1), strides=(1, 1))(x)  # (batch_size, 40, 40, 3)
         return x
 
@@ -63,12 +63,12 @@ class WorldModel(nn.Module):
             x
         )  # (batch_size, 10, 10, 32)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Conv(32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal())(
             x
         )  # (batch_size, 10, 10, 32)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Conv(
             self.latent_shape[-1] * self.action_size,
             (3, 3),
@@ -131,7 +131,7 @@ class ResidualBlock(nn.Module):
             x0
         )  # (batch_size, 10, 10, 32)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Conv(
             self.channels,
             self.kernel_size,
@@ -141,7 +141,7 @@ class ResidualBlock(nn.Module):
             x
         )  # (batch_size, 10, 10, 32)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = x + x0
         return x
 
@@ -156,7 +156,7 @@ class EncoderOptimized(nn.Module):
             x
         )  # (batch_size, 10, 10, 16)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = ResidualBlock(16)(x, training)
         x = ResidualBlock(16)(x, training)
         logits = nn.Conv(
@@ -175,13 +175,13 @@ class DecoderOptimized(nn.Module):
         x = (latent - 0.5) * 2.0
         x = nn.Conv(16, (1, 1), strides=(1, 1))(x)  # (batch_size, 10, 10, 16)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = ResidualBlock(16)(x, training)
         x = ResidualBlock(16)(x, training)
         x = nn.ConvTranspose(16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal())(
             x
         )  # (batch_size, 40, 40, 16)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Conv(3, (1, 1), strides=(1, 1), kernel_init=nn.initializers.orthogonal())(
             x
         )  # (batch_size, 40, 40, 3)
