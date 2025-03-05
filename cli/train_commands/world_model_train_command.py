@@ -142,11 +142,20 @@ def train(
             next_data,
             action,
             training=training,
-            method=model.train_info,
+            method=model.world_model_train_info,
             mutable=["batch_stats"],
         )
 
+    def get_projections_fn(params, latent, training=False):
+        return model.apply(
+            params,
+            latent,
+            training=training,
+            method=model.get_projections,
+        )
+
     params = world_model.params
+    target_params = world_model.params
 
     print("initializing optimizer")
     optimizer, opt_state = setup_optimizer(params)
@@ -155,12 +164,14 @@ def train(
     train_fn = world_model_train_builder(
         mini_batch_size,
         train_info_fn,
+        get_projections_fn,
         optimizer,
     )
 
     print("initializing eval function")
     eval_fn = world_model_eval_builder(
         train_info_fn,
+        get_projections_fn,
         mini_batch_size,
     )
 
@@ -191,6 +202,7 @@ def train(
         key, subkey = jax.random.split(key)
         (
             params,
+            target_params,
             opt_state,
             loss,
             AE_loss,
@@ -200,7 +212,7 @@ def train(
             accuracy,
             target_Qs,
             current_Qs,
-        ) = train_fn(subkey, (datas, next_datas, actions), params, opt_state, epoch)
+        ) = train_fn(subkey, (datas, next_datas, actions), params, target_params, opt_state, epoch)
         mean_target_Qs = jnp.mean(target_Qs)
         mean_current_Qs = jnp.mean(current_Qs)
         pbar.set_description(
