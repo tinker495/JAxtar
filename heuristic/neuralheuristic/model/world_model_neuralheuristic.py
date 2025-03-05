@@ -14,7 +14,7 @@ class Projector(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(1000)(x)
-        x = nn.BatchNorm(use_running_average=not training)(x)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
         x = nn.Dense(1000)(x)
         x = nn.relu(x)
@@ -23,10 +23,18 @@ class Projector(nn.Module):
 
 
 class Model(nn.Module):
-    @nn.compact
+    def setup(self):
+        self.forward_projector = Projector()
+        self.backward_projector = Projector()
+        self.dummy_BatchNorm = nn.BatchNorm(use_running_average=True)
+
     def __call__(self, latent_stack, training=False):
-        current_projection = Projector()(latent_stack[..., 0], training=training)
-        target_projection = Projector()(latent_stack[..., 1], training=training)
+        _ = self.dummy_BatchNorm(latent_stack)
+        current_projection = self.forward_projector(latent_stack[..., 0], training=training)
+        target_projection = self.backward_projector(latent_stack[..., 1], training=training)
+        target_projection = target_projection / (
+            jnp.linalg.norm(target_projection, axis=-1, keepdims=True) + 1.0
+        )
         scalar = jnp.sum(current_projection * target_projection, axis=-1, keepdims=True)
         return scalar
 
