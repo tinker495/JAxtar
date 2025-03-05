@@ -513,14 +513,14 @@ class WorldModelPuzzleBase(Puzzle):
         This function should return a representation of the state.
         """
         binary_latent = self.from_uint8(state.latent).astype(jnp.float32)
-        return binary_latent
+        return (binary_latent - 0.5) * 2.0
 
     def representation_solve_config(self, solve_config: SolveConfig) -> jnp.ndarray:
         """
         This function should return a representation of the solve config.
         """
         target_latent = self.from_uint8(solve_config.TargetState.latent).astype(jnp.float32)
-        return target_latent
+        return (target_latent - 0.5) * 2.0
 
     def to_uint8(self, bit_latent: chex.Array) -> chex.Array:
         # from booleans to uint8
