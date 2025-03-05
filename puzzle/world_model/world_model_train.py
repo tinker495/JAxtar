@@ -34,11 +34,11 @@ def projection_distance_loss_fn(
     target_Qs = jax.vmap(Q_fn, in_axes=(0, None), out_axes=0)(
         forward_projected_next_prim_latent_preds, backward_projected_target_prim_latent
     )  # [action_size, batch_size, batch_size]
-    target_Qs = jax.lax.stop_gradient(0.9 * jnp.max(target_Qs, axis=0))  # [batch_size, batch_size]
+    target_Qs = jax.lax.stop_gradient(1.0 + jnp.min(target_Qs, axis=0))  # [batch_size, batch_size]
     target_Qs = jnp.maximum(target_Qs, 0.0)
     # Set diagonal elements (identity matrix positions) to zero
     batch_size = target_Qs.shape[0]
-    target_Qs = target_Qs.at[jnp.diag_indices(batch_size)].set(100.0)
+    target_Qs = target_Qs.at[jnp.diag_indices(batch_size)].set(0.0)
     # jax.debug.print("target_Qs: {output}", output=target_Qs[:10, :10])
     # this Qs is calculate heuristic distance between
     # forward_projected_latent and forward_projected_next_prim_latent_preds
