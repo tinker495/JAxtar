@@ -142,7 +142,7 @@ def train(
             next_data,
             action,
             training=training,
-            method=model.train_info,
+            method=model.world_model_train_info,
             mutable=["batch_stats"],
         )
 
@@ -172,20 +172,8 @@ def train(
     eval_data = (eval_trajectory[0][0], eval_trajectory[0][1], eval_trajectory[1][0])
     writer.add_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
     writer.add_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
-    eval_accuracy, eval_forward_projected_latents, eval_backward_projected_latents = eval_fn(
-        params, eval_trajectory
-    )
+    eval_accuracy = eval_fn(params, eval_trajectory)
     writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, 0)
-
-    forward_tsne_img = visualize_latents(
-        eval_forward_projected_latents, 0, "Forward Projected Latents"
-    )
-    writer.add_image("Latent/Forward Projected Latents", forward_tsne_img, 0, dataformats="HWC")
-
-    backward_tsne_img = visualize_latents(
-        eval_backward_projected_latents, 0, "Backward Projected Latents"
-    )
-    writer.add_image("Latent/Backward Projected Latents", backward_tsne_img, 0, dataformats="HWC")
 
     for epoch in pbar:
         key, subkey = jax.random.split(key)
@@ -195,65 +183,24 @@ def train(
             loss,
             AE_loss,
             world_model_loss,
-            total_projection_distance_loss,
-            orthonormality_regularization_loss,
             accuracy,
-            target_Qs,
-            current_Qs,
         ) = train_fn(subkey, (datas, next_datas, actions), params, opt_state, epoch)
-        mean_target_Qs = jnp.mean(target_Qs)
-        mean_current_Qs = jnp.mean(current_Qs)
         pbar.set_description(
             f"Loss: {loss:.4f}, "
             f"AE Loss: {AE_loss:.4f}, "
             f"WM Loss: {world_model_loss:.4f}, "
-            f"PD Loss: {total_projection_distance_loss:.4f}, "
-            f"OR Loss: {orthonormality_regularization_loss:.4f}, "
             f"Acc: {accuracy*100:3.1f}, "
-            f"Eval Acc: {eval_accuracy*100:3.1f}, "
-            f"TQs: {mean_target_Qs:.4f}, "
-            f"CQs: {mean_current_Qs:.4f}"
+            f"Eval Acc: {eval_accuracy*100:3.1f}"
         )
         if epoch % 10 == 0:
             writer.add_scalar("Losses/Loss", loss, epoch)
             writer.add_scalar("Losses/AE Loss", AE_loss, epoch)
             writer.add_scalar("Losses/World Model Loss", world_model_loss, epoch)
-            writer.add_scalar(
-                "Losses/Projection Distance Loss", total_projection_distance_loss, epoch
-            )
-            writer.add_scalar(
-                "Losses/Orthonormality Regularization Loss",
-                orthonormality_regularization_loss,
-                epoch,
-            )
             writer.add_scalar("Metrics/Accuracy", accuracy, epoch)
-            writer.add_scalar("Metrics/Mean Target Qs", mean_target_Qs, epoch)
-            writer.add_scalar("Metrics/Mean Current Qs", mean_current_Qs, epoch)
-
-            writer.add_histogram("Target Qs", target_Qs[:1000], epoch)
-            writer.add_histogram("Current Qs", current_Qs[:1000], epoch)
 
         if epoch % 100 == 0:
-            (
-                eval_accuracy,
-                eval_forward_projected_latents,
-                eval_backward_projected_latents,
-            ) = eval_fn(params, eval_trajectory)
+            eval_accuracy = eval_fn(params, eval_trajectory)
             writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
-
-            forward_tsne_img = visualize_latents(
-                eval_forward_projected_latents, epoch, "Forward Projected Latents"
-            )
-            writer.add_image(
-                "Latent/Forward Projected Latents", forward_tsne_img, epoch, dataformats="HWC"
-            )
-
-            backward_tsne_img = visualize_latents(
-                eval_backward_projected_latents, epoch, "Backward Projected Latents"
-            )
-            writer.add_image(
-                "Latent/Backward Projected Latents", backward_tsne_img, epoch, dataformats="HWC"
-            )
 
             data = jnp.expand_dims(eval_data[0], axis=0)
             latent = model.apply(params, data, training=False, method=model.encode)

@@ -34,7 +34,7 @@ class Encoder(nn.Module):
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(1000)(flatten)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Dense(latent_size)(x)
         logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
         return logits
@@ -49,7 +49,7 @@ class Decoder(nn.Module):
         latent = (latent - 0.5) * 2.0
         x = nn.Dense(1000)(latent)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Dense(output_size)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
         return output
@@ -80,10 +80,10 @@ class Projector(nn.Module):
         normalized_latent = jax.lax.stop_gradient(normalized_latent)
         x = nn.Dense(1000)(normalized_latent)
         x = nn.LayerNorm()(x)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Dense(1000)(x)
         x = nn.LayerNorm()(x)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Dense(self.projection_dim)(x)
         return x
 
@@ -97,13 +97,13 @@ class WorldModel(nn.Module):
         x = (latent - 0.5) * 2.0
         x = nn.Dense(500)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Dense(500)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         x = nn.Dense(500)(x)
         x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.swish(x)
+        x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(latent_size * self.action_size)(x)
         x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + self.latent_shape)
@@ -134,7 +134,6 @@ class WorldModelPuzzleBase(Puzzle):
         """
 
         TargetState: "WorldModelPuzzleBase.State"
-        projected_latent: jnp.ndarray
 
     def __init__(
         self,
@@ -145,7 +144,6 @@ class WorldModelPuzzleBase(Puzzle):
         AE=AutoEncoder,
         WM=WorldModel,
         init_params=True,
-        projection_dim=250,
         **kwargs,
     ):
         self.data_path = data_path
@@ -161,23 +159,14 @@ class WorldModelPuzzleBase(Puzzle):
         class total_model(nn.Module):
             autoencoder: AutoEncoder
             world_model: WorldModel
-            projection_dim: int
-
-            def setup(self):
-                self.forward_projector = Projector(self.projection_dim)
-                self.backward_projector = Projector(self.projection_dim)
 
             @nn.compact
             def __call__(self, x, training=False):
                 latent, decoded = self.autoencoder(x, training)
                 forward_latents = self.world_model(latent, training)
-                forward_projected_latent = self.forward_projector(latent, training)
-                backward_projected_latent = self.backward_projector(latent, training)
                 return (
                     forward_latents,
                     decoded,
-                    forward_projected_latent,
-                    backward_projected_latent,
                 )
 
             def decode(self, latent, training=False):
@@ -197,50 +186,27 @@ class WorldModelPuzzleBase(Puzzle):
             def backward_project(self, latent, training=False):
                 return self.backward_projector(latent, training)
 
-            def train_info(self, data, next_data, actions, training=True):
-
+            def world_model_train_info(self, data, next_data, actions, training=True):
                 logits = self.autoencoder.encoder(data, training)
                 latent = nn.sigmoid(logits)
                 rounded_latent = round_through_gradient(latent)
                 decoded = self.autoencoder.decoder(rounded_latent, training)
-                forward_projected_latent = self.forward_project(rounded_latent, training)
-                backward_projected_latent = self.backward_project(rounded_latent, training)
 
                 next_logits = self.autoencoder.encoder(next_data, training)
                 next_latent = nn.sigmoid(next_logits)
                 rounded_next_latent = round_through_gradient(next_latent)
                 next_decoded = self.autoencoder.decoder(rounded_next_latent, training)
-                forward_projected_next_latent = self.forward_project(rounded_next_latent, training)
-                backward_projected_next_latent = self.backward_project(
-                    rounded_next_latent, training
-                )
 
                 actions = jnp.reshape(
                     actions, (-1,) + (1,) * (next_latent.ndim)
                 )  # [batch_size, 1, ...]
 
                 next_logits_preds = self.world_model(rounded_latent, training)
-                next_latent_preds = nn.sigmoid(next_logits_preds)
-                rounded_next_latent_preds = round_through_gradient(next_latent_preds)
                 next_logits_pred = jnp.take_along_axis(next_logits_preds, actions, axis=1).squeeze(
                     axis=1
                 )  # [batch_size, ...]
                 next_latent_pred = nn.sigmoid(next_logits_pred)
                 rounded_next_latent_pred = round_through_gradient(next_latent_pred)
-
-                flattened_next_latent_preds = jnp.reshape(
-                    rounded_next_latent_preds,
-                    shape=(-1, *rounded_next_latent_preds.shape[2:]),
-                )  # [batch_size * action_size, ...]
-
-                forward_projected_next_latent_preds = self.forward_project(
-                    flattened_next_latent_preds, training
-                )  # [batch_size, action_size, projector_latent_dim]
-
-                forward_projected_next_latent_preds = jnp.reshape(
-                    forward_projected_next_latent_preds,
-                    shape=(*rounded_next_latent_preds.shape[:2], -1),
-                )  # [batch_size, action_size, projector_latent_dim]
 
                 return (
                     (logits, rounded_latent, decoded),  # for AutoEncoder and WorldModel
@@ -250,21 +216,11 @@ class WorldModelPuzzleBase(Puzzle):
                         next_decoded,
                     ),  # for AutoEncoder and WorldModel
                     (next_logits_pred, rounded_next_latent_pred),  # for WorldModel
-                    (
-                        forward_projected_latent,
-                        backward_projected_latent,
-                    ),  # for Projection Distance
-                    (
-                        forward_projected_next_latent,
-                        backward_projected_next_latent,
-                        forward_projected_next_latent_preds,
-                    ),  # for Projection Distance
                 )
 
         self.model = total_model(
             autoencoder=AE(data_shape=self.data_shape, latent_shape=self.latent_shape),
             world_model=WM(latent_shape=self.latent_shape, action_size=self.action_size),
-            projection_dim=projection_dim,
         )
 
         if init_params:
@@ -357,13 +313,9 @@ class WorldModelPuzzleBase(Puzzle):
         """
         This function should return a default solve config.
         """
-        default_state = self.State.default()
-        default_projected_latent = jnp.zeros(self.model.projection_dim, dtype=jnp.float32)
 
         def default_gen():
-            return self.SolveConfig(
-                TargetState=default_state, projected_latent=default_projected_latent
-            )
+            return self.SolveConfig(TargetState=self.State.default())
 
         return default_gen
 
@@ -474,14 +426,9 @@ class WorldModelPuzzleBase(Puzzle):
         latent = self.model.apply(
             self.params, target_data, training=False, method=self.model.encode
         )
-        projected_latent = self.model.apply(
-            self.params, latent, training=False, method=self.model.backward_project
-        )[0]
         latent = jnp.round(latent).astype(jnp.bool_)[0]
         latent = self.to_uint8(latent)
-        return self.SolveConfig(
-            TargetState=self.State(latent=latent), projected_latent=projected_latent
-        )
+        return self.SolveConfig(TargetState=self.State(latent=latent))
 
     def get_initial_state(self, solve_config: SolveConfig, key=None, data=None) -> State:
         """
@@ -566,22 +513,14 @@ class WorldModelPuzzleBase(Puzzle):
         This function should return a representation of the state.
         """
         binary_latent = self.from_uint8(state.latent).astype(jnp.float32)
-        binary_latent = jnp.expand_dims(binary_latent, axis=0)
-        projected_latent = self.model.apply(
-            self.params, binary_latent, training=False, method=self.model.forward_projector
-        )
-        return projected_latent
+        return binary_latent
 
     def representation_solve_config(self, solve_config: SolveConfig) -> jnp.ndarray:
         """
         This function should return a representation of the solve config.
         """
         target_latent = self.from_uint8(solve_config.TargetState.latent).astype(jnp.float32)
-        target_latent = jnp.expand_dims(target_latent, axis=0)
-        projected_latent = self.model.apply(
-            self.params, target_latent, training=False, method=self.model.backward_projector
-        )
-        return projected_latent
+        return target_latent
 
     def to_uint8(self, bit_latent: chex.Array) -> chex.Array:
         # from booleans to uint8
