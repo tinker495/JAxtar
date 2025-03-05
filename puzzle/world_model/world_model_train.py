@@ -17,23 +17,29 @@ def Q_fn(forward_projected_latent: chex.Array, backward_projected_target_latent:
     dot_products = jnp.einsum(
         "bd,cd->bc", forward_projected_latent, backward_projected_target_latent
     )  # [batch_size, batch_size]
+    # dist = - jax.nn.log_sigmoid(dot_products)
     return dot_products  # [batch_size, batch_size]
 
 
 def projection_distance_loss_fn(
     forward_projected_latent: chex.Array,
-    forward_projected_next_prim_latent_preds: chex.Array,
     backward_projected_target_latent: chex.Array,
+    forward_projected_next_prim_latent_preds: chex.Array,
+    backward_projected_target_prim_latent: chex.Array,
 ):
     # forward_projected_latent: [batch_size, latent_size]
     # forward_projected_next_prim_latent_preds: [batch_size, action_size, latent_size]
     # backward_projected_target_latent: [batch_size, latent_size]
 
-    target_Qs = jax.vmap(Q_fn, in_axes=(1, None), out_axes=0)(
-        forward_projected_next_prim_latent_preds, backward_projected_target_latent
+    target_Qs = jax.vmap(Q_fn, in_axes=(0, None), out_axes=0)(
+        forward_projected_next_prim_latent_preds, backward_projected_target_prim_latent
     )  # [action_size, batch_size, batch_size]
-    target_Qs = jax.lax.stop_gradient(1.0 + jnp.min(target_Qs, axis=0))  # [batch_size, batch_size]
+    target_Qs = jax.lax.stop_gradient(0.9 * jnp.max(target_Qs, axis=0))  # [batch_size, batch_size]
     target_Qs = jnp.maximum(target_Qs, 0.0)
+    # Set diagonal elements (identity matrix positions) to zero
+    batch_size = target_Qs.shape[0]
+    target_Qs = target_Qs.at[jnp.diag_indices(batch_size)].set(100.0)
+    # jax.debug.print("target_Qs: {output}", output=target_Qs[:10, :10])
     # this Qs is calculate heuristic distance between
     # forward_projected_latent and forward_projected_next_prim_latent_preds
 
@@ -49,7 +55,6 @@ def self_projection_distance_loss_fn(
 ):
     # forward_projected_latent: [batch_size, latent_size]
     # backward_projected_latent: [batch_size, latent_size]
-
     self_dot_products = jnp.sum(
         forward_projected_latent * backward_projected_latent, axis=-1
     )  # [batch_size]
@@ -90,10 +95,12 @@ def orthonormality_loss_fn(latent: chex.Array, other_latent: chex.Array):
 def world_model_train_builder(
     minibatch_size: int,
     train_info_fn: Callable,
+    get_projections_fn: Callable,
     optimizer: optax.GradientTransformation = optax.adam(1e-4),
 ):
     def loss_fn(
         params: jax.tree_util.PyTreeDef,
+        target_params: WorldModelPuzzleBase.State,
         data: chex.Array,
         next_data: chex.Array,
         action: chex.Array,
@@ -102,13 +109,11 @@ def world_model_train_builder(
         (
             (logits, rounded_latent, decoded),  # for AutoEncoder and WorldModel
             (next_logits, rounded_next_latent, next_decoded),  # for AutoEncoder and WorldModel
-            (next_logits_pred, rounded_next_latent_pred),  # for WorldModel
-            (forward_projected_latent, backward_projected_latent),  # for Projection Distance
             (
-                forward_projected_next_latent,
-                backward_projected_next_latent,
-                forward_projected_next_latent_preds,
-            ),  # for Projection Distance
+                next_logits_pred,
+                rounded_next_latent_pred,
+                rounded_next_latent_preds,
+            ),  # for WorldModel
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
         new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
         data_scaled = (data / 255.0) * 2 - 1
@@ -129,23 +134,26 @@ def world_model_train_builder(
             )
         )
 
-        rolled_backward_projected_latent = jnp.roll(backward_projected_latent, 1, axis=0)
+        forward_projected_latent, backward_projected_latent = get_projections_fn(
+            params, rounded_latent
+        )
+        _, backward_projected_target_latent = get_projections_fn(target_params, rounded_latent)
+        forward_projected_next_latent_preds, _ = jax.vmap(
+            get_projections_fn, in_axes=(None, 1), out_axes=0
+        )(target_params, rounded_next_latent_preds)
 
         projection_distance_loss, target_Qs, current_Qs = projection_distance_loss_fn(
             forward_projected_latent,
+            backward_projected_latent,
             forward_projected_next_latent_preds,
-            backward_projected_next_latent,
-        )
-        self_projection_distance_loss = self_projection_distance_loss_fn(
-            forward_projected_latent, backward_projected_latent
-        ) + self_projection_distance_loss_fn(
-            forward_projected_next_latent, backward_projected_next_latent
+            backward_projected_target_latent,
         )
 
-        total_projection_distance_loss = (
-            projection_distance_loss + self_projection_distance_loss
-        )  # self_projection_distance_loss
+        total_projection_distance_loss = projection_distance_loss  # self_projection_distance_loss
 
+        rolled_backward_projected_latent = jnp.roll(
+            backward_projected_latent, minibatch_size // 2, axis=0
+        )  # [batch_size, latent_size]
         # orthonormality regularization
         orthonormality_regularization_loss = orthonormality_loss_fn(
             backward_projected_latent, rolled_backward_projected_latent
@@ -175,6 +183,7 @@ def world_model_train_builder(
             WorldModelPuzzleBase.State, WorldModelPuzzleBase.State, chex.Array
         ],  # (state, next_state, action)
         params: jax.tree_util.PyTreeDef,
+        target_params: WorldModelPuzzleBase.State,
         opt_state: optax.OptState,
         epoch: int,
     ):
@@ -187,7 +196,7 @@ def world_model_train_builder(
 
         batch_indexs = jnp.concatenate(
             [
-                jax.random.permutation(key, jnp.arange(data_size)),
+                jnp.arange(data_size),
                 jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
             ],
             axis=0,
@@ -218,6 +227,7 @@ def world_model_train_builder(
                 ),
             ), grads = jax.value_and_grad(loss_fn, has_aux=True)(
                 params,
+                target_params,
                 states,
                 next_states,
                 actions,
@@ -261,8 +271,12 @@ def world_model_train_builder(
         accuracy = jnp.mean(accuracies)
         target_Qs = jnp.reshape(target_Qs, (-1,))
         current_Qs = jnp.reshape(current_Qs, (-1,))
+        target_params = (
+            params  # jax.tree_map(lambda x, y: 0.9 * x + 0.1 * y, target_params, params)
+        )
         return (
             params,
+            target_params,
             opt_state,
             loss,
             AE_loss,
@@ -279,6 +293,7 @@ def world_model_train_builder(
 
 def world_model_eval_builder(
     train_info_fn: Callable,
+    get_projections_fn: Callable,
     minibatch_size: int,
 ):
     def eval_fn(
@@ -304,15 +319,16 @@ def world_model_eval_builder(
             (
                 (logits, rounded_latent, decoded),  # for AutoEncoder and WorldModel
                 (next_logits, rounded_next_latent, next_decoded),  # for AutoEncoder and WorldModel
-                (next_logits_pred, rounded_next_latent_pred),  # for WorldModel
-                (forward_projected_latent, backward_projected_latent),  # for Projection Distance
                 (
-                    forward_projected_next_latent,
-                    backward_projected_next_latent,
-                    forward_projected_next_latent_preds,
-                ),  # for Projection Distance
+                    next_logits_pred,
+                    rounded_next_latent_pred,
+                    rounded_next_latent_preds,
+                ),  # for WorldModel
             ), variable_updates = train_info_fn(
                 params, states, next_states, actions, training=False
+            )
+            forward_projected_latent, backward_projected_latent = get_projections_fn(
+                params, rounded_latent
             )
             accuracy = accuracy_fn(rounded_next_latent_pred, rounded_next_latent)
             return None, (accuracy, forward_projected_latent, backward_projected_latent)

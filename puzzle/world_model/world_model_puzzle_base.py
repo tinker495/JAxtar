@@ -82,9 +82,11 @@ class Projector(nn.Module):
         x = nn.LayerNorm()(x)
         x = nn.swish(x)
         x = nn.Dense(1000)(x)
-        x = nn.LayerNorm()(x)
         x = nn.swish(x)
-        x = nn.Dense(self.projection_dim)(x)
+        x = nn.Dense(
+            self.projection_dim,
+            kernel_init=nn.initializers.orthogonal(jnp.sqrt(1 / self.projection_dim)),
+        )(x)
         return x
 
 
@@ -197,23 +199,17 @@ class WorldModelPuzzleBase(Puzzle):
             def backward_project(self, latent, training=False):
                 return self.backward_projector(latent, training)
 
-            def train_info(self, data, next_data, actions, training=True):
+            def world_model_train_info(self, data, next_data, actions, training=True):
 
                 logits = self.autoencoder.encoder(data, training)
                 latent = nn.sigmoid(logits)
                 rounded_latent = round_through_gradient(latent)
                 decoded = self.autoencoder.decoder(rounded_latent, training)
-                forward_projected_latent = self.forward_project(rounded_latent, training)
-                backward_projected_latent = self.backward_project(rounded_latent, training)
 
                 next_logits = self.autoencoder.encoder(next_data, training)
                 next_latent = nn.sigmoid(next_logits)
                 rounded_next_latent = round_through_gradient(next_latent)
                 next_decoded = self.autoencoder.decoder(rounded_next_latent, training)
-                forward_projected_next_latent = self.forward_project(rounded_next_latent, training)
-                backward_projected_next_latent = self.backward_project(
-                    rounded_next_latent, training
-                )
 
                 actions = jnp.reshape(
                     actions, (-1,) + (1,) * (next_latent.ndim)
@@ -225,22 +221,11 @@ class WorldModelPuzzleBase(Puzzle):
                 next_logits_pred = jnp.take_along_axis(next_logits_preds, actions, axis=1).squeeze(
                     axis=1
                 )  # [batch_size, ...]
-                next_latent_pred = nn.sigmoid(next_logits_pred)
-                rounded_next_latent_pred = round_through_gradient(next_latent_pred)
-
-                flattened_next_latent_preds = jnp.reshape(
-                    rounded_next_latent_preds,
-                    shape=(-1, *rounded_next_latent_preds.shape[2:]),
-                )  # [batch_size * action_size, ...]
-
-                forward_projected_next_latent_preds = self.forward_project(
-                    flattened_next_latent_preds, training
-                )  # [batch_size, action_size, projector_latent_dim]
-
-                forward_projected_next_latent_preds = jnp.reshape(
-                    forward_projected_next_latent_preds,
-                    shape=(*rounded_next_latent_preds.shape[:2], -1),
-                )  # [batch_size, action_size, projector_latent_dim]
+                rounded_next_latent_pred = jnp.take_along_axis(
+                    rounded_next_latent_preds, actions, axis=1
+                ).squeeze(
+                    axis=1
+                )  # [batch_size, ...]
 
                 return (
                     (logits, rounded_latent, decoded),  # for AutoEncoder and WorldModel
@@ -249,17 +234,17 @@ class WorldModelPuzzleBase(Puzzle):
                         rounded_next_latent,
                         next_decoded,
                     ),  # for AutoEncoder and WorldModel
-                    (next_logits_pred, rounded_next_latent_pred),  # for WorldModel
                     (
-                        forward_projected_latent,
-                        backward_projected_latent,
-                    ),  # for Projection Distance
-                    (
-                        forward_projected_next_latent,
-                        backward_projected_next_latent,
-                        forward_projected_next_latent_preds,
-                    ),  # for Projection Distance
+                        next_logits_pred,
+                        rounded_next_latent_pred,
+                        rounded_next_latent_preds,
+                    ),  # for WorldModel
                 )
+
+            def get_projections(self, latent, training=False):
+                forward_projected_latent = self.forward_project(latent, training)
+                backward_projected_latent = self.backward_project(latent, training)
+                return forward_projected_latent, backward_projected_latent
 
         self.model = total_model(
             autoencoder=AE(data_shape=self.data_shape, latent_shape=self.latent_shape),
