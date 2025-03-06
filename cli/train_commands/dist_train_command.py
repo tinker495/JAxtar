@@ -39,6 +39,11 @@ def setup_optimizer(params: PyTree) -> optax.OptState:
     return optimizer, optimizer.init(params)
 
 
+@jax.jit
+def softupdate(params: PyTree, target_params: PyTree, tau: float) -> PyTree:
+    return jax.tree_util.tree_map(lambda p, tp: p * tau + tp * (1 - tau), params, target_params)
+
+
 @click.command()
 @puzzle_options
 @heuristic_options
@@ -90,6 +95,7 @@ def davi(
         heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
+        target_heuristic_params = softupdate(heuristic_params, target_heuristic_params, 0.1)
         pbar.set_description(
             f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
         )
@@ -102,11 +108,9 @@ def davi(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
-            target_heuristic_params = heuristic_params
-            opt_state = optimizer.init(heuristic_params)
 
             if save_count >= 5:
-                heuristic.params = target_heuristic_params
+                heuristic.params = heuristic_params
                 heuristic.save_model(
                     f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )
@@ -163,6 +167,7 @@ def qlearning(
         qfunc_params, opt_state, loss, mean_abs_diff, diffs = qlearning_fn(
             key, dataset, qfunc_params, opt_state
         )
+        target_qfunc_params = softupdate(qfunc_params, target_qfunc_params, 0.1)
         pbar.set_description(
             f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
         )
@@ -175,11 +180,9 @@ def qlearning(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             save_count += 1
-            target_qfunc_params = qfunc_params
-            opt_state = optimizer.init(qfunc_params)
 
             if save_count >= 5:
-                qfunction.params = target_qfunc_params
+                qfunction.params = qfunc_params
                 qfunction.save_model(
                     f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl"
                 )

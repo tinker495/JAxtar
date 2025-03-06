@@ -20,12 +20,14 @@ def qlearning_builder(
         states: chex.Array,
         actions: chex.Array,
         target_qs: chex.Array,
+        weights: chex.Array,
     ):
         q_values, variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
-        loss = jnp.mean(jnp.square(diff))
+        se = jnp.square(diff)
+        loss = jnp.mean(se * weights.squeeze())
         return loss, (new_params, diff)
 
     def qlearning(
@@ -37,7 +39,7 @@ def qlearning_builder(
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q, actions = dataset
+        states, target_q, actions, weights = dataset
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -53,15 +55,17 @@ def qlearning_builder(
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
+        batched_weights = jnp.take(weights, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
-            states, target_q, actions = batched_dataset
+            states, target_q, actions, weights = batched_dataset
             (loss, (q_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
                 states,
                 actions,
                 target_q,
+                weights,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
@@ -70,7 +74,7 @@ def qlearning_builder(
         (q_params, opt_state), (losses, diffs) = jax.lax.scan(
             train_loop,
             (q_params, opt_state),
-            (batched_states, batched_target_q, batched_actions),
+            (batched_states, batched_target_q, batched_actions, batched_weights),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -91,6 +95,7 @@ def _get_datasets(
     preproc_fn: Callable,
     q_fn: Callable,
     minibatch_size: int,
+    weights_lambda: float,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
@@ -152,9 +157,12 @@ def _get_datasets(
         # because it needs to account for future costs beyond just the immediate move
         # target_q = jnp.minimum(target_q, move_costs + selected_costs)
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        return None, (states, target_q, actions)
 
-    _, (states, target_q, actions) = jax.lax.scan(
+        # less cost, means more confident
+        weights = weights_lambda / (move_costs + weights_lambda)
+        return None, (states, target_q, actions, weights)
+
+    _, (states, target_q, actions, weights) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
@@ -163,8 +171,9 @@ def _get_datasets(
     states = states.reshape((-1, *states.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
+    weights = weights.reshape((-1, *weights.shape[2:]))
 
-    return states, target_q, actions
+    return states, target_q, actions, weights
 
 
 def get_qlearning_dataset_builder(
@@ -175,6 +184,7 @@ def get_qlearning_dataset_builder(
     shuffle_length: int,
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
+    weights_lambda: float = 1.0,
 ):
 
     if using_hindsight_target:
@@ -211,6 +221,7 @@ def get_qlearning_dataset_builder(
             preproc_fn,
             q_fn,
             dataset_minibatch_size,
+            weights_lambda,
         )
     )
 
