@@ -19,6 +19,7 @@ def davi_builder(
         heuristic_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
         target_heuristic: chex.Array,
+        weights: chex.Array,
     ):
         current_heuristic, variable_updates = heuristic_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
@@ -29,7 +30,8 @@ def davi_builder(
         }
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = jnp.mean(jnp.square(diff))
+        se = jnp.square(diff)
+        loss = jnp.mean(se * weights.squeeze())
         return loss, (new_params, diff)
 
     def davi(
@@ -41,7 +43,7 @@ def davi_builder(
         """
         DAVI is a heuristic for the sliding puzzle problem.
         """
-        states, target_heuristic = dataset
+        states, target_heuristic, weights = dataset
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -56,14 +58,16 @@ def davi_builder(
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
+        batched_weights = jnp.take(weights, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
-            states, target_heuristic = batched_dataset
+            states, target_heuristic, weights = batched_dataset
             (loss, (heuristic_params, diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
                 states,
                 target_heuristic,
+                weights,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
@@ -72,7 +76,7 @@ def davi_builder(
         (heuristic_params, opt_state), (losses, diffs) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
-            (batched_states, batched_target_heuristic),
+            (batched_states, batched_target_heuristic, batched_weights),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -86,6 +90,7 @@ def _get_datasets(
     preproc_fn: Callable,
     heuristic_fn: Callable,
     minibatch_size: int,
+    weights_lambda: float,
     target_heuristic_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
@@ -142,9 +147,12 @@ def _get_datasets(
         # so it doesn't make sense to have a heuristic greater than the number of moves
         # target_heuristic = jnp.minimum(target_heuristic, move_costs)
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        return None, (states, target_heuristic)
 
-    _, (states, target_heuristic) = jax.lax.scan(
+        # less cost, means more confident
+        weights = weights_lambda / (move_costs + weights_lambda)
+        return None, (states, target_heuristic, weights)
+
+    _, (states, target_heuristic, weights) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
@@ -152,8 +160,8 @@ def _get_datasets(
 
     states = states.reshape((-1, *states.shape[2:]))
     target_heuristic = target_heuristic.reshape((-1, *target_heuristic.shape[2:]))
-
-    return states, target_heuristic
+    weights = weights.reshape((-1, *weights.shape[2:]))
+    return states, target_heuristic, weights
 
 
 def get_heuristic_dataset_builder(
@@ -164,6 +172,7 @@ def get_heuristic_dataset_builder(
     shuffle_length: int,
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
+    weights_lambda: float = 1.0,
 ):
 
     if using_hindsight_target:
@@ -200,6 +209,7 @@ def get_heuristic_dataset_builder(
             preproc_fn,
             heuristic_fn,
             dataset_minibatch_size,
+            weights_lambda,
         )
     )
 
