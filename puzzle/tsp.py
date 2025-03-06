@@ -16,13 +16,13 @@ class TSP(Puzzle):
     @state_dataclass
     class State:
         mask: chex.Array  # 1D array of size number_of_points, 0 if not visited, 1 if visited
-        start: chex.Array  # idx of the point that is the start
         point: chex.Array  # idx of the point that is currently visited
 
     @state_dataclass
     class SolveConfig:
         points: chex.Array
         distance_matrix: chex.Array
+        start: chex.Array  # idx of the point that is the start
 
     def __init__(self, size: int, **kwargs):
         self.size = size
@@ -38,12 +38,15 @@ class TSP(Puzzle):
     def get_string_parser(self):
         form = self._get_visualize_format()
 
-        def to_char(x):
-            return "☐" if x == 0 else "■"  # 0: not visited, 1: visited
+        def to_char(x, true_char="■", false_char="☐"):
+            return true_char if x else false_char
 
         def parser(state: "TSP.State", **kwargs):
             mask = self.from_uint8(state.mask)
-            return form.format(*map(to_char, mask), state.point)
+            point_mask = jnp.zeros_like(mask).at[state.point].set(True)
+            maps = [to_char(x, true_char="↓", false_char=" ") for x in point_mask]
+            maps += [to_char(x, true_char="■", false_char="☐") for x in mask]
+            return form.format(*maps)
 
         return parser
 
@@ -51,7 +54,8 @@ class TSP(Puzzle):
         def gen():
             points = jnp.zeros((self.size, 2), dtype=jnp.float16)
             distance_matrix = jnp.zeros((self.size, self.size), dtype=jnp.float16)
-            return self.SolveConfig(points=points, distance_matrix=distance_matrix)
+            start = jnp.array(0, dtype=TYPE)
+            return self.SolveConfig(points=points, distance_matrix=distance_matrix, start=start)
 
         return gen
 
@@ -61,9 +65,8 @@ class TSP(Puzzle):
 
         def gen():
             mask = jnp.zeros(size, dtype=jnp.bool_)
-            start = jnp.array(0, dtype=TYPE)
             point = jnp.array(0, dtype=TYPE)
-            return self.State(mask=self.to_uint8(mask), start=start, point=point)
+            return self.State(mask=self.to_uint8(mask), point=point)
 
         return gen
 
@@ -71,9 +74,9 @@ class TSP(Puzzle):
         self, solve_config: SolveConfig, key=jax.random.PRNGKey(0), data=None
     ) -> State:
         mask = jnp.zeros(self.size, dtype=jnp.bool_)
-        point = jax.random.randint(key, shape=(), minval=0, maxval=self.size, dtype=TYPE)
+        point = solve_config.start
         mask = mask.at[point].set(True)
-        return self.State(mask=self.to_uint8(mask), start=point, point=point)
+        return self.State(mask=self.to_uint8(mask), point=point)
 
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         points = jax.random.uniform(
@@ -82,7 +85,8 @@ class TSP(Puzzle):
         distance_matrix = jnp.linalg.norm(points[:, None] - points[None, :], axis=-1).astype(
             jnp.float16
         )
-        return self.SolveConfig(points=points, distance_matrix=distance_matrix)
+        start = jax.random.randint(key, shape=(), minval=0, maxval=self.size, dtype=TYPE)
+        return self.SolveConfig(points=points, distance_matrix=distance_matrix, start=start)
 
     def get_neighbours(
         self, solve_config: SolveConfig, state: State, filled: bool = True
@@ -105,11 +109,11 @@ class TSP(Puzzle):
             cost = jnp.where(masked, jnp.inf, cost) + jnp.where(
                 all_visited,
                 jnp.linalg.norm(
-                    solve_config.points[state.start] - solve_config.points[idx], axis=-1
+                    solve_config.points[solve_config.start] - solve_config.points[idx], axis=-1
                 ),
                 0,
             )
-            new_state = self.State(mask=self.to_uint8(new_mask), start=state.start, point=idx)
+            new_state = self.State(mask=self.to_uint8(new_mask), point=idx)
             return new_state, cost
 
         # Apply the move function to all possible moves
@@ -131,7 +135,8 @@ class TSP(Puzzle):
 
     def _get_visualize_format(self):
         size = self.size
-        form = "[" + "{:s} " * size + "]\n" + "point : [{:02d}]"
+        form = " " + "{:s} " * size + "\n"
+        form += "[" + "{:s} " * size + "]"
         return form
 
     def to_uint8(self, mask: chex.Array) -> chex.Array:
@@ -213,7 +218,7 @@ class TSP(Puzzle):
             # Draw each point with different colors based on status
             for i, (x, y) in enumerate(scaled_points):  # Renamed idx to i for clarity
                 # Color: green for start, blue for visited, red for unvisited
-                if i == state.start:
+                if i == solve_config.start:
                     color = (0, 255, 0)
                 elif visited[i]:
                     color = (255, 0, 0)
@@ -233,7 +238,9 @@ class TSP(Puzzle):
 
             # If all points are visited, draw a line from the current point to the start point to close the tour
             if np.all(visited):
-                cv2.line(img, scaled_points[state.point], scaled_points[state.start], (0, 0, 0), 2)
+                cv2.line(
+                    img, scaled_points[state.point], scaled_points[solve_config.start], (0, 0, 0), 2
+                )
 
             return img
 
