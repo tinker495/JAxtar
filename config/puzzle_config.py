@@ -216,7 +216,17 @@ puzzle_q_dict_nn: dict[str, callable] = {
     else WorldModelNeuralQ.load_model(
         puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None.pkl"
     ),
+    "rubikscube_world_model_test": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
+    if reset
+    else WorldModelNeuralQ.load_model(
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None.pkl"
+    ),
     "rubikscube_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
+    if reset
+    else WorldModelNeuralQ.load_model(
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl"
+    ),
+    "rubikscube_world_model_optimized_test": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
         puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl"
