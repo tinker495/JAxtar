@@ -78,7 +78,9 @@ def davi(
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
-    optimizer, opt_state = setup_optimizer(heuristic_params)
+    optimizer, opt_state = setup_optimizer(
+        heuristic_params, steps * dataset_batch_size // train_minibatch_size
+    )
     davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer)
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
