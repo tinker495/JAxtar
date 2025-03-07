@@ -145,7 +145,12 @@ def _get_datasets(
         q, _ = q_fn(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        target_q = jnp.min(q, axis=1) + selected_costs
+        double_q, _ = q_fn(q_params, preproc_neighbors, training=False, mutable=["batch_stats"])
+        argmin_double_q = jnp.argmin(double_q, axis=1)
+        target_q = (
+            jnp.take_along_axis(q, argmin_double_q[:, jnp.newaxis], axis=1).squeeze(1)
+            + selected_costs
+        )
         target_q = jnp.maximum(jnp.where(selected_neighbors_solved, 0.0, target_q), 0.0)
         target_q = jnp.where(
             solved, 0.0, target_q
