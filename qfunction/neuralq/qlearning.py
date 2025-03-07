@@ -218,7 +218,7 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
-    weights_lambda: float = 1.0,
+    weights_lambda: float = 10.0,
     use_kde: bool = True,
     kde_bandwidth: float = 5.0,
 ):
