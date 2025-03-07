@@ -38,10 +38,7 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     lr_schedule = optax.polynomial_schedule(
         init_value=1e-4, end_value=1e-6, power=2.0, transition_steps=steps
     )
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(10.0),
-        optax.adam(lr_schedule),
-    )
+    optimizer = optax.adam(lr_schedule)
     return optimizer, optimizer.init(params)
 
 
