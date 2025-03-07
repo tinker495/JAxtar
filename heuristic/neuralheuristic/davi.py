@@ -164,21 +164,34 @@ def get_heuristic_dataset_builder(
     shuffle_length: int,
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
+    using_triangular_target: bool = False,
 ):
 
     if using_hindsight_target:
         # Calculate appropriate shuffle_parallel for hindsight sampling
         # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
-        triangle_size = shuffle_length * (shuffle_length + 1) // 2
-        needed_parallel = math.ceil(dataset_size / triangle_size)
-        shuffle_parallel = int(min(needed_parallel, dataset_minibatch_size))
-        steps = math.ceil(dataset_size / (shuffle_parallel * triangle_size))
-        create_shuffled_path_fn = partial(
-            create_hindsight_target_shuffled_path,
-            puzzle,
-            shuffle_length,
-            shuffle_parallel,
-        )
+        if using_triangular_target:
+            triangle_size = shuffle_length * (shuffle_length + 1) // 2
+            needed_parallel = math.ceil(dataset_size / triangle_size)
+            shuffle_parallel = int(min(needed_parallel, dataset_minibatch_size))
+            steps = math.ceil(dataset_size / (shuffle_parallel * triangle_size))
+            create_shuffled_path_fn = partial(
+                create_hindsight_target_triangular_shuffled_path,
+                puzzle,
+                shuffle_length,
+                shuffle_parallel,
+            )
+        else:
+            shuffle_parallel = int(
+                min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
+            )
+            steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
+            create_shuffled_path_fn = partial(
+                create_hindsight_target_shuffled_path,
+                puzzle,
+                shuffle_length,
+                shuffle_parallel,
+            )
     else:
         shuffle_parallel = int(
             min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
@@ -287,6 +300,76 @@ def create_target_shuffled_path(
 
 
 def create_hindsight_target_shuffled_path(
+    puzzle: Puzzle,
+    shuffle_length: int,
+    shuffle_parallel: int,
+    key: chex.PRNGKey,
+):
+    solve_configs, initial_states = jax.vmap(puzzle.get_inits)(
+        jax.random.split(key, shuffle_parallel)
+    )
+
+    def _scan(carry, _):
+        old_state, state, key, move_cost = carry
+        neighbor_states, cost = puzzle.batched_get_neighbours(
+            solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
+        )  # [action, batch, ...]
+        is_past = jax.vmap(
+            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+        )(
+            old_state, neighbor_states
+        )  # [action_size, batch_size]
+        is_same = jax.vmap(
+            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+        )(
+            state, neighbor_states
+        )  # [action_size, batch_size]
+        filled = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
+        filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
+        filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
+        prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
+        key, subkey = jax.random.split(key)
+        choices = jnp.arange(cost.shape[0])  # [action]
+        idx = jax.vmap(lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1))(
+            jax.random.split(subkey, prob.shape[1]), prob
+        )  # [batch]
+        next_state = jax.vmap(
+            lambda ns, i: jax.tree_util.tree_map(lambda x: x[i], ns), in_axes=(1, 0), out_axes=0
+        )(
+            neighbor_states, idx
+        )  # [batch, ...]
+        cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, idx)  # [batch]
+        move_cost = move_cost + cost
+        return (state, next_state, key, move_cost), (next_state, move_cost)
+
+    _, (moves, move_costs) = jax.lax.scan(
+        _scan,
+        (initial_states, initial_states, key, jnp.zeros(shuffle_parallel)),
+        None,
+        length=shuffle_length + 1,
+    )  # [shuffle_length, batch_size, ...]
+    solve_configs = puzzle.batched_hindsight_transform(moves[-1, ...])  # [batch_size, ...]
+    moves = moves[:-1, ...]  # [shuffle_length, batch_size, ...]
+    move_costs = move_costs[-1, ...] - move_costs[:-1, ...]  # [shuffle_length, batch_size]
+
+    solve_configs = jax.tree_util.tree_map(
+        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
+        solve_configs,
+    )  # [shuffle_length, batch_size, ...]
+
+    solve_configs = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, *x.shape[2:])), solve_configs
+    )  # [batch_size * shuffle_length, ...]
+
+    moves = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, *x.shape[2:])), moves
+    )  # [batch_size * shuffle_length, ...]
+
+    move_costs = jnp.reshape(move_costs, (-1))  # [batch_size * shuffle_length]
+    return solve_configs, moves, move_costs
+
+
+def create_hindsight_target_triangular_shuffled_path(
     puzzle: Puzzle,
     shuffle_length: int,
     shuffle_parallel: int,
