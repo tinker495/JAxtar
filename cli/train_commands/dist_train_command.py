@@ -36,7 +36,7 @@ def setup_logging(
 
 def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     lr_schedule = optax.polynomial_schedule(
-        init_value=1e-4, end_value=1e-6, power=2.0, transition_steps=steps
+        init_value=1e-3, end_value=1e-6, power=2.0, transition_steps=steps
     )
     optimizer = optax.adam(lr_schedule)
     return optimizer, optimizer.init(params)
