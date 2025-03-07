@@ -97,6 +97,7 @@ def _get_datasets(
     minibatch_size: int,
     weights_lambda: float,
     use_kde: bool,
+    kde_bandwidth: float,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
@@ -182,14 +183,13 @@ def _get_datasets(
 
         # Use a simple density estimation
         # For each point, compute its "density" based on its distance to other points
-        bandwidth = 1.0  # Adjust based on your data range
 
         @jax.vmap
         def compute_density(q_value):
             # Calculate distances to all other points
             distances = jnp.sum((target_q_flat - q_value) ** 2, axis=1) ** 0.5
             # Apply Gaussian kernel
-            density = jnp.mean(jnp.exp(-0.5 * (distances / bandwidth) ** 2))
+            density = jnp.mean(jnp.exp(-0.5 * (distances / kde_bandwidth) ** 2))
             return density
 
         densities = compute_density(target_q_flat)
@@ -215,6 +215,7 @@ def get_qlearning_dataset_builder(
     using_triangular_target: bool = False,
     weights_lambda: float = 1.0,
     use_kde: bool = True,
+    kde_bandwidth: float = 5.0,
 ):
 
     if using_hindsight_target:
@@ -265,6 +266,7 @@ def get_qlearning_dataset_builder(
             dataset_minibatch_size,
             weights_lambda,
             use_kde,
+            kde_bandwidth,
         )
     )
 
