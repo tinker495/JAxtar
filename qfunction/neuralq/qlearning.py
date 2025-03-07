@@ -96,6 +96,7 @@ def _get_datasets(
     q_fn: Callable,
     minibatch_size: int,
     weights_lambda: float,
+    use_kde: bool,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
@@ -159,7 +160,7 @@ def _get_datasets(
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
 
         # less cost, means more confident
-        weights = weights_lambda / (move_costs + weights_lambda)
+        weights = (weights_lambda + 1.0) / (move_costs + weights_lambda)
         return None, (states, target_q, actions, weights)
 
     _, (states, target_q, actions, weights) = jax.lax.scan(
@@ -173,6 +174,33 @@ def _get_datasets(
     actions = actions.reshape((-1, *actions.shape[2:]))
     weights = weights.reshape((-1, *weights.shape[2:]))
 
+    if use_kde:
+        # Alternative method using a simplified KDE-based approach
+        # Compute pairwise distances between target_q values
+        # If target_q is multi-dimensional, you might need to flatten it first
+        target_q_flat = target_q.reshape(target_q.shape[0], -1)
+
+        # Use a simple density estimation
+        # For each point, compute its "density" based on its distance to other points
+        bandwidth = 1.0  # Adjust based on your data range
+
+        @jax.vmap
+        def compute_density(q_value):
+            # Calculate distances to all other points
+            distances = jnp.sum((target_q_flat - q_value) ** 2, axis=1) ** 0.5
+            # Apply Gaussian kernel
+            density = jnp.mean(jnp.exp(-0.5 * (distances / bandwidth) ** 2))
+            return density
+
+        densities = compute_density(target_q_flat)
+
+        # Inverse weighting - higher density means lower weight
+        epsilon = 1e-8  # Avoid division by zero
+        distribution_weights = 1.0 / (densities + epsilon)
+
+        # Combine with existing weights
+        weights = weights * distribution_weights
+    weights = weights / jnp.mean(weights)  # normalize weights to have mean 1.0
     return states, target_q, actions, weights
 
 
@@ -186,6 +214,7 @@ def get_qlearning_dataset_builder(
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
     weights_lambda: float = 1.0,
+    use_kde: bool = True,
 ):
 
     if using_hindsight_target:
@@ -235,6 +264,7 @@ def get_qlearning_dataset_builder(
             q_fn,
             dataset_minibatch_size,
             weights_lambda,
+            use_kde,
         )
     )
 

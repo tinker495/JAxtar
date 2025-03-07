@@ -35,7 +35,10 @@ def setup_logging(
 
 
 def setup_optimizer(params: PyTree) -> optax.OptState:
-    optimizer = optax.adamw(1e-3, nesterov=True, weight_decay=1e-5)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(10.0),
+        optax.adamw(1e-3, nesterov=True, weight_decay=1e-5),
+    )
     return optimizer, optimizer.init(params)
 
 
