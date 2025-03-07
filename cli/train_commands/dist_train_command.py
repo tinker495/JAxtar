@@ -116,7 +116,7 @@ def davi(
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            heuristic.params = heuristic_params
+            heuristic.params = target_heuristic_params
             heuristic.save_model(
                 f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
             )
@@ -187,5 +187,5 @@ def qlearning(
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            qfunction.params = qfunc_params
+            qfunction.params = target_qfunc_params
             qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
