@@ -190,12 +190,14 @@ def search_samples(
                     os.makedirs(f"tmp/{logging_name}", exist_ok=True)
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
+                        cost = search_result.get_cost(p)
+                        dist = search_result.get_dist(p)
                         img = search_result.get_state(p).img(
                             idx=idx, path=path_states, solve_config=solve_config
                         )
                         imgs.append(img)
                         cv2.imwrite(
-                            f"tmp/{logging_name}/img_{idx}.png",
+                            f"tmp/{logging_name}/img_{idx}_c{cost:.1f}_d{dist:.1f}.png",
                             cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
                         )
                     gif_path = f"tmp/{logging_name}/animation.gif"
