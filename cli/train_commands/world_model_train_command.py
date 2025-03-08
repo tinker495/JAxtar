@@ -168,3 +168,6 @@ def train(
             world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")
 
     writer.close()
+
+    world_model.params = params
+    world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")
