@@ -33,7 +33,7 @@ def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
 
 def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     lr_schedule = optax.polynomial_schedule(
-        init_value=1e-3, end_value=1e-6, power=2.0, transition_steps=steps // 2
+        init_value=1e-3, end_value=1e-5, power=2.0, transition_steps=steps
     )
     optimizer = optax.adam(lr_schedule)
     return optimizer, optimizer.init(params)
@@ -58,11 +58,12 @@ def train(
     writer = setup_logging(world_model_name)
     model: nn.Model = world_model.model
 
-    def train_info_fn(params, data, next_data, training):
+    def train_info_fn(params, data, next_data, action, training):
         return model.apply(
             params,
             data,
             next_data,
+            action,
             training=training,
             method=model.train_info,
             mutable=["batch_stats"],
