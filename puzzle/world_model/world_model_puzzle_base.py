@@ -156,7 +156,9 @@ class WorldModelPuzzleBase(Puzzle):
                 return latent
 
             def transition(self, latent, training=False):
-                return self.world_model(latent, training)
+                logits = self.world_model(latent, training)
+                latent = nn.sigmoid(logits)
+                return latent
 
             def train_info(self, data, next_data, action, training=True):
                 logits = self.autoencoder.encoder(data, training)
@@ -169,7 +171,7 @@ class WorldModelPuzzleBase(Puzzle):
                 rounded_next_latents = round_through_gradient(next_latents)
                 next_decoded = self.decode(rounded_next_latents, training)
 
-                next_logits_preds = self.transition(rounded_latents, training)
+                next_logits_preds = self.world_model(rounded_latents, training)
 
                 action = jnp.reshape(
                     action, (-1,) + (1,) * (next_logits_preds.ndim - 1)

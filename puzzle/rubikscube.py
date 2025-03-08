@@ -502,4 +502,4 @@ class RubiksCubeDS(RubiksCube):
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> RubiksCube.State:
-        return self._get_random_state(solve_config, key, num_shuffle=200)
+        return self._get_random_state(solve_config, key, num_shuffle=6)

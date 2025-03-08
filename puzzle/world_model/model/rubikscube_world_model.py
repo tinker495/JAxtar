@@ -31,7 +31,7 @@ class RubiksCubeWorldModelOptimized_test(WorldModelPuzzleBase):
         super().__init__(
             data_path="puzzle/world_model/data/rubikscube_test",
             data_shape=(32, 64, 3),
-            latent_shape=(256,),  # almost optimal is 144 bits
+            latent_shape=(144,),  # almost optimal is 144 bits
             action_size=12,
             **kwargs
         )
@@ -51,7 +51,7 @@ class RubiksCubeWorldModelOptimized(WorldModelPuzzleBase):
         super().__init__(
             data_path="puzzle/world_model/data/rubikscube",
             data_shape=(32, 64, 3),
-            latent_shape=(256,),
+            latent_shape=(144,),
             action_size=12,
             **kwargs
         )
