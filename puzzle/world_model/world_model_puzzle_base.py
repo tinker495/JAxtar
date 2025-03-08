@@ -20,6 +20,10 @@ from puzzle.world_model.util import (
 STR_PARSE_IMG = True
 
 
+def BatchNorm(x, training):
+    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
+
+
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
 
@@ -30,7 +34,7 @@ class Encoder(nn.Module):
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(1000)(flatten)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(latent_size)(x)
         x = jnp.reshape(x, shape=(-1, *self.latent_shape))
@@ -45,7 +49,7 @@ class Decoder(nn.Module):
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
         x = nn.Dense(1000)(latent)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(output_size)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
@@ -75,17 +79,16 @@ class WorldModel(nn.Module):
     def __call__(self, latent, training=False):
         x = (latent - 0.5) * 2.0
         x = nn.Dense(500)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(500)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(500)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(latent_size * self.action_size)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
         x = nn.sigmoid(x)
         x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + self.latent_shape)
         return x
