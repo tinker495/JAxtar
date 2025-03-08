@@ -33,10 +33,7 @@ class Encoder(nn.Module):
         data = (data / 255.0) * 2.0 - 1.0
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
-        x = nn.Dense(1000)(flatten)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
-        x = nn.Dense(latent_size)(x)
+        x = nn.Dense(latent_size)(flatten)
         logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
         return logits
 
@@ -48,9 +45,6 @@ class Decoder(nn.Module):
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
         x = (latent - 0.5) * 2.0
-        x = nn.Dense(1000)(x)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
         x = nn.Dense(output_size)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
         return output
