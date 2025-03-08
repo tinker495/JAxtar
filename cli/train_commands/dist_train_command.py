@@ -34,8 +34,11 @@ def setup_logging(
     return tensorboardX.SummaryWriter(log_dir)
 
 
-def setup_optimizer(params: PyTree) -> optax.OptState:
-    optimizer = optax.adamw(1e-3, nesterov=True, weight_decay=1e-5)
+def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
+    lr_schedule = optax.polynomial_schedule(
+        init_value=1e-3, end_value=1e-6, power=2.0, transition_steps=steps // 2
+    )
+    optimizer = optax.adam(lr_schedule)
     return optimizer, optimizer.init(params)
 
 
@@ -67,7 +70,9 @@ def davi(
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
-    optimizer, opt_state = setup_optimizer(heuristic_params)
+    optimizer, opt_state = setup_optimizer(
+        heuristic_params, steps * dataset_batch_size // train_minibatch_size
+    )
     davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer)
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -140,7 +145,9 @@ def qlearning(
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
-    optimizer, opt_state = setup_optimizer(qfunc_params)
+    optimizer, opt_state = setup_optimizer(
+        qfunc_params, steps * dataset_batch_size // train_minibatch_size
+    )
     qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_fn, optimizer)
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
