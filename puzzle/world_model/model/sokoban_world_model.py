@@ -20,9 +20,10 @@ class Encoder(nn.Module):
         x = nn.relu(x)
         x = nn.Conv(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 10, 10, 16)
         x = nn.relu(x)
-        x = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1))(x)  # (batch_size, 10, 10, 16)
-        latent = nn.sigmoid(x)
-        return latent
+        logits = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1))(
+            x
+        )  # (batch_size, 10, 10, 16)
+        return logits
 
 
 class Decoder(nn.Module):
@@ -84,9 +85,8 @@ class WorldModel(nn.Module):
         x = jnp.reshape(
             x, shape=(x.shape[0], *self.latent_shape) + (self.action_size,)
         )  # (batch_size, 10, 10, 16, 4)
-        x = jnp.transpose(x, (0, 4, 1, 2, 3))  # (batch_size, 4, 10, 10, 16)
-        x = nn.sigmoid(x)
-        return x
+        logits = jnp.transpose(x, (0, 4, 1, 2, 3))  # (batch_size, 4, 10, 10, 16)
+        return logits
 
 
 class SokobanWorldModel(WorldModelPuzzleBase):
@@ -163,14 +163,12 @@ class EncoderOptimized(nn.Module):
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResidualBlock(16)(x, training)
-        x = ResidualBlock(16)(x, training)
-        x = nn.Conv(
+        logits = nn.Conv(
             self.latent_shape[-1], (1, 1), strides=(1, 1), kernel_init=nn.initializers.orthogonal()
         )(
             x
         )  # (batch_size, 10, 10, 2)
-        latent = nn.sigmoid(x)
-        return latent
+        return logits
 
 
 class DecoderOptimized(nn.Module):
@@ -182,7 +180,6 @@ class DecoderOptimized(nn.Module):
         x = nn.Conv(16, (1, 1), strides=(1, 1))(x)  # (batch_size, 10, 10, 16)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = ResidualBlock(16)(x, training)
         x = ResidualBlock(16)(x, training)
         x = nn.ConvTranspose(16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal())(
             x
