@@ -24,7 +24,7 @@ face_map = {0: "up━", 1: "down━", 2: "left━", 3: "right", 4: "front", 5: "
 rgb_map = {
     0: (255, 255, 255),  # white
     1: (255, 255, 0),  # yellow
-    2: (255, 165, 0),  # orange
+    2: (255, 125, 0),  # orange
     3: (255, 0, 0),  # red
     4: (0, 255, 0),  # green
     5: (0, 0, 255),  # blue
