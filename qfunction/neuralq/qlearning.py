@@ -40,7 +40,7 @@ def qlearning_builder(
         similarity_loss = cosine_similarity_loss(
             state_predict, jax.lax.stop_gradient(next_state_project)
         )
-        loss = jnp.mean(se * weights.squeeze())
+        loss = jnp.mean(se * weights + similarity_loss)
         return loss, (new_params, jnp.mean(se), jnp.mean(similarity_loss), diff)
 
     def qlearning(
@@ -200,15 +200,6 @@ def _get_datasets(
             solved, 0.0, target_q
         )  # if the puzzle is already solved, the all q is 0
 
-        # target_heuristic must be less than the number of moves
-        # it just doesn't make sense to have a heuristic greater than the number of moves
-        # heuristic's definition is the optimal cost to reach the target state
-        # so it doesn't make sense to have a heuristic greater than the number of moves
-        # Q-learning needs to predict values larger than move_costs based on actions
-        # because it needs to account for future costs beyond just the immediate move
-        # target_q = jnp.minimum(target_q, move_costs + selected_costs)
-
-        # less cost, means more confident
         return None, (preproc_neighbors, target_q, actions)
 
     _, (preproc_neighbors, target_q, actions) = jax.lax.scan(
@@ -226,6 +217,8 @@ def _get_datasets(
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
     move_costs = move_costs.reshape((-1, *move_costs.shape[2:]))
+
+    # less cost, means more confident
     weights = (weights_lambda + 1.0) / (move_costs + weights_lambda)
 
     if use_kde:
