@@ -10,25 +10,38 @@ import optax
 from puzzle.puzzle_base import Puzzle
 
 
+def cosine_similarity_loss(a: chex.Array, b: chex.Array) -> chex.Array:
+    a_norm = jnp.linalg.norm(a, axis=1)
+    b_norm = jnp.linalg.norm(b, axis=1)
+    return 1.0 - jnp.sum(a * b, axis=1) / (a_norm * b_norm)
+
+
 def qlearning_builder(
     minibatch_size: int,
-    q_fn: Callable,
+    q_train_info_fn: Callable,
     optimizer: optax.GradientTransformation,
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
-        states: chex.Array,
-        actions: chex.Array,
+        solve_configs: chex.Array,
+        shuffled_paths: chex.Array,
+        preproc_neighbors: chex.Array,
         target_qs: chex.Array,
+        actions: chex.Array,
         weights: chex.Array,
     ):
-        q_values, variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
+        (q_values, state_predict, next_state_project), variable_updates = q_train_info_fn(
+            q_params, solve_configs, shuffled_paths, preproc_neighbors
+        )
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         se = jnp.square(diff)
-        loss = jnp.mean(se * weights.squeeze())
-        return loss, (new_params, diff)
+        similarity_loss = cosine_similarity_loss(
+            state_predict, jax.lax.stop_gradient(next_state_project)
+        )
+        loss = jnp.mean(se * weights.squeeze() + similarity_loss)
+        return loss, (new_params, jnp.mean(se), jnp.mean(similarity_loss), diff)
 
     def qlearning(
         key: chex.PRNGKey,
@@ -39,8 +52,8 @@ def qlearning_builder(
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q, actions, weights = dataset
-        data_size = target_q.shape[0]
+        solve_configs, shuffled_paths, preproc_neighbors, target_qs, actions, weights = dataset
+        data_size = target_qs.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
         batch_indexs = jnp.concatenate(
@@ -52,33 +65,55 @@ def qlearning_builder(
         )  # [batch_size * minibatch_size]
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
-        batched_states = jnp.take(states, batch_indexs, axis=0)
-        batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
+        batched_solve_configs = jnp.take(solve_configs, batch_indexs, axis=0)
+        batched_shuffled_paths = jnp.take(shuffled_paths, batch_indexs, axis=0)
+        batched_preproc_neighbors = jnp.take(preproc_neighbors, batch_indexs, axis=0)
+        batched_target_qs = jnp.take(target_qs, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
         batched_weights = jnp.take(weights, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
-            states, target_q, actions, weights = batched_dataset
-            (loss, (q_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
-                q_params,
-                states,
+            (
+                solve_configs,
+                shuffled_paths,
+                preproc_neighbors,
+                target_qs,
                 actions,
-                target_q,
+                weights,
+            ) = batched_dataset
+            (loss, (q_params, mse_loss, similarity_loss, diff)), grads = jax.value_and_grad(
+                qlearning_loss, has_aux=True
+            )(
+                q_params,
+                solve_configs,
+                shuffled_paths,
+                preproc_neighbors,
+                target_qs,
+                actions,
                 weights,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
-            return (q_params, opt_state), (loss, diff)
+            return (q_params, opt_state), (loss, mse_loss, similarity_loss, diff)
 
-        (q_params, opt_state), (losses, diffs) = jax.lax.scan(
+        (q_params, opt_state), (losses, mse_losses, similarity_losses, diffs) = jax.lax.scan(
             train_loop,
             (q_params, opt_state),
-            (batched_states, batched_target_q, batched_actions, batched_weights),
+            (
+                batched_solve_configs,
+                batched_shuffled_paths,
+                batched_preproc_neighbors,
+                batched_target_qs,
+                batched_actions,
+                batched_weights,
+            ),
         )
         loss = jnp.mean(losses)
+        mse_loss = jnp.mean(mse_losses)
+        similarity_loss = jnp.mean(similarity_losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
-        return q_params, opt_state, loss, mean_abs_diff, diffs
+        return q_params, opt_state, loss, mse_loss, similarity_loss, mean_abs_diff, diffs
 
     return jax.jit(qlearning)
 
@@ -92,7 +127,8 @@ def boltzmann_action_selection(q_values: chex.Array, temperature: float = 3.0) -
 
 def _get_datasets(
     puzzle: Puzzle,
-    preproc_fn: Callable,
+    solve_config_preproc_fn: Callable,
+    state_preproc_fn: Callable,
     q_fn: Callable,
     minibatch_size: int,
     weights_lambda: float,
@@ -100,27 +136,33 @@ def _get_datasets(
     kde_bandwidth: float,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
-    shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
+    infos: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
-    solve_configs, shuffled_path, move_costs = shuffled_path
+    solve_configs, shuffled_paths, move_costs = infos
+    preprocessed_solve_configs = jax.vmap(solve_config_preproc_fn)(solve_configs)
+    preprocessed_shuffled_paths = jax.vmap(state_preproc_fn)(shuffled_paths)
 
     minibatched_solve_configs = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
     )
-    minibatched_shuffled_path = jax.tree_util.tree_map(
-        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), shuffled_path
+    minibatched_shuffled_paths = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), shuffled_paths
     )
-    minibatched_move_costs = jnp.reshape(move_costs, (-1, minibatch_size))
+    minibatched_preprocessed_solve_configs = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), preprocessed_solve_configs
+    )
+    minibatched_preprocessed_shuffled_paths = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), preprocessed_shuffled_paths
+    )
 
     def get_minibatched_datasets(_, vals):
-        solve_configs, shuffled_path, move_costs = vals
+        solve_config, shuffled_path, preprocessed_solve_config, preprocessed_shuffled_path = vals
         solved = puzzle.batched_is_solved(
-            solve_configs, shuffled_path, multi_solve_config=True
+            solve_config, shuffled_path, multi_solve_config=True
         )  # [batch_size]
 
-        path_preproc = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, shuffled_path)
-        q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
+        q_values, _ = q_fn(q_params, preprocessed_solve_config, preprocessed_shuffled_path)
         probs = boltzmann_action_selection(q_values)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
@@ -128,24 +170,26 @@ def _get_datasets(
         )
 
         neighbors, cost = puzzle.batched_get_neighbours(
-            solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+            solve_config,
+            shuffled_path,
+            filleds=jnp.ones((minibatch_size,)),
+            multi_solve_config=True,
         )  # [action_size, batch_size] [action_size, batch_size]
-        batch_size = actions.shape[0]
         selected_neighbors = jax.tree_util.tree_map(
-            lambda x: x[actions, jnp.arange(batch_size), :],
+            lambda x: x[actions, jnp.arange(minibatch_size), :],
             neighbors,
         )
         selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
         selected_neighbors_solved = puzzle.batched_is_solved(
-            solve_configs, selected_neighbors, multi_solve_config=True
+            solve_config, selected_neighbors, multi_solve_config=True
         )
 
-        preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
+        preproc_neighbors = jax.vmap(state_preproc_fn)(selected_neighbors)
 
         q, _ = q_fn(
-            target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+            target_q_params, preprocessed_solve_config, preprocessed_shuffled_path
         )  # [minibatch_size, action_shape]
-        double_q, _ = q_fn(q_params, preproc_neighbors, training=False, mutable=["batch_stats"])
+        double_q, _ = q_fn(q_params, preprocessed_solve_config, preproc_neighbors)
         argmin_double_q = jnp.argmin(double_q, axis=1)
         target_q = (
             jnp.take_along_axis(q, argmin_double_q[:, jnp.newaxis], axis=1).squeeze(1)
@@ -163,22 +207,25 @@ def _get_datasets(
         # Q-learning needs to predict values larger than move_costs based on actions
         # because it needs to account for future costs beyond just the immediate move
         # target_q = jnp.minimum(target_q, move_costs + selected_costs)
-        states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
 
         # less cost, means more confident
-        weights = (weights_lambda + 1.0) / (move_costs + weights_lambda)
-        return None, (states, target_q, actions, weights)
+        return None, (preproc_neighbors, target_q, actions)
 
-    _, (states, target_q, actions, weights) = jax.lax.scan(
+    _, (preproc_neighbors, target_q, actions) = jax.lax.scan(
         get_minibatched_datasets,
         None,
-        (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
+        (
+            minibatched_solve_configs,
+            minibatched_shuffled_paths,
+            minibatched_preprocessed_solve_configs,
+            minibatched_preprocessed_shuffled_paths,
+        ),
     )
 
-    states = states.reshape((-1, *states.shape[2:]))
+    preproc_neighbors = preproc_neighbors.reshape((-1, *preproc_neighbors.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
-    weights = weights.reshape((-1, *weights.shape[2:]))
+    weights = (weights_lambda + 1.0) / (move_costs + weights_lambda)
 
     if use_kde:
         # Alternative method using a simplified KDE-based approach
@@ -205,13 +252,22 @@ def _get_datasets(
 
         # Combine with existing weights
         weights = weights * distribution_weights
+
     weights = weights / jnp.mean(weights)  # normalize weights to have mean 1.0
-    return states, target_q, actions, weights
+    return (
+        preprocessed_solve_configs,
+        preprocessed_shuffled_paths,
+        preproc_neighbors,
+        target_q,
+        actions,
+        weights,
+    )
 
 
 def get_qlearning_dataset_builder(
     puzzle: Puzzle,
-    preproc_fn: Callable,
+    solve_config_preproc_fn: Callable,
+    state_preproc_fn: Callable,
     q_fn: Callable,
     dataset_size: int,
     shuffle_length: int,
@@ -266,7 +322,8 @@ def get_qlearning_dataset_builder(
         partial(
             _get_datasets,
             puzzle,
-            preproc_fn,
+            solve_config_preproc_fn,
+            state_preproc_fn,
             q_fn,
             dataset_minibatch_size,
             weights_lambda,

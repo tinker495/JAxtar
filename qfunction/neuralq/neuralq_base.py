@@ -31,7 +31,7 @@ class ResBlock(nn.Module):
         return nn.relu(x + x0)
 
 
-class DefaultModel(nn.Module):
+class DistanceModel(nn.Module):
     action_size: int = 4
 
     @nn.compact
@@ -50,15 +50,85 @@ class DefaultModel(nn.Module):
         return x
 
 
+class Projector(nn.Module):
+    project_dim: int = 128
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        x = nn.Dense(1000)(x)
+        x = BatchNorm(x, training)
+        x = nn.relu(x)
+        x = nn.Dense(1000)(x)
+        x = BatchNorm(x, training)
+        x = nn.relu(x)
+        x = nn.Dense(self.project_dim)(x)
+        return x
+
+
+class Predictor(nn.Module):
+    predict_dim: int = 128
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        x = nn.Dense(1000)(x)
+        x = BatchNorm(x, training)
+        x = nn.relu(x)
+        x = nn.Dense(self.predict_dim)(x)
+        return x
+
+
 class NeuralQFunctionBase(QFunction):
-    def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True):
+    def __init__(self, puzzle: Puzzle, model: nn.Module = DistanceModel, init_params: bool = True):
         self.puzzle = puzzle
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
         self.action_size = self.puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[
             0
         ][0]
-        self.model = model(self.action_size)
+
+        class TotalModel(nn.Module):
+            distance_model: DistanceModel
+            solve_config_projector: Projector = Projector()
+            state_projector: Projector = Projector()
+            predictor: Predictor = Predictor()
+
+            @nn.compact
+            def __call__(self, solve_config, current, training=False):
+                solve_config_project = self.solve_config_projector(solve_config, training)
+                state_project = self.state_projector(current, training)
+                state_predict = self.predictor(state_project, training)
+                stacked_project = jnp.concatenate([solve_config_project, state_project], axis=-1)
+                # stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
+                distance = self.distance_model(stacked_project, training)
+                return distance, state_predict
+
+            def distance(self, solve_config, current, training=False):
+                solve_config_project = self.solve_config_projector(solve_config, training)
+                state_project = self.state_projector(current, training)
+                stacked_project = jnp.concatenate([solve_config_project, state_project], axis=-1)
+                # stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
+                distance = self.distance_model(stacked_project, training)
+                return distance
+
+            def project_solve_config(self, solve_config, training=False):
+                project = self.solve_config_projector(solve_config, training)
+                return project
+
+            def project_state(self, state, training=False):
+                project = self.state_projector(state, training)
+                return project
+
+            def predict(self, project, training=False):
+                predict = self.predictor(project, training)
+                return predict
+
+            def train_info(self, solve_config, state, next_state, training=True):
+                distance, state_predict = self.__call__(solve_config, state, training)
+                next_state_project = self.project_state(next_state, training)
+                return distance, state_predict, next_state_project
+
+        self.model = TotalModel(distance_model=model(self.action_size))
+
         if init_params:
             self.params = self.get_new_params()
 
@@ -67,7 +137,8 @@ class NeuralQFunctionBase(QFunction):
         dummy_current = self.puzzle.State.default()
         return self.model.init(
             jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+            jnp.expand_dims(self.solve_config_pre_process(dummy_solve_config), axis=0),
+            jnp.expand_dims(self.state_pre_process(dummy_current), axis=0),
         )
 
     @classmethod
@@ -83,7 +154,8 @@ class NeuralQFunctionBase(QFunction):
             dummy_current = puzzle.State.default()
             qfunc.model.apply(
                 params,
-                jnp.expand_dims(qfunc.pre_process(dummy_solve_config, dummy_current), axis=0),
+                jnp.expand_dims(qfunc.solve_config_pre_process(dummy_solve_config), axis=0),
+                jnp.expand_dims(qfunc.state_pre_process(dummy_current), axis=0),
                 training=False,
             )  # check if the params are compatible with the model
             qfunc.params = params
@@ -104,8 +176,18 @@ class NeuralQFunctionBase(QFunction):
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        solve_config_preprocessed = jax.vmap(self.solve_config_pre_process, in_axes=(0))(
+            solve_config
+        )
+        state_preprocessed = jax.vmap(self.state_pre_process, in_axes=(0))(current)
+        x, _ = self.model.apply(
+            params,
+            solve_config_preprocessed,
+            state_preprocessed,
+            training=False,
+            mutable=["batch_stats"],
+            method=self.model.distance,
+        )
         x = self.post_process(x)
         return x
 
@@ -118,13 +200,29 @@ class NeuralQFunctionBase(QFunction):
     def param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = self.pre_process(solve_config, current)
-        x = jnp.expand_dims(x, axis=0)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        solve_config_preprocessed = jnp.expand_dims(
+            self.solve_config_pre_process(solve_config), axis=0
+        )
+        state_preprocessed = jnp.expand_dims(self.state_pre_process(current), axis=0)
+        x, _ = self.model.apply(
+            params,
+            solve_config_preprocessed,
+            state_preprocessed,
+            training=False,
+            mutable=["batch_stats"],
+            method=self.model.distance,
+        )
         return self.post_process(x)
 
     @abstractmethod
-    def pre_process(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
+    def solve_config_pre_process(self, solve_config: Puzzle.SolveConfig) -> chex.Array:
+        """
+        This function should return the pre-processed solve_config.
+        """
+        pass
+
+    @abstractmethod
+    def state_pre_process(self, state: Puzzle.State) -> chex.Array:
         """
         This function should return the pre-processed state.
         """
