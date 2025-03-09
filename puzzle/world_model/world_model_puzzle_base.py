@@ -20,6 +20,10 @@ from puzzle.world_model.util import (
 STR_PARSE_IMG = True
 
 
+def BatchNorm(x, training):
+    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
+
+
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
 
@@ -30,12 +34,11 @@ class Encoder(nn.Module):
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(1000)(flatten)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(latent_size)(x)
-        x = jnp.reshape(x, shape=(-1, *self.latent_shape))
-        latent = nn.sigmoid(x)
-        return latent
+        logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
+        return logits
 
 
 class Decoder(nn.Module):
@@ -44,8 +47,9 @@ class Decoder(nn.Module):
     @nn.compact
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
-        x = nn.Dense(1000)(latent)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = (latent - 0.5) * 2.0
+        x = nn.Dense(1000)(x)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(output_size)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
@@ -75,20 +79,18 @@ class WorldModel(nn.Module):
     def __call__(self, latent, training=False):
         x = (latent - 0.5) * 2.0
         x = nn.Dense(500)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(500)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(500)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
-        x = nn.Dense(latent_size * self.action_size)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
-        x = nn.sigmoid(x)
-        x = jnp.reshape(x, shape=(x.shape[0], self.action_size) + self.latent_shape)
-        return x
+        logits = nn.Dense(latent_size * self.action_size)(x)
+        logits = jnp.reshape(logits, shape=(x.shape[0], self.action_size) + self.latent_shape)
+        return logits
 
 
 class WorldModelPuzzleBase(Puzzle):
@@ -149,32 +151,46 @@ class WorldModelPuzzleBase(Puzzle):
                 return self.autoencoder.decoder(latent, training)
 
             def encode(self, data, training=False):
-                return self.autoencoder.encoder(data, training)
+                logits = self.autoencoder.encoder(data, training)
+                latent = nn.sigmoid(logits)
+                return latent
 
             def transition(self, latent, training=False):
-                return self.world_model(latent, training)
+                logits = self.world_model(latent, training)
+                latent = nn.sigmoid(logits)
+                return latent
 
-            def train_info(self, data, next_data, training=True):
-                latent = self.encode(data, training)
-                rounded_latent = round_through_gradient(latent)
-                decoded = self.decode(rounded_latent, training)
+            def train_info(self, data, next_data, action, training=True):
+                logits = self.autoencoder.encoder(data, training)
+                latents = nn.sigmoid(logits)
+                rounded_latents = round_through_gradient(latents)
+                decoded = self.decode(rounded_latents, training)
 
-                next_latent = self.encode(next_data, training)
-                rounded_next_latent = round_through_gradient(next_latent)
-                next_decoded = self.decode(rounded_next_latent, training)
+                next_logits = self.autoencoder.encoder(next_data, training)
+                next_latents = nn.sigmoid(next_logits)
+                rounded_next_latents = round_through_gradient(next_latents)
+                next_decoded = self.decode(rounded_next_latents, training)
 
-                next_latent_preds = self.transition(rounded_latent, training)
-                rounded_next_latent_preds = round_through_gradient(next_latent_preds)
+                next_logits_preds = self.world_model(rounded_latents, training)
+
+                action = jnp.reshape(
+                    action, (-1,) + (1,) * (next_logits_preds.ndim - 1)
+                )  # [batch_size, 1, ...]
+                next_logits_pred = jnp.take_along_axis(next_logits_preds, action, axis=1).squeeze(
+                    axis=1
+                )  # [batch_size, ...]
+                next_latents_pred = nn.sigmoid(next_logits_pred)
+                rounded_next_latents_pred = round_through_gradient(next_latents_pred)
 
                 return (
-                    latent,
-                    rounded_latent,
+                    logits,
+                    rounded_latents,
                     decoded,
-                    next_latent,
-                    rounded_next_latent,
+                    next_logits,
+                    rounded_next_latents,
                     next_decoded,
-                    next_latent_preds,
-                    rounded_next_latent_preds,
+                    next_logits_pred,
+                    rounded_next_latents_pred,
                 )
 
         self.model = total_model(

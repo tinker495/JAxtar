@@ -35,7 +35,7 @@ def download_model(filename: str):
 def round_through_gradient(x: chex.Array) -> chex.Array:
     # x is a sigmoided value in the range [0, 1]. Use a straight-through estimator:
     # the forward pass returns jnp.round(x) while the gradient flows as if it were the identity.
-    return x + jax.lax.stop_gradient(jnp.round(x).astype(jnp.float32) - x)
+    return x + jax.lax.stop_gradient(jnp.where(x > 0.5, 1.0, 0.0).astype(jnp.float32) - x)
 
 
 def img_to_colored_str(img: np.ndarray) -> str:
