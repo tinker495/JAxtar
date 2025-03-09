@@ -1,18 +1,12 @@
 import chex
 import jax
 import jax.numpy as jnp
-from termcolor import colored
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.util import coloring_str
 
 TYPE = jnp.uint8
-COLORS = [
-    "red",
-    "green",
-    "yellow",
-    "blue",
-]  # 13 colors
 
 COLOR_MAP = {
     0: (255, 0, 0),  # Red
@@ -57,11 +51,11 @@ class DotKnot(Puzzle):
             if x == 0:
                 return " "
             elif x <= 2 * self.color_num:
-                color_idx = (x - 1) % self.color_num
-                return colored("●", COLORS[color_idx])
+                color_idx = int((x - 1) % self.color_num)
+                return coloring_str("●", COLOR_MAP[color_idx])
             elif x <= 3 * self.color_num:
-                color_idx = (x - 1) % self.color_num
-                return colored("■", COLORS[color_idx])
+                color_idx = int((x - 1) % self.color_num)
+                return coloring_str("■", COLOR_MAP[color_idx])
             else:
                 return "?"  # for debug and target
 
@@ -292,7 +286,7 @@ class DotKnot(Puzzle):
                 sty = int(imgsize * 0.04 + (imgsize * 0.95 / self.size) * (idx // self.size))
                 bs = int(imgsize * 0.87 / self.size)
                 center = (stx + bs // 2, sty + bs // 2)
-                color = COLOR_MAP[(int(val) - 1) % len(COLORS)]
+                color = COLOR_MAP[(int(val) - 1) % len(COLOR_MAP)]
                 if val <= knot_max:
                     # Draw knot as a filled circle
                     radius = int(bs * 0.6)
