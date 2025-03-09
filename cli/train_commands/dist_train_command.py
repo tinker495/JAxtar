@@ -216,4 +216,6 @@ def qlearning(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             qfunction.params = target_qfunc_params
-            qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
+            qfunction.save_model(
+                f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}_repr.pkl"
+            )
