@@ -140,7 +140,28 @@ def qlearning(
     **kwargs,
 ):
     writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
-    qfunc_fn = qfunction.model.apply
+
+    def qfunc_fn(params, solve_config, current):
+        return qfunction.model.apply(
+            params,
+            solve_config,
+            current,
+            training=False,
+            mutable=["batch_stats"],
+            method=qfunction.model.distance,
+        )
+
+    def train_info_fn(params, solve_config, current, next_state):
+        return qfunction.model.apply(
+            params,
+            solve_config,
+            current,
+            next_state,
+            training=True,
+            mutable=["batch_stats"],
+            method=qfunction.model.train_info,
+        )
+
     qfunc_params = qfunction.get_new_params()
     target_qfunc_params = qfunction.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -149,10 +170,11 @@ def qlearning(
     optimizer, opt_state = setup_optimizer(
         qfunc_params, steps * dataset_batch_size // train_minibatch_size
     )
-    qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_fn, optimizer)
+    qlearning_fn = qlearning_builder(train_minibatch_size, train_info_fn, optimizer)
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
-        qfunction.pre_process,
+        qfunction.solve_config_pre_process,
+        qfunction.state_pre_process,
         qfunc_fn,
         dataset_batch_size,
         shuffle_length,
@@ -164,24 +186,33 @@ def qlearning(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
-        target_heuristic = dataset[1]
-        mean_target_heuristic = jnp.mean(target_heuristic)
+        target_q = dataset[3]
+        mean_target_q = jnp.mean(target_q)
 
-        qfunc_params, opt_state, loss, mean_abs_diff, diffs = qlearning_fn(
-            key, dataset, qfunc_params, opt_state
-        )
+        (
+            qfunc_params,
+            opt_state,
+            loss,
+            mse_loss,
+            similarity_loss,
+            mean_abs_diff,
+            diffs,
+        ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         target_qfunc_params = softupdate(
             qfunc_params, target_qfunc_params, 1.0 / float(update_interval)
         )
         pbar.set_description(
-            f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
+            f"loss: {loss:.4f}(mse: {mse_loss:.4f}, similarity: {similarity_loss:.4f})"
+            f", mean_abs_diff: {mean_abs_diff:.2f}, mean_target_q: {mean_target_q:.4f}"
         )
         if i % 10 == 0:
             writer.add_scalar("Losses/Loss", loss, i)
+            writer.add_scalar("Losses/MSE", mse_loss, i)
+            writer.add_scalar("Losses/Similarity", similarity_loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-            writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
             writer.add_histogram("Losses/Diff", diffs, i)
-            writer.add_histogram("Metrics/Target", target_heuristic, i)
+            writer.add_histogram("Metrics/Target", target_q, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             qfunction.params = target_qfunc_params
