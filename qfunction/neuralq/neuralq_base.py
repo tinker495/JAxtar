@@ -95,16 +95,18 @@ class NeuralQFunctionBase(QFunction):
                 state_project = self.state_projector(current, training)
                 state_predict = self.predictor(state_project, training)
                 stacked_project = jnp.concatenate([solve_config_project, state_project], axis=-1)
-                # stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
-                distance = self.distance_model(stacked_project, training)
+                stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
+                stacked_project_raw = jnp.concatenate([stacked_project, stacked_raw], axis=-1)
+                distance = self.distance_model(stacked_project_raw, training)
                 return distance, state_predict
 
             def distance(self, solve_config, current, training=False):
                 solve_config_project = self.solve_config_projector(solve_config, training)
                 state_project = self.state_projector(current, training)
                 stacked_project = jnp.concatenate([solve_config_project, state_project], axis=-1)
-                # stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
-                distance = self.distance_model(stacked_project, training)
+                stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
+                stacked_project_raw = jnp.concatenate([stacked_project, stacked_raw], axis=-1)
+                distance = self.distance_model(stacked_project_raw, training)
                 return distance
 
             def project_solve_config(self, solve_config, training=False):
