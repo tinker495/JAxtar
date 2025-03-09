@@ -40,7 +40,7 @@ def qlearning_builder(
         similarity_loss = cosine_similarity_loss(
             state_predict, jax.lax.stop_gradient(next_state_project)
         )
-        loss = jnp.mean(se * weights.squeeze() + similarity_loss)
+        loss = jnp.mean(se * weights.squeeze())
         return loss, (new_params, jnp.mean(se), jnp.mean(similarity_loss), diff)
 
     def qlearning(
@@ -275,8 +275,8 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
-    weights_lambda: float = 100000.0,
-    use_kde: bool = False,
+    weights_lambda: float = 10.0,
+    use_kde: bool = True,
     kde_bandwidth: float = 5.0,
 ):
 

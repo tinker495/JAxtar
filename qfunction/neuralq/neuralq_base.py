@@ -36,9 +36,6 @@ class DistanceModel(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(5000)(x)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
         x = nn.Dense(1000)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
