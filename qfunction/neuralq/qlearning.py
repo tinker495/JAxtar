@@ -40,7 +40,7 @@ def qlearning_builder(
         similarity_loss = cosine_similarity_loss(
             state_predict, jax.lax.stop_gradient(next_state_project)
         )
-        loss = jnp.mean(se * weights.squeeze() + similarity_loss)
+        loss = jnp.mean(se * weights.squeeze())
         return loss, (new_params, jnp.mean(se), jnp.mean(similarity_loss), diff)
 
     def qlearning(
@@ -187,7 +187,7 @@ def _get_datasets(
         preproc_neighbors = jax.vmap(state_preproc_fn)(selected_neighbors)
 
         q, _ = q_fn(
-            target_q_params, preprocessed_solve_config, preprocessed_shuffled_path
+            target_q_params, preprocessed_solve_config, preproc_neighbors
         )  # [minibatch_size, action_shape]
         double_q, _ = q_fn(q_params, preprocessed_solve_config, preproc_neighbors)
         argmin_double_q = jnp.argmin(double_q, axis=1)
@@ -225,6 +225,7 @@ def _get_datasets(
     preproc_neighbors = preproc_neighbors.reshape((-1, *preproc_neighbors.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
+    move_costs = move_costs.reshape((-1, *move_costs.shape[2:]))
     weights = (weights_lambda + 1.0) / (move_costs + weights_lambda)
 
     if use_kde:
@@ -274,8 +275,8 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
-    weights_lambda: float = 10.0,
-    use_kde: bool = True,
+    weights_lambda: float = 100000.0,
+    use_kde: bool = False,
     kde_bandwidth: float = 5.0,
 ):
 
