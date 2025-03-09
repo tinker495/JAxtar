@@ -179,7 +179,7 @@ def _get_datasets(
             lambda x: x[actions, jnp.arange(minibatch_size), :],
             neighbors,
         )
-        selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
+        selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze()
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_config, selected_neighbors, multi_solve_config=True
         )
@@ -189,13 +189,14 @@ def _get_datasets(
         q, _ = q_fn(
             target_q_params, preprocessed_solve_config, preproc_neighbors
         )  # [minibatch_size, action_shape]
+        q = jnp.maximum(q, 0.0)
         double_q, _ = q_fn(q_params, preprocessed_solve_config, preproc_neighbors)
         argmin_double_q = jnp.argmin(double_q, axis=1)
         target_q = (
-            jnp.take_along_axis(q, argmin_double_q[:, jnp.newaxis], axis=1).squeeze(1)
+            jnp.take_along_axis(q, argmin_double_q[:, jnp.newaxis], axis=1).squeeze()
             + selected_costs
         )
-        target_q = jnp.maximum(jnp.where(selected_neighbors_solved, 0.0, target_q), 0.0)
+        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
         target_q = jnp.where(
             solved, 0.0, target_q
         )  # if the puzzle is already solved, the all q is 0
