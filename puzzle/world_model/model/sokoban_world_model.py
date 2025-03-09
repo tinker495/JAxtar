@@ -5,6 +5,10 @@ import jax.numpy as jnp
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 
+def BatchNorm(x, training):
+    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
+
+
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
 
@@ -12,13 +16,14 @@ class Encoder(nn.Module):
     def __call__(self, data, training=False):
         x = (data / 255.0) * 2.0 - 1.0
         x = nn.Conv(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 20, 20, 16)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Conv(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 10, 10, 16)
         x = nn.relu(x)
-        x = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1))(x)  # (batch_size, 10, 10, 16)
-        latent = nn.sigmoid(x)
-        return latent
+        logits = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1))(
+            x
+        )  # (batch_size, 10, 10, 16)
+        return logits
 
 
 class Decoder(nn.Module):
@@ -29,6 +34,7 @@ class Decoder(nn.Module):
         # batch
         x = (latent - 0.5) * 2.0
         x = nn.ConvTranspose(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 20, 20, 16)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.ConvTranspose(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 40, 40, 16)
         x = nn.relu(x)
@@ -61,12 +67,12 @@ class WorldModel(nn.Module):
         x = nn.Conv(32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal())(
             x
         )  # (batch_size, 10, 10, 32)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Conv(32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal())(
             x
         )  # (batch_size, 10, 10, 32)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Conv(
             self.latent_shape[-1] * self.action_size,
@@ -79,9 +85,8 @@ class WorldModel(nn.Module):
         x = jnp.reshape(
             x, shape=(x.shape[0], *self.latent_shape) + (self.action_size,)
         )  # (batch_size, 10, 10, 16, 4)
-        x = jnp.transpose(x, (0, 4, 1, 2, 3))  # (batch_size, 4, 10, 10, 16)
-        x = nn.sigmoid(x)
-        return x
+        logits = jnp.transpose(x, (0, 4, 1, 2, 3))  # (batch_size, 4, 10, 10, 16)
+        return logits
 
 
 class SokobanWorldModel(WorldModelPuzzleBase):
@@ -130,7 +135,7 @@ class ResidualBlock(nn.Module):
         )(
             x0
         )  # (batch_size, 10, 10, 32)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Conv(
             self.channels,
@@ -140,7 +145,7 @@ class ResidualBlock(nn.Module):
         )(
             x
         )  # (batch_size, 10, 10, 32)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = x + x0
         return x
@@ -155,17 +160,15 @@ class EncoderOptimized(nn.Module):
         x = nn.Conv(16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal())(
             x
         )  # (batch_size, 10, 10, 16)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResidualBlock(16)(x, training)
-        x = ResidualBlock(16)(x, training)
-        x = nn.Conv(
+        logits = nn.Conv(
             self.latent_shape[-1], (1, 1), strides=(1, 1), kernel_init=nn.initializers.orthogonal()
         )(
             x
         )  # (batch_size, 10, 10, 2)
-        latent = nn.sigmoid(x)
-        return latent
+        return logits
 
 
 class DecoderOptimized(nn.Module):
@@ -175,9 +178,8 @@ class DecoderOptimized(nn.Module):
     def __call__(self, latent, training=False):
         x = (latent - 0.5) * 2.0
         x = nn.Conv(16, (1, 1), strides=(1, 1))(x)  # (batch_size, 10, 10, 16)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = ResidualBlock(16)(x, training)
         x = ResidualBlock(16)(x, training)
         x = nn.ConvTranspose(16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal())(
             x
