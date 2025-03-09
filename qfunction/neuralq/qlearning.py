@@ -40,7 +40,7 @@ def qlearning_builder(
         similarity_loss = cosine_similarity_loss(
             state_predict, jax.lax.stop_gradient(next_state_project)
         )
-        loss = jnp.mean(se * weights.squeeze())
+        loss = jnp.mean(se * weights.squeeze() + similarity_loss)
         return loss, (new_params, jnp.mean(se), jnp.mean(similarity_loss), diff)
 
     def qlearning(
