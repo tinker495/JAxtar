@@ -31,11 +31,11 @@ def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
     return tensorboardX.SummaryWriter(log_dir)
 
 
-def setup_optimizer(params: PyTree) -> optax.OptState:
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(10.0),  # Clip gradients to a maximum global norm of 1.0
-        optax.adamw(1e-3, nesterov=True, weight_decay=1e-4),
+def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
+    lr_schedule = optax.polynomial_schedule(
+        init_value=1e-3, end_value=1e-5, power=2.0, transition_steps=steps
     )
+    optimizer = optax.adam(lr_schedule)
     return optimizer, optimizer.init(params)
 
 
@@ -58,11 +58,12 @@ def train(
     writer = setup_logging(world_model_name)
     model: nn.Model = world_model.model
 
-    def train_info_fn(params, data, next_data, training):
+    def train_info_fn(params, data, next_data, action, training):
         return model.apply(
             params,
             data,
             next_data,
+            action,
             training=training,
             method=model.train_info,
             mutable=["batch_stats"],
@@ -70,8 +71,9 @@ def train(
 
     params = world_model.params
 
+    dataset_size = actions.shape[0]
     print("initializing optimizer")
-    optimizer, opt_state = setup_optimizer(params)
+    optimizer, opt_state = setup_optimizer(params, train_epochs * dataset_size // mini_batch_size)
 
     print("initializing train function")
     train_fn = world_model_train_builder(
@@ -166,3 +168,6 @@ def train(
             world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")
 
     writer.close()
+
+    world_model.params = params
+    world_model.save_model(f"puzzle/world_model/model/params/{world_model_name}.pkl")

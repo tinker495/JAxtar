@@ -8,6 +8,10 @@ from puzzle.lightsout import LightsOut
 NODE_SIZE = 256
 
 
+def BatchNorm(x, training):
+    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
+
+
 class ConvResBlock(nn.Module):
     filters: int
     kernel_size: int
@@ -16,10 +20,10 @@ class ConvResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0, training=False):
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         return nn.relu(x + x0)
 
 
@@ -29,10 +33,10 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0, training=False):
         x = nn.Dense(self.node_size)(x0)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         return nn.relu(x + x0)
 
 
@@ -41,12 +45,12 @@ class Model(nn.Module):
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(64, (3, 3), strides=1, padding="SAME")(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ConvResBlock(64, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
-        x = nn.BatchNorm()(x, use_running_average=not training)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(512)(x, training)
         x = nn.Dense(1)(x)
