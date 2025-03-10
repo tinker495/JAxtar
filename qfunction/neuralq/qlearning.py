@@ -27,7 +27,7 @@ def qlearning_builder(
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         se = jnp.square(diff)
-        loss = jnp.mean(se * weights.squeeze())
+        loss = jnp.mean(se)
         return loss, (new_params, diff)
 
     def qlearning(
