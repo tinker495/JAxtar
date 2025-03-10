@@ -201,44 +201,50 @@ puzzle_q_dict: dict[str, QFunction] = {
 puzzle_q_dict_nn: dict[str, callable] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralQ(puzzle)
     if reset
-    else SlidePuzzleNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}.pkl"),
+    else SlidePuzzleNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}_repr.pkl"
+    ),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralQ(puzzle)
     if reset
-    else LightsOutNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/lightsout_{n}.pkl"),
+    else LightsOutNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/lightsout_{n}_repr.pkl"
+    ),
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralQ(puzzle)
     if reset
-    else RubiksCubeNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/rubikscube_{n}.pkl"),
+    else RubiksCubeNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/rubikscube_{n}_repr.pkl"
+    ),
     "sokoban": lambda n, puzzle, reset: SokobanNeuralQ(puzzle)
     if reset
-    else SokobanNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/sokoban_{n}.pkl"),
+    else SokobanNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/sokoban_{n}_repr.pkl"),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None_repr.pkl"
     ),
     "rubikscube_world_model_test": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None_repr.pkl"
     ),
     "rubikscube_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None_repr.pkl"
     ),
     "rubikscube_world_model_optimized_test": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None_repr.pkl"
     ),
     "sokoban_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_None_repr.pkl"
     ),
     "sokoban_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_optimized_None_repr.pkl"
     ),
 }
