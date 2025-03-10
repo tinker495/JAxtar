@@ -139,10 +139,9 @@ def _get_datasets(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
         target_q = jnp.maximum(jnp.min(q, axis=1), 0.0) + selected_costs
-        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
-        target_q = jnp.where(
-            solved, 0.0, target_q
-        )  # if the puzzle is already solved, the all q is 0
+        solved = jnp.logical_or(selected_neighbors_solved, solved)
+        target_q = jnp.where(solved, 0.0, target_q)
+        # if the puzzle is already solved, the all q is 0
 
         # target_heuristic must be less than the number of moves
         # it just doesn't make sense to have a heuristic greater than the number of moves
