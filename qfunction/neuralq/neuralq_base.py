@@ -175,10 +175,11 @@ class NeuralQFunctionBase(QFunction):
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        solve_config_preprocessed = jax.vmap(self.solve_config_pre_process, in_axes=(0))(
-            solve_config
+        solve_config_preprocessed = self.solve_config_pre_process(solve_config)
+        state_preprocessed = jax.vmap(self.state_pre_process)(current)
+        solve_config_preprocessed = jnp.tile(
+            jnp.expand_dims(solve_config_preprocessed, axis=0), (state_preprocessed.shape[0], 1)
         )
-        state_preprocessed = jax.vmap(self.state_pre_process, in_axes=(0))(current)
         x, _ = self.model.apply(
             params,
             solve_config_preprocessed,
