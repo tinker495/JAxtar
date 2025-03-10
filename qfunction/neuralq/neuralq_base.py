@@ -52,7 +52,7 @@ class DistanceModel(nn.Module):
 
 
 class Projector(nn.Module):
-    project_dim: int = 128
+    project_dim: int = 512
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -67,7 +67,7 @@ class Projector(nn.Module):
 
 
 class Predictor(nn.Module):
-    predict_dim: int = 128
+    predict_dim: int = 512
 
     @nn.compact
     def __call__(self, x, training=False):
