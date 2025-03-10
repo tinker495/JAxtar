@@ -271,7 +271,7 @@ def get_qlearning_dataset_builder(
     using_triangular_target: bool = False,
     weights_ratio: float = 10.0,
     use_kde: bool = True,
-    kde_bandwidth: float = 0.5,
+    kde_bandwidth: float = 2.0,
 ):
     weights_lambda = shuffle_length / max(weights_ratio, 1e-5)
 
