@@ -155,6 +155,9 @@ def _get_datasets(
         target_q = jnp.where(
             solved, 0.0, target_q
         )  # if the puzzle is already solved, the all q is 0
+        solved = jnp.logical_or(selected_neighbors_solved, solved)
+        target_q = jnp.where(solved, 0.0, target_q)
+        # if the puzzle is already solved, the all q is 0
 
         # target_heuristic must be less than the number of moves
         # it just doesn't make sense to have a heuristic greater than the number of moves
