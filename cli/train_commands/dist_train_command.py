@@ -28,9 +28,7 @@ PyTree = Any
 def setup_logging(
     puzzle_name: str, puzzle_size: int, train_type: str
 ) -> tensorboardX.SummaryWriter:
-    log_dir = (
-        f"runs/{puzzle_name}_{puzzle_size}_{train_type}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    )
+    log_dir = f"runs/{puzzle_name}_{puzzle_size}_{train_type}_repr_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     return tensorboardX.SummaryWriter(log_dir)
 
 
