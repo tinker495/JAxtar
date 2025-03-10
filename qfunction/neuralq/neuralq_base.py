@@ -17,6 +17,10 @@ def BatchNorm(x, training):
     return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
 
 
+def AvgL1Norm(x):
+    return x / jnp.mean(jnp.abs(x), axis=-1, keepdims=True)
+
+
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int
@@ -95,18 +99,20 @@ class NeuralQFunctionBase(QFunction):
                 state_project = self.state_projector(current, training)
                 state_predict = self.predictor(state_project, training)
                 stacked_project = jnp.concatenate([solve_config_project, state_project], axis=-1)
-                stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
-                stacked_project_raw = jnp.concatenate([stacked_project, stacked_raw], axis=-1)
-                distance = self.distance_model(stacked_project_raw, training)
+                stacked_project = AvgL1Norm(stacked_project)
+                # stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
+                # stacked_project_raw = jnp.concatenate([stacked_project, stacked_raw], axis=-1)
+                distance = self.distance_model(stacked_project, training)
                 return distance, state_predict
 
             def distance(self, solve_config, current, training=False):
                 solve_config_project = self.solve_config_projector(solve_config, training)
                 state_project = self.state_projector(current, training)
                 stacked_project = jnp.concatenate([solve_config_project, state_project], axis=-1)
-                stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
-                stacked_project_raw = jnp.concatenate([stacked_project, stacked_raw], axis=-1)
-                distance = self.distance_model(stacked_project_raw, training)
+                stacked_project = AvgL1Norm(stacked_project)
+                # stacked_raw = jnp.concatenate([solve_config, current], axis=-1)
+                # stacked_project_raw = jnp.concatenate([stacked_project, stacked_raw], axis=-1)
+                distance = self.distance_model(stacked_project, training)
                 return distance
 
             def project_solve_config(self, solve_config, training=False):
