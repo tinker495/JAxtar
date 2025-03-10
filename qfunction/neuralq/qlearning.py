@@ -196,10 +196,9 @@ def _get_datasets(
             jnp.take_along_axis(q, argmin_double_q[:, jnp.newaxis], axis=1).squeeze()
             + selected_costs
         )
-        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
-        target_q = jnp.where(
-            solved, 0.0, target_q
-        )  # if the puzzle is already solved, the all q is 0
+        solved = jnp.logical_or(selected_neighbors_solved, solved)
+        target_q = jnp.where(solved, 0.0, target_q)
+        # if the puzzle is already solved, the all q is 0
 
         return None, (preproc_neighbors, target_q, actions)
 

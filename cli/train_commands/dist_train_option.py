@@ -56,6 +56,7 @@ def train_option(func: callable) -> callable:
     @click.option("-l", "--loss_threshold", type=float, default=float("inf"))
     @click.option("-u", "--update_interval", type=int, default=500)
     @click.option("--using_hindsight_target", is_flag=True, help="Use hindsight target")
+    @click.option("--soft_update", is_flag=True, help="Use soft update")
     @click.option("--debug", is_flag=True, help="Debug mode")
     @wraps(func)
     def wrapper(*args, **kwargs):

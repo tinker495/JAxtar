@@ -65,6 +65,7 @@ def davi(
     loss_threshold: float,
     update_interval: int,
     using_hindsight_target: bool,
+    soft_update: bool,
     **kwargs,
 ):
 
@@ -99,9 +100,6 @@ def davi(
         heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
-        target_heuristic_params = softupdate(
-            heuristic_params, target_heuristic_params, 1.0 / float(update_interval)
-        )
         pbar.set_description(
             f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
         )
@@ -112,11 +110,23 @@ def davi(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        if soft_update:
+            target_heuristic_params = softupdate(
+                heuristic_params, target_heuristic_params, 1.0 / float(update_interval)
+            )
+        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+            target_heuristic_params = heuristic_params
+
+        if i % 10000 == 0 and i != 0:
             heuristic.params = target_heuristic_params
             heuristic.save_model(
-                f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
+                f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}_repr.pkl"
             )
+
+    heuristic.params = target_heuristic_params
+    heuristic.save_model(
+        f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}_repr.pkl"
+    )
 
 
 @click.command()
@@ -137,6 +147,7 @@ def qlearning(
     loss_threshold: float,
     update_interval: int,
     using_hindsight_target: bool,
+    soft_update: bool,
     **kwargs,
 ):
     writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
@@ -198,9 +209,6 @@ def qlearning(
             mean_abs_diff,
             diffs,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
-        target_qfunc_params = softupdate(
-            qfunc_params, target_qfunc_params, 1.0 / float(update_interval)
-        )
         pbar.set_description(
             f"loss: {loss:.4f}(mse: {mse_loss:.4f}, similarity: {similarity_loss:.4f})"
             f", mean_abs_diff: {mean_abs_diff:.2f}, mean_target_q: {mean_target_q:.4f}"
@@ -214,8 +222,18 @@ def qlearning(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_q, i)
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        if soft_update:
+            target_qfunc_params = softupdate(
+                qfunc_params, target_qfunc_params, 1.0 / float(update_interval)
+            )
+        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+            target_qfunc_params = qfunc_params
+
+        if i % 10000 == 0 and i != 0:
             qfunction.params = target_qfunc_params
             qfunction.save_model(
                 f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}_repr.pkl"
             )
+
+    qfunction.params = target_qfunc_params
+    qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}_repr.pkl")
