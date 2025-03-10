@@ -269,10 +269,11 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
-    weights_lambda: float = 10.0,
+    weights_ratio: float = 10.0,
     use_kde: bool = True,
     kde_bandwidth: float = 5.0,
 ):
+    weights_lambda = shuffle_length / max(weights_ratio, 1e-5)
 
     if using_hindsight_target:
         # Calculate appropriate shuffle_parallel for hindsight sampling
