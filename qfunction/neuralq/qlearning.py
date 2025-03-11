@@ -27,7 +27,7 @@ def qlearning_builder(
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         se = jnp.square(diff)
-        loss = jnp.mean(se * weights.squeeze())
+        loss = jnp.mean(se * weights)
         return loss, (new_params, diff)
 
     def qlearning(
@@ -39,17 +39,19 @@ def qlearning_builder(
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q, actions, weights = dataset
+        states, target_q, actions, abs_diffs = dataset
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        batch_indexs = jnp.concatenate(
-            [
-                jax.random.permutation(key, jnp.arange(data_size)),
-                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
+        alpha = 0.6
+        beta = 0.4
+        p = jnp.power(abs_diffs, alpha)
+        p = p / jnp.sum(p)
+        weights = jnp.power(data_size * p, -beta)
+        weights = weights / jnp.sum(weights)
+        batch_indexs = jax.random.choice(
+            key, jnp.arange(data_size), (batch_size * minibatch_size,), p=p
+        )
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
@@ -95,9 +97,6 @@ def _get_datasets(
     preproc_fn: Callable,
     q_fn: Callable,
     minibatch_size: int,
-    weights_lambda: float,
-    use_kde: bool,
-    kde_bandwidth: float,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
@@ -111,24 +110,27 @@ def _get_datasets(
     minibatched_shuffled_path = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), shuffled_path
     )
-    minibatched_move_costs = jnp.reshape(move_costs, (-1, minibatch_size))
 
     def get_minibatched_datasets(_, vals):
-        solve_configs, shuffled_path, move_costs = vals
+        solve_configs, shuffled_path = vals
         solved = puzzle.batched_is_solved(
             solve_configs, shuffled_path, multi_solve_config=True
         )  # [batch_size]
 
-        path_preproc = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, shuffled_path)
+        path_preproc = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
         q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
         probs = boltzmann_action_selection(q_values)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(key, q_values.shape[0]), probs
         )
+        action_q_values = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
 
         neighbors, cost = puzzle.batched_get_neighbours(
-            solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+            solve_configs,
+            shuffled_path,
+            filleds=jnp.ones((minibatch_size,)),
+            multi_solve_config=True,
         )  # [action_size, batch_size] [action_size, batch_size]
         batch_size = actions.shape[0]
         selected_neighbors = jax.tree_util.tree_map(
@@ -148,59 +150,23 @@ def _get_datasets(
         target_q = jnp.maximum(jnp.min(q, axis=1), 0.0) + selected_costs
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
+        abs_diff = jnp.abs(action_q_values - target_q)
         # if the puzzle is already solved, the all q is 0
 
-        # target_heuristic must be less than the number of moves
-        # it just doesn't make sense to have a heuristic greater than the number of moves
-        # heuristic's definition is the optimal cost to reach the target state
-        # so it doesn't make sense to have a heuristic greater than the number of moves
-        # Q-learning needs to predict values larger than move_costs based on actions
-        # because it needs to account for future costs beyond just the immediate move
-        # target_q = jnp.minimum(target_q, move_costs + selected_costs)
-        states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
+        return None, (path_preproc, target_q, actions, abs_diff)
 
-        # less cost, means more confident
-        weights = (weights_lambda + 1.0) / (move_costs + weights_lambda)
-        return None, (states, target_q, actions, weights)
-
-    _, (states, target_q, actions, weights) = jax.lax.scan(
+    _, (states, target_q, actions, abs_diffs) = jax.lax.scan(
         get_minibatched_datasets,
         None,
-        (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
+        (minibatched_solve_configs, minibatched_shuffled_path),
     )
 
     states = states.reshape((-1, *states.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
-    weights = weights.reshape((-1, *weights.shape[2:]))
-
-    if use_kde:
-        # Alternative method using a simplified KDE-based approach
-        # Compute pairwise distances between target_q values
-        # If target_q is multi-dimensional, you might need to flatten it first
-        target_q_flat = target_q.reshape(target_q.shape[0], -1)
-
-        # Use a simple density estimation
-        # For each point, compute its "density" based on its distance to other points
-
-        @jax.vmap
-        def compute_density(q_value):
-            # Calculate distances to all other points
-            distances = jnp.sum((target_q_flat - q_value) ** 2, axis=1) ** 0.5
-            # Apply Gaussian kernel
-            density = jnp.mean(jnp.exp(-0.5 * (distances / kde_bandwidth) ** 2))
-            return density
-
-        densities = compute_density(target_q_flat)
-
-        # Inverse weighting - higher density means lower weight
-        epsilon = 1e-8  # Avoid division by zero
-        distribution_weights = 1.0 / (densities + epsilon)
-
-        # Combine with existing weights
-        weights = weights * distribution_weights
-    weights = weights / jnp.mean(weights)  # normalize weights to have mean 1.0
-    return states, target_q, actions, weights
+    abs_diffs = abs_diffs.reshape((-1, *abs_diffs.shape[2:]))
+    # confidence_weights = (weights_lambda + 1.0) / (move_costs + weights_lambda)
+    return states, target_q, actions, abs_diffs
 
 
 def get_qlearning_dataset_builder(
@@ -212,11 +178,7 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
-    weights_ratio: float = 100.0,
-    use_kde: bool = True,
-    kde_bandwidth: float = 2.0,
 ):
-    weights_lambda = shuffle_length / max(weights_ratio, 1e-5)
 
     if using_hindsight_target:
         # Calculate appropriate shuffle_parallel for hindsight sampling
@@ -264,9 +226,6 @@ def get_qlearning_dataset_builder(
             preproc_fn,
             q_fn,
             dataset_minibatch_size,
-            weights_lambda,
-            use_kde,
-            kde_bandwidth,
         )
     )
 
