@@ -47,7 +47,7 @@ def qlearning_builder(
         beta = 0.4
         p = jnp.power(abs_diffs, alpha)
         p = p / jnp.sum(p)
-        weights = jnp.power(data_size * p, -beta)
+        weights = jnp.power(p, -beta)
         weights = weights / jnp.mean(weights)
         batch_indexs = jax.random.choice(
             key, jnp.arange(data_size), (batch_size * minibatch_size,), p=p
