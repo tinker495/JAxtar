@@ -52,7 +52,7 @@ class PancakeSorting(Puzzle):
             for i, pancake in enumerate(state.stack):
                 size_str = "=" * (2 * (int(pancake) - 1) + 1)
                 result.append(
-                    f"{i:02d}:{pancake:02d} - "
+                    f"{i+1:02d}:{pancake:02d} - "
                     + colored(f"{size_str.center(self.size * 2)}", get_color(pancake))
                 )
             result.append("Plate " + "┗━" + "━━" * self.size + "┛")
