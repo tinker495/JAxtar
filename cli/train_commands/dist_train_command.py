@@ -1,3 +1,4 @@
+from collections import deque
 from datetime import datetime
 from typing import Any
 
@@ -42,6 +43,31 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     return optimizer, optimizer.init(params)
 
 
+class LossConvergeDetector:
+    def __init__(self, window_size: int = 50, threshold: float = 0.005):
+        self.window_size = window_size
+        self.threshold = threshold
+        self.loss_history = deque(maxlen=window_size)
+
+    def update(self, loss: float) -> bool:
+        """
+        Update loss history and check if loss has converged.
+
+        Args:
+            loss: The current loss value
+
+        Returns:
+            bool: True if loss has converged, False otherwise
+        """
+        self.loss_history.append(loss)
+        if len(self.loss_history) == self.window_size:
+            # Calculate the slope of the linear regression line
+            # A small absolute slope indicates convergence
+            slope = np.polyfit(np.arange(self.window_size), list(self.loss_history), 1)[0]
+            return abs(slope) < self.threshold
+        return False
+
+
 @click.command()
 @puzzle_options
 @heuristic_options
@@ -84,6 +110,8 @@ def davi(
         using_hindsight_target,
     )
 
+    loss_converge_detector = LossConvergeDetector()
+
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -104,7 +132,8 @@ def davi(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        detect = loss_converge_detector.update(loss)
+        if (i % update_interval == 0 and i != 0) and detect:
             target_heuristic_params = heuristic_params
 
         if i % 1000 == 0 and i != 0:
@@ -155,6 +184,8 @@ def qlearning(
         using_hindsight_target,
     )
 
+    loss_converge_detector = LossConvergeDetector()
+
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -175,7 +206,8 @@ def qlearning(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        detect = loss_converge_detector.update(loss)
+        if (i % update_interval == 0 and i != 0) and detect:
             target_qfunc_params = qfunc_params
 
         if i % 1000 == 0 and i != 0:
