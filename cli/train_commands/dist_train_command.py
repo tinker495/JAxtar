@@ -51,13 +51,10 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
 
 
 class LossConvergeDetector:
-    def __init__(
-        self, window_size: int = 50, threshold: float = 0.0001, use_second_derivative: bool = True
-    ):
+    def __init__(self, window_size: int = 50, threshold: float = 1e-5):
         self.window_size = window_size
         self.threshold = threshold
         self.loss_history = deque(maxlen=window_size)
-        self.use_second_derivative = use_second_derivative
 
     def update(self, loss: float) -> bool:
         """
@@ -69,32 +66,22 @@ class LossConvergeDetector:
         Returns:
             bool: True if loss has converged, False otherwise
         """
-        self.loss_history.append(loss)
+        log_loss = np.log(loss)
+        self.loss_history.append(log_loss)
         if len(self.loss_history) == self.window_size:
             # Use 2nd derivative to detect inflection point
             # Fit a 3rd degree polynomial to capture the curvature
             x = np.arange(self.window_size)
-            coeffs = np.polyfit(x, list(self.loss_history), 3)
+            coeffs = np.polyfit(x, list(self.loss_history), 2)
 
-            if self.use_second_derivative:
-                # Calculate second derivative at the latest point
-                # For a polynomial ax^3 + bx^2 + cx + d, the second derivative is 6ax + 2b
-                a, b = coeffs[0], coeffs[1]
-                second_deriv = 6 * a * (self.window_size - 1) + 2 * b
-
-                # If second derivative is close to zero or positive, we're at an inflection point
-                # or the curve is starting to bend upward, indicating convergence
-                return abs(second_deriv) < self.threshold
-            else:
-                # Calculate first derivative at the latest point
-                # For a polynomial ax^3 + bx^2 + cx + d, the first derivative is 3ax^2 + 2bx + c
-                a, b, c = coeffs[0], coeffs[1], coeffs[2]
-                x_latest = self.window_size - 1
-                first_deriv = 3 * a * x_latest**2 + 2 * b * x_latest + c
-
-                # If first derivative is close to zero, the loss is stabilizing
-                return abs(first_deriv) < self.threshold
-        return False
+            # Calculate first derivative at the latest point
+            # For a polynomial ax^2 + bx + c, the first derivative is 2ax + b
+            a, b, c = coeffs
+            x_latest = self.window_size - 1
+            first_deriv = 2 * a * x_latest + b
+            # If first derivative is greater than negative threshold, the loss is stabilizing or increasing
+            return first_deriv > -self.threshold, first_deriv
+        return False, 0
 
 
 @click.command()
@@ -139,7 +126,7 @@ def davi(
         using_hindsight_target,
     )
 
-    loss_converge_detector = LossConvergeDetector()
+    loss_converge_detector = LossConvergeDetector(update_interval // 2)
 
     pbar = trange(steps)
     for i in pbar:
@@ -156,15 +143,17 @@ def davi(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
             f", target_heuristic: {mean_target_heuristic:.2f}"
         )
+        detect, first_deriv = loss_converge_detector.update(loss)
+
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
+            writer.add_scalar("Losses/Loss First Derivative", first_deriv, i)
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        detect = loss_converge_detector.update(loss)
         if (i % update_interval == 0 and i != 0) and detect:
             target_heuristic_params = heuristic_params
 
@@ -216,7 +205,7 @@ def qlearning(
         using_hindsight_target,
     )
 
-    loss_converge_detector = LossConvergeDetector()
+    loss_converge_detector = LossConvergeDetector(update_interval // 2)
 
     pbar = trange(steps)
     for i in pbar:
@@ -233,15 +222,17 @@ def qlearning(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
             f", target_q: {mean_target_heuristic:.2f}"
         )
+        detect, first_deriv = loss_converge_detector.update(loss)
+
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
+            writer.add_scalar("Losses/Loss First Derivative", first_deriv, i)
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        detect = loss_converge_detector.update(loss)
         if (i % update_interval == 0 and i != 0) and detect:
             target_qfunc_params = qfunc_params
 
