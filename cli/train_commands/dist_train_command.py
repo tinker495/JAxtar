@@ -38,7 +38,14 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     lr_schedule = optax.polynomial_schedule(
         init_value=1e-3, end_value=1e-5, power=2.0, transition_steps=steps // 2
     )
-    optimizer = optax.adam(lr_schedule)
+
+    def adam(learning_rate):
+        return optax.chain(
+            optax.scale_by_adam(),
+            optax.scale_by_learning_rate(learning_rate),
+        )
+
+    optimizer = optax.inject_hyperparams(adam)(lr_schedule)
     return optimizer, optimizer.init(params)
 
 
@@ -85,7 +92,6 @@ def davi(
     )
 
     pbar = trange(steps)
-    save_count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, subkey)
@@ -95,10 +101,13 @@ def davi(
         heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
+        lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
+            f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
+            f", target_heuristic: {mean_target_heuristic:.2f}"
         )
         if i % 10 == 0:
+            writer.add_scalar("Metrics/Learning Rate", lr, i)
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
@@ -106,16 +115,13 @@ def davi(
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            save_count += 1
             target_heuristic_params = heuristic_params
-            opt_state = optimizer.init(heuristic_params)
 
-            if save_count >= 5:
-                heuristic.params = target_heuristic_params
-                heuristic.save_model(
-                    f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
-                )
-                save_count = 0
+        if i % 1000 == 0 and i != 0:
+            heuristic.params = target_heuristic_params
+            heuristic.save_model(
+                f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
+            )
 
 
 @click.command()
@@ -160,7 +166,6 @@ def qlearning(
     )
 
     pbar = trange(steps)
-    save_count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
@@ -170,10 +175,13 @@ def qlearning(
         qfunc_params, opt_state, loss, mean_abs_diff, diffs = qlearning_fn(
             key, dataset, qfunc_params, opt_state
         )
+        lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"loss: {loss:.4f}, mean_abs_diff: {mean_abs_diff:.2f}, mean_target_heuristic: {mean_target_heuristic:.4f}"
+            f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
+            f", target_q: {mean_target_heuristic:.2f}"
         )
         if i % 10 == 0:
+            writer.add_scalar("Metrics/Learning Rate", lr, i)
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
@@ -181,13 +189,8 @@ def qlearning(
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            save_count += 1
             target_qfunc_params = qfunc_params
-            opt_state = optimizer.init(qfunc_params)
 
-            if save_count >= 5:
-                qfunction.params = target_qfunc_params
-                qfunction.save_model(
-                    f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl"
-                )
-                save_count = 0
+        if i % 1000 == 0 and i != 0:
+            qfunction.params = target_qfunc_params
+            qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
