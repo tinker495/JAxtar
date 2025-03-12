@@ -30,10 +30,6 @@ class PancakeSorting(Puzzle):
     class State:
         stack: chex.Array  # Array representing pancake sizes, index 0 is the top
 
-    @state_dataclass
-    class SolveConfig:
-        TargetState: "PancakeSorting.State"
-
     def __init__(self, size: int, **kwargs):
         """
         Initialize the Pancake Sorting puzzle

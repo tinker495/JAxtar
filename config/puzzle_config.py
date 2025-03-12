@@ -31,6 +31,7 @@ from puzzle import (
     SlidePuzzleHard,
     Sokoban,
     SokobanHard,
+    TowerOfHanoi,
 )
 from puzzle.world_model import (
     RubiksCubeWorldModel,
@@ -69,6 +70,7 @@ default_puzzle_sizes: dict[str, int] = {
     "dotknot": 8,
     "sokoban": 10,
     "pancake": 16,
+    "hanoi": 10,
     "rubikscube_world_model": None,
     "rubikscube_world_model_test": None,
     "rubikscube_world_model_optimized": None,
@@ -86,6 +88,7 @@ puzzle_dict: dict[str, Puzzle] = {
     "tsp": TSP,
     "sokoban": Sokoban,
     "pancake": PancakeSorting,
+    "hanoi": TowerOfHanoi,
     "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel.load_model(
         "puzzle/world_model/model/params/rubikscube.pkl"
     ),
@@ -122,6 +125,7 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "tsp": TSPHeuristic,
     "sokoban": SokobanHeuristic,
     "pancake": PancakeHeuristic,
+    "hanoi": EmptyHeuristic,
     "rubikscube_world_model": EmptyHeuristic,
     "rubikscube_world_model_test": EmptyHeuristic,
     "rubikscube_world_model_optimized": EmptyHeuristic,
