@@ -157,10 +157,16 @@ Solution found
 
 ### Target available puzzle
 
-| Rubikscube                                              | Slidepuzzle                                               | Lightsout                                             | Pancake Sorting                                          | Maze                                       | Sokoban                                          |
-| ------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
-| ![Rubiks cube solve](images/rubikscubesolve.png)        | ![Slide puzzle solve](images/slidepuzzlesolve.png)        | ![Lights out solve](images/lightsoutsolve.png)        | ![Pancake Sorting solve](images/pancakesolve.png)        | ![Maze solve](images/mazesolve.png)        | ![Sokoban solve](images/sokobansolve.png)        |
-| ![Rubiks cube animate](images/rubikscube_animation.gif) | ![Slide puzzle animate](images/slidepuzzle_animation.gif) | ![Lights out animate](images/lightsout_animation.gif) | ![Pancake Sorting animate](images/pancake_animation.gif) | ![Maze animate](images/maze_animation.gif) | ![Sokoban animate](images/sokoban_animation.gif) |
+| Rubikscube | Slidepuzzle | Lightsout | Sokoban |
+| ------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| ![Rubiks cube solve](images/rubikscubesolve.png) | ![Slide puzzle solve](images/slidepuzzlesolve.png) | ![Lights out solve](images/lightsoutsolve.png) || ![Sokoban solve](images/sokobansolve.png) |
+| ![Rubiks cube animate](images/rubikscube_animation.gif) | ![Slide puzzle animate](images/slidepuzzle_animation.gif) | ![Lights out animate](images/lightsout_animation.gif) | ![Sokoban animate](images/sokoban_animation.gif) |
+
+
+| Maze                                       | Pancake Sorting                                          | Hanoi                                        |
+| ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------- |
+| ![Maze solve](images/mazesolve.png)        | ![Pancake Sorting solve](images/pancakesolve.png)        | ![Hanoi solve](images/hanoisolve.png)        |
+| ![Maze animate](images/maze_animation.gif) | ![Pancake Sorting animate](images/pancake_animation.gif) | ![Hanoi animate](images/hanoi_animation.gif) |
 
 ### Target not available puzzle
 
