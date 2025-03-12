@@ -44,10 +44,13 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
 
 
 class LossConvergeDetector:
-    def __init__(self, window_size: int = 50, threshold: float = 0.005):
+    def __init__(
+        self, window_size: int = 50, threshold: float = 0.005, use_second_derivative: bool = True
+    ):
         self.window_size = window_size
         self.threshold = threshold
         self.loss_history = deque(maxlen=window_size)
+        self.use_second_derivative = use_second_derivative
 
     def update(self, loss: float) -> bool:
         """
@@ -61,10 +64,29 @@ class LossConvergeDetector:
         """
         self.loss_history.append(loss)
         if len(self.loss_history) == self.window_size:
-            # Calculate the slope of the linear regression line
-            # A small absolute slope indicates convergence
-            slope = np.polyfit(np.arange(self.window_size), list(self.loss_history), 1)[0]
-            return abs(slope) < self.threshold
+            # Use 2nd derivative to detect inflection point
+            # Fit a 3rd degree polynomial to capture the curvature
+            x = np.arange(self.window_size)
+            coeffs = np.polyfit(x, list(self.loss_history), 3)
+
+            if self.use_second_derivative:
+                # Calculate second derivative at the latest point
+                # For a polynomial ax^3 + bx^2 + cx + d, the second derivative is 6ax + 2b
+                a, b = coeffs[0], coeffs[1]
+                second_deriv = 6 * a * (self.window_size - 1) + 2 * b
+
+                # If second derivative is close to zero or positive, we're at an inflection point
+                # or the curve is starting to bend upward, indicating convergence
+                return abs(second_deriv) < self.threshold
+            else:
+                # Calculate first derivative at the latest point
+                # For a polynomial ax^3 + bx^2 + cx + d, the first derivative is 3ax^2 + 2bx + c
+                a, b, c = coeffs[0], coeffs[1], coeffs[2]
+                x_latest = self.window_size - 1
+                first_deriv = 3 * a * x_latest**2 + 2 * b * x_latest + c
+
+                # If first derivative is close to zero, the loss is stabilizing
+                return abs(first_deriv) < self.threshold
         return False
 
 
