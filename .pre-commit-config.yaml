@@ -35,13 +35,3 @@ repos:
       - id: isort
         name: Format imports
         args: [--profile=black]
-
-  - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.21
-    hooks:
-      - id: mdformat
-        additional_dependencies:
-          - mdformat-gfm
-          - mdformat-black
-          - mdformat-footnote
-          - mdformat_frontmatter
