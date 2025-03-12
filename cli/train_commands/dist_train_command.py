@@ -85,7 +85,6 @@ def davi(
     )
 
     pbar = trange(steps)
-    save_count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, subkey)
@@ -106,16 +105,13 @@ def davi(
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            save_count += 1
             target_heuristic_params = heuristic_params
-            opt_state = optimizer.init(heuristic_params)
 
-            if save_count >= 5:
-                heuristic.params = target_heuristic_params
-                heuristic.save_model(
-                    f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
-                )
-                save_count = 0
+        if i % 1000 == 0 and i != 0:
+            heuristic.params = target_heuristic_params
+            heuristic.save_model(
+                f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
+            )
 
 
 @click.command()
@@ -160,7 +156,6 @@ def qlearning(
     )
 
     pbar = trange(steps)
-    save_count = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
@@ -181,13 +176,8 @@ def qlearning(
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            save_count += 1
             target_qfunc_params = qfunc_params
-            opt_state = optimizer.init(qfunc_params)
 
-            if save_count >= 5:
-                qfunction.params = target_qfunc_params
-                qfunction.save_model(
-                    f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl"
-                )
-                save_count = 0
+        if i % 1000 == 0 and i != 0:
+            qfunction.params = target_qfunc_params
+            qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
