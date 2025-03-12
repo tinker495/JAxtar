@@ -52,7 +52,7 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
 
 class LossConvergeDetector:
     def __init__(
-        self, window_size: int = 50, threshold: float = 0.005, use_second_derivative: bool = True
+        self, window_size: int = 50, threshold: float = 0.0001, use_second_derivative: bool = True
     ):
         self.window_size = window_size
         self.threshold = threshold
