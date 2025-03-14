@@ -8,13 +8,11 @@ Key features:
 - Generic puzzle-agnostic implementation
 """
 
-from collections import defaultdict
 from functools import partial
 
 import chex
 import jax
 import jax.numpy as jnp
-from tqdm import trange
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -281,22 +279,43 @@ class SearchResult:
         """
         assert search_result.solved
         solved_idx = search_result.solved_idx
-        return search_result._get_path(solved_idx)
-
-    def _get_path(search_result, solved_idx: Current) -> list[Parent]:
-        """
-        Get the path to the solved state.
-        """
-
-        path = [solved_idx]
-        parent_last = search_result.get_parent(solved_idx)
-        while True:
-            if parent_last.index == -1:
-                break
-            path.append(parent_last)
-            parent_last = search_result.get_parent(parent_last)
-        path.reverse()
+        path, mask = search_result._get_path(solved_idx)
+        path = [path[i] for i in jnp.where(mask)[0][::-1]]
         return path
+
+    @jax.jit
+    def _get_path(
+        search_result, solved_idx: Current, max_len: int = 100
+    ) -> tuple[Parent, chex.Array]:
+        """
+        Get the path to the solved state using jax.lax.scan for JIT compatibility.
+
+        Args:
+            search_result: The search result containing parent information
+            solved_idx: The index of the solved state
+            max_len: Maximum length of the path to return
+
+        Returns:
+            tuple: Contains:
+                - Array of parents with fixed length max_len
+                - Boolean mask indicating valid entries in the path
+        """
+        parent = Parent(
+            index=solved_idx.index,
+            table_index=solved_idx.table_index,
+            action=jnp.array(0, dtype=ACTION_DTYPE),
+        )
+
+        # Use jax.lax.scan to collect parents
+        def scan_fn(parent, _):
+            cont = parent.index != -1
+            next_parent = jax.lax.cond(
+                cont, lambda: search_result.get_parent(parent), lambda: parent
+            )
+            return next_parent, (parent, cont)
+
+        _, (path, mask) = jax.lax.scan(scan_fn, parent, length=(max_len - 1))
+        return path, mask
 
     def get_all_branch_paths(search_result) -> list[list[Parent]]:
         """
@@ -318,20 +337,18 @@ class SearchResult:
         # Map back to 2D indices
         sorted_2d_cost = search_result.cost[indices[:, 0], indices[:, 1]]
         sorted_2d_current = Current(
-            index=indices[:, 0],
-            table_index=indices[:, 1],
+            index=indices[:, 0].astype(HASH_POINT_DTYPE),
+            table_index=indices[:, 1].astype(HASH_TABLE_IDX_DTYPE),
             cost=sorted_2d_cost,
         )
         len_sorted = indices.shape[0]
 
         paths = []
-        len_count = defaultdict(int)
-        p = trange(len_sorted)
-        for i in p:
-            current = sorted_2d_current[i]
-            path = search_result._get_path(current)
+        batch_size = 1000
+        for i in range(len_sorted // batch_size + 1):
+            current = sorted_2d_current[i * batch_size : (i + 1) * batch_size]
+            path, mask = jax.vmap(SearchResult._get_path, in_axes=(None, 0))(search_result, current)
             paths.append(path)
-            len_count[len(path)] += 1
 
         return paths
 
