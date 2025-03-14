@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax
 import jax.numpy as jnp
 
@@ -9,7 +11,12 @@ class DotKnotHeuristic(Heuristic):
     def __init__(self, puzzle: DotKnot):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: "DotKnot.SolveConfig", current: DotKnot.State) -> float:
+    def distance(
+        self,
+        solve_config: "DotKnot.SolveConfig",
+        current: DotKnot.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         Get distance for solving puzzle.
         """

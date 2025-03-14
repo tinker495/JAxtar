@@ -1,5 +1,6 @@
 import pickle
 from abc import abstractmethod
+from typing import Any, Optional
 
 import chex
 import jax
@@ -55,6 +56,12 @@ class NeuralHeuristicBase(Heuristic):
         if init_params:
             self.params = self.get_new_params()
 
+    def get_params(self):
+        """
+        Get the parameters of the Heuristic.
+        """
+        return self.params
+
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
@@ -90,9 +97,11 @@ class NeuralHeuristicBase(Heuristic):
             pickle.dump(self.params, f)
 
     def batched_distance(
-        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
     ) -> chex.Array:
-        return self.batched_param_distance(self.params, solve_config, current)
+        if params is None:
+            params = self.params
+        return self.batched_param_distance(params, solve_config, current)
 
     def batched_param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
@@ -102,11 +111,15 @@ class NeuralHeuristicBase(Heuristic):
         x = self.post_process(x)
         return x
 
-    def distance(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
+    def distance(
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
+    ) -> float:
         """
         This function should return the distance between the state and the target.
         """
-        return float(self.param_distance(self.params, solve_config, current)[0])
+        if params is None:
+            params = self.params
+        return float(self.param_distance(params, solve_config, current)[0])
 
     def param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State

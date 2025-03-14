@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
@@ -9,7 +11,10 @@ class PancakeHeuristic(Heuristic):
         super().__init__(puzzle)
 
     def distance(
-        self, solve_config: PancakeSorting.SolveConfig, current: PancakeSorting.State
+        self,
+        solve_config: PancakeSorting.SolveConfig,
+        current: PancakeSorting.State,
+        params: Optional[Any] = None,
     ) -> float:
         """
         Gap heuristic for pancake sorting.

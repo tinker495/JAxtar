@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax
 import jax.numpy as jnp
 
@@ -9,7 +11,12 @@ class DotKnotQ(QFunction):
     def __init__(self, puzzle: DotKnot):
         super().__init__(puzzle)
 
-    def q_value(self, solve_config: "DotKnot.SolveConfig", current: DotKnot.State) -> float:
+    def q_value(
+        self,
+        solve_config: "DotKnot.SolveConfig",
+        current: DotKnot.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         Get q values for all possible actions from current state.
         """

@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
@@ -8,7 +10,12 @@ class LightsOutHeuristic(Heuristic):
     def __init__(self, puzzle: LightsOut):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: LightsOut.SolveConfig, current: LightsOut.State) -> float:
+    def distance(
+        self,
+        solve_config: LightsOut.SolveConfig,
+        current: LightsOut.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         Get distance between current state and target state.
         """

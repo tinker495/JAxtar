@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -19,7 +21,12 @@ class SlidePuzzleQ(QFunction):
         )
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
 
-    def q_value(self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State) -> float:
+    def q_value(
+        self,
+        solve_config: SlidePuzzle.SolveConfig,
+        current: SlidePuzzle.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         This function should return the q value of the current state and target state.
         """

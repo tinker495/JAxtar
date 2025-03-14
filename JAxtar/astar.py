@@ -1,4 +1,5 @@
 import time
+from typing import Any, Optional
 
 import chex
 import jax
@@ -25,6 +26,7 @@ def astar_builder(
     max_nodes: int = int(1e6),
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    use_heuristic_params: bool = False,
 ):
     """
     astar_builder is a function that returns a partial function of astar.
@@ -49,6 +51,7 @@ def astar_builder(
     def astar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
+        heuristic_params: Optional[Any] = None,
     ) -> tuple[SearchResult, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
@@ -138,9 +141,9 @@ def astar_builder(
             inserted = unflatten_array(flatten_inserted, filleds.shape)
 
             def _inserted(search_result: SearchResult, neighbour, current, inserted):
-                neighbour_heur = heuristic.batched_distance(solve_config, neighbour).astype(
-                    KEY_DTYPE
-                )
+                neighbour_heur = heuristic.batched_distance(
+                    solve_config, neighbour, heuristic_params
+                ).astype(KEY_DTYPE)
                 # cache the heuristic value
                 search_result.dist = set_array_as_condition(
                     search_result.dist,
@@ -221,7 +224,11 @@ def astar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    astar_fn(empty_solve_config, empty_states)
+    if use_heuristic_params:
+        heuristic_params = heuristic.get_params()
+        astar_fn(empty_solve_config, empty_states, heuristic_params)
+    else:
+        astar_fn(empty_solve_config, empty_states)
 
     if show_compile_time:
         end = time.time()

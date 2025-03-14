@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
@@ -14,7 +16,12 @@ class RubiksCubeHeuristic(Heuristic):
         else:
             self.heur_modify = 1 / (puzzle.size**2)
 
-    def distance(self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State) -> float:
+    def distance(
+        self,
+        solve_config: RubiksCube.SolveConfig,
+        current: RubiksCube.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         Get distance between current state and target state.
         """

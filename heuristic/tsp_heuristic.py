@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
@@ -8,7 +10,9 @@ class TSPHeuristic(Heuristic):
     def __init__(self, puzzle):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> float:
+    def distance(
+        self, solve_config: TSP.SolveConfig, current: TSP.State, params: Optional[Any] = None
+    ) -> float:
         """
         Return zero distance for any puzzle state.
         """

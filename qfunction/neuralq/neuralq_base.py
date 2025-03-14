@@ -1,5 +1,6 @@
 import pickle
 from abc import abstractmethod
+from typing import Any, Optional
 
 import chex
 import jax
@@ -62,6 +63,12 @@ class NeuralQFunctionBase(QFunction):
         if init_params:
             self.params = self.get_new_params()
 
+    def get_params(self):
+        """
+        Get the parameters of the QFunction.
+        """
+        return self.params
+
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
@@ -97,9 +104,11 @@ class NeuralQFunctionBase(QFunction):
             pickle.dump(self.params, f)
 
     def batched_q_value(
-        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
     ) -> chex.Array:
-        return self.batched_param_q_value(self.params, solve_config, current)
+        if params is None:
+            params = self.params
+        return self.batched_param_q_value(params, solve_config, current)
 
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State

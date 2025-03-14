@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
@@ -8,7 +10,12 @@ class SokobanHeuristic(Heuristic):
     def __init__(self, puzzle: Sokoban):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> float:
+    def distance(
+        self,
+        solve_config: Sokoban.SolveConfig,
+        current: Sokoban.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         Simple heuristic for the Sokoban puzzle.
         It computes the distance as the total number of boxes in the target state

@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax
 import jax.numpy as jnp
 
@@ -15,7 +17,12 @@ class RubiksCubeQ(QFunction):
         else:
             self.heur_modify = 1 / (puzzle.size**2)
 
-    def q_value(self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State) -> float:
+    def q_value(
+        self,
+        solve_config: RubiksCube.SolveConfig,
+        current: RubiksCube.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         Get q values for all possible actions from current state.
         """

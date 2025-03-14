@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -10,7 +12,9 @@ class TSPQ(QFunction):
     def __init__(self, puzzle):
         super().__init__(puzzle)
 
-    def q_value(self, solve_config: TSP.SolveConfig, current: TSP.State) -> chex.Array:
+    def q_value(
+        self, solve_config: TSP.SolveConfig, current: TSP.State, params: Optional[Any] = None
+    ) -> chex.Array:
         """
         Get q values for all possible actions from the current state.
         For EmptyQFunction, this returns an array of zeros for each available move.

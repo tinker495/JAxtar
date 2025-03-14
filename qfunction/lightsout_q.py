@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import jax
 import jax.numpy as jnp
 
@@ -9,7 +11,12 @@ class LightsOutQ(QFunction):
     def __init__(self, puzzle: LightsOut):
         super().__init__(puzzle)
 
-    def q_value(self, solve_config: LightsOut.SolveConfig, current: LightsOut.State) -> float:
+    def q_value(
+        self,
+        solve_config: LightsOut.SolveConfig,
+        current: LightsOut.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         Get q values for all possible actions from current state.
         """

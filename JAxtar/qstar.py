@@ -1,4 +1,5 @@
 import time
+from typing import Any, Optional
 
 import chex
 import jax
@@ -24,6 +25,7 @@ def qstar_builder(
     max_nodes: int = int(1e6),
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    use_q_fn_params: bool = False,
 ):
     """
     astar_builder is a function that returns a partial function of astar.
@@ -48,6 +50,7 @@ def qstar_builder(
     def qstar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
+        q_fn_params: Optional[Any] = None,
     ) -> tuple[SearchResult, chex.Array]:
         """
         astar is the implementation of the A* algorithm.
@@ -95,7 +98,9 @@ def qstar_builder(
             nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             q_vals = (
-                q_fn.batched_q_value(solve_config, states).transpose().astype(KEY_DTYPE)
+                q_fn.batched_q_value(solve_config, states, q_fn_params)
+                .transpose()
+                .astype(KEY_DTYPE)
             )  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
             neighbour_key = (cost_weight * nextcosts + q_vals).astype(KEY_DTYPE)
 
@@ -176,7 +181,12 @@ def qstar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    qstar_fn(empty_solve_config, empty_states)
+    if use_q_fn_params:
+        # compile with input params as params
+        q_fn_params = q_fn.get_params()
+        qstar_fn(empty_solve_config, empty_states, q_fn_params)
+    else:
+        qstar_fn(empty_solve_config, empty_states)
 
     if show_compile_time:
         end = time.time()

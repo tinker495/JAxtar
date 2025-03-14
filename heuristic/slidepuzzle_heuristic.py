@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -19,7 +21,12 @@ class SlidePuzzleHeuristic(Heuristic):
         )
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
 
-    def distance(self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State) -> float:
+    def distance(
+        self,
+        solve_config: SlidePuzzle.SolveConfig,
+        current: SlidePuzzle.State,
+        params: Optional[Any] = None,
+    ) -> float:
         """
         This function should return the distance between the state and the target.
         """

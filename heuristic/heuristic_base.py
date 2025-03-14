@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, Optional
 
 import chex
 import jax
@@ -12,16 +13,24 @@ class Heuristic(ABC):
     def __init__(self, puzzle: Puzzle):
         self.puzzle = puzzle
 
+    def get_params(self):
+        """
+        Get the parameters of the Heuristic.
+        """
+        return None
+
     def batched_distance(
-        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
     ) -> chex.Array:
         """
         This function should return the distance between the state and the target.
         """
-        return jax.vmap(self.distance, in_axes=(None, 0))(solve_config, current)
+        return jax.vmap(self.distance, in_axes=(None, 0, None))(solve_config, current, params)
 
     @abstractmethod
-    def distance(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
+    def distance(
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
+    ) -> float:
         """
         This function should return the distance between the state and the target.
 

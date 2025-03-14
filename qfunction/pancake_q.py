@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -11,7 +13,10 @@ class PancakeQ(QFunction):
         super().__init__(puzzle)
 
     def q_value(
-        self, solve_config: PancakeSorting.SolveConfig, current: PancakeSorting.State
+        self,
+        solve_config: PancakeSorting.SolveConfig,
+        current: PancakeSorting.State,
+        params: Optional[Any] = None,
     ) -> chex.Array:
         """
         Get q values for all possible actions from the current state.

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, Optional
 
 import chex
 import jax
@@ -12,8 +13,17 @@ class QFunction(ABC):
     def __init__(self, puzzle: Puzzle):
         self.puzzle = puzzle
 
+    def get_params(self):
+        """
+        Get the parameters of the QFunction.
+        This method should be overridden when the QFunction is a neural network.
+        """
+        return None
+
     @abstractmethod
-    def q_value(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
+    def q_value(
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
+    ) -> chex.Array:
         """
         Get q value of the current state and target state.
 
@@ -28,9 +38,9 @@ class QFunction(ABC):
         pass
 
     def batched_q_value(
-        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
     ) -> chex.Array:
         """
         Get q value of the current state and target state.
         """
-        return jax.vmap(self.q_value, in_axes=(None, 0))(solve_config, current)
+        return jax.vmap(self.q_value, in_axes=(None, 0, None))(solve_config, current, params)
