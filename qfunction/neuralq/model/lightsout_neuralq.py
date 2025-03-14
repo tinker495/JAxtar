@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from flax import linen as nn
 
 from puzzle.lightsout import LightsOut
-from qfunction.neuralq.module import BatchNorm
+from qfunction.neuralq.module import BatchReNorm
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -13,12 +13,12 @@ class ConvResBlock(nn.Module):
     strides: int
 
     @nn.compact
-    def __call__(self, x0, training=False):
+    def __call__(self, x0):
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         return nn.relu(x + x0)
 
 
@@ -26,12 +26,12 @@ class ResBlock(nn.Module):
     node_size: int
 
     @nn.compact
-    def __call__(self, x0, training=False):
+    def __call__(self, x0):
         x = nn.Dense(self.node_size)(x0)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         return nn.relu(x + x0)
 
 
@@ -41,15 +41,16 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
+        x = BatchReNorm(x, training)
         x = nn.Conv(64, (3, 3), strides=1, padding="SAME")(x)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
-        x = ConvResBlock(64, (3, 3), strides=1)(x, training)
+        x = ConvResBlock(64, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(1024)(x)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
-        x = ResBlock(1024)(x, training)
+        x = ResBlock(1024)(x)
         x = nn.Dense(self.action_size)(x)
         return x
 

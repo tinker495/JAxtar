@@ -2,14 +2,9 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
+from heuristic.neuralheuristic.module import BatchReNorm
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.lightsout import LightsOut
-
-NODE_SIZE = 256
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
 
 
 class ConvResBlock(nn.Module):
@@ -18,12 +13,12 @@ class ConvResBlock(nn.Module):
     strides: int
 
     @nn.compact
-    def __call__(self, x0, training=False):
+    def __call__(self, x0):
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         return nn.relu(x + x0)
 
 
@@ -31,12 +26,12 @@ class ResBlock(nn.Module):
     node_size: int
 
     @nn.compact
-    def __call__(self, x0, training=False):
+    def __call__(self, x0):
         x = nn.Dense(self.node_size)(x0)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         return nn.relu(x + x0)
 
 
@@ -44,15 +39,16 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
+        x = BatchReNorm(x, training)
         x = nn.Conv(64, (3, 3), strides=1, padding="SAME")(x)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
-        x = ConvResBlock(64, (3, 3), strides=1)(x, training)
+        x = ConvResBlock(64, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
-        x = BatchNorm(x, training)
+        x = nn.LayerNorm()(x)
         x = nn.relu(x)
-        x = ResBlock(512)(x, training)
+        x = ResBlock(512)(x)
         x = nn.Dense(1)(x)
         return x
 

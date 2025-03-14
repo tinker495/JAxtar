@@ -19,7 +19,7 @@ class ResBlock(nn.Module):
     node_size: int
 
     @nn.compact
-    def __call__(self, x0, training=False):
+    def __call__(self, x0):
         x = nn.Dense(self.node_size)(x0)
         x = nn.LayerNorm()(x)
         x = nn.relu(x)
@@ -40,10 +40,10 @@ class DefaultModel(nn.Module):
         x = nn.Dense(1000)(x)
         x = nn.LayerNorm()(x)
         x = nn.relu(x)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x)
+        x = ResBlock(1000)(x)
+        x = ResBlock(1000)(x)
+        x = ResBlock(1000)(x)
         x = nn.Dense(self.action_size)(x)
         return x
 
