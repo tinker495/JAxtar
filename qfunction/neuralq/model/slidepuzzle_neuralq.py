@@ -3,13 +3,8 @@ import jax.numpy as jnp
 from flax import linen as nn
 
 from puzzle.slidepuzzle import SlidePuzzle
+from qfunction.neuralq.module import BatchNorm
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
-
-NODE_SIZE = 256
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
 
 
 class ConvResBlock(nn.Module):

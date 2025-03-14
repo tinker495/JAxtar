@@ -10,16 +10,8 @@ from flax import linen as nn
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
-from .module import BatchReNormModule
+from .module import BatchReNorm
 from .util import download_model, is_model_downloaded
-
-
-def BatchReNorm(x, training):
-    return BatchReNormModule()(x, use_running_average=not training)
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm()(x, use_running_average=not training)
 
 
 # Residual Block
@@ -41,7 +33,7 @@ class DefaultModel(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = BatchNorm(x, training)
+        x = BatchReNorm(x, training)
         x = nn.Dense(5000)(x)
         x = nn.LayerNorm()(x)
         x = nn.relu(x)

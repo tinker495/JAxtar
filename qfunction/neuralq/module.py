@@ -1,6 +1,7 @@
 from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import jax.numpy as jnp
+from flax import linen as nn
 from flax.linen.module import (  # pylint: disable=g-multiple-import
     Module,
     compact,
@@ -15,6 +16,14 @@ Array = Any
 Shape = Tuple[int, ...]
 Dtype = Any  # this could be a real type?
 Axes = Union[int, Sequence[int]]
+
+
+def BatchReNorm(x, training):
+    return BatchReNormModule()(x, use_running_average=not training)
+
+
+def BatchNorm(x, training):
+    return nn.BatchNorm()(x, use_running_average=not training)
 
 
 class BatchReNormModule(Module):
