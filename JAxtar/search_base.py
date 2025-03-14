@@ -273,14 +273,17 @@ class SearchResult:
         )
         return search_result, min_val.current, filled
 
-    def get_solved_path(search_result) -> list[Parent]:
+    def get_solved_path(search_result) -> list[Parent, Current]:
         """
         Get the path to the solved state.
+
+        returns:
+            path: list[Parent, Current] - [Parent, Parent, ..., Parent, Current]
         """
         assert search_result.solved
         solved_idx = search_result.solved_idx
         path, mask = search_result._get_path(solved_idx)
-        path = [path[i] for i in jnp.where(mask)[0][::-1]]
+        path = [path[i] for i in jnp.where(mask)[0][::-1]] + [solved_idx]
         return path
 
     @jax.jit
@@ -300,11 +303,7 @@ class SearchResult:
                 - Array of parents with fixed length max_len
                 - Boolean mask indicating valid entries in the path
         """
-        parent = Parent(
-            index=solved_idx.index,
-            table_index=solved_idx.table_index,
-            action=jnp.array(0, dtype=ACTION_DTYPE),
-        )
+        parent = search_result.get_parent(solved_idx)
 
         # Use jax.lax.scan to collect parents
         def scan_fn(parent, _):
