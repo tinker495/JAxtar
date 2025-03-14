@@ -138,6 +138,8 @@ def search_samples(
         single_search_time = end - start
         states_per_second = search_result.hashtable.size / single_search_time
 
+        search_result.get_all_branch_paths()
+
         if not has_target:
             if solved:
                 solved_st = search_result.get_state(search_result.solved_idx)

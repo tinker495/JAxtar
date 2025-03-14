@@ -290,6 +290,29 @@ class SearchResult:
         path.reverse()
         return path
 
+    def get_all_branch_paths(search_result) -> list[list[Parent]]:
+        """
+        Get all branch paths from the solved state.
+        All closed states are pseudo-optimal (they are optimal when the heuristic is admissible).
+        This allows us to collect ground truth heuristic values from these states.
+        If the heuristic is not admissible, the optimality of these paths cannot be guaranteed.
+        All closed states are generally close to optimal paths, even if the heuristic is not perfectly admissible.
+        """
+        state_masks = jnp.isfinite(search_result.cost)  # [size_table, n_table]
+        # Get indices of finite costs in 2D format
+        indices = jnp.stack(jnp.where(state_masks), axis=1)  # [num_finite, 2]
+        # Sort the indices based on cost values
+        sorted_indices = jnp.argsort(search_result.cost[state_masks])
+        # Map back to 2D indices
+        sorted_2d_indices = indices[sorted_indices]
+        sorted_2d_cost = search_result.cost[sorted_2d_indices[:, 0], sorted_2d_indices[:, 1]]
+
+        print(sorted_2d_cost[:10])
+        print(sorted_2d_indices[:10])
+
+        print(sorted_2d_cost[-10:])
+        print(sorted_2d_indices[-10:])
+
     def get_state(search_result, idx: Current) -> Puzzle.State:
         """
         Get the state from the hash table.
