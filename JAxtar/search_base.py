@@ -8,11 +8,13 @@ Key features:
 - Generic puzzle-agnostic implementation
 """
 
+from collections import defaultdict
 from functools import partial
 
 import chex
 import jax
 import jax.numpy as jnp
+from tqdm import trange
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -279,6 +281,12 @@ class SearchResult:
         """
         assert search_result.solved
         solved_idx = search_result.solved_idx
+        return search_result._get_path(solved_idx)
+
+    def _get_path(search_result, solved_idx: Current) -> list[Parent]:
+        """
+        Get the path to the solved state.
+        """
 
         path = [solved_idx]
         parent_last = search_result.get_parent(solved_idx)
@@ -298,20 +306,34 @@ class SearchResult:
         If the heuristic is not admissible, the optimality of these paths cannot be guaranteed.
         All closed states are generally close to optimal paths, even if the heuristic is not perfectly admissible.
         """
-        state_masks = jnp.isfinite(search_result.cost)  # [size_table, n_table]
+        closed_masks = jnp.isfinite(search_result.cost)  # [size_table, n_table]
+        no_parented_masks = (
+            jnp.ones_like(closed_masks, dtype=jnp.bool_)
+            .at[search_result.parent.index, search_result.parent.table_index]
+            .set(False)
+        )
+        no_parented_masks = jnp.logical_and(closed_masks, no_parented_masks)
         # Get indices of finite costs in 2D format
-        indices = jnp.stack(jnp.where(state_masks), axis=1)  # [num_finite, 2]
-        # Sort the indices based on cost values
-        sorted_indices = jnp.argsort(search_result.cost[state_masks])
+        indices = jnp.stack(jnp.where(no_parented_masks), axis=1)  # [num_finite, 2]
         # Map back to 2D indices
-        sorted_2d_indices = indices[sorted_indices]
-        sorted_2d_cost = search_result.cost[sorted_2d_indices[:, 0], sorted_2d_indices[:, 1]]
+        sorted_2d_cost = search_result.cost[indices[:, 0], indices[:, 1]]
+        sorted_2d_current = Current(
+            index=indices[:, 0],
+            table_index=indices[:, 1],
+            cost=sorted_2d_cost,
+        )
+        len_sorted = indices.shape[0]
 
-        print(sorted_2d_cost[:10])
-        print(sorted_2d_indices[:10])
+        paths = []
+        len_count = defaultdict(int)
+        p = trange(len_sorted)
+        for i in p:
+            current = sorted_2d_current[i]
+            path = search_result._get_path(current)
+            paths.append(path)
+            len_count[len(path)] += 1
 
-        print(sorted_2d_cost[-10:])
-        print(sorted_2d_indices[-10:])
+        return paths
 
     def get_state(search_result, idx: Current) -> Puzzle.State:
         """
