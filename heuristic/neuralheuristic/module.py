@@ -26,6 +26,23 @@ def BatchNorm(x, training):
     return nn.BatchNorm()(x, use_running_average=not training)
 
 
+class DyT(Module):
+    """Dynamic Tanh activation function with learnable parameters.
+    This is used as a replacement for LayerNorm."""
+
+    alpha_init: float = 1.0
+
+    @compact
+    def __call__(self, x):
+        shape = x.shape[-1] if x.ndim > 1 else 1
+        alpha = self.param("alpha", lambda _: jnp.ones(1) * self.alpha_init)
+        gamma = self.param("gamma", initializers.ones, (shape,))
+        beta = self.param("beta", initializers.zeros, (shape,))
+
+        x = jnp.tanh(alpha * x)
+        return gamma * x + beta
+
+
 class BatchReNormModule(Module):
     """BatchReNorm Module, implemented based on the Batch Renormalization paper (https://arxiv.org/abs/1702.03275).
     and adapted from Flax's BatchNorm implementation:

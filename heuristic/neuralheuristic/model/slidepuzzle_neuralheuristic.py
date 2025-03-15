@@ -2,7 +2,7 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
-from heuristic.neuralheuristic.module import BatchReNorm
+from heuristic.neuralheuristic.module import BatchReNorm, DyT
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.slidepuzzle import SlidePuzzle
 
@@ -15,10 +15,10 @@ class ConvResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0):
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
-        x = nn.LayerNorm()(x)
+        x = DyT()(x)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        x = nn.LayerNorm()(x)
+        x = DyT()(x)
         return nn.relu(x + x0)
 
 
@@ -28,10 +28,10 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0):
         x = nn.Dense(self.node_size)(x0)
-        x = nn.LayerNorm()(x)
+        x = DyT()(x)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        x = nn.LayerNorm()(x)
+        x = DyT()(x)
         return nn.relu(x + x0)
 
 
@@ -41,12 +41,12 @@ class Model(nn.Module):
         # [4, 4, 1] -> conv
         x = BatchReNorm(x, training)
         x = nn.Conv(256, (3, 3), strides=1, padding="SAME")(x)
-        x = nn.LayerNorm()(x)
+        x = DyT()(x)
         x = nn.relu(x)
         x = ConvResBlock(256, (3, 3), strides=1)(x)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
-        x = nn.LayerNorm()(x)
+        x = DyT()(x)
         x = nn.relu(x)
         x = ResBlock(512)(x)
         x = nn.Dense(1)(x)
