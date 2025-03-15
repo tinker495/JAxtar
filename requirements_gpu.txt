@@ -12,4 +12,5 @@ dm-haiku
 huggingface_hub
 flax
 optax
+termcolor
 tensorboardX
