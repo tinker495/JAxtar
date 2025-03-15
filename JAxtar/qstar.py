@@ -75,7 +75,7 @@ def qstar_builder(
 
         def _cond(input: tuple[SearchResult, Current, chex.Array]):
             search_result, parent, filled = input
-            hash_size = search_result.hashtable.size
+            hash_size = search_result.generated_size
             size_cond1 = filled.any()  # queue is not empty
             size_cond2 = hash_size < max_nodes  # hash table is not full
             size_cond = jnp.logical_and(size_cond1, size_cond2)

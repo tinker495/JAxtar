@@ -136,7 +136,7 @@ def search_samples(
         solved = search_result.solved.block_until_ready()
         end = time.time()
         single_search_time = end - start
-        states_per_second = search_result.hashtable.size / single_search_time
+        states_per_second = search_result.generated_size / single_search_time
 
         if not has_target:
             if solved:
@@ -147,12 +147,12 @@ def search_samples(
 
         print(f"Search Time: {single_search_time:6.2f} seconds")
         print(
-            f"Search states: {human_format(search_result.hashtable.size)}"
+            f"Search states: {human_format(search_result.generated_size)}"
             f"({human_format(states_per_second)} states/s)\n\n"
         )
 
         total_search_times.append(single_search_time)
-        total_states.append(search_result.hashtable.size)
+        total_states.append(search_result.generated_size)
         total_solved.append(solved)
         if profile:
             jax.profiler.stop_trace()
@@ -267,11 +267,11 @@ def vmapped_search_samples(
             print(solved_st)
             print()
 
-    search_states = jnp.sum(search_result.hashtable.size)
+    search_states = jnp.sum(search_result.generated_size)
     vmapped_states_per_second = search_states / vmapped_search_time
 
     if len(seeds) > 1:
-        sizes = search_result.hashtable.size
+        sizes = search_result.generated_size
         print(
             f"Search Time: {vmapped_search_time:6.2f} seconds "
             f"(x{vmapped_search_time/jnp.sum(total_search_times)*vmap_size:.1f}/{vmap_size})"
