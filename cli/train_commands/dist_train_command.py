@@ -99,7 +99,7 @@ def davi(
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
-        heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
+        heuristic_params, opt_state, loss, mean_abs_diff, diffs, grad_magnitude, weight_magnitude = davi_fn(
             key, dataset, heuristic_params, opt_state
         )
         lr = opt_state.hyperparams["learning_rate"]
@@ -112,6 +112,8 @@ def davi(
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+            writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
@@ -173,7 +175,7 @@ def qlearning(
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
-        qfunc_params, opt_state, loss, mean_abs_diff, diffs = qlearning_fn(
+        qfunc_params, opt_state, loss, mean_abs_diff, diffs, grad_magnitude, weight_magnitude  = qlearning_fn(
             key, dataset, qfunc_params, opt_state
         )
         lr = opt_state.hyperparams["learning_rate"]
@@ -186,6 +188,8 @@ def qlearning(
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+            writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
