@@ -1,3 +1,4 @@
+import os
 import pickle
 from abc import abstractmethod
 
@@ -93,6 +94,8 @@ class NeuralQFunctionBase(QFunction):
         return qfunc
 
     def save_model(self, path: str):
+        if not os.path.exists(path):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
             pickle.dump(self.params, f)
 
