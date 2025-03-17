@@ -27,16 +27,15 @@ def first_high_zero_init(key, shape, dtype=jnp.float32, scale=10.0):
 
 
 class CategorialOutput(nn.Module):
-    max_distance: int
+    center: jnp.ndarray
 
     def setup(self):
-        self.support_size = self.max_distance + 1
-        self.support = jnp.arange(self.support_size)
+        self.support_size = len(self.center)
 
     @nn.compact
     def __call__(self, x):
         logits = nn.Dense(self.support_size, bias_init=first_high_zero_init)(x)
         probs = nn.softmax(logits)
-        mul = probs * self.support
+        mul = probs * self.center
         scalar = jnp.sum(mul, axis=1)
         return probs, scalar

@@ -35,7 +35,7 @@ class ResBlock(nn.Module):
 
 class DefaultModel(nn.Module):
     action_size: int = 4
-    max_distance: int = 30
+    center: jnp.ndarray = jnp.linspace(0, 30, 31) - 0.5
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -49,7 +49,7 @@ class DefaultModel(nn.Module):
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
-        probs, scalar = CategorialOutput(self.action_size, self.max_distance)(x)
+        probs, scalar = CategorialOutput(self.action_size, self.center)(x)
         return probs, scalar
 
 
@@ -67,9 +67,13 @@ class NeuralQFunctionBase(QFunction):
         self.action_size = self.puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[
             0
         ][0]
-        self.max_distance = max_distance
-        self.support = jnp.arange(max_distance + 2) - 0.5
-        self.model = model(self.action_size, self.max_distance)
+        self.support = (
+            jnp.linspace(0, max_distance + 1, max_distance + 2) - 0.5
+        )  # [-0.5, 0.5, 1.5, ..., max_distance - 0.5, max_distance + 0.5]
+        self.center = (
+            self.support[:-1] + self.support[1:]
+        ) / 2  # [0, 1, 2, ..., max_distance - 1, max_distance]
+        self.model = model(self.action_size, self.center)
         if init_params:
             self.params = self.get_new_params()
 
