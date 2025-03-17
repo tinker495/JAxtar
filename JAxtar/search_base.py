@@ -184,9 +184,22 @@ class SearchResult:
         return self.priority_queue.batch_size
 
     @property
-    def size(self) -> int:
-        """Current number of states stored."""
+    def generated_size(self) -> int:
+        """Current number of states stored in the founded set.
+        This is the number of states in the founded set."""
         return self.hashtable.size
+
+    @property
+    def opened_size(self) -> int:
+        """Current number of states stored in the opened set.
+        This is the number of states in the hash table but not in the closed set."""
+        return self.generated_size - self.closed_size
+
+    @property
+    def closed_size(self) -> int:
+        """Current number of states stored in the closed set.
+        This is the number of states in the closed set."""
+        return jnp.sum(jnp.isfinite(self.cost))
 
     def pop_full(search_result) -> tuple["SearchResult", Current, chex.Array]:
         """
