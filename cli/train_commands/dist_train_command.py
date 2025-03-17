@@ -100,9 +100,15 @@ def davi(
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
-        heuristic_params, opt_state, loss, mean_abs_diff, diffs, grad_magnitude, weight_magnitude = davi_fn(
-            key, dataset, heuristic_params, opt_state
-        )
+        (
+            heuristic_params,
+            opt_state,
+            loss,
+            mean_abs_diff,
+            diffs,
+            grad_magnitude,
+            weight_magnitude,
+        ) = davi_fn(key, dataset, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
@@ -176,9 +182,15 @@ def qlearning(
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
-        qfunc_params, opt_state, loss, mean_abs_diff, diffs, grad_magnitude, weight_magnitude  = qlearning_fn(
-            key, dataset, qfunc_params, opt_state
-        )
+        (
+            qfunc_params,
+            opt_state,
+            loss,
+            mean_abs_diff,
+            diffs,
+            grad_magnitude,
+            weight_magnitude,
+        ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"

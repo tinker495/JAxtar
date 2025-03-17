@@ -67,8 +67,7 @@ def qlearning_builder(
             q_params = optax.apply_updates(q_params, updates)
             # Calculate gradient magnitude mean
             grad_magnitude = jax.tree_util.tree_map(
-                lambda x: jnp.mean(jnp.abs(x)), 
-                jax.tree_util.tree_leaves(grads["params"])
+                lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude))
             return (q_params, opt_state), (loss, diff, grad_magnitude_mean)
@@ -83,11 +82,18 @@ def qlearning_builder(
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude_means))
         weights_magnitude = jax.tree_util.tree_map(
-            lambda x: jnp.mean(jnp.abs(x)), 
-            jax.tree_util.tree_leaves(q_params["params"])
+            lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(q_params["params"])
         )
         weights_magnitude_mean = jnp.mean(jnp.array(weights_magnitude))
-        return q_params, opt_state, loss, mean_abs_diff, diffs, grad_magnitude_mean, weights_magnitude_mean
+        return (
+            q_params,
+            opt_state,
+            loss,
+            mean_abs_diff,
+            diffs,
+            grad_magnitude_mean,
+            weights_magnitude_mean,
+        )
 
     return jax.jit(qlearning)
 
