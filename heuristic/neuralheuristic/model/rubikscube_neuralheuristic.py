@@ -4,6 +4,7 @@ import jax
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.rubikscube import RubiksCube
 
+
 class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 

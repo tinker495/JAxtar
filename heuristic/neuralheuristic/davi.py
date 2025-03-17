@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import optax
 
 from puzzle.puzzle_base import Puzzle
+
 from .moduls import hl_gaussian_convert
 
 

@@ -3,8 +3,9 @@ import jax.numpy as jnp
 from flax import linen as nn
 
 from puzzle.lightsout import LightsOut
-from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.moduls import BatchNorm, CategorialOutput
+from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+
 
 class ConvResBlock(nn.Module):
     filters: int

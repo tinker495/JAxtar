@@ -2,9 +2,9 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
+from heuristic.neuralheuristic.moduls import BatchNorm, CategorialOutput
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.slidepuzzle import SlidePuzzle
-from heuristic.neuralheuristic.moduls import CategorialOutput, BatchNorm
 
 
 class ConvResBlock(nn.Module):

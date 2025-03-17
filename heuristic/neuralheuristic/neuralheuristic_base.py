@@ -11,8 +11,9 @@ from flax import linen as nn
 from heuristic.heuristic_base import Heuristic
 from puzzle.puzzle_base import Puzzle
 
-from .util import download_model, is_model_downloaded
 from .moduls import CategorialOutput
+from .util import download_model, is_model_downloaded
+
 
 def BatchNorm(x, training):
     return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
@@ -52,7 +53,13 @@ class DefaultModel(nn.Module):
 
 
 class NeuralHeuristicBase(Heuristic):
-    def __init__(self, puzzle: Puzzle, max_distance: int, model: nn.Module = DefaultModel, init_params: bool = True):
+    def __init__(
+        self,
+        puzzle: Puzzle,
+        max_distance: int,
+        model: nn.Module = DefaultModel,
+        init_params: bool = True,
+    ):
         self.puzzle = puzzle
         self.max_distance = max_distance
         self.support = jnp.arange(max_distance + 2) - 0.5

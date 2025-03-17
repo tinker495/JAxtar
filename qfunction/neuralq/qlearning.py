@@ -8,7 +8,9 @@ import jax.numpy as jnp
 import optax
 
 from puzzle.puzzle_base import Puzzle
+
 from .moduls import hl_gaussian_convert
+
 
 def qlearning_builder(
     minibatch_size: int,
@@ -23,9 +25,13 @@ def qlearning_builder(
         actions: chex.Array,
         target_qs: chex.Array,
     ):
-        (distribution, scalar), variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
+        (distribution, scalar), variable_updates = q_fn(
+            q_params, states, training=True, mutable=["batch_stats"]
+        )
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
-        action_dist = jnp.take_along_axis(distribution, actions[:, jnp.newaxis, jnp.newaxis], axis=1).squeeze()
+        action_dist = jnp.take_along_axis(
+            distribution, actions[:, jnp.newaxis, jnp.newaxis], axis=1
+        ).squeeze()
         action_scalar = jnp.take_along_axis(scalar, actions[:, jnp.newaxis], axis=1)
         target_distribution = hl_gaussian_convert(target_qs, support, sigma)
         diff = target_qs.squeeze() - action_scalar.squeeze()

@@ -11,8 +11,8 @@ from flax import linen as nn
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
-from .util import download_model, is_model_downloaded
 from .moduls import CategorialOutput
+from .util import download_model, is_model_downloaded
 
 
 def BatchNorm(x, training):
@@ -54,7 +54,13 @@ class DefaultModel(nn.Module):
 
 
 class NeuralQFunctionBase(QFunction):
-    def __init__(self, puzzle: Puzzle, max_distance, model: nn.Module = DefaultModel, init_params: bool = True):
+    def __init__(
+        self,
+        puzzle: Puzzle,
+        max_distance,
+        model: nn.Module = DefaultModel,
+        init_params: bool = True,
+    ):
         self.puzzle = puzzle
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
