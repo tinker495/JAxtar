@@ -40,9 +40,10 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     )
 
     def adam(learning_rate):
+        mask = {"params": True, "batch_stats": False}
         return optax.chain(
             optax.scale_by_adam(),
-            optax.add_decayed_weights(1e-5),
+            optax.add_decayed_weights(1e-5, mask=mask),
             optax.scale_by_learning_rate(learning_rate),
         )
 
