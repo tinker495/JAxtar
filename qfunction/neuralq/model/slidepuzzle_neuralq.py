@@ -4,12 +4,7 @@ from flax import linen as nn
 
 from puzzle.slidepuzzle import SlidePuzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
-
-NODE_SIZE = 256
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
+from qfunction.neuralq.moduls import BatchNorm, CategorialOutput
 
 
 class ConvResBlock(nn.Module):
@@ -42,6 +37,7 @@ class ResBlock(nn.Module):
 
 class Model(nn.Module):
     action_size: int
+    max_distance: int
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -55,8 +51,8 @@ class Model(nn.Module):
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(512)(x, training)
-        x = nn.Dense(self.action_size)(x)
-        return x
+        probs, scalar = CategorialOutput(self.action_size, self.max_distance)(x)
+        return probs, scalar
 
 
 class SlidePuzzleNeuralQ(NeuralQFunctionBase):

@@ -5,14 +5,12 @@ import jax.numpy as jnp
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.sokoban import Sokoban
 
-NODE_SIZE = 256
-
 
 class SokobanNeuralHeuristic(NeuralHeuristicBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: Sokoban, init_params: bool = True):
-        super().__init__(puzzle, init_params=init_params)
+        super().__init__(puzzle, 100, init_params=init_params)
 
     def pre_process(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> chex.Array:
         target_board = self.puzzle.unpack_board(solve_config.TargetState.board)

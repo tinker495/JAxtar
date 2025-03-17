@@ -4,12 +4,7 @@ from flax import linen as nn
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.slidepuzzle import SlidePuzzle
-
-NODE_SIZE = 256
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
+from heuristic.neuralheuristic.moduls import CategorialOutput, BatchNorm
 
 
 class ConvResBlock(nn.Module):
@@ -53,8 +48,8 @@ class Model(nn.Module):
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(512)(x, training)
-        x = nn.Dense(1)(x)
-        return x
+        probs, scalar = CategorialOutput(self.max_distance)(x)
+        return probs, scalar
 
 
 class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
@@ -64,7 +59,7 @@ class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
         x = jnp.tile(jnp.arange(puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, puzzle.size, 1))
         y = jnp.tile(jnp.arange(puzzle.size)[jnp.newaxis, :, jnp.newaxis], (puzzle.size, 1, 1))
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
-        super().__init__(puzzle, model=Model(), init_params=init_params)
+        super().__init__(puzzle, 30, model=Model, init_params=init_params)
 
     def pre_process(
         self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State

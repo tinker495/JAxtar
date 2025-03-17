@@ -12,7 +12,7 @@ from heuristic.heuristic_base import Heuristic
 from puzzle.puzzle_base import Puzzle
 
 from .util import download_model, is_model_downloaded
-
+from .moduls import CategorialOutput
 
 def BatchNorm(x, training):
     return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
@@ -33,6 +33,8 @@ class ResBlock(nn.Module):
 
 
 class DefaultModel(nn.Module):
+    max_distance: int = 30
+
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000)(x)
@@ -45,14 +47,16 @@ class DefaultModel(nn.Module):
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
-        x = nn.Dense(1)(x)
-        return x
+        probs, scalar = CategorialOutput(self.max_distance)(x)
+        return probs, scalar
 
 
 class NeuralHeuristicBase(Heuristic):
-    def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel(), init_params: bool = True):
+    def __init__(self, puzzle: Puzzle, max_distance: int, model: nn.Module = DefaultModel, init_params: bool = True):
         self.puzzle = puzzle
-        self.model = model
+        self.max_distance = max_distance
+        self.support = jnp.arange(max_distance + 2) - 0.5
+        self.model = model(max_distance)
         if init_params:
             self.params = self.get_new_params()
 
@@ -101,7 +105,7 @@ class NeuralHeuristicBase(Heuristic):
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
         x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        (_, x), _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
         x = self.post_process(x)
         return x
 
@@ -116,7 +120,7 @@ class NeuralHeuristicBase(Heuristic):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        (_, x), _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
         return self.post_process(x)
 
     @abstractmethod

@@ -11,7 +11,7 @@ class WorldModelNeuralQ(NeuralQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: WorldModelPuzzleBase, init_params: bool = True):
-        super().__init__(puzzle, init_params=init_params)
+        super().__init__(puzzle, 100, init_params=init_params)
 
     def pre_process(
         self, solve_config: WorldModelPuzzleBase.SolveConfig, current: WorldModelPuzzleBase.State

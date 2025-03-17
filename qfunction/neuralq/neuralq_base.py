@@ -12,6 +12,7 @@ from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
 from .util import download_model, is_model_downloaded
+from .moduls import CategorialOutput
 
 
 def BatchNorm(x, training):
@@ -34,6 +35,7 @@ class ResBlock(nn.Module):
 
 class DefaultModel(nn.Module):
     action_size: int = 4
+    max_distance: int = 30
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -47,19 +49,21 @@ class DefaultModel(nn.Module):
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
-        x = nn.Dense(self.action_size)(x)
-        return x
+        probs, scalar = CategorialOutput(self.action_size, self.max_distance)(x)
+        return probs, scalar
 
 
 class NeuralQFunctionBase(QFunction):
-    def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True):
+    def __init__(self, puzzle: Puzzle, max_distance, model: nn.Module = DefaultModel, init_params: bool = True):
         self.puzzle = puzzle
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
         self.action_size = self.puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[
             0
         ][0]
-        self.model = model(self.action_size)
+        self.max_distance = max_distance
+        self.support = jnp.arange(max_distance + 2) - 0.5
+        self.model = model(self.action_size, self.max_distance)
         if init_params:
             self.params = self.get_new_params()
 

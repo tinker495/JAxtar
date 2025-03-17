@@ -8,28 +8,33 @@ import jax.numpy as jnp
 import optax
 
 from puzzle.puzzle_base import Puzzle
+from .moduls import hl_gaussian_convert
 
 
 def davi_builder(
     minibatch_size: int,
     heuristic_fn: Callable,
     optimizer: optax.GradientTransformation,
+    support: jnp.ndarray,
+    sigma: float,
 ):
     def davi_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
         target_heuristic: chex.Array,
     ):
-        current_heuristic, variable_updates = heuristic_fn(
+        (distribution, scalar), variable_updates = heuristic_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
+        target_distribution = hl_gaussian_convert(target_heuristic, support, sigma)
         new_params = {
             "params": heuristic_params["params"],
             "batch_stats": variable_updates["batch_stats"],
         }
-        diff = target_heuristic.squeeze() - current_heuristic.squeeze()
+        diff = target_heuristic.squeeze() - scalar.squeeze()
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = jnp.mean(jnp.square(diff))
+        centropy = -jnp.sum(target_distribution * jnp.log(distribution + 1e-6), axis=1)
+        loss = jnp.mean(centropy)
         return loss, (new_params, diff)
 
     def davi(
@@ -136,7 +141,7 @@ def _get_datasets(
         )
 
         def heur_scan(_, neighbors):
-            heur, _ = heuristic_fn(
+            (_, heur), _ = heuristic_fn(
                 target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
             )
             return None, heur.squeeze()

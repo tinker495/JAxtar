@@ -8,12 +8,14 @@ import jax.numpy as jnp
 import optax
 
 from puzzle.puzzle_base import Puzzle
-
+from .moduls import hl_gaussian_convert
 
 def qlearning_builder(
     minibatch_size: int,
     q_fn: Callable,
     optimizer: optax.GradientTransformation,
+    support: jnp.ndarray,
+    sigma: float,
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
@@ -21,11 +23,14 @@ def qlearning_builder(
         actions: chex.Array,
         target_qs: chex.Array,
     ):
-        q_values, variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
+        (distribution, scalar), variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
-        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
-        diff = target_qs.squeeze() - q_values_at_actions.squeeze()
-        loss = jnp.mean(jnp.square(diff))
+        action_dist = jnp.take_along_axis(distribution, actions[:, jnp.newaxis, jnp.newaxis], axis=1).squeeze()
+        action_scalar = jnp.take_along_axis(scalar, actions[:, jnp.newaxis], axis=1)
+        target_distribution = hl_gaussian_convert(target_qs, support, sigma)
+        diff = target_qs.squeeze() - action_scalar.squeeze()
+        centropy = -jnp.sum(target_distribution * jnp.log(action_dist + 1e-6), axis=1)
+        loss = jnp.mean(centropy)
         return loss, (new_params, diff)
 
     def qlearning(
@@ -126,7 +131,7 @@ def _get_datasets(
         )  # [batch_size]
 
         path_preproc = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, shuffled_path)
-        q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
+        (_, q_values), _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
         probs = boltzmann_action_selection(q_values)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
@@ -148,10 +153,10 @@ def _get_datasets(
 
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
-        q, _ = q_fn(
+        (_, target_q), _ = q_fn(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        target_q = jnp.maximum(jnp.min(q, axis=1), 0.0) + selected_costs
+        target_q = jnp.maximum(jnp.min(target_q, axis=1), 0.0) + selected_costs
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
         # if the puzzle is already solved, the all q is 0

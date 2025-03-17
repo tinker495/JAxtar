@@ -4,13 +4,7 @@ from flax import linen as nn
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.lightsout import LightsOut
-
-NODE_SIZE = 256
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
-
+from heuristic.neuralheuristic.moduls import CategorialOutput, BatchNorm
 
 class ConvResBlock(nn.Module):
     filters: int
@@ -41,6 +35,8 @@ class ResBlock(nn.Module):
 
 
 class Model(nn.Module):
+    max_distance: int
+
     @nn.compact
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
@@ -53,13 +49,13 @@ class Model(nn.Module):
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(512)(x, training)
-        x = nn.Dense(1)(x)
-        return x
+        probs, scalar = CategorialOutput(self.max_distance)(x)
+        return probs, scalar
 
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: LightsOut, init_params: bool = True):
-        super().__init__(puzzle, model=Model(), init_params=init_params)
+        super().__init__(puzzle, 30, model=Model, init_params=init_params)
 
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
