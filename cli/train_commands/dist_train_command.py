@@ -83,7 +83,7 @@ def davi(
         heuristic_params, steps * dataset_batch_size // train_minibatch_size
     )
     support = heuristic.support
-    sigma = 0.25
+    sigma = 0.75
     davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer, support, sigma)
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -167,7 +167,7 @@ def qlearning(
         qfunc_params, steps * dataset_batch_size // train_minibatch_size
     )
     support = qfunction.support
-    sigma = 0.25
+    sigma = 0.75
     qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_fn, optimizer, support, sigma)
     get_datasets = get_qlearning_dataset_builder(
         puzzle,

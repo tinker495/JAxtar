@@ -63,7 +63,7 @@ class NeuralHeuristicBase(Heuristic):
         self.puzzle = puzzle
         self.max_distance = max_distance
         self.support = (
-            jnp.linspace(0, max_distance + 1, max_distance + 2) - 0.5
+            jnp.linspace(0, max_distance + 1, max_distance * 4 + 2) - 0.5
         )  # [-0.5, 0.5, 1.5, ..., max_distance - 0.5, max_distance + 0.5]
         self.center = (
             self.support[:-1] + self.support[1:]
