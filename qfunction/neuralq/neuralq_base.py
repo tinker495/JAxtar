@@ -122,7 +122,7 @@ class NeuralQFunctionBase(QFunction):
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
         x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        (_, x), _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
         x = self.post_process(x)
         return x
 
@@ -137,7 +137,7 @@ class NeuralQFunctionBase(QFunction):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        (_, x), _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
         return self.post_process(x)
 
     @abstractmethod
