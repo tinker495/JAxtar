@@ -34,10 +34,10 @@ class DyT(Module):
 
     @compact
     def __call__(self, x):
-        shape = x.shape[-1] if x.ndim > 1 else 1
+        shape = x.shape[1:] # [B, C...]
         alpha = self.param("alpha", lambda _: jnp.ones(1) * self.alpha_init)
-        gamma = self.param("gamma", initializers.ones, (shape,))
-        beta = self.param("beta", initializers.zeros, (shape,))
+        gamma = self.param("gamma", initializers.ones, shape) 
+        beta = self.param("beta", initializers.zeros, shape)
 
         x = jnp.tanh(alpha * x)
         return gamma * x + beta
