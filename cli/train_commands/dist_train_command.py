@@ -52,11 +52,12 @@ def tree_random_normal_like(rng_key: jax.random.PRNGKey, target: PyTree):
 
 @jax.jit
 def soft_reset(tensors: PyTree, key: jax.random.PRNGKey, tau: float) -> PyTree:
-    new_tensors = tree_random_normal_like(key, tensors)
-    soft_reseted = jax.tree_map(
-        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, tensors
+    params = tensors["params"]
+    new_tensors = tree_random_normal_like(key, params)
+    soft_reseted_params = jax.tree_map(
+        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, params
     )
-    return soft_reseted
+    return {"params": soft_reseted_params, "batch_stats": tensors["batch_stats"]}
 
 
 def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
