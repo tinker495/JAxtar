@@ -42,10 +42,15 @@ class DefaultModel(nn.Module):
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(1000)(x)
+        x = BatchNorm(x, training)
+        x = nn.relu(x)
+
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
+
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(1)(x)
         return x
