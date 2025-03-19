@@ -24,12 +24,15 @@ class ResBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = nn.Dense(self.node_size)(x0)
+        # Pre-activation pattern
+        x = BatchNorm(x0, training)
+        x = nn.relu(x)
+        x = nn.Dense(self.node_size)(x)
+
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        x = BatchNorm(x, training)
-        return nn.relu(x + x0)
+        return x + x0  # No final activation on the sum
 
 
 class DefaultModel(nn.Module):
@@ -39,12 +42,11 @@ class DefaultModel(nn.Module):
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(1000)(x)
-        x = BatchNorm(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
+        x = ResBlock(1000)(x, training)
         x = nn.relu(x)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
         x = nn.Dense(1)(x)
         return x
 
