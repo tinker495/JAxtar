@@ -34,6 +34,32 @@ def setup_logging(
     return tensorboardX.SummaryWriter(log_dir)
 
 
+def random_split_like_tree(rng_key: jax.random.PRNGKey, target: PyTree = None, treedef=None):
+    if treedef is None:
+        treedef = jax.tree_structure(target)
+    keys = jax.random.split(rng_key, treedef.num_leaves)
+    return jax.tree_unflatten(treedef, keys)
+
+
+def tree_random_normal_like(rng_key: jax.random.PRNGKey, target: PyTree):
+    keys_tree = random_split_like_tree(rng_key, target)
+    return jax.tree_map(
+        lambda t, k: jax.random.normal(k, t.shape, t.dtype) * jnp.std(t),
+        target,
+        keys_tree,
+    )
+
+
+@jax.jit
+def soft_reset(tensors: PyTree, key: jax.random.PRNGKey, tau: float) -> PyTree:
+    params = tensors["params"]
+    new_tensors = tree_random_normal_like(key, params)
+    soft_reseted_params = jax.tree_map(
+        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, params
+    )
+    return {"params": soft_reseted_params, "batch_stats": tensors["batch_stats"]}
+
+
 def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     lr_schedule = optax.polynomial_schedule(
         init_value=1e-3, end_value=1e-5, power=1.0, transition_steps=steps // 2
@@ -126,6 +152,7 @@ def davi(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
+            heuristic_params = soft_reset(heuristic_params, key, 0.2)
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = target_heuristic_params
@@ -208,6 +235,7 @@ def qlearning(
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
+            qfunc_params = soft_reset(qfunc_params, key, 0.2)
 
         if i % 1000 == 0 and i != 0:
             qfunction.params = target_qfunc_params
