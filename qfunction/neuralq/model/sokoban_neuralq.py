@@ -5,8 +5,6 @@ import jax.numpy as jnp
 from puzzle.sokoban import Sokoban
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
-NODE_SIZE = 256
-
 
 class SokobanNeuralQ(NeuralQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle

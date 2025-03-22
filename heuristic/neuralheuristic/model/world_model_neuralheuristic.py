@@ -4,8 +4,6 @@ import jax.numpy as jnp
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.world_model import WorldModelPuzzleBase
 
-NODE_SIZE = 256
-
 
 class WorldModelNeuralHeuristic(NeuralHeuristicBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle

@@ -2,42 +2,9 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
+from heuristic.neuralheuristic.modules import BatchNorm, ConvResBlock, ResBlock
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.lightsout import LightsOut
-
-NODE_SIZE = 256
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
-
-
-class ConvResBlock(nn.Module):
-    filters: int
-    kernel_size: int
-    strides: int
-
-    @nn.compact
-    def __call__(self, x0, training=False):
-        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
-        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        x = BatchNorm(x, training)
-        return nn.relu(x + x0)
-
-
-class ResBlock(nn.Module):
-    node_size: int
-
-    @nn.compact
-    def __call__(self, x0, training=False):
-        x = nn.Dense(self.node_size)(x0)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
-        x = nn.Dense(self.node_size)(x)
-        x = BatchNorm(x, training)
-        return nn.relu(x + x0)
 
 
 class Model(nn.Module):
