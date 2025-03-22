@@ -125,7 +125,8 @@ def _get_datasets(
     )
     minibatched_move_costs = jnp.reshape(move_costs, (-1, minibatch_size))
 
-    def get_minibatched_datasets(_, vals):
+    def get_minibatched_datasets(key, vals):
+        key, subkey = jax.random.split(key)
         solve_configs, shuffled_path, move_costs = vals
         solved = puzzle.batched_is_solved(
             solve_configs, shuffled_path, multi_solve_config=True
@@ -136,7 +137,7 @@ def _get_datasets(
         probs = boltzmann_action_selection(q_values)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
-            jax.random.split(key, q_values.shape[0]), probs
+            jax.random.split(subkey, q_values.shape[0]), probs
         )
 
         neighbors, cost = puzzle.batched_get_neighbours(
@@ -161,11 +162,11 @@ def _get_datasets(
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
         # if the puzzle is already solved, the all q is 0
-        return None, (path_preproc, target_q, actions)
+        return key, (path_preproc, target_q, actions)
 
     _, (states, target_q, actions) = jax.lax.scan(
         get_minibatched_datasets,
-        None,
+        key,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
     )
 
