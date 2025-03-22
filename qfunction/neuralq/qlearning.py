@@ -98,7 +98,7 @@ def qlearning_builder(
     return jax.jit(qlearning)
 
 
-def boltzmann_action_selection(q_values: chex.Array, temperature: float = 3.0) -> chex.Array:
+def boltzmann_action_selection(q_values: chex.Array, temperature: float = 1 / 3.0) -> chex.Array:
     q_values = -q_values / temperature
     q_values = jnp.exp(q_values)
     probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
@@ -125,18 +125,19 @@ def _get_datasets(
     )
     minibatched_move_costs = jnp.reshape(move_costs, (-1, minibatch_size))
 
-    def get_minibatched_datasets(_, vals):
+    def get_minibatched_datasets(key, vals):
+        key, subkey = jax.random.split(key)
         solve_configs, shuffled_path, move_costs = vals
         solved = puzzle.batched_is_solved(
             solve_configs, shuffled_path, multi_solve_config=True
         )  # [batch_size]
 
-        path_preproc = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, shuffled_path)
+        path_preproc = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
         q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
         probs = boltzmann_action_selection(q_values)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
-            jax.random.split(key, q_values.shape[0]), probs
+            jax.random.split(subkey, q_values.shape[0]), probs
         )
 
         neighbors, cost = puzzle.batched_get_neighbours(
@@ -161,20 +162,11 @@ def _get_datasets(
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
         # if the puzzle is already solved, the all q is 0
-
-        # target_heuristic must be less than the number of moves
-        # it just doesn't make sense to have a heuristic greater than the number of moves
-        # heuristic's definition is the optimal cost to reach the target state
-        # so it doesn't make sense to have a heuristic greater than the number of moves
-        # Q-learning needs to predict values larger than move_costs based on actions
-        # because it needs to account for future costs beyond just the immediate move
-        # target_q = jnp.minimum(target_q, move_costs + selected_costs)
-        states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        return None, (states, target_q, actions)
+        return key, (path_preproc, target_q, actions)
 
     _, (states, target_q, actions) = jax.lax.scan(
         get_minibatched_datasets,
-        None,
+        key,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
     )
 
@@ -245,17 +237,21 @@ def get_qlearning_dataset_builder(
         )
     )
 
+    @jax.jit
     def get_datasets(
         target_q_params: jax.tree_util.PyTreeDef,
         q_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
-        paths = []
-        for _ in range(steps):
+        def scan_fn(key, _):
             key, subkey = jax.random.split(key)
-            paths.append(jited_create_shuffled_path(subkey))
-        paths = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *paths)
-        paths = jax.tree_util.tree_map(lambda x: x[:dataset_size], paths)
+            paths = jited_create_shuffled_path(subkey)
+            return key, paths
+
+        key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
+        paths = jax.tree_util.tree_map(
+            lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
+        )
 
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
         return flatten_dataset
