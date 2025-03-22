@@ -256,7 +256,7 @@ def get_qlearning_dataset_builder(
             paths = jited_create_shuffled_path(subkey)
             return key, paths
 
-        _, paths = jax.lax.scan(scan_fn, key, None, length=steps)
+        key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
         paths = jax.tree_util.tree_map(
             lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
         )
