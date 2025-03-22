@@ -40,9 +40,10 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     )
 
     def adam(learning_rate):
+        mask = {"params": True, "batch_stats": False}
         return optax.chain(
             optax.scale_by_adam(),
-            optax.add_decayed_weights(1e-5),
+            optax.add_decayed_weights(1e-5, mask=mask),
             optax.scale_by_learning_rate(learning_rate),
         )
 
@@ -99,9 +100,15 @@ def davi(
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
-        heuristic_params, opt_state, loss, mean_abs_diff, diffs = davi_fn(
-            key, dataset, heuristic_params, opt_state
-        )
+        (
+            heuristic_params,
+            opt_state,
+            loss,
+            mean_abs_diff,
+            diffs,
+            grad_magnitude,
+            weight_magnitude,
+        ) = davi_fn(key, dataset, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
@@ -112,6 +119,8 @@ def davi(
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+            writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
@@ -173,9 +182,15 @@ def qlearning(
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
-        qfunc_params, opt_state, loss, mean_abs_diff, diffs = qlearning_fn(
-            key, dataset, qfunc_params, opt_state
-        )
+        (
+            qfunc_params,
+            opt_state,
+            loss,
+            mean_abs_diff,
+            diffs,
+            grad_magnitude,
+            weight_magnitude,
+        ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
@@ -186,6 +201,8 @@ def qlearning(
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+            writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 

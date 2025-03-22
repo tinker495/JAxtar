@@ -67,16 +67,35 @@ def davi_builder(
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
-            return (heuristic_params, opt_state), (loss, diff)
+            # Calculate gradient magnitude mean
+            grad_magnitude = jax.tree_util.tree_map(
+                lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(grads["params"])
+            )
+            grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude))
+            return (heuristic_params, opt_state), (loss, diff, grad_magnitude_mean)
 
-        (heuristic_params, opt_state), (losses, diffs) = jax.lax.scan(
+        (heuristic_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
             (batched_states, batched_target_heuristic),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
-        return heuristic_params, opt_state, loss, mean_abs_diff, diffs
+        # Calculate weights magnitude means
+        grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude_means))
+        weights_magnitude = jax.tree_util.tree_map(
+            lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(heuristic_params["params"])
+        )
+        weights_magnitude_mean = jnp.mean(jnp.array(weights_magnitude))
+        return (
+            heuristic_params,
+            opt_state,
+            loss,
+            mean_abs_diff,
+            diffs,
+            grad_magnitude_mean,
+            weights_magnitude_mean,
+        )
 
     return jax.jit(davi)
 
@@ -216,16 +235,20 @@ def get_heuristic_dataset_builder(
         )
     )
 
+    @jax.jit
     def get_datasets(
         heuristic_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
-        paths = []
-        for _ in range(steps):
+        def scan_fn(key, _):
             key, subkey = jax.random.split(key)
-            paths.append(jited_create_shuffled_path(subkey))
-        paths = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *paths)
-        paths = jax.tree_util.tree_map(lambda x: x[:dataset_size], paths)
+            paths = jited_create_shuffled_path(subkey)
+            return key, paths
+
+        key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
+        paths = jax.tree_util.tree_map(
+            lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
+        )
 
         flatten_dataset = jited_get_datasets(heuristic_params, paths, key)
         return flatten_dataset
