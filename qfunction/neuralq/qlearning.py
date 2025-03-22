@@ -98,7 +98,7 @@ def qlearning_builder(
     return jax.jit(qlearning)
 
 
-def boltzmann_action_selection(q_values: chex.Array, temperature: float = 3.0) -> chex.Array:
+def boltzmann_action_selection(q_values: chex.Array, temperature: float = 1 / 3.0) -> chex.Array:
     q_values = -q_values / temperature
     q_values = jnp.exp(q_values)
     probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
