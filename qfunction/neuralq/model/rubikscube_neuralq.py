@@ -4,8 +4,6 @@ import jax
 from puzzle.rubikscube import RubiksCube
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
-NODE_SIZE = 256
-
 
 class RubiksCubeNeuralQ(NeuralQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
