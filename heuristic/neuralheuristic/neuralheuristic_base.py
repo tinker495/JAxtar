@@ -15,27 +15,110 @@ from .modules import BatchNorm, ResBlock
 from .util import download_model, is_model_downloaded
 
 
-class DefaultModel(nn.Module):
+class Projector(nn.Module):
+    projection_dim: int
+
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(5000)(x)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
         x = nn.Dense(1000)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = nn.Dense(1)(x)
+        x = nn.Dense(self.projection_dim)(x)
         return x
 
 
+class Predictor(nn.Module):
+    projection_dim: int
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        x = nn.Dense(1000)(x)
+        x = BatchNorm(x, training)
+        x = nn.relu(x)
+        x = nn.Dense(1000)(x)
+        x = BatchNorm(x, training)
+        x = nn.relu(x)
+        x = nn.Dense(self.projection_dim)(x)
+        return x
+
+
+class DefaultModel(nn.Module):
+    projection_dim: int = 128
+    use_solve_config: bool = True
+
+    def setup(self):
+        if self.use_solve_config:
+            self.solve_config_projector = Projector(projection_dim=self.projection_dim)
+
+        self.state_projector = Projector(projection_dim=self.projection_dim)
+        self.predictor = Predictor(projection_dim=self.projection_dim)
+        self.distance_bias = self.param("distance_bias", nn.initializers.zeros, (1,))
+        self.distance_scale = self.param("distance_scale", nn.initializers.ones, (1,))
+
+    def __call__(
+        self, preprocessed_target: chex.Array, preprocessed_current: chex.Array, training=False
+    ):
+        if self.use_solve_config:
+            target_projection = self.solve_config_projector(
+                preprocessed_target, training
+            )  # [batch_size, projection_dim]
+        else:
+            target_projection = self.state_projector(
+                preprocessed_target, training
+            )  # [batch_size, projection_dim]
+        current_projection = self.state_projector(
+            preprocessed_current, training
+        )  # [batch_size, projection_dim]
+        dot_product = jnp.einsum(
+            "bd, bd -> b", target_projection, current_projection
+        )  # [batch_size]
+        distance = self.distance_bias + self.distance_scale * dot_product  # [batch_size]
+        return jnp.expand_dims(distance, axis=1)  # [batch_size, 1]
+
+    def state_distance(
+        self, preprocessed_target: chex.Array, preprocessed_current: chex.Array, training=False
+    ):
+        target_projection = self.state_projector(
+            preprocessed_target, training
+        )  # [batch_size, projection_dim]
+        current_projection = self.state_projector(
+            preprocessed_current, training
+        )  # [batch_size, projection_dim]
+        dot_product = jnp.einsum(
+            "bd, bd -> b", target_projection, current_projection
+        )  # [batch_size]
+        distance = self.distance_bias + self.distance_scale * dot_product  # [batch_size]
+        return jnp.expand_dims(distance, axis=1)  # [batch_size, 1]
+
+    def state_similarity(self, state1: chex.Array, state2: chex.Array, training=False):
+        projection1 = self.state_projector(state1, training)  # [batch_size, projection_dim]
+        projection2 = self.state_projector(state2, training)  # [batch_size, projection_dim]
+        prediction = self.predictor(projection1, training)  # [batch_size, projection_dim]
+        dot_product = jnp.einsum("bd, bd -> b", prediction, projection2)  # [batch_size]
+        # Normalize the vectors for cosine similarity
+        norm1 = jnp.sqrt(jnp.sum(prediction**2, axis=1))  # [batch_size]
+        norm2 = jnp.sqrt(jnp.sum(projection2**2, axis=1))  # [batch_size]
+        # Avoid division by zero
+        denominator = jnp.maximum(norm1 * norm2, 1e-12)  # [batch_size]
+        # Calculate cosine similarity
+        cos_similarity = dot_product / denominator  # [batch_size]
+        return cos_similarity  # [batch_size]
+
+
 class NeuralHeuristicBase(Heuristic):
-    def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel(), init_params: bool = True):
+    def __init__(
+        self,
+        puzzle: Puzzle,
+        projection_dim: int = 128,
+        model: nn.Module = DefaultModel,
+        init_params: bool = True,
+    ):
         self.puzzle = puzzle
-        self.model = model
+        self.model = model(
+            projection_dim=projection_dim, use_solve_config=not self.puzzle.only_target
+        )
         if init_params:
             self.params = self.get_new_params()
 
