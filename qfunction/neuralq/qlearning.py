@@ -131,7 +131,7 @@ def _get_datasets(
             solve_configs, shuffled_path, multi_solve_config=True
         )  # [batch_size]
 
-        path_preproc = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, shuffled_path)
+        path_preproc = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
         q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
         probs = boltzmann_action_selection(q_values)
         idxs = jnp.arange(q_values.shape[1])  # action_size
@@ -161,16 +161,7 @@ def _get_datasets(
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
         # if the puzzle is already solved, the all q is 0
-
-        # target_heuristic must be less than the number of moves
-        # it just doesn't make sense to have a heuristic greater than the number of moves
-        # heuristic's definition is the optimal cost to reach the target state
-        # so it doesn't make sense to have a heuristic greater than the number of moves
-        # Q-learning needs to predict values larger than move_costs based on actions
-        # because it needs to account for future costs beyond just the immediate move
-        # target_q = jnp.minimum(target_q, move_costs + selected_costs)
-        states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        return None, (states, target_q, actions)
+        return None, (path_preproc, target_q, actions)
 
     _, (states, target_q, actions) = jax.lax.scan(
         get_minibatched_datasets,
