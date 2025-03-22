@@ -245,17 +245,21 @@ def get_qlearning_dataset_builder(
         )
     )
 
+    @jax.jit
     def get_datasets(
         target_q_params: jax.tree_util.PyTreeDef,
         q_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
-        paths = []
-        for _ in range(steps):
+        def scan_fn(key, _):
             key, subkey = jax.random.split(key)
-            paths.append(jited_create_shuffled_path(subkey))
-        paths = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *paths)
-        paths = jax.tree_util.tree_map(lambda x: x[:dataset_size], paths)
+            paths = jited_create_shuffled_path(subkey)
+            return key, paths
+
+        _, paths = jax.lax.scan(scan_fn, key, None, length=steps)
+        paths = jax.tree_util.tree_map(
+            lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
+        )
 
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
         return flatten_dataset
