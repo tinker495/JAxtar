@@ -5,8 +5,6 @@ import jax.numpy as jnp
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.sokoban import Sokoban
 
-NODE_SIZE = 256
-
 
 class SokobanNeuralHeuristic(NeuralHeuristicBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
