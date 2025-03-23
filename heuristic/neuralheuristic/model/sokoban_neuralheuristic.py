@@ -12,10 +12,8 @@ class SokobanNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: Sokoban, init_params: bool = True):
         super().__init__(puzzle, init_params=init_params)
 
-    def pre_process(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> chex.Array:
-        target_board = self.puzzle.unpack_board(solve_config.TargetState.board)
-        current_board = self.puzzle.unpack_board(current.board)
-        stacked_board = jnp.concatenate([current_board, target_board], axis=-1)
-        one_hot_board = jax.nn.one_hot(stacked_board, num_classes=4)
+    def pre_process_state(self, state: Sokoban.State) -> chex.Array:
+        board = self.puzzle.unpack_board(state.board)
+        one_hot_board = jax.nn.one_hot(board, num_classes=4)
         flattened_board = jnp.reshape(one_hot_board, (-1,))
         return (flattened_board - 0.5) * 2.0

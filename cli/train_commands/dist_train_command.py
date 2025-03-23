@@ -73,7 +73,7 @@ def davi(
 ):
 
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
-    heuristic_fn = heuristic.model.apply
+    heuristic_model = heuristic.model
     heuristic_params = heuristic.get_new_params()
     target_heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -82,11 +82,12 @@ def davi(
     optimizer, opt_state = setup_optimizer(
         heuristic_params, steps * dataset_batch_size // train_minibatch_size
     )
-    davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer)
+    davi_fn = davi_builder(train_minibatch_size, heuristic_model, optimizer)
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
-        heuristic.pre_process,
-        heuristic_fn,
+        heuristic.pre_process_solve_config,
+        heuristic.pre_process_state,
+        heuristic_model,
         dataset_batch_size,
         shuffle_length,
         dataset_minibatch_size,
@@ -97,7 +98,7 @@ def davi(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, subkey)
-        target_heuristic = dataset[1]
+        target_heuristic = dataset[3]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
         (
@@ -105,19 +106,23 @@ def davi(
             opt_state,
             loss,
             mean_abs_diff,
+            mean_mse_loss,
+            mean_similarity_loss,
             diffs,
             grad_magnitude,
             weight_magnitude,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
-            f", target_heuristic: {mean_target_heuristic:.2f}"
+            f"lr: {lr:.4f}, loss: {loss:.4f}(mse: {mean_mse_loss:.2f}, sim: {mean_similarity_loss:.2f})"
+            f", abs_diff: {mean_abs_diff:.2f}, target_heuristic: {mean_target_heuristic:.2f}"
         )
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+            writer.add_scalar("Losses/MSE Loss", mean_mse_loss, i)
+            writer.add_scalar("Losses/Similarity Loss", mean_similarity_loss, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
             writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
             writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)

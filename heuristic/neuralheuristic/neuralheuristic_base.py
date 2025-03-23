@@ -11,7 +11,7 @@ from flax import linen as nn
 from heuristic.heuristic_base import Heuristic
 from puzzle.puzzle_base import Puzzle
 
-from .modules import BatchNorm, ResBlock
+from .modules import BatchNorm, ResBlock, cosine_similarity
 from .util import download_model, is_model_downloaded
 
 
@@ -55,9 +55,19 @@ class DefaultModel(nn.Module):
         self.state_projector = Projector(projection_dim=self.projection_dim)
         self.predictor = Predictor(projection_dim=self.projection_dim)
         self.distance_bias = self.param("distance_bias", nn.initializers.zeros, (1,))
-        self.distance_scale = self.param("distance_scale", nn.initializers.ones, (1,))
+        self.distance_scale = self.param("distance_scale", nn.initializers.zeros, (1,))
 
     def __call__(
+        self,
+        preprocessed_solve_config: chex.Array,
+        preprocessed_state: chex.Array,
+        training=False,
+    ):
+        a = self.solve_config_distance(preprocessed_solve_config, preprocessed_state, training)
+        b = self.state_similarity(preprocessed_state, preprocessed_state, training)
+        return a, b
+
+    def solve_config_distance(
         self, preprocessed_target: chex.Array, preprocessed_current: chex.Array, training=False
     ):
         if self.use_solve_config:
@@ -95,16 +105,15 @@ class DefaultModel(nn.Module):
     def state_similarity(self, state1: chex.Array, state2: chex.Array, training=False):
         projection1 = self.state_projector(state1, training)  # [batch_size, projection_dim]
         projection2 = self.state_projector(state2, training)  # [batch_size, projection_dim]
-        prediction = self.predictor(projection1, training)  # [batch_size, projection_dim]
-        dot_product = jnp.einsum("bd, bd -> b", prediction, projection2)  # [batch_size]
-        # Normalize the vectors for cosine similarity
-        norm1 = jnp.sqrt(jnp.sum(prediction**2, axis=1))  # [batch_size]
-        norm2 = jnp.sqrt(jnp.sum(projection2**2, axis=1))  # [batch_size]
-        # Avoid division by zero
-        denominator = jnp.maximum(norm1 * norm2, 1e-12)  # [batch_size]
-        # Calculate cosine similarity
-        cos_similarity = dot_product / denominator  # [batch_size]
-        return cos_similarity  # [batch_size]
+        prediction1 = self.predictor(
+            jax.lax.stop_gradient(projection1), training
+        )  # [batch_size, projection_dim]
+        prediction2 = self.predictor(
+            jax.lax.stop_gradient(projection2), training
+        )  # [batch_size, projection_dim]
+        cos_similarity1 = cosine_similarity(prediction1, projection2)  # [batch_size]
+        cos_similarity2 = cosine_similarity(prediction2, projection1)  # [batch_size]
+        return cos_similarity1, cos_similarity2
 
 
 class NeuralHeuristicBase(Heuristic):
@@ -125,9 +134,14 @@ class NeuralHeuristicBase(Heuristic):
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
+        dummy_solve_config = jnp.expand_dims(
+            self.pre_process_solve_config(dummy_solve_config), axis=0
+        )
+        dummy_current = jnp.expand_dims(self.pre_process_state(dummy_current), axis=0)
         return self.model.init(
             jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+            dummy_solve_config,
+            dummy_current,
         )
 
     @classmethod
@@ -141,9 +155,14 @@ class NeuralHeuristicBase(Heuristic):
             heuristic = cls(puzzle, init_params=False)
             dummy_solve_config = puzzle.SolveConfig.default()
             dummy_current = puzzle.State.default()
+            dummy_solve_config = jnp.expand_dims(
+                heuristic.pre_process_solve_config(dummy_solve_config), axis=0
+            )
+            dummy_current = jnp.expand_dims(heuristic.pre_process_state(dummy_current), axis=0)
             heuristic.model.apply(
                 params,
-                jnp.expand_dims(heuristic.pre_process(dummy_solve_config, dummy_current), axis=0),
+                dummy_solve_config,
+                dummy_current,
                 training=False,
             )  # check if the params are compatible with the model
             heuristic.params = params
@@ -166,10 +185,19 @@ class NeuralHeuristicBase(Heuristic):
     def batched_param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
-        x = self.post_process(x)
-        return x
+        preprocessed_solve_config = self.pre_process_solve_config(solve_config)  # [...]
+        preprocessed_current = jax.vmap(self.pre_process_state)(current)  # [batch_size, ...]
+        preprocessed_solve_config = jnp.tile(
+            jnp.expand_dims(preprocessed_solve_config, axis=0), (preprocessed_current.shape[0], 1)
+        )  # [batch_size, ...]
+        value, _ = self.model.apply(
+            params,
+            preprocessed_solve_config,
+            preprocessed_current,
+            training=False,
+            mutable=["batch_stats"],
+        )  # [batch_size, 1]
+        return self.post_process(value)
 
     def distance(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
         """
@@ -180,13 +208,31 @@ class NeuralHeuristicBase(Heuristic):
     def param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = self.pre_process(solve_config, current)
-        x = jnp.expand_dims(x, axis=0)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
-        return self.post_process(x)
+        preprocessed_solve_config = self.pre_process_solve_config(solve_config)[
+            jnp.newaxis, :
+        ]  # [1, ...]
+        preprocessed_current = self.pre_process_state(current)[jnp.newaxis, :]
+        value, _ = self.model.apply(
+            params,
+            preprocessed_solve_config,
+            preprocessed_current,
+            training=False,
+            mutable=["batch_stats"],
+        )  # [1, 1]
+        return self.post_process(value)
+
+    def pre_process_solve_config(self, solve_config: Puzzle.SolveConfig) -> chex.Array:
+        """
+        This function should return the pre-processed solve config.
+        """
+        assert (
+            self.puzzle.only_target
+        ), "This config is for only target condition, you should redefine this function for your puzzle"
+        target_state = solve_config.TargetState
+        return self.pre_process_state(target_state)
 
     @abstractmethod
-    def pre_process(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
+    def pre_process_state(self, state: Puzzle.State) -> chex.Array:
         """
         This function should return the pre-processed state.
         """

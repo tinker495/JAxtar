@@ -3,6 +3,7 @@ from functools import partial
 from typing import Callable
 
 import chex
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax
@@ -12,25 +13,44 @@ from puzzle.puzzle_base import Puzzle
 
 def davi_builder(
     minibatch_size: int,
-    heuristic_fn: Callable,
+    heuristic_model: nn.Module,
     optimizer: optax.GradientTransformation,
 ):
     def davi_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
-        states: chex.Array,
+        preprocessed_solve_configs: chex.Array,
+        preprocessed_states: chex.Array,
+        random_neighbors: chex.Array,
         target_heuristic: chex.Array,
     ):
-        current_heuristic, variable_updates = heuristic_fn(
-            heuristic_params, states, training=True, mutable=["batch_stats"]
+        current_heuristic, variable_updates = heuristic_model.apply(
+            heuristic_params,
+            preprocessed_solve_configs,
+            preprocessed_states,
+            training=True,
+            mutable=["batch_stats"],
+            method=heuristic_model.solve_config_distance,
         )
-        new_params = {
-            "params": heuristic_params["params"],
-            "batch_stats": variable_updates["batch_stats"],
-        }
+        heuristic_params["batch_stats"] = variable_updates["batch_stats"]
+
+        (cos_similarity1, cos_similarity2), variable_updates = heuristic_model.apply(
+            heuristic_params,
+            preprocessed_states,
+            random_neighbors,
+            training=False,
+            mutable=["batch_stats"],
+            method=heuristic_model.state_similarity,
+        )
+        heuristic_params["batch_stats"] = variable_updates["batch_stats"]
+
+        cos_similarity = (cos_similarity1 + cos_similarity2) / 2
+        similarity_loss = jnp.mean(1 - cos_similarity)
+
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
+        mse_loss = jnp.mean(jnp.square(diff))
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = jnp.mean(jnp.square(diff))
-        return loss, (new_params, diff)
+        loss = mse_loss + similarity_loss
+        return loss, (heuristic_params, mse_loss, similarity_loss, diff)
 
     def davi(
         key: chex.PRNGKey,
@@ -41,7 +61,12 @@ def davi_builder(
         """
         DAVI is a heuristic for the sliding puzzle problem.
         """
-        states, target_heuristic = dataset
+        (
+            preprocessed_solve_configs,
+            preprocessed_states,
+            random_neighbors,
+            target_heuristic,
+        ) = dataset
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -54,15 +79,28 @@ def davi_builder(
         )  # [batch_size * minibatch_size]
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
-        batched_states = jnp.take(states, batch_indexs, axis=0)
+        batched_preprocessed_solve_configs = jnp.take(
+            preprocessed_solve_configs, batch_indexs, axis=0
+        )
+        batched_preprocessed_states = jnp.take(preprocessed_states, batch_indexs, axis=0)
+        batched_random_neighbors = jnp.take(random_neighbors, batch_indexs, axis=0)
         batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
-            states, target_heuristic = batched_dataset
-            (loss, (heuristic_params, diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
+            (
+                preprocessed_solve_configs,
+                preprocessed_states,
+                random_neighbors,
+                target_heuristic,
+            ) = batched_dataset
+            (loss, (heuristic_params, mse_loss, similarity_loss, diff)), grads = jax.value_and_grad(
+                davi_loss, has_aux=True
+            )(
                 heuristic_params,
-                states,
+                preprocessed_solve_configs,
+                preprocessed_states,
+                random_neighbors,
                 target_heuristic,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
@@ -72,15 +110,34 @@ def davi_builder(
                 lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude))
-            return (heuristic_params, opt_state), (loss, diff, grad_magnitude_mean)
+            return (heuristic_params, opt_state), (
+                loss,
+                mse_loss,
+                similarity_loss,
+                diff,
+                grad_magnitude_mean,
+            )
 
-        (heuristic_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
+        (heuristic_params, opt_state), (
+            losses,
+            mse_losses,
+            similarity_losses,
+            diffs,
+            grad_magnitude_means,
+        ) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
-            (batched_states, batched_target_heuristic),
+            (
+                batched_preprocessed_solve_configs,
+                batched_preprocessed_states,
+                batched_random_neighbors,
+                batched_target_heuristic,
+            ),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
+        mean_mse_loss = jnp.mean(mse_losses)
+        mean_similarity_loss = jnp.mean(similarity_losses)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude_means))
         weights_magnitude = jax.tree_util.tree_map(
@@ -92,6 +149,8 @@ def davi_builder(
             opt_state,
             loss,
             mean_abs_diff,
+            mean_mse_loss,
+            mean_similarity_loss,
             diffs,
             grad_magnitude_mean,
             weights_magnitude_mean,
@@ -102,8 +161,9 @@ def davi_builder(
 
 def _get_datasets(
     puzzle: Puzzle,
-    preproc_fn: Callable,
-    heuristic_fn: Callable,
+    solve_config_preproc_fn: Callable,
+    state_preproc_fn: Callable,
+    heuristic_model: nn.Module,
     minibatch_size: int,
     target_heuristic_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
@@ -121,6 +181,10 @@ def _get_datasets(
 
     def get_minibatched_datasets(_, vals):
         solve_configs, shuffled_path, move_costs = vals
+        preprocessed_solve_configs = jax.vmap(solve_config_preproc_fn)(
+            solve_configs
+        )  # [batch_size, ...]
+        preprocessed_states = jax.vmap(state_preproc_fn)(shuffled_path)  # [batch_size, ...]
         solved = puzzle.batched_is_solved(
             solve_configs, shuffled_path, multi_solve_config=True
         )  # [batch_size]
@@ -133,21 +197,28 @@ def _get_datasets(
         )(
             solve_configs, neighbors
         )  # [action_size, batch_size]
-        preproc_neighbors = jax.vmap(jax.vmap(preproc_fn, in_axes=(0, 0)), in_axes=(None, 0))(
-            solve_configs, neighbors
-        )
-        # preproc_neighbors: [action_size, batch_size, ...]
-        flatten_neighbors = jnp.reshape(
-            preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
-        )
+        preproc_neighbors = jax.vmap(jax.vmap(state_preproc_fn))(
+            neighbors
+        )  # [action_size, batch_size, ...]
+        random_neighbor_idx = jax.random.randint(
+            key, (minibatch_size,), 0, preproc_neighbors.shape[0]
+        )  # [batch_size]
+        random_neighbors = jax.vmap(lambda x, i: x[i], in_axes=(1, 0))(
+            preproc_neighbors, random_neighbor_idx
+        )  # [batch_size, ...]
 
         def heur_scan(_, neighbors):
-            heur, _ = heuristic_fn(
-                target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
+            heur, _ = heuristic_model.apply(
+                target_heuristic_params,
+                preprocessed_solve_configs,
+                neighbors,
+                training=False,
+                mutable=["batch_stats"],
+                method=heuristic_model.state_distance,
             )
             return None, heur.squeeze()
 
-        _, heur = jax.lax.scan(heur_scan, None, flatten_neighbors)
+        _, heur = jax.lax.scan(heur_scan, None, preproc_neighbors)
         heur = jnp.vstack(heur)
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
         target_heuristic = jnp.min(heur + cost, axis=0)
@@ -155,30 +226,39 @@ def _get_datasets(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
 
-        # target_heuristic must be less than the number of moves
-        # it just doesn't make sense to have a heuristic greater than the number of moves
-        # heuristic's definition is the optimal cost to reach the target state
-        # so it doesn't make sense to have a heuristic greater than the number of moves
-        # target_heuristic = jnp.minimum(target_heuristic, move_costs)
-        states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        return None, (states, target_heuristic)
+        return None, (
+            preprocessed_solve_configs,
+            preprocessed_states,
+            random_neighbors,
+            target_heuristic,
+        )
 
-    _, (states, target_heuristic) = jax.lax.scan(
+    _, (
+        preprocessed_solve_configs,
+        preprocessed_states,
+        random_neighbors,
+        target_heuristic,
+    ) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
     )
 
-    states = states.reshape((-1, *states.shape[2:]))
+    preprocessed_solve_configs = preprocessed_solve_configs.reshape(
+        (-1, *preprocessed_solve_configs.shape[2:])
+    )
+    preprocessed_states = preprocessed_states.reshape((-1, *preprocessed_states.shape[2:]))
+    random_neighbors = random_neighbors.reshape((-1, *random_neighbors.shape[2:]))
     target_heuristic = target_heuristic.reshape((-1, *target_heuristic.shape[2:]))
 
-    return states, target_heuristic
+    return preprocessed_solve_configs, preprocessed_states, random_neighbors, target_heuristic
 
 
 def get_heuristic_dataset_builder(
     puzzle: Puzzle,
-    preproc_fn: Callable,
-    heuristic_fn: Callable,
+    solve_config_preproc_fn: Callable,
+    state_preproc_fn: Callable,
+    heuristic_model: nn.Module,
     dataset_size: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
@@ -229,8 +309,9 @@ def get_heuristic_dataset_builder(
         partial(
             _get_datasets,
             puzzle,
-            preproc_fn,
-            heuristic_fn,
+            solve_config_preproc_fn,
+            state_preproc_fn,
+            heuristic_model,
             dataset_minibatch_size,
         )
     )
