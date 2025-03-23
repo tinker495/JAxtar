@@ -37,7 +37,7 @@ def davi_builder(
             heuristic_params,
             preprocessed_states,
             random_neighbors,
-            training=False,
+            training=True,
             mutable=["batch_stats"],
             method=heuristic_model.state_similarity,
         )
@@ -49,7 +49,7 @@ def davi_builder(
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
         mse_loss = jnp.mean(jnp.square(diff))
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = mse_loss + similarity_loss
+        loss = mse_loss + similarity_loss * 0.01
         return loss, (heuristic_params, mse_loss, similarity_loss, diff)
 
     def davi(
