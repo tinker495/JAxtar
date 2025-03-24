@@ -11,7 +11,7 @@ from flax import linen as nn
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
-from .modules import BatchNorm, ResBlock
+from .modules import BatchNorm, LayerNorm, ResBlock, cosine_similarity
 from .util import download_model, is_model_downloaded
 
 
@@ -20,11 +20,11 @@ class Projector(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=False):
+        _ = BatchNorm(x, training)  # for dummy batchnorm
         x = nn.Dense(1000)(x)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
+        x = LayerNorm(x, training)
         x = nn.Dense(self.projection_dim)(x)
         return x
 
@@ -35,11 +35,11 @@ class Predictor(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(1000)(x)
-        x = BatchNorm(x, training)
         x = nn.relu(x)
+        x = LayerNorm(x, training)
         x = nn.Dense(1000)(x)
-        x = BatchNorm(x, training)
         x = nn.relu(x)
+        x = LayerNorm(x, training)
         x = nn.Dense(self.projection_dim)(x)
         return x
 
@@ -47,49 +47,32 @@ class Predictor(nn.Module):
 class DefaultModel(nn.Module):
     action_size: int = 4
     projection_dim: int = 128
-    use_solve_config: bool = True
 
     def setup(self):
-        if self.use_solve_config:
-            self.solve_config_projector = Projector(projection_dim=self.projection_dim)
-
+        self.solve_config_projector = Projector(projection_dim=self.projection_dim)
         self.state_projector = Projector(projection_dim=self.projection_dim)
         self.predictor = Predictor(projection_dim=self.projection_dim)
-        self.distance_bias = self.param("distance_bias", nn.initializers.zeros, (1,))
-        self.distance_scale = self.param("distance_scale", nn.initializers.ones, (1,))
         self.action_projection = self.param(
-            "action_projection", nn.initializers.zeros, (1, self.action_size, self.projection_dim)
-        )  # [action_size, projection_dim]
+            "action_projection",
+            nn.initializers.he_normal(),
+            (1, self.action_size, self.projection_dim),
+        )  # [1, action_size, projection_dim]
+        self.distance_conv = nn.Dense(self.action_size)
 
     def __call__(
-        self, preprocessed_target: chex.Array, preprocessed_current: chex.Array, training=False
+        self,
+        preprocessed_solve_config: chex.Array,
+        preprocessed_state: chex.Array,
+        training=False,
     ):
-        if self.use_solve_config:
-            target_projection = self.solve_config_projector(
-                preprocessed_target, training
-            )  # [batch_size, projection_dim]
-        else:
-            target_projection = self.state_projector(
-                preprocessed_target, training
-            )  # [batch_size, projection_dim]
-        current_projection = self.state_projector(
-            preprocessed_current, training
-        )  # [batch_size, projection_dim]
-        actioned_projection = (
-            jnp.expand_dims(current_projection, axis=1) + self.action_projection
-        )  # [batch_size, action_size, projection_dim]
-        dot_product = jnp.einsum(
-            "bd, bad -> ba", target_projection, actioned_projection
-        )  # [batch_size, action_size]
-        distances = (
-            self.distance_bias + self.distance_scale * dot_product
-        )  # [batch_size, action_size]
-        return distances  # [batch_size, action_size]
+        a = self.solve_config_distance(preprocessed_solve_config, preprocessed_state, training)
+        b = self.state_similarity(preprocessed_state, preprocessed_state, training)
+        return a, b
 
-    def state_distance(
+    def solve_config_distance(
         self, preprocessed_target: chex.Array, preprocessed_current: chex.Array, training=False
     ):
-        target_projection = self.state_projector(
+        target_projection = self.solve_config_projector(
             preprocessed_target, training
         )  # [batch_size, projection_dim]
         current_projection = self.state_projector(
@@ -101,24 +84,51 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bad -> ba", target_projection, actioned_projection
         )  # [batch_size, action_size]
-        distances = (
-            self.distance_bias + self.distance_scale * dot_product
-        )  # [batch_size, action_size]
+        flatten_action_projection = jnp.reshape(
+            actioned_projection, (-1, self.projection_dim * self.action_size)
+        )
+        concat = jnp.concatenate(
+            [target_projection, flatten_action_projection, dot_product], axis=1
+        )
+        distances = self.distance_conv(concat)  # [batch_size, action_size]
         return distances  # [batch_size, action_size]
+
+    def get_solve_config_projection(self, preprocessed_solve_config: chex.Array, training=False):
+        return self.solve_config_projector(preprocessed_solve_config, training)
+
+    def get_state_projection(self, preprocessed_state: chex.Array, training=False):
+        return self.state_projector(preprocessed_state, training)
+
+    def distance_from_projection(
+        self, target_projection: chex.Array, current_projection: chex.Array, training=False
+    ):
+        actioned_projection = (
+            jnp.expand_dims(current_projection, axis=1) + self.action_projection
+        )  # [batch_size, action_size, projection_dim]
+        dot_product = jnp.einsum(
+            "bd, bad -> ba", target_projection, actioned_projection
+        )  # [batch_size, action_size]
+        flatten_action_projection = jnp.reshape(
+            actioned_projection, (-1, self.projection_dim * self.action_size)
+        )
+        concat = jnp.concatenate(
+            [target_projection, flatten_action_projection, dot_product], axis=1
+        )
+        distance = self.distance_conv(concat)  # [batch_size, action_size]
+        return distance  # [batch_size, action_size]
 
     def state_similarity(self, state1: chex.Array, state2: chex.Array, training=False):
         projection1 = self.state_projector(state1, training)  # [batch_size, projection_dim]
         projection2 = self.state_projector(state2, training)  # [batch_size, projection_dim]
-        prediction = self.predictor(projection1, training)  # [batch_size, projection_dim]
-        dot_product = jnp.einsum("bd, bd -> b", prediction, projection2)  # [batch_size]
-        # Normalize the vectors for cosine similarity
-        norm1 = jnp.sqrt(jnp.sum(prediction**2, axis=1))  # [batch_size]
-        norm2 = jnp.sqrt(jnp.sum(projection2**2, axis=1))  # [batch_size]
-        # Avoid division by zero
-        denominator = jnp.maximum(norm1 * norm2, 1e-12)  # [batch_size]
-        # Calculate cosine similarity
-        cos_similarity = dot_product / denominator  # [batch_size]
-        return cos_similarity  # [batch_size]
+        prediction1 = self.predictor(projection1, training)  # [batch_size, projection_dim]
+        prediction2 = self.predictor(projection2, training)  # [batch_size, projection_dim]
+        cos_similarity1 = cosine_similarity(
+            prediction1, jax.lax.stop_gradient(projection2)
+        )  # [batch_size]
+        cos_similarity2 = cosine_similarity(
+            prediction2, jax.lax.stop_gradient(projection1)
+        )  # [batch_size]
+        return cos_similarity1, cos_similarity2
 
 
 class NeuralQFunctionBase(QFunction):
@@ -138,7 +148,6 @@ class NeuralQFunctionBase(QFunction):
         self.model = model(
             self.action_size,
             projection_dim=projection_dim,
-            use_solve_config=not self.puzzle.only_target,
         )
         if init_params:
             self.params = self.get_new_params()
@@ -146,9 +155,14 @@ class NeuralQFunctionBase(QFunction):
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
+        dummy_solve_config = jnp.expand_dims(
+            self.pre_process_solve_config(dummy_solve_config), axis=0
+        )
+        dummy_current = jnp.expand_dims(self.pre_process_state(dummy_current), axis=0)
         return self.model.init(
             jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+            dummy_solve_config,
+            dummy_current,
         )
 
     @classmethod
@@ -162,9 +176,14 @@ class NeuralQFunctionBase(QFunction):
             qfunc = cls(puzzle, init_params=False)
             dummy_solve_config = puzzle.SolveConfig.default()
             dummy_current = puzzle.State.default()
+            dummy_solve_config = jnp.expand_dims(
+                qfunc.pre_process_solve_config(dummy_solve_config), axis=0
+            )
+            dummy_current = jnp.expand_dims(qfunc.pre_process_state(dummy_current), axis=0)
             qfunc.model.apply(
                 params,
-                jnp.expand_dims(qfunc.pre_process(dummy_solve_config, dummy_current), axis=0),
+                dummy_solve_config,
+                dummy_current,
                 training=False,
             )  # check if the params are compatible with the model
             qfunc.params = params
@@ -187,10 +206,32 @@ class NeuralQFunctionBase(QFunction):
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
-        x = self.post_process(x)
-        return x
+        preprocessed_solve_config = self.pre_process_solve_config(solve_config)  # [...]
+        preprocessed_current = jax.vmap(self.pre_process_state)(current)  # [batch_size, ...]
+        target_projection, _ = self.model.apply(
+            params,
+            jnp.expand_dims(preprocessed_solve_config, axis=0),
+            training=False,
+            mutable=["batch_stats"],
+            method=self.model.get_solve_config_projection,
+        )  # [1, projection_dim]
+        current_projection, _ = self.model.apply(
+            params,
+            preprocessed_current,
+            training=False,
+            mutable=["batch_stats"],
+            method=self.model.get_state_projection,
+        )  # [batch_size, projection_dim]
+        target_projection = jnp.tile(target_projection, (preprocessed_current.shape[0], 1))
+        q_value, _ = self.model.apply(
+            params,
+            target_projection,
+            current_projection,
+            training=False,
+            mutable=["batch_stats"],
+            method=self.model.distance_from_projection,
+        )  # [batch_size, action_size]
+        return q_value
 
     def q_value(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
         """
@@ -201,13 +242,32 @@ class NeuralQFunctionBase(QFunction):
     def param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = self.pre_process(solve_config, current)
-        x = jnp.expand_dims(x, axis=0)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
-        return self.post_process(x)
+        preprocessed_solve_config = self.pre_process_solve_config(solve_config)[
+            jnp.newaxis, :
+        ]  # [1, ...]
+        preprocessed_current = self.pre_process_state(current)[jnp.newaxis, :]
+        q_value, _ = self.model.apply(
+            params,
+            preprocessed_solve_config,
+            preprocessed_current,
+            training=False,
+            mutable=["batch_stats"],
+            method=self.model.solve_config_distance,
+        )  # [1, action_size]
+        return self.post_process(q_value)
+
+    def pre_process_solve_config(self, solve_config: Puzzle.SolveConfig) -> chex.Array:
+        """
+        This function should return the pre-processed solve config.
+        """
+        assert (
+            self.puzzle.only_target
+        ), "This config is for only target condition, you should redefine this function for your puzzle"
+        target_state = solve_config.TargetState
+        return self.pre_process_state(target_state)
 
     @abstractmethod
-    def pre_process(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
+    def pre_process_state(self, state: Puzzle.State) -> chex.Array:
         """
         This function should return the pre-processed state.
         """

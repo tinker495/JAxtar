@@ -165,20 +165,21 @@ def qlearning(
     **kwargs,
 ):
     writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
-    qfunc_fn = qfunction.model.apply
+    qfunc_model = qfunction.model
     qfunc_params = qfunction.get_new_params()
     target_qfunc_params = qfunction.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(
-        qfunc_params, steps * dataset_batch_size // train_minibatch_size
+        qfunc_params, train_minibatch_size, steps * dataset_batch_size // train_minibatch_size
     )
-    qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_fn, optimizer)
+    qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_model, optimizer)
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
-        qfunction.pre_process,
-        qfunc_fn,
+        qfunction.pre_process_solve_config,
+        qfunction.pre_process_state,
+        qfunc_model,
         dataset_batch_size,
         shuffle_length,
         dataset_minibatch_size,
@@ -189,32 +190,40 @@ def qlearning(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
-        target_heuristic = dataset[1]
-        mean_target_heuristic = jnp.mean(target_heuristic)
+        target_q = dataset[3]
+        mean_target_q = jnp.mean(target_q)
 
         (
             qfunc_params,
             opt_state,
             loss,
             mean_abs_diff,
+            mean_mse_loss,
+            mean_similarity_loss,
             diffs,
+            q_values_at_actions,
             grad_magnitude,
             weight_magnitude,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
-            f", target_q: {mean_target_heuristic:.2f}"
+            f"lr: {lr:.4f}, loss: {loss:.4f}(mse: {mean_mse_loss:.2f}, sim: {mean_similarity_loss:.2f})"
+            f", abs_diff: {mean_abs_diff:.2f}, target_q: {mean_target_q:.2f}"
+            f", current_q: {jnp.mean(q_values_at_actions):.2f}"
         )
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-            writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_scalar("Losses/MSE Loss", mean_mse_loss, i)
+            writer.add_scalar("Losses/Similarity Loss", mean_similarity_loss, i)
+            writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
+            writer.add_scalar("Metrics/Mean Current", jnp.mean(q_values_at_actions), i)
             writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
             writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
-            writer.add_histogram("Metrics/Target", target_heuristic, i)
+            writer.add_histogram("Metrics/Target", target_q, i)
+            writer.add_histogram("Metrics/Current", q_values_at_actions, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
