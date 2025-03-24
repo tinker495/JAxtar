@@ -41,7 +41,6 @@ def davi_builder(
             mutable=["batch_stats"],
             method=heuristic_model.state_similarity,
         )
-        heuristic_params["batch_stats"] = variable_updates["batch_stats"]
 
         cos_similarity = (cos_similarity1 + cos_similarity2) / 2
         similarity_loss = jnp.mean(1 - cos_similarity)
@@ -50,7 +49,7 @@ def davi_builder(
         mse_loss = jnp.mean(jnp.square(diff))
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
         loss = mse_loss + similarity_loss * 0.01
-        return loss, (heuristic_params, mse_loss, similarity_loss, diff)
+        return loss, (heuristic_params, mse_loss, similarity_loss, diff, current_heuristic)
 
     def davi(
         key: chex.PRNGKey,
@@ -94,9 +93,10 @@ def davi_builder(
                 random_neighbors,
                 target_heuristic,
             ) = batched_dataset
-            (loss, (heuristic_params, mse_loss, similarity_loss, diff)), grads = jax.value_and_grad(
-                davi_loss, has_aux=True
-            )(
+            (
+                loss,
+                (heuristic_params, mse_loss, similarity_loss, diff, current_heuristic),
+            ), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
                 preprocessed_solve_configs,
                 preprocessed_states,
@@ -116,6 +116,7 @@ def davi_builder(
                 similarity_loss,
                 diff,
                 grad_magnitude_mean,
+                current_heuristic,
             )
 
         (heuristic_params, opt_state), (
@@ -124,6 +125,7 @@ def davi_builder(
             similarity_losses,
             diffs,
             grad_magnitude_means,
+            current_heuristics,
         ) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
@@ -152,6 +154,7 @@ def davi_builder(
             mean_mse_loss,
             mean_similarity_loss,
             diffs,
+            current_heuristics,
             grad_magnitude_mean,
             weights_magnitude_mean,
         )
@@ -214,12 +217,11 @@ def _get_datasets(
                 neighbors,
                 training=False,
                 mutable=["batch_stats"],
-                method=heuristic_model.state_distance,
+                method=heuristic_model.solve_config_distance,
             )
             return None, heur.squeeze()
 
         _, heur = jax.lax.scan(heur_scan, None, preproc_neighbors)
-        heur = jnp.vstack(heur)
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
         target_heuristic = jnp.min(heur + cost, axis=0)
         target_heuristic = jnp.where(

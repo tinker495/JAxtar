@@ -34,9 +34,10 @@ def setup_logging(
     return tensorboardX.SummaryWriter(log_dir)
 
 
-def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
+def setup_optimizer(params: PyTree, batch_size: int, steps: int) -> optax.OptState:
+    init_lr = 1e-3 * batch_size / 1e4
     lr_schedule = optax.polynomial_schedule(
-        init_value=1e-3, end_value=1e-5, power=1.0, transition_steps=steps // 2
+        init_value=init_lr, end_value=init_lr * 0.1, power=1.0, transition_steps=steps // 2
     )
 
     def adam(learning_rate):
@@ -80,7 +81,7 @@ def davi(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(
-        heuristic_params, steps * dataset_batch_size // train_minibatch_size
+        heuristic_params, train_minibatch_size, steps * dataset_batch_size // train_minibatch_size
     )
     davi_fn = davi_builder(train_minibatch_size, heuristic_model, optimizer)
     get_datasets = get_heuristic_dataset_builder(
@@ -109,6 +110,7 @@ def davi(
             mean_mse_loss,
             mean_similarity_loss,
             diffs,
+            current_heuristics,
             grad_magnitude,
             weight_magnitude,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
@@ -116,6 +118,7 @@ def davi(
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {loss:.4f}(mse: {mean_mse_loss:.2f}, sim: {mean_similarity_loss:.2f})"
             f", abs_diff: {mean_abs_diff:.2f}, target_heuristic: {mean_target_heuristic:.2f}"
+            f", current_heuristic: {jnp.mean(current_heuristics):.2f}"
         )
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
@@ -124,10 +127,12 @@ def davi(
             writer.add_scalar("Losses/MSE Loss", mean_mse_loss, i)
             writer.add_scalar("Losses/Similarity Loss", mean_similarity_loss, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_scalar("Metrics/Mean Current", jnp.mean(current_heuristics), i)
             writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
             writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
+            writer.add_histogram("Metrics/Current", current_heuristics, i)
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
