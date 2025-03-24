@@ -81,6 +81,24 @@ class DefaultModel(nn.Module):
         distance = self.distance_conv(concat)  # [batch_size, 1]
         return distance  # [batch_size, 1]
 
+    def get_solve_config_projection(self, preprocessed_solve_config: chex.Array, training=False):
+        return self.solve_config_projector(preprocessed_solve_config, training)
+
+    def get_state_projection(self, preprocessed_state: chex.Array, training=False):
+        return self.state_projector(preprocessed_state, training)
+
+    def distance_from_projection(
+        self, target_projection: chex.Array, current_projection: chex.Array, training=False
+    ):
+        dot_product = jnp.einsum(
+            "bd, bd -> b", target_projection, current_projection
+        )  # [batch_size]
+        concat = jnp.concatenate(
+            [target_projection, current_projection, dot_product[:, jnp.newaxis]], axis=1
+        )
+        distance = self.distance_conv(concat)  # [batch_size, 1]
+        return distance  # [batch_size, 1]
+
     def state_similarity(self, state1: chex.Array, state2: chex.Array, training=False):
         projection1 = self.state_projector(state1, training)  # [batch_size, projection_dim]
         projection2 = self.state_projector(state2, training)  # [batch_size, projection_dim]
@@ -164,16 +182,28 @@ class NeuralHeuristicBase(Heuristic):
     ) -> chex.Array:
         preprocessed_solve_config = self.pre_process_solve_config(solve_config)  # [...]
         preprocessed_current = jax.vmap(self.pre_process_state)(current)  # [batch_size, ...]
-        preprocessed_solve_config = jnp.tile(
-            jnp.expand_dims(preprocessed_solve_config, axis=0), (preprocessed_current.shape[0], 1)
-        )  # [batch_size, ...]
-        value, _ = self.model.apply(
+        target_projection, _ = self.model.apply(
             params,
-            preprocessed_solve_config,
+            jnp.expand_dims(preprocessed_solve_config, axis=0),
+            training=False,
+            mutable=["batch_stats"],
+            method=self.model.get_solve_config_projection,
+        )  # [1, projection_dim]
+        current_projection, _ = self.model.apply(
+            params,
             preprocessed_current,
             training=False,
             mutable=["batch_stats"],
-            method=self.model.solve_config_distance,
+            method=self.model.get_state_projection,
+        )  # [batch_size, projection_dim]
+        target_projection = jnp.tile(target_projection, (preprocessed_current.shape[0], 1))
+        value, _ = self.model.apply(
+            params,
+            target_projection,
+            current_projection,
+            training=False,
+            mutable=["batch_stats"],
+            method=self.model.distance_from_projection,
         )  # [batch_size, 1]
         return self.post_process(value)
 
