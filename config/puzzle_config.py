@@ -139,54 +139,56 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralHeuristic(puzzle)
     if reset
     else SlidePuzzleNeuralHeuristic.load_model(
-        puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle_{n}.pkl"
+        puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle_{n}_sim.pkl"
     ),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralHeuristic(puzzle)
     if reset
     else LightsOutNeuralHeuristic.load_model(
-        puzzle, f"heuristic/neuralheuristic/model/params/lightsout_{n}.pkl"
+        puzzle, f"heuristic/neuralheuristic/model/params/lightsout_{n}_sim.pkl"
     ),
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralHeuristic(puzzle)
     if reset
     else RubiksCubeNeuralHeuristic.load_model(
-        puzzle, f"heuristic/neuralheuristic/model/params/rubikscube_{n}.pkl"
+        puzzle, f"heuristic/neuralheuristic/model/params/rubikscube_{n}_sim.pkl"
     ),
     "sokoban": lambda n, puzzle, reset: SokobanNeuralHeuristic(puzzle)
     if reset
     else SokobanNeuralHeuristic.load_model(
-        puzzle, f"heuristic/neuralheuristic/model/params/sokoban_{n}.pkl"
+        puzzle, f"heuristic/neuralheuristic/model/params/sokoban_{n}_sim.pkl"
     ),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
     if reset
     else WorldModelNeuralHeuristic.load_model(
-        puzzle, "heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl"
+        puzzle, "heuristic/neuralheuristic/model/params/rubikscube_world_model_None_sim.pkl"
     ),
     "rubikscube_world_model_test": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
     if reset
     else WorldModelNeuralHeuristic.load_model(
-        puzzle, "heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl"
+        puzzle, "heuristic/neuralheuristic/model/params/rubikscube_world_model_None_sim.pkl"
     ),
     "rubikscube_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
     if reset
     else WorldModelNeuralHeuristic.load_model(
-        puzzle, "heuristic/neuralheuristic/model/params/rubikscube_world_model_optimized_None.pkl"
+        puzzle,
+        "heuristic/neuralheuristic/model/params/rubikscube_world_model_optimized_None_sim.pkl",
     ),
     "rubikscube_world_model_optimized_test": lambda n, puzzle, reset: WorldModelNeuralHeuristic(
         puzzle
     )
     if reset
     else WorldModelNeuralHeuristic.load_model(
-        puzzle, "heuristic/neuralheuristic/model/params/rubikscube_world_model_optimized_None.pkl"
+        puzzle,
+        "heuristic/neuralheuristic/model/params/rubikscube_world_model_optimized_None_sim.pkl",
     ),
     "sokoban_world_model": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
     if reset
     else WorldModelNeuralHeuristic.load_model(
-        puzzle, "heuristic/neuralheuristic/model/params/sokoban_world_model_None.pkl"
+        puzzle, "heuristic/neuralheuristic/model/params/sokoban_world_model_None_sim.pkl"
     ),
     "sokoban_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
     if reset
     else WorldModelNeuralHeuristic.load_model(
-        puzzle, "heuristic/neuralheuristic/model/params/sokoban_world_model_optimized_None.pkl"
+        puzzle, "heuristic/neuralheuristic/model/params/sokoban_world_model_optimized_None_sim.pkl"
     ),
 }
 
@@ -212,44 +214,50 @@ puzzle_q_dict: dict[str, QFunction] = {
 puzzle_q_dict_nn: dict[str, callable] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralQ(puzzle)
     if reset
-    else SlidePuzzleNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}.pkl"),
+    else SlidePuzzleNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}_sim.pkl"
+    ),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralQ(puzzle)
     if reset
-    else LightsOutNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/lightsout_{n}.pkl"),
+    else LightsOutNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/lightsout_{n}_sim.pkl"
+    ),
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralQ(puzzle)
     if reset
-    else RubiksCubeNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/rubikscube_{n}.pkl"),
+    else RubiksCubeNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/rubikscube_{n}_sim.pkl"
+    ),
     "sokoban": lambda n, puzzle, reset: SokobanNeuralQ(puzzle)
     if reset
-    else SokobanNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/sokoban_{n}.pkl"),
+    else SokobanNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/sokoban_{n}_sim.pkl"),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None_sim.pkl"
     ),
     "rubikscube_world_model_test": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_None_sim.pkl"
     ),
     "rubikscube_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None_sim.pkl"
     ),
     "rubikscube_world_model_optimized_test": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/rubikscube_world_model_optimized_None_sim.pkl"
     ),
     "sokoban_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_None_sim.pkl"
     ),
     "sokoban_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
-        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl"
+        puzzle, "qfunction/neuralq/model/params/sokoban_world_model_optimized_None_sim.pkl"
     ),
 }
