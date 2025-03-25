@@ -105,11 +105,12 @@ class SearchResult:
         hashtable (HashTable): Stores all encountered states for efficient lookup
         priority_queue (BGPQ): Priority queue for ordering state expansions
         min_key_buffer (chex.Array): Buffer for minimum keys in the priority queue
-        min_val_buffer (HashTableIdx_HeapValue): Buffer for minimum values in the priority queue
-        cost (chex.Array): Cost array tracking path costs to each state
-        not_closed (chex.Array): Boolean array tracking open/closed status (inverted for efficiency)
-        parent (chex.Array): Array storing parent state indices for path reconstruction
-        parent_action (chex.Array): Array storing actions that led to each state
+        min_val_buffer (Current_with_Parent): Buffer for minimum values in the priority queue
+        cost (chex.Array): Cost array tracking path costs to each state (g value)
+        dist (chex.Array): Distance array storing calculated heuristic or Q values
+        parent (Parent): Array storing parent state indices for path reconstruction
+        solved (chex.Array): Boolean flag indicating if a solution has been found
+        solved_idx (Current): Index of the solved state in the hash table
     """
 
     hashtable: HashTable  # hash table
