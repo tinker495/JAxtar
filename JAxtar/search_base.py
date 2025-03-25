@@ -361,8 +361,6 @@ class SearchResult:
             table_index=sorted_idxs[:, 1].astype(HASH_TABLE_IDX_DTYPE),
             cost=sorted_cost,
         )
-        len_sorted = jnp.sum(sorted_mask)
-        jax.debug.print("len_sorted: {len_sorted}", len_sorted=len_sorted)
 
         paths = []
         top_k_leaf_nodes = sorted_leaf_nodes[:top_k]
