@@ -300,9 +300,9 @@ class SearchResult:
         path = [path[i] for i in jnp.where(mask)[0][::-1]] + [solved_idx]
         return path
 
-    @jax.jit
+    @partial(jax.jit, static_argnums=(3,))
     def _get_path(
-        search_result, solved_idx: Current, mask: chex.Array = True, max_len: int = 100
+        search_result, solved_idx: Current, mask: chex.Array = True, max_depth: int = 100
     ) -> tuple[Parent, chex.Array]:
         """
         Get the path to the solved state using jax.lax.scan for JIT compatibility.
@@ -310,11 +310,11 @@ class SearchResult:
         Args:
             search_result: The search result containing parent information
             solved_idx: The index of the solved state
-            max_len: Maximum length of the path to return
+            max_depth: Maximum depth of the path to return
 
         Returns:
             tuple: Contains:
-                - Array of parents with fixed length max_len
+                - Array of parents with fixed length max_depth
                 - Boolean mask indicating valid entries in the path
         """
         parent = search_result.get_parent(solved_idx)
@@ -327,12 +327,12 @@ class SearchResult:
             )
             return next_parent, (parent, cont)
 
-        _, (path, path_mask) = jax.lax.scan(scan_fn, parent, length=(max_len - 1))
+        _, (path, path_mask) = jax.lax.scan(scan_fn, parent, length=max_depth)
         return path, path_mask
 
-    @jax.jit
+    @partial(jax.jit, static_argnums=(2,))
     def get_top_k_branchs_paths(
-        search_result, top_k: int = 1000
+        search_result, top_k: int = 1000, max_depth: int = 100
     ) -> tuple[Current, Parent, chex.Array]:
         """
         Get all branch paths from the solved state.
@@ -366,8 +366,8 @@ class SearchResult:
         paths = []
         top_k_leaf_nodes = sorted_leaf_nodes[:top_k]
         top_k_mask = sorted_mask[:top_k]
-        paths, path_masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0))(
-            search_result, top_k_leaf_nodes, top_k_mask
+        paths, path_masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
+            search_result, top_k_leaf_nodes, top_k_mask, max_depth
         )
         return top_k_leaf_nodes, paths, path_masks
 
