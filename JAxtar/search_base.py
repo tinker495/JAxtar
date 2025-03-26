@@ -330,7 +330,13 @@ class SearchResult:
         _, (path, path_mask) = jax.lax.scan(scan_fn, parent, length=max_depth)
         return path, path_mask
 
-    @partial(jax.jit, static_argnums=(2,))
+    @partial(
+        jax.jit,
+        static_argnums=(
+            1,
+            2,
+        ),
+    )
     def get_top_k_branchs_paths(
         search_result, top_k: int = 1000, max_depth: int = 100
     ) -> tuple[Current, Parent, chex.Array]:

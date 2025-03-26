@@ -11,6 +11,7 @@ from tqdm import trange
 
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from heuristic.neuralheuristic.wbsdai import wbsdai_dataset_builder
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
@@ -36,7 +37,7 @@ def setup_logging(
 
 def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     lr_schedule = optax.polynomial_schedule(
-        init_value=1e-3, end_value=1e-5, power=1.0, transition_steps=steps // 2
+        init_value=1e-4, end_value=1e-5, power=1.0, transition_steps=steps // 2
     )
 
     def adam(learning_rate):
@@ -75,7 +76,6 @@ def davi(
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
     heuristic_fn = heuristic.model.apply
     heuristic_params = heuristic.get_new_params()
-    target_heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
@@ -83,20 +83,27 @@ def davi(
         heuristic_params, steps * dataset_batch_size // train_minibatch_size
     )
     davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer)
-    get_datasets = get_heuristic_dataset_builder(
-        puzzle,
-        heuristic.pre_process,
-        heuristic_fn,
-        dataset_batch_size,
-        shuffle_length,
-        dataset_minibatch_size,
-        using_hindsight_target,
-    )
+    if False:
+        get_datasets = get_heuristic_dataset_builder(
+            puzzle,
+            heuristic.pre_process,
+            heuristic_fn,
+            dataset_batch_size,
+            shuffle_length,
+            dataset_minibatch_size,
+            using_hindsight_target,
+        )
+    else:
+        get_datasets = wbsdai_dataset_builder(
+            puzzle,
+            heuristic,
+            get_dataset_size=dataset_batch_size,
+        )
 
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_heuristic_params, subkey)
+        dataset = get_datasets(heuristic_params, subkey)
         target_heuristic = dataset[1]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
@@ -124,11 +131,8 @@ def davi(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            target_heuristic_params = heuristic_params
-
-        if i % 1000 == 0 and i != 0:
-            heuristic.params = target_heuristic_params
+        if i % 100 == 0 and i != 0:
+            heuristic.params = heuristic_params
             heuristic.save_model(
                 f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
             )
@@ -209,6 +213,6 @@ def qlearning(
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
 
-        if i % 1000 == 0 and i != 0:
+        if i % 100 == 0 and i != 0:
             qfunction.params = target_qfunc_params
             qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
