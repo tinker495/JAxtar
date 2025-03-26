@@ -15,7 +15,7 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
     def pre_process(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
-        target_face = solve_config.TargetState
+        target_face = solve_config.TargetState.faces
         flatten_target_face = self.puzzle.unpack_faces(target_face).flatten()  # (3,3,6) -> (54,)
         flatten_face = self.puzzle.unpack_faces(current.faces).flatten()  # (3,3,6) -> (54,)
         # Create a one-hot encoding of the flattened face
