@@ -37,14 +37,14 @@ def setup_logging(
 
 def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     lr_schedule = optax.polynomial_schedule(
-        init_value=1e-4, end_value=1e-5, power=1.0, transition_steps=steps // 2
+        init_value=1e-3, end_value=1e-5, power=1.0, transition_steps=steps // 2
     )
 
     def adam(learning_rate):
         mask = {"params": True, "batch_stats": False}
         return optax.chain(
             optax.scale_by_adam(),
-            optax.add_decayed_weights(1e-5, mask=mask),
+            optax.add_decayed_weights(1e-2, mask=mask),
             optax.scale_by_learning_rate(learning_rate),
         )
 
