@@ -48,7 +48,7 @@ def puzzle_options(func: callable) -> callable:
 def train_option(func: callable) -> callable:
     @click.option("--steps", type=int, default=int(1e6))
     @click.option("--shuffle_length", type=int, default=30)
-    @click.option("--dataset_batch_size", type=int, default=int(1e6))
+    @click.option("--dataset_batch_size", type=int, default=int(3e5))
     @click.option("--dataset_minibatch_size", type=int, default=int(1e4))
     @click.option("--train_minibatch_size", type=int, default=int(1e3))
     @click.option("--key", type=int, default=0)
