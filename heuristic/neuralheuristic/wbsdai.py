@@ -115,8 +115,9 @@ def wbsdai_dataset_builder(
         list_preprocessed_data = []
         list_true_costs = []
         while dataset_size < get_dataset_size:
+            key, subkey = jax.random.split(key)
             preprocessed_data, true_costs, masks = jitted_get_one_solved_branch_samples(
-                heuristic_params, key
+                heuristic_params, subkey
             )
             list_preprocessed_data.append(preprocessed_data[masks])
             list_true_costs.append(true_costs[masks])
