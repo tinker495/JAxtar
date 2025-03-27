@@ -146,6 +146,6 @@ def wbsdai_dataset_builder(
         assert (
             true_costs.shape[0] == get_dataset_size
         ), f"{true_costs.shape[0]} != {get_dataset_size}"
-        return preprocessed_data, true_costs
+        return (preprocessed_data, true_costs), key
 
     return get_wbsdai_dataset
