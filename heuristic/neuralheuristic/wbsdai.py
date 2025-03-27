@@ -82,7 +82,12 @@ def get_one_solved_branch_samples(
         leaf_solve_configs, path_states
     )
     # preprocessed_data: [topk_branch_size, max_depth, ...]
-    return preprocessed_data, true_costs, masks
+    flattened_preprocessed_data = jnp.reshape(
+        preprocessed_data, (topk_branch_size * max_depth, *preprocessed_data.shape[2:])
+    )
+    flattened_true_costs = jnp.reshape(true_costs, (topk_branch_size * max_depth,))
+    flattened_masks = jnp.reshape(masks, (topk_branch_size * max_depth,))
+    return flattened_preprocessed_data, flattened_true_costs, flattened_masks
 
 
 def wbsdai_dataset_builder(

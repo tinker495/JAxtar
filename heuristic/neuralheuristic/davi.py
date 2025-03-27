@@ -23,14 +23,11 @@ def davi_builder(
         current_heuristic, variable_updates = heuristic_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
-        new_params = {
-            "params": heuristic_params["params"],
-            "batch_stats": variable_updates["batch_stats"],
-        }
+        heuristic_params["batch_stats"] = variable_updates["batch_stats"]
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
         loss = jnp.mean(jnp.square(diff))
-        return loss, (new_params, diff)
+        return loss, (heuristic_params, diff)
 
     def davi(
         key: chex.PRNGKey,
