@@ -27,10 +27,11 @@ def get_one_solved_branch_samples(
 
     search_result = astar_fn(solve_config, initial_state, heuristic_params)
 
-    leafs, paths, masks = search_result.get_top_k_branchs_paths(topk_branch_size, max_depth)
+    leafs, paths, masks = search_result.get_top_k_branchs_paths(topk_branch_size, max_depth - 1)
     # leafs: [topk_branch_size, ...]
-    # paths: [topk_branch_size, max_depth, ...]
-    # masks: [topk_branch_size, max_depth]
+    # paths: [topk_branch_size, max_depth - 1, ...]
+    # masks: [topk_branch_size, max_depth - 1]
+    masks = jnp.concatenate((jnp.ones(masks.shape[0], dtype=bool)[:, jnp.newaxis], masks), axis=1)
 
     leaf_states = search_result.get_state(leafs)
     leaf_costs = search_result.get_cost(leafs)
@@ -44,12 +45,17 @@ def get_one_solved_branch_samples(
     masks = jnp.where((leaf_costs >= costs_threshold)[:, jnp.newaxis], masks, False)
 
     path_states = search_result.get_state(paths)
+    path_states = jax.tree_util.tree_map(
+        lambda x, y: jnp.concatenate((x, y), axis=1), leaf_states[:, jnp.newaxis], path_states
+    )
     path_costs = search_result.get_cost(paths)
+    path_costs = jnp.concatenate((leaf_costs[:, jnp.newaxis], path_costs), axis=1)
     # path_states: [topk_branch_size, max_depth, ...], path_costs: [topk_branch_size, max_depth]
 
     raw_costs = leaf_costs[:, jnp.newaxis] - path_costs
-    raw_costs = jnp.where(masks, raw_costs, jnp.inf)
+    raw_costs = jnp.where(masks, raw_costs, leaf_costs[:, jnp.newaxis])
     # raw_costs: [topk_branch_size, max_depth] , [[1, 2, 3, 4, 5, ...], [1, 2, 3, 4, 5, ...], ...]
+    # example: [1, 2, 3, 4, 5, 6, 7, ... , 20, 21, 22, 22, 22, 22, 22, ...]
 
     incr_costs = raw_costs[:, 1:] - raw_costs[:, :-1]
     incr_costs = jnp.concatenate((raw_costs[:, 0, jnp.newaxis], incr_costs), axis=1)
@@ -65,7 +71,10 @@ def get_one_solved_branch_samples(
     true_costs = jnp.cumsum(incr_costs, axis=1)
     # true_costs: [topk_branch_size, max_depth] , [[0, 0, 1, 2, 3, ...], [0, 0, 0, 1, 2, ...], ...]
     # This represents the cumulative cost from each state to the leaf node
-    masks = jnp.logical_and(masks, ~is_solved)
+    shifted_is_solved = jnp.concatenate(
+        (is_solved[:, 1:], jnp.zeros((topk_branch_size, 1), dtype=jnp.bool_)), axis=1
+    )
+    masks = jnp.logical_and(masks, ~shifted_is_solved)
     # masks: [topk_branch_size, max_depth] ,
     # [[False, False, True, True, True, ...], [False, False, False, True, True, ...], ...]
 
