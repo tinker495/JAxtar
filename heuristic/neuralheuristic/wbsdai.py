@@ -138,6 +138,14 @@ def wbsdai_dataset_builder(
             dataset_size += jnp.sum(masks)
         preprocessed_data = jnp.concatenate(list_preprocessed_data, axis=0)[:get_dataset_size]
         true_costs = jnp.concatenate(list_true_costs, axis=0)[:get_dataset_size]
+        preprocessed_data = jnp.asarray(preprocessed_data).astype(jnp.float32)
+        true_costs = jnp.asarray(true_costs).astype(jnp.float32)
+        assert (
+            preprocessed_data.shape[0] == get_dataset_size
+        ), f"{preprocessed_data.shape[0]} != {get_dataset_size}"
+        assert (
+            true_costs.shape[0] == get_dataset_size
+        ), f"{true_costs.shape[0]} != {get_dataset_size}"
         return preprocessed_data, true_costs
 
     return get_wbsdai_dataset
