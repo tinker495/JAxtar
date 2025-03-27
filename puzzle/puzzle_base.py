@@ -218,9 +218,10 @@ class Puzzle(ABC):
         """
         This function should return a initial state and solve config.
         """
-        data = self.get_data(key)
-        solve_config = self.get_solve_config(key, data)
-        return solve_config, self.get_initial_state(solve_config, key, data)
+        data_key, solve_config_key, initial_state_key = jax.random.split(key, 3)
+        data = self.get_data(data_key)
+        solve_config = self.get_solve_config(solve_config_key, data)
+        return solve_config, self.get_initial_state(solve_config, initial_state_key, data)
 
     def batched_get_neighbours(
         self,
