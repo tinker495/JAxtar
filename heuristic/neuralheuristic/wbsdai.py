@@ -97,8 +97,8 @@ def wbsdai_dataset_builder(
     max_nodes: int = int(2e7),
     cost_weight: float = 0.8,
     max_depth: int = 100,
-    topk_branch_size: int = int(1e3),
-    topk_branch_ratio: float = 1.0,  # use all topk_branch_size
+    topk_branch_size: int = int(1e4),
+    topk_branch_ratio: float = 0.3,  # use all topk_branch_size
     get_dataset_size: int = int(1e6),
 ) -> Callable:
     """
