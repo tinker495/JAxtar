@@ -87,7 +87,7 @@ def get_one_solved_branch_samples(
     )
     flattened_true_costs = jnp.reshape(true_costs, (topk_branch_size * max_depth,))
     flattened_masks = jnp.reshape(masks, (topk_branch_size * max_depth,))
-    return flattened_preprocessed_data, flattened_true_costs, flattened_masks
+    return flattened_preprocessed_data, flattened_true_costs, flattened_masks, search_result.solved
 
 
 def wbsdai_dataset_builder(
@@ -98,7 +98,7 @@ def wbsdai_dataset_builder(
     cost_weight: float = 0.8,
     max_depth: int = 100,
     topk_branch_size: int = int(1e4),
-    topk_branch_ratio: float = 0.3,  # use all topk_branch_size
+    topk_branch_ratio: float = 0.1,  # use all topk_branch_size
     get_dataset_size: int = int(1e6),
 ) -> Callable:
     """
@@ -128,14 +128,18 @@ def wbsdai_dataset_builder(
         dataset_size = 0
         list_preprocessed_data = []
         list_true_costs = []
+        iter_count = 0
+        solved_count = 0
         while dataset_size < get_dataset_size:
             key, subkey = jax.random.split(key)
-            preprocessed_data, true_costs, masks = jitted_get_one_solved_branch_samples(
+            preprocessed_data, true_costs, masks, solved = jitted_get_one_solved_branch_samples(
                 heuristic_params, subkey
             )
             list_preprocessed_data.append(preprocessed_data[masks])
             list_true_costs.append(true_costs[masks])
             dataset_size += jnp.sum(masks)
+            iter_count += 1
+            solved_count += jnp.sum(solved)
         preprocessed_data = jnp.concatenate(list_preprocessed_data, axis=0)[:get_dataset_size]
         true_costs = jnp.concatenate(list_true_costs, axis=0)[:get_dataset_size]
         preprocessed_data = jnp.asarray(preprocessed_data).astype(jnp.float32)
@@ -146,6 +150,6 @@ def wbsdai_dataset_builder(
         assert (
             true_costs.shape[0] == get_dataset_size
         ), f"{true_costs.shape[0]} != {get_dataset_size}"
-        return (preprocessed_data, true_costs), key
+        return (preprocessed_data, true_costs), iter_count, solved_count, key
 
     return get_wbsdai_dataset

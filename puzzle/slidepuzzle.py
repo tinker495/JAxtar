@@ -250,3 +250,18 @@ class SlidePuzzleHard(SlidePuzzle):
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> SlidePuzzle.State:
         return self.hardest_state
+
+
+class SlidePuzzleRandom(SlidePuzzle):
+    """
+    This class is a extension of SlidePuzzle, it will generate the random state for the puzzle.
+    """
+
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
+        shuffled_state = self._get_random_state(key)
+        return self.SolveConfig(TargetState=shuffled_state)
+
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> Puzzle.State:
+        return self._get_random_state(key)

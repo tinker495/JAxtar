@@ -503,3 +503,20 @@ class RubiksCubeDS(RubiksCube):
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> RubiksCube.State:
         return self._get_random_state(solve_config, key, num_shuffle=6)
+
+
+class RubiksCubeRandom(RubiksCube):
+    """
+    This class is a extension of RubiksCube, it will generate the random state for the puzzle.
+    """
+
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
+        init_solve_config = super().get_solve_config(key, data)
+        shuffled_state = self._get_random_state(init_solve_config, key, num_shuffle=100)
+        init_solve_config.TargetState = shuffled_state
+        return init_solve_config
+
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> RubiksCube.State:
+        return self._get_random_state(solve_config, key, num_shuffle=100)

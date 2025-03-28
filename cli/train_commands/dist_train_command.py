@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from typing import Any
 
@@ -9,7 +10,7 @@ import optax
 import tensorboardX
 from tqdm import trange
 
-from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
+from heuristic.neuralheuristic.davi import davi_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from heuristic.neuralheuristic.wbsdai import wbsdai_dataset_builder
 from puzzle.puzzle_base import Puzzle
@@ -37,14 +38,14 @@ def setup_logging(
 
 def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
     lr_schedule = optax.polynomial_schedule(
-        init_value=1e-4, end_value=1e-5, power=1.0, transition_steps=steps // 2
+        init_value=1e-3, end_value=1e-4, power=1.0, transition_steps=steps
     )
 
     def adam(learning_rate):
         mask = {"params": True, "batch_stats": False}
         return optax.chain(
             optax.scale_by_adam(),
-            optax.add_decayed_weights(1e-3, mask=mask),
+            optax.add_decayed_weights(1e-4, mask=mask),
             optax.scale_by_learning_rate(learning_rate),
         )
 
@@ -83,29 +84,27 @@ def davi(
         heuristic_params, steps * dataset_batch_size // train_minibatch_size
     )
     davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer)
-    if False:
-        get_datasets = get_heuristic_dataset_builder(
-            puzzle,
-            heuristic.pre_process,
-            heuristic_fn,
-            dataset_batch_size,
-            shuffle_length,
-            dataset_minibatch_size,
-            using_hindsight_target,
-        )
-    else:
-        get_datasets = wbsdai_dataset_builder(
-            puzzle,
-            heuristic,
-            get_dataset_size=dataset_batch_size,
-        )
+    get_datasets = wbsdai_dataset_builder(
+        puzzle,
+        heuristic,
+        get_dataset_size=dataset_batch_size,
+    )
 
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset, key = get_datasets(heuristic_params, subkey)
-        target_heuristic = dataset[1]
-        mean_target_heuristic = jnp.mean(target_heuristic)
+        if i % 100 == 0:
+            t = time.time()
+            dataset, iter_count, solved_count, key = get_datasets(heuristic_params, subkey)
+            target_heuristic = dataset[1]
+            mean_target_heuristic = jnp.mean(target_heuristic)
+            dt = time.time() - t
+            writer.add_scalar("Metrics/Data sample time", dt, i)
+            writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+            writer.add_histogram("Metrics/Target", target_heuristic, i)
+            writer.add_scalar("Metrics/Iter Count", iter_count, i)
+            writer.add_scalar("Metrics/Solved Count", solved_count, i)
+            writer.add_scalar("Metrics/Solved Ratio", solved_count / iter_count, i)
 
         (
             heuristic_params,
@@ -121,21 +120,21 @@ def davi(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
             f", target_heuristic: {mean_target_heuristic:.2f}"
         )
-        if i % 10 == 0:
-            writer.add_scalar("Metrics/Learning Rate", lr, i)
-            writer.add_scalar("Losses/Loss", loss, i)
-            writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-            writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-            writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-            writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-            writer.add_histogram("Losses/Diff", diffs, i)
-            writer.add_histogram("Metrics/Target", target_heuristic, i)
+        writer.add_scalar("Metrics/Learning Rate", lr, i)
+        writer.add_scalar("Losses/Loss", loss, i)
+        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        writer.add_histogram("Losses/Diff", diffs, i)
 
-        if i % 100 == 0 and i != 0:
+        if i % 1000 == 0 and i != 0:
             heuristic.params = heuristic_params
             heuristic.save_model(
                 f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
             )
+
+    heuristic.params = heuristic_params
+    heuristic.save_model(f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl")
 
 
 @click.command()
