@@ -18,16 +18,18 @@ def get_one_solved_branch_samples(
     heuristic: NeuralHeuristic,
     astar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
     max_depth: int,
-    topk_branch_size: int,
-    topk_branch_ratio: float,
     heuristic_params: jax.tree_util.PyTreeDef,
     key: chex.PRNGKey,
 ):
     solve_config, initial_state = puzzle.get_inits(key)
 
-    search_result = astar_fn(solve_config, initial_state, heuristic_params)
+    search_result, leafs, filled = astar_fn(solve_config, initial_state, heuristic_params)
+    batch_size = filled.shape[0]
 
-    leafs, paths, masks = search_result.get_top_k_branchs_paths(topk_branch_size, max_depth - 1)
+    paths, masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
+        search_result, leafs, filled, max_depth - 1
+    )
+
     # leafs: [topk_branch_size, ...]
     # paths: [topk_branch_size, max_depth - 1, ...]
     # masks: [topk_branch_size, max_depth - 1]
@@ -38,11 +40,6 @@ def get_one_solved_branch_samples(
     # leaf_states: [topk_branch_size, ...], leaf_costs: [topk_branch_size]
     leaf_solve_configs = puzzle.batched_hindsight_transform(leaf_states)  # states -> solve_configs
     # leaf_solve_configs: [topk_branch_size, ...]
-
-    costs_threshold = jnp.max(leaf_costs) * (
-        1 - topk_branch_ratio
-    )  # only samples topk_branch_ratio of the branchs
-    masks = jnp.where((leaf_costs >= costs_threshold)[:, jnp.newaxis], masks, False)
 
     path_states = search_result.get_state(paths)
     path_states = jax.tree_util.tree_map(
@@ -72,7 +69,7 @@ def get_one_solved_branch_samples(
     # true_costs: [topk_branch_size, max_depth] , [[0, 0, 1, 2, 3, ...], [0, 0, 0, 1, 2, ...], ...]
     # This represents the cumulative cost from each state to the leaf node
     shifted_is_solved = jnp.concatenate(
-        (is_solved[:, 1:], jnp.zeros((topk_branch_size, 1), dtype=jnp.bool_)), axis=1
+        (is_solved[:, 1:], jnp.zeros((is_solved.shape[0], 1), dtype=jnp.bool_)), axis=1
     )
     masks = jnp.logical_and(masks, ~shifted_is_solved)
     # masks: [topk_branch_size, max_depth] ,
@@ -83,10 +80,10 @@ def get_one_solved_branch_samples(
     )
     # preprocessed_data: [topk_branch_size, max_depth, ...]
     flattened_preprocessed_data = jnp.reshape(
-        preprocessed_data, (topk_branch_size * max_depth, *preprocessed_data.shape[2:])
+        preprocessed_data, (batch_size * max_depth, *preprocessed_data.shape[2:])
     )
-    flattened_true_costs = jnp.reshape(true_costs, (topk_branch_size * max_depth,))
-    flattened_masks = jnp.reshape(masks, (topk_branch_size * max_depth,))
+    flattened_true_costs = jnp.reshape(true_costs, (batch_size * max_depth,))
+    flattened_masks = jnp.reshape(masks, (batch_size * max_depth,))
     return flattened_preprocessed_data, flattened_true_costs, flattened_masks, search_result.solved
 
 
@@ -97,8 +94,6 @@ def wbsdai_dataset_builder(
     max_nodes: int = int(2e7),
     cost_weight: float = 0.8,
     max_depth: int = 100,
-    topk_branch_size: int = int(1e4),
-    topk_branch_ratio: float = 0.1,  # use all topk_branch_size
     get_dataset_size: int = int(1e6),
 ) -> Callable:
     """
@@ -106,7 +101,13 @@ def wbsdai_dataset_builder(
     """
 
     astar_fn = astar_builder(
-        puzzle, heuristic, batch_size, max_nodes, cost_weight, use_heuristic_params=True
+        puzzle,
+        heuristic,
+        batch_size,
+        max_nodes,
+        cost_weight,
+        use_heuristic_params=True,
+        export_last_pops=True,
     )
 
     jitted_get_one_solved_branch_samples = jax.jit(
@@ -116,8 +117,6 @@ def wbsdai_dataset_builder(
             heuristic,
             astar_fn,
             max_depth,
-            topk_branch_size,
-            topk_branch_ratio,
         )
     )
 
