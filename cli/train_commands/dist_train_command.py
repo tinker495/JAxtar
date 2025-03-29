@@ -73,7 +73,7 @@ def davi(
     using_hindsight_target: bool,
     **kwargs,
 ):
-
+    puzzle_name = puzzle_name.replace("_random", "")
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
     heuristic_fn = heuristic.model.apply
     heuristic_params = heuristic.get_new_params()
