@@ -207,12 +207,12 @@ def astar_builder(
         (search_result, idxes, filled) = jax.lax.while_loop(
             _cond, _body, (search_result, hash_idxs, filled)
         )
-        if export_last_pops:
-            return search_result, idxes, filled
         states = search_result.get_state(idxes)
         solved = puzzle.batched_is_solved(solve_config, states)
         search_result.solved = solved.any()
         search_result.solved_idx = idxes[jnp.argmax(solved)]
+        if export_last_pops:
+            return search_result, idxes, filled
         return search_result
 
     astar_fn = jax.jit(astar)
