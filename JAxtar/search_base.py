@@ -330,53 +330,6 @@ class SearchResult:
         _, (path, path_mask) = jax.lax.scan(scan_fn, parent, length=max_depth)
         return path, path_mask
 
-    @partial(
-        jax.jit,
-        static_argnums=(
-            1,
-            2,
-        ),
-    )
-    def get_top_k_branchs_paths(
-        search_result, top_k: int = 1000, max_depth: int = 100
-    ) -> tuple[Current, Parent, chex.Array]:
-        """
-        Get all branch paths from the solved state.
-        All closed states are pseudo-optimal (they are optimal when the heuristic is admissible).
-        This allows us to collect ground truth heuristic values from these states.
-        If the heuristic is not admissible, the optimality of these paths cannot be guaranteed.
-        All closed states are generally close to optimal paths, even if the heuristic is not perfectly admissible.
-        """
-        closed_masks = jnp.isfinite(search_result.cost)  # [size_table, n_table]
-        no_parented_masks = (
-            jnp.ones_like(closed_masks, dtype=jnp.bool_)
-            .at[search_result.parent.index, search_result.parent.table_index]
-            .set(False)
-        )
-        leaf_mask = jnp.logical_and(closed_masks, no_parented_masks)
-        masked_cost = jnp.where(leaf_mask, search_result.cost, 0)  # [size_table, n_table]
-        flattened_cost = jnp.reshape(masked_cost, (-1,))  # [size_table * n_table]
-        flattened_idxs = jnp.stack(
-            jnp.unravel_index(jnp.arange(search_result.cost.size), search_result.cost.shape), axis=1
-        ).astype(jnp.uint32)
-        flattend_sort_indices = jnp.argsort(flattened_cost, descending=True)
-        sorted_idxs = flattened_idxs[flattend_sort_indices]
-        sorted_cost = flattened_cost[flattend_sort_indices]
-        sorted_mask = leaf_mask[sorted_idxs[:, 0], sorted_idxs[:, 1]]
-        sorted_leaf_nodes = Current(
-            index=sorted_idxs[:, 0].astype(HASH_POINT_DTYPE),
-            table_index=sorted_idxs[:, 1].astype(HASH_TABLE_IDX_DTYPE),
-            cost=sorted_cost,
-        )
-
-        paths = []
-        top_k_leaf_nodes = sorted_leaf_nodes[:top_k]
-        top_k_mask = sorted_mask[:top_k]
-        paths, path_masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
-            search_result, top_k_leaf_nodes, top_k_mask, max_depth
-        )
-        return top_k_leaf_nodes, paths, path_masks
-
     def get_state(search_result, idx: Current) -> Puzzle.State:
         """
         Get the state from the hash table.

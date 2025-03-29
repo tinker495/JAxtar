@@ -9,8 +9,62 @@ from heuristic.neuralheuristic.neuralheuristic_base import (
     NeuralHeuristicBase as NeuralHeuristic,
 )
 from JAxtar.astar import astar_builder
-from JAxtar.search_base import SearchResult
+from JAxtar.search_base import (
+    HASH_POINT_DTYPE,
+    HASH_TABLE_IDX_DTYPE,
+    Current,
+    Parent,
+    SearchResult,
+)
 from puzzle.puzzle_base import Puzzle
+
+
+@partial(
+    jax.jit,
+    static_argnums=(
+        1,
+        2,
+    ),
+)
+def get_top_k_branchs_paths(
+    search_result: SearchResult, top_k: int = 1000, max_depth: int = 100
+) -> tuple[Current, Parent, chex.Array]:
+    """
+    Get all branch paths from the solved state.
+    All closed states are pseudo-optimal (they are optimal when the heuristic is admissible).
+    This allows us to collect ground truth heuristic values from these states.
+    If the heuristic is not admissible, the optimality of these paths cannot be guaranteed.
+    All closed states are generally close to optimal paths, even if the heuristic is not perfectly admissible.
+    """
+    closed_masks = jnp.isfinite(search_result.cost)  # [size_table, n_table]
+    no_parented_masks = (
+        jnp.ones_like(closed_masks, dtype=jnp.bool_)
+        .at[search_result.parent.index, search_result.parent.table_index]
+        .set(False)
+    )
+    leaf_mask = jnp.logical_and(closed_masks, no_parented_masks)
+    masked_cost = jnp.where(leaf_mask, search_result.cost, 0)  # [size_table, n_table]
+    flattened_cost = jnp.reshape(masked_cost, (-1,))  # [size_table * n_table]
+    flattened_idxs = jnp.stack(
+        jnp.unravel_index(jnp.arange(search_result.cost.size), search_result.cost.shape), axis=1
+    ).astype(jnp.uint32)
+    flattend_sort_indices = jnp.argsort(flattened_cost, descending=True)
+    sorted_idxs = flattened_idxs[flattend_sort_indices]
+    sorted_cost = flattened_cost[flattend_sort_indices]
+    sorted_mask = leaf_mask[sorted_idxs[:, 0], sorted_idxs[:, 1]]
+    sorted_leaf_nodes = Current(
+        index=sorted_idxs[:, 0].astype(HASH_POINT_DTYPE),
+        table_index=sorted_idxs[:, 1].astype(HASH_TABLE_IDX_DTYPE),
+        cost=sorted_cost,
+    )
+
+    paths = []
+    top_k_leaf_nodes = sorted_leaf_nodes[:top_k]
+    top_k_mask = sorted_mask[:top_k]
+    paths, path_masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
+        search_result, top_k_leaf_nodes, top_k_mask, max_depth
+    )
+    return top_k_leaf_nodes, paths, path_masks
 
 
 def get_one_solved_branch_samples(
@@ -18,6 +72,7 @@ def get_one_solved_branch_samples(
     heuristic: NeuralHeuristic,
     astar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
     max_depth: int,
+    use_topk_branch: bool,
     heuristic_params: jax.tree_util.PyTreeDef,
     key: chex.PRNGKey,
 ):
@@ -26,9 +81,14 @@ def get_one_solved_branch_samples(
     search_result, leafs, filled = astar_fn(solve_config, initial_state, heuristic_params)
     batch_size = filled.shape[0]
 
-    paths, masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
-        search_result, leafs, filled, max_depth - 1
-    )
+    if use_topk_branch:
+        leafs, paths, masks = get_top_k_branchs_paths(
+            search_result, top_k=batch_size, max_depth=max_depth - 1
+        )
+    else:
+        paths, masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
+            search_result, leafs, filled, max_depth - 1
+        )
 
     # leafs: [topk_branch_size, ...]
     # paths: [topk_branch_size, max_depth - 1, ...]
@@ -95,6 +155,7 @@ def wbsdai_dataset_builder(
     cost_weight: float = 0.8,
     max_depth: int = 100,
     get_dataset_size: int = int(1e6),
+    use_topk_branch: bool = True,
 ) -> Callable:
     """
     wbsdai_builder is a function that returns a partial function of wbsdai.
@@ -117,6 +178,7 @@ def wbsdai_dataset_builder(
             heuristic,
             astar_fn,
             max_depth,
+            use_topk_branch,
         )
     )
 
