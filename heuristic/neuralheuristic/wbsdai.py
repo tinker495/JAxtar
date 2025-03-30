@@ -72,6 +72,7 @@ def get_one_solved_branch_samples(
     heuristic: NeuralHeuristic,
     astar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
     max_depth: int,
+    sample_ratio: float,
     use_topk_branch: bool,
     heuristic_params: jax.tree_util.PyTreeDef,
     key: chex.PRNGKey,
@@ -100,6 +101,10 @@ def get_one_solved_branch_samples(
     # leaf_states: [topk_branch_size, ...], leaf_costs: [topk_branch_size]
     leaf_solve_configs = puzzle.batched_hindsight_transform(leaf_states)  # states -> solve_configs
     # leaf_solve_configs: [topk_branch_size, ...]
+
+    max_leaf_costs = jnp.max(leaf_costs)
+    leaf_mask = leaf_costs > max_leaf_costs * (1.0 - sample_ratio)  # batch_size
+    masks = jnp.where(leaf_mask[:, jnp.newaxis], masks, False)  # [topk_branch_size, max_depth]
 
     path_states = search_result.get_state(paths)
     path_states = jax.tree_util.tree_map(
@@ -154,8 +159,9 @@ def wbsdai_dataset_builder(
     max_nodes: int = int(2e6),
     cost_weight: float = 1.0 - 1e-3,
     max_depth: int = 100,
-    get_dataset_size: int = int(1e6),
+    sample_ratio: float = 0.3,
     use_topk_branch: bool = False,
+    get_dataset_size: int = int(1e6),
 ) -> Callable:
     """
     wbsdai_builder is a function that returns a partial function of wbsdai.
@@ -178,6 +184,7 @@ def wbsdai_dataset_builder(
             heuristic,
             astar_fn,
             max_depth,
+            sample_ratio,
             use_topk_branch,
         )
     )
