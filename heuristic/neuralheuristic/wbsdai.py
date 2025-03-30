@@ -151,11 +151,11 @@ def wbsdai_dataset_builder(
     puzzle: Puzzle,
     heuristic: NeuralHeuristic,
     batch_size: int = 8192,
-    max_nodes: int = int(2e7),
-    cost_weight: float = 0.8,
+    max_nodes: int = int(2e6),
+    cost_weight: float = 1.0 - 1e-3,
     max_depth: int = 100,
     get_dataset_size: int = int(1e6),
-    use_topk_branch: bool = True,
+    use_topk_branch: bool = False,
 ) -> Callable:
     """
     wbsdai_builder is a function that returns a partial function of wbsdai.

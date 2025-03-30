@@ -11,13 +11,12 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
+        _ = BatchNorm(x, training)  # dummy
         x = nn.Conv(256, (3, 3), strides=1, padding="SAME")(x)
-        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ConvResBlock(256, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512)(x)
-        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(512)(x, training)
         x = nn.Dense(1)(x)
