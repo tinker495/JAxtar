@@ -263,6 +263,36 @@ class Puzzle(ABC):
         else:
             return jax.vmap(self.is_solved, in_axes=(None, 0))(solve_configs, states)
 
+    def _get_suffled_state(
+        self, solve_config: "Puzzle.SolveConfig", init_state: "Puzzle.State", key, num_shuffle
+    ):
+        def cond_fun(loop_state):
+            iteration_count, _, _, _ = loop_state
+            return iteration_count < num_shuffle
+
+        def body_fun(loop_state):
+            iteration_count, current_state, previous_state, key = loop_state
+            neighbor_states, costs = self.get_neighbours(solve_config, current_state, filled=True)
+            old_eq = jax.vmap(self.is_equal, in_axes=(None, 0))(previous_state, neighbor_states)
+            valid_mask = jnp.where(old_eq, 0.0, 1.0)
+
+            valid_mask_sum = jnp.sum(valid_mask)
+            probabilities = jax.lax.cond(
+                valid_mask_sum > 0,
+                lambda: valid_mask / valid_mask_sum,
+                lambda: jnp.ones_like(costs) / costs.shape[0],
+            )
+
+            key, subkey = jax.random.split(key)
+            idx = jax.random.choice(subkey, jnp.arange(costs.shape[0]), p=probabilities)
+            next_state = neighbor_states[idx]
+            return (iteration_count + 1, next_state, current_state, key)
+
+        _, final_state, _, _ = jax.lax.while_loop(
+            cond_fun, body_fun, (0, init_state, init_state, key)
+        )
+        return final_state
+
     @abstractmethod
     def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
         """

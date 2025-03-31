@@ -54,7 +54,7 @@ class LightsOut(Puzzle):
         return gen
 
     def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
-        return self._get_random_state(solve_config, key)
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=10)
 
     def get_target_state(self, key=None) -> State:
         return self.State(board=self.to_uint8(jnp.zeros(self.size**2, dtype=bool)))
@@ -126,23 +126,6 @@ class LightsOut(Puzzle):
         form += "━━┛"
         return form
 
-    def _get_random_state(self, solve_config: Puzzle.SolveConfig, key, num_shuffle=8):
-        """
-        This function should return a random state.
-        """
-        init_state = self.get_target_state()
-
-        def random_flip(carry, _):
-            state, key = carry
-            neighbor_states, _ = self.get_neighbours(solve_config, state, filled=True)
-            key, subkey = jax.random.split(key)
-            idx = jax.random.choice(subkey, jnp.arange(self.size**2))
-            next_state = neighbor_states[idx]
-            return (next_state, key), None
-
-        (last_state, _), _ = jax.lax.scan(random_flip, (init_state, key), None, length=num_shuffle)
-        return last_state
-
     def to_uint8(self, board: chex.Array) -> chex.Array:
         # from booleans to uint8
         # boolean 32 to uint8 4
@@ -193,4 +176,4 @@ class LightsOutHard(LightsOut):
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> LightsOut.State:
-        return self._get_random_state(solve_config, key, num_shuffle=50)
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=50)

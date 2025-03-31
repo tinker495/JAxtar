@@ -264,4 +264,4 @@ class SlidePuzzleRandom(SlidePuzzle):
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> Puzzle.State:
-        return self._get_random_state(key)
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=100)

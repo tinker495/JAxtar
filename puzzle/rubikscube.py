@@ -139,7 +139,7 @@ class RubiksCube(Puzzle):
         return gen
 
     def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
-        return self._get_random_state(solve_config, key, num_shuffle=10)
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=10)
 
     def get_target_state(self, key=None) -> State:
         raw_faces = jnp.repeat(jnp.arange(6)[:, None], self.size * self.size, axis=1).astype(
@@ -188,40 +188,6 @@ class RubiksCube(Puzzle):
         This function should return a string representation of the action.
         """
         return f"{rotate_face_map[int(action // 2)]}_{'cw' if action % 2 == 0 else 'ccw'}"
-
-    def _get_random_state(self, solve_config: Puzzle.SolveConfig, key, num_shuffle):
-        """
-        This function returns a random state using jax.lax.while_loop.
-        num_shuffle can be a dynamic JAX tracer.
-        """
-        init_state = self.get_target_state()
-
-        def cond_fun(loop_state):
-            iteration_count, _, _, _ = loop_state
-            return iteration_count < num_shuffle
-
-        def body_fun(loop_state):
-            iteration_count, current_state, previous_state, key = loop_state
-            neighbor_states, costs = self.get_neighbours(solve_config, current_state, filled=True)
-            old_eq = jax.vmap(self.is_equal, in_axes=(None, 0))(previous_state, neighbor_states)
-            valid_mask = jnp.where(old_eq, 0.0, 1.0)
-
-            valid_mask_sum = jnp.sum(valid_mask)
-            probabilities = jax.lax.cond(
-                valid_mask_sum > 0,
-                lambda: valid_mask / valid_mask_sum,
-                lambda: jnp.ones_like(costs) / costs.shape[0],
-            )
-
-            key, subkey = jax.random.split(key)
-            idx = jax.random.choice(subkey, jnp.arange(costs.shape[0]), p=probabilities)
-            next_state = neighbor_states[idx]
-            return (iteration_count + 1, next_state, current_state, key)
-
-        _, final_state, _, _ = jax.lax.while_loop(
-            cond_fun, body_fun, (0, init_state, init_state, key)
-        )
-        return final_state
 
     @staticmethod
     def _rotate_face(shaped_faces: chex.Array, clockwise: bool, mul: int):
@@ -503,7 +469,7 @@ class RubiksCubeHard(RubiksCube):
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> RubiksCube.State:
-        return self._get_random_state(solve_config, key, num_shuffle=50)
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=50)
 
 
 class RubiksCubeDS(RubiksCube):
@@ -514,7 +480,7 @@ class RubiksCubeDS(RubiksCube):
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> RubiksCube.State:
-        return self._get_random_state(solve_config, key, num_shuffle=6)
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=6)
 
 
 class RubiksCubeRandom(RubiksCube):
@@ -524,7 +490,9 @@ class RubiksCubeRandom(RubiksCube):
 
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         init_solve_config = super().get_solve_config(key, data)
-        shuffled_state = self._get_random_state(init_solve_config, key, num_shuffle=100)
+        shuffled_state = self._get_suffled_state(
+            init_solve_config, init_solve_config.TargetState, key, num_shuffle=100
+        )
         init_solve_config.TargetState = shuffled_state
         return init_solve_config
 
@@ -533,4 +501,6 @@ class RubiksCubeRandom(RubiksCube):
     ) -> RubiksCube.State:
         shuffle_key, state_key = jax.random.split(key)
         random_n_shuffle = jax.random.randint(shuffle_key, (), 0, 30)
-        return self._get_random_state(solve_config, state_key, num_shuffle=random_n_shuffle)
+        return self._get_suffled_state(
+            solve_config, solve_config.TargetState, state_key, num_shuffle=random_n_shuffle
+        )
