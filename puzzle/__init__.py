@@ -1,6 +1,6 @@
 from puzzle.dotknot import DotKnot
 from puzzle.hanoi import TowerOfHanoi
-from puzzle.lightsout import LightsOut, LightsOutHard
+from puzzle.lightsout import LightsOut, LightsOutHard, LightsOutRandom
 from puzzle.maze import Maze
 from puzzle.pancake import PancakeSorting
 from puzzle.puzzle_base import Puzzle

@@ -93,7 +93,7 @@ def davi(
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        if i % 10 == 0:
+        if i % 100 == 0:
             t = time.time()
             dataset, iter_count, solved_count, key = get_datasets(heuristic_params, subkey)
             target_heuristic = dataset[1]

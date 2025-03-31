@@ -15,11 +15,12 @@ class ResBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = LayerNorm(x0, training)
-        x = nn.Dense(self.node_size)(x)
+        x = nn.Dense(self.node_size)(x0)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Dense(self.node_size)(x)
-        return x + x0
+        x = BatchNorm(x, training)
+        return nn.relu(x + x0)
 
 
 # Conv Residual Block
@@ -30,8 +31,9 @@ class ConvResBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = LayerNorm(x0, training)
-        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
+        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
+        x = BatchNorm(x, training)
         x = nn.relu(x)
         x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
-        return x + x0
+        x = BatchNorm(x, training)
+        return nn.relu(x + x0)

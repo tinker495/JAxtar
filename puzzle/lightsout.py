@@ -177,3 +177,18 @@ class LightsOutHard(LightsOut):
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> LightsOut.State:
         return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=50)
+
+
+class LightsOutRandom(LightsOut):
+    """
+    This class is a extension of LightsOut, it will generate a random state for the puzzle.
+    """
+
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> LightsOut.State:
+        shuffle_key, state_key = jax.random.split(key)
+        random_n_shuffle = jax.random.randint(shuffle_key, (), 0, 50)
+        return self._get_suffled_state(
+            solve_config, solve_config.TargetState, state_key, num_shuffle=random_n_shuffle
+        )

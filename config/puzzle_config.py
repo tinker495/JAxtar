@@ -22,6 +22,7 @@ from puzzle import (
     DotKnot,
     LightsOut,
     LightsOutHard,
+    LightsOutRandom,
     Maze,
     PancakeSorting,
     Puzzle,
@@ -67,6 +68,7 @@ default_puzzle_sizes: dict[str, int] = {
     "n-puzzle": 4,
     "n-puzzle_random": 4,
     "lightsout": 7,
+    "lightsout_random": 7,
     "rubikscube": 3,
     "rubikscube_random": 3,
     "maze": 20,
@@ -87,6 +89,7 @@ puzzle_dict: dict[str, Puzzle] = {
     "n-puzzle": SlidePuzzle,
     "n-puzzle_random": SlidePuzzleRandom,
     "lightsout": LightsOut,
+    "lightsout_random": LightsOutRandom,
     "rubikscube": RubiksCube,
     "rubikscube_random": RubiksCubeRandom,
     "maze": Maze,
@@ -126,6 +129,7 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "n-puzzle": SlidePuzzleHeuristic,
     "n-puzzle_random": SlidePuzzleHeuristic,
     "lightsout": LightsOutHeuristic,
+    "lightsout_random": LightsOutHeuristic,
     "rubikscube": RubiksCubeHeuristic,
     "rubikscube_random": RubiksCubeHeuristic,
     "maze": MazeHeuristic,
@@ -155,6 +159,11 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
         puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle_{n}.pkl"
     ),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralHeuristic(puzzle)
+    if reset
+    else LightsOutNeuralHeuristic.load_model(
+        puzzle, f"heuristic/neuralheuristic/model/params/lightsout_{n}.pkl"
+    ),
+    "lightsout_random": lambda n, puzzle, reset: LightsOutNeuralHeuristic(puzzle)
     if reset
     else LightsOutNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/lightsout_{n}.pkl"
@@ -212,6 +221,7 @@ puzzle_q_dict: dict[str, QFunction] = {
     "n-puzzle": SlidePuzzleQ,
     "n-puzzle_random": SlidePuzzleQ,
     "lightsout": LightsOutQ,
+    "lightsout_random": LightsOutQ,
     "rubikscube": RubiksCubeQ,
     "rubikscube_random": RubiksCubeQ,
     "maze": MazeQ,
@@ -237,6 +247,9 @@ puzzle_q_dict_nn: dict[str, callable] = {
     if reset
     else SlidePuzzleNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}.pkl"),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralQ(puzzle)
+    if reset
+    else LightsOutNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/lightsout_{n}.pkl"),
+    "lightsout_random": lambda n, puzzle, reset: LightsOutNeuralQ(puzzle)
     if reset
     else LightsOutNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/lightsout_{n}.pkl"),
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralQ(puzzle)
