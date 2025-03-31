@@ -118,7 +118,7 @@ def davi(
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
-            f", target_heuristic: {mean_target_heuristic:.2f}"
+            f", target_heuristic: {mean_target_heuristic:.2f}, samples : {solved_count}/{iter_count}"
         )
         writer.add_scalar("Metrics/Learning Rate", lr, i)
         writer.add_scalar("Losses/Loss", loss, i)

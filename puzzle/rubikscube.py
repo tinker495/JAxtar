@@ -500,7 +500,7 @@ class RubiksCubeRandom(RubiksCube):
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> RubiksCube.State:
         shuffle_key, state_key = jax.random.split(key)
-        random_n_shuffle = jax.random.randint(shuffle_key, (), 0, 30)
+        random_n_shuffle = jax.random.randint(shuffle_key, (), 5, 30)
         return self._get_suffled_state(
             solve_config, solve_config.TargetState, state_key, num_shuffle=random_n_shuffle
         )

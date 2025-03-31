@@ -25,9 +25,7 @@ def davi_builder(
         )
         heuristic_params["batch_stats"] = variable_updates["batch_stats"]
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
-        loss = jnp.mean(
-            optax.huber_loss(target_heuristic, current_heuristic.squeeze(), delta=0.5) / 0.5
-        )
+        loss = jnp.mean(jnp.square(diff))
         return loss, (heuristic_params, diff)
 
     def davi(
