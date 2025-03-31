@@ -428,7 +428,8 @@ class BGPQ:
             min_l = key_store[l][0]
             min_r = key_store[r][0]
             min_lr = jnp.minimum(min_l, min_r)
-            return max_c > min_lr
+            out_of_bounds = jnp.logical_or(jnp.logical_or(c >= size, l >= size), r >= size)
+            return jnp.logical_and(max_c > min_lr, ~out_of_bounds)
 
         def _f(var):
             """Perform one step of heapification"""
