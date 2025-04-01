@@ -76,7 +76,7 @@ def dai(
     puzzle_name = puzzle_name.replace("_random", "")
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
     heuristic_fn = heuristic.model.apply
-    heuristic_params = heuristic.get_new_params()
+    heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 

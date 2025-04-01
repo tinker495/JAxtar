@@ -52,7 +52,6 @@ def train_option(func: callable) -> callable:
     @click.option("--dataset_minibatch_size", type=int, default=int(1e4))
     @click.option("--train_minibatch_size", type=int, default=int(1e4))
     @click.option("--key", type=int, default=0)
-    @click.option("--reset", is_flag=True, help="Reset the target heuristic params")
     @click.option("-l", "--loss_threshold", type=float, default=float("inf"))
     @click.option("-u", "--update_interval", type=int, default=100)
     @click.option("--using_hindsight_target", is_flag=True, help="Use hindsight target")
@@ -74,10 +73,9 @@ def heuristic_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle_name"]
         puzzle_size = kwargs["puzzle_size"]
         puzzle = kwargs["puzzle"]
-        reset = kwargs["reset"]
         try:
             heuristic: NeuralHeuristicBase = puzzle_heuristic_dict_nn[puzzle_name](
-                puzzle_size, puzzle, reset
+                puzzle_size, puzzle, True
             )
         except KeyError:
             raise ValueError(f"No Neural Heuristic for {puzzle_name} with size {puzzle_size}")
@@ -94,10 +92,9 @@ def qfunction_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle_name"]
         puzzle_size = kwargs["puzzle_size"]
         puzzle = kwargs["puzzle"]
-        reset = kwargs["reset"]
         try:
             qfunction: NeuralQFunctionBase = puzzle_q_dict_nn[puzzle_name](
-                puzzle_size, puzzle, reset
+                puzzle_size, puzzle, True
             )
         except KeyError:
             raise ValueError(f"No Neural Q Function for {puzzle_name} with size {puzzle_size}")
