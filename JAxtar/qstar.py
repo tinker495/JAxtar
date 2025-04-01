@@ -95,7 +95,9 @@ def qstar_builder(
 
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
             parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
-            nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
+            nextcosts = (cost[jnp.newaxis, :] + ncost).astype(
+                KEY_DTYPE
+            )  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             q_vals = (
                 q_fn.batched_q_value(solve_config, states, q_fn_params)

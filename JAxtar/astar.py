@@ -100,7 +100,9 @@ def astar_builder(
                 jnp.expand_dims(jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE), axis=1),
                 (1, ncost.shape[1]),
             )  # [n_neighbours, batch_size]
-            nextcosts = cost[jnp.newaxis, :] + ncost  # [n_neighbours, batch_size]
+            nextcosts = (cost[jnp.newaxis, :] + ncost).astype(
+                KEY_DTYPE
+            )  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             parent_index = jnp.tile(
                 jnp.expand_dims(jnp.arange(ncost.shape[1]), axis=0), (ncost.shape[0],)

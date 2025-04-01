@@ -34,6 +34,7 @@ from puzzle import (
     SlidePuzzleRandom,
     Sokoban,
     SokobanHard,
+    TopSpin,
     TowerOfHanoi,
 )
 from puzzle.world_model import (
@@ -77,6 +78,7 @@ default_puzzle_sizes: dict[str, int] = {
     "sokoban": 10,
     "pancake": 16,
     "hanoi": 10,
+    "topspin": 20,
     "rubikscube_world_model": None,
     "rubikscube_world_model_test": None,
     "rubikscube_world_model_optimized": None,
@@ -98,6 +100,7 @@ puzzle_dict: dict[str, Puzzle] = {
     "sokoban": Sokoban,
     "pancake": PancakeSorting,
     "hanoi": TowerOfHanoi,
+    "topspin": TopSpin,
     "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel.load_model(
         "puzzle/world_model/model/params/rubikscube.pkl"
     ),
@@ -138,6 +141,7 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "sokoban": SokobanHeuristic,
     "pancake": PancakeHeuristic,
     "hanoi": EmptyHeuristic,
+    "topspin": EmptyHeuristic,
     "rubikscube_world_model": EmptyHeuristic,
     "rubikscube_world_model_test": EmptyHeuristic,
     "rubikscube_world_model_optimized": EmptyHeuristic,
@@ -229,6 +233,8 @@ puzzle_q_dict: dict[str, QFunction] = {
     "tsp": TSPQ,
     "sokoban": SokobanQ,
     "pancake": PancakeQ,
+    "hanoi": EmptyQFunction,
+    "topspin": EmptyQFunction,
     "worldmodel": EmptyQFunction,
     "rubikscube_world_model": EmptyQFunction,
     "rubikscube_world_model_test": EmptyQFunction,
