@@ -26,7 +26,7 @@ def puzzle_options(func: callable) -> callable:
     )
     @click.option("-h", "--hard", default=False, is_flag=True, help="Use the hard puzzle")
     @click.option("-ps", "--puzzle_size", default="default", type=str, help="Size of the puzzle")
-    @click.option("-s", "--seeds", default="32", type=str, help="Seed for the random puzzle")
+    @click.option("-s", "--seeds", default="0", type=str, help="Seed for the random puzzle")
     @wraps(func)
     def wrapper(*args, **kwargs):
         if kwargs["puzzle_size"] == "default":
