@@ -10,8 +10,8 @@ import optax
 import tensorboardX
 from tqdm import trange
 
-from heuristic.neuralheuristic.davi import davi_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from heuristic.neuralheuristic.train import regression_trainer_builder
 from heuristic.neuralheuristic.wbsdai import wbsdai_dataset_builder
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
@@ -57,7 +57,7 @@ def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
 @puzzle_options
 @heuristic_options
 @train_option
-def davi(
+def dai(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
@@ -83,7 +83,7 @@ def davi(
     optimizer, opt_state = setup_optimizer(
         heuristic_params, steps * dataset_batch_size // train_minibatch_size
     )
-    davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer)
+    regression_trainer = regression_trainer_builder(train_minibatch_size, heuristic_fn, optimizer)
     get_datasets = wbsdai_dataset_builder(
         puzzle,
         heuristic,
@@ -93,7 +93,7 @@ def davi(
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        if i % 100 == 0:
+        if i % update_interval == 0:
             t = time.time()
             dataset, iter_count, solved_count, key = get_datasets(heuristic_params, subkey)
             target_heuristic = dataset[1]
@@ -114,7 +114,7 @@ def davi(
             diffs,
             grad_magnitude,
             weight_magnitude,
-        ) = davi_fn(key, dataset, heuristic_params, opt_state)
+        ) = regression_trainer(key, dataset, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
