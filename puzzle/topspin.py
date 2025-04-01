@@ -37,8 +37,10 @@ class TopSpin(Puzzle):
     def get_string_parser(self) -> callable:
         def parser(state: "TopSpin.State", **kwargs):
             # Highlight the turnstile
-            turnstile_str = " ".join(map(str, state.permutation[: self.turnstile_size]))
-            rest_str = " ".join(map(str, state.permutation[self.turnstile_size :]))
+            turnstile_str = " ".join(
+                map(lambda x: f"{x:2d}", state.permutation[: self.turnstile_size])
+            )
+            rest_str = " ".join(map(lambda x: f"{x:2d}", state.permutation[self.turnstile_size :]))
             return f"[{turnstile_str}] {rest_str}"
 
         return parser
