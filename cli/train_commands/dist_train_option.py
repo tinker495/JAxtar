@@ -80,7 +80,6 @@ def heuristic_options(func: callable) -> callable:
         except KeyError:
             raise ValueError(f"No Neural Heuristic for {puzzle_name} with size {puzzle_size}")
         kwargs["heuristic"] = heuristic
-        kwargs.pop("reset")
         return func(*args, **kwargs)
 
     return wrapper
@@ -99,7 +98,6 @@ def qfunction_options(func: callable) -> callable:
         except KeyError:
             raise ValueError(f"No Neural Q Function for {puzzle_name} with size {puzzle_size}")
         kwargs["qfunction"] = qfunction
-        kwargs.pop("reset")
         return func(*args, **kwargs)
 
     return wrapper
