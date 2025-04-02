@@ -16,6 +16,7 @@ import jax.numpy as jnp
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
+    CUCKOO_TABLE_N,
     HASH_POINT_DTYPE,
     HASH_SIZE_MULTIPLIER,
     HASH_TABLE_IDX_DTYPE,
@@ -124,8 +125,8 @@ class SearchResult:
     solved_idx: Current  # solved index
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
-    def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=0, n_table=2):
+    @partial(jax.jit, static_argnums=(0, 1, 2))
+    def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=42):
         """
         Creates a new instance of SearchResult with initialized data structures.
 
@@ -134,14 +135,13 @@ class SearchResult:
             batch_size (int): Size of batches for parallel processing
             max_nodes (int): Maximum number of nodes to store
             seed (int): Random seed for hash function initialization
-            n_table (int): Number of cuckoo hash tables for collision handling
 
         Returns:
             SearchResult: A new instance with initialized data structures
         """
         # Initialize the hash table for state storage
-        hashtable = HashTable.build(statecls, seed, max_nodes, n_table=n_table)
-        size_table = int(HASH_SIZE_MULTIPLIER * max_nodes / n_table)
+        hashtable = HashTable.build(statecls, seed, max_nodes)
+        size_table = int(HASH_SIZE_MULTIPLIER * max_nodes / CUCKOO_TABLE_N)
 
         # Initialize priority queue for state expansion
         priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent)
@@ -151,9 +151,9 @@ class SearchResult:
         min_val_buffer = Current_with_Parent.default((batch_size,))
 
         # Initialize arrays for tracking costs and state relationships
-        cost = jnp.full((size_table, n_table), jnp.inf, dtype=KEY_DTYPE)
-        dist = jnp.full((size_table, n_table), jnp.inf, dtype=KEY_DTYPE)
-        parent = Parent.default((size_table, n_table))
+        cost = jnp.full((size_table, CUCKOO_TABLE_N), jnp.inf, dtype=KEY_DTYPE)
+        dist = jnp.full((size_table, CUCKOO_TABLE_N), jnp.inf, dtype=KEY_DTYPE)
+        parent = Parent.default((size_table, CUCKOO_TABLE_N))
         solved = jnp.array(False)
         solved_idx = Current.default((1,))
 
@@ -173,11 +173,6 @@ class SearchResult:
     def capacity(self) -> int:
         """Maximum number of states that can be stored."""
         return self.hashtable.capacity
-
-    @property
-    def n_table(self) -> int:
-        """Number of cuckoo hash tables being used."""
-        return self.hashtable.n_table
 
     @property
     def batch_size(self) -> int:
