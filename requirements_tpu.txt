@@ -15,3 +15,4 @@ flax
 optax
 termcolor
 tensorboardX
+flashbax

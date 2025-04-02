@@ -11,8 +11,11 @@ import tensorboardX
 from tqdm import trange
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from heuristic.neuralheuristic.train import regression_trainer_builder
-from heuristic.neuralheuristic.wbsdai import wbsdai_dataset_builder
+from heuristic.neuralheuristic.replay import init_experience_replay
+from heuristic.neuralheuristic.wbsdai import (
+    train_replay_builder,
+    wbsdai_dataset_builder,
+)
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
@@ -80,31 +83,34 @@ def dai(
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
+    buffer, buffer_state = init_experience_replay(
+        heuristic.get_dummy_preprocessed_state(),
+        max_length=int(1e7),
+        min_length=int(1e6),
+        sample_batch_size=train_minibatch_size,
+        add_batch_size=dataset_batch_size,
+    )
     optimizer, opt_state = setup_optimizer(
         heuristic_params, steps * dataset_batch_size // train_minibatch_size
     )
-    regression_trainer = regression_trainer_builder(train_minibatch_size, heuristic_fn, optimizer)
+    replay_trainer = train_replay_builder(buffer, 100, heuristic_fn, optimizer)
     get_datasets = wbsdai_dataset_builder(
-        puzzle,
-        heuristic,
-        get_dataset_size=dataset_batch_size,
+        puzzle, heuristic, buffer, add_batch_size=dataset_batch_size
     )
 
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        if i % update_interval == 0:
+        if i % 100 == 0:
             t = time.time()
-            dataset, iter_count, solved_count, key = get_datasets(heuristic_params, subkey)
-            target_heuristic = dataset[1]
-            mean_target_heuristic = jnp.mean(target_heuristic)
+            buffer_state, search_count, solved_count, key = get_datasets(
+                heuristic_params, buffer_state, subkey
+            )
             dt = time.time() - t
-            writer.add_scalar("Metrics/Data sample time", dt, i)
-            writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-            writer.add_histogram("Metrics/Target", target_heuristic, i)
-            writer.add_scalar("Metrics/Iter Count", iter_count, i)
-            writer.add_scalar("Metrics/Solved Count", solved_count, i)
-            writer.add_scalar("Metrics/Solved Ratio", solved_count / iter_count, i)
+            writer.add_scalar("Samples/Data sample time", dt, i)
+            writer.add_scalar("Samples/Search Count", search_count, i)
+            writer.add_scalar("Samples/Solved Count", solved_count, i)
+            writer.add_scalar("Samples/Solved Ratio", solved_count / search_count, i)
 
         (
             heuristic_params,
@@ -112,20 +118,24 @@ def dai(
             loss,
             mean_abs_diff,
             diffs,
+            sampled_target_heuristics,
             grad_magnitude,
             weight_magnitude,
-        ) = regression_trainer(key, dataset, heuristic_params, opt_state)
+        ) = replay_trainer(key, buffer_state, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
+        mean_target_heuristic = jnp.mean(sampled_target_heuristics)
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {loss:.4f}, abs_diff: {mean_abs_diff:.2f}"
-            f", target_heuristic: {mean_target_heuristic:.2f}, samples : {solved_count}/{iter_count}"
+            f", target_heuristic: {mean_target_heuristic:.2f}, samples : {solved_count}/{search_count}"
         )
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
         writer.add_scalar("Losses/Loss", loss, i)
         writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        writer.add_scalar("Metrics/Learning Rate", lr, i)
         writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
         writer.add_histogram("Losses/Diff", diffs, i)
+        writer.add_histogram("Metrics/Target", sampled_target_heuristics, i)
 
         if i % 100 == 0 and i != 0:
             heuristic.params = heuristic_params
