@@ -151,9 +151,10 @@ class SearchResult:
         min_val_buffer = Current_with_Parent.default((batch_size,))
 
         # Initialize arrays for tracking costs and state relationships
-        cost = jnp.full((size_table, CUCKOO_TABLE_N), jnp.inf, dtype=KEY_DTYPE)
-        dist = jnp.full((size_table, CUCKOO_TABLE_N), jnp.inf, dtype=KEY_DTYPE)
-        parent = Parent.default((size_table, CUCKOO_TABLE_N))
+        # +1 for -1 index as a dummy node
+        cost = jnp.full((size_table + 1, CUCKOO_TABLE_N), jnp.inf, dtype=KEY_DTYPE)
+        dist = jnp.full((size_table + 1, CUCKOO_TABLE_N), jnp.inf, dtype=KEY_DTYPE)
+        parent = Parent.default((size_table + 1, CUCKOO_TABLE_N))
         solved = jnp.array(False)
         solved_idx = Current.default((1,))
 
