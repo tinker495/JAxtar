@@ -37,6 +37,7 @@ def get_top_k_branchs_paths(
     All closed states are generally close to optimal paths, even if the heuristic is not perfectly admissible.
     """
     closed_masks = jnp.isfinite(search_result.cost)  # [size_table, n_table]
+    closed_masks = closed_masks.at[-1, :].set(False)  # mask the last row as a dummy node
     no_parented_masks = (
         jnp.ones_like(closed_masks, dtype=jnp.bool_)
         .at[search_result.parent.index, search_result.parent.table_index]
