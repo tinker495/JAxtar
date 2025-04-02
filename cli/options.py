@@ -12,6 +12,7 @@ from config import (
     puzzle_q_dict,
     puzzle_q_dict_nn,
 )
+from helpers.formatting import human_format_to_float
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
@@ -56,7 +57,7 @@ def puzzle_options(func: callable) -> callable:
 
 def search_options(func: callable) -> callable:
     @click.option(
-        "-m", "--max_node_size", default=2e6, help="Size of the puzzle"
+        "-m", "--max_node_size", default="2e6", type=str, help="Size of the puzzle"
     )  # this is a float for input like 2e6
     @click.option(
         "-b", "--batch_size", default=8192, type=int, help="Batch size for BGPQ"
@@ -77,7 +78,7 @@ def search_options(func: callable) -> callable:
             kwargs["max_node_size"] = 10000
             kwargs["batch_size"] = 100
         kwargs.pop("debug")
-        kwargs["max_node_size"] = int(kwargs["max_node_size"])
+        kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
         return func(*args, **kwargs)
 
     return wrapper
