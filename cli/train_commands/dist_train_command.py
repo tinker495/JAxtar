@@ -39,9 +39,26 @@ def setup_logging(
     return tensorboardX.SummaryWriter(log_dir)
 
 
-def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
-    lr_schedule = optax.polynomial_schedule(
-        init_value=1e-3, end_value=1e-4, power=1.0, transition_steps=steps
+def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.OptState:
+    # Add warmup to the learning rate schedule
+    warmup_steps = 10 * one_iter_size
+
+    # Create a warmup schedule that linearly increases from 0 to init_value
+    warmup_schedule = optax.linear_schedule(
+        init_value=0.0, end_value=1e-3, transition_steps=warmup_steps
+    )
+
+    # Create the main decay schedule
+    decay_schedule = optax.polynomial_schedule(
+        init_value=1e-3,
+        end_value=1e-4,
+        power=1.0,
+        transition_steps=steps * one_iter_size - warmup_steps,
+    )
+
+    # Combine the schedules
+    lr_schedule = optax.join_schedules(
+        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
     )
 
     def adam(learning_rate):
@@ -91,7 +108,7 @@ def dai(
         add_batch_size=dataset_batch_size,
     )
     optimizer, opt_state = setup_optimizer(
-        heuristic_params, steps * dataset_batch_size // train_minibatch_size
+        heuristic_params, steps, dataset_batch_size // train_minibatch_size
     )
     replay_trainer = train_replay_builder(buffer, 100, heuristic_fn, optimizer)
     get_datasets = wbsdai_dataset_builder(
@@ -175,7 +192,7 @@ def qlearning(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(
-        qfunc_params, steps * dataset_batch_size // train_minibatch_size
+        qfunc_params, steps, dataset_batch_size // train_minibatch_size
     )
     qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_fn, optimizer)
     get_datasets = get_qlearning_dataset_builder(
