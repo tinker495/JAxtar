@@ -35,8 +35,22 @@ def setup_logging(
 
 
 def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
-    lr_schedule = optax.polynomial_schedule(
-        init_value=1e-3, end_value=1e-4, power=1.0, transition_steps=steps
+    # Add warmup to the learning rate schedule
+    warmup_steps = 10
+
+    # Create a warmup schedule that linearly increases from 0 to init_value
+    warmup_schedule = optax.linear_schedule(
+        init_value=0.0, end_value=1e-3, transition_steps=warmup_steps
+    )
+
+    # Create the main decay schedule
+    decay_schedule = optax.polynomial_schedule(
+        init_value=1e-3, end_value=1e-4, power=1.0, transition_steps=steps - warmup_steps
+    )
+
+    # Combine the schedules
+    lr_schedule = optax.join_schedules(
+        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
     )
 
     def adam(learning_rate):
