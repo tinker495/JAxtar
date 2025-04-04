@@ -139,7 +139,7 @@ class RubiksCube(Puzzle):
         return gen
 
     def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
-        return self._get_random_state(solve_config, key)
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=10)
 
     def get_target_state(self, key=None) -> State:
         raw_faces = jnp.repeat(jnp.arange(6)[:, None], self.size * self.size, axis=1).astype(
@@ -188,28 +188,6 @@ class RubiksCube(Puzzle):
         This function should return a string representation of the action.
         """
         return f"{rotate_face_map[int(action // 2)]}_{'cw' if action % 2 == 0 else 'ccw'}"
-
-    def _get_random_state(self, solve_config: Puzzle.SolveConfig, key, num_shuffle=10):
-        """
-        This function should return a random state.
-        """
-        init_state = self.get_target_state()
-
-        def random_flip(carry, _):
-            old_state, state, key = carry
-            neighbor_states, costs = self.get_neighbours(solve_config, state, filled=True)
-            old_eq = jax.vmap(self.is_equal, in_axes=(None, 0))(old_state, neighbor_states)
-            mask = jnp.where(old_eq, 0, 1)
-            key, subkey = jax.random.split(key)
-            p = mask / jnp.sum(mask)
-            idx = jax.random.choice(subkey, jnp.arange(costs.shape[0]), p=p)
-            next_state = neighbor_states[idx]
-            return (state, next_state, key), None
-
-        (_, last_state, _), _ = jax.lax.scan(
-            random_flip, (init_state, init_state, key), None, length=num_shuffle
-        )
-        return last_state
 
     @staticmethod
     def _rotate_face(shaped_faces: chex.Array, clockwise: bool, mul: int):
@@ -491,7 +469,7 @@ class RubiksCubeHard(RubiksCube):
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> RubiksCube.State:
-        return self._get_random_state(solve_config, key, num_shuffle=50)
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=50)
 
 
 class RubiksCubeDS(RubiksCube):
@@ -502,4 +480,6 @@ class RubiksCubeDS(RubiksCube):
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> RubiksCube.State:
-        return self._get_random_state(solve_config, key, num_shuffle=6)
+        return self._get_suffled_state(
+            solve_config, solve_config.TargetState, key, num_shuffle=1000
+        )

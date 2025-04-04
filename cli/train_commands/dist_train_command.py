@@ -34,21 +34,38 @@ def setup_logging(
     return tensorboardX.SummaryWriter(log_dir)
 
 
-def setup_optimizer(params: PyTree, batch_size: int, steps: int) -> optax.OptState:
-    init_lr = 1e-3 * batch_size / 1e4
-    lr_schedule = optax.polynomial_schedule(
-        init_value=init_lr, end_value=init_lr * 0.1, power=1.0, transition_steps=steps // 2
+def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.OptState:
+    # Add warmup to the learning rate schedule
+    warmup_steps = 10 * one_iter_size
+
+    # Create a warmup schedule that linearly increases from 0 to init_value
+    warmup_schedule = optax.linear_schedule(
+        init_value=0.0, end_value=1e-3, transition_steps=warmup_steps
     )
 
-    def adam(learning_rate):
+    # Create the main decay schedule
+    decay_schedule = optax.polynomial_schedule(
+        init_value=1e-3,
+        end_value=1e-4,
+        power=1.0,
+        transition_steps=steps * one_iter_size - warmup_steps,
+    )
+
+    # Combine the schedules
+    lr_schedule = optax.join_schedules(
+        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
+    )
+
+    def optimizer_fn(learning_rate):
         mask = {"params": True, "batch_stats": False}
         return optax.chain(
-            optax.scale_by_adam(),
+            optax.scale_by_adam(),  # optax.scale_by_adopt(),
             optax.add_decayed_weights(1e-5, mask=mask),
+            # optax.scale_by_trust_ratio(),
             optax.scale_by_learning_rate(learning_rate),
         )
 
-    optimizer = optax.inject_hyperparams(adam)(lr_schedule)
+    optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
     return optimizer, optimizer.init(params)
 
 
@@ -81,7 +98,7 @@ def davi(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(
-        heuristic_params, train_minibatch_size, steps * dataset_batch_size // train_minibatch_size
+        heuristic_params, steps, dataset_batch_size // train_minibatch_size
     )
     davi_fn = davi_builder(train_minibatch_size, heuristic_model, optimizer)
     get_datasets = get_heuristic_dataset_builder(
@@ -172,7 +189,7 @@ def qlearning(
     key, subkey = jax.random.split(key)
 
     optimizer, opt_state = setup_optimizer(
-        qfunc_params, train_minibatch_size, steps * dataset_batch_size // train_minibatch_size
+        qfunc_params, steps, dataset_batch_size // train_minibatch_size
     )
     qlearning_fn = qlearning_builder(train_minibatch_size, qfunc_model, optimizer)
     get_datasets = get_qlearning_dataset_builder(

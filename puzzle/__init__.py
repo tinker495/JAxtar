@@ -7,4 +7,25 @@ from puzzle.puzzle_base import Puzzle
 from puzzle.rubikscube import RubiksCube, RubiksCubeDS, RubiksCubeHard
 from puzzle.slidepuzzle import SlidePuzzle, SlidePuzzleHard
 from puzzle.sokoban import Sokoban, SokobanDS, SokobanHard
+from puzzle.topspin import TopSpin
 from puzzle.tsp import TSP
+
+__all__ = [
+    "DotKnot",
+    "TowerOfHanoi",
+    "LightsOut",
+    "LightsOutHard",
+    "Maze",
+    "PancakeSorting",
+    "Puzzle",
+    "RubiksCube",
+    "RubiksCubeDS",
+    "RubiksCubeHard",
+    "SlidePuzzle",
+    "SlidePuzzleHard",
+    "Sokoban",
+    "SokobanDS",
+    "SokobanHard",
+    "TSP",
+    "TopSpin",
+]

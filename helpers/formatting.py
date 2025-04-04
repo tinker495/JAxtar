@@ -1,3 +1,9 @@
+def human_format_to_float(num_str):
+    num_str = num_str.upper()  # convert to uppercase
+    num_str = num_str.replace("K", "e3").replace("M", "e6").replace("B", "e9").replace("T", "e12")
+    return float(num_str)
+
+
 def human_format(num):
     num = float("{:.3g}".format(num))
     magnitude = 0

@@ -31,11 +31,37 @@ def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
     return tensorboardX.SummaryWriter(log_dir)
 
 
-def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
-    lr_schedule = optax.polynomial_schedule(
-        init_value=1e-3, end_value=1e-5, power=2.0, transition_steps=steps
+def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.OptState:
+    # Add warmup to the learning rate schedule
+    warmup_steps = 10 * one_iter_size
+
+    # Create a warmup schedule that linearly increases from 0 to init_value
+    warmup_schedule = optax.linear_schedule(
+        init_value=0.0, end_value=1e-3, transition_steps=warmup_steps
     )
-    optimizer = optax.adam(lr_schedule)
+
+    # Create the main decay schedule
+    decay_schedule = optax.polynomial_schedule(
+        init_value=1e-3,
+        end_value=1e-4,
+        power=1.0,
+        transition_steps=steps * one_iter_size - warmup_steps,
+    )
+
+    # Combine the schedules
+    lr_schedule = optax.join_schedules(
+        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
+    )
+
+    def adam(learning_rate):
+        mask = {"params": True, "batch_stats": False}
+        return optax.chain(
+            optax.scale_by_adam(),
+            optax.add_decayed_weights(1e-5, mask=mask),
+            optax.scale_by_learning_rate(learning_rate),
+        )
+
+    optimizer = optax.inject_hyperparams(adam)(lr_schedule)
     return optimizer, optimizer.init(params)
 
 
@@ -73,7 +99,7 @@ def train(
 
     dataset_size = actions.shape[0]
     print("initializing optimizer")
-    optimizer, opt_state = setup_optimizer(params, train_epochs * dataset_size // mini_batch_size)
+    optimizer, opt_state = setup_optimizer(params, train_epochs, dataset_size // mini_batch_size)
 
     print("initializing train function")
     train_fn = world_model_train_builder(
@@ -104,12 +130,14 @@ def train(
         params, opt_state, loss, AE_loss, WM_loss, accuracy = train_fn(
             subkey, (datas, next_datas, actions), params, opt_state, epoch
         )
+        lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"Loss: {loss:.4f},"
+            f"lr: {lr:.4f}, Loss: {loss:.4f},"
             f"AE Loss: {AE_loss:.4f}, WM Loss: {WM_loss:.4f},"
             f"Accuracy: {accuracy:.4f}, Eval Accuracy: {eval_accuracy:.4f}"
         )
         if epoch % 10 == 0:
+            writer.add_scalar("Metrics/Learning Rate", lr, epoch)
             writer.add_scalar("Losses/Loss", loss, epoch)
             writer.add_scalar("Losses/AE Loss", AE_loss, epoch)
             writer.add_scalar("Losses/WM Loss", WM_loss, epoch)

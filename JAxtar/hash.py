@@ -11,6 +11,7 @@ import jax
 import jax.numpy as jnp
 
 from JAxtar.annotate import (
+    CUCKOO_TABLE_N,
     HASH_POINT_DTYPE,
     HASH_SIZE_MULTIPLIER,
     HASH_TABLE_IDX_DTYPE,
@@ -135,7 +136,6 @@ class HashTable:
         capacity: User-specified capacity
         _capacity: Actual internal capacity (larger than specified to handle collisions)
         size: Current number of items in table
-        n_table: Number of hash functions/tables used
         table: The actual storage for states
         table_idx: Indices tracking which hash function was used for each entry
     """
@@ -144,14 +144,13 @@ class HashTable:
     capacity: int
     _capacity: int
     size: int
-    n_table: int  # number of tables
     table: Puzzle.State  # shape = State("args" = (capacity, cuckoo_len, ...), ...)
     table_idx: chex.Array  # shape = (capacity, ) is the index of the table in the cuckoo table.
     # hash_func: HASH_FUNC_TYPE
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-    def build(statecls: Puzzle.State, seed: int, capacity: int, n_table: int = 2):
+    @partial(jax.jit, static_argnums=(0, 1, 2))
+    def build(statecls: Puzzle.State, seed: int, capacity: int):
         """
         Initialize a new hash table with specified parameters.
 
@@ -159,15 +158,16 @@ class HashTable:
             statecls: The puzzle state class to store
             seed: Initial seed for hash functions
             capacity: Desired capacity of the table
-            n_table: Number of hash functions to use (default=2)
 
         Returns:
             Initialized HashTable instance
         """
-        _capacity = int(HASH_SIZE_MULTIPLIER * capacity / n_table)  # Convert to concrete integer
+        _capacity = int(
+            HASH_SIZE_MULTIPLIER * capacity / CUCKOO_TABLE_N
+        )  # Convert to concrete integer
         size = SIZE_DTYPE(0)
         # Initialize table with default states
-        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity + 1, n_table)))
+        table = jax.vmap(jax.vmap(statecls.default))(jnp.zeros((_capacity + 1, CUCKOO_TABLE_N)))
         table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
         # hash_func = hash_func_builder(statecls)
         return HashTable(
@@ -175,7 +175,6 @@ class HashTable:
             capacity=capacity,
             _capacity=_capacity,
             size=size,
-            n_table=n_table,
             table=table,
             table_idx=table_idx,
             # hash_func=hash_func,
@@ -261,7 +260,7 @@ class HashTable:
             seed, idx, table_idx, found = val
 
             def get_new_idx_and_table_idx(seed, idx, table_idx):
-                next_table = table_idx >= (table.n_table - 1)
+                next_table = table_idx >= (CUCKOO_TABLE_N - 1)
                 seed, idx, table_idx = jax.lax.cond(
                     next_table,
                     lambda _: (
@@ -357,7 +356,7 @@ class HashTable:
     ):
         def _next_idx(seeds, _idxs, unupdateds):
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
-                next_table = table_idx >= (table.n_table - 1)
+                next_table = table_idx >= (CUCKOO_TABLE_N - 1)
 
                 def next_table_fn(seed, table):
                     next_idx = HashTable.get_new_idx(hash_func, table, state, seed)
@@ -395,7 +394,7 @@ class HashTable:
             seeds, _idxs = _next_idx(seeds, _idxs, unupdated)
 
             overflowed = jnp.logical_and(
-                _idxs[:, 1] >= table.n_table, unupdated
+                _idxs[:, 1] >= CUCKOO_TABLE_N, unupdated
             )  # Overflowed index must be updated
             _idxs = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
             unique_idxs = jnp.unique(_idxs, axis=0, size=batch_len, return_index=True)[

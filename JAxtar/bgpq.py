@@ -187,11 +187,10 @@ class BGPQ:
         n = ak.shape[-1]  # size of group
         key = jnp.concatenate([ak, bk])
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-        idx = jnp.argsort(key, stable=SORT_STABLE)
-
-        # Sort both key and value arrays using the same index
-        sorted_key = key[idx]
-        sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
+        sorted_key, sorted_idx = jax.lax.sort_key_val(
+            key, jnp.arange(key.shape[0]), is_stable=SORT_STABLE
+        )
+        sorted_val = val[sorted_idx]
         return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
     @staticmethod
@@ -428,7 +427,8 @@ class BGPQ:
             min_l = key_store[l][0]
             min_r = key_store[r][0]
             min_lr = jnp.minimum(min_l, min_r)
-            return max_c > min_lr
+            out_of_bounds = jnp.logical_or(jnp.logical_or(c >= size, l >= size), r >= size)
+            return jnp.logical_and(max_c > min_lr, ~out_of_bounds)
 
         def _f(var):
             """Perform one step of heapification"""
