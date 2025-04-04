@@ -57,7 +57,7 @@ class DefaultModel(nn.Module):
             nn.initializers.he_normal(),
             (1, self.action_size, self.projection_dim),
         )  # [1, action_size, projection_dim]
-        self.distance_conv = nn.Dense(self.action_size)
+        self.distance_conv = nn.Dense(self.action_size, kernel_init=nn.initializers.zeros)
 
     def __call__(
         self,

@@ -51,7 +51,7 @@ class DefaultModel(nn.Module):
         self.solve_config_projector = Projector(projection_dim=self.projection_dim)
         self.state_projector = Projector(projection_dim=self.projection_dim)
         self.predictor = Predictor(projection_dim=self.projection_dim)
-        self.distance_conv = nn.Dense(1)
+        self.distance_conv = nn.Dense(1, kernel_init=nn.initializers.zeros)
 
     def __call__(
         self,
