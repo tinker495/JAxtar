@@ -209,15 +209,29 @@ def _get_datasets(
         random_neighbors = jax.vmap(lambda x, i: x[i], in_axes=(1, 0))(
             preproc_neighbors, random_neighbor_idx
         )  # [batch_size, ...]
+        solve_config_projection, __dict__ = heuristic_model.apply(
+            target_heuristic_params,
+            preprocessed_solve_configs,
+            training=False,
+            mutable=["batch_stats"],
+            method=heuristic_model.get_solve_config_projection,
+        )
 
         def heur_scan(_, neighbors):
-            heur, _ = heuristic_model.apply(
+            current_projection, _ = heuristic_model.apply(
                 target_heuristic_params,
-                preprocessed_solve_configs,
                 neighbors,
                 training=False,
                 mutable=["batch_stats"],
-                method=heuristic_model.solve_config_distance,
+                method=heuristic_model.get_state_projection,
+            )  # [batch_size, projection_dim]
+            heur, _ = heuristic_model.apply(
+                target_heuristic_params,
+                solve_config_projection,
+                current_projection,
+                training=False,
+                mutable=["batch_stats"],
+                method=heuristic_model.distance_from_projection,
             )
             return None, heur.squeeze()
 
