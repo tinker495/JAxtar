@@ -117,15 +117,15 @@ def davi(
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, subkey)
         target_heuristic = dataset[3]
+        random_sampled_target_heuristic = dataset[4]
         mean_target_heuristic = jnp.mean(target_heuristic)
+        mean_random_sampled_target_heuristic = jnp.mean(random_sampled_target_heuristic)
 
         (
             heuristic_params,
             opt_state,
             loss,
             mean_abs_diff,
-            mean_mse_loss,
-            mean_similarity_loss,
             diffs,
             current_heuristics,
             grad_magnitude,
@@ -133,23 +133,28 @@ def davi(
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {loss:.4f}(mse: {mean_mse_loss:.2f}, sim: {mean_similarity_loss:.2f})"
+            f"lr: {lr:.4f}, loss: {loss:.4f}"
             f", abs_diff: {mean_abs_diff:.2f}, target_heuristic: {mean_target_heuristic:.2f}"
             f", current_heuristic: {jnp.mean(current_heuristics):.2f}"
+            f", random_sampled_target_heuristic: {mean_random_sampled_target_heuristic:.2f}"
         )
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-            writer.add_scalar("Losses/MSE Loss", mean_mse_loss, i)
-            writer.add_scalar("Losses/Similarity Loss", mean_similarity_loss, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
             writer.add_scalar("Metrics/Mean Current", jnp.mean(current_heuristics), i)
+            writer.add_scalar(
+                "Metrics/Mean Random Sampled Target", mean_random_sampled_target_heuristic, i
+            )
             writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
             writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
             writer.add_histogram("Metrics/Current", current_heuristics, i)
+            writer.add_histogram(
+                "Metrics/Random Sampled Target", random_sampled_target_heuristic, i
+            )
 
         if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params

@@ -11,7 +11,7 @@ from flax import linen as nn
 from heuristic.heuristic_base import Heuristic
 from puzzle.puzzle_base import Puzzle
 
-from .modules import BatchNorm, LayerNorm, ResBlock, cosine_similarity
+from .modules import BatchNorm, LayerNorm, ResBlock
 from .util import download_model, is_model_downloaded
 
 
@@ -25,22 +25,7 @@ class Projector(nn.Module):
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = LayerNorm(x, training)
-        x = nn.Dense(self.projection_dim)(x)
-        return x
-
-
-class Predictor(nn.Module):
-    projection_dim: int
-
-    @nn.compact
-    def __call__(self, x, training=False):
-        x = nn.Dense(1000)(x)
-        x = nn.relu(x)
-        x = LayerNorm(x, training)
-        x = nn.Dense(1000)(x)
-        x = nn.relu(x)
-        x = LayerNorm(x, training)
-        x = nn.Dense(self.projection_dim)(x)
+        x = nn.Dense(self.projection_dim, kernel_init=nn.initializers.normal(stddev=0.001))(x)
         return x
 
 
@@ -50,8 +35,6 @@ class DefaultModel(nn.Module):
     def setup(self):
         self.solve_config_projector = Projector(projection_dim=self.projection_dim)
         self.state_projector = Projector(projection_dim=self.projection_dim)
-        self.predictor = Predictor(projection_dim=self.projection_dim)
-        self.distance_conv = nn.Dense(1, kernel_init=nn.initializers.zeros)
 
     def __call__(
         self,
@@ -60,8 +43,7 @@ class DefaultModel(nn.Module):
         training=False,
     ):
         a = self.solve_config_distance(preprocessed_solve_config, preprocessed_state, training)
-        b = self.state_similarity(preprocessed_state, preprocessed_state, training)
-        return a, b
+        return a
 
     def solve_config_distance(
         self, preprocessed_target: chex.Array, preprocessed_current: chex.Array, training=False
@@ -75,11 +57,7 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bd -> b", target_projection, current_projection
         )  # [batch_size]
-        concat = jnp.concatenate(
-            [target_projection, current_projection, dot_product[:, jnp.newaxis]], axis=1
-        )
-        distance = self.distance_conv(concat)  # [batch_size, 1]
-        return distance  # [batch_size, 1]
+        return dot_product  # [batch_size, 1]
 
     def get_solve_config_projection(self, preprocessed_solve_config: chex.Array, training=False):
         return self.solve_config_projector(preprocessed_solve_config, training)
@@ -93,24 +71,7 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bd -> b", target_projection, current_projection
         )  # [batch_size]
-        concat = jnp.concatenate(
-            [target_projection, current_projection, dot_product[:, jnp.newaxis]], axis=1
-        )
-        distance = self.distance_conv(concat)  # [batch_size, 1]
-        return distance  # [batch_size, 1]
-
-    def state_similarity(self, state1: chex.Array, state2: chex.Array, training=False):
-        projection1 = self.state_projector(state1, training)  # [batch_size, projection_dim]
-        projection2 = self.state_projector(state2, training)  # [batch_size, projection_dim]
-        prediction1 = self.predictor(projection1, training)  # [batch_size, projection_dim]
-        prediction2 = self.predictor(projection2, training)  # [batch_size, projection_dim]
-        cos_similarity1 = cosine_similarity(
-            prediction1, jax.lax.stop_gradient(projection2)
-        )  # [batch_size]
-        cos_similarity2 = cosine_similarity(
-            prediction2, jax.lax.stop_gradient(projection1)
-        )  # [batch_size]
-        return cos_similarity1, cos_similarity2
+        return dot_product  # [batch_size, 1]
 
 
 class NeuralHeuristicBase(Heuristic):

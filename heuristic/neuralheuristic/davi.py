@@ -20,36 +20,47 @@ def davi_builder(
         heuristic_params: jax.tree_util.PyTreeDef,
         preprocessed_solve_configs: chex.Array,
         preprocessed_states: chex.Array,
-        random_neighbors: chex.Array,
+        random_sampled_projections: chex.Array,
         target_heuristic: chex.Array,
+        random_sampled_target_heuristic: chex.Array,
     ):
-        current_heuristic, variable_updates = heuristic_model.apply(
+        solve_config_projection, _ = heuristic_model.apply(
             heuristic_params,
             preprocessed_solve_configs,
-            preprocessed_states,
             training=True,
             mutable=["batch_stats"],
-            method=heuristic_model.solve_config_distance,
+            method=heuristic_model.get_solve_config_projection,
         )
-        heuristic_params["batch_stats"] = variable_updates["batch_stats"]
-
-        (cos_similarity1, cos_similarity2), variable_updates = heuristic_model.apply(
+        concat_solve_config_projection = jnp.concatenate(
+            [solve_config_projection, random_sampled_projections], axis=0
+        )  # [2 * batch_size, projection_dim]
+        current_projection, _ = heuristic_model.apply(
             heuristic_params,
             preprocessed_states,
-            random_neighbors,
             training=True,
             mutable=["batch_stats"],
-            method=heuristic_model.state_similarity,
+            method=heuristic_model.get_state_projection,
+        )
+        tile_projection = jnp.tile(current_projection, (2, 1))  # [2 * batch_size, projection_dim]
+        print(concat_solve_config_projection.shape, tile_projection.shape)
+        current_heuristic, _ = heuristic_model.apply(
+            heuristic_params,
+            concat_solve_config_projection,
+            tile_projection,
+            training=True,
+            mutable=["batch_stats"],
+            method=heuristic_model.distance_from_projection,
         )
 
-        cos_similarity = (cos_similarity1 + cos_similarity2) / 2
-        similarity_loss = jnp.mean(1 - cos_similarity)
-
-        diff = target_heuristic.squeeze() - current_heuristic.squeeze()
+        concat_target_heuristic = jnp.concatenate(
+            [target_heuristic, random_sampled_target_heuristic], axis=0
+        )
+        diff = concat_target_heuristic.squeeze() - current_heuristic.squeeze()
+        print(diff.shape)
         mse_loss = jnp.mean(jnp.square(diff))
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = mse_loss + similarity_loss * 0.01
-        return loss, (heuristic_params, mse_loss, similarity_loss, diff, current_heuristic)
+        loss = mse_loss
+        return loss, (heuristic_params, diff, current_heuristic)
 
     def davi(
         key: chex.PRNGKey,
@@ -63,8 +74,9 @@ def davi_builder(
         (
             preprocessed_solve_configs,
             preprocessed_states,
-            random_neighbors,
+            random_sampled_projections,
             target_heuristic,
+            random_sampled_target_heuristic,
         ) = dataset
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
@@ -82,26 +94,32 @@ def davi_builder(
             preprocessed_solve_configs, batch_indexs, axis=0
         )
         batched_preprocessed_states = jnp.take(preprocessed_states, batch_indexs, axis=0)
-        batched_random_neighbors = jnp.take(random_neighbors, batch_indexs, axis=0)
+        batched_random_sampled_projections = jnp.take(
+            random_sampled_projections, batch_indexs, axis=0
+        )
         batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
+        batched_random_sampled_target_heuristic = jnp.take(
+            random_sampled_target_heuristic, batch_indexs, axis=0
+        )
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
             (
                 preprocessed_solve_configs,
                 preprocessed_states,
-                random_neighbors,
+                random_sampled_projections,
                 target_heuristic,
+                random_sampled_target_heuristic,
             ) = batched_dataset
-            (
-                loss,
-                (heuristic_params, mse_loss, similarity_loss, diff, current_heuristic),
-            ), grads = jax.value_and_grad(davi_loss, has_aux=True)(
+            (loss, (heuristic_params, diff, current_heuristic),), grads = jax.value_and_grad(
+                davi_loss, has_aux=True
+            )(
                 heuristic_params,
                 preprocessed_solve_configs,
                 preprocessed_states,
-                random_neighbors,
+                random_sampled_projections,
                 target_heuristic,
+                random_sampled_target_heuristic,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
@@ -112,8 +130,6 @@ def davi_builder(
             grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude))
             return (heuristic_params, opt_state), (
                 loss,
-                mse_loss,
-                similarity_loss,
                 diff,
                 grad_magnitude_mean,
                 current_heuristic,
@@ -121,8 +137,6 @@ def davi_builder(
 
         (heuristic_params, opt_state), (
             losses,
-            mse_losses,
-            similarity_losses,
             diffs,
             grad_magnitude_means,
             current_heuristics,
@@ -132,14 +146,13 @@ def davi_builder(
             (
                 batched_preprocessed_solve_configs,
                 batched_preprocessed_states,
-                batched_random_neighbors,
+                batched_random_sampled_projections,
                 batched_target_heuristic,
+                batched_random_sampled_target_heuristic,
             ),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
-        mean_mse_loss = jnp.mean(mse_losses)
-        mean_similarity_loss = jnp.mean(similarity_losses)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude_means))
         weights_magnitude = jax.tree_util.tree_map(
@@ -151,8 +164,6 @@ def davi_builder(
             opt_state,
             loss,
             mean_abs_diff,
-            mean_mse_loss,
-            mean_similarity_loss,
             diffs,
             current_heuristics,
             grad_magnitude_mean,
@@ -182,7 +193,8 @@ def _get_datasets(
     )
     minibatched_move_costs = jnp.reshape(move_costs, (-1, minibatch_size))
 
-    def get_minibatched_datasets(_, vals):
+    def get_minibatched_datasets(key, vals):
+        key, subkey = jax.random.split(key)
         solve_configs, shuffled_path, move_costs = vals
         preprocessed_solve_configs = jax.vmap(solve_config_preproc_fn)(
             solve_configs
@@ -203,19 +215,14 @@ def _get_datasets(
         preproc_neighbors = jax.vmap(jax.vmap(state_preproc_fn))(
             neighbors
         )  # [action_size, batch_size, ...]
-        random_neighbor_idx = jax.random.randint(
-            key, (minibatch_size,), 0, preproc_neighbors.shape[0]
-        )  # [batch_size]
-        random_neighbors = jax.vmap(lambda x, i: x[i], in_axes=(1, 0))(
-            preproc_neighbors, random_neighbor_idx
-        )  # [batch_size, ...]
-        solve_config_projection, __dict__ = heuristic_model.apply(
+        solve_config_projection, _ = heuristic_model.apply(
             target_heuristic_params,
             preprocessed_solve_configs,
             training=False,
             mutable=["batch_stats"],
             method=heuristic_model.get_solve_config_projection,
         )
+        random_sampled_projection = jax.random.normal(subkey, solve_config_projection.shape)
 
         def heur_scan(_, neighbors):
             current_projection, _ = heuristic_model.apply(
@@ -233,30 +240,42 @@ def _get_datasets(
                 mutable=["batch_stats"],
                 method=heuristic_model.distance_from_projection,
             )
-            return None, heur.squeeze()
+            random_sampled_heuristic, _ = heuristic_model.apply(
+                target_heuristic_params,
+                random_sampled_projection,
+                current_projection,
+                training=False,
+                mutable=["batch_stats"],
+                method=heuristic_model.distance_from_projection,
+            )
+            return None, (heur.squeeze(), random_sampled_heuristic.squeeze())
 
-        _, heur = jax.lax.scan(heur_scan, None, preproc_neighbors)
+        _, (heur, random_sampled_heuristic) = jax.lax.scan(heur_scan, None, preproc_neighbors)
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
         target_heuristic = jnp.min(heur + cost, axis=0)
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
 
-        return None, (
+        random_sampled_target_heuristic = jnp.min(random_sampled_heuristic + cost, axis=0)
+
+        return key, (
             preprocessed_solve_configs,
             preprocessed_states,
-            random_neighbors,
+            random_sampled_projection,
             target_heuristic,
+            random_sampled_target_heuristic,
         )
 
     _, (
         preprocessed_solve_configs,
         preprocessed_states,
-        random_neighbors,
+        random_sampled_projections,
         target_heuristic,
+        random_sampled_target_heuristic,
     ) = jax.lax.scan(
         get_minibatched_datasets,
-        None,
+        key,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
     )
 
@@ -264,10 +283,20 @@ def _get_datasets(
         (-1, *preprocessed_solve_configs.shape[2:])
     )
     preprocessed_states = preprocessed_states.reshape((-1, *preprocessed_states.shape[2:]))
-    random_neighbors = random_neighbors.reshape((-1, *random_neighbors.shape[2:]))
+    random_sampled_projections = random_sampled_projections.reshape(
+        (-1, *random_sampled_projections.shape[2:])
+    )
     target_heuristic = target_heuristic.reshape((-1, *target_heuristic.shape[2:]))
-
-    return preprocessed_solve_configs, preprocessed_states, random_neighbors, target_heuristic
+    random_sampled_target_heuristic = random_sampled_target_heuristic.reshape(
+        (-1, *random_sampled_target_heuristic.shape[2:])
+    )
+    return (
+        preprocessed_solve_configs,
+        preprocessed_states,
+        random_sampled_projections,
+        target_heuristic,
+        random_sampled_target_heuristic,
+    )
 
 
 def get_heuristic_dataset_builder(
