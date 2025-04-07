@@ -69,9 +69,9 @@ def davi_builder(
             heuristic_params = optax.apply_updates(heuristic_params, updates)
             # Calculate gradient magnitude mean
             grad_magnitude = jax.tree_util.tree_map(
-                lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(grads["params"])
+                lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
-            grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude))
+            grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (heuristic_params, opt_state), (loss, diff, grad_magnitude_mean)
 
         (heuristic_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
@@ -82,11 +82,12 @@ def davi_builder(
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         # Calculate weights magnitude means
-        grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude_means))
+        grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
-            lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(heuristic_params["params"])
+            lambda x: jnp.abs(jnp.reshape(x, (-1,))),
+            jax.tree_util.tree_leaves(heuristic_params["params"]),
         )
-        weights_magnitude_mean = jnp.mean(jnp.array(weights_magnitude))
+        weights_magnitude_mean = jnp.mean(jnp.concatenate(weights_magnitude))
         return (
             heuristic_params,
             opt_state,

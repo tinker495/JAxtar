@@ -28,7 +28,7 @@ class DefaultModel(nn.Module):
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
-        x = nn.Dense(1)(x)
+        x = nn.Dense(1, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         return x
 
 
