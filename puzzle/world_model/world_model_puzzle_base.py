@@ -8,6 +8,7 @@ from flax import linen as nn
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.world_model.modules import DTYPE, BatchNorm
 from puzzle.world_model.util import (
     download_dataset,
     download_model,
@@ -20,23 +21,19 @@ from puzzle.world_model.util import (
 STR_PARSE_IMG = True
 
 
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
-
-
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
 
     @nn.compact
     def __call__(self, data, training=False):
         shape = data.shape
-        data = (data / 255.0) * 2.0 - 1.0
+        data = ((data / 255.0) * 2.0 - 1.0).astype(DTYPE)
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
-        x = nn.Dense(1000)(flatten)
+        x = nn.Dense(1000, dtype=DTYPE)(flatten)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(latent_size)(x)
+        x = nn.Dense(latent_size, dtype=DTYPE)(x)
         logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
         return logits
 
@@ -47,13 +44,13 @@ class Decoder(nn.Module):
     @nn.compact
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
-        x = (latent - 0.5) * 2.0
-        x = nn.Dense(1000)(x)
+        x = ((latent - 0.5) * 2.0).astype(DTYPE)
+        x = nn.Dense(1000, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(output_size)(x)
+        x = nn.Dense(output_size, dtype=DTYPE)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
-        return output
+        return output.astype(DTYPE)
 
 
 # Residual Block
@@ -77,18 +74,18 @@ class WorldModel(nn.Module):
 
     @nn.compact
     def __call__(self, latent, training=False):
-        x = (latent - 0.5) * 2.0
-        x = nn.Dense(500)(x)
+        x = ((latent - 0.5) * 2.0).astype(DTYPE)
+        x = nn.Dense(500, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(500)(x)
+        x = nn.Dense(500, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(500)(x)
+        x = nn.Dense(500, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
-        logits = nn.Dense(latent_size * self.action_size)(x)
+        logits = nn.Dense(latent_size * self.action_size, dtype=DTYPE)(x)
         logits = jnp.reshape(logits, shape=(x.shape[0], self.action_size) + self.latent_shape)
         return logits
 
@@ -218,6 +215,7 @@ class WorldModelPuzzleBase(Puzzle):
                 download_model(path)
             with open(path, "rb") as f:
                 params = pickle.load(f)
+            params = jax.tree_util.tree_map(lambda x: x.astype(DTYPE), params)
             puzzle = cls(init_params=False)
             dummy_data = jnp.zeros((1, *puzzle.data_shape))
             puzzle.model.apply(

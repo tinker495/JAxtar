@@ -2,11 +2,8 @@ import chex
 import flax.linen as nn
 import jax.numpy as jnp
 
+from puzzle.world_model.modules import DTYPE, BatchNorm, ConvResBlock
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
 
 
 class Encoder(nn.Module):
@@ -14,13 +11,13 @@ class Encoder(nn.Module):
 
     @nn.compact
     def __call__(self, data, training=False):
-        x = (data / 255.0) * 2.0 - 1.0
-        x = nn.Conv(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 20, 20, 16)
+        x = ((data / 255.0) * 2.0 - 1.0).astype(DTYPE)
+        x = nn.Conv(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 20, 20, 16)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Conv(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 10, 10, 16)
+        x = nn.Conv(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 10, 10, 16)
         x = nn.relu(x)
-        logits = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1))(
+        logits = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1), dtype=DTYPE)(
             x
         )  # (batch_size, 10, 10, 16)
         return logits
@@ -32,13 +29,13 @@ class Decoder(nn.Module):
     @nn.compact
     def __call__(self, latent, training=False):
         # batch
-        x = (latent - 0.5) * 2.0
-        x = nn.ConvTranspose(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 20, 20, 16)
+        x = ((latent - 0.5) * 2.0).astype(DTYPE)
+        x = nn.ConvTranspose(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 20, 20, 16)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.ConvTranspose(16, (2, 2), strides=(2, 2))(x)  # (batch_size, 40, 40, 16)
+        x = nn.ConvTranspose(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 40, 40, 16)
         x = nn.relu(x)
-        x = nn.Conv(3, (1, 1), strides=(1, 1))(x)  # (batch_size, 40, 40, 3)
+        x = nn.Conv(3, (1, 1), strides=(1, 1), dtype=DTYPE)(x)  # (batch_size, 40, 40, 3)
         return x
 
 
@@ -63,13 +60,17 @@ class WorldModel(nn.Module):
 
     @nn.compact
     def __call__(self, latent, training=False):
-        x = (latent - 0.5) * 2.0
-        x = nn.Conv(32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal())(
+        x = ((latent - 0.5) * 2.0).astype(DTYPE)
+        x = nn.Conv(
+            32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+        )(
             x
         )  # (batch_size, 10, 10, 32)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Conv(32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal())(
+        x = nn.Conv(
+            32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+        )(
             x
         )  # (batch_size, 10, 10, 32)
         x = BatchNorm(x, training)
@@ -79,6 +80,7 @@ class WorldModel(nn.Module):
             (3, 3),
             strides=(1, 1),
             kernel_init=nn.initializers.orthogonal(),
+            dtype=DTYPE,
         )(
             x
         )  # (batch_size, 10, 10, 16 * self.action_size)
@@ -119,52 +121,26 @@ class SokobanWorldModel(WorldModelPuzzleBase):
         )
 
 
-# Residual Block
-class ResidualBlock(nn.Module):
-    channels: int
-    kernel_size: tuple[int, int] = (1, 1)
-    strides: tuple[int, int] = (1, 1)
-
-    @nn.compact
-    def __call__(self, x0, training=False):
-        x = nn.Conv(
-            self.channels,
-            self.kernel_size,
-            strides=self.strides,
-            kernel_init=nn.initializers.orthogonal(),
-        )(
-            x0
-        )  # (batch_size, 10, 10, 32)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
-        x = nn.Conv(
-            self.channels,
-            self.kernel_size,
-            strides=self.strides,
-            kernel_init=nn.initializers.orthogonal(),
-        )(
-            x
-        )  # (batch_size, 10, 10, 32)
-        x = BatchNorm(x, training)
-        x = nn.relu(x)
-        x = x + x0
-        return x
-
-
 class EncoderOptimized(nn.Module):
     latent_shape: tuple[int, int, int]
 
     @nn.compact
     def __call__(self, data, training=False):
-        x = (data / 255.0) * 2.0 - 1.0
-        x = nn.Conv(16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal())(
+        x = ((data / 255.0) * 2.0 - 1.0).astype(DTYPE)
+        x = nn.Conv(
+            16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+        )(
             x
         )  # (batch_size, 10, 10, 16)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = ResidualBlock(16)(x, training)
+        x = ConvResBlock(16, (1, 1), (1, 1))(x, training)
         logits = nn.Conv(
-            self.latent_shape[-1], (1, 1), strides=(1, 1), kernel_init=nn.initializers.orthogonal()
+            self.latent_shape[-1],
+            (1, 1),
+            strides=(1, 1),
+            kernel_init=nn.initializers.orthogonal(),
+            dtype=DTYPE,
         )(
             x
         )  # (batch_size, 10, 10, 2)
@@ -176,16 +152,20 @@ class DecoderOptimized(nn.Module):
 
     @nn.compact
     def __call__(self, latent, training=False):
-        x = (latent - 0.5) * 2.0
-        x = nn.Conv(16, (1, 1), strides=(1, 1))(x)  # (batch_size, 10, 10, 16)
+        x = ((latent - 0.5) * 2.0).astype(DTYPE)
+        x = nn.Conv(16, (1, 1), strides=(1, 1), dtype=DTYPE)(x)  # (batch_size, 10, 10, 16)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = ResidualBlock(16)(x, training)
-        x = nn.ConvTranspose(16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal())(
+        x = ConvResBlock(16, (1, 1), (1, 1))(x, training)
+        x = nn.ConvTranspose(
+            16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+        )(
             x
         )  # (batch_size, 40, 40, 16)
         x = nn.relu(x)
-        x = nn.Conv(3, (1, 1), strides=(1, 1), kernel_init=nn.initializers.orthogonal())(
+        x = nn.Conv(
+            3, (1, 1), strides=(1, 1), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+        )(
             x
         )  # (batch_size, 40, 40, 3)
         return x

@@ -64,6 +64,7 @@ class NeuralQFunctionBase(QFunction):
                 download_model(path)
             with open(path, "rb") as f:
                 params = pickle.load(f)
+            params = jax.tree_util.tree_map(lambda x: x.astype(DTYPE), params)
             qfunc = cls(puzzle, init_params=False)
             dummy_solve_config = puzzle.SolveConfig.default()
             dummy_current = puzzle.State.default()
