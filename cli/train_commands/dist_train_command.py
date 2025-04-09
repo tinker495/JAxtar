@@ -58,7 +58,7 @@ def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.Opt
 
     def optimizer_fn(learning_rate):
         return optax.chain(
-            optax.scale_by_adopt(),
+            optax.scale_by_adam(),
             optax.scale_by_learning_rate(learning_rate),
         )
 
