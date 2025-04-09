@@ -2,6 +2,7 @@ import chex
 import jax.numpy as jnp
 
 from puzzle.world_model import WorldModelPuzzleBase
+from qfunction.neuralq.modules import DTYPE
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -18,4 +19,4 @@ class WorldModelNeuralQ(NeuralQFunctionBase):
         current_latent = self.puzzle.from_uint8(current.latent).astype(jnp.float32)
         latent_stack = jnp.concatenate([current_latent, target_latent], axis=-1)
         latent_stack = jnp.reshape(latent_stack, (-1,))
-        return (latent_stack - 0.5) * 2.0
+        return ((latent_stack - 0.5) * 2.0).astype(DTYPE)

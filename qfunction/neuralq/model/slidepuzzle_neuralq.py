@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from flax import linen as nn
 
 from puzzle.slidepuzzle import SlidePuzzle
-from qfunction.neuralq.modules import BatchNorm, ConvResBlock, ResBlock
+from qfunction.neuralq.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -13,16 +13,16 @@ class Model(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
-        x = nn.Conv(256, (3, 3), strides=1, padding="SAME")(x)
+        x = nn.Conv(256, (3, 3), strides=1, padding="SAME", dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ConvResBlock(256, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
-        x = nn.Dense(512)(x)
+        x = nn.Dense(512, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(512)(x, training)
-        x = nn.Dense(self.action_size)(x)
+        x = nn.Dense(self.action_size, dtype=DTYPE)(x)
         return x
 
 
@@ -42,7 +42,7 @@ class SlidePuzzleNeuralQ(NeuralQFunctionBase):
         c_zero = self.to_2d(self._zero_pos(current))  # [n, n, 1]
         t_zero = self.to_2d(self._zero_pos(solve_config.TargetState))  # [n, n, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1)  # [n, n, 4]
-        return x
+        return x.astype(DTYPE)
 
     def to_2d(self, x: chex.Array) -> chex.Array:
         return x.reshape((self.puzzle.size, self.puzzle.size, x.shape[-1]))

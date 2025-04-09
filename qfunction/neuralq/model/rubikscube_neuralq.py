@@ -2,6 +2,7 @@ import chex
 import jax
 
 from puzzle.rubikscube import RubiksCube
+from qfunction.neuralq.modules import DTYPE
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -17,4 +18,4 @@ class RubiksCubeNeuralQ(NeuralQFunctionBase):
         flatten_face = self.puzzle.unpack_faces(current.faces).flatten()
         # Create a one-hot encoding of the flattened face
         one_hot = jax.nn.one_hot(flatten_face, num_classes=6).flatten()  # 6 colors in Rubik's Cube
-        return (one_hot - 0.5) * 2.0  # normalize to [-1, 1]
+        return ((one_hot - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]

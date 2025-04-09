@@ -2,6 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from heuristic.neuralheuristic.modules import DTYPE
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.sokoban import Sokoban
 
@@ -18,4 +19,4 @@ class SokobanNeuralHeuristic(NeuralHeuristicBase):
         stacked_board = jnp.concatenate([current_board, target_board], axis=-1)
         one_hot_board = jax.nn.one_hot(stacked_board, num_classes=4)
         flattened_board = jnp.reshape(one_hot_board, (-1,))
-        return (flattened_board - 0.5) * 2.0
+        return ((flattened_board - 0.5) * 2.0).astype(DTYPE)

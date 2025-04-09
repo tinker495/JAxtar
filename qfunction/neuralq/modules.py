@@ -1,8 +1,11 @@
 import flax.linen as nn
+import jax.numpy as jnp
+
+DTYPE = jnp.float16
 
 
 def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
+    return nn.BatchNorm(momentum=0.9, dtype=DTYPE)(x, use_running_average=not training)
 
 
 # Residual Block
@@ -11,10 +14,10 @@ class ResBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = nn.Dense(self.node_size)(x0)
+        x = nn.Dense(self.node_size, dtype=DTYPE)(x0)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(self.node_size)(x)
+        x = nn.Dense(self.node_size, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         return nn.relu(x + x0)
 
@@ -27,9 +30,13 @@ class ConvResBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x0)
+        x = nn.Conv(
+            self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
+        )(x0)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Conv(self.filters, self.kernel_size, strides=self.strides, padding="SAME")(x)
+        x = nn.Conv(
+            self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
+        )(x)
         x = BatchNorm(x, training)
         return nn.relu(x + x0)

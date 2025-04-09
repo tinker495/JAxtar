@@ -1,6 +1,7 @@
 import chex
 import jax.numpy as jnp
 
+from heuristic.neuralheuristic.modules import DTYPE
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.world_model import WorldModelPuzzleBase
 
@@ -18,4 +19,4 @@ class WorldModelNeuralHeuristic(NeuralHeuristicBase):
         current_latent = self.puzzle.from_uint8(current.latent).astype(jnp.float32)
         latent_stack = jnp.concatenate([current_latent, target_latent], axis=-1)
         latent_stack = jnp.reshape(latent_stack, (-1,))
-        return (latent_stack - 0.5) * 2.0
+        return ((latent_stack - 0.5) * 2.0).astype(DTYPE)
