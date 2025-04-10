@@ -2,8 +2,8 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
+from neural_util.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
 from puzzle.lightsout import LightsOut
-from qfunction.neuralq.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 

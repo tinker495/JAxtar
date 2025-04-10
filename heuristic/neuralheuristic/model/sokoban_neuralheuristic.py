@@ -2,8 +2,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from heuristic.neuralheuristic.modules import DTYPE
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.modules import DTYPE
 from puzzle.sokoban import Sokoban
 
 

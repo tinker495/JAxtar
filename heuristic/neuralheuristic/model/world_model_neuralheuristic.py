@@ -1,8 +1,8 @@
 import chex
 import jax.numpy as jnp
 
-from heuristic.neuralheuristic.modules import DTYPE
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.modules import DTYPE
 from puzzle.world_model import WorldModelPuzzleBase
 
 

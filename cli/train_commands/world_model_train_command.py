@@ -10,7 +10,7 @@ import optax
 import tensorboardX
 from tqdm import trange
 
-from puzzle.world_model.util import round_through_gradient
+from neural_util.util import round_through_gradient
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 from puzzle.world_model.world_model_train import (
     world_model_eval_builder,

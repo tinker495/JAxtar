@@ -2,7 +2,7 @@ import chex
 import flax.linen as nn
 import jax.numpy as jnp
 
-from puzzle.world_model.modules import DTYPE, BatchNorm, ConvResBlock
+from neural_util.modules import DTYPE, BatchNorm, ConvResBlock
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 

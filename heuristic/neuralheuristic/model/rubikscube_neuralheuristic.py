@@ -1,8 +1,8 @@
 import chex
 import jax
 
-from heuristic.neuralheuristic.modules import DTYPE
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.modules import DTYPE
 from puzzle.rubikscube import RubiksCube
 
 

@@ -6,17 +6,17 @@ import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
 
-from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
-from puzzle.world_model.modules import DTYPE, BatchNorm
-from puzzle.world_model.util import (
-    download_dataset,
+from helpers.formatting import img_to_colored_str
+from neural_util.modules import DTYPE, BatchNorm
+from neural_util.util import (
     download_model,
-    img_to_colored_str,
-    is_dataset_downloaded,
+    download_world_model_dataset,
     is_model_downloaded,
+    is_world_model_dataset_downloaded,
     round_through_gradient,
 )
+from puzzle.annotate import IMG_SIZE
+from puzzle.puzzle_base import Puzzle, state_dataclass
 
 STR_PARSE_IMG = True
 
@@ -237,8 +237,8 @@ class WorldModelPuzzleBase(Puzzle):
         This function should be called in the __init__ of the subclass.
         If the puzzle need to load dataset, this function should be filled.
         """
-        if not is_dataset_downloaded():
-            download_dataset()
+        if not is_world_model_dataset_downloaded():
+            download_world_model_dataset()
         self.inits = jnp.load(self.data_path + "/inits.npy").to_device(jax.devices("gpu")[0])
         self.targets = jnp.load(self.data_path + "/targets.npy").to_device(jax.devices("gpu")[0])
         self.num_puzzles = self.inits.shape[0]

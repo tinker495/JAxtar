@@ -9,10 +9,9 @@ import numpy as np
 from flax import linen as nn
 
 from heuristic.heuristic_base import Heuristic
+from neural_util.modules import DTYPE, BatchNorm, ResBlock
+from neural_util.util import download_model, is_model_downloaded
 from puzzle.puzzle_base import Puzzle
-
-from .modules import DTYPE, BatchNorm, ResBlock
-from .util import download_model, is_model_downloaded
 
 
 class DefaultModel(nn.Module):

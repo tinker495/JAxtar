@@ -2,8 +2,8 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
-from heuristic.neuralheuristic.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
 from puzzle.lightsout import LightsOut
 
 

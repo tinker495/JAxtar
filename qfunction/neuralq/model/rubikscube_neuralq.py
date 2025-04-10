@@ -1,8 +1,8 @@
 import chex
 import jax
 
+from neural_util.modules import DTYPE
 from puzzle.rubikscube import RubiksCube
-from qfunction.neuralq.modules import DTYPE
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
