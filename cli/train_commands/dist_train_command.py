@@ -10,6 +10,7 @@ from tqdm import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.optimizer import setup_optimizer
+from neural_util.target_update import soft_update
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
@@ -48,6 +49,7 @@ def davi(
     key: int,
     loss_threshold: float,
     update_interval: int,
+    use_soft_update: bool,
     using_hindsight_target: bool,
     **kwargs,
 ):
@@ -104,7 +106,11 @@ def davi(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        if use_soft_update:
+            target_heuristic_params = soft_update(
+                target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
+            )
+        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
 
         if i % 1000 == 0 and i != 0:
@@ -131,6 +137,7 @@ def qlearning(
     key: int,
     loss_threshold: float,
     update_interval: int,
+    use_soft_update: bool,
     using_hindsight_target: bool,
     **kwargs,
 ):
@@ -186,7 +193,11 @@ def qlearning(
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        if use_soft_update:
+            target_qfunc_params = soft_update(
+                target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
+            )
+        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
 
         if i % 1000 == 0 and i != 0:
