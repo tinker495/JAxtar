@@ -1,16 +1,15 @@
 from datetime import datetime
-from typing import Any
 
 import click
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 import tensorboardX
 from tqdm import trange
 
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.optimizer import setup_optimizer
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
@@ -22,8 +21,6 @@ from .dist_train_option import (
     train_option,
 )
 
-PyTree = Any
-
 
 def setup_logging(
     puzzle_name: str, puzzle_size: int, train_type: str
@@ -32,38 +29,6 @@ def setup_logging(
         f"runs/{puzzle_name}_{puzzle_size}_{train_type}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     )
     return tensorboardX.SummaryWriter(log_dir)
-
-
-def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.OptState:
-    # Add warmup to the learning rate schedule
-    warmup_steps = 10 * one_iter_size
-
-    # Create a warmup schedule that linearly increases from 0 to init_value
-    warmup_schedule = optax.linear_schedule(
-        init_value=0.0, end_value=1e-3, transition_steps=warmup_steps
-    )
-
-    # Create the main decay schedule
-    decay_schedule = optax.polynomial_schedule(
-        init_value=1e-3,
-        end_value=1e-4,
-        power=1.0,
-        transition_steps=steps * one_iter_size - warmup_steps,
-    )
-
-    # Combine the schedules
-    lr_schedule = optax.join_schedules(
-        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
-    )
-
-    def optimizer_fn(learning_rate):
-        return optax.chain(
-            optax.scale_by_adam(),
-            optax.scale_by_learning_rate(learning_rate),
-        )
-
-    optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
-    return optimizer, optimizer.init(params)
 
 
 @click.command()
