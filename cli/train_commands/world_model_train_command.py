@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Any
 
 import chex
 import click
@@ -22,8 +21,6 @@ from .world_model_train_option import (
     get_world_model_options,
     train_options,
 )
-
-PyTree = Any
 
 
 def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
