@@ -6,11 +6,11 @@ import click
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import optax
 import tensorboardX
 from tqdm import trange
 
-from neural_util.util import round_through_gradient
+from neural_util.modules import round_through_gradient
+from neural_util.optimizer import setup_optimizer
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 from puzzle.world_model.world_model_train import (
     world_model_eval_builder,
@@ -29,40 +29,6 @@ PyTree = Any
 def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
     log_dir = f"runs/{world_model_name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     return tensorboardX.SummaryWriter(log_dir)
-
-
-def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.OptState:
-    # Add warmup to the learning rate schedule
-    warmup_steps = 10 * one_iter_size
-
-    # Create a warmup schedule that linearly increases from 0 to init_value
-    warmup_schedule = optax.linear_schedule(
-        init_value=0.0, end_value=1e-3, transition_steps=warmup_steps
-    )
-
-    # Create the main decay schedule
-    decay_schedule = optax.polynomial_schedule(
-        init_value=1e-3,
-        end_value=1e-4,
-        power=1.0,
-        transition_steps=steps * one_iter_size - warmup_steps,
-    )
-
-    # Combine the schedules
-    lr_schedule = optax.join_schedules(
-        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
-    )
-
-    def adam(learning_rate):
-        mask = {"params": True, "batch_stats": False}
-        return optax.chain(
-            optax.scale_by_adam(),
-            optax.add_decayed_weights(1e-5, mask=mask),
-            optax.scale_by_learning_rate(learning_rate),
-        )
-
-    optimizer = optax.inject_hyperparams(adam)(lr_schedule)
-    return optimizer, optimizer.init(params)
 
 
 @click.command()
