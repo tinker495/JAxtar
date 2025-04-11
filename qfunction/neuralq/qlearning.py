@@ -114,9 +114,9 @@ def qlearning_builder(
             q_params = optax.apply_updates(q_params, updates)
             # Calculate gradient magnitude mean
             grad_magnitude = jax.tree_util.tree_map(
-                lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(grads["params"])
+                lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
-            grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude))
+            grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (q_params, opt_state), (
                 loss,
                 mse_loss,
@@ -149,11 +149,11 @@ def qlearning_builder(
         mean_mse_loss = jnp.mean(mse_losses)
         mean_similarity_loss = jnp.mean(similarity_losses)
         # Calculate weights magnitude means
-        grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude_means))
+        grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
-            lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(q_params["params"])
+            lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(q_params["params"])
         )
-        weights_magnitude_mean = jnp.mean(jnp.array(weights_magnitude))
+        weights_magnitude_mean = jnp.mean(jnp.concatenate(weights_magnitude))
         return (
             q_params,
             opt_state,

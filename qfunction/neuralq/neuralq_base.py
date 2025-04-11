@@ -8,11 +8,10 @@ import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
 
+from neural_util.modules import DTYPE, BatchNorm, LayerNorm, ResBlock, cosine_similarity
+from neural_util.util import download_model, is_model_downloaded
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
-
-from .modules import BatchNorm, LayerNorm, ResBlock, cosine_similarity
-from .util import download_model, is_model_downloaded
 
 
 class Projector(nn.Module):
@@ -25,7 +24,7 @@ class Projector(nn.Module):
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = LayerNorm(x, training)
-        x = nn.Dense(self.projection_dim)(x)
+        x = nn.Dense(self.projection_dim, dtype=DTYPE)(x)
         return x
 
 

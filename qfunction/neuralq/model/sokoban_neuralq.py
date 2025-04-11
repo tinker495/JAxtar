@@ -2,6 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from neural_util.modules import DTYPE
 from puzzle.sokoban import Sokoban
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
@@ -16,4 +17,4 @@ class SokobanNeuralQ(NeuralQFunctionBase):
         board = self.puzzle.unpack_board(state.board)
         one_hot_board = jax.nn.one_hot(board, num_classes=4)
         flattened_board = jnp.reshape(one_hot_board, (-1,))
-        return (flattened_board - 0.5) * 2.0
+        return ((flattened_board - 0.5) * 2.0).astype(DTYPE)

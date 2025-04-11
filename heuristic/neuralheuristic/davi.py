@@ -125,9 +125,9 @@ def davi_builder(
             heuristic_params = optax.apply_updates(heuristic_params, updates)
             # Calculate gradient magnitude mean
             grad_magnitude = jax.tree_util.tree_map(
-                lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(grads["params"])
+                lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
-            grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude))
+            grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (heuristic_params, opt_state), (
                 loss,
                 diff,
@@ -154,11 +154,12 @@ def davi_builder(
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         # Calculate weights magnitude means
-        grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude_means))
+        grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
-            lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(heuristic_params["params"])
+            lambda x: jnp.abs(jnp.reshape(x, (-1,))),
+            jax.tree_util.tree_leaves(heuristic_params["params"]),
         )
-        weights_magnitude_mean = jnp.mean(jnp.array(weights_magnitude))
+        weights_magnitude_mean = jnp.mean(jnp.concatenate(weights_magnitude))
         return (
             heuristic_params,
             opt_state,
@@ -224,7 +225,7 @@ def _get_datasets(
         )
         random_sampled_projection = jax.random.normal(subkey, solve_config_projection.shape)
 
-        def heur_scan(_, neighbors):
+        def heur_scan(neighbors):
             current_projection, _ = heuristic_model.apply(
                 target_heuristic_params,
                 neighbors,
@@ -248,9 +249,11 @@ def _get_datasets(
                 mutable=["batch_stats"],
                 method=heuristic_model.distance_from_projection,
             )
-            return None, (heur.squeeze(), random_sampled_heuristic.squeeze())
+            return heur.squeeze(), random_sampled_heuristic.squeeze()
 
-        _, (heur, random_sampled_heuristic) = jax.lax.scan(heur_scan, None, preproc_neighbors)
+        heur, random_sampled_heuristic = jax.vmap(heur_scan)(
+            preproc_neighbors
+        )  # [action_size, batch_size]
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
         target_heuristic = jnp.min(heur + cost, axis=0)
         target_heuristic = jnp.where(

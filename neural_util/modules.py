@@ -3,6 +3,8 @@ from typing import Callable
 import flax.linen as nn
 import jax.numpy as jnp
 
+DTYPE = jnp.bfloat16
+
 
 def cosine_similarity(x, y):
     return jnp.einsum("bd, bd -> b", x, y) / (
@@ -11,7 +13,7 @@ def cosine_similarity(x, y):
 
 
 def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
+    return nn.BatchNorm(momentum=0.9, dtype=DTYPE)(x, use_running_average=not training)
 
 
 def LayerNorm(x, training):

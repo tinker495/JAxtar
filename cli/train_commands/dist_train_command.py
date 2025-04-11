@@ -1,16 +1,16 @@
 from datetime import datetime
-from typing import Any
 
 import click
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 import tensorboardX
 from tqdm import trange
 
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.optimizer import setup_optimizer
+from neural_util.target_update import soft_update
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
@@ -22,8 +22,6 @@ from .dist_train_option import (
     train_option,
 )
 
-PyTree = Any
-
 
 def setup_logging(
     puzzle_name: str, puzzle_size: int, train_type: str
@@ -32,41 +30,6 @@ def setup_logging(
         f"runs/{puzzle_name}_{puzzle_size}_{train_type}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     )
     return tensorboardX.SummaryWriter(log_dir)
-
-
-def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.OptState:
-    # Add warmup to the learning rate schedule
-    warmup_steps = 10 * one_iter_size
-
-    # Create a warmup schedule that linearly increases from 0 to init_value
-    warmup_schedule = optax.linear_schedule(
-        init_value=0.0, end_value=1e-3, transition_steps=warmup_steps
-    )
-
-    # Create the main decay schedule
-    decay_schedule = optax.polynomial_schedule(
-        init_value=1e-3,
-        end_value=1e-4,
-        power=1.0,
-        transition_steps=steps * one_iter_size - warmup_steps,
-    )
-
-    # Combine the schedules
-    lr_schedule = optax.join_schedules(
-        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
-    )
-
-    def optimizer_fn(learning_rate):
-        mask = {"params": True, "batch_stats": False}
-        return optax.chain(
-            optax.scale_by_adopt(),  # optax.scale_by_adopt(),
-            optax.add_decayed_weights(1e-5, mask=mask),
-            optax.scale_by_trust_ratio(),
-            optax.scale_by_learning_rate(learning_rate),
-        )
-
-    optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
-    return optimizer, optimizer.init(params)
 
 
 @click.command()
@@ -86,6 +49,7 @@ def davi(
     key: int,
     loss_threshold: float,
     update_interval: int,
+    use_soft_update: bool,
     using_hindsight_target: bool,
     **kwargs,
 ):
@@ -133,10 +97,10 @@ def davi(
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {loss:.4f}"
-            f", abs_diff: {mean_abs_diff:.2f}, target_heuristic: {mean_target_heuristic:.2f}"
-            f", current_heuristic: {jnp.mean(current_heuristics):.2f}"
-            f", random_sampled_target_heuristic: {mean_random_sampled_target_heuristic:.2f}"
+            f"lr: {lr:.4f}, loss: {float(loss):.4f}"
+            f", abs_diff: {float(mean_abs_diff):.2f}, target_heuristic: {float(mean_target_heuristic):.2f}"
+            f", current_heuristic: {float(jnp.mean(current_heuristics)):.2f}"
+            f", random_sampled_target_heuristic: {float(mean_random_sampled_target_heuristic):.2f}"
         )
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
@@ -156,18 +120,19 @@ def davi(
                 "Metrics/Random Sampled Target", random_sampled_target_heuristic, i
             )
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        if use_soft_update:
+            target_heuristic_params = soft_update(
+                target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
+            )
+        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = target_heuristic_params
-            heuristic.save_model(
-                f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}_sim.pkl"
-            )
+            heuristic.save_model()
 
 
 @click.command()
-@puzzle_options
 @qfunction_options
 @train_option
 def qlearning(
@@ -183,6 +148,7 @@ def qlearning(
     key: int,
     loss_threshold: float,
     update_interval: int,
+    use_soft_update: bool,
     using_hindsight_target: bool,
     **kwargs,
 ):
@@ -229,9 +195,10 @@ def qlearning(
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {loss:.4f}(mse: {mean_mse_loss:.2f}, sim: {mean_similarity_loss:.2f})"
-            f", abs_diff: {mean_abs_diff:.2f}, target_q: {mean_target_q:.2f}"
-            f", current_q: {jnp.mean(q_values_at_actions):.2f}"
+            f"lr: {lr:.4f}, loss: {float(loss):.4f}(mse: {float(mean_mse_loss):.2f}"
+            f", sim: {float(mean_similarity_loss):.2f})"
+            f", abs_diff: {float(mean_abs_diff):.2f}, target_q: {float(mean_target_q):.2f}"
+            f", current_q: {float(jnp.mean(q_values_at_actions)):.2f}"
         )
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
@@ -247,7 +214,11 @@ def qlearning(
             writer.add_histogram("Metrics/Target", target_q, i)
             writer.add_histogram("Metrics/Current", q_values_at_actions, i)
 
-        if (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        if use_soft_update:
+            target_qfunc_params = soft_update(
+                target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
+            )
+        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
 
         if i % 1000 == 0 and i != 0:

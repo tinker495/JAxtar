@@ -9,10 +9,9 @@ import numpy as np
 from flax import linen as nn
 
 from heuristic.heuristic_base import Heuristic
+from neural_util.modules import DTYPE, BatchNorm, LayerNorm, ResBlock
+from neural_util.util import download_model, is_model_downloaded
 from puzzle.puzzle_base import Puzzle
-
-from .modules import BatchNorm, LayerNorm, ResBlock
-from .util import download_model, is_model_downloaded
 
 
 class Projector(nn.Module):
@@ -25,7 +24,9 @@ class Projector(nn.Module):
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = LayerNorm(x, training)
-        x = nn.Dense(self.projection_dim, kernel_init=nn.initializers.normal(stddev=0.001))(x)
+        x = nn.Dense(
+            self.projection_dim, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.001)
+        )(x)
         return x
 
 
