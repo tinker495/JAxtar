@@ -215,7 +215,6 @@ class WorldModelPuzzleBase(Puzzle):
                 download_model(path)
             with open(path, "rb") as f:
                 params = pickle.load(f)
-            params = jax.tree_util.tree_map(lambda x: x.astype(DTYPE), params)
             puzzle = cls(init_params=False)
             dummy_data = jnp.zeros((1, *puzzle.data_shape))
             puzzle.model.apply(

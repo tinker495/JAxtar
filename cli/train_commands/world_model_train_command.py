@@ -106,6 +106,7 @@ def train(
             writer.add_scalar("Losses/WM Loss", WM_loss, epoch)
             writer.add_scalar("Metrics/Accuracy", accuracy, epoch)
 
+        if epoch % 100 == 0:
             eval_accuracy = eval_fn(params, eval_trajectory)
             writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
 

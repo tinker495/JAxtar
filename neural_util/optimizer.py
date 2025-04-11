@@ -10,7 +10,7 @@ PyTree = Any
 
 def scale_by_adopt(
     b1: float = 0.9,
-    b2: float = 0.9999,
+    b2: float = 0.99,
     eps: float = 1e-6,
     mu_dtype: Optional[jnp.dtype] = None,
     *,
