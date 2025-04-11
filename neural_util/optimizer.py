@@ -86,19 +86,19 @@ def scale_by_adopt(
 
 def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.OptState:
     # Add warmup to the learning rate schedule
+    lr = 1e-3
     warmup_steps = 10 * one_iter_size
 
     # Create a warmup schedule that linearly increases from 0 to init_value
     warmup_schedule = optax.linear_schedule(
-        init_value=0.0, end_value=1e-3, transition_steps=warmup_steps
+        init_value=0.0, end_value=lr, transition_steps=warmup_steps
     )
 
     # Create the main decay schedule
-    decay_schedule = optax.polynomial_schedule(
-        init_value=1e-3,
-        end_value=1e-4,
-        power=1.0,
-        transition_steps=steps * one_iter_size - warmup_steps,
+    decay_schedule = optax.schedules.exponential_decay(
+        lr,
+        5000,
+        0.995,
     )
 
     # Combine the schedules
