@@ -6,22 +6,19 @@ import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
 
-from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
-from puzzle.world_model.util import (
-    download_dataset,
+from helpers.formatting import img_to_colored_str
+from neural_util.modules import DTYPE, BatchNorm
+from neural_util.util import (
     download_model,
-    img_to_colored_str,
-    is_dataset_downloaded,
+    download_world_model_dataset,
     is_model_downloaded,
+    is_world_model_dataset_downloaded,
     round_through_gradient,
 )
+from puzzle.annotate import IMG_SIZE
+from puzzle.puzzle_base import Puzzle, state_dataclass
 
 STR_PARSE_IMG = True
-
-
-def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9)(x, use_running_average=not training)
 
 
 class Encoder(nn.Module):
@@ -30,13 +27,13 @@ class Encoder(nn.Module):
     @nn.compact
     def __call__(self, data, training=False):
         shape = data.shape
-        data = (data / 255.0) * 2.0 - 1.0
+        data = ((data / 255.0) * 2.0 - 1.0).astype(DTYPE)
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
-        x = nn.Dense(1000)(flatten)
+        x = nn.Dense(1000, dtype=DTYPE)(flatten)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(latent_size)(x)
+        x = nn.Dense(latent_size, dtype=DTYPE)(x)
         logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
         return logits
 
@@ -47,13 +44,13 @@ class Decoder(nn.Module):
     @nn.compact
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
-        x = (latent - 0.5) * 2.0
-        x = nn.Dense(1000)(x)
+        x = ((latent - 0.5) * 2.0).astype(DTYPE)
+        x = nn.Dense(1000, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(output_size)(x)
+        x = nn.Dense(output_size, dtype=DTYPE)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
-        return output
+        return output.astype(DTYPE)
 
 
 # Residual Block
@@ -77,18 +74,18 @@ class WorldModel(nn.Module):
 
     @nn.compact
     def __call__(self, latent, training=False):
-        x = (latent - 0.5) * 2.0
-        x = nn.Dense(500)(x)
+        x = ((latent - 0.5) * 2.0).astype(DTYPE)
+        x = nn.Dense(500, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(500)(x)
+        x = nn.Dense(500, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(500)(x)
+        x = nn.Dense(500, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
-        logits = nn.Dense(latent_size * self.action_size)(x)
+        logits = nn.Dense(latent_size * self.action_size, dtype=DTYPE)(x)
         logits = jnp.reshape(logits, shape=(x.shape[0], self.action_size) + self.latent_shape)
         return logits
 
@@ -239,8 +236,8 @@ class WorldModelPuzzleBase(Puzzle):
         This function should be called in the __init__ of the subclass.
         If the puzzle need to load dataset, this function should be filled.
         """
-        if not is_dataset_downloaded():
-            download_dataset()
+        if not is_world_model_dataset_downloaded():
+            download_world_model_dataset()
         self.inits = jnp.load(self.data_path + "/inits.npy").to_device(jax.devices("gpu")[0])
         self.targets = jnp.load(self.data_path + "/targets.npy").to_device(jax.devices("gpu")[0])
         self.num_puzzles = self.inits.shape[0]

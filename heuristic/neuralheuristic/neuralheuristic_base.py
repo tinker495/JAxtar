@@ -9,26 +9,25 @@ import numpy as np
 from flax import linen as nn
 
 from heuristic.heuristic_base import Heuristic
+from neural_util.modules import DTYPE, BatchNorm, ResBlock
+from neural_util.util import download_model, is_model_downloaded
 from puzzle.puzzle_base import Puzzle
-
-from .modules import BatchNorm, ResBlock
-from .util import download_model, is_model_downloaded
 
 
 class DefaultModel(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(5000)(x)
+        x = nn.Dense(5000, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(1000)(x)
+        x = nn.Dense(1000, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
-        x = nn.Dense(1, kernel_init=nn.initializers.normal(stddev=0.01))(x)
+        x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         return x
 
 
