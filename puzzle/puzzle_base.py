@@ -87,6 +87,14 @@ class Puzzle(ABC):
         """
         return self.has_target and len(self.SolveConfig.__annotations__.keys()) == 1
 
+    @property
+    def fixed_target(self) -> bool:
+        """
+        This function should return a boolean that indicates whether the target state is fixed and doesn't change.
+        default is only_target, but if the target state is not fixed, you should redefine this function.
+        """
+        return self.only_target
+
     def __init__(self, **kwargs):
         """
         This function should be called in the __init__ of the subclass.
