@@ -89,6 +89,8 @@ def davi(
             heuristic_params,
             opt_state,
             loss,
+            mse_loss,
+            ortho_loss,
             mean_abs_diff,
             diffs,
             current_heuristics,
@@ -97,7 +99,7 @@ def davi(
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {float(loss):.4f}"
+            f"lr: {lr:.4f}, loss: {float(loss):.4f}(mse: {float(mse_loss):.2f}, ortho: {float(ortho_loss):.2f})"
             f", abs_diff: {float(mean_abs_diff):.2f}, target_heuristic: {float(mean_target_heuristic):.2f}"
             f", current_heuristic: {float(jnp.mean(current_heuristics)):.2f}"
             f", random_sampled_target_heuristic: {float(mean_random_sampled_target_heuristic):.2f}"
@@ -106,6 +108,8 @@ def davi(
             writer.add_scalar("Metrics/Learning Rate", lr, i)
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+            writer.add_scalar("Losses/MSE Loss", mse_loss, i)
+            writer.add_scalar("Losses/Orthogonal Loss", ortho_loss, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
             writer.add_scalar("Metrics/Mean Current", jnp.mean(current_heuristics), i)
             writer.add_scalar(
@@ -124,7 +128,7 @@ def davi(
             target_heuristic_params = soft_update(
                 target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
             )
-        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        elif (i % update_interval == 0 and i != 0) and mse_loss <= loss_threshold:
             target_heuristic_params = heuristic_params
 
         if i % 1000 == 0 and i != 0:

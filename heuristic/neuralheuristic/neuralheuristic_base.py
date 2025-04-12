@@ -9,7 +9,7 @@ import numpy as np
 from flax import linen as nn
 
 from heuristic.heuristic_base import Heuristic
-from neural_util.modules import DTYPE, BatchNorm, LayerNorm, ResBlock
+from neural_util.modules import DTYPE, BatchNorm, ResBlock
 from neural_util.util import download_model, is_model_downloaded
 from puzzle.puzzle_base import Puzzle
 
@@ -20,10 +20,14 @@ class Projector(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         _ = BatchNorm(x, training)  # for dummy batchnorm
+        x = nn.Dense(5000)(x)
+        x = BatchNorm(x, training)
+        x = nn.relu(x)
         x = nn.Dense(1000)(x)
+        x = BatchNorm(x, training)
+        x = nn.relu(x)
         x = ResBlock(1000)(x, training)
         x = ResBlock(1000)(x, training)
-        x = LayerNorm(x, training)
         x = nn.Dense(
             self.projection_dim, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.001)
         )(x)
@@ -50,7 +54,10 @@ class DefaultModel(nn.Module):
         else:
             self.solve_config_projector = Projector(projection_dim=self.projection_dim)
         self.state_projector = Projector(projection_dim=self.projection_dim)
-        self.distance_conv = nn.Dense(1, kernel_init=nn.initializers.normal(stddev=0.001))
+        self.distance_weight = self.param(
+            "distance_weight", nn.initializers.normal(stddev=0.001), (1,)
+        )
+        self.distance_bias = self.param("distance_bias", nn.initializers.normal(stddev=0.001), (1,))
 
     def __call__(
         self,
@@ -73,7 +80,8 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bd -> b", target_projection, current_projection
         )  # [batch_size]
-        return self.distance_conv(dot_product[:, jnp.newaxis])  # [batch_size, 1]
+        distance = self.distance_weight * dot_product + self.distance_bias
+        return distance[:, jnp.newaxis]  # [batch_size, 1]
 
     def get_solve_config_projection(self, preprocessed_solve_config: chex.Array, training=False):
         return self.solve_config_projector(preprocessed_solve_config, training)
@@ -87,7 +95,8 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bd -> b", target_projection, current_projection
         )  # [batch_size]
-        return self.distance_conv(dot_product[:, jnp.newaxis])  # [batch_size, 1]
+        distance = self.distance_weight * dot_product + self.distance_bias
+        return distance[:, jnp.newaxis]  # [batch_size, 1]
 
 
 class NeuralHeuristicBase(Heuristic):

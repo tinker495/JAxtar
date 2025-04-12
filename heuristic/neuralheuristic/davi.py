@@ -24,51 +24,56 @@ def davi_builder(
         target_heuristic: chex.Array,
         random_sampled_target_heuristic: chex.Array,
     ):
-        solve_config_projection, _ = heuristic_model.apply(
+        solve_config_projection, batch_stats = heuristic_model.apply(
             heuristic_params,
             preprocessed_solve_configs,
             training=True,
             mutable=["batch_stats"],
             method=heuristic_model.get_solve_config_projection,
         )
-        concat_solve_config_projection = jnp.concatenate(
-            [solve_config_projection, random_sampled_projections], axis=0
-        )  # [2 * batch_size, projection_dim]
-        current_projection, _ = heuristic_model.apply(
+        heuristic_params["batch_stats"] = batch_stats["batch_stats"]
+        current_projection, batch_stats = heuristic_model.apply(
             heuristic_params,
             preprocessed_states,
             training=True,
             mutable=["batch_stats"],
             method=heuristic_model.get_state_projection,
         )
-        tile_projection = jnp.tile(current_projection, (2, 1))  # [2 * batch_size, projection_dim]
+        heuristic_params["batch_stats"] = batch_stats["batch_stats"]
         current_heuristic, _ = heuristic_model.apply(
             heuristic_params,
-            concat_solve_config_projection,
-            tile_projection,
+            solve_config_projection,
+            current_projection,
             training=True,
             mutable=["batch_stats"],
             method=heuristic_model.distance_from_projection,
         )
 
-        concat_target_heuristic = jnp.concatenate(
-            [target_heuristic, random_sampled_target_heuristic], axis=0
-        )
-        diff = concat_target_heuristic.squeeze() - current_heuristic.squeeze()
+        diff = target_heuristic.squeeze() - current_heuristic.squeeze()
         mse_loss = jnp.mean(jnp.square(diff))
 
         # Orthogonality loss for current_projection
-        # Calculate pairwise dot products within the batch
-        dot_prod = current_projection @ current_projection.T  # [batch_size, batch_size]
-        # Target is an identity matrix (zero off-diagonal)
-        identity = jnp.eye(current_projection.shape[0], dtype=dot_prod.dtype)
-        # Calculate the mean squared error of the off-diagonal elements
-        ortho_loss = jnp.mean(jnp.square(dot_prod * (1 - identity)))
+        # Normalize the projection vectors
+        norm = jnp.linalg.norm(current_projection, axis=1, keepdims=True)
+        normalized_projection = current_projection / (norm + 1e-8)  # Add epsilon for stability
+        # Calculate pairwise cosine similarities
+        cos_sim = normalized_projection @ normalized_projection.T  # [batch_size, batch_size]
+        # Target is an identity matrix (zero off-diagonal cosine similarity)
+        identity = jnp.eye(current_projection.shape[0], dtype=cos_sim.dtype)
+        # Calculate the mean squared error of the off-diagonal cosine similarities
+        ortho_loss = jnp.mean(jnp.square(cos_sim * (1 - identity)))
+
+        solve_config_regularization = jnp.mean(jnp.square(solve_config_projection))
 
         # Combine losses (add a weight for the ortho loss, e.g., 0.1)
         ortho_weight = 0.1
-        loss = mse_loss + ortho_weight * ortho_loss
-        return loss, (heuristic_params, diff, current_heuristic)
+        solve_config_regularization_weight = 0.1
+        loss = (
+            mse_loss
+            + ortho_weight * ortho_loss
+            + solve_config_regularization_weight * solve_config_regularization
+        )
+        return loss, (heuristic_params, mse_loss, ortho_loss, diff, current_heuristic)
 
     def davi(
         key: chex.PRNGKey,
@@ -119,9 +124,10 @@ def davi_builder(
                 target_heuristic,
                 random_sampled_target_heuristic,
             ) = batched_dataset
-            (loss, (heuristic_params, diff, current_heuristic),), grads = jax.value_and_grad(
-                davi_loss, has_aux=True
-            )(
+            (
+                loss,
+                (heuristic_params, mse_loss, ortho_loss, diff, current_heuristic),
+            ), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
                 preprocessed_solve_configs,
                 preprocessed_states,
@@ -138,6 +144,8 @@ def davi_builder(
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (heuristic_params, opt_state), (
                 loss,
+                mse_loss,
+                ortho_loss,
                 diff,
                 grad_magnitude_mean,
                 current_heuristic,
@@ -145,6 +153,8 @@ def davi_builder(
 
         (heuristic_params, opt_state), (
             losses,
+            mse_losses,
+            ortho_losses,
             diffs,
             grad_magnitude_means,
             current_heuristics,
@@ -160,6 +170,8 @@ def davi_builder(
             ),
         )
         loss = jnp.mean(losses)
+        mse_loss = jnp.mean(mse_losses)
+        ortho_loss = jnp.mean(ortho_losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
@@ -172,6 +184,8 @@ def davi_builder(
             heuristic_params,
             opt_state,
             loss,
+            mse_loss,
+            ortho_loss,
             mean_abs_diff,
             diffs,
             current_heuristics,
