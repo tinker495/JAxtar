@@ -177,3 +177,27 @@ class LightsOutHard(LightsOut):
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> LightsOut.State:
         return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=50)
+
+
+class LightsOutRandom(LightsOut):
+    """
+    This class is a extension of LightsOut, it will generate the random state for the puzzle.
+    """
+
+    @property
+    def fixed_target(self) -> bool:
+        return False
+
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
+        solve_config = super().get_solve_config(key, data)
+        solve_config.TargetState = self._get_suffled_state(
+            solve_config, solve_config.TargetState, key, num_shuffle=1000
+        )
+        return solve_config
+
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> LightsOut.State:
+        return self._get_suffled_state(
+            solve_config, solve_config.TargetState, key, num_shuffle=1000
+        )

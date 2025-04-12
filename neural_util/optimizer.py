@@ -10,7 +10,7 @@ PyTree = Any
 
 def scale_by_adopt(
     b1: float = 0.9,
-    b2: float = 0.99,
+    b2: float = 0.9999,
     eps: float = 1e-6,
     mu_dtype: Optional[jnp.dtype] = None,
     *,
@@ -106,10 +106,23 @@ def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.Opt
         schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
     )
 
+    def _is_batch_stat_or_bias(path, value):
+        # Check if 'batch_stats' is part of any dictionary key in the path
+        is_batch_stat = any(
+            isinstance(entry, jax.tree_util.DictKey) and "batch_stats" in entry.key
+            for entry in path
+        )
+        # Check if the last part of the path is a dictionary key named 'bias'
+        is_bias = path and isinstance(path[-1], jax.tree_util.DictKey) and path[-1].key == "bias"
+        return not (is_batch_stat or is_bias)
+
+    mask = jax.tree_util.tree_map_with_path(_is_batch_stat_or_bias, params)
+
     def optimizer_fn(learning_rate):
         return optax.chain(
             # optax.scale_by_adam(),
             scale_by_adopt(),
+            optax.add_decayed_weights(0.01, mask=mask),
             optax.scale_by_learning_rate(learning_rate),
         )
 
