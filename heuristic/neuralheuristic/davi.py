@@ -31,7 +31,10 @@ def davi_builder(
             mutable=["batch_stats"],
             method=heuristic_model.get_solve_config_projection,
         )
-        heuristic_params["batch_stats"] = batch_stats["batch_stats"]
+        heuristic_params = {
+            "params": heuristic_params["params"],
+            "batch_stats": batch_stats["batch_stats"],
+        }
         current_projection, batch_stats = heuristic_model.apply(
             heuristic_params,
             preprocessed_states,
@@ -39,7 +42,10 @@ def davi_builder(
             mutable=["batch_stats"],
             method=heuristic_model.get_state_projection,
         )
-        heuristic_params["batch_stats"] = batch_stats["batch_stats"]
+        heuristic_params = {
+            "params": heuristic_params["params"],
+            "batch_stats": batch_stats["batch_stats"],
+        }
         current_heuristic, _ = heuristic_model.apply(
             heuristic_params,
             solve_config_projection,

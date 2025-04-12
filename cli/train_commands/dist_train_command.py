@@ -139,6 +139,7 @@ def davi(
 
 
 @click.command()
+@puzzle_options
 @qfunction_options
 @train_option
 def qlearning(
@@ -193,7 +194,7 @@ def qlearning(
             loss,
             mean_abs_diff,
             mean_mse_loss,
-            mean_similarity_loss,
+            mean_ortho_loss,
             diffs,
             q_values_at_actions,
             grad_magnitude,
@@ -202,7 +203,7 @@ def qlearning(
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             f"lr: {lr:.4f}, loss: {float(loss):.4f}(mse: {float(mean_mse_loss):.2f}"
-            f", sim: {float(mean_similarity_loss):.2f})"
+            f", ortho: {float(mean_ortho_loss):.2f})"
             f", abs_diff: {float(mean_abs_diff):.2f}, target_q: {float(mean_target_q):.2f}"
             f", current_q: {float(jnp.mean(q_values_at_actions)):.2f}"
         )
@@ -211,7 +212,7 @@ def qlearning(
             writer.add_scalar("Losses/Loss", loss, i)
             writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
             writer.add_scalar("Losses/MSE Loss", mean_mse_loss, i)
-            writer.add_scalar("Losses/Similarity Loss", mean_similarity_loss, i)
+            writer.add_scalar("Losses/Orthogonal Loss", mean_ortho_loss, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
             writer.add_scalar("Metrics/Mean Current", jnp.mean(q_values_at_actions), i)
             writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
@@ -224,7 +225,7 @@ def qlearning(
             target_qfunc_params = soft_update(
                 target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
             )
-        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
+        elif (i % update_interval == 0 and i != 0) and mean_mse_loss <= loss_threshold:
             target_qfunc_params = qfunc_params
 
         if i % 1000 == 0 and i != 0:

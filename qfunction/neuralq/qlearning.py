@@ -21,38 +21,64 @@ def qlearning_builder(
         q_params: jax.tree_util.PyTreeDef,
         preprocessed_solve_configs: chex.Array,
         preprocessed_states: chex.Array,
-        random_neighbors: chex.Array,
+        random_sampled_projections: chex.Array,
         actions: chex.Array,
         target_qs: chex.Array,
+        random_sampled_target_q: chex.Array,
     ):
-        q_values, variable_updates = q_model.apply(
+        solve_config_projection, batch_stats = q_model.apply(
             q_params,
             preprocessed_solve_configs,
-            preprocessed_states,
             training=True,
             mutable=["batch_stats"],
-            method=q_model.solve_config_distance,
+            method=q_model.get_solve_config_projection,
         )
-        q_params["batch_stats"] = variable_updates["batch_stats"]
-
-        (cos_similarity1, cos_similarity2), variable_updates = q_model.apply(
+        q_params = {"params": q_params["params"], "batch_stats": batch_stats["batch_stats"]}
+        current_action_projection, batch_stats = q_model.apply(
             q_params,
             preprocessed_states,
-            random_neighbors,
             training=True,
             mutable=["batch_stats"],
-            method=q_model.state_similarity,
+            method=q_model.get_state_action_projection,
+        )
+        q_params = {"params": q_params["params"], "batch_stats": batch_stats["batch_stats"]}
+        current_q, _ = q_model.apply(
+            q_params,
+            solve_config_projection,
+            current_action_projection,
+            training=True,
+            mutable=["batch_stats"],
+            method=q_model.distance_from_projection,
         )
 
-        cos_similarity = (cos_similarity1 + cos_similarity2) / 2
-        similarity_loss = jnp.mean(1 - cos_similarity)
-
-        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
+        q_values_at_actions = jnp.take_along_axis(current_q, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         mse_loss = jnp.mean(jnp.square(diff))
-        # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = mse_loss + similarity_loss * 0.01
-        return loss, (q_params, mse_loss, similarity_loss, diff, q_values_at_actions)
+
+        current_projection = jnp.take_along_axis(
+            current_action_projection, actions[:, jnp.newaxis, jnp.newaxis], axis=1
+        )  # [batch_size, 1, projection_dim]
+        current_projection = jnp.squeeze(current_projection, axis=1)  # [batch_size, projection_dim]
+        norm = jnp.linalg.norm(current_projection, axis=1, keepdims=True)
+        normalized_projection = current_projection / (norm + 1e-8)  # Add epsilon for stability
+        # Calculate pairwise cosine similarities
+        cos_sim = normalized_projection @ normalized_projection.T  # [batch_size, batch_size]
+        # Target is an identity matrix (zero off-diagonal cosine similarity)
+        identity = jnp.eye(current_projection.shape[0], dtype=cos_sim.dtype)
+        # Calculate the mean squared error of the off-diagonal cosine similarities
+        ortho_loss = jnp.mean(jnp.square(cos_sim * (1 - identity)))
+
+        solve_config_regularization = jnp.mean(jnp.square(solve_config_projection))
+
+        # Combine losses (add a weight for the ortho loss, e.g., 0.1)
+        ortho_weight = 0.1
+        solve_config_regularization_weight = 0.1
+        loss = (
+            mse_loss
+            + ortho_weight * ortho_loss
+            + solve_config_regularization_weight * solve_config_regularization
+        )
+        return loss, (q_params, mse_loss, ortho_loss, diff, q_values_at_actions)
 
     def qlearning(
         key: chex.PRNGKey,
@@ -66,9 +92,10 @@ def qlearning_builder(
         (
             preprocessed_solve_configs,
             preprocessed_states,
-            random_neighbors,
+            random_sampled_projections,
             target_q,
             actions,
+            random_sampled_target_q,
         ) = dataset
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
@@ -86,29 +113,34 @@ def qlearning_builder(
             preprocessed_solve_configs, batch_indexs, axis=0
         )
         batched_preprocessed_states = jnp.take(preprocessed_states, batch_indexs, axis=0)
-        batched_random_neighbors = jnp.take(random_neighbors, batch_indexs, axis=0)
+        batched_random_sampled_projections = jnp.take(
+            random_sampled_projections, batch_indexs, axis=0
+        )
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
+        batched_random_sampled_target_q = jnp.take(random_sampled_target_q, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
             (
                 preprocessed_solve_configs,
                 preprocessed_states,
-                random_neighbors,
+                random_sampled_projections,
                 target_q,
                 actions,
+                random_sampled_target_q,
             ) = batched_dataset
             (
                 loss,
-                (q_params, mse_loss, similarity_loss, diff, q_values_at_actions),
+                (q_params, mse_loss, ortho_loss, diff, q_values_at_actions),
             ), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
                 preprocessed_solve_configs,
                 preprocessed_states,
-                random_neighbors,
+                random_sampled_projections,
                 actions,
                 target_q,
+                random_sampled_target_q,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
@@ -120,7 +152,7 @@ def qlearning_builder(
             return (q_params, opt_state), (
                 loss,
                 mse_loss,
-                similarity_loss,
+                ortho_loss,
                 diff,
                 q_values_at_actions,
                 grad_magnitude_mean,
@@ -129,7 +161,7 @@ def qlearning_builder(
         (q_params, opt_state), (
             losses,
             mse_losses,
-            similarity_losses,
+            ortho_losses,
             diffs,
             q_values_at_actions,
             grad_magnitude_means,
@@ -139,15 +171,16 @@ def qlearning_builder(
             (
                 batched_preprocessed_solve_configs,
                 batched_preprocessed_states,
-                batched_random_neighbors,
+                batched_random_sampled_projections,
                 batched_target_q,
                 batched_actions,
+                batched_random_sampled_target_q,
             ),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         mean_mse_loss = jnp.mean(mse_losses)
-        mean_similarity_loss = jnp.mean(similarity_losses)
+        mean_ortho_loss = jnp.mean(ortho_losses)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -160,7 +193,7 @@ def qlearning_builder(
             loss,
             mean_abs_diff,
             mean_mse_loss,
-            mean_similarity_loss,
+            mean_ortho_loss,
             diffs,
             q_values_at_actions,
             grad_magnitude_mean,
@@ -209,22 +242,33 @@ def _get_datasets(
             solve_configs, shuffled_path, multi_solve_config=True
         )  # [batch_size]
 
-        q_values, _ = q_model.apply(
+        solve_config_projection, _ = q_model.apply(
             q_params,
             preprocessed_solve_configs,
+            training=False,
+            mutable=["batch_stats"],
+            method=q_model.get_solve_config_projection,
+        )
+        state_action_projection, _ = q_model.apply(
+            q_params,
             preprocessed_states,
             training=False,
             mutable=["batch_stats"],
-            method=q_model.solve_config_distance,
+            method=q_model.get_state_action_projection,
+        )
+        q_values, _ = q_model.apply(
+            q_params,
+            solve_config_projection,
+            state_action_projection,
+            training=False,
+            mutable=["batch_stats"],
+            method=q_model.distance_from_projection,
         )
         probs = boltzmann_action_selection(q_values)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
         )
-        random_neighbor_idx = jax.random.randint(
-            key, (minibatch_size,), 0, q_values.shape[1]
-        )  # [batch_size]
 
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
@@ -234,43 +278,68 @@ def _get_datasets(
             lambda x: x[actions, jnp.arange(batch_size), :],
             neighbors,
         )
-        random_neighbors = jax.tree_util.tree_map(
-            lambda x: x[random_neighbor_idx, jnp.arange(batch_size), :],
-            neighbors,
-        )  # [batch_size, ...]
         selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
         preproc_neighbors = jax.vmap(state_preproc_fn)(selected_neighbors)
-        preproc_random_neighbors = jax.vmap(state_preproc_fn)(random_neighbors)
+        random_sampled_projection = jax.random.normal(subkey, solve_config_projection.shape)
 
-        q, _ = q_model.apply(
+        target_solve_config_projection, _ = q_model.apply(
             target_q_params,
             preprocessed_solve_configs,
+            training=False,
+            mutable=["batch_stats"],
+            method=q_model.get_solve_config_projection,
+        )
+        neighbors_projection, _ = q_model.apply(
+            target_q_params,
             preproc_neighbors,
             training=False,
             mutable=["batch_stats"],
-            method=q_model.solve_config_distance,
+            method=q_model.get_state_action_projection,
+        )
+        q, _ = q_model.apply(
+            target_q_params,
+            target_solve_config_projection,
+            neighbors_projection,
+            training=False,
+            mutable=["batch_stats"],
+            method=q_model.distance_from_projection,
         )  # [minibatch_size, action_shape]
         target_q = jnp.maximum(jnp.min(q, axis=1), 0.0) + selected_costs
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
         # if the puzzle is already solved, the all q is 0
+
+        random_sampled_q, _ = q_model.apply(
+            target_q_params,
+            random_sampled_projection,
+            neighbors_projection,
+            training=False,
+            mutable=["batch_stats"],
+            method=q_model.distance_from_projection,
+        )  # [minibatch_size, action_shape]
+        random_sampled_target_q = jnp.min(
+            jnp.min(random_sampled_q, axis=1) + selected_costs, axis=0
+        )
+
         return key, (
             preprocessed_solve_configs,
             preprocessed_states,
-            preproc_random_neighbors,
+            random_sampled_projection,
             target_q,
             actions,
+            random_sampled_target_q,
         )
 
     _, (
         preprocessed_solve_configs,
         preprocessed_states,
-        random_neighbors,
+        random_sampled_projections,
         target_q,
         actions,
+        random_sampled_target_q,
     ) = jax.lax.scan(
         get_minibatched_datasets,
         key,
@@ -281,11 +350,23 @@ def _get_datasets(
         (-1, *preprocessed_solve_configs.shape[2:])
     )
     preprocessed_states = preprocessed_states.reshape((-1, *preprocessed_states.shape[2:]))
-    random_neighbors = random_neighbors.reshape((-1, *random_neighbors.shape[2:]))
+    random_sampled_projections = random_sampled_projections.reshape(
+        (-1, *random_sampled_projections.shape[2:])
+    )
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
+    random_sampled_target_q = random_sampled_target_q.reshape(
+        (-1, *random_sampled_target_q.shape[2:])
+    )
 
-    return preprocessed_solve_configs, preprocessed_states, random_neighbors, target_q, actions
+    return (
+        preprocessed_solve_configs,
+        preprocessed_states,
+        random_sampled_projections,
+        target_q,
+        actions,
+        random_sampled_target_q,
+    )
 
 
 def get_qlearning_dataset_builder(

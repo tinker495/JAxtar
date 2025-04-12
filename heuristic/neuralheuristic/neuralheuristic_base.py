@@ -19,7 +19,6 @@ class Projector(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=False):
-        _ = BatchNorm(x, training)  # for dummy batchnorm
         x = nn.Dense(5000)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
