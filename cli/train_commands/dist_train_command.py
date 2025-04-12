@@ -10,6 +10,7 @@ from tqdm import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.optimizer import setup_optimizer
+from neural_util.reset import build_soft_reset
 from neural_util.target_update import soft_update
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
@@ -60,6 +61,7 @@ def davi(
     target_heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
+    soft_reset = build_soft_reset(heuristic_params, 0.3)
 
     optimizer, opt_state = setup_optimizer(
         heuristic_params, steps, dataset_batch_size // train_minibatch_size
@@ -113,6 +115,9 @@ def davi(
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
 
+        if i % (update_interval * 100) == 0 and i != 0:
+            heuristic_params = soft_reset(heuristic_params, key)
+
         if i % 1000 == 0 and i != 0:
             heuristic.params = target_heuristic_params
             heuristic.save_model(
@@ -147,6 +152,7 @@ def qlearning(
     target_qfunc_params = qfunction.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
+    soft_reset = build_soft_reset(qfunc_params, 0.3)
 
     optimizer, opt_state = setup_optimizer(
         qfunc_params, steps, dataset_batch_size // train_minibatch_size
@@ -199,6 +205,9 @@ def qlearning(
             )
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
+
+        if i % (update_interval * 100) == 0 and i != 0:
+            qfunc_params = soft_reset(qfunc_params, key)
 
         if i % 1000 == 0 and i != 0:
             qfunction.params = target_qfunc_params
