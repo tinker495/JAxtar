@@ -6,12 +6,6 @@ import jax.numpy as jnp
 DTYPE = jnp.bfloat16
 
 
-def cosine_similarity(x, y):
-    return jnp.einsum("bd, bd -> b", x, y) / (
-        jnp.linalg.norm(x, axis=1) * jnp.linalg.norm(y, axis=1) + 1e-6
-    )
-
-
 def BatchNorm(x, training):
     return nn.BatchNorm(momentum=0.99, dtype=DTYPE)(x, use_running_average=not training)
 

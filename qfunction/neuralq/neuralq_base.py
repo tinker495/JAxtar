@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
 
-from neural_util.modules import DTYPE, BatchNorm, LayerNorm, ResBlock, cosine_similarity
+from neural_util.modules import DTYPE, BatchNorm, LayerNorm, ResBlock
 from neural_util.util import download_model, is_model_downloaded
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
@@ -115,19 +115,6 @@ class DefaultModel(nn.Module):
         )
         distance = self.distance_conv(concat)  # [batch_size, action_size]
         return distance  # [batch_size, action_size]
-
-    def state_similarity(self, state1: chex.Array, state2: chex.Array, training=False):
-        projection1 = self.state_projector(state1, training)  # [batch_size, projection_dim]
-        projection2 = self.state_projector(state2, training)  # [batch_size, projection_dim]
-        prediction1 = self.predictor(projection1, training)  # [batch_size, projection_dim]
-        prediction2 = self.predictor(projection2, training)  # [batch_size, projection_dim]
-        cos_similarity1 = cosine_similarity(
-            prediction1, jax.lax.stop_gradient(projection2)
-        )  # [batch_size]
-        cos_similarity2 = cosine_similarity(
-            prediction2, jax.lax.stop_gradient(projection1)
-        )  # [batch_size]
-        return cos_similarity1, cos_similarity2
 
 
 class NeuralQFunctionBase(QFunction):

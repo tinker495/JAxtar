@@ -6,6 +6,12 @@ import jax
 import jax.numpy as jnp
 
 
+def cosine_similarity(x, y):
+    return jnp.einsum("bd, bd -> b", x, y) / (
+        jnp.linalg.norm(x, axis=1) * jnp.linalg.norm(y, axis=1) + 1e-6
+    )
+
+
 def is_world_model_dataset_downloaded():
     return os.path.exists("puzzle/world_model/data")
 

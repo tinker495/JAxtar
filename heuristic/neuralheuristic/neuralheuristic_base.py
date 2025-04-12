@@ -32,10 +32,25 @@ class Projector(nn.Module):
 
 class DefaultModel(nn.Module):
     projection_dim: int = 128
+    fixed_target: bool = False
 
     def setup(self):
-        self.solve_config_projector = Projector(projection_dim=self.projection_dim)
+        if self.fixed_target:
+            self.target_project = self.param(
+                "target_project",
+                nn.initializers.normal(stddev=0.001),
+                (
+                    1,
+                    self.projection_dim,
+                ),
+            )
+            self.solve_config_projector = lambda x, __: jnp.tile(
+                self.target_project, (x.shape[0], 1)
+            )  # just return the target project
+        else:
+            self.solve_config_projector = Projector(projection_dim=self.projection_dim)
         self.state_projector = Projector(projection_dim=self.projection_dim)
+        self.distance_conv = nn.Dense(1, kernel_init=nn.initializers.normal(stddev=0.001))
 
     def __call__(
         self,
@@ -58,7 +73,7 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bd -> b", target_projection, current_projection
         )  # [batch_size]
-        return dot_product  # [batch_size, 1]
+        return self.distance_conv(dot_product[:, jnp.newaxis])  # [batch_size, 1]
 
     def get_solve_config_projection(self, preprocessed_solve_config: chex.Array, training=False):
         return self.solve_config_projector(preprocessed_solve_config, training)
@@ -72,7 +87,7 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bd -> b", target_projection, current_projection
         )  # [batch_size]
-        return dot_product  # [batch_size, 1]
+        return self.distance_conv(dot_product[:, jnp.newaxis])  # [batch_size, 1]
 
 
 class NeuralHeuristicBase(Heuristic):
@@ -84,7 +99,7 @@ class NeuralHeuristicBase(Heuristic):
         init_params: bool = True,
     ):
         self.puzzle = puzzle
-        self.model = model(projection_dim=projection_dim)
+        self.model = model(projection_dim=projection_dim, fixed_target=puzzle.fixed_target)
         if init_params:
             self.params = self.get_new_params()
 

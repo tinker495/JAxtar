@@ -42,7 +42,6 @@ def davi_builder(
             method=heuristic_model.get_state_projection,
         )
         tile_projection = jnp.tile(current_projection, (2, 1))  # [2 * batch_size, projection_dim]
-        print(concat_solve_config_projection.shape, tile_projection.shape)
         current_heuristic, _ = heuristic_model.apply(
             heuristic_params,
             concat_solve_config_projection,
@@ -56,10 +55,19 @@ def davi_builder(
             [target_heuristic, random_sampled_target_heuristic], axis=0
         )
         diff = concat_target_heuristic.squeeze() - current_heuristic.squeeze()
-        print(diff.shape)
         mse_loss = jnp.mean(jnp.square(diff))
-        # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = mse_loss
+
+        # Orthogonality loss for current_projection
+        # Calculate pairwise dot products within the batch
+        dot_prod = current_projection @ current_projection.T  # [batch_size, batch_size]
+        # Target is an identity matrix (zero off-diagonal)
+        identity = jnp.eye(current_projection.shape[0], dtype=dot_prod.dtype)
+        # Calculate the mean squared error of the off-diagonal elements
+        ortho_loss = jnp.mean(jnp.square(dot_prod * (1 - identity)))
+
+        # Combine losses (add a weight for the ortho loss, e.g., 0.1)
+        ortho_weight = 0.1
+        loss = mse_loss + ortho_weight * ortho_loss
         return loss, (heuristic_params, diff, current_heuristic)
 
     def davi(
