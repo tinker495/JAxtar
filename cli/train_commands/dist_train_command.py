@@ -129,7 +129,9 @@ def davi(
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = target_heuristic_params
-            heuristic.save_model()
+            heuristic.save_model(
+                f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}_fb.pkl"
+            )
 
 
 @click.command()
@@ -224,5 +226,5 @@ def qlearning(
         if i % 1000 == 0 and i != 0:
             qfunction.params = target_qfunc_params
             qfunction.save_model(
-                f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}_sim.pkl"
+                f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}_fb.pkl"
             )
