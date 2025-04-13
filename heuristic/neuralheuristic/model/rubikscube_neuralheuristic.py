@@ -1,8 +1,8 @@
 import chex
 import jax
-import jax.numpy as jnp
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.modules import DTYPE
 from puzzle.rubikscube import RubiksCube
 
 
@@ -15,10 +15,7 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
     def pre_process(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
-        target_face = solve_config.TargetState.faces
-        flatten_target_face = self.puzzle.unpack_faces(target_face).flatten()  # (3,3,6) -> (54,)
         flatten_face = self.puzzle.unpack_faces(current.faces).flatten()  # (3,3,6) -> (54,)
         # Create a one-hot encoding of the flattened face
-        concat_face = jnp.concatenate([flatten_face, flatten_target_face])
-        one_hot = jax.nn.one_hot(concat_face, num_classes=6).flatten()  # 6 colors in Rubik's Cube
-        return (one_hot - 0.5) * 2.0  # normalize to [-1, 1]
+        one_hot = jax.nn.one_hot(flatten_face, num_classes=6).flatten()  # 6 colors in Rubik's Cube
+        return ((one_hot - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]

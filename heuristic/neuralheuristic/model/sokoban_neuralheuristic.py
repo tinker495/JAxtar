@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.modules import DTYPE
 from puzzle.sokoban import Object, Sokoban
 
 
@@ -16,7 +17,7 @@ class SokobanNeuralHeuristic(NeuralHeuristicBase):
         target_board = self.puzzle.unpack_board(solve_config.TargetState.board)
         target_board = target_board == Object.BOX.value
         current_board = self.puzzle.unpack_board(current.board)
-        current_one_hot = jax.nn.one_hot(current_board, num_classes=4)
-        stacked_board = jnp.concatenate([current_one_hot, target_board[:, jnp.newaxis]], axis=-1)
-        flattened_board = jnp.reshape(stacked_board, (-1,))
-        return (flattened_board - 0.5) * 2.0
+        stacked_board = jnp.concatenate([current_board, target_board], axis=-1)
+        one_hot_board = jax.nn.one_hot(stacked_board, num_classes=4)
+        flattened_board = jnp.reshape(one_hot_board, (-1,))
+        return ((flattened_board - 0.5) * 2.0).astype(DTYPE)

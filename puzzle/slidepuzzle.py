@@ -257,11 +257,16 @@ class SlidePuzzleRandom(SlidePuzzle):
     This class is a extension of SlidePuzzle, it will generate the random state for the puzzle.
     """
 
+    @property
+    def fixed_target(self) -> bool:
+        return False
+
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
-        shuffled_state = self._get_random_state(key)
-        return self.SolveConfig(TargetState=shuffled_state)
+        solve_config = super().get_solve_config(key, data)
+        solve_config.TargetState = self._get_random_state(key)
+        return solve_config
 
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
-    ) -> Puzzle.State:
+    ) -> SlidePuzzle.State:
         return self._get_random_state(key)

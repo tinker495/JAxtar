@@ -33,6 +33,10 @@ class Sokoban(Puzzle):
         assert size == 10, "Boxoban dataset only supports size 10"
         super().__init__(**kwargs)
 
+    @property
+    def fixed_target(self) -> bool:
+        return False
+
     def data_init(self):
         self.init_puzzles = jnp.load("puzzle/data/sokoban/init.npy")  # bring boxoban dataset here
         self.target_puzzles = jnp.load(

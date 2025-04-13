@@ -1,16 +1,15 @@
 from datetime import datetime
-from typing import Any
 
 import chex
 import click
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import optax
 import tensorboardX
 from tqdm import trange
 
-from puzzle.world_model.util import round_through_gradient
+from neural_util.optimizer import setup_optimizer
+from neural_util.util import round_through_gradient
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 from puzzle.world_model.world_model_train import (
     world_model_eval_builder,
@@ -23,20 +22,10 @@ from .world_model_train_option import (
     train_options,
 )
 
-PyTree = Any
-
 
 def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
     log_dir = f"runs/{world_model_name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     return tensorboardX.SummaryWriter(log_dir)
-
-
-def setup_optimizer(params: PyTree, steps: int) -> optax.OptState:
-    lr_schedule = optax.polynomial_schedule(
-        init_value=1e-3, end_value=1e-5, power=2.0, transition_steps=steps
-    )
-    optimizer = optax.adam(lr_schedule)
-    return optimizer, optimizer.init(params)
 
 
 @click.command()
@@ -73,7 +62,7 @@ def train(
 
     dataset_size = actions.shape[0]
     print("initializing optimizer")
-    optimizer, opt_state = setup_optimizer(params, train_epochs * dataset_size // mini_batch_size)
+    optimizer, opt_state = setup_optimizer(params, train_epochs, dataset_size // mini_batch_size)
 
     print("initializing train function")
     train_fn = world_model_train_builder(
@@ -104,17 +93,20 @@ def train(
         params, opt_state, loss, AE_loss, WM_loss, accuracy = train_fn(
             subkey, (datas, next_datas, actions), params, opt_state, epoch
         )
+        lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"Loss: {loss:.4f},"
-            f"AE Loss: {AE_loss:.4f}, WM Loss: {WM_loss:.4f},"
-            f"Accuracy: {accuracy:.4f}, Eval Accuracy: {eval_accuracy:.4f}"
+            f"lr: {lr:.4f}, Loss: {float(loss):.4f},"
+            f"AE Loss: {float(AE_loss):.4f}, WM Loss: {float(WM_loss):.4f},"
+            f"Accuracy: {float(accuracy):.4f}, Eval Accuracy: {float(eval_accuracy):.4f}"
         )
         if epoch % 10 == 0:
+            writer.add_scalar("Metrics/Learning Rate", lr, epoch)
             writer.add_scalar("Losses/Loss", loss, epoch)
             writer.add_scalar("Losses/AE Loss", AE_loss, epoch)
             writer.add_scalar("Losses/WM Loss", WM_loss, epoch)
             writer.add_scalar("Metrics/Accuracy", accuracy, epoch)
 
+        if epoch % 100 == 0:
             eval_accuracy = eval_fn(params, eval_trajectory)
             writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
 

@@ -67,9 +67,9 @@ def qlearning_builder(
             q_params = optax.apply_updates(q_params, updates)
             # Calculate gradient magnitude mean
             grad_magnitude = jax.tree_util.tree_map(
-                lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(grads["params"])
+                lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
-            grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude))
+            grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (q_params, opt_state), (loss, diff, grad_magnitude_mean)
 
         (q_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
@@ -80,11 +80,11 @@ def qlearning_builder(
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         # Calculate weights magnitude means
-        grad_magnitude_mean = jnp.mean(jnp.array(grad_magnitude_means))
+        grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
-            lambda x: jnp.mean(jnp.abs(x)), jax.tree_util.tree_leaves(q_params["params"])
+            lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(q_params["params"])
         )
-        weights_magnitude_mean = jnp.mean(jnp.array(weights_magnitude))
+        weights_magnitude_mean = jnp.mean(jnp.concatenate(weights_magnitude))
         return (
             q_params,
             opt_state,
@@ -98,7 +98,7 @@ def qlearning_builder(
     return jax.jit(qlearning)
 
 
-def boltzmann_action_selection(q_values: chex.Array, temperature: float = 1 / 3.0) -> chex.Array:
+def boltzmann_action_selection(q_values: chex.Array, temperature: float = 3.0) -> chex.Array:
     q_values = -q_values / temperature
     q_values = jnp.exp(q_values)
     probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
@@ -115,7 +115,7 @@ def _get_datasets(
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
-    solve_configs, shuffled_path, move_costs = shuffled_path
+    solve_configs, target_state, shuffled_path, move_costs = shuffled_path
 
     minibatched_solve_configs = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
@@ -271,9 +271,9 @@ def create_target_shuffled_path(
     )
 
     def _scan(carry, _):
-        old_state, state, key, move_cost = carry
+        old_state, state, key, move_cost_ = carry
         neighbor_states, cost = puzzle.batched_get_inverse_neighbours(
-            solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
+            solve_configs, state, filleds=jnp.ones_like(move_cost_), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
             jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
@@ -300,8 +300,8 @@ def create_target_shuffled_path(
             neighbor_states, idx
         )  # [batch, ...]
         cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, idx)  # [batch]
-        move_cost = move_cost + cost
-        return (state, next_state, key, move_cost), (next_state, move_cost)
+        move_cost = move_cost_ + cost
+        return (state, next_state, key, move_cost), (state, move_cost_)
 
     _, (moves, move_costs) = jax.lax.scan(
         _scan, (targets, targets, key, jnp.zeros(shuffle_parallel)), None, length=shuffle_length
@@ -322,7 +322,7 @@ def create_target_shuffled_path(
         lambda x: x.reshape((-1, *x.shape[2:])), moves
     )  # [batch_size * shuffle_length, ...]
     move_costs = jnp.reshape(move_costs, (-1))  # [batch_size * shuffle_length]
-    return solve_configs, moves, move_costs
+    return solve_configs, targets, moves, move_costs
 
 
 def create_hindsight_target_shuffled_path(
@@ -336,9 +336,9 @@ def create_hindsight_target_shuffled_path(
     )
 
     def _scan(carry, _):
-        old_state, state, key, move_cost = carry
+        old_state, state, key, move_cost_ = carry
         neighbor_states, cost = puzzle.batched_get_neighbours(
-            solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
+            solve_configs, state, filleds=jnp.ones_like(move_cost_), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
             jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
@@ -365,8 +365,8 @@ def create_hindsight_target_shuffled_path(
             neighbor_states, idx
         )  # [batch, ...]
         cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, idx)  # [batch]
-        move_cost = move_cost + cost
-        return (state, next_state, key, move_cost), (next_state, move_cost)
+        move_cost = move_cost_ + cost
+        return (state, next_state, key, move_cost), (state, move_cost_)
 
     _, (moves, move_costs) = jax.lax.scan(
         _scan,
@@ -374,8 +374,9 @@ def create_hindsight_target_shuffled_path(
         None,
         length=shuffle_length + 1,
     )  # [shuffle_length, batch_size, ...]
-    solve_configs = puzzle.batched_hindsight_transform(moves[-1, ...])  # [batch_size, ...]
+    targets = moves[-1, ...]
     moves = moves[:-1, ...]  # [shuffle_length, batch_size, ...]
+    solve_configs = puzzle.batched_hindsight_transform(targets)  # [batch_size, ...]
     move_costs = move_costs[-1, ...] - move_costs[:-1, ...]  # [shuffle_length, batch_size]
 
     solve_configs = jax.tree_util.tree_map(
@@ -392,7 +393,7 @@ def create_hindsight_target_shuffled_path(
     )  # [batch_size * shuffle_length, ...]
 
     move_costs = jnp.reshape(move_costs, (-1))  # [batch_size * shuffle_length]
-    return solve_configs, moves, move_costs
+    return solve_configs, targets, moves, move_costs
 
 
 def create_hindsight_target_triangular_shuffled_path(
@@ -406,9 +407,9 @@ def create_hindsight_target_triangular_shuffled_path(
     )
 
     def _scan(carry, _):
-        old_state, state, key, move_cost = carry
+        old_state, state, key, move_cost_ = carry
         neighbor_states, cost = puzzle.batched_get_neighbours(
-            solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
+            solve_configs, state, filleds=jnp.ones_like(move_cost_), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
             jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
@@ -435,8 +436,8 @@ def create_hindsight_target_triangular_shuffled_path(
             neighbor_states, idx
         )  # [batch, ...]
         cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, idx)  # [batch]
-        move_cost = move_cost + cost
-        return (state, next_state, key, move_cost), (next_state, move_cost)
+        move_cost = move_cost_ + cost
+        return (state, next_state, key, move_cost), (state, move_cost_)
 
     _, (moves, move_costs) = jax.lax.scan(
         _scan,
@@ -450,6 +451,10 @@ def create_hindsight_target_triangular_shuffled_path(
     solve_configs = jax.tree_util.tree_map(
         lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length + 1, 1) + (x.ndim - 1) * (1,)),
         solve_configs,
+    )
+    targets = jax.tree_util.tree_map(
+        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length + 1, 1) + (x.ndim - 1) * (1,)),
+        moves,
     )
     moves = jax.tree_util.tree_map(
         lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length + 1) + (x.ndim - 1) * (1,)),
@@ -469,4 +474,4 @@ def create_hindsight_target_triangular_shuffled_path(
     solve_configs = solve_configs[idxs[0], idxs[1], idxs[2], ...]
     moves = moves[idxs[0], idxs[1], idxs[2], ...]
     move_costs = move_costs[idxs[0], idxs[1], idxs[2]]
-    return solve_configs, moves, move_costs
+    return solve_configs, targets, moves, move_costs
