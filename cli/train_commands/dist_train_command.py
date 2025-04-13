@@ -186,7 +186,9 @@ def qlearning(
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
         target_q = dataset[3]
+        random_sampled_target_q = dataset[5]
         mean_target_q = jnp.mean(target_q)
+        mean_random_sampled_target_q = jnp.mean(random_sampled_target_q)
 
         (
             qfunc_params,
@@ -206,6 +208,7 @@ def qlearning(
             f", ortho: {float(mean_ortho_loss):.2f})"
             f", abs_diff: {float(mean_abs_diff):.2f}, target_q: {float(mean_target_q):.2f}"
             f", current_q: {float(jnp.mean(q_values_at_actions)):.2f}"
+            f", random_sampled_target_q: {float(mean_random_sampled_target_q):.2f}"
         )
         if i % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, i)
@@ -215,11 +218,13 @@ def qlearning(
             writer.add_scalar("Losses/Orthogonal Loss", mean_ortho_loss, i)
             writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
             writer.add_scalar("Metrics/Mean Current", jnp.mean(q_values_at_actions), i)
+            writer.add_scalar("Metrics/Mean Random Sampled Target", mean_random_sampled_target_q, i)
             writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
             writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_q, i)
             writer.add_histogram("Metrics/Current", q_values_at_actions, i)
+            writer.add_histogram("Metrics/Random Sampled Target", random_sampled_target_q, i)
 
         if use_soft_update:
             target_qfunc_params = soft_update(

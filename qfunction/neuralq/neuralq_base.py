@@ -19,10 +19,10 @@ class Projector(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(5000)(x)
+        x = nn.Dense(5000, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
-        x = nn.Dense(1000)(x)
+        x = nn.Dense(1000, dtype=DTYPE)(x)
         x = BatchNorm(x, training)
         x = nn.relu(x)
         x = ResBlock(1000)(x, training)
@@ -31,6 +31,22 @@ class Projector(nn.Module):
             self.projection_dim, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.001)
         )(x)
         return x
+
+
+class Scaler(nn.Module):
+
+    dtype: jnp.dtype = DTYPE
+    param_dtype: jnp.dtype = jnp.float32
+
+    @nn.compact
+    def __call__(self, input: chex.Array):
+        weight = self.param(
+            "weight", nn.initializers.normal(stddev=0.001), (1,), dtype=self.param_dtype
+        )
+        bias = self.param(
+            "bias", nn.initializers.normal(stddev=0.001), (1,), dtype=self.param_dtype
+        )
+        return input * weight.astype(self.dtype) + bias.astype(self.dtype)
 
 
 class DefaultModel(nn.Module):
@@ -56,10 +72,7 @@ class DefaultModel(nn.Module):
         self.state_action_projector = Projector(
             projection_dim=self.projection_dim * self.action_size
         )
-        self.distance_weight = self.param(
-            "distance_weight", nn.initializers.normal(stddev=0.001), (1,)
-        )
-        self.distance_bias = self.param("distance_bias", nn.initializers.normal(stddev=0.001), (1,))
+        self.scaler = Scaler()
 
     def __call__(
         self,
@@ -85,7 +98,7 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bad -> ba", target_projection, current_action_projection
         )  # [batch_size, action_size]
-        distance = self.distance_weight * dot_product + self.distance_bias
+        distance = self.scaler(dot_product)
         return distance  # [batch_size, action_size]
 
     def get_solve_config_projection(self, preprocessed_solve_config: chex.Array, training=False):
@@ -101,7 +114,7 @@ class DefaultModel(nn.Module):
         dot_product = jnp.einsum(
             "bd, bad -> ba", target_projection, current_action_projection
         )  # [batch_size, action_size]
-        distance = self.distance_weight * dot_product + self.distance_bias
+        distance = self.scaler(dot_product)
         return distance  # [batch_size, action_size]
 
 
