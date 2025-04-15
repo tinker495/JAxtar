@@ -1,10 +1,44 @@
 import chex
+import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
 from puzzle.slidepuzzle import SlidePuzzle
+
+
+class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
+    def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):
+        self.size_square = puzzle.size * puzzle.size
+        super().__init__(puzzle, init_params=init_params)
+
+    def pre_process(
+        self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
+    ) -> chex.Array:
+        """
+        Pre-process the current state for the neural heuristic model.
+
+        Args:
+            solve_config: Configuration for solving the puzzle
+            current: Current state of the puzzle
+
+        Returns:
+            One-hot representation of the puzzle state
+        """
+        # Create a one-hot encoding of the current state
+        # Shape will be [puzzle_size, puzzle_size, puzzle_size*puzzle_size]
+        current_board = current.board
+        current_board_one_hot = jax.nn.one_hot(current_board, self.size_square).flatten()
+
+        if self.is_fixed:
+            one_hots = current_board_one_hot
+        else:
+            target_board = solve_config.TargetState.board
+            target_board_one_hot = jax.nn.one_hot(target_board, self.size_square).flatten()
+            one_hots = jnp.concatenate([target_board_one_hot, current_board_one_hot], axis=-1)
+
+        return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
 
 class Model(nn.Module):
@@ -24,14 +58,14 @@ class Model(nn.Module):
         return x
 
 
-class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
+class SlidePuzzleConvNeuralHeuristic(NeuralHeuristicBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):
         x = jnp.tile(jnp.arange(puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, puzzle.size, 1))
         y = jnp.tile(jnp.arange(puzzle.size)[jnp.newaxis, :, jnp.newaxis], (puzzle.size, 1, 1))
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
-        super().__init__(puzzle, model=Model(), init_params=init_params)
+        super().__init__(puzzle, model=Model, init_params=init_params)
 
     def pre_process(
         self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State

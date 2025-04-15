@@ -7,6 +7,22 @@ from puzzle.lightsout import LightsOut
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
+class LightsOutNeuralQ(NeuralQFunctionBase):
+    def __init__(self, puzzle: LightsOut, init_params: bool = True):
+        super().__init__(puzzle, init_params=init_params)
+
+    def pre_process(
+        self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
+    ) -> chex.Array:
+        current_map = self.puzzle.from_uint8(current.board).astype(DTYPE)
+        if self.is_fixed:
+            one_hots = current_map
+        else:
+            target_map = self.puzzle.from_uint8(solve_config.TargetState.board).astype(DTYPE)
+            one_hots = jnp.concatenate([target_map, current_map], axis=-1)
+        return ((one_hots - 0.5) * 2.0).astype(DTYPE)
+
+
 class Model(nn.Module):
     action_size: int
 
@@ -26,7 +42,7 @@ class Model(nn.Module):
         return x
 
 
-class LightsOutNeuralQ(NeuralQFunctionBase):
+class LightsOutConvNeuralQ(NeuralQFunctionBase):
     def __init__(self, puzzle: LightsOut, init_params: bool = True):
         super().__init__(puzzle, model=Model, init_params=init_params)
 

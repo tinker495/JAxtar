@@ -32,9 +32,12 @@ class DefaultModel(nn.Module):
 
 
 class NeuralHeuristicBase(Heuristic):
-    def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel(), init_params: bool = True):
+    def __init__(
+        self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True, **kwargs
+    ):
         self.puzzle = puzzle
-        self.model = model
+        self.model = model(**kwargs)
+        self.is_fixed = puzzle.fixed_target
         if init_params:
             self.params = self.get_new_params()
 

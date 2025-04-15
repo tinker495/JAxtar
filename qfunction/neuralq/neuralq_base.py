@@ -36,14 +36,17 @@ class DefaultModel(nn.Module):
 
 
 class NeuralQFunctionBase(QFunction):
-    def __init__(self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True):
+    def __init__(
+        self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True, **kwargs
+    ):
         self.puzzle = puzzle
+        self.is_fixed = puzzle.fixed_target
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
         self.action_size = self.puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[
             0
         ][0]
-        self.model = model(self.action_size)
+        self.model = model(self.action_size, **kwargs)
         if init_params:
             self.params = self.get_new_params()
 
