@@ -137,9 +137,11 @@ def _get_datasets(
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
-        q_values_sum_cost = q_values + jnp.transpose(cost, (1, 0))  # remove invalid actions
+        q_values = jnp.where(
+            jnp.isfinite(jnp.transpose(cost, (1, 0))), q_values, jnp.inf
+        )  # remove invalid actions
 
-        probs = boltzmann_action_selection(q_values_sum_cost)
+        probs = boltzmann_action_selection(q_values)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
@@ -151,6 +153,12 @@ def _get_datasets(
             neighbors,
         )
         selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
+        _, neighbor_cost = puzzle.batched_get_neighbours(
+            solve_configs,
+            selected_neighbors,
+            filleds=jnp.ones_like(move_costs),
+            multi_solve_config=True,
+        )  # [action_size, batch_size] [action_size, batch_size]
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
@@ -160,6 +168,7 @@ def _get_datasets(
         q, _ = q_fn(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
+        q = jnp.where(jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0))), q, jnp.inf)
         target_q = jnp.maximum(jnp.min(q, axis=1), 0.0) + selected_costs
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
