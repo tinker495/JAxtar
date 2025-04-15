@@ -48,7 +48,7 @@ def qlearning_builder(
         if importance_sampling:
             # Calculate sampling probabilities based on diff (error) for importance sampling
             # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
-            sampling_weights = jnp.power(diff, importance_sampling_alpha)
+            sampling_weights = jnp.power(diff + 1e-6, importance_sampling_alpha)
             sampling_probs = sampling_weights / jnp.sum(sampling_weights)
             loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
             loss_weights = loss_weights / jnp.max(loss_weights)
@@ -172,6 +172,7 @@ def _get_datasets(
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
         )
+        selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
 
         batch_size = actions.shape[0]
         selected_neighbors = jax.tree_util.tree_map(
@@ -199,7 +200,7 @@ def _get_datasets(
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
 
-        diff = jnp.abs(target_q - q)
+        diff = jnp.abs(target_q - selected_q)
         # if the puzzle is already solved, the all q is 0
         return key, (path_preproc, target_q, actions, diff)
 
