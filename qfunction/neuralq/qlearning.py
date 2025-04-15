@@ -200,8 +200,9 @@ def _get_datasets(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
         q = jnp.where(jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0))), q, jnp.inf)
-        min_q = jnp.where(selected_neighbors_solved, 0.0, jnp.min(q, axis=1))
+        min_q = jnp.min(q, axis=1)
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
+        solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = target_q - selected_q
