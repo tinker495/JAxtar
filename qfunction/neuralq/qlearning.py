@@ -134,15 +134,17 @@ def _get_datasets(
 
         path_preproc = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
         q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
-        probs = boltzmann_action_selection(q_values)
+        neighbors, cost = puzzle.batched_get_neighbours(
+            solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+        )  # [action_size, batch_size] [action_size, batch_size]
+        q_values_sum_cost = q_values + jnp.transpose(cost, (1, 0))  # remove invalid actions
+
+        probs = boltzmann_action_selection(q_values_sum_cost)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
         )
 
-        neighbors, cost = puzzle.batched_get_neighbours(
-            solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
-        )  # [action_size, batch_size] [action_size, batch_size]
         batch_size = actions.shape[0]
         selected_neighbors = jax.tree_util.tree_map(
             lambda x: x[actions, jnp.arange(batch_size), :],
