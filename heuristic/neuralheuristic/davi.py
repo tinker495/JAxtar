@@ -14,11 +14,15 @@ def davi_builder(
     minibatch_size: int,
     heuristic_fn: Callable,
     optimizer: optax.GradientTransformation,
+    importance_sampling: int = True,
+    importance_sampling_alpha: float = 0.7,
+    importance_sampling_beta: float = 0.5,
 ):
     def davi_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
         target_heuristic: chex.Array,
+        weights: chex.Array,
     ):
         current_heuristic, variable_updates = heuristic_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
@@ -29,7 +33,7 @@ def davi_builder(
         }
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = jnp.mean(jnp.square(diff))
+        loss = jnp.mean(jnp.square(diff) * weights)
         return loss, (new_params, diff)
 
     def davi(
@@ -45,25 +49,47 @@ def davi_builder(
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        batch_indexs = jnp.concatenate(
-            [
-                jax.random.permutation(key, jnp.arange(data_size)),
-                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
+        if importance_sampling:
+            # Calculate sampling probabilities based on diff (error) for importance sampling
+            # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
+            sampling_weights = jnp.power(diff, importance_sampling_alpha)
+            sampling_probs = sampling_weights / jnp.sum(sampling_weights)
+            loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
+            loss_weights = loss_weights / jnp.max(loss_weights)
+
+            # Sample indices based on the calculated probabilities
+            batch_indexs = jax.random.choice(
+                key,
+                jnp.arange(data_size),
+                shape=(batch_size * minibatch_size,),
+                replace=True,
+                p=sampling_probs,
+            )
+        else:
+            batch_indexs = jnp.concatenate(
+                [
+                    jax.random.permutation(key, jnp.arange(data_size)),
+                    jax.random.randint(
+                        key, (batch_size * minibatch_size - data_size,), 0, data_size
+                    ),
+                ],
+                axis=0,
+            )  # [batch_size * minibatch_size]
+            loss_weights = jnp.ones_like(batch_indexs)
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
+        batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
-            states, target_heuristic = batched_dataset
+            states, target_heuristic, weights = batched_dataset
             (loss, (heuristic_params, diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
                 states,
                 target_heuristic,
+                weights,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
@@ -77,7 +103,7 @@ def davi_builder(
         (heuristic_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
-            (batched_states, batched_target_heuristic),
+            (batched_states, batched_target_heuristic, batched_weights),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
