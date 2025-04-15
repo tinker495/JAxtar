@@ -37,7 +37,7 @@ def qlearning_builder(
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q, actions = dataset
+        states, target_q, actions, diff = dataset
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -172,10 +172,12 @@ def _get_datasets(
         target_q = jnp.maximum(jnp.min(q, axis=1), 0.0) + selected_costs
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
-        # if the puzzle is already solved, the all q is 0
-        return key, (path_preproc, target_q, actions)
 
-    _, (states, target_q, actions) = jax.lax.scan(
+        diff = jnp.abs(target_q - q)
+        # if the puzzle is already solved, the all q is 0
+        return key, (path_preproc, target_q, actions, diff)
+
+    _, (states, target_q, actions, diff) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
@@ -184,8 +186,9 @@ def _get_datasets(
     states = states.reshape((-1, *states.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
+    diff = diff.reshape((-1, *diff.shape[2:]))
 
-    return states, target_q, actions
+    return states, target_q, actions, diff
 
 
 def get_qlearning_dataset_builder(

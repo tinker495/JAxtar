@@ -41,7 +41,7 @@ def davi_builder(
         """
         DAVI is a heuristic for the sliding puzzle problem.
         """
-        states, target_heuristic = dataset
+        states, target_heuristic, diff = dataset
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -155,15 +155,14 @@ def _get_datasets(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
 
-        # target_heuristic must be less than the number of moves
-        # it just doesn't make sense to have a heuristic greater than the number of moves
-        # heuristic's definition is the optimal cost to reach the target state
-        # so it doesn't make sense to have a heuristic greater than the number of moves
-        # target_heuristic = jnp.minimum(target_heuristic, move_costs)
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        return None, (states, target_heuristic)
+        heur, _ = heuristic_fn(
+            target_heuristic_params, states, training=False, mutable=["batch_stats"]
+        )
+        diff = jnp.abs(target_heuristic - heur)
+        return None, (states, target_heuristic, diff)
 
-    _, (states, target_heuristic) = jax.lax.scan(
+    _, (states, target_heuristic, diff) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
@@ -171,8 +170,9 @@ def _get_datasets(
 
     states = states.reshape((-1, *states.shape[2:]))
     target_heuristic = target_heuristic.reshape((-1, *target_heuristic.shape[2:]))
+    diff = diff.reshape((-1, *diff.shape[2:]))
 
-    return states, target_heuristic
+    return states, target_heuristic, diff
 
 
 def get_heuristic_dataset_builder(
