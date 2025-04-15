@@ -16,7 +16,7 @@ def qlearning_builder(
     optimizer: optax.GradientTransformation,
     importance_sampling: int = True,
     importance_sampling_alpha: float = 0.7,
-    importance_sampling_beta: float = 0.5,
+    importance_sampling_beta: float = 0.1,
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
@@ -48,7 +48,8 @@ def qlearning_builder(
         if importance_sampling:
             # Calculate sampling probabilities based on diff (error) for importance sampling
             # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
-            sampling_weights = jnp.power(diff + 1e-6, importance_sampling_alpha)
+            abs_diff = jnp.abs(diff)
+            sampling_weights = jnp.power(abs_diff + 1e-6, importance_sampling_alpha)
             sampling_probs = sampling_weights / jnp.sum(sampling_weights)
             loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
             loss_weights = loss_weights / jnp.max(loss_weights)
@@ -200,7 +201,7 @@ def _get_datasets(
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
 
-        diff = jnp.abs(target_q - selected_q)
+        diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
         return key, (path_preproc, target_q, actions, diff)
 

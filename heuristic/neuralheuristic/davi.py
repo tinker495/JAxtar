@@ -16,7 +16,7 @@ def davi_builder(
     optimizer: optax.GradientTransformation,
     importance_sampling: int = True,
     importance_sampling_alpha: float = 0.7,
-    importance_sampling_beta: float = 0.5,
+    importance_sampling_beta: float = 0.1,
 ):
     def davi_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
@@ -52,7 +52,8 @@ def davi_builder(
         if importance_sampling:
             # Calculate sampling probabilities based on diff (error) for importance sampling
             # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
-            sampling_weights = jnp.power(diff + 1e-6, importance_sampling_alpha)
+            abs_diff = jnp.abs(diff)
+            sampling_weights = jnp.power(abs_diff + 1e-6, importance_sampling_alpha)
             sampling_probs = sampling_weights / jnp.sum(sampling_weights)
             loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
             loss_weights = loss_weights / jnp.max(loss_weights)
@@ -185,7 +186,7 @@ def _get_datasets(
         heur, _ = heuristic_fn(
             target_heuristic_params, states, training=False, mutable=["batch_stats"]
         ).squeeze()
-        diff = jnp.abs(target_heuristic - heur)
+        diff = target_heuristic - heur
         return None, (states, target_heuristic, diff)
 
     _, (states, target_heuristic, diff) = jax.lax.scan(

@@ -56,7 +56,10 @@ def train_option(func: callable) -> callable:
     @click.option("-l", "--loss_threshold", type=float, default=0.05)
     @click.option("-u", "--update_interval", type=int, default=100)  # 50 * 100 = 5000
     @click.option("-s", "--use_soft_update", is_flag=True, help="Use soft update")
-    @click.option("--using_hindsight_target", is_flag=True, help="Use hindsight target")
+    @click.option("-her", "--using_hindsight_target", is_flag=True, help="Use hindsight target")
+    @click.option(
+        "-per", "--using_importance_sampling", is_flag=True, help="Use importance sampling"
+    )
     @click.option("--debug", is_flag=True, help="Debug mode")
     @wraps(func)
     def wrapper(*args, **kwargs):
