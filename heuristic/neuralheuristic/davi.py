@@ -188,8 +188,8 @@ def _get_datasets(
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
         heur, _ = heuristic_fn(
             target_heuristic_params, states, training=False, mutable=["batch_stats"]
-        ).squeeze()
-        diff = target_heuristic - heur
+        )
+        diff = target_heuristic - heur.squeeze()
         return None, (states, target_heuristic, diff)
 
     _, (states, target_heuristic, diff) = jax.lax.scan(
