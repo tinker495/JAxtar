@@ -15,9 +15,9 @@ def qlearning_builder(
     q_fn: Callable,
     optimizer: optax.GradientTransformation,
     importance_sampling: int = True,
-    importance_sampling_alpha: float = 0.1,
+    importance_sampling_alpha: float = 0.5,
     importance_sampling_beta: float = 0.1,
-    importance_sampling_eps: float = 1e-6,
+    importance_sampling_eps: float = 1.0,
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
@@ -62,7 +62,7 @@ def qlearning_builder(
                 key,
                 jnp.arange(data_size),
                 shape=(batch_size * minibatch_size,),
-                replace=True,
+                replace=False,
                 p=sampling_probs,
             )
         else:
