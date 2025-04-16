@@ -158,9 +158,6 @@ def _get_datasets(
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
         solve_configs, shuffled_path, move_costs = vals
-        solved = puzzle.batched_is_solved(
-            solve_configs, shuffled_path, multi_solve_config=True
-        )  # [batch_size]
 
         path_preproc = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
         q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
@@ -202,8 +199,7 @@ def _get_datasets(
         q = jnp.where(jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0))), q, jnp.inf)
         min_q = jnp.min(q, axis=1)
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
-        solved = jnp.logical_or(selected_neighbors_solved, solved)
-        target_q = jnp.where(solved, 0.0, target_q)
+        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
 
         diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
