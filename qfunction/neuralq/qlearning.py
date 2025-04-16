@@ -14,18 +14,23 @@ def qlearning_builder(
     minibatch_size: int,
     q_fn: Callable,
     optimizer: optax.GradientTransformation,
+    importance_sampling: int = True,
+    importance_sampling_alpha: float = 0.5,
+    importance_sampling_beta: float = 0.1,
+    importance_sampling_eps: float = 1.0,
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
         actions: chex.Array,
         target_qs: chex.Array,
+        weights: chex.Array,
     ):
         q_values, variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
-        loss = jnp.mean(jnp.square(diff))
+        loss = jnp.mean(jnp.square(diff) * weights)
         return loss, (new_params, diff)
 
     def qlearning(
@@ -37,31 +42,56 @@ def qlearning_builder(
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q, actions = dataset
+        states, target_q, actions, diff = dataset
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        batch_indexs = jnp.concatenate(
-            [
-                jax.random.permutation(key, jnp.arange(data_size)),
-                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
+        if importance_sampling:
+            # Calculate sampling probabilities based on diff (error) for importance sampling
+            # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
+            abs_diff = jnp.abs(diff)
+            sampling_weights = jnp.power(
+                abs_diff + importance_sampling_eps, importance_sampling_alpha
+            )
+            sampling_probs = sampling_weights / jnp.sum(sampling_weights)
+            loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
+            loss_weights = loss_weights / jnp.max(loss_weights)
+
+            # Sample indices based on the calculated probabilities
+            batch_indexs = jax.random.choice(
+                key,
+                jnp.arange(data_size),
+                shape=(batch_size * minibatch_size,),
+                replace=False,
+                p=sampling_probs,
+            )
+        else:
+            batch_indexs = jnp.concatenate(
+                [
+                    jax.random.permutation(key, jnp.arange(data_size)),
+                    jax.random.randint(
+                        key, (batch_size * minibatch_size - data_size,), 0, data_size
+                    ),
+                ],
+                axis=0,
+            )  # [batch_size * minibatch_size]
+            loss_weights = jnp.ones_like(batch_indexs)
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
+        batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
-            states, target_q, actions = batched_dataset
+            states, target_q, actions, weights = batched_dataset
             (loss, (q_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
                 states,
                 actions,
                 target_q,
+                weights,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
@@ -75,7 +105,7 @@ def qlearning_builder(
         (q_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
             train_loop,
             (q_params, opt_state),
-            (batched_states, batched_target_q, batched_actions),
+            (batched_states, batched_target_q, batched_actions, batched_weights),
         )
         loss = jnp.mean(losses)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -146,6 +176,7 @@ def _get_datasets(
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
         )
+        selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
 
         batch_size = actions.shape[0]
         selected_neighbors = jax.tree_util.tree_map(
@@ -173,10 +204,12 @@ def _get_datasets(
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
         solved = jnp.logical_or(selected_neighbors_solved, solved)
         target_q = jnp.where(solved, 0.0, target_q)
-        # if the puzzle is already solved, the all q is 0
-        return key, (path_preproc, target_q, actions)
 
-    _, (states, target_q, actions) = jax.lax.scan(
+        diff = target_q - selected_q
+        # if the puzzle is already solved, the all q is 0
+        return key, (path_preproc, target_q, actions, diff)
+
+    _, (states, target_q, actions, diff) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
@@ -185,8 +218,9 @@ def _get_datasets(
     states = states.reshape((-1, *states.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
+    diff = diff.reshape((-1, *diff.shape[2:]))
 
-    return states, target_q, actions
+    return states, target_q, actions, diff
 
 
 def get_qlearning_dataset_builder(
