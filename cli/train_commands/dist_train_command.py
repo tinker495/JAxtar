@@ -79,7 +79,7 @@ def davi(
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_heuristic_params, subkey)
+        dataset = get_datasets(heuristic_params, target_heuristic_params, subkey)
         target_heuristic = dataset[1]
         diffs = dataset[2]
         mean_target_heuristic = jnp.mean(target_heuristic)

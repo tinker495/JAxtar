@@ -136,6 +136,7 @@ def _get_datasets(
     preproc_fn: Callable,
     heuristic_fn: Callable,
     minibatch_size: int,
+    heuristic_params: jax.tree_util.PyTreeDef,
     target_heuristic_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
@@ -186,9 +187,7 @@ def _get_datasets(
         )  # if the puzzle is already solved, the heuristic is 0
 
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        heur, _ = heuristic_fn(
-            target_heuristic_params, states, training=False, mutable=["batch_stats"]
-        )
+        heur, _ = heuristic_fn(heuristic_params, states, training=False, mutable=["batch_stats"])
         diff = target_heuristic - heur.squeeze()
         return None, (states, target_heuristic, diff)
 
@@ -268,6 +267,7 @@ def get_heuristic_dataset_builder(
     @jax.jit
     def get_datasets(
         heuristic_params: jax.tree_util.PyTreeDef,
+        target_heuristic_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
         def scan_fn(key, _):
@@ -280,7 +280,7 @@ def get_heuristic_dataset_builder(
             lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
         )
 
-        flatten_dataset = jited_get_datasets(heuristic_params, paths, key)
+        flatten_dataset = jited_get_datasets(heuristic_params, target_heuristic_params, paths, key)
         return flatten_dataset
 
     return get_datasets
