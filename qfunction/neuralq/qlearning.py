@@ -128,10 +128,14 @@ def qlearning_builder(
     return jax.jit(qlearning)
 
 
-def boltzmann_action_selection(q_values: chex.Array, temperature: float = 3.0) -> chex.Array:
+def boltzmann_action_selection(
+    q_values: chex.Array, temperature: float = 3.0, epsilon: float = 0.01, mask: chex.Array = None
+) -> chex.Array:
     q_values = -q_values / temperature
-    q_values = jnp.exp(q_values)
-    probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
+    probs = jnp.exp(q_values) + epsilon
+    if mask is not None:
+        probs = jnp.where(mask, probs, 0.0)
+    probs = probs / jnp.sum(probs, axis=1, keepdims=True)
     return probs
 
 
@@ -164,11 +168,9 @@ def _get_datasets(
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
-        q_values = jnp.where(
-            jnp.isfinite(jnp.transpose(cost, (1, 0))), q_values, jnp.inf
-        )  # remove invalid actions
+        mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
 
-        probs = boltzmann_action_selection(q_values)
+        probs = boltzmann_action_selection(q_values, mask=mask)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
@@ -196,7 +198,8 @@ def _get_datasets(
         q, _ = q_fn(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        q = jnp.where(jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0))), q, jnp.inf)
+        mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
+        q = jnp.where(mask, q, jnp.inf)
         min_q = jnp.min(q, axis=1)
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
         target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
