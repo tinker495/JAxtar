@@ -18,6 +18,7 @@ def qlearning_builder(
     importance_sampling_alpha: float = 0.5,
     importance_sampling_beta: float = 0.1,
     importance_sampling_eps: float = 1.0,
+    n_devices: int = 1,
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
@@ -93,6 +94,9 @@ def qlearning_builder(
                 target_q,
                 weights,
             )
+            if n_devices > 1:
+                q_params = jax.lax.pmean(q_params, axis_name="devices")
+                grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
             # Calculate gradient magnitude mean
@@ -122,7 +126,25 @@ def qlearning_builder(
             weights_magnitude_mean,
         )
 
-    return jax.jit(qlearning)
+    if n_devices > 1:
+        def pmap_qlearning(key, dataset, q_params, opt_state):
+            keys = jax.random.split(key, n_devices)
+            (
+                qfunc_params,
+                opt_state,
+                loss,
+                grad_magnitude,
+                weight_magnitude,
+            ) = jax.pmap(qlearning, in_axes=(0, 0, None, None), axis_name="devices")(keys, dataset, q_params, opt_state)
+            qfunc_params = jax.tree_util.tree_map(lambda xs: xs[0], qfunc_params)
+            opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
+            loss = jnp.mean(loss)
+            grad_magnitude = jnp.mean(grad_magnitude)
+            weight_magnitude = jnp.mean(weight_magnitude)
+            return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude
+        return pmap_qlearning
+    else:
+        return jax.jit(qlearning)
 
 
 def boltzmann_action_selection(
@@ -303,11 +325,10 @@ def get_qlearning_dataset_builder(
         return flatten_dataset
 
     if n_devices > 1:
-        print(f"Data parallelism enabled across {n_devices} devices")
         def pmap_get_datasets(target_q_params, q_params, key):
             keys = jax.random.split(key, n_devices)
             datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(target_q_params, q_params, keys)
-            return jax.tree_util.tree_map(lambda xs: jnp.reshape(xs, (-1, *xs.shape[2:])), datasets)
+            return datasets
         return pmap_get_datasets
     else:
         return get_datasets

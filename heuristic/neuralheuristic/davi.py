@@ -18,6 +18,7 @@ def davi_builder(
     importance_sampling_alpha: float = 0.5,
     importance_sampling_beta: float = 0.1,
     importance_sampling_eps: float = 1.0,
+    n_devices: int = 1,
 ):
     def davi_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
@@ -95,6 +96,9 @@ def davi_builder(
                 target_heuristic,
                 weights,
             )
+            if n_devices > 1:
+                heuristic_params = jax.lax.pmean(heuristic_params, axis_name="devices")
+                grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
             # Calculate gradient magnitude mean
@@ -125,7 +129,25 @@ def davi_builder(
             weights_magnitude_mean,
         )
 
-    return jax.jit(davi)
+    if n_devices > 1:
+        def pmap_davi(key, dataset, heuristic_params, opt_state):
+            keys = jax.random.split(key, n_devices)
+            (
+                heuristic_params,
+                opt_state,
+                loss,
+                grad_magnitude,
+                weight_magnitude,
+            ) = jax.pmap(davi, in_axes=(0, 0, None, None), axis_name="devices")(keys, dataset, heuristic_params, opt_state)
+            heuristic_params = jax.tree_util.tree_map(lambda xs: xs[0], heuristic_params)
+            opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
+            loss = jnp.mean(loss)
+            grad_magnitude = jnp.mean(grad_magnitude)
+            weight_magnitude = jnp.mean(weight_magnitude)
+            return heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude
+        return pmap_davi
+    else:
+        return jax.jit(davi)
 
 
 def _get_datasets(
@@ -282,7 +304,6 @@ def get_heuristic_dataset_builder(
         return flatten_dataset
 
     if n_devices > 1:
-        print(f"Data parallelism enabled across {n_devices} devices")
         def pmap_get_datasets(target_heuristic_params, heuristic_params, key):
             keys = jax.random.split(key, n_devices)
             datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(target_heuristic_params, heuristic_params, keys)

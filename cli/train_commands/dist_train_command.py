@@ -65,11 +65,12 @@ def davi(
     n_devices = jax.device_count()
     steps = steps // n_devices
     update_interval = update_interval // n_devices
+    print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
         heuristic_params, steps, dataset_batch_size // train_minibatch_size
     )
-    davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer, using_importance_sampling)
+    davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer, using_importance_sampling, n_devices=n_devices)
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
@@ -159,12 +160,13 @@ def qlearning(
     n_devices = jax.device_count()
     steps = steps // n_devices
     update_interval = update_interval // n_devices
+    print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
         qfunc_params, steps, dataset_batch_size // train_minibatch_size
     )
     qlearning_fn = qlearning_builder(
-        train_minibatch_size, qfunc_fn, optimizer, using_importance_sampling
+        train_minibatch_size, qfunc_fn, optimizer, using_importance_sampling, n_devices=n_devices
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
