@@ -133,8 +133,8 @@ def _get_datasets(
     preproc_fn: Callable,
     heuristic_fn: Callable,
     minibatch_size: int,
-    heuristic_params: jax.tree_util.PyTreeDef,
     target_heuristic_params: jax.tree_util.PyTreeDef,
+    heuristic_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
@@ -264,8 +264,8 @@ def get_heuristic_dataset_builder(
 
     @jax.jit
     def get_datasets(
-        heuristic_params: jax.tree_util.PyTreeDef,
         target_heuristic_params: jax.tree_util.PyTreeDef,
+        heuristic_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
         def scan_fn(key, _):
@@ -278,14 +278,14 @@ def get_heuristic_dataset_builder(
             lambda x: x.reshape((-1, *x.shape[2:])), paths
         )
 
-        flatten_dataset = jited_get_datasets(heuristic_params, target_heuristic_params, paths, key)
+        flatten_dataset = jited_get_datasets(target_heuristic_params, heuristic_params, paths, key)
         return flatten_dataset
 
     if n_devices > 1:
         print(f"Data parallelism enabled across {n_devices} devices")
-        def pmap_get_datasets(heuristic_params, target_heuristic_params, key):
+        def pmap_get_datasets(target_heuristic_params, heuristic_params, key):
             keys = jax.random.split(key, n_devices)
-            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(heuristic_params, target_heuristic_params, keys)
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(target_heuristic_params, heuristic_params, keys)
             return jax.tree_util.tree_map(lambda xs: jnp.reshape(xs, (-1, *xs.shape[2:])), datasets)
         return pmap_get_datasets
     else:
