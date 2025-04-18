@@ -132,10 +132,14 @@ def boltzmann_action_selection(
     q_values: chex.Array, temperature: float = 3.0, epsilon: float = 0.01, mask: chex.Array = None
 ) -> chex.Array:
     q_values = -q_values / temperature
-    probs = jnp.exp(q_values) + epsilon
+    probs = jnp.exp(q_values)
     if mask is not None:
         probs = jnp.where(mask, probs, 0.0)
+    else:
+        mask = jnp.ones_like(probs)
     probs = probs / jnp.sum(probs, axis=1, keepdims=True)
+    uniform_prob = mask.astype(jnp.float32) / jnp.sum(mask, axis=1, keepdims=True)
+    probs = probs * (1 - epsilon) + uniform_prob * epsilon
     return probs
 
 
