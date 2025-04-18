@@ -297,7 +297,7 @@ def get_heuristic_dataset_builder(
 
         key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
         paths = jax.tree_util.tree_map(
-            lambda x: x.reshape((-1, *x.shape[2:])), paths
+            lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
         )
 
         flatten_dataset = jited_get_datasets(target_heuristic_params, heuristic_params, paths, key)
