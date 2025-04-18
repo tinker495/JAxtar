@@ -84,9 +84,9 @@ def scale_by_adopt(
     return optax.GradientTransformation(init_fn, update_fn)
 
 
-def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.OptState:
+def setup_optimizer(params: PyTree, num_devices: int, steps: int, one_iter_size: int) -> optax.OptState:
     # Add warmup to the learning rate schedule
-    lr = 1e-3
+    lr = 1e-3 * num_devices
     warmup_steps = 10 * one_iter_size
 
     # Create a warmup schedule that linearly increases from 0 to init_value
@@ -121,8 +121,8 @@ def setup_optimizer(params: PyTree, steps: int, one_iter_size: int) -> optax.Opt
     def optimizer_fn(learning_rate):
         return optax.chain(
             # optax.scale_by_adam(),
-            scale_by_adopt(),
-            optax.add_decayed_weights(0.01, mask=mask),
+            scale_by_adopt(b2=0.99),
+            optax.add_decayed_weights(0.001, mask=mask),
             optax.scale_by_learning_rate(learning_rate),
         )
 

@@ -68,7 +68,7 @@ def davi(
     print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
-        heuristic_params, steps, dataset_batch_size // train_minibatch_size
+        heuristic_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
     davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer, using_importance_sampling, n_devices=n_devices)
     get_datasets = get_heuristic_dataset_builder(
@@ -163,7 +163,7 @@ def qlearning(
     print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
-        qfunc_params, steps, dataset_batch_size // train_minibatch_size
+        qfunc_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
     qlearning_fn = qlearning_builder(
         train_minibatch_size, qfunc_fn, optimizer, using_importance_sampling, n_devices=n_devices
