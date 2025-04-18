@@ -29,6 +29,8 @@ def davi_builder(
         current_heuristic, variable_updates = heuristic_fn(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
+        if n_devices > 1:
+            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
         new_params = {
             "params": heuristic_params["params"],
             "batch_stats": variable_updates["batch_stats"],
@@ -97,7 +99,6 @@ def davi_builder(
                 weights,
             )
             if n_devices > 1:
-                heuristic_params = jax.lax.pmean(heuristic_params, axis_name="devices")
                 grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)

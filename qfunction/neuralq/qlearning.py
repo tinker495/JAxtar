@@ -28,6 +28,8 @@ def qlearning_builder(
         weights: chex.Array,
     ):
         q_values, variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
+        if n_devices > 1:
+            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
@@ -95,7 +97,6 @@ def qlearning_builder(
                 weights,
             )
             if n_devices > 1:
-                q_params = jax.lax.pmean(q_params, axis_name="devices")
                 grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
