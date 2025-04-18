@@ -62,6 +62,10 @@ def davi(
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
+    n_devices = jax.device_count()
+    steps = steps // n_devices
+    update_interval = update_interval // n_devices
+
     optimizer, opt_state = setup_optimizer(
         heuristic_params, steps, dataset_batch_size // train_minibatch_size
     )
@@ -74,6 +78,7 @@ def davi(
         shuffle_length,
         dataset_minibatch_size,
         using_hindsight_target,
+        n_devices=n_devices,
     )
 
     pbar = trange(steps)
@@ -83,13 +88,12 @@ def davi(
         target_heuristic = dataset[1]
         diffs = dataset[2]
         mean_target_heuristic = jnp.mean(target_heuristic)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         (
             heuristic_params,
             opt_state,
             loss,
-            mean_abs_diff,
-            _,
             grad_magnitude,
             weight_magnitude,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
@@ -98,13 +102,13 @@ def davi(
             f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
             f", target_heuristic: {float(mean_target_heuristic):.2f}"
         )
+        writer.add_scalar("Metrics/Learning Rate", lr, i)
+        writer.add_scalar("Losses/Loss", loss, i)
+        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if i % 10 == 0:
-            writer.add_scalar("Metrics/Learning Rate", lr, i)
-            writer.add_scalar("Losses/Loss", loss, i)
-            writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-            writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-            writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-            writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_heuristic, i)
 
@@ -152,6 +156,10 @@ def qlearning(
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
+    n_devices = jax.device_count()
+    steps = steps // n_devices
+    update_interval = update_interval // n_devices
+
     optimizer, opt_state = setup_optimizer(
         qfunc_params, steps, dataset_batch_size // train_minibatch_size
     )
@@ -166,6 +174,7 @@ def qlearning(
         shuffle_length,
         dataset_minibatch_size,
         using_hindsight_target,
+        n_devices=n_devices,
     )
 
     pbar = trange(steps)
@@ -175,13 +184,12 @@ def qlearning(
         target_q = dataset[1]
         diffs = dataset[3]
         mean_target_q = jnp.mean(target_q)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         (
             qfunc_params,
             opt_state,
             loss,
-            mean_abs_diff,
-            _,
             grad_magnitude,
             weight_magnitude,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
@@ -190,13 +198,14 @@ def qlearning(
             f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
             f", target_q: {float(mean_target_q):.2f}"
         )
+
+        writer.add_scalar("Metrics/Learning Rate", lr, i)
+        writer.add_scalar("Losses/Loss", loss, i)
+        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
+        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if i % 10 == 0:
-            writer.add_scalar("Metrics/Learning Rate", lr, i)
-            writer.add_scalar("Losses/Loss", loss, i)
-            writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-            writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
-            writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-            writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
             writer.add_histogram("Losses/Diff", diffs, i)
             writer.add_histogram("Metrics/Target", target_q, i)
 

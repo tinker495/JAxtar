@@ -31,7 +31,7 @@ def qlearning_builder(
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, (new_params, diff)
+        return loss, new_params
 
     def qlearning(
         key: chex.PRNGKey,
@@ -86,7 +86,7 @@ def qlearning_builder(
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
             states, target_q, actions, weights = batched_dataset
-            (loss, (q_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
+            (loss, q_params), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
                 states,
                 actions,
@@ -100,15 +100,14 @@ def qlearning_builder(
                 lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (q_params, opt_state), (loss, diff, grad_magnitude_mean)
+            return (q_params, opt_state), (loss, grad_magnitude_mean)
 
-        (q_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
+        (q_params, opt_state), (losses, grad_magnitude_means) = jax.lax.scan(
             train_loop,
             (q_params, opt_state),
             (batched_states, batched_target_q, batched_actions, batched_weights),
         )
         loss = jnp.mean(losses)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -119,8 +118,6 @@ def qlearning_builder(
             q_params,
             opt_state,
             loss,
-            mean_abs_diff,
-            diffs,
             grad_magnitude_mean,
             weights_magnitude_mean,
         )
@@ -235,8 +232,8 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
+    n_devices: int = 1,
 ):
-
     if using_hindsight_target:
         # Calculate appropriate shuffle_parallel for hindsight sampling
         # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
@@ -299,13 +296,21 @@ def get_qlearning_dataset_builder(
 
         key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
         paths = jax.tree_util.tree_map(
-            lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
+            lambda x: x.reshape((-1, *x.shape[2:])), paths
         )
 
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
         return flatten_dataset
 
-    return get_datasets
+    if n_devices > 1:
+        print(f"Data parallelism enabled across {n_devices} devices")
+        def pmap_get_datasets(target_q_params, q_params, key):
+            keys = jax.random.split(key, n_devices)
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(target_q_params, q_params, keys)
+            return jax.tree_util.tree_map(lambda xs: jnp.reshape(xs, (-1, *xs.shape[2:])), datasets)
+        return pmap_get_datasets
+    else:
+        return get_datasets
 
 
 def create_target_shuffled_path(
