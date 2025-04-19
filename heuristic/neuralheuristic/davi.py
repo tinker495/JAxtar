@@ -308,7 +308,7 @@ def get_heuristic_dataset_builder(
         def pmap_get_datasets(target_heuristic_params, heuristic_params, key):
             keys = jax.random.split(key, n_devices)
             datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(target_heuristic_params, heuristic_params, keys)
-            return jax.tree_util.tree_map(lambda xs: jnp.reshape(xs, (-1, *xs.shape[2:])), datasets)
+            return datasets
         return pmap_get_datasets
     else:
         return get_datasets
