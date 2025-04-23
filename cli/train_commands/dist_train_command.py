@@ -73,6 +73,7 @@ def davi(
     optimizer, opt_state = setup_optimizer(
         heuristic_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
+    opt_state_init = opt_state
     davi_fn = davi_builder(
         train_minibatch_size,
         heuristic_fn,
@@ -128,6 +129,7 @@ def davi(
             )
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
+            opt_state = opt_state_init
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = target_heuristic_params
@@ -177,6 +179,7 @@ def qlearning(
     optimizer, opt_state = setup_optimizer(
         qfunc_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
+    opt_state_init = opt_state
     qlearning_fn = qlearning_builder(
         train_minibatch_size, qfunc_fn, optimizer, using_importance_sampling, n_devices=n_devices
     )
@@ -229,7 +232,7 @@ def qlearning(
             )
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
-
+            opt_state = opt_state_init
         if i % 1000 == 0 and i != 0:
             qfunction.params = target_qfunc_params
             qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
