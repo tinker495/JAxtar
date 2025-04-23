@@ -119,7 +119,7 @@ def setup_optimizer(
     def optimizer_fn(learning_rate):
         return optax.chain(
             # optax.scale_by_adam(),
-            scale_by_adopt(use_clipping=False),
+            scale_by_adopt(use_clipping=True),
             optax.add_decayed_weights(0.001, mask=mask),
             optax.scale_by_learning_rate(learning_rate),
         )
