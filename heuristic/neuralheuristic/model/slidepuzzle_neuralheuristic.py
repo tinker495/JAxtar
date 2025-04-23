@@ -4,7 +4,13 @@ import jax.numpy as jnp
 from flax import linen as nn
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    ConvResBlock,
+    ResBlock,
+    conditional_dummy_norm,
+)
 from puzzle.slidepuzzle import SlidePuzzle
 
 
@@ -46,15 +52,16 @@ class Model(nn.Module):
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(256, (3, 3), strides=1, padding="SAME", dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
         x = ConvResBlock(256, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
         x = ResBlock(512)(x, training)
         x = nn.Dense(1, dtype=DTYPE)(x)
+        _ = conditional_dummy_norm(x, training)
         return x
 
 

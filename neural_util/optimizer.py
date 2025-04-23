@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import jax
 import optax
@@ -16,6 +16,7 @@ def scale_by_adopt(
     *,
     nesterov: bool = False,
     use_clipping: bool = True,
+    clip_value_fn: Callable = lambda step: step**0.25,
 ) -> optax.GradientTransformation:
     r"""Rescale updates according to the ADOPT algorithm.
 
@@ -51,9 +52,10 @@ def scale_by_adopt(
     def update_fn(updates, state, params=None):
         del params
         b2_ = jnp.where(state.count > 0, b2, 0)
+        b1_ = jnp.where(state.count > 0, b1, 1)
         nu = otu.tree_update_moment_per_elem_norm(updates, state.nu, b2_, 2)
         if use_clipping:
-            clip_value = state.count**0.25
+            clip_value = clip_value_fn(state.count)
             mu_updates = jax.tree.map(
                 lambda ud, nu: jnp.clip(
                     ud / jnp.maximum(jnp.sqrt(nu), eps), -clip_value, clip_value
@@ -61,20 +63,14 @@ def scale_by_adopt(
                 updates,
                 state.nu,
             )
-            b1_ = b1
         else:
             mu_updates = jax.tree.map(
-                lambda ud, nu: ud / jnp.maximum(jnp.sqrt(nu), eps), updates, nu
+                lambda ud, nu: ud / jnp.maximum(jnp.sqrt(nu), eps), updates, state.nu
             )
-            b1_ = jnp.where(state.count > 0, b1, 0)
         mu = otu.tree_update_moment(mu_updates, state.mu, b1_, 1)
         count_inc = optax._src.numerics.safe_increment(state.count)
         if nesterov:
-            mu_ = jax.tree.map(
-                lambda m, g: b1 * m + (1 - b1) * g,
-                mu,
-                mu_updates,
-            )
+            mu_ = otu.tree_update_moment(mu_updates, state.mu, b1_, 1)
         else:
             mu_ = mu
         updates = mu_
