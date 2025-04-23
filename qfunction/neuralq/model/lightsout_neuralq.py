@@ -2,7 +2,13 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
-from neural_util.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    ConvResBlock,
+    ResBlock,
+    conditional_dummy_norm,
+)
 from puzzle.lightsout import LightsOut
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
@@ -30,15 +36,16 @@ class Model(nn.Module):
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(64, (3, 3), strides=1, padding="SAME", dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
         x = ConvResBlock(64, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(1024, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
         x = ResBlock(1024)(x, training)
         x = nn.Dense(self.action_size, dtype=DTYPE)(x)
+        _ = conditional_dummy_norm(x, training)
         return x
 
 
