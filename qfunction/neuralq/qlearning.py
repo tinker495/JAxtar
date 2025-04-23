@@ -18,6 +18,7 @@ def qlearning_builder(
     importance_sampling_alpha: float = 0.5,
     importance_sampling_beta: float = 0.1,
     importance_sampling_eps: float = 1.0,
+    n_devices: int = 1,
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
@@ -27,11 +28,13 @@ def qlearning_builder(
         weights: chex.Array,
     ):
         q_values, variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
+        if n_devices > 1:
+            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, (new_params, diff)
+        return loss, new_params
 
     def qlearning(
         key: chex.PRNGKey,
@@ -86,13 +89,15 @@ def qlearning_builder(
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
             states, target_q, actions, weights = batched_dataset
-            (loss, (q_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
+            (loss, q_params), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
                 states,
                 actions,
                 target_q,
                 weights,
             )
+            if n_devices > 1:
+                grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
             # Calculate gradient magnitude mean
@@ -100,15 +105,14 @@ def qlearning_builder(
                 lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (q_params, opt_state), (loss, diff, grad_magnitude_mean)
+            return (q_params, opt_state), (loss, grad_magnitude_mean)
 
-        (q_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
+        (q_params, opt_state), (losses, grad_magnitude_means) = jax.lax.scan(
             train_loop,
             (q_params, opt_state),
             (batched_states, batched_target_q, batched_actions, batched_weights),
         )
         loss = jnp.mean(losses)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -119,13 +123,29 @@ def qlearning_builder(
             q_params,
             opt_state,
             loss,
-            mean_abs_diff,
-            diffs,
             grad_magnitude_mean,
             weights_magnitude_mean,
         )
 
-    return jax.jit(qlearning)
+    if n_devices > 1:
+        def pmap_qlearning(key, dataset, q_params, opt_state):
+            keys = jax.random.split(key, n_devices)
+            (
+                qfunc_params,
+                opt_state,
+                loss,
+                grad_magnitude,
+                weight_magnitude,
+            ) = jax.pmap(qlearning, in_axes=(0, 0, None, None), axis_name="devices")(keys, dataset, q_params, opt_state)
+            qfunc_params = jax.tree_util.tree_map(lambda xs: xs[0], qfunc_params)
+            opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
+            loss = jnp.mean(loss)
+            grad_magnitude = jnp.mean(grad_magnitude)
+            weight_magnitude = jnp.mean(weight_magnitude)
+            return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude
+        return pmap_qlearning
+    else:
+        return jax.jit(qlearning)
 
 
 def boltzmann_action_selection(
@@ -235,8 +255,8 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
+    n_devices: int = 1,
 ):
-
     if using_hindsight_target:
         # Calculate appropriate shuffle_parallel for hindsight sampling
         # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
@@ -305,7 +325,14 @@ def get_qlearning_dataset_builder(
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
         return flatten_dataset
 
-    return get_datasets
+    if n_devices > 1:
+        def pmap_get_datasets(target_q_params, q_params, key):
+            keys = jax.random.split(key, n_devices)
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(target_q_params, q_params, keys)
+            return datasets
+        return pmap_get_datasets
+    else:
+        return get_datasets
 
 
 def create_target_shuffled_path(
