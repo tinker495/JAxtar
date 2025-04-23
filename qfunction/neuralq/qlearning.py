@@ -128,28 +128,29 @@ def qlearning_builder(
         )
 
     if n_devices > 1:
+
         def pmap_qlearning(key, dataset, q_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (
-                qfunc_params,
-                opt_state,
-                loss,
-                grad_magnitude,
-                weight_magnitude,
-            ) = jax.pmap(qlearning, in_axes=(0, 0, None, None), axis_name="devices")(keys, dataset, q_params, opt_state)
+            (qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude,) = jax.pmap(
+                qlearning, in_axes=(0, 0, None, None), axis_name="devices"
+            )(keys, dataset, q_params, opt_state)
             qfunc_params = jax.tree_util.tree_map(lambda xs: xs[0], qfunc_params)
             opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
             loss = jnp.mean(loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
             return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude
+
         return pmap_qlearning
     else:
         return jax.jit(qlearning)
 
 
 def boltzmann_action_selection(
-    q_values: chex.Array, temperature: float = 3.0, epsilon: float = 0.01, mask: chex.Array = None
+    q_values: chex.Array,
+    temperature: float = 1.0 / 3.0,
+    epsilon: float = 0.01,
+    mask: chex.Array = None,
 ) -> chex.Array:
     q_values = -q_values / temperature
     probs = jnp.exp(q_values)
@@ -326,10 +327,14 @@ def get_qlearning_dataset_builder(
         return flatten_dataset
 
     if n_devices > 1:
+
         def pmap_get_datasets(target_q_params, q_params, key):
             keys = jax.random.split(key, n_devices)
-            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(target_q_params, q_params, keys)
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(
+                target_q_params, q_params, keys
+            )
             return datasets
+
         return pmap_get_datasets
     else:
         return get_datasets
