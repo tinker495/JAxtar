@@ -52,6 +52,7 @@ def davi(
     use_soft_update: bool,
     using_hindsight_target: bool,
     using_importance_sampling: bool,
+    multi_device: bool,
     **kwargs,
 ):
 
@@ -62,15 +63,23 @@ def davi(
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
-    n_devices = jax.device_count()
-    steps = steps // n_devices
-    update_interval = update_interval // n_devices
-    print(f"Training with {n_devices} devices")
+    n_devices = 1
+    if multi_device:
+        n_devices = jax.device_count()
+        steps = steps // n_devices
+        update_interval = update_interval // n_devices
+        print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
         heuristic_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
-    davi_fn = davi_builder(train_minibatch_size, heuristic_fn, optimizer, using_importance_sampling, n_devices=n_devices)
+    davi_fn = davi_builder(
+        train_minibatch_size,
+        heuristic_fn,
+        optimizer,
+        using_importance_sampling,
+        n_devices=n_devices,
+    )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
@@ -148,6 +157,7 @@ def qlearning(
     use_soft_update: bool,
     using_hindsight_target: bool,
     using_importance_sampling: bool,
+    multi_device: bool,
     **kwargs,
 ):
     writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
@@ -157,10 +167,12 @@ def qlearning(
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
-    n_devices = jax.device_count()
-    steps = steps // n_devices
-    update_interval = update_interval // n_devices
-    print(f"Training with {n_devices} devices")
+    n_devices = 1
+    if multi_device:
+        n_devices = jax.device_count()
+        steps = steps // n_devices
+        update_interval = update_interval // n_devices
+        print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
         qfunc_params, n_devices, steps, dataset_batch_size // train_minibatch_size
