@@ -161,8 +161,8 @@ $ python main.py qstar -p rubikscube_world_model -nn -w 0.6
 ...
 
 Dist: 'action 0': 18.4 | 'action 1': 17.9 ... 'action 10': 18.2 | 'action 11': 16.6
-Search Time:   0.57 seconds
-Search states: 1.81M(3.17M states/s)
+Search Time:   0.27 seconds
+Search states: 1.81M(6.74M states/s)
 
 
 Cost: 22.0
