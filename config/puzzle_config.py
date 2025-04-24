@@ -13,6 +13,7 @@ from heuristic import (
 from heuristic.neuralheuristic import (
     LightsOutConvNeuralHeuristic,
     LightsOutNeuralHeuristic,
+    PancakeNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
     SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
@@ -61,6 +62,7 @@ from qfunction import (
 from qfunction.neuralq import (
     LightsOutConvNeuralQ,
     LightsOutNeuralQ,
+    PancakeNeuralQ,
     RubiksCubeNeuralQ,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
@@ -80,7 +82,7 @@ default_puzzle_sizes: dict[str, int] = {
     "tsp": 16,
     "dotknot": 8,
     "sokoban": 10,
-    "pancake": 16,
+    "pancake": 35,
     "hanoi": 10,
     "topspin": 20,
     "rubikscube_world_model": None,
@@ -200,6 +202,11 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
     else SokobanNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/sokoban_{n}.pkl"
     ),
+    "pancake": lambda n, puzzle, reset: PancakeNeuralHeuristic(puzzle)
+    if reset
+    else PancakeNeuralHeuristic.load_model(
+        puzzle, f"heuristic/neuralheuristic/model/params/pancake_{n}.pkl"
+    ),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
     if reset
     else WorldModelNeuralHeuristic.load_model(
@@ -292,6 +299,9 @@ puzzle_q_dict_nn: dict[str, callable] = {
     "sokoban": lambda n, puzzle, reset: SokobanNeuralQ(puzzle)
     if reset
     else SokobanNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/sokoban_{n}.pkl"),
+    "pancake": lambda n, puzzle, reset: PancakeNeuralQ(puzzle)
+    if reset
+    else PancakeNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/pancake_{n}.pkl"),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(
