@@ -81,10 +81,10 @@ def scale_by_adopt(
 
 
 def setup_optimizer(
-    params: PyTree, num_devices: int, steps: int, one_iter_size: int
+    params: PyTree, num_devices: int, steps: int, one_iter_size: int, lr_init: float = 1e-3
 ) -> optax.OptState:
     # Add warmup to the learning rate schedule
-    lr = 1e-3 * num_devices
+    lr = lr_init * num_devices
     warmup_steps = 10 * one_iter_size
 
     # Create a warmup schedule that linearly increases from 0 to init_value
