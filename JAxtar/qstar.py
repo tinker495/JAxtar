@@ -129,9 +129,7 @@ def qstar_builder(
             def _scan(search_result: SearchResult, val):
                 neighbour_key, parent_action, current = val
 
-                optimal = jnp.less(
-                    current.cost, search_result.cost[current.index, current.table_index]
-                )
+                optimal = jnp.less(current.cost, search_result.get_cost(current))
                 neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
                 parent_action = jnp.tile(parent_action, (neighbour_key.shape[0],))

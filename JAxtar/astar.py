@@ -172,9 +172,7 @@ def astar_builder(
                 )
                 neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
 
-                optimal = jnp.less(
-                    current.cost, search_result.cost[current.index, current.table_index]
-                )
+                optimal = jnp.less(current.cost, search_result.get_cost(current))
                 neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
                 aranged_parent = parent[parent_index]
