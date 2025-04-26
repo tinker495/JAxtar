@@ -17,7 +17,7 @@ def world_model_train_builder(
     minibatch_size: int,
     train_info_fn: Callable,
     optimizer: optax.GradientTransformation = optax.adam(1e-4),
-    loss_ratio: float = 0.1,
+    loss_ratio: float = 0.5,
 ):
     def loss_fn(
         params: jax.tree_util.PyTreeDef,
