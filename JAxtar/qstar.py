@@ -26,19 +26,19 @@ def qstar_builder(
     show_compile_time: bool = False,
 ):
     """
-    astar_builder is a function that returns a partial function of astar.
+    Builds and returns a JAX-accelerated Q* search function.
 
     Args:
-    - puzzle: Puzzle instance that contains the puzzle.
-    - heuristic_fn: heuristic function that returns the heuristic value of the states.
-    - batch_size: batch size of the states.
-    - max_nodes: maximum number of nodes that can be stored in the HashTable.
-    - astar_weight: weight of the cost function in the A* algorithm.
-    - efficient_heuristic: if True, the heuristic value of the states is stored in the HashTable.
-                        This is useful when the heuristic function is expensive to compute.
-                        ex) neural heuristic function.
-                        This option is slower than the normal heuristic function
-                        because of the overhead of the HashTable.
+        puzzle: Puzzle instance that defines the problem space and operations.
+        q_fn: QFunction instance that provides state-action value estimation.
+        batch_size: Number of states to process in parallel (default: 1024).
+        max_nodes: Maximum number of nodes to explore before terminating (default: 1e6).
+        cost_weight: Weight applied to the path cost in the Q* algorithm (default: 1.0-1e-6).
+                    Values closer to 1.0 make the search more greedy/depth-first.
+        show_compile_time: If True, displays the time taken to compile the search function (default: False).
+
+    Returns:
+        A function that performs Q* search given a start state and solve configuration.
     """
 
     statecls = puzzle.State
@@ -50,7 +50,7 @@ def qstar_builder(
         start: Puzzle.State,
     ) -> tuple[SearchResult, chex.Array]:
         """
-        astar is the implementation of the A* algorithm.
+        qstar is the implementation of the Q* algorithm.
         """
         search_result: SearchResult = SearchResult.build(statecls, batch_size, max_nodes)
         states, filled = HashTable.make_batched(puzzle.State, start[jnp.newaxis, ...], batch_size)
