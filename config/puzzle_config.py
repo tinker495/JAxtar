@@ -78,7 +78,7 @@ default_puzzle_sizes: dict[str, int] = {
     "lightsout-conv": 7,
     "rubikscube": 3,
     "rubikscube-random": 3,
-    "maze": 20,
+    "maze": 23,
     "tsp": 16,
     "dotknot": 8,
     "sokoban": 10,

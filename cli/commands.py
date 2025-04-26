@@ -109,6 +109,7 @@ def search_samples(
     profile,
     visualize_terminal,
     visualize_imgs,
+    max_animation_time,
     **kwargs,
 ):
     has_target = puzzle.has_target
@@ -201,7 +202,14 @@ def search_samples(
                             cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
                         )
                     gif_path = f"tmp/{logging_name}/animation.gif"
-                    imageio.mimsave(gif_path, imgs, fps=4)
+                    # Calculate the appropriate fps based on max_animation_time
+                    num_frames = len(imgs)
+                    fps = 4  # Default fps
+
+                    # If animation would be longer than max_animation_time, adjust fps
+                    if num_frames / fps > max_animation_time:
+                        fps = num_frames / max_animation_time
+                    imageio.mimsave(gif_path, imgs, fps=fps)
         else:
             print("No solution found\n\n")
 
