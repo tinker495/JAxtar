@@ -1,6 +1,7 @@
 from typing import Any, Callable, Optional
 
 import jax
+import numpy as np
 import optax
 import optax.tree_utils as otu
 from jax import numpy as jnp
@@ -80,6 +81,59 @@ def scale_by_adopt(
     return optax.GradientTransformation(init_fn, update_fn)
 
 
+def shrink_and_perturb(
+    shrink_factor: float = 1e-6, noise_scale_factor: float = 1.0
+) -> optax.GradientTransformation:
+    """Soft shrink and perturb parameters as a gradient transformation.
+
+    Applies a soft shrink to the parameters (multiplying by a factor < 1)
+    and adds Gaussian noise proportional to the standard deviation of each parameter.
+    The standard deviation is calculated during initialization and used for subsequent updates.
+    This can be used as part of an optimization chain to help escape local minima.
+
+    Args:
+        shrink_factor: Factor to multiply parameters by (default: 0.95)
+        noise_scale_factor: Factor to multiply parameter std by for noise scale (default: 0.01)
+
+    Returns:
+        An optax.GradientTransformation that applies shrinking and perturbation
+    """
+
+    def init_fn(params):
+        # Calculate standard deviation for each parameter at initialization
+        param_stds = jax.tree.map(lambda p: jnp.std(p), params)
+        key = jax.random.PRNGKey(np.random.randint(0, 2**30))
+        return (param_stds, key)
+
+    def update_fn(updates, state, params):
+        param_stds, key = state  # Unpack state
+
+        # Split the key: one for this step's use, one for the next state
+        key, key_step = jax.random.split(key)
+
+        def _shrink_and_perturb(p, std, k):
+            # Use the pre-calculated standard deviation from init
+            noise = noise_scale_factor * std * jax.random.normal(k, p.shape, p.dtype)
+            return (1 - shrink_factor) * p + shrink_factor * noise
+
+        # Use key_step for generating noise keys for this update
+        keys = jax.random.split(key_step, len(jax.tree_util.tree_leaves(params)))
+        flat_params, treedef = jax.tree.flatten(params)
+        flat_stds, _ = jax.tree.flatten(param_stds)  # Correctly using param_stds
+
+        perturbed_flat_params = [
+            _shrink_and_perturb(p, std, k) for p, std, k in zip(flat_params, flat_stds, keys)
+        ]
+
+        new_params = jax.tree.unflatten(treedef, perturbed_flat_params)
+        update_diff = jax.tree.map(lambda new_p, old_p: new_p - old_p, new_params, params)
+        updates = jax.tree.map(lambda u, d: u + d, updates, update_diff)
+
+        return updates, (param_stds, key)  # Store the new key back
+
+    return optax.GradientTransformation(init_fn, update_fn)
+
+
 def setup_optimizer(
     params: PyTree, num_devices: int, steps: int, one_iter_size: int, lr_init: float = 1e-3
 ) -> optax.OptState:
@@ -88,4 +142,10 @@ def setup_optimizer(
     warmup_steps = 10 * one_iter_size
 
     optimizer = optax.contrib.schedule_free_adamw(lr, warmup_steps, weight_decay=0.001)
+
+    optimizer = optax.chain(
+        optimizer,
+        shrink_and_perturb(1e-5, 1.0),
+    )
+
     return optimizer, optimizer.init(params)
