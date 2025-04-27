@@ -108,12 +108,10 @@ def davi(
             grad_magnitude,
             weight_magnitude,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
-        lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
+            f"loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
             f", target_heuristic: {float(mean_target_heuristic):.2f}"
         )
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
         writer.add_scalar("Losses/Loss", loss, i)
         writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
@@ -210,13 +208,11 @@ def qlearning(
             grad_magnitude,
             weight_magnitude,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
-        lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
+            f"loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
             f", target_q: {float(mean_target_q):.2f}"
         )
 
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
         writer.add_scalar("Losses/Loss", loss, i)
         writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
@@ -233,6 +229,7 @@ def qlearning(
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
             opt_state = opt_state_init
+
         if i % 1000 == 0 and i != 0:
             qfunction.params = target_qfunc_params
             qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")

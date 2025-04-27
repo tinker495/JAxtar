@@ -87,42 +87,5 @@ def setup_optimizer(
     lr = lr_init * num_devices
     warmup_steps = 10 * one_iter_size
 
-    # Create a warmup schedule that linearly increases from 0 to init_value
-    warmup_schedule = optax.linear_schedule(
-        init_value=0.0, end_value=lr, transition_steps=warmup_steps
-    )
-
-    # Create the main decay schedule
-    decay_schedule = optax.schedules.exponential_decay(
-        lr,
-        5000,
-        0.995,
-    )
-
-    # Combine the schedules
-    lr_schedule = optax.join_schedules(
-        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
-    )
-
-    def _is_batch_stat_or_bias(path, value):
-        # Check if 'batch_stats' is part of any dictionary key in the path
-        is_batch_stat = any(
-            isinstance(entry, jax.tree_util.DictKey) and "batch_stats" in entry.key
-            for entry in path
-        )
-        # Check if the last part of the path is a dictionary key named 'bias'
-        is_bias = path and isinstance(path[-1], jax.tree_util.DictKey) and path[-1].key == "bias"
-        return not (is_batch_stat or is_bias)
-
-    mask = jax.tree_util.tree_map_with_path(_is_batch_stat_or_bias, params)
-
-    def optimizer_fn(learning_rate):
-        return optax.chain(
-            # optax.scale_by_adam(),
-            scale_by_adopt(use_clipping=True),
-            optax.add_decayed_weights(0.001, mask=mask),
-            optax.scale_by_learning_rate(learning_rate),
-        )
-
-    optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
+    optimizer = optax.contrib.schedule_free_adamw(lr, warmup_steps, weight_decay=0.001)
     return optimizer, optimizer.init(params)
