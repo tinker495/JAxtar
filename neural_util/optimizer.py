@@ -6,11 +6,6 @@ import numpy as np
 import optax
 import optax.tree_utils as otu
 from jax import numpy as jnp
-from optax._src import base, combine, numerics, transform
-from optax.schedules import _schedule
-from optax.transforms import _adding
-
-from .schedule_free import DTypeLike, ScheduleFreeState, schedule_free
 
 PyTree = Any
 
@@ -91,7 +86,7 @@ class ScaleByAdoptRmsState(NamedTuple):
     """State for the Adopt RMS scaling transformation."""
 
     count: chex.Numeric
-    nu: base.Updates
+    nu: optax.Updates
 
 
 def scale_by_adopt_rms(
@@ -99,7 +94,7 @@ def scale_by_adopt_rms(
     eps: float = 1e-6,
     use_clipping: bool = True,
     clip_value_fn: Callable = lambda step: step**0.25,
-) -> base.GradientTransformation:
+) -> optax.GradientTransformation:
     """Rescale updates according to the Adopt algorithm's second moment (RMS).
 
     This transformation implements the scaling part of Adopt/Adam based on the
@@ -136,11 +131,11 @@ def scale_by_adopt_rms(
                 lambda ud: jnp.clip(ud, -clip_value, clip_value), updates_scaled
             )
 
-        count_inc = numerics.safe_increment(state.count)
+        count_inc = optax.safe_increment(state.count)
 
         return updates_scaled, ScaleByAdoptRmsState(count=count_inc, nu=nu)
 
-    return base.GradientTransformation(init_fn, update_fn)
+    return optax.GradientTransformation(init_fn, update_fn)
 
 
 def schedule_free_adopt(
@@ -151,9 +146,9 @@ def schedule_free_adopt(
     eps: float = 1e-6,  # Adopt eps
     weight_decay: float = 0.0,
     weight_lr_power: float = 2.0,
-    state_dtype: Optional[DTypeLike] = None,
+    state_dtype: Optional[jnp.dtype] = None,
     use_clipping: bool = True,
-) -> base.GradientTransformationExtraArgs:
+) -> optax.GradientTransformationExtraArgs:
     """Schedule-Free wrapper for Adopt.
 
     Combines the Adopt second-moment scaling with the Schedule-Free wrapper.
@@ -174,7 +169,7 @@ def schedule_free_adopt(
     """
     lr_schedule = learning_rate
     if warmup_steps is not None:
-        lr_schedule = _schedule.warmup_constant_schedule(
+        lr_schedule = optax.warmup_constant_schedule(
             init_value=0.0,
             peak_value=learning_rate,
             warmup_steps=warmup_steps,
@@ -183,13 +178,13 @@ def schedule_free_adopt(
     # Base optimizer chain: Adopt RMS scaling -> weight decay -> LR scaling
     optimizer_chain = [scale_by_adopt_rms(b2=b2, eps=eps, use_clipping=use_clipping)]
     if weight_decay > 0.0:
-        optimizer_chain.append(_adding.add_decayed_weights(weight_decay))
+        optimizer_chain.append(optax.add_decayed_weights(weight_decay))
 
-    optimizer_chain.append(transform.scale_by_learning_rate(lr_schedule))
+    optimizer_chain.append(optax.scale_by_learning_rate(lr_schedule))
 
-    base_optimizer = combine.chain(*optimizer_chain)
+    base_optimizer = optax.chain(*optimizer_chain)
 
-    return schedule_free(
+    return optax.contrib.schedule_free(
         base_optimizer,
         learning_rate=lr_schedule,  # Pass schedule here for max_lr tracking
         b1=b1,
@@ -253,7 +248,7 @@ def shrink_and_perturb(
 
 def setup_optimizer(
     params: PyTree, num_devices: int, steps: int, one_iter_size: int, lr_init: float = 1e-3
-) -> tuple[base.GradientTransformationExtraArgs, ScheduleFreeState]:
+) -> optax.GradientTransformationExtraArgs:
     # Add warmup to the learning rate schedule
     lr = lr_init * num_devices
     warmup_steps = 10 * one_iter_size
