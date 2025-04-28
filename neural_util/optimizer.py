@@ -2,6 +2,7 @@ from typing import Any, Callable, NamedTuple, Optional
 
 import chex
 import jax
+import numpy as np
 import optax
 import optax.tree_utils as otu
 from jax import numpy as jnp
@@ -96,7 +97,8 @@ class ScaleByAdoptRmsState(NamedTuple):
 def scale_by_adopt_rms(
     b2: float = 0.9999,
     eps: float = 1e-6,
-    bias_correction: bool = True,
+    use_clipping: bool = True,
+    clip_value_fn: Callable = lambda step: step**0.25,
 ) -> base.GradientTransformation:
     """Rescale updates according to the Adopt algorithm's second moment (RMS).
 
@@ -119,21 +121,22 @@ def scale_by_adopt_rms(
 
     def update_fn(updates, state, params=None):
         del params
-        b2_t = b2 if not bias_correction else jnp.where(state.count > 0, b2, 0.0)
-        nu = otu.tree_update_moment_per_elem_norm(updates, state.nu, b2_t, 2)
+        b2_ = jnp.where(state.count > 0, b2, 0)
+        nu = otu.tree_update_moment_per_elem_norm(updates, state.nu, b2_, 2)
 
-        updates_scaled = jax.tree.map(lambda g, n: g / (jnp.sqrt(n) + eps), updates, nu)
-
-        if bias_correction:
-            count_inc = numerics.safe_increment(state.count)
-            bias_correction_term = 1.0 - jnp.power(b2, count_inc)
-            # Ensure bias correction term doesn't cause issues (e.g., sqrt of negative)
+        updates_scaled = jax.tree.map(
+            lambda ud, nu: ud / jnp.maximum(jnp.sqrt(nu), eps), updates, state.nu
+        )
+        updates_scaled = jax.tree.map(
+            lambda ud: jnp.where(state.count > 0, ud, jnp.zeros_like(ud)), updates_scaled
+        )
+        if use_clipping:
+            clip_value = clip_value_fn(state.count)
             updates_scaled = jax.tree.map(
-                lambda u: u * jnp.sqrt(jnp.maximum(0.0, bias_correction_term)), updates_scaled
+                lambda ud: jnp.clip(ud, -clip_value, clip_value), updates_scaled
             )
-        else:
-            # Still increment count even if not bias correcting, state needs updating
-            count_inc = numerics.safe_increment(state.count)
+
+        count_inc = numerics.safe_increment(state.count)
 
         return updates_scaled, ScaleByAdoptRmsState(count=count_inc, nu=nu)
 
@@ -149,7 +152,7 @@ def schedule_free_adopt(
     weight_decay: float = 0.0,
     weight_lr_power: float = 2.0,
     state_dtype: Optional[DTypeLike] = None,
-    bias_correction: bool = True,
+    use_clipping: bool = True,
 ) -> base.GradientTransformationExtraArgs:
     """Schedule-Free wrapper for Adopt.
 
@@ -178,7 +181,7 @@ def schedule_free_adopt(
         )
 
     # Base optimizer chain: Adopt RMS scaling -> weight decay -> LR scaling
-    optimizer_chain = [scale_by_adopt_rms(b2=b2, eps=eps, bias_correction=bias_correction)]
+    optimizer_chain = [scale_by_adopt_rms(b2=b2, eps=eps, use_clipping=use_clipping)]
     if weight_decay > 0.0:
         optimizer_chain.append(_adding.add_decayed_weights(weight_decay))
 
@@ -195,6 +198,59 @@ def schedule_free_adopt(
     )
 
 
+def shrink_and_perturb(
+    shrink_factor: float = 1e-6, noise_scale_factor: float = 1.0
+) -> optax.GradientTransformation:
+    """Soft shrink and perturb parameters as a gradient transformation.
+
+    Applies a soft shrink to the parameters (multiplying by a factor < 1)
+    and adds Gaussian noise proportional to the standard deviation of each parameter.
+    The standard deviation is calculated during initialization and used for subsequent updates.
+    This can be used as part of an optimization chain to help escape local minima.
+
+    Args:
+        shrink_factor: Factor to multiply parameters by (default: 0.95)
+        noise_scale_factor: Factor to multiply parameter std by for noise scale (default: 0.01)
+
+    Returns:
+        An optax.GradientTransformation that applies shrinking and perturbation
+    """
+
+    def init_fn(params):
+        # Calculate standard deviation for each parameter at initialization
+        param_stds = jax.tree.map(lambda p: jnp.std(p), params)
+        key = jax.random.PRNGKey(np.random.randint(0, 2**30))
+        return (param_stds, key)
+
+    def update_fn(updates, state, params):
+        param_stds, key = state  # Unpack state
+
+        # Split the key: one for this step's use, one for the next state
+        key, key_step = jax.random.split(key)
+
+        def _shrink_and_perturb(p, std, k):
+            # Use the pre-calculated standard deviation from init
+            noise = noise_scale_factor * std * jax.random.normal(k, p.shape, p.dtype)
+            return (1 - shrink_factor) * p + shrink_factor * noise
+
+        # Use key_step for generating noise keys for this update
+        keys = jax.random.split(key_step, len(jax.tree_util.tree_leaves(params)))
+        flat_params, treedef = jax.tree.flatten(params)
+        flat_stds, _ = jax.tree.flatten(param_stds)  # Correctly using param_stds
+
+        perturbed_flat_params = [
+            _shrink_and_perturb(p, std, k) for p, std, k in zip(flat_params, flat_stds, keys)
+        ]
+
+        new_params = jax.tree.unflatten(treedef, perturbed_flat_params)
+        update_diff = jax.tree.map(lambda new_p, old_p: new_p - old_p, new_params, params)
+        updates = jax.tree.map(lambda u, d: u + d, updates, update_diff)
+
+        return updates, (param_stds, key)  # Store the new key back
+
+    return optax.GradientTransformation(init_fn, update_fn)
+
+
 def setup_optimizer(
     params: PyTree, num_devices: int, steps: int, one_iter_size: int, lr_init: float = 1e-3
 ) -> tuple[base.GradientTransformationExtraArgs, ScheduleFreeState]:
@@ -202,7 +258,12 @@ def setup_optimizer(
     lr = lr_init * num_devices
     warmup_steps = 10 * one_iter_size
 
-    optimizer = optax.contrib.schedule_free_adamw(lr, warmup_steps, weight_decay=0.001)
-    # optimizer = schedule_free_adopt(lr, warmup_steps, weight_decay=0.001)
+    optimizer = schedule_free_adopt(lr, warmup_steps)
+    # optimizer = optax.contrib.schedule_free_adamw(lr, warmup_steps)
+
+    optimizer = optax.chain(
+        optimizer,
+        shrink_and_perturb(1e-5, 1.0),
+    )
 
     return optimizer, optimizer.init(params)
