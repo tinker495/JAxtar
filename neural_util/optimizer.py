@@ -199,6 +199,6 @@ def setup_optimizer(
     lr = lr_init * num_devices
     warmup_steps = 10 * one_iter_size
 
-    optimizer = schedule_free_adopt(lr, warmup_steps)
+    optimizer = schedule_free_adopt(lr, warmup_steps, weight_decay=0.01)
     # optimizer = optax.contrib.schedule_free_adamw(lr, warmup_steps)
     return optimizer, optimizer.init(params)
