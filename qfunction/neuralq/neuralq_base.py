@@ -16,6 +16,7 @@ from qfunction.q_base import QFunction
 
 class DefaultModel(nn.Module):
     action_size: int = 4
+    Res_N: int = 4
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -25,10 +26,8 @@ class DefaultModel(nn.Module):
         x = nn.Dense(1000, dtype=DTYPE)(x)
         x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
+        for _ in range(self.Res_N):
+            x = ResBlock(1000)(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
@@ -38,7 +37,11 @@ class DefaultModel(nn.Module):
 
 class NeuralQFunctionBase(QFunction):
     def __init__(
-        self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True, **kwargs
+        self,
+        puzzle: Puzzle,
+        model: nn.Module = DefaultModel,
+        init_params: bool = True,
+        **kwargs,
     ):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target

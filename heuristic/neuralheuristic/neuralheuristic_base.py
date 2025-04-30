@@ -15,6 +15,9 @@ from puzzle.puzzle_base import Puzzle
 
 
 class DefaultModel(nn.Module):
+
+    Res_N: int = 4
+
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000, dtype=DTYPE)(x)
@@ -23,10 +26,8 @@ class DefaultModel(nn.Module):
         x = nn.Dense(1000, dtype=DTYPE)(x)
         x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
-        x = ResBlock(1000)(x, training)
+        for _ in range(self.Res_N):
+            x = ResBlock(1000)(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         _ = conditional_dummy_norm(x, training)
         return x
@@ -34,7 +35,11 @@ class DefaultModel(nn.Module):
 
 class NeuralHeuristicBase(Heuristic):
     def __init__(
-        self, puzzle: Puzzle, model: nn.Module = DefaultModel, init_params: bool = True, **kwargs
+        self,
+        puzzle: Puzzle,
+        model: nn.Module = DefaultModel,
+        init_params: bool = True,
+        **kwargs,
     ):
         self.puzzle = puzzle
         self.model = model(**kwargs)
