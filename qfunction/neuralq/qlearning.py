@@ -149,7 +149,7 @@ def qlearning_builder(
 def boltzmann_action_selection(
     q_values: chex.Array,
     temperature: float = 1.0 / 3.0,
-    epsilon: float = 0.01,
+    epsilon: float = 0.1,
     mask: chex.Array = None,
 ) -> chex.Array:
     q_values = -q_values / temperature
