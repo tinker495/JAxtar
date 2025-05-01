@@ -14,7 +14,7 @@ from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
 
-class DefaultModel(nn.Module):
+class QModelBase(nn.Module):
     action_size: int = 4
     Res_N: int = 4
 
@@ -39,7 +39,7 @@ class NeuralQFunctionBase(QFunction):
     def __init__(
         self,
         puzzle: Puzzle,
-        model: nn.Module = DefaultModel,
+        model: nn.Module = QModelBase,
         init_params: bool = True,
         **kwargs,
     ):
