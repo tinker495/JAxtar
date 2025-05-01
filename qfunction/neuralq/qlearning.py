@@ -8,11 +8,12 @@ import jax.numpy as jnp
 import optax
 
 from puzzle.puzzle_base import Puzzle
+from qfunction.neuralq.neuralq_base import QModelBase
 
 
 def qlearning_builder(
     minibatch_size: int,
-    q_fn: Callable,
+    q_fn: QModelBase,
     optimizer: optax.GradientTransformation,
     importance_sampling: int = True,
     importance_sampling_alpha: float = 0.5,
@@ -27,7 +28,9 @@ def qlearning_builder(
         target_qs: chex.Array,
         weights: chex.Array,
     ):
-        q_values, variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
+        q_values, variable_updates = q_fn.apply(
+            q_params, states, training=True, mutable=["batch_stats"]
+        )
         if n_devices > 1:
             variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
@@ -167,7 +170,7 @@ def boltzmann_action_selection(
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    q_fn: Callable,
+    q_model: QModelBase,
     minibatch_size: int,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
@@ -189,7 +192,7 @@ def _get_datasets(
         solve_configs, shuffled_path, move_costs = vals
 
         path_preproc = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
+        q_values, _ = q_model.apply(q_params, path_preproc, training=False, mutable=["batch_stats"])
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
@@ -220,7 +223,7 @@ def _get_datasets(
 
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
-        q, _ = q_fn(
+        q, _ = q_model.apply(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
         mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
@@ -250,7 +253,7 @@ def _get_datasets(
 def get_qlearning_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    q_fn: Callable,
+    q_model: QModelBase,
     dataset_size: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
@@ -302,7 +305,7 @@ def get_qlearning_dataset_builder(
             _get_datasets,
             puzzle,
             preproc_fn,
-            q_fn,
+            q_model,
             dataset_minibatch_size,
         )
     )

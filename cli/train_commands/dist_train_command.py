@@ -57,7 +57,7 @@ def davi(
 ):
 
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
-    heuristic_fn = heuristic.model.apply
+    heuristic_model = heuristic.model
     heuristic_params = heuristic.get_new_params()
     target_heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -76,7 +76,7 @@ def davi(
     opt_state_init = opt_state
     davi_fn = davi_builder(
         train_minibatch_size,
-        heuristic_fn,
+        heuristic_model,
         optimizer,
         using_importance_sampling,
         n_devices=n_devices,
@@ -84,7 +84,7 @@ def davi(
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
-        heuristic_fn,
+        heuristic_model,
         dataset_batch_size,
         shuffle_length,
         dataset_minibatch_size,
@@ -163,7 +163,7 @@ def qlearning(
     **kwargs,
 ):
     writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
-    qfunc_fn = qfunction.model.apply
+    qfunc_model = qfunction.model
     qfunc_params = qfunction.get_new_params()
     target_qfunc_params = qfunction.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -181,12 +181,12 @@ def qlearning(
     )
     opt_state_init = opt_state
     qlearning_fn = qlearning_builder(
-        train_minibatch_size, qfunc_fn, optimizer, using_importance_sampling, n_devices=n_devices
+        train_minibatch_size, qfunc_model, optimizer, using_importance_sampling, n_devices=n_devices
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
         qfunction.pre_process,
-        qfunc_fn,
+        qfunc_model,
         dataset_batch_size,
         shuffle_length,
         dataset_minibatch_size,

@@ -7,12 +7,13 @@ import jax
 import jax.numpy as jnp
 import optax
 
+from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.puzzle_base import Puzzle
 
 
 def davi_builder(
     minibatch_size: int,
-    heuristic_fn: Callable,
+    heuristic_model: NeuralHeuristicBase,
     optimizer: optax.GradientTransformation,
     importance_sampling: int = True,
     importance_sampling_alpha: float = 0.5,
@@ -26,7 +27,7 @@ def davi_builder(
         target_heuristic: chex.Array,
         weights: chex.Array,
     ):
-        current_heuristic, variable_updates = heuristic_fn(
+        current_heuristic, variable_updates = heuristic_model.apply(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
         if n_devices > 1:
@@ -131,21 +132,19 @@ def davi_builder(
         )
 
     if n_devices > 1:
+
         def pmap_davi(key, dataset, heuristic_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (
-                heuristic_params,
-                opt_state,
-                loss,
-                grad_magnitude,
-                weight_magnitude,
-            ) = jax.pmap(davi, in_axes=(0, 0, None, None), axis_name="devices")(keys, dataset, heuristic_params, opt_state)
+            (heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude,) = jax.pmap(
+                davi, in_axes=(0, 0, None, None), axis_name="devices"
+            )(keys, dataset, heuristic_params, opt_state)
             heuristic_params = jax.tree_util.tree_map(lambda xs: xs[0], heuristic_params)
             opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
             loss = jnp.mean(loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
             return heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude
+
         return pmap_davi
     else:
         return jax.jit(davi)
@@ -154,7 +153,7 @@ def davi_builder(
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_fn: Callable,
+    heuristic_model: NeuralHeuristicBase,
     minibatch_size: int,
     target_heuristic_params: jax.tree_util.PyTreeDef,
     heuristic_params: jax.tree_util.PyTreeDef,
@@ -194,7 +193,7 @@ def _get_datasets(
         )
 
         def heur_scan(neighbors):
-            heur, _ = heuristic_fn(
+            heur, _ = heuristic_model.apply(
                 target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
             )
             return heur.squeeze()
@@ -207,7 +206,9 @@ def _get_datasets(
         )  # if the puzzle is already solved, the heuristic is 0
 
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        heur, _ = heuristic_fn(heuristic_params, states, training=False, mutable=["batch_stats"])
+        heur, _ = heuristic_model.apply(
+            heuristic_params, states, training=False, mutable=["batch_stats"]
+        )
         diff = target_heuristic - heur.squeeze()
         return None, (states, target_heuristic, diff)
 
@@ -227,7 +228,7 @@ def _get_datasets(
 def get_heuristic_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_fn: Callable,
+    heuristic_model: NeuralHeuristicBase,
     dataset_size: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
@@ -280,7 +281,7 @@ def get_heuristic_dataset_builder(
             _get_datasets,
             puzzle,
             preproc_fn,
-            heuristic_fn,
+            heuristic_model,
             dataset_minibatch_size,
         )
     )
@@ -305,10 +306,14 @@ def get_heuristic_dataset_builder(
         return flatten_dataset
 
     if n_devices > 1:
+
         def pmap_get_datasets(target_heuristic_params, heuristic_params, key):
             keys = jax.random.split(key, n_devices)
-            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(target_heuristic_params, heuristic_params, keys)
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(
+                target_heuristic_params, heuristic_params, keys
+            )
             return datasets
+
         return pmap_get_datasets
     else:
         return get_datasets

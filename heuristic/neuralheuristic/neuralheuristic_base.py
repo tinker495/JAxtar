@@ -14,7 +14,7 @@ from neural_util.util import download_model, is_model_downloaded
 from puzzle.puzzle_base import Puzzle
 
 
-class DefaultModel(nn.Module):
+class HeuristicBase(nn.Module):
 
     Res_N: int = 4
 
@@ -37,7 +37,7 @@ class NeuralHeuristicBase(Heuristic):
     def __init__(
         self,
         puzzle: Puzzle,
-        model: nn.Module = DefaultModel,
+        model: nn.Module = HeuristicBase,
         init_params: bool = True,
         **kwargs,
     ):
