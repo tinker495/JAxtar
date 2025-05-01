@@ -227,8 +227,8 @@ def _get_datasets(
         mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
         q = jnp.where(mask, q, jnp.inf)
         double_q = jnp.where(mask, double_q, jnp.inf)
-        min_actions = jnp.argmin(double_q, axis=-1)
-        min_q = jnp.take_along_axis(q, min_actions[:, None], axis=-1).squeeze(-1)
+        min_actions = jnp.argmin(double_q, axis=-1, keepdims=True)
+        min_q = jnp.take_along_axis(q, min_actions, axis=-1).squeeze(-1)
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
         target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
 
