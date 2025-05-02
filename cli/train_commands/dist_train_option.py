@@ -9,9 +9,11 @@ from config import (
     puzzle_dict_hard,
     puzzle_heuristic_dict_nn,
     puzzle_q_dict_nn,
+    puzzle_zeroshot_q_dict_nn,
 )
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+from qfunction.zeroshotq.zeroshotq_base import ZeroshotQFunctionBase
 
 
 def puzzle_options(func: callable) -> callable:
@@ -109,6 +111,26 @@ def qfunction_options(func: callable) -> callable:
         except KeyError:
             raise ValueError(f"No Neural Q Function for {puzzle_name} with size {puzzle_size}")
         kwargs["qfunction"] = qfunction
+        kwargs.pop("reset")
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def zeroshot_qfunction_options(func: callable) -> callable:
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        puzzle_name = kwargs["puzzle_name"]
+        puzzle_size = kwargs["puzzle_size"]
+        puzzle = kwargs["puzzle"]
+        reset = kwargs["reset"]
+        try:
+            zeroshot_qfunction: ZeroshotQFunctionBase = puzzle_zeroshot_q_dict_nn[puzzle_name](
+                puzzle_size, puzzle, reset
+            )
+        except KeyError:
+            raise ValueError(f"No Zeroshot Q Function for {puzzle_name} with size {puzzle_size}")
+        kwargs["zeroshot_qfunction"] = zeroshot_qfunction
         kwargs.pop("reset")
         return func(*args, **kwargs)
 

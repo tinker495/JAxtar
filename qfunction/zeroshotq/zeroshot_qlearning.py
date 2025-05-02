@@ -8,12 +8,12 @@ import jax.numpy as jnp
 import optax
 
 from puzzle.puzzle_base import Puzzle
-from qfunction.zeroshotq.zeroshotq_base import ZeroshotQFunctionBase
+from qfunction.zeroshotq.zeroshotq_base import ZeroshotQModelBase
 
 
 def zeroshot_qlearning_builder(
     minibatch_size: int,
-    zeroshotq_model: ZeroshotQFunctionBase,
+    zeroshotq_model: ZeroshotQModelBase,
     optimizer: optax.GradientTransformation,
     importance_sampling: int = True,
     importance_sampling_alpha: float = 0.5,
@@ -169,8 +169,9 @@ def boltzmann_action_selection(
 
 def _get_datasets(
     puzzle: Puzzle,
-    preproc_fn: Callable,
-    zeroshotq_model: ZeroshotQFunctionBase,
+    solve_config_preproc_fn: Callable,
+    state_preproc_fn: Callable,
+    zeroshotq_model: ZeroshotQModelBase,
     minibatch_size: int,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
@@ -191,9 +192,23 @@ def _get_datasets(
         key, subkey = jax.random.split(key)
         solve_configs, shuffled_path, move_costs = vals
 
-        path_preproc = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        q_values, _ = zeroshotq_model(
-            q_params, path_preproc, training=False, mutable=["batch_stats"]
+        solve_config_preproc = jax.vmap(solve_config_preproc_fn)(solve_configs)
+        state_preproc = jax.vmap(state_preproc_fn)(shuffled_path)
+
+        solve_config_z = zeroshotq_model.apply(
+            q_params,
+            solve_config_preproc,
+            training=False,
+            mutable=["batch_stats"],
+            method=zeroshotq_model.solve_config_projection,
+        )
+        q_values, _ = zeroshotq_model.apply(
+            q_params,
+            state_preproc,
+            solve_config_z,
+            training=False,
+            mutable=["batch_stats"],
+            method=zeroshotq_model.forward_distance,
         )
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
@@ -223,10 +238,22 @@ def _get_datasets(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
 
-        preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
+        preproc_neighbors = jax.vmap(state_preproc_fn, in_axes=(0, 0))(selected_neighbors)
 
-        q, _ = zeroshotq_model(
-            target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+        solve_config_z = zeroshotq_model.apply(
+            target_q_params,
+            solve_config_preproc,
+            training=False,
+            mutable=["batch_stats"],
+            method=zeroshotq_model.solve_config_projection,
+        )
+        q, _ = zeroshotq_model.apply(
+            target_q_params,
+            preproc_neighbors,
+            solve_config_z,
+            training=False,
+            mutable=["batch_stats"],
+            method=zeroshotq_model.forward_distance,
         )  # [minibatch_size, action_shape]
         mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
         q = jnp.where(mask, q, jnp.inf)
@@ -236,26 +263,28 @@ def _get_datasets(
 
         diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
-        return key, (path_preproc, target_q, actions, diff)
+        return key, (solve_config_preproc, state_preproc, target_q, actions, diff)
 
-    _, (states, target_q, actions, diff) = jax.lax.scan(
+    _, (solve_config_preproc, state_preproc, target_q, actions, diff) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
     )
 
-    states = states.reshape((-1, *states.shape[2:]))
+    solve_config_preproc = solve_config_preproc.reshape((-1, *solve_config_preproc.shape[2:]))
+    state_preproc = state_preproc.reshape((-1, *state_preproc.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
     diff = diff.reshape((-1, *diff.shape[2:]))
 
-    return states, target_q, actions, diff
+    return solve_config_preproc, state_preproc, target_q, actions, diff
 
 
-def get_qlearning_dataset_builder(
+def get_zeroshot_qlearning_dataset_builder(
     puzzle: Puzzle,
-    preproc_fn: Callable,
-    zeroshotq_model: ZeroshotQFunctionBase,
+    solve_config_preproc_fn: Callable,
+    state_preproc_fn: Callable,
+    zeroshotq_model: ZeroshotQModelBase,
     dataset_size: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
@@ -306,7 +335,8 @@ def get_qlearning_dataset_builder(
         partial(
             _get_datasets,
             puzzle,
-            preproc_fn,
+            solve_config_preproc_fn,
+            state_preproc_fn,
             zeroshotq_model,
             dataset_minibatch_size,
         )

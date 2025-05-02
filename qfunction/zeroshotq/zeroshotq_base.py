@@ -43,10 +43,10 @@ class FixedSolveConfigProjector(nn.Module):
         return output
 
 
-class ZeroshotQFunctionBase(nn.Module):
+class ZeroshotQModelBase(nn.Module):
     action_size: int = 4
     latent_dim: int = 256
-    Res_N: int = 4
+    Res_N: int = 2
     fixed_target: bool = False
 
     def setup(self):
@@ -98,7 +98,7 @@ class ZeroshotQFunctionBase(QFunction):
     def __init__(
         self,
         puzzle: Puzzle,
-        model: nn.Module = ZeroshotQFunctionBase,
+        model: nn.Module = ZeroshotQModelBase,
         init_params: bool = True,
         **kwargs,
     ):

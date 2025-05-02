@@ -69,6 +69,7 @@ from qfunction.neuralq import (
     SokobanNeuralQ,
     WorldModelNeuralQ,
 )
+from qfunction.zeroshotq import RubiksCubeZeroshotQ
 
 default_puzzle_sizes: dict[str, int] = {
     "n-puzzle": 4,
@@ -331,5 +332,15 @@ puzzle_q_dict_nn: dict[str, callable] = {
     if reset
     else WorldModelNeuralQ.load_model(
         puzzle, "qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl"
+    ),
+}
+
+
+# nn option need to be callable, for loading model
+puzzle_zeroshot_q_dict_nn: dict[str, callable] = {
+    "rubikscube": lambda n, puzzle, reset: RubiksCubeZeroshotQ(puzzle)
+    if reset
+    else RubiksCubeZeroshotQ.load_model(
+        puzzle, "qfunction/zeroshotq/model/params/rubikscube_{n}.pkl"
     ),
 }

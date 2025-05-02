@@ -1,0 +1,1 @@
+from qfunction.zeroshotq.model.rubikscube_zeroshotq import RubiksCubeZeroshotQ
