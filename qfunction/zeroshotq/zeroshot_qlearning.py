@@ -29,13 +29,16 @@ def zeroshot_qlearning_builder(
         target_qs: chex.Array,
         weights: chex.Array,
     ):
-        solve_config_z, _ = zeroshotq_model.apply(
+        solve_config_z, variable_updates = zeroshotq_model.apply(
             q_params,
             solve_configs,
             training=True,
             mutable=["batch_stats"],
             method=zeroshotq_model.solve_config_projection,
         )
+        if n_devices > 1:
+            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
+        q_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values, variable_updates = zeroshotq_model.apply(
             q_params,
             states,
@@ -46,11 +49,11 @@ def zeroshot_qlearning_builder(
         )
         if n_devices > 1:
             variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
-        new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
+        q_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, new_params
+        return loss, q_params
 
     def qlearning(
         key: chex.PRNGKey,
