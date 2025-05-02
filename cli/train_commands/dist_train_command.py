@@ -307,8 +307,8 @@ def zeroshot_qlearning(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
-        target_q = dataset[1]
-        diffs = dataset[3]
+        target_q = dataset["target_q"]
+        diffs = dataset["diff"]
         mean_target_q = jnp.mean(target_q)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
@@ -343,10 +343,11 @@ def zeroshot_qlearning(
             target_qfunc_params = qfunc_params
             opt_state = opt_state_init
         if i % 1000 == 0 and i != 0:
-            zeroshot_qfunction.params = target_qfunc_params
+            zeroshot_qfunction.params = qfunc_params
             zeroshot_qfunction.save_model(
                 f"qfunction/zeroshotq/model/params/{puzzle_name}_{puzzle_size}.pkl"
             )
+    zeroshot_qfunction.params = qfunc_params
     zeroshot_qfunction.save_model(
         f"qfunction/zeroshotq/model/params/{puzzle_name}_{puzzle_size}.pkl"
     )

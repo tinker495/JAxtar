@@ -23,13 +23,26 @@ def zeroshot_qlearning_builder(
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
+        solve_configs: chex.Array,
         states: chex.Array,
         actions: chex.Array,
         target_qs: chex.Array,
         weights: chex.Array,
     ):
-        q_values, variable_updates = zeroshotq_model(
-            q_params, states, training=True, mutable=["batch_stats"]
+        solve_config_z, _ = zeroshotq_model.apply(
+            q_params,
+            solve_configs,
+            training=True,
+            mutable=["batch_stats"],
+            method=zeroshotq_model.solve_config_projection,
+        )
+        q_values, variable_updates = zeroshotq_model.apply(
+            q_params,
+            states,
+            solve_config_z,
+            training=True,
+            mutable=["batch_stats"],
+            method=zeroshotq_model.forward_distance,
         )
         if n_devices > 1:
             variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
@@ -41,14 +54,18 @@ def zeroshot_qlearning_builder(
 
     def qlearning(
         key: chex.PRNGKey,
-        dataset: tuple[chex.Array, chex.Array, chex.Array],
+        dataset: dict[str, chex.Array],
         q_params: jax.tree_util.PyTreeDef,
         opt_state: optax.OptState,
     ):
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q, actions, diff = dataset
+        solve_configs = dataset["solve_configs"]
+        states = dataset["states"]
+        target_q = dataset["target_q"]
+        actions = dataset["actions"]
+        diff = dataset["diff"]
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -84,6 +101,7 @@ def zeroshot_qlearning_builder(
             loss_weights = jnp.ones_like(batch_indexs)
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
+        batched_solve_configs = jnp.take(solve_configs, batch_indexs, axis=0)
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
@@ -91,9 +109,10 @@ def zeroshot_qlearning_builder(
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
-            states, target_q, actions, weights = batched_dataset
+            solve_configs, states, target_q, actions, weights = batched_dataset
             (loss, q_params), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
+                solve_configs,
                 states,
                 actions,
                 target_q,
@@ -113,7 +132,13 @@ def zeroshot_qlearning_builder(
         (q_params, opt_state), (losses, grad_magnitude_means) = jax.lax.scan(
             train_loop,
             (q_params, opt_state),
-            (batched_states, batched_target_q, batched_actions, batched_weights),
+            (
+                batched_solve_configs,
+                batched_states,
+                batched_target_q,
+                batched_actions,
+                batched_weights,
+            ),
         )
         loss = jnp.mean(losses)
         # Calculate weights magnitude means
@@ -195,7 +220,7 @@ def _get_datasets(
         solve_config_preproc = jax.vmap(solve_config_preproc_fn)(solve_configs)
         state_preproc = jax.vmap(state_preproc_fn)(shuffled_path)
 
-        solve_config_z = zeroshotq_model.apply(
+        solve_config_z, _ = zeroshotq_model.apply(
             q_params,
             solve_config_preproc,
             training=False,
@@ -238,9 +263,9 @@ def _get_datasets(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
 
-        preproc_neighbors = jax.vmap(state_preproc_fn, in_axes=(0, 0))(selected_neighbors)
+        preproc_neighbors = jax.vmap(state_preproc_fn)(selected_neighbors)
 
-        solve_config_z = zeroshotq_model.apply(
+        solve_config_z, _ = zeroshotq_model.apply(
             target_q_params,
             solve_config_preproc,
             training=False,
@@ -277,7 +302,13 @@ def _get_datasets(
     actions = actions.reshape((-1, *actions.shape[2:]))
     diff = diff.reshape((-1, *diff.shape[2:]))
 
-    return solve_config_preproc, state_preproc, target_q, actions, diff
+    return {
+        "solve_configs": solve_config_preproc,
+        "states": state_preproc,
+        "target_q": target_q,
+        "actions": actions,
+        "diff": diff,
+    }
 
 
 def get_zeroshot_qlearning_dataset_builder(

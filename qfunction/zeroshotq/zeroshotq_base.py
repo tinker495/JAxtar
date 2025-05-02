@@ -117,9 +117,12 @@ class ZeroshotQFunctionBase(QFunction):
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
+        dummy_solve_config_processed = self.pre_process_solve_config(dummy_solve_config)
+        dummy_current_processed = self.pre_process_state(dummy_current)
         return self.model.init(
             jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+            jnp.expand_dims(dummy_solve_config_processed, axis=0),
+            jnp.expand_dims(dummy_current_processed, axis=0),
         )
 
     @classmethod
@@ -182,7 +185,7 @@ class ZeroshotQFunctionBase(QFunction):
         This function should return the pre-processed solve_config.
         """
         if self.is_fixed:
-            return None
+            return jnp.zeros((1,))
         if self.puzzle.only_target:
             return self.pre_process_state(solve_config.TargetState)
         else:
