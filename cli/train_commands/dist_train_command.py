@@ -132,10 +132,11 @@ def davi(
             opt_state = opt_state_init
 
         if i % 1000 == 0 and i != 0:
-            heuristic.params = target_heuristic_params
+            heuristic.params = heuristic_params
             heuristic.save_model(
                 f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"
             )
+    heuristic.params = heuristic_params
     heuristic.save_model(f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl")
 
 
@@ -234,6 +235,7 @@ def qlearning(
             target_qfunc_params = qfunc_params
             opt_state = opt_state_init
         if i % 1000 == 0 and i != 0:
-            qfunction.params = target_qfunc_params
+            qfunction.params = qfunc_params
             qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
+    qfunction.params = qfunc_params
     qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
