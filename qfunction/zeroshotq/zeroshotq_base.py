@@ -61,6 +61,8 @@ class ZeroshotQModelBase(nn.Module):
             self.solve_config_projector = FixedSolveConfigProjector(latent_dim=self.latent_dim)
         else:
             self.solve_config_projector = Projector(latent_dim=self.latent_dim, Res_N=self.Res_N)
+        self.forward_weight = self.param("forward_weight", nn.initializers.ones, (1,))
+        self.forward_bias = self.param("forward_bias", nn.initializers.zeros, (1,))
 
     def __call__(self, solve_config, current, training=False):
         z = self.solve_config_projection(solve_config, training)  # (batch_size, latent_dim)
@@ -79,8 +81,9 @@ class ZeroshotQModelBase(nn.Module):
             f_a, (f_a.shape[0], self.action_size, self.latent_dim)
         )  # (batch_size, action_size, latent_dim)
         f_a = jnp.einsum("baz,bz->ba", f_a, z)  # (batch_size, action_size)
-        f_a = -jax.nn.log_sigmoid(f_a)
-        return f_a
+        f_a = f_a * self.forward_weight + self.forward_bias
+        q = -jax.nn.log_sigmoid(f_a)
+        return q
 
     def solve_config_projection(self, solve_config, training=False):
         z = self.solve_config_projector(solve_config, training)  # (batch_size, latent_dim)
