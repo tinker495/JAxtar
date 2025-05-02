@@ -138,4 +138,5 @@ puzzle/world_model/.gitattributes
 # ignore model params
 heuristic/neuralheuristic/model/params
 qfunction/neuralq/model/params
+qfunction/zeroshotq/model/params
 puzzle/world_model/model/params

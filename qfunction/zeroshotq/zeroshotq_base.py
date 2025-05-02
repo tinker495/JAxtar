@@ -36,10 +36,10 @@ class FixedSolveConfigProjector(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         batch_size = x.shape[0]
-        latent = self.variable(
-            "solve_config_latent", nn.initializers.he_normal(), (1, self.latent_dim)
+        latent = self.param(
+            "solve_config_latent", nn.initializers.normal(stddev=0.02), (1, self.latent_dim)
         )  # (1, latent_dim)
-        output = jnp.tile(latent.value, (batch_size, 1))  # (batch_size, latent_dim)
+        output = jnp.tile(latent, (batch_size, 1))  # (batch_size, latent_dim)
         return output
 
 
@@ -61,8 +61,8 @@ class ZeroshotQModelBase(nn.Module):
             self.solve_config_projector = FixedSolveConfigProjector(latent_dim=self.latent_dim)
         else:
             self.solve_config_projector = Projector(latent_dim=self.latent_dim, Res_N=self.Res_N)
-        self.forward_weight = self.param("forward_weight", nn.initializers.ones, (1,))
-        self.forward_bias = self.param("forward_bias", nn.initializers.zeros, (1,))
+        self.forward_weight = self.param("forward_weight", nn.initializers.normal(stddev=1), (1,))
+        self.forward_bias = self.param("forward_bias", nn.initializers.normal(stddev=1), (1,))
 
     def __call__(self, solve_config, current, training=False):
         z = self.solve_config_projection(solve_config, training)  # (batch_size, latent_dim)
@@ -96,6 +96,13 @@ class ZeroshotQModelBase(nn.Module):
         )  # (batch_size, action_size, latent_dim)
         return b_a
 
+    def forward_projection(self, state, z, training=False):
+        f_a = self.forward_projector(jnp.concatenate([state, z], axis=-1), training)
+        f_a = jnp.reshape(
+            f_a, (f_a.shape[0], self.action_size, self.latent_dim)
+        )  # (batch_size, action_size, latent_dim)
+        return f_a
+
 
 class ZeroshotQFunctionBase(QFunction):
     def __init__(
@@ -108,7 +115,7 @@ class ZeroshotQFunctionBase(QFunction):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
         self.action_size = self._get_action_size()
-        self.model = model(self.action_size, **kwargs)
+        self.model = model(self.action_size, fixed_target=self.is_fixed, **kwargs)
         if init_params:
             self.params = self.get_new_params()
 
