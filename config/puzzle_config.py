@@ -343,4 +343,9 @@ puzzle_zeroshot_q_dict_nn: dict[str, callable] = {
     else RubiksCubeZeroshotQ.load_model(
         puzzle, "qfunction/zeroshotq/model/params/rubikscube_{n}.pkl"
     ),
+    "rubikscube-random": lambda n, puzzle, reset: RubiksCubeZeroshotQ(puzzle)
+    if reset
+    else RubiksCubeZeroshotQ.load_model(
+        puzzle, "qfunction/zeroshotq/model/params/rubikscube-random_{n}.pkl"
+    ),
 }
