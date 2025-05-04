@@ -66,21 +66,15 @@ class ZeroshotQModelBase(nn.Module):
 
     def __call__(self, solve_config, current, training=False):
         z = self.solve_config_projection(solve_config, training)  # (batch_size, latent_dim)
-        f_a = self.forward_distance(current, z, training)  # (batch_size, action_size)
+        f_a = self.forward_projection(current, z, training)  # (batch_size, action_size, latent_dim)
+        q = self.distance(f_a, z, training)  # (batch_size, action_size)
         b_a = self.backward_projection(current, training)  # (batch_size, action_size, latent_dim)
-        return f_a, b_a
+        return q, b_a
 
-    def forward_distance(
-        self, state, z, training=False
-    ):  # (batch_size, state_dim), (batch_size, latent_dim)
-        current_state = jnp.concatenate([state, z], axis=-1)  # (batch_size, state_dim + latent_dim)
-        f_a = self.forward_projector(
-            current_state, training
-        )  # (batch_size, latent_dim * action_size)
-        f_a = jnp.reshape(
-            f_a, (f_a.shape[0], self.action_size, self.latent_dim)
-        )  # (batch_size, action_size, latent_dim)
-        f_a = jnp.einsum("baz,bz->ba", f_a, z)  # (batch_size, action_size)
+    def distance(
+        self, f_a, b, training=False
+    ):  # (batch_size, action_size, latent_dim), (batch_size, latent_dim)
+        f_a = jnp.einsum("baz,bz->ba", f_a, b)  # (batch_size, action_size)
         f_a = f_a * self.forward_weight + self.forward_bias
         q = -jax.nn.log_sigmoid(f_a)
         return q
