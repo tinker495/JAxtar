@@ -264,12 +264,22 @@ class Maze(Puzzle):
             bool_maze = self.from_uint8(solve_config.Maze).reshape((self.size, self.size))
 
             # Check if the new position is within the maze bounds and not a wall (True)
-            valid_move = (
-                (new_pos >= 0).all()
-                & (new_pos < self.size).all()
-                & (~bool_maze[new_pos[0], new_pos[1]])  # Check against False (path)
-                & filled
+            # Calculate bounds checks separately
+            lower_bound_ok = (new_pos >= 0).all()
+            upper_bound_ok = (new_pos < self.size).all()
+            in_bounds = jnp.logical_and(lower_bound_ok, upper_bound_ok)
+
+            # Check if it's a path cell, avoiding OOB access
+            # Access maze only if 'in_bounds' is True
+            is_path = jnp.where(
+                in_bounds,
+                ~bool_maze[new_pos[0], new_pos[1]],  # Check against False (path)
+                False,  # Consider out-of-bounds as not a valid path cell
             )
+
+            # Combine all checks including the 'filled' condition
+            valid_move = jnp.logical_and(in_bounds, is_path)
+            valid_move = jnp.logical_and(valid_move, filled)
 
             # If the move is valid, update the position. Otherwise, keep the old position.
             new_state = self.State(pos=jnp.where(valid_move, new_pos, state.pos))
@@ -454,3 +464,9 @@ class Maze(Puzzle):
             return self.get_img_parser()(solve_config.TargetState, solve_config)
 
         return parser
+
+    def hindsight_transform(
+        self, solve_config: "Maze.SolveConfig", state: "Maze.State"
+    ) -> "Maze.SolveConfig":
+        solve_config.TargetState = state
+        return solve_config

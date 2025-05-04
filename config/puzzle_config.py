@@ -70,7 +70,7 @@ from qfunction.neuralq import (
     SokobanNeuralQ,
     WorldModelNeuralQ,
 )
-from qfunction.zeroshotq import RubiksCubeZeroshotQ
+from qfunction.zeroshotq import RoomZeroshotQ, RubiksCubeZeroshotQ
 
 default_puzzle_sizes: dict[str, int] = {
     "n-puzzle": 4,
@@ -353,4 +353,7 @@ puzzle_zeroshot_q_dict_nn: dict[str, callable] = {
     else RubiksCubeZeroshotQ.load_model(
         puzzle, "qfunction/zeroshotq/model/params/rubikscube-random_{n}.pkl"
     ),
+    "room": lambda n, puzzle, reset: RoomZeroshotQ(puzzle)
+    if reset
+    else RoomZeroshotQ.load_model(puzzle, "qfunction/zeroshotq/model/params/room_{n}.pkl"),
 }

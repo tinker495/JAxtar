@@ -1,1 +1,2 @@
+from qfunction.zeroshotq.model.room_zeroshotq import RoomZeroshotQ
 from qfunction.zeroshotq.model.rubikscube_zeroshotq import RubiksCubeZeroshotQ

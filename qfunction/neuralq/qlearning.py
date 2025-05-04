@@ -460,7 +460,7 @@ def create_hindsight_target_shuffled_path(
     )  # [shuffle_length, batch_size, ...]
     targets = moves[-1, ...]
     moves = moves[:-1, ...]  # [shuffle_length, batch_size, ...]
-    solve_configs = puzzle.batched_hindsight_transform(targets)  # [batch_size, ...]
+    solve_configs = puzzle.batched_hindsight_transform(solve_configs, targets)  # [batch_size, ...]
     move_costs = move_costs[-1, ...] - move_costs[:-1, ...]  # [shuffle_length, batch_size]
 
     solve_configs = jax.tree_util.tree_map(
@@ -529,7 +529,9 @@ def create_hindsight_target_triangular_shuffled_path(
         None,
         length=shuffle_length + 1,
     )  # [shuffle_length, batch_size, ...]
-    solve_configs = jax.vmap(puzzle.batched_hindsight_transform)(moves)
+    solve_configs = jax.vmap(puzzle.batched_hindsight_transform, in_axes=(None, 0))(
+        solve_configs, moves
+    )
     move_costs = move_costs[jnp.newaxis, ...] - move_costs[:, jnp.newaxis, ...]
 
     solve_configs = jax.tree_util.tree_map(

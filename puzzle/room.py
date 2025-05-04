@@ -1,7 +1,6 @@
-import jax
 import jax.numpy as jnp
 
-from puzzle.maze import TYPE, Maze  # Inherit from Maze
+from puzzle.maze import Maze  # Inherit from Maze
 
 # Removed Fixed Map Constants - Map is now generated dynamically
 
@@ -74,25 +73,6 @@ class Room(Maze):
 
         return maze
 
-    def get_solve_config(self, key=jax.random.PRNGKey(128), data=None) -> Maze.SolveConfig:
-        """Generates a SolveConfig using the generated 3x3 room map."""
-        bool_maze_jax = self._generate_room_map()
-        target_state = self._get_random_state(bool_maze_jax, key)
-        packed_maze = self.to_uint8(bool_maze_jax.flatten())
-        return self.SolveConfig(TargetState=target_state, Maze=packed_maze)
-
-    def _generate_maze_dfs(self, key):
+    def _generate_maze_dfs(self, key, size):
         """Overrides DFS generation to return the generated 3x3 room map."""
         return self._generate_room_map()
-
-    def get_solve_config_default_gen(self):
-        """Default SolveConfig with target at (0,0) and the generated 3x3 room map."""
-
-        def gen():
-            default_map = self._generate_room_map()
-            packed_map = self.to_uint8(default_map.flatten())
-            return self.SolveConfig(
-                TargetState=self.State(pos=jnp.array([0, 0], dtype=TYPE)), Maze=packed_map
-            )
-
-        return gen
