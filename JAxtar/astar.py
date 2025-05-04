@@ -30,19 +30,19 @@ def astar_builder(
     export_last_pops: bool = False,
 ):
     """
-    astar_builder is a function that returns a partial function of astar.
+    Builds and returns a JAX-accelerated A* search function.
 
     Args:
-    - puzzle: Puzzle instance that contains the puzzle.
-    - heuristic_fn: heuristic function that returns the heuristic value of the states.
-    - batch_size: batch size of the states.
-    - max_nodes: maximum number of nodes that can be stored in the HashTable.
-    - astar_weight: weight of the cost function in the A* algorithm.
-    - efficient_heuristic: if True, the heuristic value of the states is stored in the HashTable.
-                        This is useful when the heuristic function is expensive to compute.
-                        ex) neural heuristic function.
-                        This option is slower than the normal heuristic function
-                        because of the overhead of the HashTable.
+        puzzle: Puzzle instance that defines the problem space and operations.
+        heuristic: Heuristic instance that provides state evaluation.
+        batch_size: Number of states to process in parallel (default: 1024).
+        max_nodes: Maximum number of nodes to explore before terminating (default: 1e6).
+        cost_weight: Weight applied to the path cost in f(n) = g(n) + w*h(n) (default: 1.0-1e-6).
+                    Values closer to 1.0 make the search more greedy/depth-first.
+        show_compile_time: If True, displays the time taken to compile the search function (default: False).
+
+    Returns:
+        A function that performs A* search given a start state and solve configuration.
     """
 
     statecls = puzzle.State
@@ -176,9 +176,7 @@ def astar_builder(
                 )
                 neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
 
-                optimal = jnp.less(
-                    current.cost, search_result.cost[current.index, current.table_index]
-                )
+                optimal = jnp.less(current.cost, search_result.get_cost(current))
                 neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
                 aranged_parent = parent[parent_index]

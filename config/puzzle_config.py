@@ -11,8 +11,11 @@ from heuristic import (
     TSPHeuristic,
 )
 from heuristic.neuralheuristic import (
+    LightsOutConvNeuralHeuristic,
     LightsOutNeuralHeuristic,
+    PancakeNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
+    SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
     SokobanNeuralHeuristic,
     WorldModelNeuralHeuristic,
@@ -22,7 +25,6 @@ from puzzle import (
     DotKnot,
     LightsOut,
     LightsOutHard,
-    LightsOutRandom,
     Maze,
     PancakeSorting,
     Puzzle,
@@ -58,8 +60,11 @@ from qfunction import (
     SokobanQ,
 )
 from qfunction.neuralq import (
+    LightsOutConvNeuralQ,
     LightsOutNeuralQ,
+    PancakeNeuralQ,
     RubiksCubeNeuralQ,
+    SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
     SokobanNeuralQ,
     WorldModelNeuralQ,
@@ -67,16 +72,17 @@ from qfunction.neuralq import (
 
 default_puzzle_sizes: dict[str, int] = {
     "n-puzzle": 4,
-    "n-puzzle_random": 4,
+    "n-puzzle-conv": 4,
+    "n-puzzle-random": 4,
     "lightsout": 7,
-    "lightsout_random": 7,
+    "lightsout-conv": 7,
     "rubikscube": 3,
-    "rubikscube_random": 3,
-    "maze": 20,
+    "rubikscube-random": 3,
+    "maze": 23,
     "tsp": 16,
     "dotknot": 8,
     "sokoban": 10,
-    "pancake": 16,
+    "pancake": 35,
     "hanoi": 10,
     "topspin": 20,
     "rubikscube_world_model": None,
@@ -89,11 +95,12 @@ default_puzzle_sizes: dict[str, int] = {
 
 puzzle_dict: dict[str, Puzzle] = {
     "n-puzzle": SlidePuzzle,
-    "n-puzzle_random": SlidePuzzleRandom,
+    "n-puzzle-conv": SlidePuzzle,
+    "n-puzzle-random": SlidePuzzleRandom,
     "lightsout": LightsOut,
-    "lightsout_random": LightsOutRandom,
+    "lightsout-conv": LightsOut,
     "rubikscube": RubiksCube,
-    "rubikscube_random": RubiksCubeRandom,
+    "rubikscube-random": RubiksCubeRandom,
     "maze": Maze,
     "dotknot": DotKnot,
     "tsp": TSP,
@@ -123,18 +130,21 @@ puzzle_dict: dict[str, Puzzle] = {
 
 puzzle_dict_hard: dict[str, Puzzle] = {
     "n-puzzle": SlidePuzzleHard,
+    "n-puzzle-conv": SlidePuzzleHard,
     "lightsout": LightsOutHard,
+    "lightsout-conv": LightsOutHard,
     "rubikscube": RubiksCubeHard,
     "sokoban": SokobanHard,
 }
 
 puzzle_heuristic_dict: dict[str, Heuristic] = {
     "n-puzzle": SlidePuzzleHeuristic,
-    "n-puzzle_random": SlidePuzzleHeuristic,
+    "n-puzzle-conv": SlidePuzzleHeuristic,
+    "n-puzzle-random": SlidePuzzleHeuristic,
     "lightsout": LightsOutHeuristic,
-    "lightsout_random": LightsOutHeuristic,
+    "lightsout-conv": LightsOutHeuristic,
     "rubikscube": RubiksCubeHeuristic,
-    "rubikscube_random": RubiksCubeHeuristic,
+    "rubikscube-random": RubiksCubeHeuristic,
     "maze": MazeHeuristic,
     "dotknot": DotKnotHeuristic,
     "tsp": TSPHeuristic,
@@ -157,35 +167,45 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
     else SlidePuzzleNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle_{n}.pkl"
     ),
-    "n-puzzle_random": lambda n, puzzle, reset: SlidePuzzleNeuralHeuristic(puzzle)
+    "n-puzzle-random": lambda n, puzzle, reset: SlidePuzzleNeuralHeuristic(puzzle)
     if reset
     else SlidePuzzleNeuralHeuristic.load_model(
-        puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle_{n}.pkl"
+        puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle-random_{n}.pkl"
+    ),
+    "n-puzzle-conv": lambda n, puzzle, reset: SlidePuzzleConvNeuralHeuristic(puzzle)
+    if reset
+    else SlidePuzzleConvNeuralHeuristic.load_model(
+        puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle-conv_{n}.pkl"
     ),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralHeuristic(puzzle)
     if reset
     else LightsOutNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/lightsout_{n}.pkl"
     ),
-    "lightsout_random": lambda n, puzzle, reset: LightsOutNeuralHeuristic(puzzle)
+    "lightsout-conv": lambda n, puzzle, reset: LightsOutConvNeuralHeuristic(puzzle)
     if reset
-    else LightsOutNeuralHeuristic.load_model(
-        puzzle, f"heuristic/neuralheuristic/model/params/lightsout_{n}.pkl"
+    else LightsOutConvNeuralHeuristic.load_model(
+        puzzle, f"heuristic/neuralheuristic/model/params/lightsout-conv_{n}.pkl"
     ),
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralHeuristic(puzzle)
     if reset
     else RubiksCubeNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/rubikscube_{n}.pkl"
     ),
-    "rubikscube_random": lambda n, puzzle, reset: RubiksCubeNeuralHeuristic(puzzle)
+    "rubikscube-random": lambda n, puzzle, reset: RubiksCubeNeuralHeuristic(puzzle)
     if reset
     else RubiksCubeNeuralHeuristic.load_model(
-        puzzle, f"heuristic/neuralheuristic/model/params/rubikscube_{n}.pkl"
+        puzzle, f"heuristic/neuralheuristic/model/params/rubikscube-random_{n}.pkl"
     ),
     "sokoban": lambda n, puzzle, reset: SokobanNeuralHeuristic(puzzle)
     if reset
     else SokobanNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/sokoban_{n}.pkl"
+    ),
+    "pancake": lambda n, puzzle, reset: PancakeNeuralHeuristic(puzzle)
+    if reset
+    else PancakeNeuralHeuristic.load_model(
+        puzzle, f"heuristic/neuralheuristic/model/params/pancake_{n}.pkl"
     ),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralHeuristic(puzzle)
     if reset
@@ -223,11 +243,12 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
 
 puzzle_q_dict: dict[str, QFunction] = {
     "n-puzzle": SlidePuzzleQ,
-    "n-puzzle_random": SlidePuzzleQ,
+    "n-puzzle-conv": SlidePuzzleQ,
+    "n-puzzle-random": SlidePuzzleQ,
     "lightsout": LightsOutQ,
-    "lightsout_random": LightsOutQ,
+    "lightsout-conv": LightsOutQ,
     "rubikscube": RubiksCubeQ,
-    "rubikscube_random": RubiksCubeQ,
+    "rubikscube-random": RubiksCubeQ,
     "maze": MazeQ,
     "dotknot": DotKnotQ,
     "tsp": TSPQ,
@@ -249,24 +270,38 @@ puzzle_q_dict_nn: dict[str, callable] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralQ(puzzle)
     if reset
     else SlidePuzzleNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}.pkl"),
-    "n-puzzle_random": lambda n, puzzle, reset: SlidePuzzleNeuralQ(puzzle)
+    "n-puzzle-conv": lambda n, puzzle, reset: SlidePuzzleConvNeuralQ(puzzle)
     if reset
-    else SlidePuzzleNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}.pkl"),
+    else SlidePuzzleConvNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/n-puzzle-conv_{n}.pkl"
+    ),
+    "n-puzzle-random": lambda n, puzzle, reset: SlidePuzzleConvNeuralQ(puzzle)
+    if reset
+    else SlidePuzzleConvNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/n-puzzle-conv_{n}.pkl"
+    ),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralQ(puzzle)
     if reset
     else LightsOutNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/lightsout_{n}.pkl"),
-    "lightsout_random": lambda n, puzzle, reset: LightsOutNeuralQ(puzzle)
+    "lightsout-conv": lambda n, puzzle, reset: LightsOutConvNeuralQ(puzzle)
     if reset
-    else LightsOutNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/lightsout_{n}.pkl"),
+    else LightsOutConvNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/lightsout-conv_{n}.pkl"
+    ),
     "rubikscube": lambda n, puzzle, reset: RubiksCubeNeuralQ(puzzle)
     if reset
     else RubiksCubeNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/rubikscube_{n}.pkl"),
-    "rubikscube_random": lambda n, puzzle, reset: RubiksCubeNeuralQ(puzzle)
+    "rubikscube-random": lambda n, puzzle, reset: RubiksCubeNeuralQ(puzzle)
     if reset
-    else RubiksCubeNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/rubikscube_{n}.pkl"),
+    else RubiksCubeNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/rubikscube-random_{n}.pkl"
+    ),
     "sokoban": lambda n, puzzle, reset: SokobanNeuralQ(puzzle)
     if reset
     else SokobanNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/sokoban_{n}.pkl"),
+    "pancake": lambda n, puzzle, reset: PancakeNeuralQ(puzzle)
+    if reset
+    else PancakeNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/pancake_{n}.pkl"),
     "rubikscube_world_model": lambda n, puzzle, reset: WorldModelNeuralQ(puzzle)
     if reset
     else WorldModelNeuralQ.load_model(

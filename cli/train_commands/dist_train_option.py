@@ -46,18 +46,24 @@ def puzzle_options(func: callable) -> callable:
 
 
 def train_option(func: callable) -> callable:
-    @click.option("--steps", type=int, default=int(2e4))  # 50 * 2e4 = 1e6 / DeepCubeA settings
-    @click.option("--shuffle_length", type=int, default=30)
-    @click.option("--dataset_batch_size", type=int, default=int(5e5))  # 50 * 10k
-    @click.option("--dataset_minibatch_size", type=int, default=int(1e4))  # 10k
-    @click.option("--train_minibatch_size", type=int, default=int(1e4))  # 10k
-    @click.option("--key", type=int, default=0)
-    @click.option("--reset", is_flag=True, help="Reset the target heuristic params")
+    @click.option(
+        "-s", "--steps", type=int, default=int(2e4)
+    )  # 50 * 2e4 = 1e6 / DeepCubeA settings
+    @click.option("-sl", "--shuffle_length", type=int, default=30)
+    @click.option("-b", "--dataset_batch_size", type=int, default=524288)  # 8192 * 64
+    @click.option("-mb", "--dataset_minibatch_size", type=int, default=8192)  # 128 * 16
+    @click.option("-tmb", "--train_minibatch_size", type=int, default=8192)  # 128 * 16
+    @click.option("-k", "--key", type=int, default=0)
+    @click.option("-r", "--reset", is_flag=True, help="Reset the target heuristic params")
     @click.option("-l", "--loss_threshold", type=float, default=0.05)
-    @click.option("-u", "--update_interval", type=int, default=100)  # 50 * 100 = 5000
-    @click.option("-s", "--use_soft_update", is_flag=True, help="Use soft update")
-    @click.option("--using_hindsight_target", is_flag=True, help="Use hindsight target")
+    @click.option("-u", "--update_interval", type=int, default=128)
+    @click.option("-su", "--use_soft_update", is_flag=True, help="Use soft update")
+    @click.option("-her", "--using_hindsight_target", is_flag=True, help="Use hindsight target")
+    @click.option(
+        "-per", "--using_importance_sampling", is_flag=True, help="Use importance sampling"
+    )
     @click.option("--debug", is_flag=True, help="Debug mode")
+    @click.option("-m", "--multi_device", is_flag=True, help="Use multi device")
     @wraps(func)
     def wrapper(*args, **kwargs):
         if kwargs["debug"]:

@@ -141,6 +141,7 @@ def visualize_options(func: callable) -> callable:
     @click.option(
         "-vi", "--visualize_imgs", is_flag=True, help="Visualize the path with gif images"
     )
+    @click.option("-mt", "--max_animation_time", default=10, type=int, help="Max animation time")
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)

@@ -17,6 +17,7 @@ def world_model_train_builder(
     minibatch_size: int,
     train_info_fn: Callable,
     optimizer: optax.GradientTransformation = optax.adam(1e-4),
+    loss_ratio: float = 0.5,
 ):
     def loss_fn(
         params: jax.tree_util.PyTreeDef,
@@ -93,7 +94,7 @@ def world_model_train_builder(
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_next_states = jnp.take(next_states, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
-        loss_weight = jnp.clip((epoch - 100) / 100.0, 0.0001, 1.0) * 0.5
+        loss_weight = jnp.clip((epoch - 100) / 1000.0, 0.0001, 1.0) * loss_ratio
 
         def train_loop(carry, batched_dataset):
             params, opt_state = carry

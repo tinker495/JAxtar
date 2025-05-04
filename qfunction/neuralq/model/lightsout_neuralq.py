@@ -2,9 +2,31 @@ import chex
 import jax.numpy as jnp
 from flax import linen as nn
 
-from neural_util.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    ConvResBlock,
+    ResBlock,
+    conditional_dummy_norm,
+)
 from puzzle.lightsout import LightsOut
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+
+
+class LightsOutNeuralQ(NeuralQFunctionBase):
+    def __init__(self, puzzle: LightsOut, init_params: bool = True):
+        super().__init__(puzzle, init_params=init_params)
+
+    def pre_process(
+        self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
+    ) -> chex.Array:
+        current_map = self.puzzle.from_uint8(current.board).astype(DTYPE)
+        if self.is_fixed:
+            one_hots = current_map
+        else:
+            target_map = self.puzzle.from_uint8(solve_config.TargetState.board).astype(DTYPE)
+            one_hots = jnp.concatenate([target_map, current_map], axis=-1)
+        return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
 
 class Model(nn.Module):
@@ -14,19 +36,20 @@ class Model(nn.Module):
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(64, (3, 3), strides=1, padding="SAME", dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
         x = ConvResBlock(64, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(1024, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
         x = ResBlock(1024)(x, training)
         x = nn.Dense(self.action_size, dtype=DTYPE)(x)
+        _ = conditional_dummy_norm(x, training)
         return x
 
 
-class LightsOutNeuralQ(NeuralQFunctionBase):
+class LightsOutConvNeuralQ(NeuralQFunctionBase):
     def __init__(self, puzzle: LightsOut, init_params: bool = True):
         super().__init__(puzzle, model=Model, init_params=init_params)
 

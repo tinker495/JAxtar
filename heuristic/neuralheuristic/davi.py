@@ -7,30 +7,39 @@ import jax
 import jax.numpy as jnp
 import optax
 
+from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from puzzle.puzzle_base import Puzzle
 
 
-def davi_builder(
+def regression_trainer_builder(
     minibatch_size: int,
-    heuristic_fn: Callable,
+    heuristic_model: NeuralHeuristicBase,
     optimizer: optax.GradientTransformation,
+    importance_sampling: int = True,
+    importance_sampling_alpha: float = 0.5,
+    importance_sampling_beta: float = 0.1,
+    importance_sampling_eps: float = 1.0,
+    n_devices: int = 1,
 ):
     def davi_loss(
         heuristic_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
         target_heuristic: chex.Array,
+        weights: chex.Array,
     ):
-        current_heuristic, variable_updates = heuristic_fn(
+        current_heuristic, variable_updates = heuristic_model.apply(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
+        if n_devices > 1:
+            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
         new_params = {
             "params": heuristic_params["params"],
             "batch_stats": variable_updates["batch_stats"],
         }
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
         # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = jnp.mean(jnp.square(diff))
-        return loss, (new_params, diff)
+        loss = jnp.mean(jnp.square(diff) * weights)
+        return loss, new_params
 
     def davi(
         key: chex.PRNGKey,
@@ -41,30 +50,57 @@ def davi_builder(
         """
         DAVI is a heuristic for the sliding puzzle problem.
         """
-        states, target_heuristic = dataset
+        states, target_heuristic, diff = dataset
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        batch_indexs = jnp.concatenate(
-            [
-                jax.random.permutation(key, jnp.arange(data_size)),
-                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
+        if importance_sampling:
+            # Calculate sampling probabilities based on diff (error) for importance sampling
+            # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
+            abs_diff = jnp.abs(diff)
+            sampling_weights = jnp.power(
+                abs_diff + importance_sampling_eps, importance_sampling_alpha
+            )
+            sampling_probs = sampling_weights / jnp.sum(sampling_weights)
+            loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
+            loss_weights = loss_weights / jnp.max(loss_weights)
+
+            # Sample indices based on the calculated probabilities
+            batch_indexs = jax.random.choice(
+                key,
+                jnp.arange(data_size),
+                shape=(batch_size * minibatch_size,),
+                replace=False,
+                p=sampling_probs,
+            )
+        else:
+            batch_indexs = jnp.concatenate(
+                [
+                    jax.random.permutation(key, jnp.arange(data_size)),
+                    jax.random.randint(
+                        key, (batch_size * minibatch_size - data_size,), 0, data_size
+                    ),
+                ],
+                axis=0,
+            )  # [batch_size * minibatch_size]
+            loss_weights = jnp.ones_like(batch_indexs)
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
+        batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
-            states, target_heuristic = batched_dataset
-            (loss, (heuristic_params, diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
+            states, target_heuristic, weights = batched_dataset
+            (loss, heuristic_params), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
                 states,
                 target_heuristic,
+                weights,
             )
+            if n_devices > 1:
+                grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
             # Calculate gradient magnitude mean
@@ -72,15 +108,14 @@ def davi_builder(
                 lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (heuristic_params, opt_state), (loss, diff, grad_magnitude_mean)
+            return (heuristic_params, opt_state), (loss, grad_magnitude_mean)
 
-        (heuristic_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
+        (heuristic_params, opt_state), (losses, grad_magnitude_means) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
-            (batched_states, batched_target_heuristic),
+            (batched_states, batched_target_heuristic, batched_weights),
         )
         loss = jnp.mean(losses)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -92,21 +127,36 @@ def davi_builder(
             heuristic_params,
             opt_state,
             loss,
-            mean_abs_diff,
-            diffs,
             grad_magnitude_mean,
             weights_magnitude_mean,
         )
 
-    return jax.jit(davi)
+    if n_devices > 1:
+
+        def pmap_davi(key, dataset, heuristic_params, opt_state):
+            keys = jax.random.split(key, n_devices)
+            (heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude,) = jax.pmap(
+                davi, in_axes=(0, 0, None, None), axis_name="devices"
+            )(keys, dataset, heuristic_params, opt_state)
+            heuristic_params = jax.tree_util.tree_map(lambda xs: xs[0], heuristic_params)
+            opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
+            loss = jnp.mean(loss)
+            grad_magnitude = jnp.mean(grad_magnitude)
+            weight_magnitude = jnp.mean(weight_magnitude)
+            return heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude
+
+        return pmap_davi
+    else:
+        return jax.jit(davi)
 
 
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_fn: Callable,
+    heuristic_model: NeuralHeuristicBase,
     minibatch_size: int,
     target_heuristic_params: jax.tree_util.PyTreeDef,
+    heuristic_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
@@ -143,7 +193,7 @@ def _get_datasets(
         )
 
         def heur_scan(neighbors):
-            heur, _ = heuristic_fn(
+            heur, _ = heuristic_model.apply(
                 target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
             )
             return heur.squeeze()
@@ -155,15 +205,14 @@ def _get_datasets(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
 
-        # target_heuristic must be less than the number of moves
-        # it just doesn't make sense to have a heuristic greater than the number of moves
-        # heuristic's definition is the optimal cost to reach the target state
-        # so it doesn't make sense to have a heuristic greater than the number of moves
-        # target_heuristic = jnp.minimum(target_heuristic, move_costs)
         states = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        return None, (states, target_heuristic)
+        heur, _ = heuristic_model.apply(
+            heuristic_params, states, training=False, mutable=["batch_stats"]
+        )
+        diff = target_heuristic - heur.squeeze()
+        return None, (states, target_heuristic, diff)
 
-    _, (states, target_heuristic) = jax.lax.scan(
+    _, (states, target_heuristic, diff) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
@@ -171,19 +220,21 @@ def _get_datasets(
 
     states = states.reshape((-1, *states.shape[2:]))
     target_heuristic = target_heuristic.reshape((-1, *target_heuristic.shape[2:]))
+    diff = diff.reshape((-1, *diff.shape[2:]))
 
-    return states, target_heuristic
+    return states, target_heuristic, diff
 
 
 def get_davi_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_fn: Callable,
+    heuristic_model: NeuralHeuristicBase,
     dataset_size: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
+    n_devices: int = 1,
 ):
 
     if using_hindsight_target:
@@ -230,13 +281,14 @@ def get_davi_dataset_builder(
             _get_datasets,
             puzzle,
             preproc_fn,
-            heuristic_fn,
+            heuristic_model,
             dataset_minibatch_size,
         )
     )
 
     @jax.jit
     def get_datasets(
+        target_heuristic_params: jax.tree_util.PyTreeDef,
         heuristic_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
@@ -250,10 +302,21 @@ def get_davi_dataset_builder(
             lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
         )
 
-        flatten_dataset = jited_get_datasets(heuristic_params, paths, key)
+        flatten_dataset = jited_get_datasets(target_heuristic_params, heuristic_params, paths, key)
         return flatten_dataset
 
-    return get_datasets
+    if n_devices > 1:
+
+        def pmap_get_datasets(target_heuristic_params, heuristic_params, key):
+            keys = jax.random.split(key, n_devices)
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(
+                target_heuristic_params, heuristic_params, keys
+            )
+            return datasets
+
+        return pmap_get_datasets
+    else:
+        return get_datasets
 
 
 def create_target_shuffled_path(

@@ -497,13 +497,11 @@ class RubiksCubeRandom(RubiksCube):
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         solve_config = super().get_solve_config(key, data)
         solve_config.TargetState = self._get_suffled_state(
-            solve_config, solve_config.TargetState, key, num_shuffle=1000
+            solve_config, solve_config.TargetState, key, num_shuffle=100
         )
         return solve_config
 
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
     ) -> RubiksCube.State:
-        return self._get_suffled_state(
-            solve_config, solve_config.TargetState, key, num_shuffle=1000
-        )
+        return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=100)

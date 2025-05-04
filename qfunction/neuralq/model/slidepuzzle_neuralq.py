@@ -1,10 +1,50 @@
 import chex
+import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
-from neural_util.modules import DTYPE, BatchNorm, ConvResBlock, ResBlock
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    ConvResBlock,
+    ResBlock,
+    conditional_dummy_norm,
+)
 from puzzle.slidepuzzle import SlidePuzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+
+
+class SlidePuzzleNeuralQ(NeuralQFunctionBase):
+    def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):
+        self.size_square = puzzle.size * puzzle.size
+        super().__init__(puzzle, init_params=init_params)
+
+    def pre_process(
+        self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
+    ) -> chex.Array:
+        """
+        Pre-process the current state for the neural heuristic model.
+
+        Args:
+            solve_config: Configuration for solving the puzzle
+            current: Current state of the puzzle
+
+        Returns:
+            One-hot representation of the puzzle state
+        """
+        # Create a one-hot encoding of the current state
+        # Shape will be [puzzle_size, puzzle_size, puzzle_size*puzzle_size]
+        current_board = current.board
+        current_board_one_hot = jax.nn.one_hot(current_board, self.size_square).flatten()
+
+        if self.is_fixed:
+            one_hots = current_board_one_hot
+        else:
+            target_board = solve_config.TargetState.board
+            target_board_one_hot = jax.nn.one_hot(target_board, self.size_square).flatten()
+            one_hots = jnp.concatenate([target_board_one_hot, current_board_one_hot], axis=-1)
+
+        return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
 
 class Model(nn.Module):
@@ -14,19 +54,20 @@ class Model(nn.Module):
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(256, (3, 3), strides=1, padding="SAME", dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
         x = ConvResBlock(256, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.relu(x)
         x = ResBlock(512)(x, training)
         x = nn.Dense(self.action_size, dtype=DTYPE)(x)
+        _ = conditional_dummy_norm(x, training)
         return x
 
 
-class SlidePuzzleNeuralQ(NeuralQFunctionBase):
+class SlidePuzzleConvNeuralQ(NeuralQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):

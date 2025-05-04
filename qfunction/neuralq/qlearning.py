@@ -8,25 +8,36 @@ import jax.numpy as jnp
 import optax
 
 from puzzle.puzzle_base import Puzzle
+from qfunction.neuralq.neuralq_base import QModelBase
 
 
 def qlearning_builder(
     minibatch_size: int,
-    q_fn: Callable,
+    q_fn: QModelBase,
     optimizer: optax.GradientTransformation,
+    importance_sampling: int = True,
+    importance_sampling_alpha: float = 0.5,
+    importance_sampling_beta: float = 0.1,
+    importance_sampling_eps: float = 1.0,
+    n_devices: int = 1,
 ):
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
         states: chex.Array,
         actions: chex.Array,
         target_qs: chex.Array,
+        weights: chex.Array,
     ):
-        q_values, variable_updates = q_fn(q_params, states, training=True, mutable=["batch_stats"])
+        q_values, variable_updates = q_fn.apply(
+            q_params, states, training=True, mutable=["batch_stats"]
+        )
+        if n_devices > 1:
+            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
-        loss = jnp.mean(jnp.square(diff))
-        return loss, (new_params, diff)
+        loss = jnp.mean(jnp.square(diff) * weights)
+        return loss, new_params
 
     def qlearning(
         key: chex.PRNGKey,
@@ -37,32 +48,59 @@ def qlearning_builder(
         """
         Q-learning is a heuristic for the sliding puzzle problem.
         """
-        states, target_q, actions = dataset
+        states, target_q, actions, diff = dataset
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        batch_indexs = jnp.concatenate(
-            [
-                jax.random.permutation(key, jnp.arange(data_size)),
-                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
+        if importance_sampling:
+            # Calculate sampling probabilities based on diff (error) for importance sampling
+            # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
+            abs_diff = jnp.abs(diff)
+            sampling_weights = jnp.power(
+                abs_diff + importance_sampling_eps, importance_sampling_alpha
+            )
+            sampling_probs = sampling_weights / jnp.sum(sampling_weights)
+            loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
+            loss_weights = loss_weights / jnp.max(loss_weights)
+
+            # Sample indices based on the calculated probabilities
+            batch_indexs = jax.random.choice(
+                key,
+                jnp.arange(data_size),
+                shape=(batch_size * minibatch_size,),
+                replace=False,
+                p=sampling_probs,
+            )
+        else:
+            batch_indexs = jnp.concatenate(
+                [
+                    jax.random.permutation(key, jnp.arange(data_size)),
+                    jax.random.randint(
+                        key, (batch_size * minibatch_size - data_size,), 0, data_size
+                    ),
+                ],
+                axis=0,
+            )  # [batch_size * minibatch_size]
+            loss_weights = jnp.ones_like(batch_indexs)
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_states = jnp.take(states, batch_indexs, axis=0)
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
+        batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
-            states, target_q, actions = batched_dataset
-            (loss, (q_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
+            states, target_q, actions, weights = batched_dataset
+            (loss, q_params), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
                 states,
                 actions,
                 target_q,
+                weights,
             )
+            if n_devices > 1:
+                grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
             # Calculate gradient magnitude mean
@@ -70,15 +108,14 @@ def qlearning_builder(
                 lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (q_params, opt_state), (loss, diff, grad_magnitude_mean)
+            return (q_params, opt_state), (loss, grad_magnitude_mean)
 
-        (q_params, opt_state), (losses, diffs, grad_magnitude_means) = jax.lax.scan(
+        (q_params, opt_state), (losses, grad_magnitude_means) = jax.lax.scan(
             train_loop,
             (q_params, opt_state),
-            (batched_states, batched_target_q, batched_actions),
+            (batched_states, batched_target_q, batched_actions, batched_weights),
         )
         loss = jnp.mean(losses)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -89,26 +126,51 @@ def qlearning_builder(
             q_params,
             opt_state,
             loss,
-            mean_abs_diff,
-            diffs,
             grad_magnitude_mean,
             weights_magnitude_mean,
         )
 
-    return jax.jit(qlearning)
+    if n_devices > 1:
+
+        def pmap_qlearning(key, dataset, q_params, opt_state):
+            keys = jax.random.split(key, n_devices)
+            (qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude,) = jax.pmap(
+                qlearning, in_axes=(0, 0, None, None), axis_name="devices"
+            )(keys, dataset, q_params, opt_state)
+            qfunc_params = jax.tree_util.tree_map(lambda xs: xs[0], qfunc_params)
+            opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
+            loss = jnp.mean(loss)
+            grad_magnitude = jnp.mean(grad_magnitude)
+            weight_magnitude = jnp.mean(weight_magnitude)
+            return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude
+
+        return pmap_qlearning
+    else:
+        return jax.jit(qlearning)
 
 
-def boltzmann_action_selection(q_values: chex.Array, temperature: float = 3.0) -> chex.Array:
+def boltzmann_action_selection(
+    q_values: chex.Array,
+    temperature: float = 1.0 / 3.0,
+    epsilon: float = 0.1,
+    mask: chex.Array = None,
+) -> chex.Array:
     q_values = -q_values / temperature
-    q_values = jnp.exp(q_values)
-    probs = q_values / jnp.sum(q_values, axis=1, keepdims=True)
+    probs = jnp.exp(q_values)
+    if mask is not None:
+        probs = jnp.where(mask, probs, 0.0)
+    else:
+        mask = jnp.ones_like(probs)
+    probs = probs / jnp.sum(probs, axis=1, keepdims=True)
+    uniform_prob = mask.astype(jnp.float32) / jnp.sum(mask, axis=1, keepdims=True)
+    probs = probs * (1 - epsilon) + uniform_prob * epsilon
     return probs
 
 
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    q_fn: Callable,
+    q_model: QModelBase,
     minibatch_size: int,
     target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
@@ -128,43 +190,53 @@ def _get_datasets(
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
         solve_configs, shuffled_path, move_costs = vals
-        solved = puzzle.batched_is_solved(
-            solve_configs, shuffled_path, multi_solve_config=True
-        )  # [batch_size]
 
         path_preproc = jax.vmap(preproc_fn)(solve_configs, shuffled_path)
-        q_values, _ = q_fn(q_params, path_preproc, training=False, mutable=["batch_stats"])
-        probs = boltzmann_action_selection(q_values)
+        q_values, _ = q_model.apply(q_params, path_preproc, training=False, mutable=["batch_stats"])
+        neighbors, cost = puzzle.batched_get_neighbours(
+            solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+        )  # [action_size, batch_size] [action_size, batch_size]
+        mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
+
+        probs = boltzmann_action_selection(q_values, mask=mask)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
         )
+        selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
 
-        neighbors, cost = puzzle.batched_get_neighbours(
-            solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
-        )  # [action_size, batch_size] [action_size, batch_size]
         batch_size = actions.shape[0]
         selected_neighbors = jax.tree_util.tree_map(
             lambda x: x[actions, jnp.arange(batch_size), :],
             neighbors,
         )
         selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
+        _, neighbor_cost = puzzle.batched_get_neighbours(
+            solve_configs,
+            selected_neighbors,
+            filleds=jnp.ones_like(move_costs),
+            multi_solve_config=True,
+        )  # [action_size, batch_size] [action_size, batch_size]
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
 
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
-        q, _ = q_fn(
+        q, _ = q_model.apply(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        target_q = jnp.maximum(jnp.min(q, axis=1), 0.0) + selected_costs
-        solved = jnp.logical_or(selected_neighbors_solved, solved)
-        target_q = jnp.where(solved, 0.0, target_q)
-        # if the puzzle is already solved, the all q is 0
-        return key, (path_preproc, target_q, actions)
+        mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
+        q = jnp.where(mask, q, jnp.inf)
+        min_q = jnp.min(q, axis=1)
+        target_q = jnp.maximum(min_q, 0.0) + selected_costs
+        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
 
-    _, (states, target_q, actions) = jax.lax.scan(
+        diff = target_q - selected_q
+        # if the puzzle is already solved, the all q is 0
+        return key, (path_preproc, target_q, actions, diff)
+
+    _, (states, target_q, actions, diff) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
@@ -173,21 +245,22 @@ def _get_datasets(
     states = states.reshape((-1, *states.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
+    diff = diff.reshape((-1, *diff.shape[2:]))
 
-    return states, target_q, actions
+    return states, target_q, actions, diff
 
 
 def get_qlearning_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    q_fn: Callable,
+    q_model: QModelBase,
     dataset_size: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
+    n_devices: int = 1,
 ):
-
     if using_hindsight_target:
         # Calculate appropriate shuffle_parallel for hindsight sampling
         # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
@@ -232,7 +305,7 @@ def get_qlearning_dataset_builder(
             _get_datasets,
             puzzle,
             preproc_fn,
-            q_fn,
+            q_model,
             dataset_minibatch_size,
         )
     )
@@ -256,7 +329,18 @@ def get_qlearning_dataset_builder(
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
         return flatten_dataset
 
-    return get_datasets
+    if n_devices > 1:
+
+        def pmap_get_datasets(target_q_params, q_params, key):
+            keys = jax.random.split(key, n_devices)
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(
+                target_q_params, q_params, keys
+            )
+            return datasets
+
+        return pmap_get_datasets
+    else:
+        return get_datasets
 
 
 def create_target_shuffled_path(

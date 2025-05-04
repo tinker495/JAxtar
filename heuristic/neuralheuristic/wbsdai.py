@@ -21,10 +21,10 @@ from JAxtar.search_base import (
 from puzzle.puzzle_base import Puzzle
 
 
-def train_replay_builder(
+def regression_replay_trainer_builder(
     buffer: BUFFER_TYPE,
     train_steps: int,
-    heuristic_fn: NeuralHeuristic,
+    heuristic_model: NeuralHeuristic,
     optimizer: optax.GradientTransformation,
 ) -> Callable:
     def regression_loss(
@@ -32,7 +32,7 @@ def train_replay_builder(
         states: chex.Array,
         target_heuristic: chex.Array,
     ):
-        current_heuristic, variable_updates = heuristic_fn(
+        current_heuristic, variable_updates = heuristic_model(
             heuristic_params, states, training=True, mutable=["batch_stats"]
         )
         heuristic_params["batch_stats"] = variable_updates["batch_stats"]

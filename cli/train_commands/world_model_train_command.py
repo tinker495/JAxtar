@@ -62,7 +62,9 @@ def train(
 
     dataset_size = actions.shape[0]
     print("initializing optimizer")
-    optimizer, opt_state = setup_optimizer(params, train_epochs, dataset_size // mini_batch_size)
+    optimizer, opt_state = setup_optimizer(
+        params, 1, train_epochs, dataset_size // mini_batch_size, lr_init=1e-2
+    )
 
     print("initializing train function")
     train_fn = world_model_train_builder(
