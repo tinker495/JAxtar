@@ -307,10 +307,6 @@ def zeroshot_qlearning(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
-        target_q = dataset["target_q"]
-        diffs = dataset["diff"]
-        mean_target_q = jnp.mean(target_q)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         (
             qfunc_params,
@@ -320,20 +316,12 @@ def zeroshot_qlearning(
             weight_magnitude,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
-        pbar.set_description(
-            f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
-            f", target_q: {float(mean_target_q):.2f}"
-        )
+        pbar.set_description(f"lr: {lr:.4f}, loss: {float(loss):.4f}")
 
         writer.add_scalar("Metrics/Learning Rate", lr, i)
         writer.add_scalar("Losses/Loss", loss, i)
-        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-        writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
         writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if i % 10 == 0:
-            writer.add_histogram("Losses/Diff", diffs, i)
-            writer.add_histogram("Metrics/Target", target_q, i)
 
         if use_soft_update:
             target_qfunc_params = soft_update(

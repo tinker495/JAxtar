@@ -97,6 +97,31 @@ class ZeroshotQModelBase(nn.Module):
         )  # (batch_size, action_size, latent_dim)
         return f_a
 
+    def get_b(
+        self,
+        state: Puzzle.State,
+        actions: chex.Array,
+        training: bool = True,
+    ):
+        b_a = self.backward_projection(state, training)  # (batch_size, action_size, latent_dim)
+        b = jnp.take_along_axis(b_a, actions[:, jnp.newaxis], axis=1)  # (batch_size, latent_dim)
+        return b  # (batch_size, latent_dim)
+
+    def get_q_ij(
+        self,
+        z: chex.Array,
+        state_i: Puzzle.State,
+        state_j: Puzzle.State,
+        actions_j: chex.Array,
+        training: bool = True,
+    ):
+        f_a_i = self.forward_projection(
+            state_i, z, training
+        )  # (batch_size, action_size, latent_dim)
+        b_j = self.get_b(state_j, actions_j, training)  # (batch_size, latent_dim)
+        q_ij = self.distance(f_a_i, b_j, training)  # (batch_size, action_size)
+        return q_ij  # (batch_size, action_size)
+
 
 class ZeroshotQFunctionBase(QFunction):
     def __init__(

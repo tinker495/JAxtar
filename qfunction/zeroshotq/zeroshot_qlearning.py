@@ -15,50 +15,149 @@ def zeroshot_qlearning_builder(
     minibatch_size: int,
     zeroshotq_model: ZeroshotQModelBase,
     optimizer: optax.GradientTransformation,
-    importance_sampling: int = True,
-    importance_sampling_alpha: float = 0.5,
-    importance_sampling_beta: float = 0.1,
-    importance_sampling_eps: float = 1.0,
     n_devices: int = 1,
 ):
+    latent_dim = zeroshotq_model.latent_dim
+
     def qlearning_loss(
         q_params: jax.tree_util.PyTreeDef,
-        solve_configs: chex.Array,
-        states: chex.Array,
-        actions: chex.Array,
-        target_qs: chex.Array,
-        weights: chex.Array,
+        target_q_params: jax.tree_util.PyTreeDef,
+        solve_configs_i: chex.Array,
+        states_i: chex.Array,
+        actions_i: chex.Array,
+        costs_i: chex.Array,
+        states_j: chex.Array,
+        actions_j: chex.Array,
+        key: chex.PRNGKey,
     ):
-        solve_config_z, variable_updates = zeroshotq_model.apply(
+        batch_size = actions_i.shape[0]
+
+        # ---------- solve config loss ----------
+
+        solve_config_z, _ = zeroshotq_model.apply(
             q_params,
-            solve_configs,
+            solve_configs_i,
             training=True,
-            mutable=["batch_stats"],
             method=zeroshotq_model.solve_config_projection,
         )
-        if n_devices > 1:
-            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
-        q_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
-        q_values, variable_updates = zeroshotq_model.apply(
+        solve_config_q_ij, _ = zeroshotq_model.apply(
             q_params,
-            states,
             solve_config_z,
+            states_i,
+            states_j,
+            actions_j,
             training=True,
-            mutable=["batch_stats"],
-            method=zeroshotq_model.forward_distance,
+            method=zeroshotq_model.get_q_ij,
         )
-        if n_devices > 1:
-            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
-        q_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
-        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
-        diff = target_qs.squeeze() - q_values_at_actions.squeeze()
-        loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, q_params
+        solve_config_q_ij_at_actions = jnp.take_along_axis(
+            solve_config_q_ij, actions_i[:, jnp.newaxis], axis=1
+        )  # (batch_size,)
+
+        solve_config_target_q_ij, _ = zeroshotq_model.apply(
+            target_q_params,
+            solve_config_z,
+            states_i,
+            states_j,
+            actions_j,
+            training=False,
+            method=zeroshotq_model.get_q_ij,
+        )
+        solve_config_target_pi_ij = boltzmann_action_selection(
+            solve_config_target_q_ij
+        )  # (batch_size, action_size)
+        solve_config_target_v_ij = (
+            jnp.sum(solve_config_target_pi_ij * solve_config_target_q_ij, axis=1) + costs_i
+        )  # (batch_size,)
+
+        solve_config_td_error = solve_config_target_v_ij - solve_config_q_ij_at_actions
+        solve_config_td_loss = jnp.mean(jnp.square(solve_config_td_error))
+
+        # ---------- sampled loss ----------
+
+        sampled_z = jax.random.normal(key, (batch_size, latent_dim))
+        sampled_q_ij, _ = zeroshotq_model.apply(
+            q_params,
+            sampled_z,
+            states_i,
+            states_j,
+            actions_j,
+            training=True,
+            method=zeroshotq_model.get_q_ij,
+        )
+        sampled_q_ij_at_actions = jnp.take_along_axis(
+            sampled_q_ij, actions_i[:, jnp.newaxis], axis=1
+        )  # (batch_size,)
+
+        sampled_target_q_ij, _ = zeroshotq_model.apply(
+            target_q_params,
+            sampled_z,
+            states_i,
+            states_j,
+            actions_j,
+            training=False,
+            method=zeroshotq_model.get_q_ij,
+        )  # (batch_size, action_size)
+        sampled_target_pi_ij = boltzmann_action_selection(
+            sampled_target_q_ij
+        )  # (batch_size, action_size)
+        sampled_target_v_ij = (
+            jnp.sum(sampled_target_pi_ij * sampled_target_q_ij, axis=1) + costs_i
+        )  # (batch_size,)
+
+        sampled_td_error = sampled_target_v_ij - sampled_q_ij_at_actions
+        sampled_td_loss = jnp.mean(jnp.square(sampled_td_error))
+
+        # ---------- fb alignment loss ----------
+
+        sampled_align_q, _ = zeroshotq_model.apply(
+            q_params,
+            sampled_z,
+            states_i,
+            states_i,
+            actions_i,
+            training=True,
+            method=zeroshotq_model.get_q_ij,
+        )  # (batch_size, action_size)
+        sampled_align_q_at_actions = jnp.take_along_axis(
+            sampled_align_q, actions_i[:, jnp.newaxis], axis=1
+        )  # (batch_size,)
+        fb_align_loss = jnp.mean(sampled_align_q_at_actions)
+
+        # ---------- orthogonal loss ----------
+
+        b_i = zeroshotq_model.apply(
+            q_params, states_i, actions_i, training=True, method=zeroshotq_model.get_b
+        )  # (batch_size, latent_dim)
+        b_j = zeroshotq_model.apply(
+            q_params, states_j, actions_j, training=True, method=zeroshotq_model.get_b
+        )  # (batch_size, latent_dim)
+
+        # Term 1: (1/b^2) * sum_{i,j} B(si, ai)^T * sg(B(sj, aj))
+        term1_matrix = jnp.einsum("iz,jz->ij", b_i, jax.lax.stop_gradient(b_j))
+
+        # Term 2: (1/b^2) * sum_{i,j} sg(B(si, ai)^T * B(sj, aj))
+        term2_matrix = jnp.einsum("iz,jz->ij", b_i, b_j)
+        term2_matrix_sg = jax.lax.stop_gradient(term2_matrix)
+
+        # Term 3: (1/b) * sum_i B(si, ai)^T * sg(B(si, ai))
+        term3_vector = jnp.einsum("iz,iz->i", b_i, jax.lax.stop_gradient(b_i))
+
+        # Calculate means (equivalent to sum / b^2 or sum / b)
+        loss_term1 = jnp.mean(term1_matrix * term2_matrix_sg)
+        loss_term2 = jnp.mean(term3_vector)
+
+        ortho_loss = loss_term1 - loss_term2
+
+        # Combine all losses (assuming equal weight for now)
+        total_loss = solve_config_td_loss + sampled_td_loss + fb_align_loss + ortho_loss
+
+        return total_loss, q_params
 
     def qlearning(
         key: chex.PRNGKey,
         dataset: dict[str, chex.Array],
         q_params: jax.tree_util.PyTreeDef,
+        target_q_params: jax.tree_util.PyTreeDef,
         opt_state: optax.OptState,
     ):
         """
@@ -66,60 +165,57 @@ def zeroshot_qlearning_builder(
         """
         solve_configs = dataset["solve_configs"]
         states = dataset["states"]
-        target_q = dataset["target_q"]
         actions = dataset["actions"]
-        diff = dataset["diff"]
-        data_size = target_q.shape[0]
+        costs = dataset["cost"]
+        data_size = actions.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        if importance_sampling:
-            # Calculate sampling probabilities based on diff (error) for importance sampling
-            # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
-            abs_diff = jnp.abs(diff)
-            sampling_weights = jnp.power(
-                abs_diff + importance_sampling_eps, importance_sampling_alpha
-            )
-            sampling_probs = sampling_weights / jnp.sum(sampling_weights)
-            loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
-            loss_weights = loss_weights / jnp.max(loss_weights)
+        key_i, key_j, key = jax.random.split(key, 3)
 
-            # Sample indices based on the calculated probabilities
-            batch_indexs = jax.random.choice(
-                key,
-                jnp.arange(data_size),
-                shape=(batch_size * minibatch_size,),
-                replace=False,
-                p=sampling_probs,
-            )
-        else:
-            batch_indexs = jnp.concatenate(
-                [
-                    jax.random.permutation(key, jnp.arange(data_size)),
-                    jax.random.randint(
-                        key, (batch_size * minibatch_size - data_size,), 0, data_size
-                    ),
-                ],
-                axis=0,
-            )  # [batch_size * minibatch_size]
-            loss_weights = jnp.ones_like(batch_indexs)
-        batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
+        batch_indexs_i = jnp.concatenate(
+            [
+                jax.random.permutation(key_i, jnp.arange(data_size)),
+                jax.random.randint(key_i, (batch_size * minibatch_size - data_size,), 0, data_size),
+            ],
+            axis=0,
+        )  # [batch_size * minibatch_size]
+        batch_indexs_i = jnp.reshape(batch_indexs_i, (batch_size, minibatch_size))
+        batch_indexs_j = jnp.concatenate(
+            [
+                jax.random.permutation(key_j, jnp.arange(data_size)),
+                jax.random.randint(key_j, (batch_size * minibatch_size - data_size,), 0, data_size),
+            ],
+            axis=0,
+        )  # [batch_size * minibatch_size]
+        batch_indexs_j = jnp.reshape(batch_indexs_j, (batch_size, minibatch_size))
 
-        batched_solve_configs = jnp.take(solve_configs, batch_indexs, axis=0)
-        batched_states = jnp.take(states, batch_indexs, axis=0)
-        batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
-        batched_actions = jnp.take(actions, batch_indexs, axis=0)
-        batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
+        batched_solve_configs_i = jnp.take(solve_configs, batch_indexs_i, axis=0)
+        batched_states_i = jnp.take(states, batch_indexs_i, axis=0)
+        batched_actions_i = jnp.take(actions, batch_indexs_i, axis=0)
+        batched_costs_i = jnp.take(costs, batch_indexs_i, axis=0)
+
+        batched_states_j = jnp.take(states, batch_indexs_j, axis=0)
+        batched_actions_j = jnp.take(actions, batch_indexs_j, axis=0)
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
-            solve_configs, states, target_q, actions, weights = batched_dataset
+            (
+                solve_configs_i,
+                states_i,
+                states_j,
+                actions_i,
+                actions_j,
+                costs_i,
+            ) = batched_dataset
             (loss, q_params), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
-                solve_configs,
-                states,
-                actions,
-                target_q,
-                weights,
+                target_q_params,
+                solve_configs_i,
+                states_i,
+                actions_i,
+                costs_i,
+                states_j,
+                actions_j,
             )
             if n_devices > 1:
                 grads = jax.lax.psum(grads, axis_name="devices")
@@ -136,11 +232,12 @@ def zeroshot_qlearning_builder(
             train_loop,
             (q_params, opt_state),
             (
-                batched_solve_configs,
-                batched_states,
-                batched_target_q,
-                batched_actions,
-                batched_weights,
+                batched_solve_configs_i,
+                batched_states_i,
+                batched_states_j,
+                batched_actions_i,
+                batched_actions_j,
+                batched_costs_i,
             ),
         )
         loss = jnp.mean(losses)
@@ -201,7 +298,6 @@ def _get_datasets(
     state_preproc_fn: Callable,
     zeroshotq_model: ZeroshotQModelBase,
     minibatch_size: int,
-    target_q_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
@@ -230,15 +326,23 @@ def _get_datasets(
             mutable=["batch_stats"],
             method=zeroshotq_model.solve_config_projection,
         )
-        q_values, _ = zeroshotq_model.apply(
+        f_a = zeroshotq_model.apply(
             q_params,
             state_preproc,
             solve_config_z,
             training=False,
             mutable=["batch_stats"],
-            method=zeroshotq_model.forward_distance,
+            method=zeroshotq_model.forward_projection,
         )
-        neighbors, cost = puzzle.batched_get_neighbours(
+        q_values, _ = zeroshotq_model.apply(
+            q_params,
+            f_a,
+            solve_config_z,
+            training=False,
+            mutable=["batch_stats"],
+            method=zeroshotq_model.distance,
+        )
+        _, cost = puzzle.batched_get_neighbours(
             solve_configs, shuffled_path, filleds=jnp.ones_like(move_costs), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
         mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
@@ -246,54 +350,12 @@ def _get_datasets(
         probs = boltzmann_action_selection(q_values, mask=mask)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
-            jax.random.split(subkey, q_values.shape[0]), probs
-        )
-        selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
-
-        batch_size = actions.shape[0]
-        selected_neighbors = jax.tree_util.tree_map(
-            lambda x: x[actions, jnp.arange(batch_size), :],
-            neighbors,
-        )
-        selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
-        _, neighbor_cost = puzzle.batched_get_neighbours(
-            solve_configs,
-            selected_neighbors,
-            filleds=jnp.ones_like(move_costs),
-            multi_solve_config=True,
-        )  # [action_size, batch_size] [action_size, batch_size]
-        selected_neighbors_solved = puzzle.batched_is_solved(
-            solve_configs, selected_neighbors, multi_solve_config=True
+            jax.random.split(key, q_values.shape[0]), probs
         )
 
-        preproc_neighbors = jax.vmap(state_preproc_fn)(selected_neighbors)
+        return key, (solve_config_preproc, state_preproc, actions, cost)
 
-        solve_config_z, _ = zeroshotq_model.apply(
-            target_q_params,
-            solve_config_preproc,
-            training=False,
-            mutable=["batch_stats"],
-            method=zeroshotq_model.solve_config_projection,
-        )
-        q, _ = zeroshotq_model.apply(
-            target_q_params,
-            preproc_neighbors,
-            solve_config_z,
-            training=False,
-            mutable=["batch_stats"],
-            method=zeroshotq_model.forward_distance,
-        )  # [minibatch_size, action_shape]
-        mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
-        q = jnp.where(mask, q, jnp.inf)
-        min_q = jnp.min(q, axis=1)
-        target_q = jnp.maximum(min_q, 0.0) + selected_costs
-        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
-
-        diff = target_q - selected_q
-        # if the puzzle is already solved, the all q is 0
-        return key, (solve_config_preproc, state_preproc, target_q, actions, diff)
-
-    _, (solve_config_preproc, state_preproc, target_q, actions, diff) = jax.lax.scan(
+    _, (solve_config_preproc, state_preproc, actions, cost) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_shuffled_path, minibatched_move_costs),
@@ -301,16 +363,13 @@ def _get_datasets(
 
     solve_config_preproc = solve_config_preproc.reshape((-1, *solve_config_preproc.shape[2:]))
     state_preproc = state_preproc.reshape((-1, *state_preproc.shape[2:]))
-    target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
-    diff = diff.reshape((-1, *diff.shape[2:]))
-
+    cost = cost.reshape((-1, *cost.shape[2:]))
     return {
         "solve_configs": solve_config_preproc,
         "states": state_preproc,
-        "target_q": target_q,
         "actions": actions,
-        "diff": diff,
+        "cost": cost,
     }
 
 
@@ -595,9 +654,7 @@ def create_hindsight_target_triangular_shuffled_path(
         None,
         length=shuffle_length + 1,
     )  # [shuffle_length, batch_size, ...]
-    solve_configs = jax.vmap(puzzle.batched_hindsight_transform, in_axes=(None, 0))(
-        solve_configs, moves
-    )
+    solve_configs = jax.vmap(puzzle.batched_hindsight_transform)(moves)
     move_costs = move_costs[jnp.newaxis, ...] - move_costs[:, jnp.newaxis, ...]
 
     solve_configs = jax.tree_util.tree_map(
