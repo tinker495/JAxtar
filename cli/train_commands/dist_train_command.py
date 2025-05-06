@@ -251,6 +251,10 @@ def qlearning(
 @puzzle_options
 @zeroshot_qfunction_options
 @train_option
+@click.option(
+    "--lambda-reg", type=float, default=0.001, help="Coefficient for orthonormality regularization."
+)
+@click.option("--polyak-alpha", type=float, default=0.999, help="Coefficient for Polyak averaging.")
 def zeroshot_qlearning(
     puzzle: Puzzle,
     zeroshot_qfunction: ZeroshotQFunctionBase,
@@ -268,73 +272,108 @@ def zeroshot_qlearning(
     using_hindsight_target: bool,
     using_importance_sampling: bool,
     multi_device: bool,
+    lambda_reg: float,
+    polyak_alpha: float,
     **kwargs,
 ):
-    writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
+    writer = setup_logging(puzzle_name, puzzle_size, "zeroshot_qlearning")
     qfunc_model = zeroshot_qfunction.model
-    qfunc_params = zeroshot_qfunction.get_new_params()
-    target_qfunc_params = zeroshot_qfunction.params
+    goal_model = zeroshot_qfunction.goal_projector
+    qfunc_params, goal_params = zeroshot_qfunction.get_new_params()
+    target_qfunc_params = qfunc_params
+    target_goal_params = goal_params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
     n_devices = 1
     if multi_device:
         n_devices = jax.device_count()
+        original_steps = steps
         steps = steps // n_devices
-        update_interval = update_interval // n_devices
-        print(f"Training with {n_devices} devices")
+        print(
+            f"Training with {n_devices} devices. Effective steps: {steps} per device (Total: {original_steps})"
+        )
 
-    optimizer, opt_state = setup_optimizer(
-        qfunc_params, n_devices, steps, dataset_batch_size // train_minibatch_size
+    steps_per_epoch = dataset_batch_size // train_minibatch_size
+    optimizer_q, _ = setup_optimizer(qfunc_params, n_devices, steps, steps_per_epoch)
+    optimizer_goal, _ = setup_optimizer(qfunc_params, n_devices, steps, steps_per_epoch)
+
+    opt_state_q = optimizer_q.init(qfunc_params)
+    opt_state_goal = optimizer_goal.init(qfunc_params)
+
+    zqlearning_fn = zeroshot_qlearning_builder(
+        minibatch_size=train_minibatch_size,
+        goal_model=goal_model,
+        zeroshotq_model=qfunc_model,
+        optimizer_q=optimizer_q,
+        optimizer_goal=optimizer_goal,
+        lambda_reg=lambda_reg,
+        polyak_alpha=polyak_alpha,
+        n_devices=n_devices,
     )
-    opt_state_init = opt_state
-    qlearning_fn = zeroshot_qlearning_builder(
-        train_minibatch_size, qfunc_model, optimizer, using_importance_sampling, n_devices=n_devices
-    )
+
     get_datasets = get_zeroshot_qlearning_dataset_builder(
         puzzle,
         zeroshot_qfunction.pre_process_solve_config,
         zeroshot_qfunction.pre_process_state,
-        qfunc_model,
-        dataset_batch_size,
-        shuffle_length,
-        dataset_minibatch_size,
-        using_hindsight_target,
+        goal_model=goal_model,
+        zeroshotq_model=qfunc_model,
+        dataset_size=dataset_batch_size,
+        shuffle_length=shuffle_length,
+        dataset_minibatch_size=dataset_minibatch_size,
+        using_hindsight_target=using_hindsight_target,
         n_devices=n_devices,
     )
 
     pbar = trange(steps)
     for i in pbar:
-        key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
+        key, data_key, train_key = jax.random.split(key, 3)
+        dataset = get_datasets(q_params=qfunc_params, goal_params=goal_params, key=data_key)
 
         (
             qfunc_params,
-            opt_state,
-            loss,
+            goal_params,
+            target_qfunc_params,
+            target_goal_params,
+            _,
+            _,
+            opt_state_q,
+            opt_state_goal,
+            total_loss,
+            mse_loss,
+            reg_loss,
             grad_magnitude,
             weight_magnitude,
-        ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
-        lr = opt_state.hyperparams["learning_rate"]
-        pbar.set_description(f"lr: {lr:.4f}, loss: {float(loss):.4f}")
+        ) = zqlearning_fn(
+            key=train_key,
+            dataset=dataset,
+            q_params=qfunc_params,
+            target_q_params=target_qfunc_params,
+            goal_params=goal_params,
+            target_goal_params=target_goal_params,
+            opt_state_q=opt_state_q,
+            opt_state_goal=opt_state_goal,
+        )
+
+        lr = opt_state_q.hyperparams["learning_rate"]
+
+        pbar.set_description(
+            f"lr: {lr:.4f}, total_loss: {float(total_loss):.4f}, mse: {float(mse_loss):.4f}, reg: {float(reg_loss):.4f}"
+        )
 
         writer.add_scalar("Metrics/Learning Rate", lr, i)
-        writer.add_scalar("Losses/Loss", loss, i)
+        writer.add_scalar("Losses/Total Loss", total_loss, i)
+        writer.add_scalar("Losses/MSE Loss", mse_loss, i)
+        writer.add_scalar("Losses/Regularization Loss", reg_loss, i)
         writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
 
-        if use_soft_update:
-            target_qfunc_params = soft_update(
-                target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
-            )
-        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            target_qfunc_params = qfunc_params
-            opt_state = opt_state_init
         if i % 1000 == 0 and i != 0:
             zeroshot_qfunction.params = qfunc_params
             zeroshot_qfunction.save_model(
                 f"qfunction/zeroshotq/model/params/{puzzle_name}_{puzzle_size}.pkl"
             )
+
     zeroshot_qfunction.params = qfunc_params
     zeroshot_qfunction.save_model(
         f"qfunction/zeroshotq/model/params/{puzzle_name}_{puzzle_size}.pkl"

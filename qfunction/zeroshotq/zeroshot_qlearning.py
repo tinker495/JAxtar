@@ -8,20 +8,24 @@ import jax.numpy as jnp
 import optax
 
 from puzzle.puzzle_base import Puzzle
-from qfunction.zeroshotq.zeroshotq_base import ZeroshotQModelBase
+from qfunction.zeroshotq.zeroshotq_base import GoalProjector, ZeroshotQModelBase
 
 
 def zeroshot_qlearning_builder(
     minibatch_size: int,
+    goal_model: GoalProjector,
     zeroshotq_model: ZeroshotQModelBase,
-    optimizer: optax.GradientTransformation,
+    optimizer_q: optax.GradientTransformation,
+    optimizer_goal: optax.GradientTransformation,
+    lambda_reg: float,
+    polyak_alpha: float,
     n_devices: int = 1,
 ):
-    latent_dim = zeroshotq_model.latent_dim
-
-    def qlearning_loss(
+    def zeroshotq_loss(
         q_params: jax.tree_util.PyTreeDef,
         target_q_params: jax.tree_util.PyTreeDef,
+        goal_params: jax.tree_util.PyTreeDef,
+        target_goal_params: jax.tree_util.PyTreeDef,
         solve_configs_i: chex.Array,
         states_i: chex.Array,
         actions_i: chex.Array,
@@ -30,164 +34,191 @@ def zeroshot_qlearning_builder(
         actions_j: chex.Array,
         key: chex.PRNGKey,
     ):
-        batch_size = actions_i.shape[0]
-
-        # ---------- solve config loss ----------
-
-        solve_config_z, _ = zeroshotq_model.apply(
-            q_params,
+        batch_size = states_i.shape[0]
+        # Apply goal model to get representations and updates
+        (solve_config_z, update_goal_1), (b_j, update_goal_2), (b_i, update_goal_3) = jax.vmap(
+            lambda gp, s_conf, s_i, a_i, s_j, a_j: (
+                goal_model.apply(
+                    gp,
+                    s_conf,
+                    training=True,
+                    method=goal_model.solve_config_projection,
+                    mutable=["batch_stats"],
+                ),
+                goal_model.apply(
+                    gp,
+                    s_j,
+                    a_j,
+                    training=True,
+                    method=goal_model.get_b,
+                    mutable=["batch_stats"],
+                ),
+                goal_model.apply(
+                    gp,
+                    s_i,
+                    a_i,
+                    training=True,
+                    method=goal_model.get_b,
+                    mutable=["batch_stats"],
+                ),
+            ),
+            in_axes=(None, 0, 0, 0, 0, 0),
+            out_axes=0,
+        )(
+            goal_params,
             solve_configs_i,
-            training=True,
-            method=zeroshotq_model.solve_config_projection,
-        )
-        solve_config_q_ij, _ = zeroshotq_model.apply(
-            q_params,
-            solve_config_z,
-            states_i,
-            states_j,
-            actions_j,
-            training=True,
-            method=zeroshotq_model.get_q_ij,
-        )
-        solve_config_q_ij_at_actions = jnp.take_along_axis(
-            solve_config_q_ij, actions_i[:, jnp.newaxis], axis=1
-        )  # (batch_size,)
-
-        solve_config_target_q_ij, _ = zeroshotq_model.apply(
-            target_q_params,
-            solve_config_z,
-            states_i,
-            states_j,
-            actions_j,
-            training=False,
-            method=zeroshotq_model.get_q_ij,
-        )
-        solve_config_target_pi_ij = boltzmann_action_selection(
-            solve_config_target_q_ij
-        )  # (batch_size, action_size)
-        solve_config_target_v_ij = (
-            jnp.sum(solve_config_target_pi_ij * solve_config_target_q_ij, axis=1) + costs_i
-        )  # (batch_size,)
-
-        solve_config_td_error = solve_config_target_v_ij - solve_config_q_ij_at_actions
-        solve_config_td_loss = jnp.mean(jnp.square(solve_config_td_error))
-
-        # ---------- sampled loss ----------
-
-        sampled_z = jax.random.normal(key, (batch_size, latent_dim))
-        sampled_q_ij, _ = zeroshotq_model.apply(
-            q_params,
-            sampled_z,
-            states_i,
-            states_j,
-            actions_j,
-            training=True,
-            method=zeroshotq_model.get_q_ij,
-        )
-        sampled_q_ij_at_actions = jnp.take_along_axis(
-            sampled_q_ij, actions_i[:, jnp.newaxis], axis=1
-        )  # (batch_size,)
-
-        sampled_target_q_ij, _ = zeroshotq_model.apply(
-            target_q_params,
-            sampled_z,
-            states_i,
-            states_j,
-            actions_j,
-            training=False,
-            method=zeroshotq_model.get_q_ij,
-        )  # (batch_size, action_size)
-        sampled_target_pi_ij = boltzmann_action_selection(
-            sampled_target_q_ij
-        )  # (batch_size, action_size)
-        sampled_target_v_ij = (
-            jnp.sum(sampled_target_pi_ij * sampled_target_q_ij, axis=1) + costs_i
-        )  # (batch_size,)
-
-        sampled_td_error = sampled_target_v_ij - sampled_q_ij_at_actions
-        sampled_td_loss = jnp.mean(jnp.square(sampled_td_error))
-
-        # ---------- fb alignment loss ----------
-
-        sampled_align_q, _ = zeroshotq_model.apply(
-            q_params,
-            sampled_z,
-            states_i,
             states_i,
             actions_i,
+            states_j,
+            actions_j,
+        )  # Combine batch stats updates
+
+        # Aggregate batch stats updates (simple mean for now, might need adjustment)
+        goal_params["batch_stats"] = jax.tree_util.tree_map(
+            lambda x, y, z: (x + y + z) / 3.0,
+            update_goal_1["batch_stats"],
+            update_goal_2["batch_stats"],
+            update_goal_3["batch_stats"],
+        )
+
+        # Apply Q model to get forward projection and updates
+        f_a_i, update_q = zeroshotq_model.apply(
+            q_params,
+            states_i,
+            solve_config_z,
             training=True,
-            method=zeroshotq_model.get_q_ij,
-        )  # (batch_size, action_size)
-        sampled_align_q_at_actions = jnp.take_along_axis(
-            sampled_align_q, actions_i[:, jnp.newaxis], axis=1
-        )  # (batch_size,)
-        fb_align_loss = jnp.mean(sampled_align_q_at_actions)
+            method=zeroshotq_model.forward_projection,
+            mutable=["batch_stats"],
+        )  # [batch_size, action_size, latent_dim]
+        q_params["batch_stats"] = update_q["batch_stats"]
 
-        # ---------- orthogonal loss ----------
+        # Calculate Q-values (distances)
+        q_ij = zeroshotq_model.apply(
+            q_params,
+            f_a_i,
+            b_j,
+            method=zeroshotq_model.distance,
+        )  # [batch_size, action_size]
+        # q_ij = jnp.squeeze(q_ij, axis=2) # [batch_size, action_size]
+        # Squeeze might not be needed depending on distance implementation
+        q_i = jnp.take_along_axis(q_ij, actions_i[:, jnp.newaxis], axis=1)  # [batch_size, 1]
+        q_i = jnp.squeeze(q_i, axis=1)  # [batch_size]
 
-        b_i = zeroshotq_model.apply(
-            q_params, states_i, actions_i, training=True, method=zeroshotq_model.get_b
-        )  # (batch_size, latent_dim)
-        b_j = zeroshotq_model.apply(
-            q_params, states_j, actions_j, training=True, method=zeroshotq_model.get_b
-        )  # (batch_size, latent_dim)
+        # Target network calculations
+        target_solve_config_z, _ = goal_model.apply(
+            target_goal_params,
+            solve_configs_i,
+            training=False,
+            method=goal_model.solve_config_projection,
+            mutable=["batch_stats"],
+        )  # [batch_size, latent_dim]
 
-        # Term 1: (1/b^2) * sum_{i,j} B(si, ai)^T * sg(B(sj, aj))
-        term1_matrix = jnp.einsum("iz,jz->ij", b_i, jax.lax.stop_gradient(b_j))
+        target_b_j, _ = goal_model.apply(
+            target_goal_params,
+            states_j,
+            actions_j,
+            training=False,
+            method=goal_model.get_b,
+            mutable=["batch_stats"],
+        )  # [batch_size, latent_dim]
 
-        # Term 2: (1/b^2) * sum_{i,j} sg(B(si, ai)^T * B(sj, aj))
-        term2_matrix = jnp.einsum("iz,jz->ij", b_i, b_j)
-        term2_matrix_sg = jax.lax.stop_gradient(term2_matrix)
+        target_f_a_i, _ = zeroshotq_model.apply(
+            target_q_params,
+            states_i,
+            target_solve_config_z,  # Use target solve config projection
+            training=False,
+            method=zeroshotq_model.forward_projection,
+            mutable=["batch_stats"],
+        )  # [batch_size, action_size, latent_dim]
 
-        # Term 3: (1/b) * sum_i B(si, ai)^T * sg(B(si, ai))
-        term3_vector = jnp.einsum("iz,iz->i", b_i, jax.lax.stop_gradient(b_i))
+        target_q_ij = zeroshotq_model.apply(
+            target_q_params,
+            target_f_a_i,
+            target_b_j,
+            method=zeroshotq_model.distance,
+        )  # [batch_size, action_size]
+        # target_q_ij = jnp.squeeze(target_q_ij, axis=2) # [batch_size, action_size] # Squeeze might not be needed
 
-        # Calculate means (equivalent to sum / b^2 or sum / b)
-        loss_term1 = jnp.mean(term1_matrix * term2_matrix_sg)
-        loss_term2 = jnp.mean(term3_vector)
+        target_pi_ij = boltzmann_action_selection(target_q_ij)  # [batch_size, action_size]
+        v_ij = jnp.sum(target_pi_ij * target_q_ij, axis=1)  # [batch_size]
+        target_q_i = v_ij + costs_i  # [batch_size]
+        target_q_i = jax.lax.stop_gradient(target_q_i)  # Stop gradient for target
 
-        ortho_loss = loss_term1 - loss_term2
+        # --- MSE Loss ---
+        mse_loss = jnp.mean(jnp.square(q_i - target_q_i))
 
-        # Combine all losses (assuming equal weight for now)
-        total_loss = solve_config_td_loss + sampled_td_loss + fb_align_loss + ortho_loss
+        # --- Orthonormality Regularization ---
+        # L_reg(ω) = (1/b^2) Σ_{i,j∈I^2, i!=j} ( Bω(si, ai)^T stop_gradient(Bω(s'j, a'j)) )^2
+        #             - (1/b) Σ_{i∈I} ( Bω(si, ai)^T stop_gradient(Bω(si, ai)) )
+        # Note: The pseudocode sums over i,j in I^2. The term below implements this.
+        # If you need sampling like in the pseudocode (sampling s_i,a_i and s'_j,a'_j),
+        # the dataset creation needs modification. This assumes i and j index the same minibatch.
+        term1 = jnp.einsum("bi,bj->ij", b_i, jax.lax.stop_gradient(b_j))  # (batch_size, batch_size)
+        term1 = jnp.square(term1)
+        # Exclude diagonal elements i=j for the first summation
+        term1 = term1 * (1.0 - jnp.eye(batch_size))
+        reg_loss_term1 = jnp.sum(term1) / (
+            batch_size * (batch_size - 1) if batch_size > 1 else 1
+        )  # Normalize by b*(b-1) or 1 if b=1
 
-        return total_loss, q_params
+        term2 = jnp.einsum("bi,bi->b", b_i, jax.lax.stop_gradient(b_i))  # (batch_size,)
+        reg_loss_term2 = jnp.mean(term2)  # Average over batch
+
+        reg_loss = reg_loss_term1 - reg_loss_term2
+
+        # Combine losses
+        total_loss = mse_loss + lambda_reg * reg_loss
+
+        return total_loss, (mse_loss, reg_loss, q_params, goal_params)
+
+    # Use value_and_grad for combined loss, getting grads for both param sets
+    grad_fn = jax.value_and_grad(
+        zeroshotq_loss, argnums=(0, 2), has_aux=True
+    )  # Grad w.r.t q_params (0) and goal_params (2)
 
     def qlearning(
         key: chex.PRNGKey,
         dataset: dict[str, chex.Array],
         q_params: jax.tree_util.PyTreeDef,
         target_q_params: jax.tree_util.PyTreeDef,
-        opt_state: optax.OptState,
+        goal_params: jax.tree_util.PyTreeDef,
+        target_goal_params: jax.tree_util.PyTreeDef,
+        opt_state_q: optax.OptState,
+        opt_state_goal: optax.OptState,
     ):
         """
-        Q-learning is a heuristic for the sliding puzzle problem.
+        Q-learning with orthonormality regularization and goal parameter updates.
         """
         solve_configs = dataset["solve_configs"]
         states = dataset["states"]
         actions = dataset["actions"]
         costs = dataset["cost"]
         data_size = actions.shape[0]
-        batch_size = math.ceil(data_size / minibatch_size)
+        n_minibatches = math.ceil(data_size / minibatch_size)  # Corrected variable name
 
         key_i, key_j, key = jax.random.split(key, 3)
 
-        batch_indexs_i = jnp.concatenate(
-            [
-                jax.random.permutation(key_i, jnp.arange(data_size)),
-                jax.random.randint(key_i, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
-        batch_indexs_i = jnp.reshape(batch_indexs_i, (batch_size, minibatch_size))
-        batch_indexs_j = jnp.concatenate(
-            [
-                jax.random.permutation(key_j, jnp.arange(data_size)),
-                jax.random.randint(key_j, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
-        batch_indexs_j = jnp.reshape(batch_indexs_j, (batch_size, minibatch_size))
+        # Ensure batch indices cover the entire dataset potentially multiple times if needed
+        total_indices_needed = n_minibatches * minibatch_size
+        permutations_needed = math.ceil(total_indices_needed / data_size)
+
+        batch_indexs_i = jnp.array([])
+        for k in range(permutations_needed):
+            key_i, subkey_i = jax.random.split(key_i)
+            batch_indexs_i = jnp.concatenate(
+                [batch_indexs_i, jax.random.permutation(subkey_i, jnp.arange(data_size))]
+            )
+        batch_indexs_i = batch_indexs_i[:total_indices_needed].astype(jnp.int32)
+        batch_indexs_i = jnp.reshape(batch_indexs_i, (n_minibatches, minibatch_size))
+
+        batch_indexs_j = jnp.array([])
+        for k in range(permutations_needed):
+            key_j, subkey_j = jax.random.split(key_j)
+            batch_indexs_j = jnp.concatenate(
+                [batch_indexs_j, jax.random.permutation(subkey_j, jnp.arange(data_size))]
+            )
+        batch_indexs_j = batch_indexs_j[:total_indices_needed].astype(jnp.int32)
+        batch_indexs_j = jnp.reshape(batch_indexs_j, (n_minibatches, minibatch_size))
 
         batched_solve_configs_i = jnp.take(solve_configs, batch_indexs_i, axis=0)
         batched_states_i = jnp.take(states, batch_indexs_i, axis=0)
@@ -198,7 +229,8 @@ def zeroshot_qlearning_builder(
         batched_actions_j = jnp.take(actions, batch_indexs_j, axis=0)
 
         def train_loop(carry, batched_dataset):
-            q_params, opt_state = carry
+            q_params, goal_params, opt_state_q, opt_state_goal, key = carry
+            key, subkey = jax.random.split(key)
             (
                 solve_configs_i,
                 states_i,
@@ -207,30 +239,77 @@ def zeroshot_qlearning_builder(
                 actions_j,
                 costs_i,
             ) = batched_dataset
-            (loss, q_params), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
+
+            # Calculate loss and gradients for both q_params and goal_params
+            (total_loss, (mse_loss, reg_loss, q_params_updated, goal_params_updated)), (
+                q_grads,
+                goal_grads,
+            ) = grad_fn(
                 q_params,
                 target_q_params,
+                goal_params,
+                target_goal_params,
                 solve_configs_i,
                 states_i,
                 actions_i,
                 costs_i,
                 states_j,
                 actions_j,
+                subkey,
             )
-            if n_devices > 1:
-                grads = jax.lax.psum(grads, axis_name="devices")
-            updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
-            q_params = optax.apply_updates(q_params, updates)
-            # Calculate gradient magnitude mean
-            grad_magnitude = jax.tree_util.tree_map(
-                lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
-            )
-            grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (q_params, opt_state), (loss, grad_magnitude_mean)
 
-        (q_params, opt_state), (losses, grad_magnitude_means) = jax.lax.scan(
+            # Update batch stats from aux output
+            q_params = q_params_updated
+            goal_params = goal_params_updated
+
+            if n_devices > 1:
+                q_grads = jax.lax.psum(q_grads, axis_name="devices")
+                goal_grads = jax.lax.psum(goal_grads, axis_name="devices")
+
+            # Update Q parameters
+            updates_q, opt_state_q = optimizer_q.update(q_grads, opt_state_q, params=q_params)
+            q_params = optax.apply_updates(q_params, updates_q)
+
+            # Update Goal parameters
+            updates_goal, opt_state_goal = optimizer_goal.update(
+                goal_grads, opt_state_goal, params=goal_params
+            )
+            goal_params = optax.apply_updates(goal_params, updates_goal)
+
+            # Calculate gradient magnitude mean for monitoring
+            q_grad_leaves = (
+                jax.tree_util.tree_leaves(q_grads["params"]) if "params" in q_grads else []
+            )
+            goal_grad_leaves = (
+                jax.tree_util.tree_leaves(goal_grads["params"]) if "params" in goal_grads else []
+            )
+
+            q_grad_magnitude = jax.tree_util.tree_map(
+                lambda x: jnp.abs(jnp.reshape(x, (-1,))), q_grad_leaves
+            )
+            goal_grad_magnitude = jax.tree_util.tree_map(
+                lambda x: jnp.abs(jnp.reshape(x, (-1,))), goal_grad_leaves
+            )
+
+            all_grads_flat = jnp.concatenate(q_grad_magnitude + goal_grad_magnitude)
+            grad_magnitude_mean = jnp.mean(all_grads_flat) if all_grads_flat.size > 0 else 0.0
+
+            return (q_params, goal_params, opt_state_q, opt_state_goal, key), (
+                total_loss,
+                mse_loss,
+                reg_loss,
+                grad_magnitude_mean,
+            )
+
+        # Scan over minibatches
+        (q_params, goal_params, opt_state_q, opt_state_goal, key), (
+            total_losses,
+            mse_losses,
+            reg_losses,
+            grad_magnitude_means,
+        ) = jax.lax.scan(
             train_loop,
-            (q_params, opt_state),
+            (q_params, goal_params, opt_state_q, opt_state_goal, key),
             (
                 batched_solve_configs_i,
                 batched_states_i,
@@ -240,37 +319,138 @@ def zeroshot_qlearning_builder(
                 batched_costs_i,
             ),
         )
-        loss = jnp.mean(losses)
-        # Calculate weights magnitude means
-        grad_magnitude_mean = jnp.mean(grad_magnitude_means)
-        weights_magnitude = jax.tree_util.tree_map(
-            lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(q_params["params"])
+        # --- Polyak Averaging ---
+        target_q_params = jax.tree_util.tree_map(
+            lambda target, online: target * polyak_alpha + online * (1 - polyak_alpha),
+            target_q_params,
+            q_params,
         )
-        weights_magnitude_mean = jnp.mean(jnp.concatenate(weights_magnitude))
+        target_goal_params = jax.tree_util.tree_map(
+            lambda target, online: target * polyak_alpha + online * (1 - polyak_alpha),
+            target_goal_params,
+            goal_params,
+        )
+
+        # Calculate final metrics
+        total_loss_mean = jnp.mean(total_losses)
+        mse_loss_mean = jnp.mean(mse_losses)
+        reg_loss_mean = jnp.mean(reg_losses)
+        grad_magnitude_mean = jnp.mean(grad_magnitude_means)
+
+        # Calculate weights magnitude means for monitoring
+        q_weights_magnitude = jax.tree_util.tree_map(
+            lambda x: jnp.abs(jnp.reshape(x, (-1,))),
+            jax.tree_util.tree_leaves(q_params["params"]) if "params" in q_params else [],
+        )
+        goal_weights_magnitude = jax.tree_util.tree_map(
+            lambda x: jnp.abs(jnp.reshape(x, (-1,))),
+            jax.tree_util.tree_leaves(goal_params["params"]) if "params" in goal_params else [],
+        )
+        all_weights_flat = jnp.concatenate(q_weights_magnitude + goal_weights_magnitude)
+        weights_magnitude_mean = jnp.mean(all_weights_flat) if all_weights_flat.size > 0 else 0.0
+
         return (
             q_params,
-            opt_state,
-            loss,
+            target_q_params,
+            goal_params,
+            target_goal_params,
+            opt_state_q,
+            opt_state_goal,
+            total_loss_mean,
+            mse_loss_mean,
+            reg_loss_mean,
             grad_magnitude_mean,
             weights_magnitude_mean,
         )
 
     if n_devices > 1:
+        # Define the pmap function correctly
+        @partial(jax.pmap, axis_name="devices", in_axes=(0, 0, None, None, None, None, None, None))
+        def pmapped_qlearning_step(
+            key,
+            dataset_shard,
+            q_params,
+            target_q_params,
+            goal_params,
+            target_goal_params,
+            opt_state_q,
+            opt_state_goal,
+        ):
+            return qlearning(
+                key,
+                dataset_shard,
+                q_params,
+                target_q_params,
+                goal_params,
+                target_goal_params,
+                opt_state_q,
+                opt_state_goal,
+            )
 
-        def pmap_qlearning(key, dataset, q_params, opt_state):
+        def pmap_qlearning(
+            key,
+            sharded_dataset,  # Expect pre-sharded dataset
+            q_params,
+            target_q_params,
+            goal_params,
+            target_goal_params,
+            opt_state_q,
+            opt_state_goal,
+        ):
             keys = jax.random.split(key, n_devices)
-            (qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude,) = jax.pmap(
-                qlearning, in_axes=(0, 0, None, None), axis_name="devices"
-            )(keys, dataset, q_params, opt_state)
-            qfunc_params = jax.tree_util.tree_map(lambda xs: xs[0], qfunc_params)
-            opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
-            loss = jnp.mean(loss)
+            (
+                q_params_out,
+                target_q_params_out,
+                goal_params_out,
+                target_goal_params_out,
+                opt_state_q_out,
+                opt_state_goal_out,
+                total_loss,
+                mse_loss,
+                reg_loss,
+                grad_magnitude,
+                weight_magnitude,
+            ) = pmapped_qlearning_step(
+                keys,
+                sharded_dataset,
+                q_params,
+                target_q_params,
+                goal_params,
+                target_goal_params,
+                opt_state_q,
+                opt_state_goal,
+            )
+            # Take the first replica's state for non-reduced outputs
+            q_params = jax.tree_util.tree_map(lambda x: x[0], q_params_out)
+            target_q_params = jax.tree_util.tree_map(lambda x: x[0], target_q_params_out)
+            goal_params = jax.tree_util.tree_map(lambda x: x[0], goal_params_out)
+            target_goal_params = jax.tree_util.tree_map(lambda x: x[0], target_goal_params_out)
+            opt_state_q = jax.tree_util.tree_map(lambda x: x[0], opt_state_q_out)
+            opt_state_goal = jax.tree_util.tree_map(lambda x: x[0], opt_state_goal_out)
+            # Average the metrics across devices
+            total_loss = jnp.mean(total_loss)
+            mse_loss = jnp.mean(mse_loss)
+            reg_loss = jnp.mean(reg_loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
-            return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude
+
+            return (
+                q_params,
+                target_q_params,
+                goal_params,
+                target_goal_params,
+                opt_state_q,
+                opt_state_goal,
+                total_loss,
+                mse_loss,
+                reg_loss,
+                grad_magnitude,
+                weight_magnitude,
+            )
 
         return pmap_qlearning
     else:
+        # Jit the single-device version
         return jax.jit(qlearning)
 
 
@@ -296,8 +476,10 @@ def _get_datasets(
     puzzle: Puzzle,
     solve_config_preproc_fn: Callable,
     state_preproc_fn: Callable,
+    goal_model: GoalProjector,
     zeroshotq_model: ZeroshotQModelBase,
     minibatch_size: int,
+    goal_params: jax.tree_util.PyTreeDef,
     q_params: jax.tree_util.PyTreeDef,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
@@ -319,27 +501,21 @@ def _get_datasets(
         solve_config_preproc = jax.vmap(solve_config_preproc_fn)(solve_configs)
         state_preproc = jax.vmap(state_preproc_fn)(shuffled_path)
 
-        solve_config_z, _ = zeroshotq_model.apply(
-            q_params,
+        solve_config_z = goal_model.apply(
+            goal_params,
             solve_config_preproc,
-            training=False,
-            mutable=["batch_stats"],
-            method=zeroshotq_model.solve_config_projection,
+            method=goal_model.solve_config_projection,
         )
         f_a = zeroshotq_model.apply(
             q_params,
             state_preproc,
             solve_config_z,
-            training=False,
-            mutable=["batch_stats"],
             method=zeroshotq_model.forward_projection,
         )
-        q_values, _ = zeroshotq_model.apply(
+        q_values = zeroshotq_model.apply(
             q_params,
             f_a,
             solve_config_z,
-            training=False,
-            mutable=["batch_stats"],
             method=zeroshotq_model.distance,
         )
         _, cost = puzzle.batched_get_neighbours(
@@ -352,6 +528,11 @@ def _get_datasets(
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(key, q_values.shape[0]), probs
         )
+        # Transpose cost to shape [batch_size, action_size] before taking actions
+        cost = jnp.transpose(cost, (1, 0))  # [batch_size, action_size]
+        # Now select costs for chosen actions
+        cost = jnp.take_along_axis(cost, actions[:, jnp.newaxis], axis=1)  # [batch_size, 1]
+        cost = jnp.squeeze(cost, axis=1)  # [batch_size]
 
         return key, (solve_config_preproc, state_preproc, actions, cost)
 
@@ -378,6 +559,7 @@ def get_zeroshot_qlearning_dataset_builder(
     solve_config_preproc_fn: Callable,
     state_preproc_fn: Callable,
     zeroshotq_model: ZeroshotQModelBase,
+    goal_model: GoalProjector,
     dataset_size: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
@@ -430,6 +612,7 @@ def get_zeroshot_qlearning_dataset_builder(
             puzzle,
             solve_config_preproc_fn,
             state_preproc_fn,
+            goal_model,
             zeroshotq_model,
             dataset_minibatch_size,
         )
@@ -437,8 +620,8 @@ def get_zeroshot_qlearning_dataset_builder(
 
     @jax.jit
     def get_datasets(
-        target_q_params: jax.tree_util.PyTreeDef,
         q_params: jax.tree_util.PyTreeDef,
+        goal_params: jax.tree_util.PyTreeDef,
         key: chex.PRNGKey,
     ):
         def scan_fn(key, _):
@@ -451,16 +634,14 @@ def get_zeroshot_qlearning_dataset_builder(
             lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
         )
 
-        flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
+        flatten_dataset = jited_get_datasets(q_params, goal_params, paths, key)
         return flatten_dataset
 
     if n_devices > 1:
 
-        def pmap_get_datasets(target_q_params, q_params, key):
+        def pmap_get_datasets(q_params, goal_params, key):
             keys = jax.random.split(key, n_devices)
-            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(
-                target_q_params, q_params, keys
-            )
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(q_params, goal_params, keys)
             return datasets
 
         return pmap_get_datasets

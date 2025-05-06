@@ -6,23 +6,23 @@ import jax.numpy as jnp
 DTYPE = jnp.bfloat16
 
 
-def BatchNorm(x, training):
+def BatchNorm(x, training=False):
     return nn.BatchNorm(momentum=0.9, dtype=DTYPE)(x, use_running_average=not training)
 
 
-def InstanceNorm(x, training):
+def InstanceNorm(x, training=False):
     return nn.InstanceNorm(dtype=DTYPE)(x)
 
 
-def LayerNorm(x, training):
+def LayerNorm(x, training=False):
     return nn.LayerNorm(dtype=DTYPE)(x)
 
 
-def GroupNorm(x, training):
+def GroupNorm(x, training=False):
     return nn.GroupNorm(num_groups=10, dtype=DTYPE)(x)
 
 
-def RMSNorm(x, training):
+def RMSNorm(x, training=False):
     return nn.RMSNorm(dtype=DTYPE)(x)
 
 
@@ -49,6 +49,21 @@ class ResBlock(nn.Module):
         x = nn.Dense(self.node_size, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         return nn.relu(x + x0)
+
+
+# Simba Residual Block
+class SimbaResBlock(nn.Module):
+    node_size: int
+    norm_fn: Callable = DEFAULT_NORM_FN
+
+    @nn.compact
+    def __call__(self, x0):
+        out_node = x0.shape[-1]
+        x = LayerNorm(x0)
+        x = nn.Dense(self.node_size, dtype=DTYPE)(x)
+        x = nn.relu(x)
+        x = nn.Dense(out_node, dtype=DTYPE)(x)
+        return x + x0
 
 
 # Conv Residual Block
