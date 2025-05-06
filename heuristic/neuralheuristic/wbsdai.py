@@ -18,6 +18,7 @@ from puzzle.puzzle_base import Puzzle
 def regression_replay_trainer_builder(
     buffer: BUFFER_TYPE,
     train_steps: int,
+    preprocess_fn: Callable,
     heuristic_model: NeuralHeuristic,
     optimizer: optax.GradientTransformation,
 ) -> Callable:
@@ -48,15 +49,17 @@ def regression_replay_trainer_builder(
             heuristic_params, opt_state, key = carry
             key, subkey = jax.random.split(key)
             sample = buffer.sample(buffer_state, subkey)
-            states, target_heuristic = (
-                sample.experience.first["obs"],
+            solve_configs, states, target_heuristic = (
+                sample.experience.first["solve_config"],
+                sample.experience.first["state"],
                 sample.experience.first["distance"],
             )
+            preprocessed_solve_configs = jax.vmap(preprocess_fn)(solve_configs, states)
             (loss, (heuristic_params, diff)), grads = jax.value_and_grad(
                 regression_loss, has_aux=True
             )(
                 heuristic_params,
-                states,
+                preprocessed_solve_configs,
                 target_heuristic,
             )
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
@@ -154,29 +157,40 @@ def wbsdai_dataset_builder(
         search_count = 0
         solved_count = 0
         while run:
-            preprocessed_datas = []
-            true_costs = []
+            solve_configs_list = []
+            states_list = []
+            true_costs_list = []
             data_len = 0
             while data_len < add_batch_size:
                 key, subkey = jax.random.split(key)
-                preprocessed_data, true_cost, masks, solved = jitted_get_one_solved_branch_samples(
-                    heuristic_params, subkey
-                )
-                preprocessed_data = preprocessed_data[masks]
-                true_cost = true_cost[masks]
+                (
+                    solve_configs,
+                    states,
+                    true_costs,
+                    masks,
+                    solved,
+                ) = jitted_get_one_solved_branch_samples(heuristic_params, subkey)
+                solve_configs = solve_configs[masks]
+                states = states[masks]
+                true_costs = true_costs[masks]
                 size = jnp.sum(masks)
-                preprocessed_datas.append(preprocessed_data)
-                true_costs.append(true_cost)
+                solve_configs_list.append(solve_configs)
+                states_list.append(states)
+                true_costs_list.append(true_costs)
                 data_len += size
                 search_count += 1
                 solved_count += solved
-            preprocessed_data = jnp.concatenate(preprocessed_datas, axis=0)
-            true_costs = jnp.concatenate(true_costs, axis=0)
+            solve_configs = jax.tree_util.tree_map(
+                lambda *x: jnp.concatenate(x, axis=0), *solve_configs_list
+            )
+            states = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), *states_list)
+            true_costs = jnp.concatenate(true_costs_list, axis=0)
             split_len = data_len // add_batch_size
 
             for i in range(split_len):
                 timestep = {
-                    "obs": preprocessed_data[i * add_batch_size : (i + 1) * add_batch_size],
+                    "solve_config": solve_configs[i * add_batch_size : (i + 1) * add_batch_size],
+                    "state": states[i * add_batch_size : (i + 1) * add_batch_size],
                     "distance": true_costs[i * add_batch_size : (i + 1) * add_batch_size],
                 }
                 buffer_state = buffer.add(buffer_state, timestep)

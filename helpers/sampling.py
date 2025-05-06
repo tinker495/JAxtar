@@ -360,16 +360,37 @@ def get_one_solved_branch_distance_samples(
     # masks: [topk_branch_size, max_depth] ,
     # [[False, False, True, True, True, ...], [False, False, False, True, True, ...], ...]
 
-    preprocessed_data = jax.vmap(jax.vmap(heuristic_preprocess, in_axes=(None, 0)))(
-        leaf_solve_configs, path_states
+    # Flatten solve_configs and states for batch processing
+    # First, create a tiled version of leaf_solve_configs.
+    # Each leaf in leaf_solve_configs typically has shape (batch_size, *config_dims).
+    # We want to tile it to (batch_size, max_depth, *config_dims).
+    tiled_leaf_solve_configs = jax.tree_util.tree_map(
+        lambda leaf: jnp.tile(
+            leaf[:, jnp.newaxis],  # Adds singleton dim: (batch_size, 1, *config_dims)
+            (1, max_depth) + (leaf.ndim - 1) * (1,),  # Repeats for the new dim
+        ),
+        leaf_solve_configs,
     )
-    # preprocessed_data: [topk_branch_size, max_depth, ...]
-    flattened_preprocessed_data = jnp.reshape(
-        preprocessed_data, (batch_size * max_depth, *preprocessed_data.shape[2:])
+    # Now, each leaf in tiled_leaf_solve_configs has shape (batch_size, max_depth, *config_dims)
+
+    flattened_solve_configs = jax.tree_util.tree_map(
+        lambda x: jnp.reshape(
+            x, (batch_size * max_depth, *x.shape[2:])
+        ),  # Reshapes (bs, md, *dims) to (bs*md, *dims)
+        tiled_leaf_solve_configs,  # Use the correctly tiled PyTree
+    )
+    flattened_states = jax.tree_util.tree_map(
+        lambda x: jnp.reshape(x, (batch_size * max_depth, *x.shape[2:])), path_states
     )
     flattened_true_costs = jnp.reshape(true_costs, (batch_size * max_depth,)).astype(jnp.bfloat16)
     flattened_masks = jnp.reshape(masks, (batch_size * max_depth,))
-    return flattened_preprocessed_data, flattened_true_costs, flattened_masks, search_result.solved
+    return (
+        flattened_solve_configs,
+        flattened_states,
+        flattened_true_costs,
+        flattened_masks,
+        search_result.solved,
+    )
 
 
 def get_one_solved_branch_q_samples(

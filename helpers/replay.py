@@ -1,12 +1,15 @@
 import flashbax as fbx
 import jax.numpy as jnp
 
+from puzzle import Puzzle
+
 BUFFER_TYPE = fbx.flat_buffer.TrajectoryBuffer
 BUFFER_STATE_TYPE = fbx.flat_buffer.TrajectoryBufferState
 
 
 def init_experience_replay(
-    dummy_preprocessed_state: jnp.ndarray,
+    solve_config_default: Puzzle.SolveConfig,
+    state_default: Puzzle.State,
     max_length: int = int(1e6),
     min_length: int = int(1e5),
     sample_batch_size: int = int(1e4),
@@ -22,13 +25,15 @@ def init_experience_replay(
     # Initialise the buffer's state.
     if use_action:
         fake_timestep = {
-            "obs": dummy_preprocessed_state,
+            "solve_config": solve_config_default,
+            "state": state_default,
             "action": jnp.array(0, dtype=jnp.int32),
             "distance": jnp.array(0.0, dtype=jnp.bfloat16),
         }
     else:
         fake_timestep = {
-            "obs": dummy_preprocessed_state,
+            "solve_config": solve_config_default,
+            "state": state_default,
             "distance": jnp.array(0.0, dtype=jnp.bfloat16),
         }
     state = buffer.init(fake_timestep)

@@ -116,7 +116,7 @@ def train_wbs_option(func: callable) -> callable:
         "-s", "--steps", type=int, default=int(2e4)
     )  # 50 * 2e4 = 1e6 / DeepCubeA settings
     @click.option("-sl", "--shuffle_length", type=int, default=30)
-    @click.option("-rs", "--replay_size", type=int, default=int(1e6))
+    @click.option("-rs", "--replay_size", type=int, default=int(2e7))
     @click.option("-b", "--dataset_batch_size", type=int, default=16384)  # 8192 * 64
     @click.option("-sb", "--search_batch_size", type=int, default=1024)  # 8192 * 64
     @click.option("-mb", "--dataset_minibatch_size", type=int, default=8192)  # 128 * 16

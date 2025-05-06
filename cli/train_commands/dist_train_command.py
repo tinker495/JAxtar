@@ -284,7 +284,8 @@ def wbsdai(
         print(f"Training with {n_devices} devices")
 
     buffer, buffer_state = init_experience_replay(
-        heuristic.get_dummy_preprocessed_state(),
+        puzzle.SolveConfig.default(),
+        puzzle.State.default(),
         max_length=replay_size,
         min_length=int(5e5),
         sample_batch_size=train_minibatch_size,
@@ -293,7 +294,9 @@ def wbsdai(
     optimizer, opt_state = setup_optimizer(
         heuristic_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
-    replay_trainer = regression_replay_trainer_builder(buffer, 100, heuristic_model, optimizer)
+    replay_trainer = regression_replay_trainer_builder(
+        buffer, 100, heuristic.pre_process, heuristic_model, optimizer
+    )
     get_datasets = wbsdai_dataset_builder(
         puzzle,
         heuristic,
