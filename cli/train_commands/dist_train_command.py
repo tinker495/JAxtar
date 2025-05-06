@@ -264,8 +264,9 @@ def wbsdai(
     steps: int,
     replay_size: int,
     search_batch_size: int,
-    dataset_batch_size: int,
+    add_batch_size: int,
     train_minibatch_size: int,
+    cost_weight: float,
     key: int,
     multi_device: bool,
     **kwargs,
@@ -289,10 +290,13 @@ def wbsdai(
         max_length=replay_size,
         min_length=int(5e5),
         sample_batch_size=train_minibatch_size,
-        add_batch_size=dataset_batch_size,
+        add_batch_size=add_batch_size,
     )
     optimizer, opt_state = setup_optimizer(
-        heuristic_params, n_devices, steps, dataset_batch_size // train_minibatch_size
+        heuristic_params,
+        n_devices,
+        steps,
+        100,
     )
     replay_trainer = regression_replay_trainer_builder(
         buffer, 100, heuristic.pre_process, heuristic_model, optimizer
@@ -301,8 +305,9 @@ def wbsdai(
         puzzle,
         heuristic,
         buffer,
-        add_batch_size=dataset_batch_size,
+        add_batch_size=add_batch_size,
         search_batch_size=search_batch_size,
+        cost_weight=cost_weight,
     )
 
     pbar = trange(steps)

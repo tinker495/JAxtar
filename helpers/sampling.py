@@ -244,8 +244,8 @@ def create_hindsight_target_triangular_shuffled_path(
         2,
     ),
 )
-def get_top_k_branchs_paths(
-    search_result: SearchResult, top_k: int = 1000, max_depth: int = 100
+def get_k_optimal_branchs_paths(
+    search_result: SearchResult, optimal_k: int = 1000, max_depth: int = 100
 ) -> tuple[Current, Parent, chex.Array]:
     """
     Get all branch paths from the solved state.
@@ -262,8 +262,10 @@ def get_top_k_branchs_paths(
         .set(False)
     )
     leaf_mask = jnp.logical_and(closed_masks, no_parented_masks)
-    masked_cost = jnp.where(leaf_mask, search_result.cost, 0)  # [size_table, n_table]
-    flattened_cost = jnp.reshape(masked_cost, (-1,))  # [size_table * n_table]
+    masked_cost = jnp.where(leaf_mask, search_result.cost, jnp.inf)  # [size_table, n_table]
+    masked_dist = jnp.where(leaf_mask, search_result.dist, jnp.inf)  # [size_table, n_table]
+    masked_sum = masked_cost + masked_dist  # [size_table, n_table]
+    flattened_cost = jnp.reshape(masked_sum, (-1,))  # [size_table * n_table]
     flattened_idxs = jnp.stack(
         jnp.unravel_index(jnp.arange(search_result.cost.size), search_result.cost.shape), axis=1
     ).astype(jnp.uint32)
@@ -277,12 +279,12 @@ def get_top_k_branchs_paths(
         cost=sorted_cost,
     )
 
-    top_k_leaf_nodes = sorted_leaf_nodes[:top_k]
-    top_k_mask = sorted_mask[:top_k]
+    optimal_k_leaf_nodes = sorted_leaf_nodes[optimal_k:]
+    optimal_k_mask = sorted_mask[optimal_k:]
     paths, path_masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
-        search_result, top_k_leaf_nodes, top_k_mask, max_depth
+        search_result, optimal_k_leaf_nodes, optimal_k_mask, max_depth
     )
-    return top_k_leaf_nodes, paths, path_masks
+    return optimal_k_leaf_nodes, paths, path_masks
 
 
 def get_one_solved_branch_distance_samples(
@@ -290,7 +292,7 @@ def get_one_solved_branch_distance_samples(
     astar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
     max_depth: int,
     sample_ratio: float,
-    use_topk_branch: bool,
+    use_optimal_branch: bool,
     heuristic_params: jax.tree_util.PyTreeDef,
     key: chex.PRNGKey,
 ):
@@ -299,9 +301,9 @@ def get_one_solved_branch_distance_samples(
     search_result, leafs, filled = astar_fn(solve_config, initial_state, heuristic_params)
     batch_size = filled.shape[0]
 
-    if use_topk_branch:
-        leafs, paths, masks = get_top_k_branchs_paths(
-            search_result, top_k=batch_size, max_depth=max_depth - 1
+    if use_optimal_branch:
+        leafs, paths, masks = get_k_optimal_branchs_paths(
+            search_result, optimal_k=batch_size, max_depth=max_depth - 1
         )
     else:
         paths, masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
@@ -397,7 +399,7 @@ def get_one_solved_branch_q_samples(
     qstar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
     max_depth: int,
     sample_ratio: float,
-    use_topk_branch: bool,
+    use_optimal_branch: bool,
     qfunction_params: jax.tree_util.PyTreeDef,
     key: chex.PRNGKey,
 ):
@@ -406,9 +408,9 @@ def get_one_solved_branch_q_samples(
     search_result, leafs, filled = qstar_fn(solve_config, initial_state, qfunction_params)
     batch_size = filled.shape[0]
 
-    if use_topk_branch:
-        leafs, paths, masks = get_top_k_branchs_paths(
-            search_result, top_k=batch_size, max_depth=max_depth - 1
+    if use_optimal_branch:
+        leafs, paths, masks = get_k_optimal_branchs_paths(
+            search_result, optimal_k=batch_size, max_depth=max_depth - 1
         )
     else:
         paths, masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(

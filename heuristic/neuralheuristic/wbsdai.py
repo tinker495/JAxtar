@@ -120,7 +120,7 @@ def wbsdai_dataset_builder(
     cost_weight: float = 1.0 - 1e-3,
     max_depth: int = 100,
     sample_ratio: float = 0.3,
-    use_topk_branch: bool = False,
+    use_optimal_branch: bool = False,
 ) -> Callable:
     """
     wbsdai_builder is a function that returns a partial function of wbsdai.
@@ -143,7 +143,7 @@ def wbsdai_dataset_builder(
             astar_fn,
             max_depth,
             sample_ratio,
-            use_topk_branch,
+            use_optimal_branch,
         )
     )
 
