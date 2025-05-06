@@ -140,7 +140,6 @@ def wbsdai_dataset_builder(
         partial(
             get_one_solved_branch_distance_samples,
             puzzle,
-            heuristic.pre_process,
             astar_fn,
             max_depth,
             sample_ratio,
