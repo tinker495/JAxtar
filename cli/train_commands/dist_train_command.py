@@ -29,6 +29,7 @@ from .dist_train_option import (
     puzzle_options,
     qfunction_options,
     train_option,
+    train_wbs_option,
 )
 
 
@@ -254,19 +255,18 @@ def qlearning(
 @click.command()
 @puzzle_options
 @heuristic_options
-@train_option
+@train_wbs_option
 def wbsdai(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
     puzzle_size: int,
     steps: int,
+    replay_size: int,
+    search_batch_size: int,
     dataset_batch_size: int,
     train_minibatch_size: int,
     key: int,
-    loss_threshold: float,
-    update_interval: int,
-    use_soft_update: bool,
     multi_device: bool,
     **kwargs,
 ):
@@ -274,7 +274,6 @@ def wbsdai(
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
     heuristic_model = heuristic.model
     heuristic_params = heuristic.get_new_params()
-    target_heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
@@ -282,12 +281,11 @@ def wbsdai(
     if multi_device:
         n_devices = jax.device_count()
         steps = steps // n_devices
-        update_interval = update_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     buffer, buffer_state = init_experience_replay(
         heuristic.get_dummy_preprocessed_state(),
-        max_length=int(2e6),
+        max_length=replay_size,
         min_length=int(5e5),
         sample_batch_size=train_minibatch_size,
         add_batch_size=dataset_batch_size,
@@ -295,16 +293,19 @@ def wbsdai(
     optimizer, opt_state = setup_optimizer(
         heuristic_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
-    opt_state_init = opt_state
     replay_trainer = regression_replay_trainer_builder(buffer, 100, heuristic_model, optimizer)
     get_datasets = wbsdai_dataset_builder(
-        puzzle, heuristic, buffer, add_batch_size=dataset_batch_size
+        puzzle,
+        heuristic,
+        buffer,
+        add_batch_size=dataset_batch_size,
+        search_batch_size=search_batch_size,
     )
 
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        if i % 100 == 0:
+        if i % 10 == 0:
             t = time.time()
             buffer_state, search_count, solved_count, key = get_datasets(
                 heuristic_params, buffer_state, subkey
@@ -339,14 +340,6 @@ def wbsdai(
         writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
         writer.add_histogram("Losses/Diff", diffs, i)
         writer.add_histogram("Metrics/Target", sampled_target_heuristics, i)
-
-        if use_soft_update:
-            target_heuristic_params = soft_update(
-                target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
-            )
-        elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
-            target_heuristic_params = heuristic_params
-            opt_state = opt_state_init
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = heuristic_params

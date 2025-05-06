@@ -109,3 +109,31 @@ def qfunction_options(func: callable) -> callable:
         return func(*args, **kwargs)
 
     return wrapper
+
+
+def train_wbs_option(func: callable) -> callable:
+    @click.option(
+        "-s", "--steps", type=int, default=int(2e4)
+    )  # 50 * 2e4 = 1e6 / DeepCubeA settings
+    @click.option("-sl", "--shuffle_length", type=int, default=30)
+    @click.option("-rs", "--replay_size", type=int, default=int(1e6))
+    @click.option("-b", "--dataset_batch_size", type=int, default=16384)  # 8192 * 64
+    @click.option("-sb", "--search_batch_size", type=int, default=1024)  # 8192 * 64
+    @click.option("-mb", "--dataset_minibatch_size", type=int, default=8192)  # 128 * 16
+    @click.option("-tmb", "--train_minibatch_size", type=int, default=8192)  # 128 * 16
+    @click.option("-k", "--key", type=int, default=0)
+    @click.option("-r", "--reset", is_flag=True, help="Reset the target heuristic params")
+    @click.option(
+        "-per", "--using_importance_sampling", is_flag=True, help="Use importance sampling"
+    )
+    @click.option("--debug", is_flag=True, help="Debug mode")
+    @click.option("-m", "--multi_device", is_flag=True, help="Use multi device")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if kwargs["debug"]:
+            # disable jit
+            print("Disabling JIT")
+            jax.config.update("jax_disable_jit", True)
+        return func(*args, **kwargs)
+
+    return wrapper

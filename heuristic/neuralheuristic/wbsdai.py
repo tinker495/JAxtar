@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import optax
 
 from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
-from helpers.sampling import get_one_solved_branch_samples
+from helpers.sampling import get_one_solved_branch_distance_samples
 from heuristic.neuralheuristic.neuralheuristic_base import (
     NeuralHeuristicBase as NeuralHeuristic,
 )
@@ -117,7 +117,7 @@ def wbsdai_dataset_builder(
     cost_weight: float = 1.0 - 1e-3,
     max_depth: int = 100,
     sample_ratio: float = 0.3,
-    use_topk_branch: bool = False,
+    use_topk_branch: bool = True,
 ) -> Callable:
     """
     wbsdai_builder is a function that returns a partial function of wbsdai.
@@ -135,9 +135,9 @@ def wbsdai_dataset_builder(
 
     jitted_get_one_solved_branch_samples = jax.jit(
         partial(
-            get_one_solved_branch_samples,
+            get_one_solved_branch_distance_samples,
             puzzle,
-            heuristic,
+            heuristic.pre_process,
             astar_fn,
             max_depth,
             sample_ratio,

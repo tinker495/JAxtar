@@ -1,11 +1,10 @@
 from functools import partial
-from typing import Callable, Union
+from typing import Callable
 
 import chex
 import jax
 import jax.numpy as jnp
 
-from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from JAxtar.search_base import (
     HASH_POINT_DTYPE,
     HASH_TABLE_IDX_DTYPE,
@@ -14,7 +13,6 @@ from JAxtar.search_base import (
     SearchResult,
 )
 from puzzle.puzzle_base import Puzzle
-from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
 def create_target_shuffled_path(
@@ -287,19 +285,19 @@ def get_top_k_branchs_paths(
     return top_k_leaf_nodes, paths, path_masks
 
 
-def get_one_solved_branch_samples(
+def get_one_solved_branch_distance_samples(
     puzzle: Puzzle,
-    distance_fn: Union[NeuralHeuristicBase, NeuralQFunctionBase],
-    search_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
+    heuristic_preprocess: Callable,
+    astar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
     max_depth: int,
     sample_ratio: float,
     use_topk_branch: bool,
-    distance_fn_params: jax.tree_util.PyTreeDef,
+    heuristic_params: jax.tree_util.PyTreeDef,
     key: chex.PRNGKey,
 ):
     solve_config, initial_state = puzzle.get_inits(key)
 
-    search_result, leafs, filled = search_fn(solve_config, initial_state, distance_fn_params)
+    search_result, leafs, filled = astar_fn(solve_config, initial_state, heuristic_params)
     batch_size = filled.shape[0]
 
     if use_topk_branch:
@@ -362,7 +360,94 @@ def get_one_solved_branch_samples(
     # masks: [topk_branch_size, max_depth] ,
     # [[False, False, True, True, True, ...], [False, False, False, True, True, ...], ...]
 
-    preprocessed_data = jax.vmap(jax.vmap(distance_fn.pre_process, in_axes=(None, 0)))(
+    preprocessed_data = jax.vmap(jax.vmap(heuristic_preprocess, in_axes=(None, 0)))(
+        leaf_solve_configs, path_states
+    )
+    # preprocessed_data: [topk_branch_size, max_depth, ...]
+    flattened_preprocessed_data = jnp.reshape(
+        preprocessed_data, (batch_size * max_depth, *preprocessed_data.shape[2:])
+    )
+    flattened_true_costs = jnp.reshape(true_costs, (batch_size * max_depth,)).astype(jnp.bfloat16)
+    flattened_masks = jnp.reshape(masks, (batch_size * max_depth,))
+    return flattened_preprocessed_data, flattened_true_costs, flattened_masks, search_result.solved
+
+
+def get_one_solved_branch_q_samples(
+    puzzle: Puzzle,
+    qfunction_preprocess: Callable,
+    qstar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
+    max_depth: int,
+    sample_ratio: float,
+    use_topk_branch: bool,
+    qfunction_params: jax.tree_util.PyTreeDef,
+    key: chex.PRNGKey,
+):
+    solve_config, initial_state = puzzle.get_inits(key)
+
+    search_result, leafs, filled = qstar_fn(solve_config, initial_state, qfunction_params)
+    batch_size = filled.shape[0]
+
+    if use_topk_branch:
+        leafs, paths, masks = get_top_k_branchs_paths(
+            search_result, top_k=batch_size, max_depth=max_depth - 1
+        )
+    else:
+        paths, masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
+            search_result, leafs, filled, max_depth - 1
+        )
+
+    # leafs: [topk_branch_size, ...]
+    # paths: [topk_branch_size, max_depth - 1, ...]
+    # masks: [topk_branch_size, max_depth - 1]
+    masks = jnp.concatenate((jnp.ones(masks.shape[0], dtype=bool)[:, jnp.newaxis], masks), axis=1)
+
+    leaf_states = search_result.get_state(leafs)
+    leaf_costs = search_result.get_cost(leafs)
+    # leaf_states: [topk_branch_size, ...], leaf_costs: [topk_branch_size]
+    leaf_solve_configs = puzzle.batched_hindsight_transform(
+        solve_config, leaf_states
+    )  # states -> solve_configs
+    # leaf_solve_configs: [topk_branch_size, ...]
+
+    max_leaf_costs = jnp.max(leaf_costs)
+    leaf_mask = leaf_costs > max_leaf_costs * (1.0 - sample_ratio)  # batch_size
+    masks = jnp.where(leaf_mask[:, jnp.newaxis], masks, False)  # [topk_branch_size, max_depth]
+
+    path_states = search_result.get_state(paths)
+    path_states = jax.tree_util.tree_map(
+        lambda x, y: jnp.concatenate((x, y), axis=1), leaf_states[:, jnp.newaxis], path_states
+    )
+    path_costs = search_result.get_cost(paths)
+    path_costs = jnp.concatenate((leaf_costs[:, jnp.newaxis], path_costs), axis=1)
+    # path_states: [topk_branch_size, max_depth, ...], path_costs: [topk_branch_size, max_depth]
+
+    raw_costs = leaf_costs[:, jnp.newaxis] - path_costs
+    raw_costs = jnp.where(masks, raw_costs, leaf_costs[:, jnp.newaxis])
+    # raw_costs: [topk_branch_size, max_depth] , [[1, 2, 3, 4, 5, ...], [1, 2, 3, 4, 5, ...], ...]
+    # example: [1, 2, 3, 4, 5, 6, 7, ... , 20, 21, 22, 22, 22, 22, 22, ...]
+
+    incr_costs = raw_costs[:, 1:] - raw_costs[:, :-1]
+    incr_costs = jnp.concatenate((raw_costs[:, 0, jnp.newaxis], incr_costs), axis=1)
+    # incr_costs: [topk_branch_size, max_depth] , [[1, 1, 1, 1, 1, ...], [1, 1, 1, 1, 1, ...], ...]
+
+    is_solved = jax.vmap(jax.vmap(puzzle.is_solved, in_axes=(None, 0)))(
+        leaf_solve_configs, path_states
+    )
+    # is_solved: [topk_branch_size, max_depth]
+    incr_costs = jnp.where(is_solved, 0, incr_costs)
+    # incr_costs: [topk_branch_size, max_depth] , [[0, 0, 1, 1, 1, ...], [0, 0, 0, 1, 1, ...], ...]
+
+    true_costs = jnp.cumsum(incr_costs, axis=1)
+    # true_costs: [topk_branch_size, max_depth] , [[0, 0, 1, 2, 3, ...], [0, 0, 0, 1, 2, ...], ...]
+    # This represents the cumulative cost from each state to the leaf node
+    shifted_is_solved = jnp.concatenate(
+        (is_solved[:, 1:], jnp.zeros((is_solved.shape[0], 1), dtype=jnp.bool_)), axis=1
+    )
+    masks = jnp.logical_and(masks, ~shifted_is_solved)
+    # masks: [topk_branch_size, max_depth] ,
+    # [[False, False, True, True, True, ...], [False, False, False, True, True, ...], ...]
+
+    preprocessed_data = jax.vmap(jax.vmap(qfunction_preprocess, in_axes=(None, 0)))(
         leaf_solve_configs, path_states
     )
     # preprocessed_data: [topk_branch_size, max_depth, ...]
