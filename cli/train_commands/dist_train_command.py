@@ -8,12 +8,12 @@ import numpy as np
 import tensorboardX
 from tqdm import trange
 
+from helpers.replay import init_experience_replay
 from heuristic.neuralheuristic.davi import (
     get_davi_dataset_builder,
     regression_trainer_builder,
 )
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from heuristic.neuralheuristic.replay import init_experience_replay
 from heuristic.neuralheuristic.wbsdai import (
     regression_replay_trainer_builder,
     wbsdai_dataset_builder,
@@ -255,22 +255,18 @@ def qlearning(
 @puzzle_options
 @heuristic_options
 @train_option
-def dai(
+def wbsdai(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
     puzzle_size: int,
     steps: int,
-    shuffle_length: int,
     dataset_batch_size: int,
-    dataset_minibatch_size: int,
     train_minibatch_size: int,
     key: int,
     loss_threshold: float,
     update_interval: int,
     use_soft_update: bool,
-    using_hindsight_target: bool,
-    using_importance_sampling: bool,
     multi_device: bool,
     **kwargs,
 ):
@@ -291,8 +287,8 @@ def dai(
 
     buffer, buffer_state = init_experience_replay(
         heuristic.get_dummy_preprocessed_state(),
-        max_length=int(1e7),
-        min_length=int(1e6),
+        max_length=int(2e6),
+        min_length=int(5e5),
         sample_batch_size=train_minibatch_size,
         add_batch_size=dataset_batch_size,
     )

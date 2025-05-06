@@ -24,9 +24,12 @@ def init_experience_replay(
         fake_timestep = {
             "obs": dummy_preprocessed_state,
             "action": jnp.array(0, dtype=jnp.int32),
-            "distance": jnp.array(0.0),
+            "distance": jnp.array(0.0, dtype=jnp.bfloat16),
         }
     else:
-        fake_timestep = {"obs": dummy_preprocessed_state, "distance": jnp.array(0.0)}
+        fake_timestep = {
+            "obs": dummy_preprocessed_state,
+            "distance": jnp.array(0.0, dtype=jnp.bfloat16),
+        }
     state = buffer.init(fake_timestep)
     return buffer, state

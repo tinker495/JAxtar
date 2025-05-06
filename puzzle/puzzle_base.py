@@ -296,11 +296,16 @@ class Puzzle(ABC):
         tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
         return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
 
-    def batched_hindsight_transform(self, solve_configs: SolveConfig, states: State) -> SolveConfig:
+    def batched_hindsight_transform(
+        self, solve_configs: SolveConfig, states: State, multi_solve_config: bool = False
+    ) -> SolveConfig:
         """
         This function shoulde transformt the state to the solve config.
         """
-        return jax.vmap(self.hindsight_transform)(solve_configs, states)
+        if multi_solve_config:
+            return jax.vmap(self.hindsight_transform, in_axes=(0, 0))(solve_configs, states)
+        else:
+            return jax.vmap(self.hindsight_transform, in_axes=(None, 0))(solve_configs, states)
 
     def solve_config_to_state_transform(
         self, solve_config: SolveConfig, key: jax.random.PRNGKey = None
