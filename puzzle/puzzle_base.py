@@ -296,11 +296,11 @@ class Puzzle(ABC):
         tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
         return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
 
-    def batched_hindsight_transform(self, states: State) -> SolveConfig:
+    def batched_hindsight_transform(self, solve_configs: SolveConfig, states: State) -> SolveConfig:
         """
         This function shoulde transformt the state to the solve config.
         """
-        return jax.vmap(self.hindsight_transform)(states)
+        return jax.vmap(self.hindsight_transform)(solve_configs, states)
 
     def solve_config_to_state_transform(
         self, solve_config: SolveConfig, key: jax.random.PRNGKey = None
@@ -315,7 +315,7 @@ class Puzzle(ABC):
         )
         return solve_config.TargetState
 
-    def hindsight_transform(self, states: State, key: jax.random.PRNGKey = None) -> SolveConfig:
+    def hindsight_transform(self, solve_config: SolveConfig, states: State) -> SolveConfig:
         """
         This function shoulde transformt the state to the solve config.
         """
@@ -324,7 +324,7 @@ class Puzzle(ABC):
             "Default hindsight transform is for only target state,"
             "you should redefine this function"
         )
-        solve_config = self.SolveConfig(TargetState=states)
+        solve_config.TargetState = states
         return solve_config
 
     def get_inverse_neighbours(

@@ -412,14 +412,14 @@ class Sokoban(Puzzle):
         return self.State(board=packed_board)
 
     def hindsight_transform(
-        self, state: "Sokoban.State", key: jax.random.PRNGKey = None
+        self, solve_config: "Sokoban.SolveConfig", state: "Sokoban.State"
     ) -> "Sokoban.SolveConfig":
         """
         This function shoulde transformt the state to the solve config.
         """
         board = self.unpack_board(state.board)
         rm_player = jnp.where(board == Object.PLAYER.value, Object.EMPTY.value, board)
-        solve_config = self.SolveConfig(TargetState=self.State(board=self.pack_board(rm_player)))
+        solve_config.TargetState = self.State(board=self.pack_board(rm_player))
         return solve_config
 
     def get_inverse_neighbours(
