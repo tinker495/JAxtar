@@ -344,7 +344,7 @@ def wbsdai(
         writer.add_histogram("Losses/Diff", diffs, i)
         writer.add_histogram("Metrics/Target", sampled_target_heuristics, i)
 
-        if i % 1000 == 0 and i != 0:
+        if i % 100 == 0 and i != 0:
             heuristic.params = heuristic_params
             heuristic.save_model(
                 f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl"

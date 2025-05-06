@@ -113,7 +113,7 @@ def qfunction_options(func: callable) -> callable:
 
 def train_wbs_option(func: callable) -> callable:
     @click.option(
-        "-s", "--steps", type=int, default=int(2e4)
+        "-s", "--steps", type=int, default=int(2e3)
     )  # 50 * 2e4 = 1e6 / DeepCubeA settings
     @click.option("-sl", "--shuffle_length", type=int, default=30)
     @click.option("-rs", "--replay_size", type=int, default=int(2e7))
