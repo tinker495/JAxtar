@@ -267,12 +267,12 @@ def wbsdai(
     add_batch_size: int,
     train_minibatch_size: int,
     cost_weight: float,
+    use_optimal_branch: bool,
     key: int,
     multi_device: bool,
     **kwargs,
 ):
-    puzzle_name = puzzle_name.replace("_random", "")
-    writer = setup_logging(puzzle_name, puzzle_size, "davi")
+    writer = setup_logging(puzzle_name, puzzle_size, "wbsdai")
     heuristic_model = heuristic.model
     heuristic_params = heuristic.get_new_params()
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -308,6 +308,7 @@ def wbsdai(
         add_batch_size=add_batch_size,
         search_batch_size=search_batch_size,
         cost_weight=cost_weight,
+        use_optimal_branch=use_optimal_branch,
     )
 
     pbar = trange(steps)

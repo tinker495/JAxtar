@@ -269,7 +269,7 @@ def get_k_optimal_branchs_paths(
     flattened_idxs = jnp.stack(
         jnp.unravel_index(jnp.arange(search_result.cost.size), search_result.cost.shape), axis=1
     ).astype(jnp.uint32)
-    flattend_sort_indices = jnp.argsort(flattened_cost, descending=True)
+    flattend_sort_indices = jnp.argsort(flattened_cost, descending=False)
     sorted_idxs = flattened_idxs[flattend_sort_indices]
     sorted_cost = flattened_cost[flattend_sort_indices]
     sorted_mask = leaf_mask[sorted_idxs[:, 0], sorted_idxs[:, 1]]
@@ -279,8 +279,8 @@ def get_k_optimal_branchs_paths(
         cost=sorted_cost,
     )
 
-    optimal_k_leaf_nodes = sorted_leaf_nodes[optimal_k:]
-    optimal_k_mask = sorted_mask[optimal_k:]
+    optimal_k_leaf_nodes = sorted_leaf_nodes[:optimal_k]
+    optimal_k_mask = sorted_mask[:optimal_k]
     paths, path_masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
         search_result, optimal_k_leaf_nodes, optimal_k_mask, max_depth
     )

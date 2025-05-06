@@ -123,9 +123,7 @@ def train_wbs_option(func: callable) -> callable:
     @click.option("-w", "--cost_weight", type=float, default=0.8)
     @click.option("-k", "--key", type=int, default=0)
     @click.option("-r", "--reset", is_flag=True, help="Reset the target heuristic params")
-    @click.option(
-        "-per", "--using_importance_sampling", is_flag=True, help="Use importance sampling"
-    )
+    @click.option("-ob", "--use_optimal_branch", is_flag=True, help="Use optimal branch")
     @click.option("--debug", is_flag=True, help="Debug mode")
     @click.option("-m", "--multi_device", is_flag=True, help="Use multi device")
     @wraps(func)
