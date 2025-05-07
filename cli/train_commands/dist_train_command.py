@@ -263,6 +263,7 @@ def wbsdai(
     puzzle_size: int,
     steps: int,
     replay_size: int,
+    max_nodes: int,
     search_batch_size: int,
     add_batch_size: int,
     train_minibatch_size: int,
@@ -274,7 +275,7 @@ def wbsdai(
 ):
     writer = setup_logging(puzzle_name, puzzle_size, "wbsdai")
     heuristic_model = heuristic.model
-    heuristic_params = heuristic.get_new_params()
+    heuristic_params = heuristic.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
@@ -305,6 +306,7 @@ def wbsdai(
         puzzle,
         heuristic,
         buffer,
+        max_nodes=max_nodes,
         add_batch_size=add_batch_size,
         search_batch_size=search_batch_size,
         cost_weight=cost_weight,

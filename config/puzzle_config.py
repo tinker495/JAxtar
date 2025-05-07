@@ -74,6 +74,7 @@ default_puzzle_sizes: dict[str, int] = {
     "n-puzzle": 4,
     "n-puzzle-conv": 4,
     "n-puzzle-random": 4,
+    "n-puzzle-conv-random": 4,
     "lightsout": 7,
     "lightsout-conv": 7,
     "rubikscube": 3,
@@ -97,6 +98,7 @@ puzzle_dict: dict[str, Puzzle] = {
     "n-puzzle": SlidePuzzle,
     "n-puzzle-conv": SlidePuzzle,
     "n-puzzle-random": SlidePuzzleRandom,
+    "n-puzzle-conv-random": SlidePuzzleRandom,
     "lightsout": LightsOut,
     "lightsout-conv": LightsOut,
     "rubikscube": RubiksCube,
@@ -141,6 +143,7 @@ puzzle_heuristic_dict: dict[str, Heuristic] = {
     "n-puzzle": SlidePuzzleHeuristic,
     "n-puzzle-conv": SlidePuzzleHeuristic,
     "n-puzzle-random": SlidePuzzleHeuristic,
+    "n-puzzle-conv-random": SlidePuzzleHeuristic,
     "lightsout": LightsOutHeuristic,
     "lightsout-conv": LightsOutHeuristic,
     "rubikscube": RubiksCubeHeuristic,
@@ -176,6 +179,11 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
     if reset
     else SlidePuzzleConvNeuralHeuristic.load_model(
         puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle-conv_{n}.pkl"
+    ),
+    "n-puzzle-conv-random": lambda n, puzzle, reset: SlidePuzzleConvNeuralHeuristic(puzzle)
+    if reset
+    else SlidePuzzleConvNeuralHeuristic.load_model(
+        puzzle, f"heuristic/neuralheuristic/model/params/n-puzzle-conv-random_{n}.pkl"
     ),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralHeuristic(puzzle)
     if reset
@@ -245,6 +253,7 @@ puzzle_q_dict: dict[str, QFunction] = {
     "n-puzzle": SlidePuzzleQ,
     "n-puzzle-conv": SlidePuzzleQ,
     "n-puzzle-random": SlidePuzzleQ,
+    "n-puzzle-conv-random": SlidePuzzleQ,
     "lightsout": LightsOutQ,
     "lightsout-conv": LightsOutQ,
     "rubikscube": RubiksCubeQ,
