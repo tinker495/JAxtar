@@ -13,6 +13,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
+from Xtructure import BGPQ, xtructure_data
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -22,43 +23,42 @@ from JAxtar.annotate import (
     HASH_TABLE_IDX_DTYPE,
     KEY_DTYPE,
 )
-from JAxtar.bgpq import BGPQ, HeapValue, bgpq_value_dataclass
 from JAxtar.hash import HashTable
 from JAxtar.util import set_array_as_condition, set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 
 
-@bgpq_value_dataclass
+@xtructure_data
 class Parent:
     index: chex.Array
     table_index: chex.Array
     action: chex.Array
 
-    @staticmethod
-    def default(shape=()) -> "Parent":
-        return Parent(
+    @classmethod
+    def default(cls, shape=()) -> "Parent":
+        return cls(
             index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
             table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
             action=jnp.full(shape, -1, dtype=ACTION_DTYPE),
         )
 
 
-@bgpq_value_dataclass
+@xtructure_data
 class Current:
     index: chex.Array
     table_index: chex.Array
     cost: chex.Array
 
-    @staticmethod
-    def default(shape=()) -> "Current":
-        return Current(
+    @classmethod
+    def default(cls, shape=()) -> "Current":
+        return cls(
             index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
             table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
             cost=jnp.full(shape, jnp.inf, dtype=KEY_DTYPE),
         )
 
 
-@bgpq_value_dataclass
+@xtructure_data
 class Current_with_Parent:
     """
     A dataclass representing a hash table heap value for the priority queue.
@@ -72,8 +72,8 @@ class Current_with_Parent:
     parent: Parent
     current: Current
 
-    @staticmethod
-    def default(shape=()) -> "Current_with_Parent":
+    @classmethod
+    def default(cls, shape=()) -> "Current_with_Parent":
         """
         Creates a default instance with -1 values, indicating an invalid/empty entry.
 
@@ -83,7 +83,7 @@ class Current_with_Parent:
         Returns:
             HashTableidx_with_Parent_HeapValue: A new instance with default values
         """
-        return Current_with_Parent(
+        return cls(
             parent=Parent.default(shape),
             current=Current.default(shape),
         )
@@ -344,17 +344,17 @@ def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
 
 
 def merge_sort_split(
-    ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue
-) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
+    ak: chex.Array, av: Current_with_Parent, bk: chex.Array, bv: Current_with_Parent
+) -> tuple[chex.Array, Current_with_Parent, chex.Array, Current_with_Parent]:
     """
     Merges and sorts two key-value pairs, then splits them back into two equal parts.
     This operation is crucial for maintaining the heap property in the priority queue.
 
     Args:
         ak (chex.Array): First array of keys
-        av (HeapValue): First array of values
+        av (Current_with_Parent): First array of values
         bk (chex.Array): Second array of keys
-        bv (HeapValue): Second array of values
+        bv (Current_with_Parent): Second array of values
 
     Returns:
         tuple: Contains:
