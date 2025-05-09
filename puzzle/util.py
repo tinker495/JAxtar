@@ -6,10 +6,7 @@ import numpy as np
 from tqdm import trange
 from Xtructure import StructuredType
 
-MAX_PRINT_BATCH_SIZE = 4
-SHOW_BATCH_SIZE = 2
 T = TypeVar("T")
-Puzzle = TypeVar("Puzzle")
 
 
 def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:
