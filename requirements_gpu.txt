@@ -14,3 +14,4 @@ flax
 optax
 termcolor
 tensorboardX
+Xtructure
