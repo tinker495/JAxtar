@@ -1,9 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 TYPE = jnp.uint8
 
@@ -12,9 +13,17 @@ class SlidePuzzle(Puzzle):
 
     size: int
 
-    @state_dataclass
-    class State:
-        board: chex.Array
+    def define_state_class(self) -> Xtructurable:
+        str_parser = self.get_string_parser()
+
+        @xtructure_dataclass
+        class State:
+            board: FieldDescriptor(TYPE, (self.size**2,))  # type: ignore
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
 
     def __init__(self, size: int, **kwargs):
         self.size = size
@@ -35,13 +44,9 @@ class SlidePuzzle(Puzzle):
 
         return parser
 
-    def get_default_gen(self) -> callable:
-        def gen():
-            return self.State(board=jnp.zeros(self.size**2, dtype=TYPE))
-
-        return gen
-
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> "SlidePuzzle.State":
         return self._get_random_state(key)
 
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
@@ -50,8 +55,8 @@ class SlidePuzzle(Puzzle):
         )
 
     def get_neighbours(
-        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: "SlidePuzzle.State", filled: bool = True
+    ) -> tuple["SlidePuzzle.State", chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
@@ -86,7 +91,7 @@ class SlidePuzzle(Puzzle):
         next_boards, costs = jax.vmap(map_fn, in_axes=(0, None))(next_pos, filled)
         return self.State(board=next_boards), costs
 
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: "SlidePuzzle.State") -> bool:
         return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:
@@ -152,7 +157,7 @@ class SlidePuzzle(Puzzle):
         state, _ = jax.lax.while_loop(not_solverable, while_loop, (state, next_key))
         return state
 
-    def _solvable(self, state: State):
+    def _solvable(self, state: "SlidePuzzle.State"):
         """Check if the state is solvable"""
         N = self.size
         inv_count = self._getInvCount(state)
@@ -165,17 +170,17 @@ class SlidePuzzle(Puzzle):
             inv_count,
         )
 
-    def _getBlankPosition(self, state: State):
+    def _getBlankPosition(self, state: "SlidePuzzle.State"):
         flat_index = jnp.argmax(state.board == 0)
         return jnp.unravel_index(flat_index, (self.size, self.size))
 
-    def _getBlankRow(self, state: State):
+    def _getBlankRow(self, state: "SlidePuzzle.State"):
         return self._getBlankPosition(state)[0]
 
-    def _getBlankCol(self, state: State):
+    def _getBlankCol(self, state: "SlidePuzzle.State"):
         return self._getBlankPosition(state)[1]
 
-    def _getInvCount(self, state: State):
+    def _getInvCount(self, state: "SlidePuzzle.State"):
         def is_inv(a, b):
             return jnp.logical_and(a > b, jnp.logical_and(a != 0, b != 0))
 
