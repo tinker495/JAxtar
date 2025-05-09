@@ -39,7 +39,7 @@ class Maze(Puzzle):
             Maze: FieldDescriptor(jnp.uint8, (dummy_maze.shape[0],), dummy_maze)  # type: ignore
 
             def __str__(self, **kwargs):
-                return self.TargetState.__str__(solve_config=self, **kwargs)
+                return self.TargetState.str(solve_config=self, **kwargs)
 
         return SolveConfig
 

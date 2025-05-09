@@ -13,7 +13,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import BGPQ, FieldDescriptor, xtructure_dataclass
+from Xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -23,7 +23,6 @@ from JAxtar.annotate import (
     HASH_TABLE_IDX_DTYPE,
     KEY_DTYPE,
 )
-from JAxtar.hash import HashTable
 from JAxtar.util import set_array_as_condition, set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 

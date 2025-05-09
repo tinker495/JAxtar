@@ -100,8 +100,8 @@ class Puzzle(ABC):
         class SolveConfig:
             TargetState: FieldDescriptor(self.State)  # type: ignore
 
-        def __str__(self, **kwargs):
-            return self.TargetState.__str__(**kwargs)
+            def __str__(self, **kwargs):
+                return self.TargetState.str(**kwargs)
 
         return SolveConfig
 
