@@ -1,9 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 TYPE = jnp.uint8
 
@@ -13,16 +14,36 @@ class TSP(Puzzle):
     size: int
     pad_size: int
 
-    @state_dataclass
-    class State:
-        mask: chex.Array  # 1D array of size number_of_points, 0 if not visited, 1 if visited
-        point: chex.Array  # idx of the point that is currently visited
+    def define_state_class(self) -> Xtructurable:
+        """Defines the state class for TSP using Xtructure."""
+        str_parser = self.get_string_parser()
+        mask = jnp.zeros(self.size, dtype=jnp.bool_)
+        packed_mask = self.to_uint8(mask)
 
-    @state_dataclass
-    class SolveConfig:
-        points: chex.Array
-        distance_matrix: chex.Array
-        start: chex.Array  # idx of the point that is the start
+        @xtructure_dataclass
+        class State:
+            mask: FieldDescriptor(jnp.uint8, packed_mask.shape, packed_mask)  # type: ignore
+            point: FieldDescriptor(TYPE)  # type: ignore
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
+
+    def define_solve_config_class(self) -> Xtructurable:
+        """Defines the solve config class for TSP using Xtructure."""
+        str_parser = self.get_solve_config_string_parser()
+
+        @xtructure_dataclass
+        class SolveConfig:
+            points: FieldDescriptor(jnp.float16, (self.size, 2))  # type: ignore
+            distance_matrix: FieldDescriptor(jnp.float16, (self.size, self.size))  # type: ignore
+            start: FieldDescriptor(TYPE)  # type: ignore
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return SolveConfig
 
     def __init__(self, size: int, **kwargs):
         self.size = size
@@ -50,29 +71,9 @@ class TSP(Puzzle):
 
         return parser
 
-    def get_solve_config_default_gen(self) -> Puzzle.SolveConfig:
-        def gen():
-            points = jnp.zeros((self.size, 2), dtype=jnp.float16)
-            distance_matrix = jnp.zeros((self.size, self.size), dtype=jnp.float16)
-            start = jnp.array(0, dtype=TYPE)
-            return self.SolveConfig(points=points, distance_matrix=distance_matrix, start=start)
-
-        return gen
-
-    def get_default_gen(self) -> callable:
-
-        size = self.size
-
-        def gen():
-            mask = jnp.zeros(size, dtype=jnp.bool_)
-            point = jnp.array(0, dtype=TYPE)
-            return self.State(mask=self.to_uint8(mask), point=point)
-
-        return gen
-
     def get_initial_state(
-        self, solve_config: SolveConfig, key=jax.random.PRNGKey(0), data=None
-    ) -> State:
+        self, solve_config: Puzzle.SolveConfig, key=jax.random.PRNGKey(0), data=None
+    ) -> Puzzle.State:
         mask = jnp.zeros(self.size, dtype=jnp.bool_)
         point = solve_config.start
         mask = mask.at[point].set(True)
@@ -89,8 +90,8 @@ class TSP(Puzzle):
         return self.SolveConfig(points=points, distance_matrix=distance_matrix, start=start)
 
     def get_neighbours(
-        self, solve_config: SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: Puzzle.State, filled: bool = True
+    ) -> tuple[Puzzle.State, chex.Array]:
         """
         This function returns neighbours and the cost of the move.
         If moving to a point already visited, the cost is infinity.
@@ -121,7 +122,7 @@ class TSP(Puzzle):
         costs = jnp.where(filled, costs, jnp.inf)
         return new_states, costs
 
-    def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: Puzzle.State) -> bool:
         """
         TSP is solved when all points have been visited.
         """

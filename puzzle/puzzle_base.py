@@ -6,9 +6,7 @@ import jax
 import jax.numpy as jnp
 from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
-from puzzle.util import add_img_parser, state_dataclass
-
-ST = state_dataclass
+from puzzle.util import add_img_parser
 
 T = TypeVar("T")
 
