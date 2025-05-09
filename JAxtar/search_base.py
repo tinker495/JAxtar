@@ -13,7 +13,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import BGPQ, xtructure_data
+from Xtructure import BGPQ, FieldDescriptor, xtructure_dataclass
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -28,65 +28,35 @@ from JAxtar.util import set_array_as_condition, set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 
 
-@xtructure_data
+@xtructure_dataclass
 class Parent:
-    index: chex.Array
-    table_index: chex.Array
-    action: chex.Array
 
-    @classmethod
-    def default(cls, shape=()) -> "Parent":
-        return cls(
-            index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
-            action=jnp.full(shape, -1, dtype=ACTION_DTYPE),
-        )
+    index: FieldDescriptor(HASH_POINT_DTYPE)  # type: ignore
+    table_index: FieldDescriptor(HASH_TABLE_IDX_DTYPE)  # type: ignore
+    action: FieldDescriptor(ACTION_DTYPE)  # type: ignore
 
 
-@xtructure_data
+@xtructure_dataclass
 class Current:
-    index: chex.Array
-    table_index: chex.Array
-    cost: chex.Array
 
-    @classmethod
-    def default(cls, shape=()) -> "Current":
-        return cls(
-            index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
-            cost=jnp.full(shape, jnp.inf, dtype=KEY_DTYPE),
-        )
+    index: FieldDescriptor(HASH_POINT_DTYPE)  # type: ignore
+    table_index: FieldDescriptor(HASH_TABLE_IDX_DTYPE)  # type: ignore
+    cost: FieldDescriptor(KEY_DTYPE)  # type: ignore
 
 
-@xtructure_data
+@xtructure_dataclass
 class Current_with_Parent:
     """
     A dataclass representing a hash table heap value for the priority queue.
     This class maintains the mapping between states in the hash table and their positions.
 
     Attributes:
-        index (chex.Array): The index in the hash table where the state is stored
-        table_index (chex.Array): The index of the cuckoo hash table (for collision resolution)
+        parent (Parent): The parent state in the search tree
+        current (Current): The current state in the search tree
     """
 
-    parent: Parent
-    current: Current
-
-    @classmethod
-    def default(cls, shape=()) -> "Current_with_Parent":
-        """
-        Creates a default instance with -1 values, indicating an invalid/empty entry.
-
-        Args:
-            shape (tuple): The shape of the arrays to create
-
-        Returns:
-            HashTableidx_with_Parent_HeapValue: A new instance with default values
-        """
-        return cls(
-            parent=Parent.default(shape),
-            current=Current.default(shape),
-        )
+    parent: FieldDescriptor(Parent)  # type: ignore
+    current: FieldDescriptor(Current)  # type: ignore
 
 
 @chex.dataclass
