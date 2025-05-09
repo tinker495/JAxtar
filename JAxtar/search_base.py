@@ -13,6 +13,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
+from Xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -22,71 +23,39 @@ from JAxtar.annotate import (
     HASH_TABLE_IDX_DTYPE,
     KEY_DTYPE,
 )
-from JAxtar.bgpq import BGPQ, HeapValue, bgpq_value_dataclass
-from JAxtar.hash import HashTable
 from JAxtar.util import set_array_as_condition, set_tree_as_condition
 from puzzle.puzzle_base import Puzzle
 
 
-@bgpq_value_dataclass
+@xtructure_dataclass
 class Parent:
-    index: chex.Array
-    table_index: chex.Array
-    action: chex.Array
 
-    @staticmethod
-    def default(shape=()) -> "Parent":
-        return Parent(
-            index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
-            action=jnp.full(shape, -1, dtype=ACTION_DTYPE),
-        )
+    index: FieldDescriptor(HASH_POINT_DTYPE)  # type: ignore
+    table_index: FieldDescriptor(HASH_TABLE_IDX_DTYPE)  # type: ignore
+    action: FieldDescriptor(ACTION_DTYPE)  # type: ignore
 
 
-@bgpq_value_dataclass
+@xtructure_dataclass
 class Current:
-    index: chex.Array
-    table_index: chex.Array
-    cost: chex.Array
 
-    @staticmethod
-    def default(shape=()) -> "Current":
-        return Current(
-            index=jnp.full(shape, -1, dtype=HASH_POINT_DTYPE),
-            table_index=jnp.full(shape, -1, dtype=HASH_TABLE_IDX_DTYPE),
-            cost=jnp.full(shape, jnp.inf, dtype=KEY_DTYPE),
-        )
+    index: FieldDescriptor(HASH_POINT_DTYPE)  # type: ignore
+    table_index: FieldDescriptor(HASH_TABLE_IDX_DTYPE)  # type: ignore
+    cost: FieldDescriptor(KEY_DTYPE)  # type: ignore
 
 
-@bgpq_value_dataclass
+@xtructure_dataclass
 class Current_with_Parent:
     """
     A dataclass representing a hash table heap value for the priority queue.
     This class maintains the mapping between states in the hash table and their positions.
 
     Attributes:
-        index (chex.Array): The index in the hash table where the state is stored
-        table_index (chex.Array): The index of the cuckoo hash table (for collision resolution)
+        parent (Parent): The parent state in the search tree
+        current (Current): The current state in the search tree
     """
 
-    parent: Parent
-    current: Current
-
-    @staticmethod
-    def default(shape=()) -> "Current_with_Parent":
-        """
-        Creates a default instance with -1 values, indicating an invalid/empty entry.
-
-        Args:
-            shape (tuple): The shape of the arrays to create
-
-        Returns:
-            HashTableidx_with_Parent_HeapValue: A new instance with default values
-        """
-        return Current_with_Parent(
-            parent=Parent.default(shape),
-            current=Current.default(shape),
-        )
+    parent: FieldDescriptor(Parent)  # type: ignore
+    current: FieldDescriptor(Current)  # type: ignore
 
 
 @chex.dataclass
@@ -344,17 +313,17 @@ def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
 
 
 def merge_sort_split(
-    ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue
-) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
+    ak: chex.Array, av: Current_with_Parent, bk: chex.Array, bv: Current_with_Parent
+) -> tuple[chex.Array, Current_with_Parent, chex.Array, Current_with_Parent]:
     """
     Merges and sorts two key-value pairs, then splits them back into two equal parts.
     This operation is crucial for maintaining the heap property in the priority queue.
 
     Args:
         ak (chex.Array): First array of keys
-        av (HeapValue): First array of values
+        av (Current_with_Parent): First array of values
         bk (chex.Array): Second array of keys
-        bv (HeapValue): Second array of values
+        bv (Current_with_Parent): Second array of values
 
     Returns:
         tuple: Contains:

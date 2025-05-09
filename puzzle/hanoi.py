@@ -2,9 +2,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from termcolor import colored
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 TYPE = jnp.uint8
 
@@ -25,13 +26,21 @@ class TowerOfHanoi(Puzzle):
     num_pegs: int = 3  # Classic Tower of Hanoi has 3 pegs
     max_disk_value: int
 
-    @state_dataclass
-    class State:
-        # Each peg is represented as an array where:
-        # - Index 0 is number of disks on the peg
-        # - Indices 1-n are disk sizes (0 means no disk)
-        # For example, a peg with disks of sizes 3 and 1 would be [2, 3, 1, 0, 0, ...]
-        pegs: chex.Array  # Shape: (num_pegs, num_disks + 1)
+    def define_state_class(self) -> Xtructurable:
+        """Defines the state class for Tower of Hanoi using Xtructure."""
+        str_parser = self.get_string_parser()
+        # Default pegs value for FieldDescriptor, initialized when class is defined
+        # self.num_pegs and self.num_disks are available from TowerOfHanoi.__init__
+        default_pegs_val = jnp.zeros((self.num_pegs, self.num_disks + 1), dtype=TYPE)
+
+        @xtructure_dataclass
+        class State:
+            pegs: FieldDescriptor(TYPE, default_pegs_val.shape, default_pegs_val)  # type: ignore
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
 
     def __init__(self, size: int, **kwargs):
         """
@@ -102,16 +111,6 @@ class TowerOfHanoi(Puzzle):
             return "\n".join(result)
 
         return parser
-
-    def get_default_gen(self) -> callable:
-        """Returns a function that generates the default state"""
-
-        def gen():
-            # Create an empty pegs array
-            pegs = jnp.zeros((self.num_pegs, self.num_disks + 1), dtype=TYPE)
-            return self.State(pegs=pegs)
-
-        return gen
 
     def get_img_parser(self) -> callable:
         """Returns a function to convert a state to an image representation"""
@@ -205,7 +204,9 @@ class TowerOfHanoi(Puzzle):
 
         return img_func
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: "TowerOfHanoi.SolveConfig", key=None, data=None
+    ) -> "TowerOfHanoi.State":
         """Generate the initial state for the puzzle with all disks on the first peg"""
         # Create an array with all disks on the first peg
         pegs = jnp.zeros((self.num_pegs, self.num_disks + 1), dtype=TYPE)
@@ -226,7 +227,7 @@ class TowerOfHanoi(Puzzle):
 
         return self.State(pegs=pegs)
 
-    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
+    def get_solve_config(self, key=None, data=None) -> "TowerOfHanoi.SolveConfig":
         """Create the solving configuration (target state) - all disks on third peg"""
         # Create an array with all disks on the third peg
         pegs = jnp.zeros((self.num_pegs, self.num_disks + 1), dtype=TYPE)
@@ -248,8 +249,11 @@ class TowerOfHanoi(Puzzle):
         return self.SolveConfig(TargetState=self.State(pegs=pegs))
 
     def get_neighbours(
-        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self,
+        solve_config: "TowerOfHanoi.SolveConfig",
+        state: "TowerOfHanoi.State",
+        filled: bool = True,
+    ) -> tuple["TowerOfHanoi.State", chex.Array]:
         """
         Get all neighboring states by moving a disk from one peg to another
 
@@ -357,7 +361,9 @@ class TowerOfHanoi(Puzzle):
 
         return next_states, costs
 
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+    def is_solved(
+        self, solve_config: "TowerOfHanoi.SolveConfig", state: "TowerOfHanoi.State"
+    ) -> bool:
         """Check if the current state matches the target state"""
         return self.is_equal(state, solve_config.TargetState)
 

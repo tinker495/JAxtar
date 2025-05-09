@@ -2,9 +2,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from termcolor import colored
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 TYPE = jnp.uint8
 
@@ -26,9 +27,18 @@ class PancakeSorting(Puzzle):
 
     size: int
 
-    @state_dataclass
-    class State:
-        stack: chex.Array  # Array representing pancake sizes, index 0 is the top
+    def define_state_class(self) -> Xtructurable:
+        """Defines the state class for PancakeSorting using Xtructure."""
+        str_parser = self.get_string_parser()
+
+        @xtructure_dataclass
+        class State:
+            stack: FieldDescriptor(TYPE, (self.size,))  # type: ignore
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
 
     def __init__(self, size: int, **kwargs):
         """
@@ -55,14 +65,6 @@ class PancakeSorting(Puzzle):
             return "\n".join(result)
 
         return parser
-
-    def get_default_gen(self) -> callable:
-        """Returns a function that generates the default state"""
-
-        def gen():
-            return self.State(stack=jnp.zeros(self.size, dtype=TYPE))
-
-        return gen
 
     def get_img_parser(self) -> callable:
         """Returns a function to convert a state to an image representation"""
@@ -176,19 +178,24 @@ class PancakeSorting(Puzzle):
 
         return img_func
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> "PancakeSorting.State":
         """Generate a random initial state for the puzzle"""
         return self._get_random_state(key)
 
-    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
+    def get_solve_config(self, key=None, data=None) -> "PancakeSorting.SolveConfig":
         """Create the solving configuration (target state)"""
         # Target is the sorted order, largest at the bottom (index size-1)
         target_stack = jnp.arange(1, self.size + 1, dtype=TYPE)
         return self.SolveConfig(TargetState=self.State(stack=target_stack))
 
     def get_neighbours(
-        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self,
+        solve_config: "PancakeSorting.SolveConfig",
+        state: "PancakeSorting.State",
+        filled: bool = True,
+    ) -> tuple["PancakeSorting.State", chex.Array]:
         """
         Get all neighboring states by flipping pancakes at different positions
 
@@ -242,7 +249,9 @@ class PancakeSorting(Puzzle):
         next_stacks, costs = jax.vmap(map_fn, in_axes=(0, None))(possible_flips, filled)
         return self.State(stack=next_stacks), costs
 
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+    def is_solved(
+        self, solve_config: "PancakeSorting.SolveConfig", state: "PancakeSorting.State"
+    ) -> bool:
         """Check if the current state matches the target state (sorted)"""
         return self.is_equal(state, solve_config.TargetState)
 

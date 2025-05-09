@@ -2,9 +2,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from termcolor import colored
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 TYPE = jnp.uint8
 
@@ -28,9 +29,20 @@ class LightsOut(Puzzle):
 
     size: int
 
-    @state_dataclass
-    class State:
-        board: chex.Array
+    def define_state_class(self) -> Xtructurable:
+        """Defines the state class for LightsOut using Xtructure."""
+        str_parser = self.get_string_parser()
+        board = jnp.zeros((self.size * self.size), dtype=bool)
+        packed_board = self.to_uint8(board)
+
+        @xtructure_dataclass
+        class State:
+            board: FieldDescriptor(TYPE, packed_board.shape)  # type: ignore
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
 
     def __init__(self, size: int, **kwargs):
         self.size = size
@@ -53,18 +65,20 @@ class LightsOut(Puzzle):
 
         return gen
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> "LightsOut.State":
         return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=8)
 
-    def get_target_state(self, key=None) -> State:
+    def get_target_state(self, key=None) -> "LightsOut.State":
         return self.State(board=self.to_uint8(jnp.zeros(self.size**2, dtype=bool)))
 
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         return self.SolveConfig(TargetState=self.get_target_state(key))
 
     def get_neighbours(
-        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: "LightsOut.State", filled: bool = True
+    ) -> tuple["LightsOut.State", chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
@@ -91,7 +105,7 @@ class LightsOut(Puzzle):
         next_boards, costs = jax.vmap(map_fn, in_axes=(0, None))(actions, filled)
         return self.State(board=next_boards), costs
 
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: "LightsOut.State") -> bool:
         return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:

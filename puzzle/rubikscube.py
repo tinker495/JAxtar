@@ -4,9 +4,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from tabulate import tabulate
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 from puzzle.util import coloring_str
 
 TYPE = jnp.uint8
@@ -44,11 +45,19 @@ class RubiksCube(Puzzle):
     size: int
     index_grid: chex.Array
 
-    @state_dataclass
-    class State:
-        # 6 faces, size x size
-        # 0 - up, 1 - down, 2 - left, 3 - right, 4 - front, 5 - back
-        faces: chex.Array
+    def define_state_class(self) -> Xtructurable:
+        str_parser = self.get_string_parser()
+        raw = jnp.full((6, self.size * self.size), -1, dtype=TYPE)
+        packed = self.pack_faces(raw)
+
+        @xtructure_dataclass
+        class State:
+            faces: FieldDescriptor(TYPE, packed.shape)  # type: ignore
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
 
     def __init__(self, size: int = 3, **kwargs):
         self.size = size
@@ -130,18 +139,12 @@ class RubiksCube(Puzzle):
         faces = jnp.reshape(cells, (6, self.size * self.size))
         return faces
 
-    def get_default_gen(self) -> callable:
-        def gen():
-            raw = jnp.full((6, self.size * self.size), -1, dtype=TYPE)
-            packed = self.pack_faces(raw)
-            return self.State(faces=packed)
-
-        return gen
-
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> "RubiksCube.State":
         return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=10)
 
-    def get_target_state(self, key=None) -> State:
+    def get_target_state(self, key=None) -> "RubiksCube.State":
         raw_faces = jnp.repeat(jnp.arange(6)[:, None], self.size * self.size, axis=1).astype(
             TYPE
         )  # 6 faces, 3x3 each
@@ -152,8 +155,8 @@ class RubiksCube(Puzzle):
         return self.SolveConfig(TargetState=self.get_target_state(key))
 
     def get_neighbours(
-        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: "RubiksCube.State", filled: bool = True
+    ) -> tuple["RubiksCube.State", chex.Array]:
         def map_fn(face, axis, index, clockwise):
             return jax.lax.cond(
                 filled,
@@ -180,7 +183,7 @@ class RubiksCube(Puzzle):
         neighbour_packed = jax.vmap(lambda faces: self.pack_faces(faces))(neighbour_unpacked)
         return self.State(faces=neighbour_packed), costs
 
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: "RubiksCube.State") -> bool:
         return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:
