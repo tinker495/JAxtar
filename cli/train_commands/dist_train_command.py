@@ -55,6 +55,8 @@ def davi(
     multi_device: bool,
     **kwargs,
 ):
+    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key, subkey = jax.random.split(key)
 
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
     heuristic_model = heuristic.model
@@ -64,8 +66,6 @@ def davi(
         key,
         0.2,
     )
-    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
-    key, subkey = jax.random.split(key)
 
     n_devices = 1
     if multi_device:
@@ -171,6 +171,9 @@ def qlearning(
     multi_device: bool,
     **kwargs,
 ):
+    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key, subkey = jax.random.split(key)
+
     writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
     qfunc_model = qfunction.model
     target_qfunc_params = qfunction.params
@@ -179,8 +182,6 @@ def qlearning(
         key,
         0.2,
     )
-    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
-    key, subkey = jax.random.split(key)
 
     n_devices = 1
     if multi_device:
