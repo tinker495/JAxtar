@@ -53,6 +53,7 @@ def davi(
     using_hindsight_target: bool,
     using_importance_sampling: bool,
     multi_device: bool,
+    tau: float,
     **kwargs,
 ):
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -64,7 +65,7 @@ def davi(
     heuristic_params = scaled_by_reset(
         target_heuristic_params,
         key,
-        0.2,
+        tau,
     )
 
     n_devices = 1
@@ -135,7 +136,7 @@ def davi(
             heuristic_params = scaled_by_reset(
                 heuristic_params,
                 key,
-                0.2,
+                tau,
             )
             opt_state = optimizer.init(heuristic_params)
 
@@ -169,6 +170,7 @@ def qlearning(
     using_hindsight_target: bool,
     using_importance_sampling: bool,
     multi_device: bool,
+    tau: float,
     **kwargs,
 ):
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -180,7 +182,7 @@ def qlearning(
     qfunc_params = scaled_by_reset(
         target_qfunc_params,
         key,
-        0.2,
+        tau,
     )
 
     n_devices = 1
@@ -248,7 +250,7 @@ def qlearning(
             qfunc_params = scaled_by_reset(
                 qfunc_params,
                 key,
-                0.2,
+                tau,
             )
             opt_state = optimizer.init(qfunc_params)
 

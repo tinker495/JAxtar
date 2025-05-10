@@ -64,6 +64,7 @@ def train_option(func: callable) -> callable:
     )
     @click.option("--debug", is_flag=True, help="Debug mode")
     @click.option("-m", "--multi_device", is_flag=True, help="Use multi device")
+    @click.option("--tau", type=float, default=0.2, help="Tau for scaled by reset")
     @wraps(func)
     def wrapper(*args, **kwargs):
         if kwargs["debug"]:
