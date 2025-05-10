@@ -10,7 +10,7 @@ from tqdm import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.optimizer import setup_optimizer
-from neural_util.target_update import soft_update
+from neural_util.target_update import scaled_by_reset, soft_update
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
@@ -73,7 +73,6 @@ def davi(
     optimizer, opt_state = setup_optimizer(
         heuristic_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
-    opt_state_init = opt_state
     davi_fn = davi_builder(
         train_minibatch_size,
         heuristic_model,
@@ -129,7 +128,12 @@ def davi(
             )
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
-            opt_state = opt_state_init
+            heuristic_params = scaled_by_reset(
+                heuristic_params,
+                key,
+                0.2,
+            )
+            opt_state = optimizer.init(heuristic_params)
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = heuristic_params
@@ -180,7 +184,6 @@ def qlearning(
     optimizer, opt_state = setup_optimizer(
         qfunc_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
-    opt_state_init = opt_state
     qlearning_fn = qlearning_builder(
         train_minibatch_size, qfunc_model, optimizer, using_importance_sampling, n_devices=n_devices
     )
@@ -233,7 +236,13 @@ def qlearning(
             )
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
-            opt_state = opt_state_init
+            qfunc_params = scaled_by_reset(
+                qfunc_params,
+                key,
+                0.2,
+            )
+            opt_state = optimizer.init(qfunc_params)
+
         if i % 1000 == 0 and i != 0:
             qfunction.params = qfunc_params
             qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
