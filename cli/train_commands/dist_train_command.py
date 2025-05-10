@@ -58,8 +58,12 @@ def davi(
 
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
     heuristic_model = heuristic.model
-    heuristic_params = heuristic.get_new_params()
     target_heuristic_params = heuristic.params
+    heuristic_params = scaled_by_reset(
+        target_heuristic_params,
+        key,
+        0.2,
+    )
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
@@ -169,8 +173,12 @@ def qlearning(
 ):
     writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
     qfunc_model = qfunction.model
-    qfunc_params = qfunction.get_new_params()
     target_qfunc_params = qfunction.params
+    qfunc_params = scaled_by_reset(
+        target_qfunc_params,
+        key,
+        0.2,
+    )
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 

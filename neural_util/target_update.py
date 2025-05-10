@@ -33,8 +33,9 @@ def scaled_by_reset(
     key: jax.random.PRNGKey,
     tau: float,
 ):
-    new_tensors = tree_random_normal_like(key, tensors)
+    new_tensors = tree_random_normal_like(key, tensors["params"])
     soft_reseted = jax.tree_util.tree_map(
-        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, tensors
+        lambda new, old: tau * new + (1.0 - tau) * old, new_tensors, tensors["params"]
     )
-    return soft_reseted
+    tensors["params"] = soft_reseted
+    return tensors
