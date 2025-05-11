@@ -53,6 +53,7 @@ def davi(
     using_hindsight_target: bool,
     using_importance_sampling: bool,
     multi_device: bool,
+    reset_interval: int,
     tau: float,
     **kwargs,
 ):
@@ -73,6 +74,7 @@ def davi(
         n_devices = jax.device_count()
         steps = steps // n_devices
         update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
@@ -97,6 +99,8 @@ def davi(
     )
 
     pbar = trange(steps)
+    updated = False
+    last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
@@ -131,14 +135,20 @@ def davi(
             target_heuristic_params = soft_update(
                 target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
             )
+            updated = True
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
+            updated = True
+
+        if i - last_reset_time >= reset_interval and updated:
+            last_reset_time = i
             heuristic_params = scaled_by_reset(
                 heuristic_params,
                 key,
                 tau,
             )
             opt_state = optimizer.init(heuristic_params)
+            updated = False
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = heuristic_params
@@ -170,6 +180,7 @@ def qlearning(
     using_hindsight_target: bool,
     using_importance_sampling: bool,
     multi_device: bool,
+    reset_interval: int,
     tau: float,
     **kwargs,
 ):
@@ -190,6 +201,7 @@ def qlearning(
         n_devices = jax.device_count()
         steps = steps // n_devices
         update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
@@ -210,6 +222,8 @@ def qlearning(
     )
 
     pbar = trange(steps)
+    updated = False
+    last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
@@ -245,14 +259,20 @@ def qlearning(
             target_qfunc_params = soft_update(
                 target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
             )
+            updated = True
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
+            updated = True
+
+        if i - last_reset_time >= reset_interval and updated:
+            last_reset_time = i
             qfunc_params = scaled_by_reset(
                 qfunc_params,
                 key,
                 tau,
             )
             opt_state = optimizer.init(qfunc_params)
+            updated = False
 
         if i % 1000 == 0 and i != 0:
             qfunction.params = qfunc_params
