@@ -22,7 +22,7 @@ class Maze(Puzzle):
 
         @xtructure_dataclass
         class State:
-            pos: FieldDescriptor(TYPE, (2,))  # type: ignore
+            pos: FieldDescriptor[TYPE, (2,)]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)
@@ -35,8 +35,8 @@ class Maze(Puzzle):
 
         @xtructure_dataclass
         class SolveConfig:
-            TargetState: FieldDescriptor(self.State)  # type: ignore
-            Maze: FieldDescriptor(jnp.uint8, (dummy_maze.shape[0],), dummy_maze)  # type: ignore
+            TargetState: FieldDescriptor[self.State]
+            Maze: FieldDescriptor[jnp.uint8, (dummy_maze.shape[0],), dummy_maze]
 
             def __str__(self, **kwargs):
                 return self.TargetState.str(solve_config=self, **kwargs)

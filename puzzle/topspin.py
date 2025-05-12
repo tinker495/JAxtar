@@ -30,7 +30,7 @@ class TopSpin(Puzzle):
 
         @xtructure_dataclass
         class State:
-            permutation: FieldDescriptor(TYPE, (self.n_discs,))  # type: ignore
+            permutation: FieldDescriptor[TYPE, (self.n_discs,)]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

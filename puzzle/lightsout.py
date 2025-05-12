@@ -37,7 +37,7 @@ class LightsOut(Puzzle):
 
         @xtructure_dataclass
         class State:
-            board: FieldDescriptor(TYPE, packed_board.shape)  # type: ignore
+            board: FieldDescriptor[TYPE, packed_board.shape]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

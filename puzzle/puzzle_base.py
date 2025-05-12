@@ -96,7 +96,7 @@ class Puzzle(ABC):
     def define_solve_config_class(self) -> Xtructurable:
         @xtructure_dataclass
         class SolveConfig:
-            TargetState: FieldDescriptor(self.State)  # type: ignore
+            TargetState: FieldDescriptor[self.State]
 
             def __str__(self, **kwargs):
                 return self.TargetState.str(**kwargs)

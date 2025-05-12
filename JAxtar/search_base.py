@@ -30,17 +30,17 @@ from puzzle.puzzle_base import Puzzle
 @xtructure_dataclass
 class Parent:
 
-    index: FieldDescriptor(HASH_POINT_DTYPE)  # type: ignore
-    table_index: FieldDescriptor(HASH_TABLE_IDX_DTYPE)  # type: ignore
-    action: FieldDescriptor(ACTION_DTYPE)  # type: ignore
+    index: FieldDescriptor[HASH_POINT_DTYPE]
+    table_index: FieldDescriptor[HASH_TABLE_IDX_DTYPE]
+    action: FieldDescriptor[ACTION_DTYPE]
 
 
 @xtructure_dataclass
 class Current:
 
-    index: FieldDescriptor(HASH_POINT_DTYPE)  # type: ignore
-    table_index: FieldDescriptor(HASH_TABLE_IDX_DTYPE)  # type: ignore
-    cost: FieldDescriptor(KEY_DTYPE)  # type: ignore
+    index: FieldDescriptor[HASH_POINT_DTYPE]
+    table_index: FieldDescriptor[HASH_TABLE_IDX_DTYPE]
+    cost: FieldDescriptor[KEY_DTYPE]
 
 
 @xtructure_dataclass
@@ -54,8 +54,8 @@ class Current_with_Parent:
         current (Current): The current state in the search tree
     """
 
-    parent: FieldDescriptor(Parent)  # type: ignore
-    current: FieldDescriptor(Current)  # type: ignore
+    parent: FieldDescriptor[Parent]
+    current: FieldDescriptor[Current]
 
 
 @chex.dataclass

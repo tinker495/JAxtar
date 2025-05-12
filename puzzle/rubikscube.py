@@ -52,7 +52,7 @@ class RubiksCube(Puzzle):
 
         @xtructure_dataclass
         class State:
-            faces: FieldDescriptor(TYPE, packed.shape)  # type: ignore
+            faces: FieldDescriptor[TYPE, packed.shape]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

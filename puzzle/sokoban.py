@@ -33,7 +33,7 @@ class Sokoban(Puzzle):
 
         @xtructure_dataclass
         class State:
-            board: FieldDescriptor(TYPE, packed_board.shape, packed_board)  # type: ignore
+            board: FieldDescriptor[TYPE, packed_board.shape, packed_board]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

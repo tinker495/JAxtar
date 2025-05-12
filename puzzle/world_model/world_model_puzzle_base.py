@@ -105,7 +105,7 @@ class WorldModelPuzzleBase(Puzzle):
 
         @xtructure_dataclass
         class State:
-            latent: FieldDescriptor(jnp.uint8, latent_uint8.shape, latent_uint8)  # type: ignore
+            latent: FieldDescriptor[jnp.uint8, latent_uint8.shape, latent_uint8]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

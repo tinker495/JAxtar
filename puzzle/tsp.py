@@ -22,8 +22,8 @@ class TSP(Puzzle):
 
         @xtructure_dataclass
         class State:
-            mask: FieldDescriptor(jnp.uint8, packed_mask.shape, packed_mask)  # type: ignore
-            point: FieldDescriptor(TYPE)  # type: ignore
+            mask: FieldDescriptor[jnp.uint8, packed_mask.shape, packed_mask]
+            point: FieldDescriptor[TYPE]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)
@@ -36,9 +36,9 @@ class TSP(Puzzle):
 
         @xtructure_dataclass
         class SolveConfig:
-            points: FieldDescriptor(jnp.float16, (self.size, 2))  # type: ignore
-            distance_matrix: FieldDescriptor(jnp.float16, (self.size, self.size))  # type: ignore
-            start: FieldDescriptor(TYPE)  # type: ignore
+            points: FieldDescriptor[jnp.float16, (self.size, 2)]
+            distance_matrix: FieldDescriptor[jnp.float16, (self.size, self.size)]
+            start: FieldDescriptor[TYPE]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

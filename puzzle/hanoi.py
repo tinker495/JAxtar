@@ -35,7 +35,7 @@ class TowerOfHanoi(Puzzle):
 
         @xtructure_dataclass
         class State:
-            pegs: FieldDescriptor(TYPE, default_pegs_val.shape, default_pegs_val)  # type: ignore
+            pegs: FieldDescriptor[TYPE, default_pegs_val.shape, default_pegs_val]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

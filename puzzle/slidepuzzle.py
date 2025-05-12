@@ -18,7 +18,7 @@ class SlidePuzzle(Puzzle):
 
         @xtructure_dataclass
         class State:
-            board: FieldDescriptor(TYPE, (self.size**2,))  # type: ignore
+            board: FieldDescriptor[TYPE, (self.size**2,)]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

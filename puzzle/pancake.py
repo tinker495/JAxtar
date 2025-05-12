@@ -33,7 +33,7 @@ class PancakeSorting(Puzzle):
 
         @xtructure_dataclass
         class State:
-            stack: FieldDescriptor(TYPE, (self.size,))  # type: ignore
+            stack: FieldDescriptor[TYPE, (self.size,)]
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)
