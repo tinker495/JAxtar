@@ -109,11 +109,11 @@ class SearchResult:
             SearchResult: A new instance with initialized data structures
         """
         # Initialize the hash table for state storage
-        hashtable = HashTable.build(statecls, seed, max_nodes)
+        hashtable = HashTable.build(statecls, seed, max_nodes, CUCKOO_TABLE_N, HASH_SIZE_MULTIPLIER)
         size_table = int(HASH_SIZE_MULTIPLIER * max_nodes / CUCKOO_TABLE_N)
 
         # Initialize priority queue for state expansion
-        priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent)
+        priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent, KEY_DTYPE)
 
         # Initialize buffers for minimum values
         min_key_buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
