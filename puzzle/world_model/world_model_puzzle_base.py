@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from helpers.formatting import img_to_colored_str
 from neural_util.modules import DTYPE, BatchNorm
@@ -16,7 +17,7 @@ from neural_util.util import (
     round_through_gradient,
 )
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 STR_PARSE_IMG = True
 
@@ -96,23 +97,20 @@ class WorldModelPuzzleBase(Puzzle):
     targets: jnp.ndarray
     num_puzzles: int
 
-    @state_dataclass
-    class State:
-        """
-        The state of the world model puzzle is 'must' be latent.
-        It should not be changed in any subclasses.
-        """
+    def define_state_class(self) -> Xtructurable:
+        """Defines the state class for WorldModelPuzzleBase using Xtructure."""
+        str_parser = self.get_string_parser()
+        latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
+        latent_uint8 = self.to_uint8(latent_bool)
 
-        latent: jnp.ndarray
+        @xtructure_dataclass
+        class State:
+            latent: FieldDescriptor[jnp.uint8, latent_uint8.shape, latent_uint8]
 
-    @state_dataclass
-    class SolveConfig:
-        """
-        The solve config of the world model puzzle is 'must' be TargetState.
-        It should not be changed in any subclasses.
-        """
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
 
-        TargetState: "WorldModelPuzzleBase.State"
+        return State
 
     def __init__(
         self,
@@ -338,7 +336,7 @@ class WorldModelPuzzleBase(Puzzle):
         init_data = jnp.expand_dims(self.inits[idx, ...], axis=0)
         return target_data, init_data
 
-    def get_solve_config(self, key=None, data=None) -> SolveConfig:
+    def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         """
         This function should return a solve config.
         """
@@ -350,7 +348,9 @@ class WorldModelPuzzleBase(Puzzle):
         latent = self.to_uint8(latent)
         return self.SolveConfig(TargetState=self.State(latent=latent))
 
-    def get_initial_state(self, solve_config: SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> Puzzle.State:
         """
         This function should return a initial state.
         """
@@ -364,11 +364,11 @@ class WorldModelPuzzleBase(Puzzle):
 
     def batched_get_neighbours(
         self,
-        solve_configs: SolveConfig,
-        states: State,
+        solve_configs: Puzzle.SolveConfig,
+        states: Puzzle.State,
         filleds: bool = True,
         multi_solve_config: bool = False,
-    ) -> tuple[State, chex.Array]:
+    ) -> tuple[Puzzle.State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         """
@@ -395,8 +395,8 @@ class WorldModelPuzzleBase(Puzzle):
         )  # (action_size, batch_size, latent_size), (action_size, batch_size)
 
     def get_neighbours(
-        self, solve_config: SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: Puzzle.State, filled: bool = True
+    ) -> tuple[Puzzle.State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
@@ -407,7 +407,10 @@ class WorldModelPuzzleBase(Puzzle):
         return next_states[:, 0], costs[:, 0]
 
     def batched_is_solved(
-        self, solve_configs: SolveConfig, states: State, multi_solve_config: bool = False
+        self,
+        solve_configs: Puzzle.SolveConfig,
+        states: Puzzle.State,
+        multi_solve_config: bool = False,
     ) -> bool:
         """
         This function should return a boolean array that indicates whether the state is the target state.
@@ -417,7 +420,7 @@ class WorldModelPuzzleBase(Puzzle):
         else:
             return jax.vmap(self.is_solved, in_axes=(None, 0))(solve_configs, states)
 
-    def is_solved(self, solve_config: SolveConfig, state: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: Puzzle.State) -> bool:
         """
         This function should return True if the state is the target state.
         if the puzzle has multiple target states, this function should return
@@ -446,8 +449,8 @@ class WorldModelPuzzleBase(Puzzle):
         return jnp.reshape(bit_latent, shape=self.latent_shape)
 
     def get_inverse_neighbours(
-        self, solve_config: SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: Puzzle.State, filled: bool = True
+    ) -> tuple[Puzzle.State, chex.Array]:
         """
         This function should return inverse neighbours and the cost of the move.
         """
@@ -458,9 +461,9 @@ class WorldModelPuzzleBase(Puzzle):
 
     def batched_get_inverse_neighbours(
         self,
-        solve_configs: SolveConfig,
-        states: State,
+        solve_configs: Puzzle.SolveConfig,
+        states: Puzzle.State,
         filleds: bool = True,
         multi_solve_config: bool = False,
-    ) -> tuple[State, chex.Array]:
+    ) -> tuple[Puzzle.State, chex.Array]:
         return self.batched_get_neighbours(solve_configs, states, filleds, multi_solve_config)

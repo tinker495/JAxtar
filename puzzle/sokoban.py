@@ -4,9 +4,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from termcolor import colored
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 TYPE = jnp.uint8
 
@@ -24,9 +25,20 @@ class Object(Enum):
 class Sokoban(Puzzle):
     size: int = 10
 
-    @state_dataclass
-    class State:
-        board: chex.Array  # Now stores a packed board representation of shape (25,)
+    def define_state_class(self) -> Xtructurable:
+        """Defines the state class for Sokoban using Xtructure."""
+        str_parser = self.get_string_parser()
+        board = jnp.ones(self.size * self.size, dtype=TYPE)
+        packed_board = self.pack_board(board)
+
+        @xtructure_dataclass
+        class State:
+            board: FieldDescriptor[TYPE, packed_board.shape, packed_board]
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
 
     def __init__(self, size: int = 10, **kwargs):
         self.size = size
@@ -77,7 +89,9 @@ class Sokoban(Puzzle):
         idx = jax.random.randint(key, (), 0, self.num_puzzles)
         return self.target_puzzles[idx, ...], self.init_puzzles[idx, ...]
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> "Sokoban.State":
         # Initialize the board with the player, boxes, and walls from level1 and pack it.
         _, init_data = data
         return self.State(board=init_data)
@@ -86,7 +100,7 @@ class Sokoban(Puzzle):
         target_data, _ = data
         return self.SolveConfig(TargetState=self.State(board=target_data))
 
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: "Sokoban.State") -> bool:
         # Unpack boards for comparison.
         board = self.unpack_board(state.board)
         t_board = self.unpack_board(solve_config.TargetState.board)
@@ -163,8 +177,8 @@ class Sokoban(Puzzle):
         return parser
 
     def get_neighbours(
-        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: "Sokoban.State", filled: bool = True
+    ) -> tuple["Sokoban.State", chex.Array]:
         """
         Returns neighbour states along with the cost for each move.
         If a move isn't possible, it returns the original state with an infinite cost.
@@ -250,7 +264,7 @@ class Sokoban(Puzzle):
         bottom_border = "┗━" + "━━" * size + "┛"
         return top_border + middle + bottom_border
 
-    def _getPlayerPosition(self, state: State):
+    def _getPlayerPosition(self, state: "Sokoban.State"):
         board = self.unpack_board(state.board)
         flat_index = jnp.argmax(board == Object.PLAYER.value)
         return jnp.unravel_index(flat_index, (self.size, self.size))

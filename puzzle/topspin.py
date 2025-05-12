@@ -1,9 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE  # Assuming IMG_SIZE is defined
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 TYPE = jnp.uint8
 
@@ -23,9 +24,18 @@ class TopSpin(Puzzle):
     n_discs: int
     turnstile_size: int
 
-    @state_dataclass
-    class State:
-        permutation: chex.Array  # Shape: (size,)
+    def define_state_class(self) -> Xtructurable:
+        """Defines the state class for TopSpin using Xtructure."""
+        str_parser = self.get_string_parser()
+
+        @xtructure_dataclass
+        class State:
+            permutation: FieldDescriptor[TYPE, (self.n_discs,)]
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
 
     def __init__(self, size: int = 20, turnstile_size: int = 4, **kwargs):
         if turnstile_size > size:
@@ -45,22 +55,18 @@ class TopSpin(Puzzle):
 
         return parser
 
-    def get_default_gen(self) -> callable:
-        def gen():
-            return self.State(permutation=jnp.zeros(self.n_discs, dtype=TYPE))
-
-        return gen
-
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         # The target state is the sorted permutation
         target_state = self.State(permutation=jnp.arange(1, self.n_discs + 1, dtype=TYPE))
         return self.SolveConfig(TargetState=target_state)
 
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> "TopSpin.State":
         # Start from solved state and apply random moves
         return self._get_suffled_state(solve_config, solve_config.TargetState, key, 18)
 
-    def _get_neighbors_internal(self, state: State) -> tuple[State, chex.Array]:
+    def _get_neighbors_internal(self, state: "TopSpin.State") -> tuple["TopSpin.State", chex.Array]:
         """Internal function to compute neighbors without vmap."""
         p = state.permutation
 
@@ -86,8 +92,8 @@ class TopSpin(Puzzle):
         return all_states, costs
 
     def get_neighbours(
-        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: "TopSpin.State", filled: bool = True
+    ) -> tuple["TopSpin.State", chex.Array]:
         """
         Returns neighbour states and costs for the 3 possible moves.
         If filled is False, costs are infinity.
@@ -97,7 +103,7 @@ class TopSpin(Puzzle):
 
         return all_states, final_costs
 
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: "TopSpin.State") -> bool:
         return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:

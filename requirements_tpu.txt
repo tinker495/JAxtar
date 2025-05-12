@@ -16,3 +16,4 @@ optax
 termcolor
 tensorboardX
 flashbax
+Xtructure @ git+https://github.com/tinker495/Xtructure.git

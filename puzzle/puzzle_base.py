@@ -4,74 +4,19 @@ from typing import Any, TypeVar
 import chex
 import jax
 import jax.numpy as jnp
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
-from puzzle.util import add_default, add_img_parser, add_string_parser, state_dataclass
+from puzzle.util import add_img_parser
 
 T = TypeVar("T")
 
 
 class Puzzle(ABC):
-    @state_dataclass
-    class State:
-        """
-        This class should be a dataclass that represents the state of the puzzle.
-        """
+    class State(Xtructurable):
+        pass
 
-        @abstractmethod
-        def dtype(self):
-            pass
-
-        @abstractmethod
-        def shape(self):
-            pass
-
-        @abstractmethod
-        def default(_=None) -> T:
-            pass
-
-        @abstractmethod
-        def img(self) -> jnp.ndarray:
-            pass
-
-    @state_dataclass
-    class SolveConfig:
-        """
-        This class should be a dataclass that represents the configuration for solving the puzzle.
-
-        Generally, most puzzles terminate when the current state is equal to the target state.
-        However, there are many cases where this is not true.
-        Some problems have independent, fixed variables separate from the state.
-        For example, in TSP, the positions of the points are independent and fixed,
-        but the state consists of the path traversed and the current index.
-        In TSP, we don't know the target state (optimal path), but we do know the locations of the points.
-        We define these fixed parameters as the SolveConfig.
-
-        To manage these cases, we use SolveConfig, a broader concept that encompasses the idea of a TargetState.
-
-        # noqa: E501
-        Ex) n_puzzle, rubikscube: We know the solvable configuration (TargetState) and the entire logic of the environment.
-                In this case, SolveConfig only needs TargetState.
-                Variables: TargetState.
-        Ex) maze: The map can vary for each maze problem, so the map must be included in SolveConfig.
-                A TargetState can also be defined, so it should be included.
-                Variables: Map, TargetState.
-        Ex) TSP: We don't know the TargetState (optimal path), but the positions of the points, which are specified for each problem, must vary.
-                Therefore, SolveConfig should contain the points.
-                Variables: Points.
-        Ex) Dotknot: We don't know the TargetState, and there are no specific values assigned for each problem, so SolveConfig should be empty.
-                Variables: None.
-        """
-
-        TargetState: "Puzzle.State"
-
-        def dtype(self):
-            pass
-
-        def shape(self):
-            pass
-
-        def default(_=None) -> T:
-            pass
+    class SolveConfig(Xtructurable):
+        pass
 
     @property
     def has_target(self) -> bool:
@@ -102,13 +47,9 @@ class Puzzle(ABC):
         super().__init__()
         self.data_init()
 
-        self.State = add_string_parser(self.State, self.get_string_parser())
-        self.State = add_default(self.State, self.get_default_gen())
+        self.State = self.define_state_class()
+        self.SolveConfig = self.define_solve_config_class()
         self.State = add_img_parser(self.State, self.get_img_parser())
-        self.SolveConfig = add_string_parser(
-            self.SolveConfig, self.get_solve_config_string_parser()
-        )
-        self.SolveConfig = add_default(self.SolveConfig, self.get_solve_config_default_gen())
         self.SolveConfig = add_img_parser(self.SolveConfig, self.get_solve_config_img_parser())
 
         self.get_initial_state = jax.jit(self.get_initial_state)
@@ -152,28 +93,18 @@ class Puzzle(ABC):
         """
         pass
 
-    def get_solve_config_default_gen(self) -> SolveConfig:
-        """
-        This function should return a default solve config.
-        """
-        assert self.only_target, (
-            "You should redefine this function, because this function is only for target state"
-            f"has_target: {self.has_target}, only_target: {self.only_target}"
-            f"SolveConfig: {self.SolveConfig.__annotations__.keys()}"
-        )
-        default_state = self.State.default()
+    def define_solve_config_class(self) -> Xtructurable:
+        @xtructure_dataclass
+        class SolveConfig:
+            TargetState: FieldDescriptor[self.State]
 
-        def default_gen():
-            return self.SolveConfig(TargetState=default_state)
+            def __str__(self, **kwargs):
+                return self.TargetState.str(**kwargs)
 
-        return default_gen
+        return SolveConfig
 
     @abstractmethod
-    def get_default_gen(self) -> callable:
-        """
-        This function should return a callable that takes a state and returns a shape of it.
-        function signature: (state: State) -> Dict[str, Any]
-        """
+    def define_state_class(self) -> Xtructurable:
         pass
 
     def get_solve_config_img_parser(self) -> callable:

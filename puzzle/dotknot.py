@@ -1,9 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 from puzzle.util import coloring_str
 
 TYPE = jnp.uint8
@@ -20,17 +21,32 @@ class DotKnot(Puzzle):
 
     size: int
 
-    @state_dataclass
-    class State:
-        board: chex.Array
-        # 0 : empty
-        # 1 ~ color_num : point a
-        # color_num + 1 ~ 2 * color_num + 1 : point b
-        # 2 * color_num + 2 ~ 3 * color_num + 2 : lines
+    def get_solve_config_default_gen(self):
+        def gen():
+            return self.SolveConfig()
 
-    @state_dataclass
-    class SolveConfig:
-        pass
+        return gen
+
+    def define_solve_config_class(self) -> Xtructurable:
+        @xtructure_dataclass
+        class SolveConfig:
+            pass
+
+        return SolveConfig
+
+    def define_state_class(self) -> Xtructurable:
+        str_parser = self.get_string_parser()
+        board = jnp.zeros((self.size * self.size), dtype=TYPE)
+        packed_board = self.pack_board(board)
+
+        @xtructure_dataclass
+        class State:
+            board: FieldDescriptor[TYPE, packed_board.shape, packed_board]
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
 
     def __init__(self, size: int, color_num: int = 4, **kwargs):
         assert size >= 4, "Size must be at least 4 for packing"
@@ -89,31 +105,17 @@ class DotKnot(Puzzle):
             board = board[:-1]
         return board
 
-    def get_solve_config_default_gen(self):
-        def gen():
-            return self.SolveConfig()
-
-        return gen
-
-    def get_default_gen(self) -> callable:
-        def gen():
-            board = jnp.zeros((self.size * self.size), dtype=TYPE)
-            packed_board = self.pack_board(board)
-            return self.State(board=packed_board)
-
-        return gen
-
     def get_initial_state(
         self, solve_config: "DotKnot.SolveConfig", key=jax.random.PRNGKey(128), data=None
-    ) -> State:
+    ) -> "DotKnot.State":
         return self._get_random_state(key)
 
-    def get_solve_config(self, key=jax.random.PRNGKey(128), data=None) -> Puzzle.SolveConfig:
+    def get_solve_config(self, key=jax.random.PRNGKey(128), data=None) -> "DotKnot.SolveConfig":
         return self.SolveConfig()
 
     def get_neighbours(
-        self, solve_config: "DotKnot.SolveConfig", state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: "DotKnot.SolveConfig", state: "DotKnot.State", filled: bool = True
+    ) -> tuple["DotKnot.State", chex.Array]:
         """
         This function returns neighbours and the cost of each move.
         If impossible to move in a direction, cost should be inf and State should be same as input state.
@@ -175,7 +177,7 @@ class DotKnot(Puzzle):
         new_states, costs = jax.vmap(move, in_axes=(None, 0))(state, moves)
         return new_states, costs
 
-    def is_solved(self, solve_config: "DotKnot.SolveConfig", state: State) -> bool:
+    def is_solved(self, solve_config: "DotKnot.SolveConfig", state: "DotKnot.State") -> bool:
         unpacked = self.unpack_board(state.board)
         empty = jnp.all(unpacked == 0)  # ALL empty is not solved condition
         gr = jnp.greater_equal(unpacked, 1)  # ALL point a is solved condition
@@ -216,7 +218,7 @@ class DotKnot(Puzzle):
             form += "━━" if i != size - 1 else "━━┛"
         return form
 
-    def _getBlankPosition(self, state: State, idx: int):
+    def _getBlankPosition(self, state: "DotKnot.State", idx: int):
         unpacked_board = self.unpack_board(state.board)
         one_hot = unpacked_board == idx
         available = jnp.any(one_hot)

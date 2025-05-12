@@ -2,9 +2,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from termcolor import colored
+from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
 
 TYPE = jnp.uint16
 
@@ -15,16 +16,34 @@ class Maze(Puzzle):
     # Maze is now stored internally primarily as bool (False=path, True=wall)
     # It gets packed to uint8 only for SolveConfig storage / potentially other interfaces
 
-    @state_dataclass
-    class State:
-        pos: chex.Array
+    def define_state_class(self) -> Xtructurable:
 
-    @state_dataclass
-    class SolveConfig:
-        TargetState: "Maze.State"
-        Maze: chex.Array  # Note: This remains packed uint8 for storage
+        str_parser = self.get_string_parser()
 
-    def __init__(self, size: int, p=0.3, key=jax.random.PRNGKey(0), **kwargs):
+        @xtructure_dataclass
+        class State:
+            pos: FieldDescriptor[TYPE, (2,)]
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+        return State
+
+    def define_solve_config_class(self) -> Xtructurable:
+        dummy_maze = jnp.zeros((self.size**2), dtype=jnp.bool_)
+        dummy_maze = self.to_uint8(dummy_maze)
+
+        @xtructure_dataclass
+        class SolveConfig:
+            TargetState: FieldDescriptor[self.State]
+            Maze: FieldDescriptor[jnp.uint8, (dummy_maze.shape[0],), dummy_maze]
+
+            def __str__(self, **kwargs):
+                return self.TargetState.str(solve_config=self, **kwargs)
+
+        return SolveConfig
+
+    def __init__(self, size: int, **kwargs):
         # Parameter p is no longer used for maze generation
         self.size = size
         super().__init__(**kwargs)
@@ -98,25 +117,9 @@ class Maze(Puzzle):
 
         return parser
 
-    def get_solve_config_default_gen(self):
-        def gen():
-            maze = jnp.zeros((self.size**2), dtype=jnp.bool_)
-            maze = self.to_uint8(maze)
-            return self.SolveConfig(
-                TargetState=self.State(pos=jnp.array([0, 0], dtype=TYPE)), Maze=maze
-            )
-
-        return gen
-
-    def get_default_gen(self) -> callable:
-        def gen():
-            return self.State(pos=jnp.array([0, 0], dtype=TYPE))
-
-        return gen
-
     def get_initial_state(
         self, solve_config: "Maze.SolveConfig", key=jax.random.PRNGKey(0), data=None
-    ) -> State:
+    ) -> "Maze.State":
         # Start state should also be chosen from valid path locations
         bool_maze = self.from_uint8(solve_config.Maze).reshape((self.size, self.size))
         return self._get_random_state(bool_maze, key)
@@ -248,8 +251,8 @@ class Maze(Puzzle):
         return maze  # Return the boolean maze grid
 
     def get_neighbours(
-        self, solve_config: "Maze.SolveConfig", state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: "Maze.SolveConfig", state: "Maze.State", filled: bool = True
+    ) -> tuple["Maze.State", chex.Array]:
         """
         This function should return neighbours, and the cost of the move.
         If impossible to move in a direction, cost should be inf and State should be same as input state.
@@ -284,7 +287,7 @@ class Maze(Puzzle):
 
         return new_states, costs
 
-    def is_solved(self, solve_config: "Maze.SolveConfig", state: State) -> bool:
+    def is_solved(self, solve_config: "Maze.SolveConfig", state: "Maze.State") -> bool:
         return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:

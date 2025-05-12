@@ -19,7 +19,7 @@ from heuristic.neuralheuristic.wbsdai import (
     wbsdai_dataset_builder,
 )
 from neural_util.optimizer import setup_optimizer
-from neural_util.target_update import soft_update
+from neural_util.target_update import scaled_by_reset, soft_update
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
@@ -63,27 +63,33 @@ def davi(
     using_hindsight_target: bool,
     using_importance_sampling: bool,
     multi_device: bool,
+    reset_interval: int,
+    tau: float,
     **kwargs,
 ):
+    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key, subkey = jax.random.split(key)
 
     writer = setup_logging(puzzle_name, puzzle_size, "davi")
     heuristic_model = heuristic.model
-    heuristic_params = heuristic.get_new_params()
     target_heuristic_params = heuristic.params
-    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
-    key, subkey = jax.random.split(key)
+    heuristic_params = scaled_by_reset(
+        target_heuristic_params,
+        key,
+        tau,
+    )
 
     n_devices = 1
     if multi_device:
         n_devices = jax.device_count()
         steps = steps // n_devices
         update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
         heuristic_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
-    opt_state_init = opt_state
     regression_trainer_fn = regression_trainer_builder(
         train_minibatch_size,
         heuristic_model,
@@ -103,6 +109,8 @@ def davi(
     )
 
     pbar = trange(steps)
+    updated = False
+    last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
@@ -137,9 +145,20 @@ def davi(
             target_heuristic_params = soft_update(
                 target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
             )
+            updated = True
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_heuristic_params = heuristic_params
-            opt_state = opt_state_init
+            updated = True
+
+        if i - last_reset_time >= reset_interval and updated:
+            last_reset_time = i
+            heuristic_params = scaled_by_reset(
+                heuristic_params,
+                key,
+                tau,
+            )
+            opt_state = optimizer.init(heuristic_params)
+            updated = False
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = heuristic_params
@@ -171,26 +190,33 @@ def qlearning(
     using_hindsight_target: bool,
     using_importance_sampling: bool,
     multi_device: bool,
+    reset_interval: int,
+    tau: float,
     **kwargs,
 ):
-    writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
-    qfunc_model = qfunction.model
-    qfunc_params = qfunction.get_new_params()
-    target_qfunc_params = qfunction.params
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
+
+    writer = setup_logging(puzzle_name, puzzle_size, "qlearning")
+    qfunc_model = qfunction.model
+    target_qfunc_params = qfunction.params
+    qfunc_params = scaled_by_reset(
+        target_qfunc_params,
+        key,
+        tau,
+    )
 
     n_devices = 1
     if multi_device:
         n_devices = jax.device_count()
         steps = steps // n_devices
         update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
         qfunc_params, n_devices, steps, dataset_batch_size // train_minibatch_size
     )
-    opt_state_init = opt_state
     qlearning_fn = qlearning_builder(
         train_minibatch_size, qfunc_model, optimizer, using_importance_sampling, n_devices=n_devices
     )
@@ -206,6 +232,8 @@ def qlearning(
     )
 
     pbar = trange(steps)
+    updated = False
+    last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
@@ -241,9 +269,20 @@ def qlearning(
             target_qfunc_params = soft_update(
                 target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
             )
+            updated = True
         elif (i % update_interval == 0 and i != 0) and loss <= loss_threshold:
             target_qfunc_params = qfunc_params
-            opt_state = opt_state_init
+            updated = True
+
+        if i - last_reset_time >= reset_interval and updated:
+            last_reset_time = i
+            qfunc_params = scaled_by_reset(
+                qfunc_params,
+                key,
+                tau,
+            )
+            opt_state = optimizer.init(qfunc_params)
+            updated = False
 
         if i % 1000 == 0 and i != 0:
             qfunction.params = qfunc_params
