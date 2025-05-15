@@ -365,8 +365,7 @@ class WorldModelPuzzleBase(Puzzle):
         """
         This function should return a neighbours, and the cost of the move.
         """
-        uint8_latent = states.latent
-        bit_latent = jax.vmap(from_uint8, in_axes=(0, None))(uint8_latent, self.latent_shape)
+        bit_latent = jax.vmap(self.State.unpacking)(states).latent
         next_bit_latent = self.model.apply(
             self.params, bit_latent, training=False, method=self.model.transition
         )  # (batch_size, action_size, latent_size)
@@ -374,18 +373,14 @@ class WorldModelPuzzleBase(Puzzle):
         next_bit_latent = jnp.swapaxes(
             next_bit_latent, 0, 1
         )  # (action_size, batch_size, latent_size)
-        next_uint8_latent = jax.vmap(jax.vmap(to_uint8))(
-            next_bit_latent
-        )  # (action_size, batch_size, latent_size)
+        next_states = self.State(latent=next_bit_latent)
+        next_states = jax.vmap(jax.vmap(self.State.packing))(next_states)
         cost = jnp.where(
             filleds,
             jnp.ones((self.action_size, states.latent.shape[0]), dtype=jnp.float16),
             jnp.inf,
         )
-        return (
-            self.State(latent=next_uint8_latent),
-            cost,
-        )  # (action_size, batch_size, latent_size), (action_size, batch_size)
+        return next_states, cost
 
     def get_neighbours(
         self, solve_config: Puzzle.SolveConfig, state: Puzzle.State, filled: bool = True
