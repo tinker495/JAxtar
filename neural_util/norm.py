@@ -70,8 +70,8 @@ class BatchReNorm(nn.Module):
                 r = lax.stop_gradient(r)
                 d = jnp.clip((mean - ra_mean.value) / ra_std, -self.d_max, self.d_max)
                 d = lax.stop_gradient(d)
-                custom_mean = mean - d * var / r
-                custom_var = var / r
+                custom_mean = mean - (std * d / r)
+                custom_var = (var + self.epsilon) / (r * r) - self.epsilon
 
                 ra_mean.value = self.momentum * ra_mean.value + (1 - self.momentum) * mean
                 ra_var.value = self.momentum * ra_var.value + (1 - self.momentum) * var
