@@ -10,7 +10,7 @@ from neural_util.modules import (
     ResBlock,
     conditional_dummy_norm,
 )
-from puzzle import LightsOut, from_uint8
+from puzzle import LightsOut
 
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):
@@ -20,15 +20,11 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
     ) -> chex.Array:
-        current_map = from_uint8(current.board, (self.puzzle.size * self.puzzle.size,)).astype(
-            DTYPE
-        )
+        current_map = current.unpacking().board.astype(DTYPE)
         if self.is_fixed:
             one_hots = current_map
         else:
-            target_map = from_uint8(
-                solve_config.TargetState.board, (self.puzzle.size * self.puzzle.size,)
-            ).astype(DTYPE)
+            target_map = solve_config.TargetState.unpacking().board.astype(DTYPE)
             one_hots = jnp.concatenate([target_map, current_map], axis=-1)
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
@@ -68,8 +64,6 @@ class LightsOutConvNeuralHeuristic(NeuralHeuristicBase):
         """
         This function should return the difference, not_equal of the current state and the target state
         """
-        current_map = from_uint8(current.board, (self.puzzle.size * self.puzzle.size,)).astype(
-            DTYPE
-        )
-        target_map = from_uint8(target.board, (self.puzzle.size * self.puzzle.size,)).astype(DTYPE)
+        current_map = current.unpacking().board.astype(DTYPE)
+        target_map = target.unpacking().board.astype(DTYPE)
         return jnp.not_equal(current_map, target_map).astype(DTYPE)

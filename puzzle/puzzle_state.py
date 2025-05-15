@@ -33,12 +33,12 @@ def state_dataclass(cls: Type[T]) -> Type[T]:
 
     if not hasattr(cls, "packing") and not hasattr(cls, "unpacking"):
         # if packing and unpacking are not implemented, return the state as is
-        def packing(self):
+        def packing(self) -> cls:
             return self
 
         setattr(cls, "packing", packing)
 
-        def unpacking(self):
+        def unpacking(self) -> cls:
             return self
 
         setattr(cls, "unpacking", unpacking)
