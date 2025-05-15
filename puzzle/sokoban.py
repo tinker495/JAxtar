@@ -4,10 +4,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from termcolor import colored
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 
 TYPE = jnp.uint8
 
@@ -25,13 +25,13 @@ class Object(Enum):
 class Sokoban(Puzzle):
     size: int = 10
 
-    def define_state_class(self) -> Xtructurable:
+    def define_state_class(self) -> PuzzleState:
         """Defines the state class for Sokoban using Xtructure."""
         str_parser = self.get_string_parser()
         board = jnp.ones(self.size * self.size, dtype=TYPE)
         packed_board = self.pack_board(board)
 
-        @xtructure_dataclass
+        @state_dataclass
         class State:
             board: FieldDescriptor[TYPE, packed_board.shape, packed_board]
 

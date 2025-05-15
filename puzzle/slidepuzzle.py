@@ -1,10 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 
 TYPE = jnp.uint8
 
@@ -13,10 +13,10 @@ class SlidePuzzle(Puzzle):
 
     size: int
 
-    def define_state_class(self) -> Xtructurable:
+    def define_state_class(self) -> PuzzleState:
         str_parser = self.get_string_parser()
 
-        @xtructure_dataclass
+        @state_dataclass
         class State:
             board: FieldDescriptor[TYPE, (self.size**2,)]
 

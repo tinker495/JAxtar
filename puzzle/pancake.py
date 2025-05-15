@@ -2,10 +2,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from termcolor import colored
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 
 TYPE = jnp.uint8
 
@@ -27,11 +27,11 @@ class PancakeSorting(Puzzle):
 
     size: int
 
-    def define_state_class(self) -> Xtructurable:
+    def define_state_class(self) -> PuzzleState:
         """Defines the state class for PancakeSorting using Xtructure."""
         str_parser = self.get_string_parser()
 
-        @xtructure_dataclass
+        @state_dataclass
         class State:
             stack: FieldDescriptor[TYPE, (self.size,)]
 

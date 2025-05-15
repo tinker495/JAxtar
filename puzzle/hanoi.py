@@ -2,10 +2,10 @@ import chex
 import jax
 import jax.numpy as jnp
 from termcolor import colored
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 
 TYPE = jnp.uint8
 
@@ -26,14 +26,14 @@ class TowerOfHanoi(Puzzle):
     num_pegs: int = 3  # Classic Tower of Hanoi has 3 pegs
     max_disk_value: int
 
-    def define_state_class(self) -> Xtructurable:
+    def define_state_class(self) -> PuzzleState:
         """Defines the state class for Tower of Hanoi using Xtructure."""
         str_parser = self.get_string_parser()
         # Default pegs value for FieldDescriptor, initialized when class is defined
         # self.num_pegs and self.num_disks are available from TowerOfHanoi.__init__
         default_pegs_val = jnp.zeros((self.num_pegs, self.num_disks + 1), dtype=TYPE)
 
-        @xtructure_dataclass
+        @state_dataclass
         class State:
             pegs: FieldDescriptor[TYPE, default_pegs_val.shape, default_pegs_val]
 
