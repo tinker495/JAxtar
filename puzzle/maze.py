@@ -6,6 +6,7 @@ from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.util import from_uint8, to_uint8
 
 TYPE = jnp.uint16
 
@@ -31,7 +32,7 @@ class Maze(Puzzle):
 
     def define_solve_config_class(self) -> Xtructurable:
         dummy_maze = jnp.zeros((self.size**2), dtype=jnp.bool_)
-        dummy_maze = self.to_uint8(dummy_maze)
+        dummy_maze = to_uint8(dummy_maze)
 
         @xtructure_dataclass
         class SolveConfig:
@@ -76,7 +77,7 @@ class Maze(Puzzle):
             assert solve_config is not None, "This puzzle requires a solve_config"
 
             # 1. Unpack the maze to boolean (True=wall, False=path)
-            bool_maze_flat = self.from_uint8(solve_config.Maze)
+            bool_maze_flat = from_uint8(solve_config.Maze, (self.size * self.size,))
 
             # 2. Create an integer representation (0=path, 1=wall)
             # Ensure correct shape for intermediate calculations
@@ -121,7 +122,7 @@ class Maze(Puzzle):
         self, solve_config: "Maze.SolveConfig", key=jax.random.PRNGKey(0), data=None
     ) -> "Maze.State":
         # Start state should also be chosen from valid path locations
-        bool_maze = self.from_uint8(solve_config.Maze).reshape((self.size, self.size))
+        bool_maze = from_uint8(solve_config.Maze, (self.size, self.size))
         return self._get_random_state(bool_maze, key)
 
     def get_solve_config(self, key=jax.random.PRNGKey(128), data=None) -> Puzzle.SolveConfig:
@@ -133,7 +134,9 @@ class Maze(Puzzle):
         target_state = self._get_random_state(bool_maze, target_key)
 
         # Pack the boolean maze into uint8 for storage in SolveConfig
-        packed_maze = self.to_uint8(bool_maze.flatten())
+        packed_maze = to_uint8(
+            bool_maze.ravel()
+        )  # Flatten to match FieldDescriptor's 1D shape expectation
 
         return self.SolveConfig(TargetState=target_state, Maze=packed_maze)
 
@@ -264,7 +267,7 @@ class Maze(Puzzle):
             new_pos = (state.pos + move).astype(TYPE)
 
             # Use the unpacked boolean maze for neighbor checks
-            bool_maze = self.from_uint8(solve_config.Maze).reshape((self.size, self.size))
+            bool_maze = from_uint8(solve_config.Maze, (self.size, self.size))
 
             # Check if the new position is within the maze bounds and not a wall (True)
             valid_move = (
@@ -357,20 +360,6 @@ class Maze(Puzzle):
 
         return self.State(pos=final_pos)
 
-    def to_uint8(self, board: chex.Array) -> chex.Array:
-        # from booleans (True=wall) to uint8
-        # Input board should be flattened first if it's 2D
-        board_flat = board.flatten()
-        # packbits expects 0/1, False/True maps correctly
-        return jnp.packbits(board_flat.astype(jnp.uint8), axis=-1, bitorder="little")
-
-    def from_uint8(self, board: chex.Array) -> chex.Array:
-        # from uint8 to boolean (True=wall)
-        # Calculate expected number of bits (size*size)
-        num_bits = self.size * self.size
-        unpacked = jnp.unpackbits(board, axis=-1, count=num_bits, bitorder="little")
-        return unpacked.astype(jnp.bool_)  # Convert 0/1 to False/True
-
     def get_img_parser(self):
         """
         This function is a decorator that adds an img_parser to the class.
@@ -384,7 +373,7 @@ class Maze(Puzzle):
 
             # --- Optimized Wall Rendering ---
             # 1. Unpack maze to boolean (True=wall)
-            maze_bool_jax = self.from_uint8(solve_config.Maze).reshape((self.size, self.size))
+            maze_bool_jax = from_uint8(solve_config.Maze, (self.size, self.size))
             maze_bool_np = np.array(maze_bool_jax)  # Convert JAX array to NumPy array
 
             # 2. Create monochrome image (0=wall, 255=path) using NumPy array

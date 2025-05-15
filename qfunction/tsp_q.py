@@ -2,7 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from puzzle.tsp import TSP
+from puzzle import TSP, from_uint8
 from qfunction.q_base import QFunction
 
 
@@ -23,7 +23,7 @@ class TSPQ(QFunction):
         """
         Return zero distance for any puzzle state.
         """
-        inv_mask = 1 - self.puzzle.from_uint8(current.mask)
+        inv_mask = 1 - from_uint8(current.mask, (self.puzzle.size,))
         distance_matrix = solve_config.distance_matrix
         masked_dists = distance_matrix * inv_mask[None, :] * inv_mask[:, None]
         total_cost = jnp.mean(jnp.sum(masked_dists, axis=1))

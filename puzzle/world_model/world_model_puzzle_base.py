@@ -18,6 +18,7 @@ from neural_util.util import (
 )
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.util import from_uint8, to_uint8
 
 STR_PARSE_IMG = True
 
@@ -101,7 +102,7 @@ class WorldModelPuzzleBase(Puzzle):
         """Defines the state class for WorldModelPuzzleBase using Xtructure."""
         str_parser = self.get_string_parser()
         latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
-        latent_uint8 = self.to_uint8(latent_bool)
+        latent_uint8 = to_uint8(latent_bool)
 
         @xtructure_dataclass
         class State:
@@ -274,7 +275,7 @@ class WorldModelPuzzleBase(Puzzle):
 
         def default_gen():
             latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
-            latent_uint8 = self.to_uint8(latent_bool)
+            latent_uint8 = to_uint8(latent_bool)
             return WorldModelPuzzleBase.State(latent=latent_uint8)
 
         return default_gen
@@ -295,7 +296,7 @@ class WorldModelPuzzleBase(Puzzle):
             **kwargs,
         ) -> jnp.ndarray:
             latent = state.latent
-            latent = self.from_uint8(latent)
+            latent = from_uint8(latent, self.latent_shape)
             latent = jnp.expand_dims(latent, axis=0)
             data = self.model.apply(
                 self.params, latent, training=False, method=self.model.decode
@@ -309,7 +310,7 @@ class WorldModelPuzzleBase(Puzzle):
                 img = data
             if solve_config is not None and show_target_state_img:
                 latent = solve_config.TargetState.latent
-                latent = self.from_uint8(latent)
+                latent = from_uint8(latent, self.latent_shape)
                 latent = jnp.expand_dims(latent, axis=0)
                 data = self.model.apply(
                     self.params, latent, training=False, method=self.model.decode
@@ -345,7 +346,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, target_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        latent = self.to_uint8(latent)
+        latent = to_uint8(latent)
         return self.SolveConfig(TargetState=self.State(latent=latent))
 
     def get_initial_state(
@@ -359,7 +360,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, init_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        latent = self.to_uint8(latent)
+        latent = to_uint8(latent)
         return self.State(latent=latent)
 
     def batched_get_neighbours(
@@ -373,7 +374,7 @@ class WorldModelPuzzleBase(Puzzle):
         This function should return a neighbours, and the cost of the move.
         """
         uint8_latent = states.latent
-        bit_latent = jax.vmap(self.from_uint8)(uint8_latent)
+        bit_latent = jax.vmap(from_uint8, in_axes=(0, None))(uint8_latent, self.latent_shape)
         next_bit_latent = self.model.apply(
             self.params, bit_latent, training=False, method=self.model.transition
         )  # (batch_size, action_size, latent_size)
@@ -381,7 +382,7 @@ class WorldModelPuzzleBase(Puzzle):
         next_bit_latent = jnp.swapaxes(
             next_bit_latent, 0, 1
         )  # (action_size, batch_size, latent_size)
-        next_uint8_latent = jax.vmap(jax.vmap(self.to_uint8))(
+        next_uint8_latent = jax.vmap(jax.vmap(to_uint8))(
             next_bit_latent
         )  # (action_size, batch_size, latent_size)
         cost = jnp.where(
@@ -430,23 +431,6 @@ class WorldModelPuzzleBase(Puzzle):
         """
         target_state = solve_config.TargetState
         return self.is_equal(state, target_state)
-
-    def to_uint8(self, bit_latent: chex.Array) -> chex.Array:
-        # from booleans to uint8
-        # boolean 32 to uint8 4
-        bit_latent = jnp.reshape(bit_latent, shape=(-1,))
-        bit_latent = jnp.pad(
-            bit_latent, pad_width=(0, self.pad_size), mode="constant", constant_values=0
-        )
-        return jnp.packbits(bit_latent, axis=-1, bitorder="little")
-
-    def from_uint8(self, uint8_latent: chex.Array) -> chex.Array:
-        # from uint8 4 to boolean 32
-        bit_latent = jnp.unpackbits(
-            uint8_latent, axis=-1, count=self.latent_size, bitorder="little"
-        )
-        bit_latent = bit_latent[: self.latent_size]
-        return jnp.reshape(bit_latent, shape=self.latent_shape)
 
     def get_inverse_neighbours(
         self, solve_config: Puzzle.SolveConfig, state: Puzzle.State, filled: bool = True

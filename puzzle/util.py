@@ -75,7 +75,7 @@ def from_uint8(
                 f"Got {all_unpacked_bits.size} bits from {packed_bytes.size} bytes."
             )
         # Select the required number of bits and reshape
-        return all_unpacked_bits[:total_bits_needed].reshape(target_shape)
+        return all_unpacked_bits[:total_bits_needed].reshape(target_shape).astype(jnp.bool_)
     else:
         # Expects packed_bytes to be uint8.
         # Output is an integer array (specifically uint8 representing the value from active_bits)

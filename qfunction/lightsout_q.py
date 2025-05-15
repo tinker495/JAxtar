@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from puzzle.lightsout import LightsOut
+from puzzle import LightsOut, from_uint8
 from qfunction.q_base import QFunction
 
 
@@ -22,7 +22,8 @@ class LightsOutQ(QFunction):
         Get distance between current state and target state.
         """
         neq_state = jnp.not_equal(
-            self.puzzle.from_uint8(current.board), self.puzzle.from_uint8(target.board)
+            from_uint8(current.board, (self.puzzle.size * self.puzzle.size)),
+            from_uint8(target.board, (self.puzzle.size * self.puzzle.size)),
         )
         sum_neq_state = jnp.sum(neq_state)
         return sum_neq_state / 5 * 2.0

@@ -2,6 +2,7 @@ import chex
 import jax.numpy as jnp
 
 from neural_util.modules import DTYPE
+from puzzle import from_uint8
 from puzzle.world_model import WorldModelPuzzleBase
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
@@ -15,8 +16,10 @@ class WorldModelNeuralQ(NeuralQFunctionBase):
     def pre_process(
         self, solve_config: WorldModelPuzzleBase.SolveConfig, current: WorldModelPuzzleBase.State
     ) -> chex.Array:
-        target_latent = self.puzzle.from_uint8(solve_config.TargetState.latent).astype(jnp.float32)
-        current_latent = self.puzzle.from_uint8(current.latent).astype(jnp.float32)
+        target_latent = from_uint8(
+            solve_config.TargetState.latent, self.puzzle.latent_shape
+        ).astype(jnp.float32)
+        current_latent = from_uint8(current.latent, self.puzzle.latent_shape).astype(jnp.float32)
         latent_stack = jnp.concatenate([current_latent, target_latent], axis=-1)
         latent_stack = jnp.reshape(latent_stack, (-1,))
         return ((latent_stack - 0.5) * 2.0).astype(DTYPE)
