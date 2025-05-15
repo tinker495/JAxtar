@@ -103,6 +103,7 @@ class WorldModelPuzzleBase(Puzzle):
         str_parser = self.get_string_parser()
         latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
         latent_uint8 = to_uint8(latent_bool)
+        latent_shape = self.latent_shape
 
         @state_dataclass
         class State:
@@ -110,6 +111,14 @@ class WorldModelPuzzleBase(Puzzle):
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)
+
+            def packing(self):
+                packed_latent = to_uint8(self.latent)
+                return State(latent=packed_latent)
+
+            def unpacking(self):
+                latent = from_uint8(self.latent, latent_shape)
+                return State(latent=latent)
 
         return State
 
@@ -267,19 +276,6 @@ class WorldModelPuzzleBase(Puzzle):
 
         return parser
 
-    def get_default_gen(self) -> callable:
-        """
-        This function should return a callable that takes a state and returns a shape of it.
-        function signature: (state: State) -> Dict[str, Any]
-        """
-
-        def default_gen():
-            latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
-            latent_uint8 = to_uint8(latent_bool)
-            return WorldModelPuzzleBase.State(latent=latent_uint8)
-
-        return default_gen
-
     def get_img_parser(self) -> callable:
         """
         This function should return a callable that takes a state and returns a image representation of it.
@@ -295,8 +291,7 @@ class WorldModelPuzzleBase(Puzzle):
             target_height: int = IMG_SIZE[1],
             **kwargs,
         ) -> jnp.ndarray:
-            latent = state.latent
-            latent = from_uint8(latent, self.latent_shape)
+            latent = state.unpacking().latent
             latent = jnp.expand_dims(latent, axis=0)
             data = self.model.apply(
                 self.params, latent, training=False, method=self.model.decode
@@ -309,8 +304,7 @@ class WorldModelPuzzleBase(Puzzle):
             else:
                 img = data
             if solve_config is not None and show_target_state_img:
-                latent = solve_config.TargetState.latent
-                latent = from_uint8(latent, self.latent_shape)
+                latent = solve_config.TargetState.unpacking().latent
                 latent = jnp.expand_dims(latent, axis=0)
                 data = self.model.apply(
                     self.params, latent, training=False, method=self.model.decode
@@ -346,8 +340,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, target_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        latent = to_uint8(latent)
-        return self.SolveConfig(TargetState=self.State(latent=latent))
+        return self.SolveConfig(TargetState=self.State(latent=latent).packing())
 
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
@@ -360,8 +353,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, init_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        latent = to_uint8(latent)
-        return self.State(latent=latent)
+        return self.State(latent=latent).packing()
 
     def batched_get_neighbours(
         self,

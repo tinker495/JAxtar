@@ -15,6 +15,29 @@ class Maze(Puzzle):
 
     size: int
 
+    def define_solve_config_class(self) -> PuzzleState:
+        dummy_maze = jnp.zeros((self.size**2), dtype=jnp.bool_)
+        dummy_maze = to_uint8(dummy_maze)
+        size = self.size
+
+        @state_dataclass
+        class SolveConfig:
+            TargetState: FieldDescriptor[self.State]
+            Maze: FieldDescriptor[jnp.uint8, (dummy_maze.shape[0],), dummy_maze]
+
+            def __str__(self, **kwargs):
+                return self.TargetState.str(solve_config=self, **kwargs)
+
+            def packing(self):
+                packed_maze = to_uint8(self.Maze)
+                return SolveConfig(TargetState=self.TargetState, Maze=packed_maze)
+
+            def unpacking(self):
+                maze = from_uint8(self.Maze, (size * size,))
+                return SolveConfig(TargetState=self.TargetState, Maze=maze)
+
+        return SolveConfig
+
     def define_state_class(self) -> PuzzleState:
 
         str_parser = self.get_string_parser()
@@ -27,20 +50,6 @@ class Maze(Puzzle):
                 return str_parser(self, **kwargs)
 
         return State
-
-    def define_solve_config_class(self) -> PuzzleState:
-        dummy_maze = jnp.zeros((self.size**2), dtype=jnp.bool_)
-        dummy_maze = to_uint8(dummy_maze)
-
-        @state_dataclass
-        class SolveConfig:
-            TargetState: FieldDescriptor[self.State]
-            Maze: FieldDescriptor[jnp.uint8, (dummy_maze.shape[0],), dummy_maze]
-
-            def __str__(self, **kwargs):
-                return self.TargetState.str(solve_config=self, **kwargs)
-
-        return SolveConfig
 
     def __init__(self, size: int, **kwargs):
         # Parameter p is no longer used for maze generation
@@ -75,7 +84,7 @@ class Maze(Puzzle):
             assert solve_config is not None, "This puzzle requires a solve_config"
 
             # 1. Unpack the maze to boolean (True=wall, False=path)
-            bool_maze_flat = from_uint8(solve_config.Maze, (self.size * self.size,))
+            bool_maze_flat = solve_config.unpacking().Maze
 
             # 2. Create an integer representation (0=path, 1=wall)
             # Ensure correct shape for intermediate calculations
@@ -120,23 +129,19 @@ class Maze(Puzzle):
         self, solve_config: "Maze.SolveConfig", key=jax.random.PRNGKey(0), data=None
     ) -> "Maze.State":
         # Start state should also be chosen from valid path locations
-        bool_maze = from_uint8(solve_config.Maze, (self.size, self.size))
+        bool_maze = solve_config.unpacking().Maze.reshape((self.size, self.size))
         return self._get_random_state(bool_maze, key)
 
     def get_solve_config(self, key=jax.random.PRNGKey(128), data=None) -> Puzzle.SolveConfig:
         # Generate maze using DFS
         key, maze_key, target_key = jax.random.split(key, 3)
         bool_maze = self._generate_maze_dfs(maze_key, self.size)  # Returns bool array (True=wall)
+        bool_maze = bool_maze.ravel()
 
         # Get target state on a valid path cell
         target_state = self._get_random_state(bool_maze, target_key)
 
-        # Pack the boolean maze into uint8 for storage in SolveConfig
-        packed_maze = to_uint8(
-            bool_maze.ravel()
-        )  # Flatten to match FieldDescriptor's 1D shape expectation
-
-        return self.SolveConfig(TargetState=target_state, Maze=packed_maze)
+        return self.SolveConfig(TargetState=target_state, Maze=bool_maze).packing()
 
     def _generate_maze_dfs(self, key, size):
         """Generates a maze using Randomized Depth-First Search."""
@@ -260,12 +265,10 @@ class Maze(Puzzle):
         """
         # Define possible moves: up, down, left, right
         moves = jnp.array([[0, -1], [0, 1], [-1, 0], [1, 0]])
+        bool_maze = solve_config.unpacking().Maze.reshape((self.size, self.size))
 
         def move(state, move):
             new_pos = (state.pos + move).astype(TYPE)
-
-            # Use the unpacked boolean maze for neighbor checks
-            bool_maze = from_uint8(solve_config.Maze, (self.size, self.size))
 
             # Check if the new position is within the maze bounds and not a wall (True)
             valid_move = (
@@ -329,7 +332,7 @@ class Maze(Puzzle):
         This function should return a random state on a path cell (False).
         Accepts a boolean maze directly.
         """
-        # bool_maze is now passed directly, no need for from_uint8
+        # bool_maze is now passed directly
         # Ensure bool_maze is 2D
         if bool_maze.ndim == 1:
             bool_maze = bool_maze.reshape((self.size, self.size))
@@ -371,7 +374,7 @@ class Maze(Puzzle):
 
             # --- Optimized Wall Rendering ---
             # 1. Unpack maze to boolean (True=wall)
-            maze_bool_jax = from_uint8(solve_config.Maze, (self.size, self.size))
+            maze_bool_jax = solve_config.unpacking().Maze.reshape((self.size, self.size))
             maze_bool_np = np.array(maze_bool_jax)  # Convert JAX array to NumPy array
 
             # 2. Create monochrome image (0=wall, 255=path) using NumPy array

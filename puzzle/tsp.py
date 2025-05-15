@@ -20,6 +20,7 @@ class TSP(Puzzle):
         str_parser = self.get_string_parser()
         mask = jnp.zeros(self.size, dtype=jnp.bool_)
         packed_mask = to_uint8(mask)
+        size = self.size
 
         @state_dataclass
         class State:
@@ -28,6 +29,14 @@ class TSP(Puzzle):
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)
+
+            def packing(self):
+                packed_mask = to_uint8(self.mask)
+                return State(mask=packed_mask, point=self.point)
+
+            def unpacking(self):
+                mask = from_uint8(self.mask, (size,))
+                return State(mask=mask, point=self.point)
 
         return State
 
@@ -64,7 +73,7 @@ class TSP(Puzzle):
             return true_char if x else false_char
 
         def parser(state: "TSP.State", **kwargs):
-            mask = from_uint8(state.mask, (self.size,))
+            mask = state.unpacking().mask
             point_mask = jnp.zeros_like(mask).at[state.point].set(True)
             maps = [to_char(x, true_char="↓", false_char=" ") for x in point_mask]
             maps += [to_char(x, true_char="■", false_char="☐") for x in mask]
@@ -78,7 +87,7 @@ class TSP(Puzzle):
         mask = jnp.zeros(self.size, dtype=jnp.bool_)
         point = solve_config.start
         mask = mask.at[point].set(True)
-        return self.State(mask=to_uint8(mask), point=point)
+        return self.State(mask=mask, point=point).packing()
 
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         points = jax.random.uniform(
@@ -98,10 +107,7 @@ class TSP(Puzzle):
         If moving to a point already visited, the cost is infinity.
         """
         # Define possible moves: up, down, left, right
-        mask = from_uint8(
-            state.mask,
-            (self.size,),
-        )  # 1D array of size number_of_points, 0 if not visited, 1 if visited
+        mask = state.unpacking().mask
         point = state.point
 
         def move(idx):
@@ -116,7 +122,7 @@ class TSP(Puzzle):
                 ),
                 0,
             )
-            new_state = self.State(mask=to_uint8(new_mask), point=idx)
+            new_state = self.State(mask=new_mask, point=idx).packing()
             return new_state, cost
 
         # Apply the move function to all possible moves
@@ -128,7 +134,7 @@ class TSP(Puzzle):
         """
         TSP is solved when all points have been visited.
         """
-        return jnp.all(from_uint8(state.mask, (self.size,)))
+        return jnp.all(state.unpacking().mask)
 
     def action_to_string(self, action: int) -> str:
         """
@@ -170,7 +176,7 @@ class TSP(Puzzle):
             img = np.ones(IMG_SIZE + (3,), np.uint8) * 255
 
             # Get the visited mask as booleans
-            visited = from_uint8(state.mask, (self.size,))
+            visited = state.unpacking().mask
             # Convert the TSP points (assumed to be an array of shape [number_of_points, 2]) to a numpy array
             points_np = np.array(solve_config.points)
 
