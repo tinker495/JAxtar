@@ -9,7 +9,6 @@ from puzzle.slidepuzzle import SlidePuzzle, SlidePuzzleHard, SlidePuzzleRandom
 from puzzle.sokoban import Sokoban, SokobanDS, SokobanHard
 from puzzle.topspin import TopSpin
 from puzzle.tsp import TSP
-from puzzle.util import from_uint8, to_uint8
 
 __all__ = [
     "DotKnot",
@@ -31,6 +30,4 @@ __all__ = [
     "SokobanHard",
     "TSP",
     "TopSpin",
-    "to_uint8",
-    "from_uint8",
 ]
