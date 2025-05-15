@@ -1,5 +1,6 @@
 from typing import Type, TypeVar
 
+import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -7,6 +8,71 @@ from tqdm import trange
 from Xtructure import StructuredType
 
 T = TypeVar("T")
+
+
+def to_uint8(input: chex.Array, active_bits: int = 1) -> chex.Array:
+    if active_bits == 1:
+        flatten_input = input.reshape((-1,))
+        return jnp.packbits(
+            flatten_input, axis=-1, bitorder="little"
+        )  # input dtype: bool, output dtype: uint8
+    else:
+        assert jnp.issubdtype(
+            input.dtype, jnp.integer
+        ), f"Input must be an integer array for active_bits={active_bits} > 1, got dtype={input.dtype}"
+
+        input_bitslen = input.dtype.itemsize * 8
+        unpacked_bits = jnp.unpackbits(
+            input, axis=-1, count=input_bitslen, bitorder="little"
+        )  # shape: (..., input_bitslen), dtype: bool
+        selected_bits = unpacked_bits[..., :active_bits]  # shape: (..., active_bits), dtype: bool
+        flat_selected_bits = selected_bits.reshape(
+            (-1,)
+        )  # shape: (total_input_elements * active_bits,), dtype: bool
+        return jnp.packbits(flat_selected_bits, axis=-1, bitorder="little")  # dtype: uint8
+
+
+def from_uint8(
+    packed_bytes: chex.Array, target_shape: tuple[int, ...], active_bits: int = 1
+) -> chex.Array:
+    assert (
+        packed_bytes.dtype == jnp.uint8
+    ), f"Input 'packed_bytes' must be uint8, got {packed_bytes.dtype}"
+
+    num_target_elements = np.prod(target_shape)
+    assert num_target_elements > 0, f"num_target_elements={num_target_elements} must be positive."
+    assert (
+        0 < active_bits <= 8
+    ), f"For reconstruction, active_bits={active_bits} must be between 1 and 8 (inclusive)."
+
+    if active_bits == 1:
+        all_unpacked_bits = jnp.unpackbits(
+            packed_bytes, bitorder="little"
+        ).flatten()  # shape: (packed_bytes.size * 8,), dtype: bool
+        return (
+            all_unpacked_bits[:num_target_elements].reshape(target_shape).astype(jnp.bool_)
+        )  # shape: target_shape, dtype: bool
+    else:
+        total_source_bits_needed = num_target_elements * active_bits
+        all_unpacked_bits = jnp.unpackbits(
+            packed_bytes, bitorder="little"
+        ).flatten()  # shape: (packed_bytes.size * 8,), dtype: uint8
+
+        assert all_unpacked_bits.size >= total_source_bits_needed, (
+            f"Not enough bits ({all_unpacked_bits.size}) for num_target_elements={num_target_elements}"
+            f"requiring active_bits={active_bits} each. Need total_source_bits_needed={total_source_bits_needed}."
+        )
+
+        relevant_bits = all_unpacked_bits[
+            :total_source_bits_needed
+        ]  # shape: (total_source_bits_needed,), dtype: uint8
+        grouped_bits = relevant_bits.reshape(
+            (num_target_elements, active_bits)
+        )  # shape: (num_target_elements, active_bits), dtype: uint8
+        reconstructed_values = jnp.packbits(
+            grouped_bits, axis=-1, bitorder="little"
+        )  # shape: (num_target_elements,), dtype: uint8
+        return reconstructed_values.reshape(target_shape)  # shape: target_shape, dtype: uint8
 
 
 def add_img_parser(cls: Type[T], imgfunc: callable) -> Type[T]:

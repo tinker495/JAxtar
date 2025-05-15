@@ -1,10 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 from puzzle.util import coloring_str
 
 TYPE = jnp.uint8
@@ -27,19 +27,19 @@ class DotKnot(Puzzle):
 
         return gen
 
-    def define_solve_config_class(self) -> Xtructurable:
-        @xtructure_dataclass
+    def define_solve_config_class(self) -> PuzzleState:
+        @state_dataclass
         class SolveConfig:
             pass
 
         return SolveConfig
 
-    def define_state_class(self) -> Xtructurable:
+    def define_state_class(self) -> PuzzleState:
         str_parser = self.get_string_parser()
         board = jnp.zeros((self.size * self.size), dtype=TYPE)
         packed_board = self.pack_board(board)
 
-        @xtructure_dataclass
+        @state_dataclass
         class State:
             board: FieldDescriptor[TYPE, packed_board.shape, packed_board]
 
