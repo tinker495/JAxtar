@@ -12,8 +12,9 @@ T = TypeVar("T")
 
 def to_uint8(input: chex.Array, active_bits: int = 1) -> chex.Array:
     if active_bits == 1:
+        flatten_input = input.reshape((-1,))
         return jnp.packbits(
-            input, axis=-1, bitorder="little"
+            flatten_input, axis=-1, bitorder="little"
         )  # input dtype: bool, output dtype: uint8
     else:
         assert jnp.issubdtype(
