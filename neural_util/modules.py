@@ -13,7 +13,7 @@ def BatchNorm(x, training):
 
 
 def BatchReNorm(x, training):
-    return BatchReNorm_(momentum=0.9, dtype=DTYPE)(x, use_running_average=not training)
+    return BatchReNorm_(momentum=0.99, dtype=DTYPE)(x, use_running_average=not training)
 
 
 def InstanceNorm(x, training):
@@ -32,7 +32,7 @@ def RMSNorm(x, training):
     return nn.RMSNorm(dtype=DTYPE)(x)
 
 
-DEFAULT_NORM_FN = BatchNorm
+DEFAULT_NORM_FN = BatchReNorm
 
 
 def conditional_dummy_norm(x, training):
