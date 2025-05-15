@@ -93,7 +93,7 @@ class BatchReNorm(nn.Module):
                 tmp_mean = mean - d * jnp.sqrt(custom_var) / r
 
                 # Warm up batch renorm for 100_000 steps to build up proper running statistics
-                warmed_up = jnp.greater_equal(steps.value, 100).astype(jnp.float32)
+                warmed_up = jnp.greater_equal(steps.value, 10_000).astype(jnp.float32)
                 custom_var = warmed_up * tmp_var + (1.0 - warmed_up) * custom_var
                 custom_mean = warmed_up * tmp_mean + (1.0 - warmed_up) * custom_mean
 
