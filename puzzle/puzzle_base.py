@@ -4,18 +4,32 @@ from typing import Any, TypeVar
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 from puzzle.util import add_img_parser
 
 T = TypeVar("T")
 
 
 class Puzzle(ABC):
-    class State(Xtructurable):
+    class State(PuzzleState):
         pass
 
-    class SolveConfig(Xtructurable):
+    class SolveConfig(PuzzleState):
+        pass
+
+    def define_solve_config_class(self) -> PuzzleState:
+        @state_dataclass
+        class SolveConfig:
+            TargetState: FieldDescriptor[self.State]
+
+            def __str__(self, **kwargs):
+                return self.TargetState.str(**kwargs)
+
+        return SolveConfig
+
+    @abstractmethod
+    def define_state_class(self) -> PuzzleState:
         pass
 
     @property
@@ -91,20 +105,6 @@ class Puzzle(ABC):
         This function should return a callable that takes a state and returns a string representation of it.
         function signature: (state: State) -> str
         """
-        pass
-
-    def define_solve_config_class(self) -> Xtructurable:
-        @xtructure_dataclass
-        class SolveConfig:
-            TargetState: FieldDescriptor[self.State]
-
-            def __str__(self, **kwargs):
-                return self.TargetState.str(**kwargs)
-
-        return SolveConfig
-
-    @abstractmethod
-    def define_state_class(self) -> Xtructurable:
         pass
 
     def get_solve_config_img_parser(self) -> callable:

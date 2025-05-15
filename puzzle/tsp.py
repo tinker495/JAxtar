@@ -1,10 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 from puzzle.util import from_uint8, to_uint8
 
 TYPE = jnp.uint8
@@ -15,13 +15,13 @@ class TSP(Puzzle):
     size: int
     pad_size: int
 
-    def define_state_class(self) -> Xtructurable:
+    def define_state_class(self) -> PuzzleState:
         """Defines the state class for TSP using Xtructure."""
         str_parser = self.get_string_parser()
         mask = jnp.zeros(self.size, dtype=jnp.bool_)
         packed_mask = to_uint8(mask)
 
-        @xtructure_dataclass
+        @state_dataclass
         class State:
             mask: FieldDescriptor[jnp.uint8, packed_mask.shape, packed_mask]
             point: FieldDescriptor[TYPE]
@@ -31,11 +31,11 @@ class TSP(Puzzle):
 
         return State
 
-    def define_solve_config_class(self) -> Xtructurable:
+    def define_solve_config_class(self) -> PuzzleState:
         """Defines the solve config class for TSP using Xtructure."""
         str_parser = self.get_solve_config_string_parser()
 
-        @xtructure_dataclass
+        @state_dataclass
         class SolveConfig:
             points: FieldDescriptor[jnp.float16, (self.size, 2)]
             distance_matrix: FieldDescriptor[jnp.float16, (self.size, self.size)]

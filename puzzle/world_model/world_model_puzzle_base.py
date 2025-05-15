@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from helpers.formatting import img_to_colored_str
 from neural_util.modules import DTYPE, BatchNorm
@@ -18,6 +17,7 @@ from neural_util.util import (
 )
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 from puzzle.util import from_uint8, to_uint8
 
 STR_PARSE_IMG = True
@@ -98,13 +98,13 @@ class WorldModelPuzzleBase(Puzzle):
     targets: jnp.ndarray
     num_puzzles: int
 
-    def define_state_class(self) -> Xtructurable:
+    def define_state_class(self) -> PuzzleState:
         """Defines the state class for WorldModelPuzzleBase using Xtructure."""
         str_parser = self.get_string_parser()
         latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
         latent_uint8 = to_uint8(latent_bool)
 
-        @xtructure_dataclass
+        @state_dataclass
         class State:
             latent: FieldDescriptor[jnp.uint8, latent_uint8.shape, latent_uint8]
 
