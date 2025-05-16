@@ -10,7 +10,12 @@ import numpy as np
 from flax import linen as nn
 
 from heuristic.heuristic_base import Heuristic
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    SimbaResBlock,
+    conditional_dummy_norm,
+)
 from neural_util.util import download_model, is_model_downloaded
 from puzzle.puzzle_base import Puzzle
 
@@ -18,17 +23,14 @@ from puzzle.puzzle_base import Puzzle
 class HeuristicBase(nn.Module):
 
     Res_N: int = 4
+    node_size: int = 1000
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(5000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
-        x = nn.relu(x)
-        x = nn.Dense(1000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
-        x = nn.relu(x)
+        x = nn.Dense(self.node_size, dtype=DTYPE)(x)
         for _ in range(self.Res_N):
-            x = ResBlock(1000)(x, training)
+            x = SimbaResBlock(self.node_size * 4)(x, training)
+        x = DEFAULT_NORM_FN(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         _ = conditional_dummy_norm(x, training)
         return x
