@@ -26,6 +26,7 @@ def qstar_builder(
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     use_q_fn_params: bool = False,
+    export_last_pops: bool = False,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -167,6 +168,8 @@ def qstar_builder(
         solved = puzzle.batched_is_solved(solve_config, states)
         search_result.solved = solved.any()
         search_result.solved_idx = idxes[jnp.argmax(solved)]
+        if export_last_pops:
+            return search_result, idxes, filled
         return search_result
 
     qstar_fn = jax.jit(qstar)

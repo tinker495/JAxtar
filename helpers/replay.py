@@ -27,7 +27,7 @@ def init_experience_replay(
         fake_timestep = {
             "solve_config": solve_config_default,
             "state": state_default,
-            "action": jnp.array(0, dtype=jnp.int32),
+            "action": jnp.array(0, dtype=jnp.uint8),
             "distance": jnp.array(0.0, dtype=jnp.bfloat16),
         }
     else:

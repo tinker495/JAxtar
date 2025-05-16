@@ -4,6 +4,7 @@ from typing import Callable
 import chex
 import jax
 import jax.numpy as jnp
+import jax.test_util
 
 from JAxtar.search_base import (
     HASH_POINT_DTYPE,
@@ -435,8 +436,12 @@ def get_one_solved_branch_q_samples(
     masks = jnp.where(leaf_mask[:, jnp.newaxis], masks, False)  # [topk_branch_size, max_depth]
 
     path_states = search_result.get_state(paths)
+    path_actions = paths.action  # [topk_branch_size, max_depth - 1]
     path_states = jax.tree_util.tree_map(
         lambda x, y: jnp.concatenate((x, y), axis=1), leaf_states[:, jnp.newaxis], path_states
+    )
+    path_actions = jnp.concatenate(
+        (jnp.zeros((batch_size, 1), dtype=jnp.uint8), path_actions), axis=1
     )
     path_costs = search_result.get_cost(paths)
     path_costs = jnp.concatenate((leaf_costs[:, jnp.newaxis], path_costs), axis=1)
@@ -460,6 +465,10 @@ def get_one_solved_branch_q_samples(
 
     true_costs = jnp.cumsum(incr_costs, axis=1)
     # true_costs: [topk_branch_size, max_depth] , [[0, 0, 1, 2, 3, ...], [0, 0, 0, 1, 2, ...], ...]
+    true_costs = jnp.roll(true_costs, 1, axis=1)
+    true_costs = true_costs.at[:, 0].set(0)
+    # true_costs: [topk_branch_size, max_depth] - Array of cumulative costs from each state to leaf node
+    # Example after roll: [[0, 0, 0, 1, 2, ...], [0, 0, 0, 0, 1, ...], ...] where each row represents a branch
     # This represents the cumulative cost from each state to the leaf node
     shifted_is_solved = jnp.concatenate(
         (is_solved[:, 1:], jnp.zeros((is_solved.shape[0], 1), dtype=jnp.bool_)), axis=1
@@ -490,11 +499,13 @@ def get_one_solved_branch_q_samples(
     flattened_states = jax.tree_util.tree_map(
         lambda x: jnp.reshape(x, (batch_size * max_depth, *x.shape[2:])), path_states
     )
+    flattened_actions = jnp.reshape(path_actions, (batch_size * max_depth,))
     flattened_true_costs = jnp.reshape(true_costs, (batch_size * max_depth,)).astype(jnp.bfloat16)
     flattened_masks = jnp.reshape(masks, (batch_size * max_depth,))
     return (
         flattened_solve_configs,
         flattened_states,
+        flattened_actions,
         flattened_true_costs,
         flattened_masks,
         search_result.solved,

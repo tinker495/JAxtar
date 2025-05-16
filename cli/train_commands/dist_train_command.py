@@ -23,6 +23,10 @@ from neural_util.target_update import scaled_by_reset, soft_update
 from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
+from qfunction.neuralq.wbsdqi import (
+    regression_replay_q_trainer_builder,
+    wbsdqi_dataset_builder,
+)
 
 from .dist_train_option import (
     heuristic_options,
@@ -399,3 +403,112 @@ def wbsdai(
 
     heuristic.params = heuristic_params
     heuristic.save_model(f"heuristic/neuralheuristic/model/params/{puzzle_name}_{puzzle_size}.pkl")
+
+
+@click.command()
+@puzzle_options
+@qfunction_options
+@train_wbs_option
+def wbsdqi(
+    puzzle: Puzzle,
+    qfunction: NeuralQFunctionBase,
+    puzzle_name: str,
+    puzzle_size: int,
+    steps: int,
+    replay_size: int,
+    max_nodes: int,
+    search_batch_size: int,
+    add_batch_size: int,
+    train_minibatch_size: int,
+    cost_weight: float,
+    use_optimal_branch: bool,
+    key: int,
+    multi_device: bool,
+    **kwargs,
+):
+    writer = setup_logging(puzzle_name, puzzle_size, "wbsdai")
+    qfunction_model = qfunction.model
+    qfunction_params = qfunction.params
+    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key, subkey = jax.random.split(key)
+
+    n_devices = 1
+    if multi_device:
+        n_devices = jax.device_count()
+        steps = steps // n_devices
+        print(f"Training with {n_devices} devices")
+
+    buffer, buffer_state = init_experience_replay(
+        puzzle.SolveConfig.default(),
+        puzzle.State.default(),
+        max_length=replay_size,
+        min_length=int(5e5),
+        sample_batch_size=train_minibatch_size,
+        add_batch_size=add_batch_size,
+        use_action=True,
+    )
+    optimizer, opt_state = setup_optimizer(
+        qfunction_params,
+        n_devices,
+        steps,
+        100,
+    )
+    replay_trainer = regression_replay_q_trainer_builder(
+        buffer, 100, qfunction.pre_process, qfunction_model, optimizer
+    )
+    get_datasets = wbsdqi_dataset_builder(
+        puzzle,
+        qfunction,
+        buffer,
+        max_nodes=max_nodes,
+        add_batch_size=add_batch_size,
+        search_batch_size=search_batch_size,
+        cost_weight=cost_weight,
+        use_optimal_branch=use_optimal_branch,
+    )
+
+    pbar = trange(steps)
+    for i in pbar:
+        key, subkey = jax.random.split(key)
+        if i % 10 == 0:
+            t = time.time()
+            buffer_state, search_count, solved_count, key = get_datasets(
+                qfunction_params, buffer_state, subkey
+            )
+            dt = time.time() - t
+            writer.add_scalar("Samples/Data sample time", dt, i)
+            writer.add_scalar("Samples/Search Count", search_count, i)
+            writer.add_scalar("Samples/Solved Count", solved_count, i)
+            writer.add_scalar("Samples/Solved Ratio", solved_count / search_count, i)
+
+        (
+            qfunction_params,
+            opt_state,
+            loss,
+            mean_abs_diff,
+            diffs,
+            sampled_target_q,
+            grad_magnitude,
+            weight_magnitude,
+        ) = replay_trainer(key, buffer_state, qfunction_params, opt_state)
+        lr = opt_state.hyperparams["learning_rate"]
+        mean_target_q = jnp.mean(sampled_target_q)
+        pbar.set_description(
+            f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
+            f", target_q: {float(mean_target_q):.2f}"
+        )
+        writer.add_scalar("Losses/Loss", loss, i)
+        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        writer.add_scalar("Metrics/Learning Rate", lr, i)
+        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
+        writer.add_histogram("Losses/Diff", diffs, i)
+        writer.add_histogram("Metrics/Target", sampled_target_q, i)
+
+        if i % 100 == 0 and i != 0:
+            qfunction.params = qfunction_params
+            qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
+
+    qfunction.params = qfunction_params
+    qfunction.save_model(f"qfunction/neuralq/model/params/{puzzle_name}_{puzzle_size}.pkl")
