@@ -32,7 +32,7 @@ def RMSNorm(x, training):
     return nn.RMSNorm(dtype=DTYPE)(x)
 
 
-DEFAULT_NORM_FN = BatchReNorm
+DEFAULT_NORM_FN = BatchNorm
 
 
 def conditional_dummy_norm(x, training):
