@@ -474,6 +474,7 @@ def get_one_solved_branch_q_samples(
         (is_solved[:, 1:], jnp.zeros((is_solved.shape[0], 1), dtype=jnp.bool_)), axis=1
     )
     masks = jnp.logical_and(masks, ~shifted_is_solved)
+    masks = jnp.roll(masks, 1, axis=1)
     # masks: [topk_branch_size, max_depth] ,
     # [[False, False, True, True, True, ...], [False, False, False, True, True, ...], ...]
 
