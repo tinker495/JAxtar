@@ -150,7 +150,7 @@ def davi(
             target_heuristic_params = heuristic_params
             updated = True
 
-        if i - last_reset_time >= reset_interval and updated:
+        if i - last_reset_time >= reset_interval and updated and i < steps / 3:
             last_reset_time = i
             heuristic_params = scaled_by_reset(
                 heuristic_params,
@@ -274,7 +274,7 @@ def qlearning(
             target_qfunc_params = qfunc_params
             updated = True
 
-        if i - last_reset_time >= reset_interval and updated:
+        if i - last_reset_time >= reset_interval and updated and i < steps / 3:
             last_reset_time = i
             qfunc_params = scaled_by_reset(
                 qfunc_params,
