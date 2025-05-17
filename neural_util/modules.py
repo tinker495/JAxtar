@@ -3,6 +3,8 @@ from typing import Callable
 import flax.linen as nn
 import jax.numpy as jnp
 
+from .norm import BatchReNorm as BatchReNorm_
+
 DTYPE = jnp.bfloat16
 
 
@@ -10,7 +12,11 @@ def BatchNorm(x, training=False):
     return nn.BatchNorm(momentum=0.9, dtype=DTYPE)(x, use_running_average=not training)
 
 
-def InstanceNorm(x, training=False):
+def BatchReNorm(x, training):
+    return BatchReNorm_(momentum=0.99, dtype=DTYPE)(x, use_running_average=not training)
+
+
+def InstanceNorm(x, training):
     return nn.InstanceNorm(dtype=DTYPE)(x)
 
 
@@ -30,7 +36,7 @@ DEFAULT_NORM_FN = BatchNorm
 
 
 def conditional_dummy_norm(x, training):
-    if DEFAULT_NORM_FN != BatchNorm:
+    if DEFAULT_NORM_FN != BatchNorm and DEFAULT_NORM_FN != BatchReNorm:
         return BatchNorm(x, training)
     else:
         return x

@@ -4,7 +4,9 @@ import jax.numpy as jnp
 from termcolor import colored
 
 from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle, state_dataclass
+from puzzle.puzzle_base import Puzzle
+from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
+from puzzle.util import from_uint8, to_uint8
 
 TYPE = jnp.uint8
 
@@ -28,9 +30,29 @@ class LightsOut(Puzzle):
 
     size: int
 
-    @state_dataclass
-    class State:
-        board: chex.Array
+    def define_state_class(self) -> PuzzleState:
+        """Defines the state class for LightsOut using Xtructure."""
+        str_parser = self.get_string_parser()
+        board = jnp.zeros((self.size * self.size), dtype=bool)
+        packed_board = to_uint8(board)
+        size = self.size
+
+        @state_dataclass
+        class State:
+            board: FieldDescriptor[TYPE, packed_board.shape]
+
+            def __str__(self, **kwargs):
+                return str_parser(self, **kwargs)
+
+            def packing(self) -> "LightsOut.State":
+                board = to_uint8(self.board)
+                return State(board=board)
+
+            def unpacking(self) -> "LightsOut.State":
+                board = from_uint8(self.board, (size * size,))
+                return State(board=board)
+
+        return State
 
     def __init__(self, size: int, **kwargs):
         self.size = size
@@ -43,33 +65,29 @@ class LightsOut(Puzzle):
             return "□" if x == 0 else "■"
 
         def parser(state: "LightsOut.State", **kwargs):
-            return form.format(*map(to_char, self.from_uint8(state.board)))
+            return form.format(*map(to_char, state.unpacking().board))
 
         return parser
 
-    def get_default_gen(self) -> callable:
-        def gen():
-            return self.State(board=self.to_uint8(jnp.ones(self.size**2, dtype=bool)))
-
-        return gen
-
-    def get_initial_state(self, solve_config: Puzzle.SolveConfig, key=None, data=None) -> State:
+    def get_initial_state(
+        self, solve_config: Puzzle.SolveConfig, key=None, data=None
+    ) -> "LightsOut.State":
         return self._get_suffled_state(solve_config, solve_config.TargetState, key, num_shuffle=8)
 
-    def get_target_state(self, key=None) -> State:
-        return self.State(board=self.to_uint8(jnp.zeros(self.size**2, dtype=bool)))
+    def get_target_state(self, key=None) -> "LightsOut.State":
+        return self.State(board=jnp.zeros(self.size**2, dtype=bool)).packing()
 
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
         return self.SolveConfig(TargetState=self.get_target_state(key))
 
     def get_neighbours(
-        self, solve_config: Puzzle.SolveConfig, state: State, filled: bool = True
-    ) -> tuple[State, chex.Array]:
+        self, solve_config: Puzzle.SolveConfig, state: "LightsOut.State", filled: bool = True
+    ) -> tuple["LightsOut.State", chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
         if impossible to move in a direction cost should be inf and State should be same as input state.
         """
-        board = self.from_uint8(state.board)
+        board = state.unpacking().board
         # actions - combinations of range(size) with 2 elements
         actions = jnp.stack(
             jnp.meshgrid(jnp.arange(self.size), jnp.arange(self.size), indexing="ij"), axis=-1
@@ -86,12 +104,13 @@ class LightsOut(Puzzle):
             next_board, cost = jax.lax.cond(
                 filled, lambda _: (flip(board, action), 1.0), lambda _: (board, jnp.inf), None
             )
-            return self.to_uint8(next_board), cost
+            next_state = self.State(board=next_board).packing()
+            return next_state, cost
 
-        next_boards, costs = jax.vmap(map_fn, in_axes=(0, None))(actions, filled)
-        return self.State(board=next_boards), costs
+        next_states, costs = jax.vmap(map_fn, in_axes=(0, None))(actions, filled)
+        return next_states, costs
 
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: State) -> bool:
+    def is_solved(self, solve_config: Puzzle.SolveConfig, state: "LightsOut.State") -> bool:
         return self.is_equal(state, solve_config.TargetState)
 
     def action_to_string(self, action: int) -> str:
@@ -126,15 +145,6 @@ class LightsOut(Puzzle):
         form += "━━┛"
         return form
 
-    def to_uint8(self, board: chex.Array) -> chex.Array:
-        # from booleans to uint8
-        # boolean 32 to uint8 4
-        return jnp.packbits(board, axis=-1, bitorder="little")
-
-    def from_uint8(self, board: chex.Array) -> chex.Array:
-        # from uint8 4 to boolean 32
-        return jnp.unpackbits(board, axis=-1, count=self.size**2, bitorder="little")
-
     def get_img_parser(self):
         """
         This function is a decorator that adds an img_parser to the class.
@@ -149,7 +159,7 @@ class LightsOut(Puzzle):
             # Calculate the size of each cell in the grid
             cell_size = imgsize // self.size
             # Reshape the flat board state into a 2D array
-            board = np.array(self.from_uint8(state.board)).reshape((self.size, self.size))
+            board = np.array(state.unpacking().board).reshape(self.size, self.size)
             # Define colors in BGR: light on → bright yellow, light off → black, and grid lines → gray
             on_color = (255, 255, 0)  # Yellow
             off_color = (0, 0, 0)  # Black

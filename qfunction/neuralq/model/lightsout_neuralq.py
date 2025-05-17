@@ -9,7 +9,7 @@ from neural_util.modules import (
     ResBlock,
     conditional_dummy_norm,
 )
-from puzzle.lightsout import LightsOut
+from puzzle import LightsOut
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -20,11 +20,11 @@ class LightsOutNeuralQ(NeuralQFunctionBase):
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
     ) -> chex.Array:
-        current_map = self.puzzle.from_uint8(current.board).astype(DTYPE)
+        current_map = current.unpacking().board.astype(DTYPE)
         if self.is_fixed:
             one_hots = current_map
         else:
-            target_map = self.puzzle.from_uint8(solve_config.TargetState.board).astype(DTYPE)
+            target_map = solve_config.TargetState.unpacking().board.astype(DTYPE)
             one_hots = jnp.concatenate([target_map, current_map], axis=-1)
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
@@ -66,6 +66,6 @@ class LightsOutConvNeuralQ(NeuralQFunctionBase):
         """
         This function should return the difference, not_equal of the current state and the target state
         """
-        current_map = self.puzzle.from_uint8(current.board)
-        target_map = self.puzzle.from_uint8(target.board)
+        current_map = current.unpacking().board.astype(DTYPE)
+        target_map = target.unpacking().board.astype(DTYPE)
         return jnp.not_equal(current_map, target_map).astype(jnp.float32)

@@ -45,14 +45,8 @@ def vmapping_search(
     Vmap the search function over the batch dimension.
     """
 
-    empty_states = puzzle.State.default()[jnp.newaxis, ...]
-    empty_states = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), empty_states
-    )
-    empty_solve_configs = puzzle.SolveConfig.default()[jnp.newaxis, ...]
-    empty_solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), empty_solve_configs
-    )
+    empty_states = puzzle.State.default((vmap_size,))
+    empty_solve_configs = puzzle.SolveConfig.default((vmap_size,))
     vmapped_star = jax.jit(jax.vmap(star_fn, in_axes=(0, 0)))
     if show_compile_time:
         print("initializing vmapped jit")
