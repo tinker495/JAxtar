@@ -4,7 +4,6 @@ import jax
 import jax.numpy as jnp
 
 from JAxtar.search_base import Current, SearchResult
-from JAxtar.util import set_tree
 from puzzle.puzzle_base import Puzzle
 
 
@@ -22,16 +21,8 @@ def vmapping_init_target(puzzle: Puzzle, vmap_size: int, start_state_seeds: list
     if len(start_state_seeds) > 1:
         for i, start_state_seed in enumerate(start_state_seeds[1:vmap_size]):
             new_solve_config, new_state = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
-            states = set_tree(
-                states,
-                new_state,
-                i + 1,
-            )
-            solve_configs = set_tree(
-                solve_configs,
-                new_solve_config,
-                i + 1,
-            )
+            states = states.at[i + 1].set(new_state)
+            solve_configs = solve_configs.at[i + 1].set(new_solve_config)
     return states, solve_configs
 
 
