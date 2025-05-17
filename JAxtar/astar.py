@@ -3,7 +3,7 @@ import time
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import HashTable, hash_func_builder
+from xtructure import HashTable, hash_func_builder
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE

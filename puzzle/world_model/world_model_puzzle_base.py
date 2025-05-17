@@ -99,7 +99,7 @@ class WorldModelPuzzleBase(Puzzle):
     num_puzzles: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for WorldModelPuzzleBase using Xtructure."""
+        """Defines the state class for WorldModelPuzzleBase using xtructure."""
         str_parser = self.get_string_parser()
         latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
         latent_uint8 = to_uint8(latent_bool)

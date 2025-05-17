@@ -25,7 +25,7 @@ class TopSpin(Puzzle):
     turnstile_size: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for TopSpin using Xtructure."""
+        """Defines the state class for TopSpin using xtructure."""
         str_parser = self.get_string_parser()
 
         @state_dataclass

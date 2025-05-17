@@ -14,4 +14,4 @@ flax
 optax
 termcolor
 tensorboardX
-Xtructure @ git+https://github.com/tinker495/Xtructure.git
+xtructure @ git+https://github.com/tinker495/xtructure.git

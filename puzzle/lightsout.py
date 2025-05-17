@@ -31,7 +31,7 @@ class LightsOut(Puzzle):
     size: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for LightsOut using Xtructure."""
+        """Defines the state class for LightsOut using xtructure."""
         str_parser = self.get_string_parser()
         board = jnp.zeros((self.size * self.size), dtype=bool)
         packed_board = to_uint8(board)

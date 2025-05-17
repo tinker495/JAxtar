@@ -13,7 +13,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
+from xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
 
 from JAxtar.annotate import (
     ACTION_DTYPE,

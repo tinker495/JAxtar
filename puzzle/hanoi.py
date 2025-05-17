@@ -27,7 +27,7 @@ class TowerOfHanoi(Puzzle):
     max_disk_value: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for Tower of Hanoi using Xtructure."""
+        """Defines the state class for Tower of Hanoi using xtructure."""
         str_parser = self.get_string_parser()
         # Default pegs value for FieldDescriptor, initialized when class is defined
         # self.num_pegs and self.num_disks are available from TowerOfHanoi.__init__
