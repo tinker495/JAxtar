@@ -3,7 +3,7 @@ import time
 import chex
 import jax
 import jax.numpy as jnp
-from xtructure import HashTable, hash_func_builder
+from xtructure import HashTable
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
@@ -43,8 +43,6 @@ def qstar_builder(
 
     statecls = puzzle.State
 
-    hash_func = hash_func_builder(statecls)
-
     def qstar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
@@ -61,7 +59,7 @@ def qstar_builder(
             _,
             idx,
             table_idx,
-        ) = search_result.hashtable.parallel_insert(hash_func, states, filled)
+        ) = search_result.hashtable.parallel_insert(states, filled)
 
         cost = jnp.where(filled, 0, jnp.inf)
         search_result.cost = set_array_as_condition(
@@ -110,7 +108,7 @@ def qstar_builder(
                 idxs,
                 table_idxs,
             ) = search_result.hashtable.parallel_insert(
-                hash_func, flatten_tree(neighbours, 2), flatten_filleds
+                flatten_tree(neighbours, 2), flatten_filleds
             )
 
             # cache the q value but this is not using in search
