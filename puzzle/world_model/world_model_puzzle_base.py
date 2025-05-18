@@ -416,8 +416,7 @@ class WorldModelPuzzleBase(Puzzle):
         e.g sokoban puzzle has multiple target states. box's position should
         be the same as the target position but the player's position can be different.
         """
-        target_state = solve_config.TargetState
-        return self.is_equal(state, target_state)
+        return state == solve_config.TargetState
 
     def get_inverse_neighbours(
         self, solve_config: Puzzle.SolveConfig, state: Puzzle.State, filled: bool = True

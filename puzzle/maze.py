@@ -292,7 +292,7 @@ class Maze(Puzzle):
         return new_states, costs
 
     def is_solved(self, solve_config: "Maze.SolveConfig", state: "Maze.State") -> bool:
-        return self.is_equal(state, solve_config.TargetState)
+        return state == solve_config.TargetState
 
     def action_to_string(self, action: int) -> str:
         """

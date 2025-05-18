@@ -365,7 +365,7 @@ class TowerOfHanoi(Puzzle):
         self, solve_config: "TowerOfHanoi.SolveConfig", state: "TowerOfHanoi.State"
     ) -> bool:
         """Check if the current state matches the target state"""
-        return self.is_equal(state, solve_config.TargetState)
+        return state == solve_config.TargetState
 
     def action_to_string(self, action: int) -> str:
         """Return a string representation of the action"""
