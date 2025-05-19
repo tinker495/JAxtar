@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from tqdm import trange
-from Xtructure import StructuredType
+from xtructure import StructuredType
 
 T = TypeVar("T")
 

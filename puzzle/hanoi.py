@@ -27,7 +27,7 @@ class TowerOfHanoi(Puzzle):
     max_disk_value: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for Tower of Hanoi using Xtructure."""
+        """Defines the state class for Tower of Hanoi using xtructure."""
         str_parser = self.get_string_parser()
         # Default pegs value for FieldDescriptor, initialized when class is defined
         # self.num_pegs and self.num_disks are available from TowerOfHanoi.__init__
@@ -365,7 +365,7 @@ class TowerOfHanoi(Puzzle):
         self, solve_config: "TowerOfHanoi.SolveConfig", state: "TowerOfHanoi.State"
     ) -> bool:
         """Check if the current state matches the target state"""
-        return self.is_equal(state, solve_config.TargetState)
+        return state == solve_config.TargetState
 
     def action_to_string(self, action: int) -> str:
         """Return a string representation of the action"""

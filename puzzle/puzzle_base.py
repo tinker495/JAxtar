@@ -73,7 +73,6 @@ class Puzzle(ABC):
         self.batched_get_neighbours = jax.jit(self.batched_get_neighbours, static_argnums=(3,))
         self.is_solved = jax.jit(self.is_solved)
         self.batched_is_solved = jax.jit(self.batched_is_solved, static_argnums=(2,))
-        self.is_equal = jax.jit(self.is_equal)
 
     def data_init(self):
         """
@@ -219,14 +218,6 @@ class Puzzle(ABC):
         """
         return f"action {action}"
 
-    def is_equal(self, state1: State, state2: State) -> bool:
-        """
-        This function should return True if the two states are equal.
-        this functions must be all puzzle's state(dataclass) compatible, so this is not a abstract method.
-        """
-        tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
-        return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
-
     def batched_hindsight_transform(
         self, solve_configs: SolveConfig, states: State, multi_solve_config: bool = False
     ) -> SolveConfig:
@@ -304,7 +295,9 @@ class Puzzle(ABC):
         def body_fun(loop_state):
             iteration_count, current_state, previous_state, key = loop_state
             neighbor_states, costs = self.get_neighbours(solve_config, current_state, filled=True)
-            old_eq = jax.vmap(self.is_equal, in_axes=(None, 0))(previous_state, neighbor_states)
+            old_eq = jax.vmap(lambda x, y: x == y, in_axes=(None, 0))(
+                previous_state, neighbor_states
+            )
             valid_mask = jnp.where(old_eq, 0.0, 1.0)
 
             valid_mask_sum = jnp.sum(valid_mask)

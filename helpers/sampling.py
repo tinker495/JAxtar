@@ -33,12 +33,12 @@ def create_target_shuffled_path(
             solve_configs, state, filleds=jnp.ones_like(move_cost_), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
-            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             old_state, neighbor_states
         )  # [action_size, batch_size]
         is_same = jax.vmap(
-            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             state, neighbor_states
         )  # [action_size, batch_size]
@@ -98,12 +98,12 @@ def create_hindsight_target_shuffled_path(
             solve_configs, state, filleds=jnp.ones_like(move_cost_), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
-            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             old_state, neighbor_states
         )  # [action_size, batch_size]
         is_same = jax.vmap(
-            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             state, neighbor_states
         )  # [action_size, batch_size]
@@ -171,12 +171,12 @@ def create_hindsight_target_triangular_shuffled_path(
             solve_configs, state, filleds=jnp.ones_like(move_cost_), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
-            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             old_state, neighbor_states
         )  # [action_size, batch_size]
         is_same = jax.vmap(
-            jax.vmap(puzzle.is_equal, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             state, neighbor_states
         )  # [action_size, batch_size]

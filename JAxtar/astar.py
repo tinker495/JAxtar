@@ -4,7 +4,7 @@ from typing import Any, Optional
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import HashTable, hash_func_builder
+from xtructure import HashTable
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
@@ -47,8 +47,6 @@ def astar_builder(
 
     statecls = puzzle.State
 
-    hash_func = hash_func_builder(statecls)
-
     def astar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
@@ -66,7 +64,7 @@ def astar_builder(
             _,
             idx,
             table_idx,
-        ) = search_result.hashtable.parallel_insert(hash_func, states, filled)
+        ) = search_result.hashtable.parallel_insert(states, filled)
 
         cost = jnp.where(filled, 0, jnp.inf)
         search_result.cost = set_array_as_condition(
@@ -119,9 +117,7 @@ def astar_builder(
                 _,
                 idxs,
                 table_idxs,
-            ) = search_result.hashtable.parallel_insert(
-                hash_func, flatten_neighbours, flatten_filleds
-            )
+            ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
 
             argsort_idx = jnp.argsort(flatten_inserted, axis=0)  # sort by inserted
 

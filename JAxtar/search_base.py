@@ -13,7 +13,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
+from xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -23,7 +23,7 @@ from JAxtar.annotate import (
     HASH_TABLE_IDX_DTYPE,
     KEY_DTYPE,
 )
-from JAxtar.util import set_array_as_condition, set_tree_as_condition
+from JAxtar.util import set_array_as_condition
 from puzzle.puzzle_base import Puzzle
 
 
@@ -243,13 +243,9 @@ class SearchResult:
             min_val.current.index,
             min_val.current.table_index,
         )
-        search_result.parent = set_tree_as_condition(
-            search_result.parent,
-            filled,
-            min_val.parent,
-            min_val.current.index,
-            min_val.current.table_index,
-        )
+        search_result.parent = search_result.parent.at[
+            min_val.current.index, min_val.current.table_index
+        ].set_as_condition(filled, min_val.parent)
         return search_result, min_val.current, filled
 
     def get_solved_path(search_result) -> list[Parent, Current]:

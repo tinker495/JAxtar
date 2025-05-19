@@ -28,7 +28,7 @@ class PancakeSorting(Puzzle):
     size: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for PancakeSorting using Xtructure."""
+        """Defines the state class for PancakeSorting using xtructure."""
         str_parser = self.get_string_parser()
 
         @state_dataclass
@@ -253,7 +253,7 @@ class PancakeSorting(Puzzle):
         self, solve_config: "PancakeSorting.SolveConfig", state: "PancakeSorting.State"
     ) -> bool:
         """Check if the current state matches the target state (sorted)"""
-        return self.is_equal(state, solve_config.TargetState)
+        return state == solve_config.TargetState
 
     def action_to_string(self, action: int) -> str:
         """Return a string representation of the action"""
