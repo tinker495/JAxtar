@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from xtructure import HashTable
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
 from JAxtar.util import (
     flatten_array,
@@ -188,7 +188,6 @@ def astar_builder(
                 search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
                     vals,
-                    added_size=jnp.sum(jnp.isfinite(neighbour_key), dtype=SIZE_DTYPE),
                 )
                 return search_result, None
 
