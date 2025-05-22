@@ -62,13 +62,13 @@ You can easily test it yourself with the colab link below.
 $ python main.py astar
 Start state
 ┏━━━┳━━━┳━━━┳━━━┓
-┃ 5 ┃ E ┃ 2 ┃ 3 ┃
+┃ 9 ┃ E ┃ 6 ┃ 8 ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ D ┃ B ┃ 9 ┃ 7 ┃
+┃ D ┃ 4 ┃ 7 ┃   ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃ A ┃ F ┃ 4 ┃ C ┃
+┃ B ┃ 1 ┃ A ┃ C ┃
 ┣━━━╋━━━╋━━━╋━━━┫
-┃   ┃ 8 ┃ 6 ┃ 1 ┃
+┃ 5 ┃ 3 ┃ F ┃ 2 ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓
@@ -80,11 +80,11 @@ Target state
 ┣━━━╋━━━╋━━━╋━━━┫
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
-Dist: 33.00
-Search Time:   0.24 seconds
-Search states: 1.04M(4.25M states/s)
+Dist: 34.00
+Search Time:   0.19 seconds
+Search states: 815K(4.4M states/s)
 
-Cost: 49.0
+Cost: 50.0
 Solution found
 ```
 
@@ -92,16 +92,16 @@ Solution found
 
 ```bash
 $ python main.py astar --vmap_size 20
-Vmapped A* search, multiple initial state solution
+Vmapped search, multiple initial state solution
 Start states
 ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
-┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  (batch : (20,))  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃  ┃ 5 ┃ E ┃ 2 ┃ 3 ┃
+┃ 9 ┃ E ┃ 6 ┃ 8 ┃  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  (batch : (20,))  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ D ┃ B ┃ 9 ┃ 7 ┃  ┃ D ┃ B ┃ 9 ┃ 7 ┃                   ┃ D ┃ B ┃ 9 ┃ 7 ┃  ┃ D ┃ B ┃ 9 ┃ 7 ┃
+┃ D ┃ 4 ┃ 7 ┃   ┃  ┃ D ┃ 4 ┃ 7 ┃   ┃                   ┃ D ┃ 4 ┃ 7 ┃   ┃  ┃ D ┃ 4 ┃ 7 ┃   ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ A ┃ F ┃ 4 ┃ C ┃  ┃ A ┃ F ┃ 4 ┃ C ┃                   ┃ A ┃ F ┃ 4 ┃ C ┃  ┃ A ┃ F ┃ 4 ┃ C ┃
+┃ B ┃ 1 ┃ A ┃ C ┃  ┃ B ┃ 1 ┃ A ┃ C ┃                   ┃ B ┃ 1 ┃ A ┃ C ┃  ┃ B ┃ 1 ┃ A ┃ C ┃
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃   ┃ 8 ┃ 6 ┃ 1 ┃  ┃   ┃ 8 ┃ 6 ┃ 1 ┃                   ┃   ┃ 8 ┃ 6 ┃ 1 ┃  ┃   ┃ 8 ┃ 6 ┃ 1 ┃
+┃ 5 ┃ 3 ┃ F ┃ 2 ┃  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃                   ┃ 5 ┃ 3 ┃ F ┃ 2 ┃  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃
 ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 Target state
 ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
@@ -113,10 +113,10 @@ Target state
 ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
 ┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃                   ┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
-vmap astar
-# search_result, solved, solved_idx =jax.vmap(astar_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
-Search Time:   5.28 seconds (x21.6/20)
-Search states: 20.7M (3.93M states/s) (x0.9 faster)
+vmap search
+# search_result, solved, solved_idx =jax.vmap(search_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
+Search Time:   2.53 seconds (x13.3/20)
+Search states: 16.3M (6.43M states/s) (x1.5 faster)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -128,10 +128,9 @@ $ python main.py astar -nn -h -p rubikscube -w 0.2
 
 ...
 
-Dist: 14.62
-
-Search Time:   0.79 seconds
-Search states: 1.51M(1.91M states/s)
+Dist: 13.88
+Search Time:   0.62 seconds
+Search states: 1.84M(2.95M states/s)
 
 
 Cost: 22.0
@@ -145,12 +144,12 @@ $ python main.py qstar -nn -h -p rubikscube -w 0.2
 
 ...
 
-Dist: 'l_cw': 18.3 | 'l_ccw': 18.1 ... 'u_cw': 18.2 | 'u_ccw': 17.1
-Search Time:   0.21 seconds
-Search states: 1.3M(6.07M states/s)
+Dist: 'l_cw': 16.8 | 'l_ccw': 16.8 ... 'u_cw': 17.2 | 'u_ccw': 17.1
+Search Time:   0.26 seconds
+Search states: 1.78M(6.74M states/s)
 
 
-Cost: 20.0
+Cost: 22.0
 Solution found
 ```
 
@@ -161,9 +160,9 @@ $ python main.py qstar -p rubikscube_world_model -nn -w 0.6
 
 ...
 
-Dist: 'action 0': 18.4 | 'action 1': 17.9 ... 'action 10': 18.2 | 'action 11': 16.6
-Search Time:   0.27 seconds
-Search states: 1.81M(6.74M states/s)
+Dist: 'action 0': 18.4 | 'action 1': 17.9 ... 'action 10': 18.2 | 'action 11': 16.5
+Search Time:   0.30 seconds
+Search states: 1.81M(6.01M states/s)
 
 
 Cost: 22.0
