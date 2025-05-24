@@ -81,8 +81,8 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Dist: 34.00
-Search Time:   0.19 seconds
-Search states: 815K(4.4M states/s)
+Search Time:   0.49 seconds
+Search states: 1.88M(3.87M states/s)
 
 Cost: 50.0
 Solution found
@@ -115,8 +115,8 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 vmap search
 # search_result, solved, solved_idx =jax.vmap(search_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
-Search Time:   2.53 seconds (x13.3/20)
-Search states: 16.3M (6.43M states/s) (x1.5 faster)
+Search Time:   8.90 seconds (x18.3/20)
+Search states: 37.6M (4.23M states/s) (x1.1 faster)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -129,8 +129,8 @@ $ python main.py astar -nn -h -p rubikscube -w 0.2
 ...
 
 Dist: 13.88
-Search Time:   0.62 seconds
-Search states: 1.84M(2.95M states/s)
+Search Time:   0.58 seconds
+Search states: 1.84M(3.16M states/s)
 
 
 Cost: 22.0
@@ -145,8 +145,8 @@ $ python main.py qstar -nn -h -p rubikscube -w 0.2
 ...
 
 Dist: 'l_cw': 16.8 | 'l_ccw': 16.8 ... 'u_cw': 17.2 | 'u_ccw': 17.1
-Search Time:   0.26 seconds
-Search states: 1.78M(6.74M states/s)
+Search Time:   0.24 seconds
+Search states: 1.78M(7.35M states/s)
 
 
 Cost: 22.0
@@ -161,8 +161,8 @@ $ python main.py qstar -p rubikscube_world_model -nn -w 0.6
 ...
 
 Dist: 'action 0': 18.4 | 'action 1': 17.9 ... 'action 10': 18.2 | 'action 11': 16.5
-Search Time:   0.30 seconds
-Search states: 1.81M(6.01M states/s)
+Search Time:   0.28 seconds
+Search states: 1.81M(6.39M states/s)
 
 
 Cost: 22.0
