@@ -6,7 +6,13 @@ import jax.numpy as jnp
 from xtructure import HashTable
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.search_base import (
+    Current,
+    Current_with_Parent,
+    HashIdx,
+    Parent,
+    SearchResult,
+)
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
@@ -69,7 +75,7 @@ def qstar_builder(
             idx,
             table_idx,
         )
-        hash_idxs = Current(index=idx, table_index=table_idx, cost=cost)
+        hash_idxs = Current(hashidx=HashIdx(index=idx, table_index=table_idx), cost=cost)
 
         def _cond(input: tuple[SearchResult, Current, chex.Array]):
             search_result, parent, filled = input
@@ -122,7 +128,7 @@ def qstar_builder(
 
             idxs = unflatten_array(idxs, filleds.shape)
             table_idxs = unflatten_array(table_idxs, filleds.shape)
-            current = Current(index=idxs, table_index=table_idxs, cost=nextcosts)
+            current = Current(hashidx=HashIdx(index=idxs, table_index=table_idxs), cost=nextcosts)
 
             def _scan(search_result: SearchResult, val):
                 neighbour_key, parent_action, current = val
@@ -134,7 +140,8 @@ def qstar_builder(
                 vals = Current_with_Parent(
                     current=current,
                     parent=Parent(
-                        action=parent_action, index=parent.index, table_index=parent.table_index
+                        action=parent_action,
+                        hashidx=parent.hashidx,
                     ),
                 )
 

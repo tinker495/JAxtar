@@ -28,18 +28,22 @@ from puzzle.puzzle_base import Puzzle
 
 
 @xtructure_dataclass
-class Parent:
-
+class HashIdx:
     index: FieldDescriptor[HASH_POINT_DTYPE]
     table_index: FieldDescriptor[HASH_TABLE_IDX_DTYPE]
+
+
+@xtructure_dataclass
+class Parent:
+
+    hashidx: FieldDescriptor[HashIdx]
     action: FieldDescriptor[ACTION_DTYPE]
 
 
 @xtructure_dataclass
 class Current:
 
-    index: FieldDescriptor[HASH_POINT_DTYPE]
-    table_index: FieldDescriptor[HASH_TABLE_IDX_DTYPE]
+    hashidx: FieldDescriptor[HashIdx]
     cost: FieldDescriptor[KEY_DTYPE]
 
 
@@ -240,11 +244,11 @@ class SearchResult:
             search_result.cost,
             filled,
             min_val.current.cost,
-            min_val.current.index,
-            min_val.current.table_index,
+            min_val.current.hashidx.index,
+            min_val.current.hashidx.table_index,
         )
         search_result.parent = search_result.parent.at[
-            min_val.current.index, min_val.current.table_index
+            min_val.current.hashidx.index, min_val.current.hashidx.table_index
         ].set_as_condition(filled, min_val.parent)
         return search_result, min_val.current, filled
 
@@ -269,25 +273,25 @@ class SearchResult:
         """
         Get the state from the hash table.
         """
-        return search_result.hashtable.table[idx.index, idx.table_index]
+        return search_result.hashtable.table[idx.hashidx.index, idx.hashidx.table_index]
 
     def get_cost(search_result, idx: Current) -> chex.Array:
         """
         Get the cost of the state from the cost array.
         """
-        return search_result.cost[idx.index, idx.table_index]
+        return search_result.cost[idx.hashidx.index, idx.hashidx.table_index]
 
     def get_dist(search_result, idx: Current) -> chex.Array:
         """
         Get the distance of the state from the distance array.
         """
-        return search_result.dist[idx.index, idx.table_index]
+        return search_result.dist[idx.hashidx.index, idx.hashidx.table_index]
 
     def get_parent(search_result, idx: Current) -> Parent:
         """
         Get the parent action from the parent action array.
         """
-        return search_result.parent[idx.index, idx.table_index]
+        return search_result.parent[idx.hashidx.index, idx.hashidx.table_index]
 
 
 def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
@@ -302,8 +306,8 @@ def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
     Returns:
         jnp.ndarray: Boolean mask where True indicates unique values
     """
-    min_val_stack = jnp.stack([val.current.index, val.current.table_index], axis=1)
-    unique_idxs = jnp.unique(min_val_stack, axis=0, size=batch_len, return_index=True)[1]
+    hash_idx_bytes = jax.vmap(lambda x: x.current.hashidx.bytes)(val)
+    unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
     uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
     return uniques
 
@@ -334,7 +338,7 @@ def merge_sort_split(
 
     idx = jnp.argsort(key, stable=True)
     sorted_key = key[idx]
-    sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
+    sorted_val = val[idx]
 
     uniques = unique_mask(sorted_val, 2 * n)
     sorted_key = jnp.where(uniques, sorted_key, jnp.inf)  # Set duplicate keys to inf
