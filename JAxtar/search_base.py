@@ -358,10 +358,10 @@ def merge_sort_split(
     key = jnp.concatenate([ak, bk])
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
 
-    uniques = unique_mask(val, 2 * n)
-    key = jnp.where(uniques, key, jnp.inf)  # Set duplicate keys to inf to ensure they sort last
-
     idx = jnp.argsort(key, stable=True)
     sorted_key = key[idx]
     sorted_val = jax.tree_util.tree_map(lambda x: x[idx], val)
+
+    uniques = unique_mask(sorted_val, 2 * n)
+    sorted_key = jnp.where(uniques, sorted_key, jnp.inf)  # Set duplicate keys to inf
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
