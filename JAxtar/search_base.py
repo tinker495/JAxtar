@@ -262,7 +262,7 @@ class SearchResult:
         path = [solved_idx]
         parent_last = search_result.get_parent(solved_idx)
         while True:
-            if parent_last.index == -1:
+            if parent_last.hashidx.index == -1:
                 break
             path.append(parent_last)
             parent_last = search_result.get_parent(parent_last)
