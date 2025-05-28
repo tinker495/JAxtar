@@ -270,15 +270,20 @@ puzzle_q_dict_nn: dict[str, callable] = {
     "n-puzzle": lambda n, puzzle, reset: SlidePuzzleNeuralQ(puzzle)
     if reset
     else SlidePuzzleNeuralQ.load_model(puzzle, f"qfunction/neuralq/model/params/n-puzzle_{n}.pkl"),
+    "n-puzzle-random": lambda n, puzzle, reset: SlidePuzzleNeuralQ(puzzle)
+    if reset
+    else SlidePuzzleNeuralQ.load_model(
+        puzzle, f"qfunction/neuralq/model/params/n-puzzle-random_{n}.pkl"
+    ),
     "n-puzzle-conv": lambda n, puzzle, reset: SlidePuzzleConvNeuralQ(puzzle)
     if reset
     else SlidePuzzleConvNeuralQ.load_model(
         puzzle, f"qfunction/neuralq/model/params/n-puzzle-conv_{n}.pkl"
     ),
-    "n-puzzle-random": lambda n, puzzle, reset: SlidePuzzleConvNeuralQ(puzzle)
+    "n-puzzle-conv-random": lambda n, puzzle, reset: SlidePuzzleConvNeuralQ(puzzle)
     if reset
     else SlidePuzzleConvNeuralQ.load_model(
-        puzzle, f"qfunction/neuralq/model/params/n-puzzle-conv_{n}.pkl"
+        puzzle, f"qfunction/neuralq/model/params/n-puzzle-conv-random_{n}.pkl"
     ),
     "lightsout": lambda n, puzzle, reset: LightsOutNeuralQ(puzzle)
     if reset
