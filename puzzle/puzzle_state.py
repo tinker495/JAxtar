@@ -1,6 +1,6 @@
 from typing import Type, TypeVar
 
-from Xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 T = TypeVar("T")
 

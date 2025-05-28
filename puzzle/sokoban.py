@@ -26,7 +26,7 @@ class Sokoban(Puzzle):
     size: int = 10
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for Sokoban using Xtructure."""
+        """Defines the state class for Sokoban using xtructure."""
         str_parser = self.get_string_parser()
         board = jnp.ones(self.size * self.size, dtype=TYPE)
         packed_board = self.pack_board(board)

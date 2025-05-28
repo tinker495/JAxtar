@@ -99,7 +99,7 @@ class WorldModelPuzzleBase(Puzzle):
     num_puzzles: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for WorldModelPuzzleBase using Xtructure."""
+        """Defines the state class for WorldModelPuzzleBase using xtructure."""
         str_parser = self.get_string_parser()
         latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
         latent_uint8 = to_uint8(latent_bool)
@@ -416,8 +416,7 @@ class WorldModelPuzzleBase(Puzzle):
         e.g sokoban puzzle has multiple target states. box's position should
         be the same as the target position but the player's position can be different.
         """
-        target_state = solve_config.TargetState
-        return self.is_equal(state, target_state)
+        return state == solve_config.TargetState
 
     def get_inverse_neighbours(
         self, solve_config: Puzzle.SolveConfig, state: Puzzle.State, filled: bool = True

@@ -31,7 +31,7 @@ class LightsOut(Puzzle):
     size: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for LightsOut using Xtructure."""
+        """Defines the state class for LightsOut using xtructure."""
         str_parser = self.get_string_parser()
         board = jnp.zeros((self.size * self.size), dtype=bool)
         packed_board = to_uint8(board)
@@ -111,7 +111,7 @@ class LightsOut(Puzzle):
         return next_states, costs
 
     def is_solved(self, solve_config: Puzzle.SolveConfig, state: "LightsOut.State") -> bool:
-        return self.is_equal(state, solve_config.TargetState)
+        return state == solve_config.TargetState
 
     def action_to_string(self, action: int) -> str:
         """

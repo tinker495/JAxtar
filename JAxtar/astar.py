@@ -3,11 +3,17 @@ import time
 import chex
 import jax
 import jax.numpy as jnp
-from Xtructure import HashTable, hash_func_builder
+from xtructure import HashTable
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, SIZE_DTYPE
-from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.search_base import (
+    Current,
+    Current_with_Parent,
+    HashIdx,
+    Parent,
+    SearchResult,
+)
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
@@ -44,8 +50,6 @@ def astar_builder(
 
     statecls = puzzle.State
 
-    hash_func = hash_func_builder(statecls)
-
     def astar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
@@ -62,7 +66,7 @@ def astar_builder(
             _,
             idx,
             table_idx,
-        ) = search_result.hashtable.parallel_insert(hash_func, states, filled)
+        ) = search_result.hashtable.parallel_insert(states, filled)
 
         cost = jnp.where(filled, 0, jnp.inf)
         search_result.cost = set_array_as_condition(
@@ -72,7 +76,10 @@ def astar_builder(
             idx,
             table_idx,
         )
-        hash_idxs = Current(index=idx, table_index=table_idx, cost=cost)
+        hash_idxs = Current(
+            hashidx=HashIdx(index=idx, table_index=table_idx),
+            cost=cost,
+        )
 
         def _cond(input: tuple[SearchResult, Current, chex.Array]):
             search_result, parent, filled = input
@@ -115,9 +122,7 @@ def astar_builder(
                 _,
                 idxs,
                 table_idxs,
-            ) = search_result.hashtable.parallel_insert(
-                hash_func, flatten_neighbours, flatten_filleds
-            )
+            ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
 
             argsort_idx = jnp.argsort(flatten_inserted, axis=0)  # sort by inserted
 
@@ -133,7 +138,7 @@ def astar_builder(
             idxs = unflatten_array(idxs, filleds.shape)
             table_idxs = unflatten_array(table_idxs, filleds.shape)
             nextcosts = unflatten_array(flatten_nextcosts, filleds.shape)
-            current = Current(index=idxs, table_index=table_idxs, cost=nextcosts)
+            current = Current(hashidx=HashIdx(index=idxs, table_index=table_idxs), cost=nextcosts)
             parent_indexs = unflatten_array(flatten_parent_index, filleds.shape)
             parent_action = unflatten_array(flatten_parent_action, filleds.shape)
             neighbours = unflatten_tree(flatten_neighbours, filleds.shape)
@@ -148,8 +153,8 @@ def astar_builder(
                     search_result.dist,
                     inserted,
                     neighbour_heur,
-                    current.index,
-                    current.table_index,
+                    current.hashidx.index,
+                    current.hashidx.table_index,
                 )
                 return search_result, neighbour_heur
 
@@ -180,15 +185,13 @@ def astar_builder(
                     current=current,
                     parent=Parent(
                         action=parent_action,
-                        index=aranged_parent.index,
-                        table_index=aranged_parent.table_index,
+                        hashidx=aranged_parent.hashidx,
                     ),
                 )
 
                 search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
                     vals,
-                    added_size=jnp.sum(jnp.isfinite(neighbour_key), dtype=SIZE_DTYPE),
                 )
                 return search_result, None
 

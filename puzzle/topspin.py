@@ -25,7 +25,7 @@ class TopSpin(Puzzle):
     turnstile_size: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for TopSpin using Xtructure."""
+        """Defines the state class for TopSpin using xtructure."""
         str_parser = self.get_string_parser()
 
         @state_dataclass
@@ -104,7 +104,7 @@ class TopSpin(Puzzle):
         return all_states, final_costs
 
     def is_solved(self, solve_config: Puzzle.SolveConfig, state: "TopSpin.State") -> bool:
-        return self.is_equal(state, solve_config.TargetState)
+        return state == solve_config.TargetState
 
     def action_to_string(self, action: int) -> str:
         match action:

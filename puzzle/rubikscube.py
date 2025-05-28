@@ -184,7 +184,7 @@ class RubiksCube(Puzzle):
         return self.State(faces=neighbour_packed), costs
 
     def is_solved(self, solve_config: Puzzle.SolveConfig, state: "RubiksCube.State") -> bool:
-        return self.is_equal(state, solve_config.TargetState)
+        return state == solve_config.TargetState
 
     def action_to_string(self, action: int) -> str:
         """

@@ -14,8 +14,8 @@ from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
 class LightsOutNeuralQ(NeuralQFunctionBase):
-    def __init__(self, puzzle: LightsOut, init_params: bool = True):
-        super().__init__(puzzle, init_params=init_params)
+    def __init__(self, puzzle: LightsOut, **kwargs):
+        super().__init__(puzzle, **kwargs)
 
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
@@ -50,8 +50,8 @@ class Model(nn.Module):
 
 
 class LightsOutConvNeuralQ(NeuralQFunctionBase):
-    def __init__(self, puzzle: LightsOut, init_params: bool = True):
-        super().__init__(puzzle, model=Model, init_params=init_params)
+    def __init__(self, puzzle: LightsOut, **kwargs):
+        super().__init__(puzzle, model=Model, **kwargs)
 
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State

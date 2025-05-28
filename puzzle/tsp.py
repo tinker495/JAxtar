@@ -16,7 +16,7 @@ class TSP(Puzzle):
     pad_size: int
 
     def define_state_class(self) -> PuzzleState:
-        """Defines the state class for TSP using Xtructure."""
+        """Defines the state class for TSP using xtructure."""
         str_parser = self.get_string_parser()
         mask = jnp.zeros(self.size, dtype=jnp.bool_)
         packed_mask = to_uint8(mask)
@@ -41,7 +41,7 @@ class TSP(Puzzle):
         return State
 
     def define_solve_config_class(self) -> PuzzleState:
-        """Defines the solve config class for TSP using Xtructure."""
+        """Defines the solve config class for TSP using xtructure."""
         str_parser = self.get_solve_config_string_parser()
 
         @state_dataclass

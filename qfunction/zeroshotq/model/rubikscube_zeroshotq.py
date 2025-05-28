@@ -9,8 +9,8 @@ from qfunction.zeroshotq.zeroshotq_base import ZeroshotQFunctionBase
 class RubiksCubeZeroshotQ(ZeroshotQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
-    def __init__(self, puzzle: RubiksCube, init_params: bool = True):
-        super().__init__(puzzle, init_params=init_params)
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, **kwargs)
 
     def pre_process_state(self, state: RubiksCube.State) -> chex.Array:
         """

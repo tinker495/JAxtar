@@ -125,6 +125,7 @@ class ZeroshotQFunctionBase(QFunction):
         zeroshot_model: nn.Module = ZeroshotQModelBase,
         goal_projector: nn.Module = GoalProjector,
         init_params: bool = True,
+        path: str = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -132,7 +133,12 @@ class ZeroshotQFunctionBase(QFunction):
         self.action_size = self._get_action_size()
         self.model = zeroshot_model(self.action_size, **kwargs)
         self.goal_projector = goal_projector(self.action_size, fixed_target=self.is_fixed, **kwargs)
-        if init_params:
+        self.path = path
+        if path is not None:
+            self.params, self.goal_params = self.load_model()
+            if init_params:
+                self.params, self.goal_params = self.get_new_params()
+        else:
             self.params, self.goal_params = self.get_new_params()
 
     def _get_action_size(self):
@@ -159,33 +165,34 @@ class ZeroshotQFunctionBase(QFunction):
         )
         return model_params, goal_params
 
-    @classmethod
-    def load_model(cls, puzzle: Puzzle, path: str):
-
+    def load_model(self):
         try:
-            if not is_model_downloaded(path):
-                download_model(path)
-            with open(path, "rb") as f:
-                params = pickle.load(f)
-            qfunc = cls(puzzle, init_params=False)
-            dummy_solve_config = puzzle.SolveConfig.default()
-            dummy_current = puzzle.State.default()
-            qfunc.model.apply(
-                params,
-                jnp.expand_dims(qfunc.pre_process(dummy_solve_config, dummy_current), axis=0),
+            if not is_model_downloaded(self.path):
+                download_model(self.path)
+            with open(self.path, "rb") as f:
+                model_params, goal_params = pickle.load(f)
+            dummy_solve_config = self.puzzle.SolveConfig.default()
+            dummy_current = self.puzzle.State.default()
+            self.model.apply(
+                model_params,
+                jnp.expand_dims(self.pre_process_state(dummy_current), axis=0),
                 training=False,
             )  # check if the params are compatible with the model
-            qfunc.params = params
+            self.goal_projector.apply(
+                goal_params,
+                jnp.expand_dims(self.pre_process_solve_config(dummy_solve_config), axis=0),
+                training=False,
+            )  # check if the params are compatible with the model
         except Exception as e:
             print(f"Error loading model: {e}")
-            qfunc = cls(puzzle)
-        return qfunc
+            model_params, goal_params = self.get_new_params()
+        return model_params, goal_params
 
-    def save_model(self, path: str):
-        if not os.path.exists(os.path.dirname(path)):
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as f:
-            pickle.dump(self.params, f)
+    def save_model(self):
+        if not os.path.exists(os.path.dirname(self.path)):
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with open(self.path, "wb") as f:
+            pickle.dump((self.params, self.goal_params), f)
 
     def batched_q_value(
         self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
