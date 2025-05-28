@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Callable
+from typing import Any, Callable
 
 import chex
 import jax
@@ -22,10 +22,10 @@ def zeroshot_qlearning_builder(
     n_devices: int = 1,
 ):
     def zeroshotq_loss(
-        q_params: jax.tree_util.PyTreeDef,
-        target_q_params: jax.tree_util.PyTreeDef,
-        goal_params: jax.tree_util.PyTreeDef,
-        target_goal_params: jax.tree_util.PyTreeDef,
+        q_params: Any,
+        target_q_params: Any,
+        goal_params: Any,
+        target_goal_params: Any,
         solve_configs_i: chex.Array,
         states_i: chex.Array,
         actions_i: chex.Array,
@@ -179,10 +179,10 @@ def zeroshot_qlearning_builder(
     def qlearning(
         key: chex.PRNGKey,
         dataset: dict[str, chex.Array],
-        q_params: jax.tree_util.PyTreeDef,
-        target_q_params: jax.tree_util.PyTreeDef,
-        goal_params: jax.tree_util.PyTreeDef,
-        target_goal_params: jax.tree_util.PyTreeDef,
+        q_params: Any,
+        target_q_params: Any,
+        goal_params: Any,
+        target_goal_params: Any,
         opt_state_q: optax.OptState,
         opt_state_goal: optax.OptState,
     ):
@@ -479,8 +479,8 @@ def _get_datasets(
     goal_model: GoalProjector,
     zeroshotq_model: ZeroshotQModelBase,
     minibatch_size: int,
-    goal_params: jax.tree_util.PyTreeDef,
-    q_params: jax.tree_util.PyTreeDef,
+    goal_params: Any,
+    q_params: Any,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
@@ -620,8 +620,8 @@ def get_zeroshot_qlearning_dataset_builder(
 
     @jax.jit
     def get_datasets(
-        q_params: jax.tree_util.PyTreeDef,
-        goal_params: jax.tree_util.PyTreeDef,
+        q_params: Any,
+        goal_params: Any,
         key: chex.PRNGKey,
     ):
         def scan_fn(key, _):
