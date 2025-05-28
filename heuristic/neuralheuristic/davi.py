@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Callable
+from typing import Any, Callable
 
 import chex
 import jax
@@ -27,7 +27,7 @@ def davi_builder(
     n_devices: int = 1,
 ):
     def davi_loss(
-        heuristic_params: jax.tree_util.PyTreeDef,
+        heuristic_params: Any,
         states: chex.Array,
         target_heuristic: chex.Array,
         weights: chex.Array,
@@ -49,7 +49,7 @@ def davi_builder(
     def davi(
         key: chex.PRNGKey,
         dataset: tuple[chex.Array, chex.Array],
-        heuristic_params: jax.tree_util.PyTreeDef,
+        heuristic_params: Any,
         opt_state: optax.OptState,
     ):
         """
@@ -160,8 +160,8 @@ def _get_datasets(
     preproc_fn: Callable,
     heuristic_model: NeuralHeuristicBase,
     minibatch_size: int,
-    target_heuristic_params: jax.tree_util.PyTreeDef,
-    heuristic_params: jax.tree_util.PyTreeDef,
+    target_heuristic_params: Any,
+    heuristic_params: Any,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
@@ -293,8 +293,8 @@ def get_heuristic_dataset_builder(
 
     @jax.jit
     def get_datasets(
-        target_heuristic_params: jax.tree_util.PyTreeDef,
-        heuristic_params: jax.tree_util.PyTreeDef,
+        target_heuristic_params: Any,
+        heuristic_params: Any,
         key: chex.PRNGKey,
     ):
         def scan_fn(key, _):

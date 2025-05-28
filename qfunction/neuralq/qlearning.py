@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Callable
+from typing import Any, Callable
 
 import chex
 import jax
@@ -27,7 +27,7 @@ def qlearning_builder(
     n_devices: int = 1,
 ):
     def qlearning_loss(
-        q_params: jax.tree_util.PyTreeDef,
+        q_params: Any,
         states: chex.Array,
         actions: chex.Array,
         target_qs: chex.Array,
@@ -47,7 +47,7 @@ def qlearning_builder(
     def qlearning(
         key: chex.PRNGKey,
         dataset: tuple[chex.Array, chex.Array, chex.Array],
-        q_params: jax.tree_util.PyTreeDef,
+        q_params: Any,
         opt_state: optax.OptState,
     ):
         """
@@ -177,8 +177,8 @@ def _get_datasets(
     preproc_fn: Callable,
     q_model: QModelBase,
     minibatch_size: int,
-    target_q_params: jax.tree_util.PyTreeDef,
-    q_params: jax.tree_util.PyTreeDef,
+    target_q_params: Any,
+    q_params: Any,
     shuffled_path: tuple[Puzzle.SolveConfig, Puzzle.State, chex.Array],
     key: chex.PRNGKey,
 ):
@@ -317,8 +317,8 @@ def get_qlearning_dataset_builder(
 
     @jax.jit
     def get_datasets(
-        target_q_params: jax.tree_util.PyTreeDef,
-        q_params: jax.tree_util.PyTreeDef,
+        target_q_params: Any,
+        q_params: Any,
         key: chex.PRNGKey,
     ):
         def scan_fn(key, _):

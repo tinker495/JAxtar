@@ -1,5 +1,5 @@
 import math
-from typing import Callable
+from typing import Any, Callable
 
 import chex
 import jax
@@ -20,7 +20,7 @@ def world_model_train_builder(
     loss_ratio: float = 0.5,
 ):
     def loss_fn(
-        params: jax.tree_util.PyTreeDef,
+        params: Any,
         data: chex.Array,
         next_data: chex.Array,
         action: chex.Array,
@@ -68,7 +68,7 @@ def world_model_train_builder(
         dataset: tuple[
             WorldModelPuzzleBase.State, WorldModelPuzzleBase.State, chex.Array
         ],  # (state, next_state, action)
-        params: jax.tree_util.PyTreeDef,
+        params: Any,
         opt_state: optax.OptState,
         epoch: int,
     ):
@@ -131,7 +131,7 @@ def world_model_eval_builder(
     minibatch_size: int,
 ):
     def eval_fn(
-        params: jax.tree_util.PyTreeDef,
+        params: Any,
         trajetory: tuple[chex.Array, chex.Array],
     ):
         states_all, actions = trajetory
