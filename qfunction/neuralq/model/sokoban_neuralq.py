@@ -10,8 +10,8 @@ from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 class SokobanNeuralQ(NeuralQFunctionBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
-    def __init__(self, puzzle: Sokoban, init_params: bool = True):
-        super().__init__(puzzle, init_params=init_params)
+    def __init__(self, puzzle: Sokoban, **kwargs):
+        super().__init__(puzzle, **kwargs)
 
     def pre_process(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> chex.Array:
         target_board = self.puzzle.unpack_board(solve_config.TargetState.board)

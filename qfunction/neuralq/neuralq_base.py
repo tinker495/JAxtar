@@ -41,13 +41,20 @@ class NeuralQFunctionBase(QFunction):
         puzzle: Puzzle,
         model: nn.Module = QModelBase,
         init_params: bool = True,
+        path: str = None,
         **kwargs,
     ):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
         self.action_size = self._get_action_size()
         self.model = model(self.action_size, **kwargs)
-        if init_params:
+        self.path = path
+        if path is not None:
+            if init_params:
+                self.params = self.get_new_params()
+            else:
+                self.params = self.load_model()
+        else:
             self.params = self.get_new_params()
 
     def _get_action_size(self):
@@ -63,32 +70,28 @@ class NeuralQFunctionBase(QFunction):
             jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
         )
 
-    @classmethod
-    def load_model(cls, puzzle: Puzzle, path: str):
-
+    def load_model(self):
         try:
-            if not is_model_downloaded(path):
-                download_model(path)
-            with open(path, "rb") as f:
+            if not is_model_downloaded(self.path):
+                download_model(self.path)
+            with open(self.path, "rb") as f:
                 params = pickle.load(f)
-            qfunc = cls(puzzle, init_params=False)
-            dummy_solve_config = puzzle.SolveConfig.default()
-            dummy_current = puzzle.State.default()
-            qfunc.model.apply(
+            dummy_solve_config = self.puzzle.SolveConfig.default()
+            dummy_current = self.puzzle.State.default()
+            self.model.apply(
                 params,
-                jnp.expand_dims(qfunc.pre_process(dummy_solve_config, dummy_current), axis=0),
+                jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
                 training=False,
             )  # check if the params are compatible with the model
-            qfunc.params = params
+            return params
         except Exception as e:
             print(f"Error loading model: {e}")
-            qfunc = cls(puzzle)
-        return qfunc
+            return self.get_new_params()
 
-    def save_model(self, path: str):
-        if not os.path.exists(os.path.dirname(path)):
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as f:
+    def save_model(self):
+        if not os.path.exists(os.path.dirname(self.path)):
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with open(self.path, "wb") as f:
             pickle.dump(self.params, f)
 
     def batched_q_value(
