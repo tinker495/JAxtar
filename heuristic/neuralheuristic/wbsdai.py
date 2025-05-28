@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable
+from typing import Any, Callable
 
 import chex
 import jax
@@ -23,7 +23,7 @@ def regression_replay_trainer_builder(
     optimizer: optax.GradientTransformation,
 ) -> Callable:
     def regression_loss(
-        heuristic_params: jax.tree_util.PyTreeDef,
+        heuristic_params: Any,
         states: chex.Array,
         target_heuristic: chex.Array,
     ):
@@ -38,7 +38,7 @@ def regression_replay_trainer_builder(
     def regression(
         key: chex.PRNGKey,
         buffer_state: BUFFER_STATE_TYPE,
-        heuristic_params: jax.tree_util.PyTreeDef,
+        heuristic_params: Any,
         opt_state: optax.OptState,
     ):
         """
@@ -148,7 +148,7 @@ def wbsdai_dataset_builder(
     )
 
     def get_wbsdai_dataset(
-        heuristic_params: jax.tree_util.PyTreeDef,
+        heuristic_params: Any,
         buffer_state: BUFFER_STATE_TYPE,
         key: chex.PRNGKey,
     ):

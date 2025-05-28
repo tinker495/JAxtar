@@ -121,12 +121,12 @@ def train_wbs_option(func: callable) -> callable:
     @click.option(
         "-s", "--steps", type=int, default=int(2e3)
     )  # 50 * 2e4 = 1e6 / DeepCubeA settings
-    @click.option("-sl", "--shuffle_length", type=int, default=30)
     @click.option("-rs", "--replay_size", type=int, default=int(1e8))
     @click.option("-mn", "--max_nodes", type=int, default=int(2e7))
     @click.option("-ab", "--add_batch_size", type=int, default=524288)  # 8192 * 64
     @click.option("-sb", "--search_batch_size", type=int, default=8192)  # 8192 * 64
     @click.option("-tmb", "--train_minibatch_size", type=int, default=8192)  # 128 * 16
+    @click.option("-sr", "--sample_ratio", type=float, default=0.3)
     @click.option("-w", "--cost_weight", type=float, default=0.8)
     @click.option("-k", "--key", type=int, default=0)
     @click.option("-r", "--reset", is_flag=True, help="Reset the target heuristic params")

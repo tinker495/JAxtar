@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable
+from typing import Any, Callable
 
 import chex
 import jax
@@ -21,7 +21,7 @@ def regression_replay_q_trainer_builder(
     optimizer: optax.GradientTransformation,
 ) -> Callable:
     def qlearning_loss(
-        q_params: jax.tree_util.PyTreeDef,
+        q_params: Any,
         states: chex.Array,
         actions: chex.Array,
         target_q: chex.Array,
@@ -38,7 +38,7 @@ def regression_replay_q_trainer_builder(
     def regression(
         key: chex.PRNGKey,
         buffer_state: BUFFER_STATE_TYPE,
-        qfunction_params: jax.tree_util.PyTreeDef,
+        qfunction_params: Any,
         opt_state: optax.OptState,
     ):
         """
@@ -150,7 +150,7 @@ def wbsdqi_dataset_builder(
     )
 
     def get_wbsdqi_dataset(
-        qfunction_params: jax.tree_util.PyTreeDef,
+        qfunction_params: Any,
         buffer_state: BUFFER_STATE_TYPE,
         key: chex.PRNGKey,
     ):
