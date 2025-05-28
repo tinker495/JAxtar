@@ -83,13 +83,15 @@ def heuristic_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle_name"]
         puzzle_size = kwargs["puzzle_size"]
         puzzle = kwargs["puzzle"]
+        reset = kwargs["reset"]
         try:
             heuristic: NeuralHeuristicBase = puzzle_heuristic_dict_nn[puzzle_name](
-                puzzle_size, puzzle, True
+                puzzle_size, puzzle, reset
             )
         except KeyError:
             raise ValueError(f"No Neural Heuristic for {puzzle_name} with size {puzzle_size}")
         kwargs["heuristic"] = heuristic
+        kwargs.pop("reset")
         return func(*args, **kwargs)
 
     return wrapper
@@ -101,13 +103,15 @@ def qfunction_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle_name"]
         puzzle_size = kwargs["puzzle_size"]
         puzzle = kwargs["puzzle"]
+        reset = kwargs["reset"]
         try:
             qfunction: NeuralQFunctionBase = puzzle_q_dict_nn[puzzle_name](
-                puzzle_size, puzzle, True
+                puzzle_size, puzzle, reset
             )
         except KeyError:
             raise ValueError(f"No Neural Q Function for {puzzle_name} with size {puzzle_size}")
         kwargs["qfunction"] = qfunction
+        kwargs.pop("reset")
         return func(*args, **kwargs)
 
     return wrapper
