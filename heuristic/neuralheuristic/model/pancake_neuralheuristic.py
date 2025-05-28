@@ -10,8 +10,8 @@ from puzzle.pancake import PancakeSorting
 class PancakeNeuralHeuristic(NeuralHeuristicBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
-    def __init__(self, puzzle: PancakeSorting, init_params: bool = True):
-        super().__init__(puzzle, init_params=init_params)
+    def __init__(self, puzzle: PancakeSorting, **kwargs):
+        super().__init__(puzzle, **kwargs)
 
     def pre_process(
         self, solve_config: PancakeSorting.SolveConfig, current: PancakeSorting.State

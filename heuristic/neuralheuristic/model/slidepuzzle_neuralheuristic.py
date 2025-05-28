@@ -15,9 +15,9 @@ from puzzle.slidepuzzle import SlidePuzzle
 
 
 class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
-    def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):
+    def __init__(self, puzzle: SlidePuzzle, **kwargs):
         self.size_square = puzzle.size * puzzle.size
-        super().__init__(puzzle, init_params=init_params)
+        super().__init__(puzzle, **kwargs)
 
     def pre_process(
         self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
@@ -68,11 +68,12 @@ class Model(nn.Module):
 class SlidePuzzleConvNeuralHeuristic(NeuralHeuristicBase):
     base_xy: chex.Array  # The coordinates of the numbers in the puzzle
 
-    def __init__(self, puzzle: SlidePuzzle, init_params: bool = True):
+    def __init__(self, puzzle: SlidePuzzle, **kwargs):
+        self.size_square = puzzle.size * puzzle.size
         x = jnp.tile(jnp.arange(puzzle.size)[:, jnp.newaxis, jnp.newaxis], (1, puzzle.size, 1))
         y = jnp.tile(jnp.arange(puzzle.size)[jnp.newaxis, :, jnp.newaxis], (puzzle.size, 1, 1))
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
-        super().__init__(puzzle, model=Model, init_params=init_params)
+        super().__init__(puzzle, model=Model, **kwargs)
 
     def pre_process(
         self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
