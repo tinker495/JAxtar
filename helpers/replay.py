@@ -13,8 +13,10 @@ def init_trajectory_experience_replay(
     sample_batch_size: int = 100,
     add_batch_size: int = 100,
     sample_sequence_length: int = 30,
+    replay_size: int = 1000000,
 ) -> tuple[BUFFER_TYPE, BUFFER_STATE_TYPE]:
     buffer = fbx.make_trajectory_buffer(
+        max_size=replay_size,
         add_batch_size=add_batch_size,
         sample_batch_size=sample_batch_size,
         sample_sequence_length=sample_sequence_length,
