@@ -169,7 +169,6 @@ def _get_datasets(
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
-    move_costs = shuffled_path["move_costs"]
 
     minibatched_solve_configs = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
@@ -177,15 +176,14 @@ def _get_datasets(
     minibatched_states = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), states
     )
-    minibatched_move_costs = jnp.reshape(move_costs, (-1, minibatch_size))
 
     def get_minibatched_datasets(_, vals):
-        solve_configs, states, move_costs = vals
+        solve_configs, states = vals
         solved = puzzle.batched_is_solved(
             solve_configs, states, multi_solve_config=True
         )  # [batch_size]
         neighbors, cost = puzzle.batched_get_neighbours(
-            solve_configs, states, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+            solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
         neighbors_solved = jax.vmap(
             lambda x, y: puzzle.batched_is_solved(x, y, multi_solve_config=True),
@@ -224,7 +222,7 @@ def _get_datasets(
     _, (preproc, target_heuristic, diff) = jax.lax.scan(
         get_minibatched_datasets,
         None,
-        (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
+        (minibatched_solve_configs, minibatched_states),
     )
 
     preproc = preproc.reshape((-1, *preproc.shape[2:]))

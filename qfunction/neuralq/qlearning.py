@@ -187,7 +187,6 @@ def _get_datasets(
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
-    move_costs = shuffled_path["move_costs"]
 
     minibatched_solve_configs = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
@@ -195,16 +194,15 @@ def _get_datasets(
     minibatched_states = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), states
     )
-    minibatched_move_costs = jnp.reshape(move_costs, (-1, minibatch_size))
 
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
-        solve_configs, states, move_costs = vals
+        solve_configs, states = vals
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
         q_values, _ = q_model.apply(q_params, preproc, training=False, mutable=["batch_stats"])
         neighbors, cost = puzzle.batched_get_neighbours(
-            solve_configs, states, filleds=jnp.ones_like(move_costs), multi_solve_config=True
+            solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
         mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
 
@@ -224,7 +222,7 @@ def _get_datasets(
         _, neighbor_cost = puzzle.batched_get_neighbours(
             solve_configs,
             selected_neighbors,
-            filleds=jnp.ones_like(move_costs),
+            filleds=jnp.ones(minibatch_size),
             multi_solve_config=True,
         )  # [action_size, batch_size] [action_size, batch_size]
         selected_neighbors_solved = puzzle.batched_is_solved(
@@ -249,7 +247,7 @@ def _get_datasets(
     _, (preproc, target_q, actions, diff) = jax.lax.scan(
         get_minibatched_datasets,
         key,
-        (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
+        (minibatched_solve_configs, minibatched_states),
     )
 
     preproc = preproc.reshape((-1, *preproc.shape[2:]))

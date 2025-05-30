@@ -19,6 +19,7 @@ def get_random_inverse_trajectory(
 
     def _scan(carry, _):
         old_state, state, move_cost, key = carry
+        key, subkey = jax.random.split(key)
         neighbor_states, cost = puzzle.batched_get_inverse_neighbours(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
@@ -36,7 +37,6 @@ def get_random_inverse_trajectory(
         filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
         filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
         prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
-        key, subkey = jax.random.split(key)
         choices = jnp.arange(cost.shape[0])  # [action]
         inv_actions = jax.vmap(
             lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
@@ -81,6 +81,7 @@ def get_random_trajectory(
 
     def _scan(carry, _):
         old_state, state, move_cost, key = carry
+        key, subkey = jax.random.split(key)
         neighbor_states, cost = puzzle.batched_get_neighbours(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
@@ -98,7 +99,6 @@ def get_random_trajectory(
         filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
         filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
         prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
-        key, subkey = jax.random.split(key)
         choices = jnp.arange(cost.shape[0])  # [action]
         actions = jax.vmap(
             lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
@@ -185,8 +185,8 @@ def create_hindsight_target_shuffled_path(
 
     targets = states[-1, ...]  # [batch_size, ...]
     states = states[:-1, ...]  # [shuffle_length, batch_size, ...]
-    solve_configs = puzzle.batched_hindsight_transform(solve_configs, targets)  # [batch_size, ...]
 
+    solve_configs = puzzle.batched_hindsight_transform(solve_configs, targets)  # [batch_size, ...]
     solve_configs = jax.tree_util.tree_map(
         lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
         solve_configs,
