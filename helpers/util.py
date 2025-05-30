@@ -1,10 +1,25 @@
 import time
 
+import chex
 import jax
 import jax.numpy as jnp
 
 from JAxtar.search_base import Current, SearchResult
 from puzzle.puzzle_base import Puzzle
+
+
+def flatten_array(array: chex.Array, dims: int) -> chex.Array:
+    """
+    Reshape the array to the given shape.
+    """
+    return jnp.reshape(array, (-1,) + array.shape[dims:])
+
+
+def flatten_tree(tree: chex.Array, dims: int) -> chex.Array:
+    """
+    Reshape the index of the tree to the given shape.
+    """
+    return jax.tree_util.tree_map(lambda t: flatten_array(t, dims), tree)
 
 
 def vmapping_init_target(puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]):
