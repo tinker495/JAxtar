@@ -15,19 +15,18 @@ def init_trajectory_experience_replay(
     sample_sequence_length: int = 30,
     replay_size: int = 1000000,
 ) -> tuple[BUFFER_TYPE, BUFFER_STATE_TYPE]:
-    buffer = fbx.make_trajectory_buffer(
-        max_size=replay_size,
-        add_batch_size=add_batch_size,
+    buffer = fbx.make_flat_buffer(
+        max_length=replay_size // sample_batch_size + 1,
+        min_length=sample_batch_size,
         sample_batch_size=sample_batch_size,
-        sample_sequence_length=sample_sequence_length,
-        min_length_time_axis=sample_sequence_length,
+        add_batch_size=add_batch_size,
     )
     # Initialise the buffer's state.
     fake_timestep = {
         "solve_config": solve_config.default(),
-        "state": state.default(),
-        "cost": jnp.array(0.0, dtype=jnp.float16),
-        "action": jnp.array(0, dtype=jnp.uint8),
+        "state": state.default((sample_sequence_length + 1,)),
+        "cost": jnp.zeros((sample_sequence_length + 1,), dtype=jnp.float32),
+        "action": jnp.zeros((sample_sequence_length + 1,), dtype=jnp.uint8),
     }
     state = buffer.init(fake_timestep)
     return buffer, state

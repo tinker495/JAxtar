@@ -135,9 +135,10 @@ class ZeroshotQFunctionBase(QFunction):
         self.goal_projector = goal_projector(self.action_size, fixed_target=self.is_fixed, **kwargs)
         self.path = path
         if path is not None:
-            self.params, self.goal_params = self.load_model()
             if init_params:
                 self.params, self.goal_params = self.get_new_params()
+            else:
+                self.params, self.goal_params = self.load_model()
         else:
             self.params, self.goal_params = self.get_new_params()
 

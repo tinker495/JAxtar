@@ -1,15 +1,11 @@
-import math
 from functools import partial
 
 import chex
 import jax
+import jax.numpy as jnp
 
 from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
-from helpers.sampling import (
-    create_hindsight_target_shuffled_path,
-    create_hindsight_target_triangular_shuffled_path,
-    create_target_shuffled_path,
-)
+from helpers.sampling import get_random_trajectory
 from puzzle.puzzle_base import Puzzle
 
 # from typing import Any, Callable
@@ -25,48 +21,19 @@ from puzzle.puzzle_base import Puzzle
 def get_zeroshot_qlearning_dataset_builder(
     puzzle: Puzzle,
     buffer: BUFFER_TYPE,
-    dataset_size: int,
     shuffle_length: int,
-    dataset_minibatch_size: int,
-    using_hindsight_target: bool = True,
-    using_triangular_target: bool = False,
+    add_size: int,
+    max_parallel: int = 8192,
 ):
-    if using_hindsight_target:
-        # Calculate appropriate shuffle_parallel for hindsight sampling
-        # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
-        if using_triangular_target:
-            triangle_size = shuffle_length * (shuffle_length + 1) // 2
-            needed_parallel = math.ceil(dataset_size / triangle_size)
-            shuffle_parallel = int(min(needed_parallel, dataset_minibatch_size))
-            steps = math.ceil(dataset_size / (shuffle_parallel * triangle_size))
-            create_shuffled_path_fn = partial(
-                create_hindsight_target_triangular_shuffled_path,
-                puzzle,
-                shuffle_length,
-                shuffle_parallel,
-            )
-        else:
-            shuffle_parallel = int(
-                min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
-            )
-            steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
-            create_shuffled_path_fn = partial(
-                create_hindsight_target_shuffled_path,
-                puzzle,
-                shuffle_length,
-                shuffle_parallel,
-            )
+    if add_size > max_parallel:
+        steps = add_size // max_parallel
+        shuffle_parallel = add_size // steps
     else:
-        shuffle_parallel = int(
-            min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
-        )
-        steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
-        create_shuffled_path_fn = partial(
-            create_target_shuffled_path,
-            puzzle,
-            shuffle_length,
-            shuffle_parallel,
-        )
+        steps = 1
+        shuffle_parallel = add_size
+    create_shuffled_path_fn = partial(
+        get_random_trajectory, puzzle, shuffle_length, shuffle_parallel
+    )
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
@@ -79,8 +46,25 @@ def get_zeroshot_qlearning_dataset_builder(
             key, buffer_state = state
             key, subkey = jax.random.split(key)
             paths = jited_create_shuffled_path(subkey)
-            buffer_state = buffer.add(buffer_state, paths)
 
+            solve_configs = paths["solve_configs"]
+            states = paths["states"]
+            actions = paths["actions"]
+            action_costs = paths["action_costs"]
+
+            states = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), states)
+            actions = jnp.swapaxes(actions, 0, 1)
+            action_costs = jnp.swapaxes(action_costs, 0, 1)
+
+            print(solve_configs.shape, states.shape, actions.shape, action_costs.shape)
+
+            insert_dict = {
+                "solve_config": solve_configs,
+                "state": states,
+                "action": actions,
+                "cost": action_costs,
+            }
+            buffer_state = buffer.add(buffer_state, insert_dict)
             return (key, buffer_state), None
 
         (key, buffer_state), _ = jax.lax.scan(scan_fn, (key, buffer_state), None, length=steps)

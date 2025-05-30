@@ -303,6 +303,7 @@ def zeroshot_qlearning(
     shuffle_length: int,
     replay_size: int,
     add_batch_size: int,
+    dataset_minibatch_size: int,
     train_minibatch_size: int,
     key: int,
     **kwargs,
@@ -325,8 +326,8 @@ def zeroshot_qlearning(
     buffer, buffer_state = init_trajectory_experience_replay(
         puzzle.SolveConfig,
         puzzle.State,
-        sample_batch_size=1000,
-        add_batch_size=1000,
+        sample_batch_size=add_batch_size,
+        add_batch_size=add_batch_size,
         replay_size=replay_size,
         sample_sequence_length=shuffle_length,
     )
@@ -334,12 +335,11 @@ def zeroshot_qlearning(
     get_datasets = get_zeroshot_qlearning_dataset_builder(
         puzzle,
         buffer,
-        add_batch_size,
         shuffle_length,
         add_batch_size,
     )
 
     pbar = trange(steps)
     for i in pbar:
-        key, data_key = jax.random.split(key, 3)
+        key, data_key = jax.random.split(key, 2)
         buffer_state = get_datasets(buffer_state, data_key)

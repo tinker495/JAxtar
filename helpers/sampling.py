@@ -37,7 +37,7 @@ def get_random_inverse_trajectory(
         filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
         filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
         prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
-        choices = jnp.arange(cost.shape[0])  # [action]
+        choices = jnp.arange(cost.shape[0], dtype=jnp.uint8)  # [action]
         inv_actions = jax.vmap(
             lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
         )(
@@ -99,7 +99,7 @@ def get_random_trajectory(
         filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
         filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
         prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
-        choices = jnp.arange(cost.shape[0])  # [action]
+        choices = jnp.arange(cost.shape[0], dtype=jnp.uint8)  # [action]
         actions = jax.vmap(
             lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
         )(
