@@ -388,6 +388,7 @@ def get_qlearning_dataset_builder(
                 shuffle_parallel,
             )
     else:
+        with_policy = True  # if not using hindsight target, must use policy for training
         shuffle_parallel = int(
             min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
         )
