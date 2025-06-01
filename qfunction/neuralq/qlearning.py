@@ -365,7 +365,6 @@ def get_qlearning_dataset_builder(
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
         # Calculate appropriate shuffle_parallel for hindsight sampling
-        # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
         if using_triangular_target:
             triangle_size = shuffle_length * (shuffle_length + 1) // 2
             needed_parallel = math.ceil(dataset_size / triangle_size)
