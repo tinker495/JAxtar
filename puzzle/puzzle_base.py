@@ -77,7 +77,8 @@ class Puzzle(ABC):
         self.is_solved = jax.jit(self.is_solved)
         self.batched_is_solved = jax.jit(self.batched_is_solved, static_argnums=(2,))
 
-        self.action_size = self._get_action_size()
+        if self.action_size is None:
+            self.action_size = self._get_action_size()
 
     def data_init(self):
         """

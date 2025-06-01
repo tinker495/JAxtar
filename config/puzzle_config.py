@@ -108,23 +108,23 @@ puzzle_dict: dict[str, Puzzle] = {
     "pancake": PancakeSorting,
     "hanoi": TowerOfHanoi,
     "topspin": TopSpin,
-    "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel.load_model(
-        "puzzle/world_model/model/params/rubikscube.pkl"
+    "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel(
+        path="puzzle/world_model/model/params/rubikscube.pkl"
     ),
-    "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModel_test.load_model(
-        "puzzle/world_model/model/params/rubikscube.pkl"
+    "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModel_test(
+        path="puzzle/world_model/model/params/rubikscube.pkl"
     ),
-    "rubikscube_world_model_optimized": lambda **kwargs: RubiksCubeWorldModelOptimized.load_model(
-        "puzzle/world_model/model/params/rubikscube_optimized.pkl"
+    "rubikscube_world_model_optimized": lambda **kwargs: RubiksCubeWorldModelOptimized(
+        path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
     ),
-    "rubikscube_world_model_optimized_test": lambda **kwargs: RubiksCubeWorldModelOptimized_test.load_model(
-        "puzzle/world_model/model/params/rubikscube_optimized.pkl"
+    "rubikscube_world_model_optimized_test": lambda **kwargs: RubiksCubeWorldModelOptimized_test(
+        path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
     ),
-    "sokoban_world_model": lambda **kwargs: SokobanWorldModel.load_model(
-        "puzzle/world_model/model/params/sokoban.pkl"
+    "sokoban_world_model": lambda **kwargs: SokobanWorldModel(
+        path="puzzle/world_model/model/params/sokoban.pkl"
     ),
-    "sokoban_world_model_optimized": lambda **kwargs: SokobanWorldModelOptimized.load_model(
-        "puzzle/world_model/model/params/sokoban_optimized.pkl"
+    "sokoban_world_model_optimized": lambda **kwargs: SokobanWorldModelOptimized(
+        path="puzzle/world_model/model/params/sokoban_optimized.pkl"
     ),
 }
 

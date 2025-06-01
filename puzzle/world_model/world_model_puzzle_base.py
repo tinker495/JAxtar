@@ -130,7 +130,8 @@ class WorldModelPuzzleBase(Puzzle):
         action_size,
         AE=AutoEncoder,
         WM=WorldModel,
-        init_params=True,
+        init_params: bool = False,
+        path: str = None,
         **kwargs,
     ):
         self.data_path = data_path
@@ -142,6 +143,7 @@ class WorldModelPuzzleBase(Puzzle):
         else:
             self.pad_size = 0
         self.action_size = action_size
+        self.path = path
 
         class total_model(nn.Module):
             autoencoder: AutoEncoder
@@ -203,7 +205,12 @@ class WorldModelPuzzleBase(Puzzle):
             world_model=WM(latent_shape=self.latent_shape, action_size=self.action_size),
         )
 
-        if init_params:
+        if path is not None:
+            if init_params:
+                self.params = self.get_new_params()
+            else:
+                self.params = self.load_model()
+        else:
             self.params = self.get_new_params()
 
         super().__init__(**kwargs)
@@ -215,28 +222,23 @@ class WorldModelPuzzleBase(Puzzle):
             dummy_data,
         )
 
-    @classmethod
-    def load_model(cls, path: str):
-
+    def load_model(self):
         try:
-            if not is_model_downloaded(path):
-                download_model(path)
-            with open(path, "rb") as f:
+            if not is_model_downloaded(self.path):
+                download_model(self.path)
+            with open(self.path, "rb") as f:
                 params = pickle.load(f)
-            puzzle = cls(init_params=False)
-            dummy_data = jnp.zeros((1, *puzzle.data_shape))
-            puzzle.model.apply(
+            self.model.apply(
                 params,
-                dummy_data,
+                jnp.zeros((1, *self.data_shape)),
             )  # check if the params are compatible with the model
-            puzzle.params = params
+            return params
         except Exception as e:
             print(f"Error loading model: {e}")
-            puzzle = cls()
-        return puzzle
+            return self.get_new_params()
 
-    def save_model(self, path: str):
-        with open(path, "wb") as f:
+    def save_model(self):
+        with open(self.path, "wb") as f:
             pickle.dump(self.params, f)
 
     def data_init(self):
