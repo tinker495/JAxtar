@@ -98,7 +98,7 @@ def heuristic_options(func: callable) -> callable:
 
 
 def qfunction_options(func: callable) -> callable:
-    @click.option("-wp", "--with_policy", is_flag=True, help="Use policy for training")
+    @click.option("-nwp", "--not_with_policy", is_flag=True, help="Not use policy for training")
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_name = kwargs["puzzle_name"]
@@ -112,6 +112,8 @@ def qfunction_options(func: callable) -> callable:
         except KeyError:
             raise ValueError(f"No Neural Q Function for {puzzle_name} with size {puzzle_size}")
         kwargs["qfunction"] = qfunction
+        kwargs["with_policy"] = not kwargs["not_with_policy"]
+        kwargs.pop("not_with_policy")
         kwargs.pop("reset")
         return func(*args, **kwargs)
 
