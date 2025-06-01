@@ -56,8 +56,6 @@ def get_zeroshot_qlearning_dataset_builder(
             actions = jnp.swapaxes(actions, 0, 1)
             action_costs = jnp.swapaxes(action_costs, 0, 1)
 
-            print(solve_configs.shape, states.shape, actions.shape, action_costs.shape)
-
             insert_dict = {
                 "solve_config": solve_configs,
                 "state": states,
