@@ -180,6 +180,7 @@ def qlearning(
     multi_device: bool,
     reset_interval: int,
     tau: float,
+    with_policy: bool,
     **kwargs,
 ):
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -217,6 +218,7 @@ def qlearning(
         dataset_minibatch_size,
         using_hindsight_target,
         n_devices=n_devices,
+        with_policy=with_policy,
     )
 
     pbar = trange(steps)

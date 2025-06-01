@@ -175,7 +175,7 @@ def boltzmann_action_selection(
     return probs
 
 
-def _get_datasets(
+def _get_datasets_with_policy(
     puzzle: Puzzle,
     preproc_fn: Callable,
     q_model: QModelBase,
@@ -198,6 +198,7 @@ def _get_datasets(
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
         solve_configs, states = vals
+        solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
         q_values, _ = q_model.apply(q_params, preproc, training=False, mutable=["batch_stats"])
@@ -239,6 +240,7 @@ def _get_datasets(
         min_q = jnp.min(q, axis=1)
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
         target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
+        target_q = jnp.where(solved, 0.0, target_q)
 
         diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
@@ -263,6 +265,91 @@ def _get_datasets(
     }
 
 
+def _get_datasets_with_trajectory(
+    puzzle: Puzzle,
+    preproc_fn: Callable,
+    q_model: QModelBase,
+    minibatch_size: int,
+    target_q_params: Any,
+    q_params: Any,
+    shuffled_path: dict[str, chex.Array],
+    key: chex.PRNGKey,
+):
+    solve_configs = shuffled_path["solve_configs"]
+    states = shuffled_path["states"]
+    actions = shuffled_path["actions"]
+
+    minibatched_solve_configs = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
+    )
+    minibatched_states = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), states
+    )
+    minibatched_actions = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), actions
+    )
+
+    def get_minibatched_datasets(key, vals):
+        key, subkey = jax.random.split(key)
+        solve_configs, states, actions = vals
+        solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
+
+        preproc = jax.vmap(preproc_fn)(solve_configs, states)
+        neighbors, cost = puzzle.batched_get_neighbours(
+            solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
+        )  # [action_size, batch_size] [action_size, batch_size]
+
+        batch_size = actions.shape[0]
+        selected_neighbors = jax.tree_util.tree_map(
+            lambda x: x[actions, jnp.arange(batch_size), :],
+            neighbors,
+        )
+        selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
+        _, neighbor_cost = puzzle.batched_get_neighbours(
+            solve_configs,
+            selected_neighbors,
+            filleds=jnp.ones(minibatch_size),
+            multi_solve_config=True,
+        )  # [action_size, batch_size] [action_size, batch_size]
+        selected_neighbors_solved = puzzle.batched_is_solved(
+            solve_configs, selected_neighbors, multi_solve_config=True
+        )
+
+        preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
+
+        q, _ = q_model.apply(
+            target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+        )  # [minibatch_size, action_shape]
+        mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
+        q = jnp.where(mask, q, jnp.inf)
+        min_q = jnp.min(q, axis=1)
+        target_q = jnp.maximum(min_q, 0.0) + selected_costs
+        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
+        target_q = jnp.where(solved, 0.0, target_q)
+
+        diff = jnp.zeros_like(target_q)
+        # if the puzzle is already solved, the all q is 0
+        return key, (preproc, target_q, actions, diff)
+
+    _, (preproc, target_q, actions, diff) = jax.lax.scan(
+        get_minibatched_datasets,
+        key,
+        (minibatched_solve_configs, minibatched_states, minibatched_actions),
+    )
+
+    preproc = preproc.reshape((-1, *preproc.shape[2:]))
+    target_q = target_q.reshape((-1, *target_q.shape[2:]))
+    actions = actions.reshape((-1, *actions.shape[2:]))
+    diff = diff.reshape((-1, *diff.shape[2:]))
+
+    return {
+        "preproc": preproc,
+        "target_q": target_q,
+        "actions": actions,
+        "diff": diff,
+    }
+
+
 def get_qlearning_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
@@ -272,6 +359,7 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_target: bool = False,
+    with_policy: bool = False,
     n_devices: int = 1,
 ):
     if using_hindsight_target:
@@ -315,7 +403,7 @@ def get_qlearning_dataset_builder(
 
     jited_get_datasets = jax.jit(
         partial(
-            _get_datasets,
+            _get_datasets_with_policy if with_policy else _get_datasets_with_trajectory,
             puzzle,
             preproc_fn,
             q_model,
