@@ -1,21 +1,60 @@
 from functools import partial
+from typing import Any, Callable
 
 import chex
 import jax
 import jax.numpy as jnp
+import optax
 
 from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
 from helpers.sampling import get_random_trajectory
 from puzzle.puzzle_base import Puzzle
-
-# from typing import Any, Callable
-
-
-# import jax.numpy as jnp
-# import optax
+from qfunction.zeroshotq.zeroshotq_base import ZeroshotQModelBase
 
 
-# from qfunction.zeroshotq.zeroshotq_base import GoalProjector, ZeroshotQModelBase
+def zeroshot_qlearning_builder(
+    train_steps: int,
+    zeroshot_q_model: ZeroshotQModelBase,
+    optimizer: optax.GradientTransformation,
+    buffer: BUFFER_TYPE,
+    solve_config_preproc_fn: Callable,
+    state_preproc_fn: Callable,
+    n_devices: int = 1,
+):
+    def loss_fn(params, solve_configs, target_states, next_states, states, costs, actions):
+        pass
+
+    def zeroshot_qlearning(
+        key: chex.PRNGKey,
+        buffer_state: BUFFER_STATE_TYPE,
+        params: Any,
+        target_params: Any,
+        opt_state: optax.OptState,
+    ):
+        def train_loop(carry, _):
+            params, opt_state, key = carry
+            key, subkey = jax.random.split(key)
+            sample = buffer.sample(buffer_state, subkey)
+            solve_configs, states, costs, actions = (
+                sample.experience.first["solve_config"],
+                sample.experience.first["state"],
+                sample.experience.first["cost"],
+                sample.experience.first["action"],
+            )
+
+            (loss, diff), grads = jax.value_and_grad(loss_fn, has_aux=True)(
+                params, solve_configs, states, costs, actions
+            )
+            updates, opt_state = optimizer.update(grads, opt_state)
+            params = optax.apply_updates(params, updates)
+            return (params, opt_state, key), None
+
+        (params, opt_state, key), _ = jax.lax.scan(
+            train_loop, (params, opt_state, key), None, length=train_steps
+        )
+        return params, opt_state
+
+    return jax.jit(zeroshot_qlearning)
 
 
 def get_zeroshot_qlearning_dataset_builder(

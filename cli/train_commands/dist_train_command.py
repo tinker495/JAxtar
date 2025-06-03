@@ -345,14 +345,3 @@ def zeroshot_qlearning(
     for i in pbar:
         key, data_key = jax.random.split(key, 2)
         buffer_state = get_datasets(buffer_state, data_key)
-
-        sample = buffer.sample(buffer_state, data_key)
-        sample = sample.experience.first
-        for k, v in sample.items():
-            print(k)
-            if isinstance(v, jax.Array):
-                print(v.shape)
-            else:
-                print(v)
-            print("-" * 30)
-        break

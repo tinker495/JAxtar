@@ -46,7 +46,7 @@ class NeuralQFunctionBase(QFunction):
     ):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
-        self.action_size = self._get_action_size()
+        self.action_size = puzzle.action_size
         self.model = model(self.action_size, **kwargs)
         self.path = path
         if path is not None:
@@ -56,11 +56,6 @@ class NeuralQFunctionBase(QFunction):
                 self.params = self.load_model()
         else:
             self.params = self.get_new_params()
-
-    def _get_action_size(self):
-        dummy_solve_config = self.puzzle.SolveConfig.default()
-        dummy_current = self.puzzle.State.default()
-        return self.puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[0][0]
 
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()

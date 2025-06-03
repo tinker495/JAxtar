@@ -28,6 +28,22 @@ class Projector(nn.Module):
         return x
 
 
+class ActionProjector(nn.Module):
+    action_size: int = 4
+    latent_dim: int = 256
+    Res_N: int = 2
+
+    @nn.compact
+    def __call__(self, x):
+        x = nn.Dense(self.latent_dim, dtype=DTYPE)(x)
+        for _ in range(self.Res_N):
+            x = SimbaResBlock(self.latent_dim * 4, LayerNorm)(x)
+        x = LayerNorm(x)
+        x = nn.Dense(self.action_size * self.latent_dim, dtype=DTYPE)(x)
+        x = jnp.reshape(x, (x.shape[0], self.action_size, self.latent_dim))
+        return x
+
+
 class FixedSolveConfigProjector(nn.Module):
     latent_dim: int = 256
 
@@ -41,81 +57,57 @@ class FixedSolveConfigProjector(nn.Module):
         return output
 
 
-class GoalProjector(nn.Module):
+class ZeroshotQModelBase(nn.Module):
     action_size: int = 4
     latent_dim: int = 256
     Res_N: int = 2
     fixed_target: bool = False
 
     def setup(self):
-        self.backward_projector = Projector(
-            latent_dim=self.latent_dim * self.action_size, Res_N=self.Res_N
+        self.forward_projector = ActionProjector(
+            action_size=self.action_size, latent_dim=self.latent_dim, Res_N=self.Res_N
         )
+        self.backward_projector = Projector(latent_dim=self.latent_dim, Res_N=self.Res_N)
+
         if self.fixed_target:
             self.solve_config_projector = FixedSolveConfigProjector(latent_dim=self.latent_dim)
         else:
             self.solve_config_projector = Projector(latent_dim=self.latent_dim, Res_N=self.Res_N)
 
-    def __call__(self, solve_config, current):
-        z = self.solve_config_projection(solve_config)  # (batch_size, latent_dim)
-        b_a = self.backward_projection(current)  # (batch_size, action_size, latent_dim)
-        return z, b_a
-
-    def solve_config_projection(self, solve_config):
-        z = self.solve_config_projector(solve_config)  # (batch_size, latent_dim)
-        return z
-
-    def backward_projection(self, state):
-        b_a = self.backward_projector(state)  # (batch_size, latent_dim * action_size)
-        b_a = jnp.reshape(
-            b_a, (b_a.shape[0], self.action_size, self.latent_dim)
-        )  # (batch_size, action_size, latent_dim)
-        return b_a
-
-    def get_b(
-        self,
-        state: Puzzle.State,
-        actions: chex.Array,
-    ):
-        b_a = self.backward_projection(state)  # (batch_size, action_size, latent_dim)
-        b = jnp.take_along_axis(
-            b_a, actions[:, jnp.newaxis, jnp.newaxis], axis=1
-        )  # (batch_size, 1, latent_dim)
-        b = jnp.reshape(b, (b.shape[0], self.latent_dim))  # (batch_size, latent_dim)
-        return b  # (batch_size, latent_dim)
-
-
-class ZeroshotQModelBase(nn.Module):
-    action_size: int = 4
-    latent_dim: int = 256
-    Res_N: int = 2
-
-    def setup(self):
-
-        self.forward_projector = Projector(
-            latent_dim=self.latent_dim * self.action_size, Res_N=self.Res_N
-        )
-
         self.forward_weight = self.param("forward_weight", nn.initializers.normal(stddev=1), (1,))
         self.forward_bias = self.param("forward_bias", nn.initializers.normal(stddev=1), (1,))
 
-    def __call__(self, state, z):
+    def __call__(self, solve_config, state):
+        z = self.solve_config_projection(solve_config)  # (batch_size, latent_dim)
+        bz = self.backward_projection(state, z)  # (batch_size, latent_dim)
         f_a = self.forward_projection(state, z)  # (batch_size, action_size, latent_dim)
-        q = self.distance(f_a, z)  # (batch_size, action_size)
+        q = self.distance(f_a, bz)  # (batch_size, action_size)
         return q
 
-    def distance(self, f_a, b):  # (batch_size, action_size, latent_dim), (batch_size, latent_dim)
-        f_a = jnp.einsum("baz,bz->ba", f_a, b)  # (batch_size, action_size)
-        f_a = f_a * self.forward_weight + self.forward_bias
-        q = -jax.nn.log_sigmoid(f_a)
-        return q
+    def solve_config_projection(self, solve_config):
+        solve_config = jnp.reshape(solve_config, (solve_config.shape[0], -1))
+        z = self.solve_config_projector(solve_config)  # (batch_size, latent_dim)
+        return z
 
     def forward_projection(self, state, z):
-        f_a = self.forward_projector(jnp.concatenate([state, z], axis=-1))
-        f_a = jnp.reshape(
-            f_a, (f_a.shape[0], self.action_size, self.latent_dim)
+        state = jnp.reshape(state, (state.shape[0], -1))
+        f_a = self.forward_projector(
+            jnp.concatenate([state, z], axis=-1)
         )  # (batch_size, action_size, latent_dim)
         return f_a
+
+    def backward_projection(self, state, z):
+        state = jnp.reshape(state, (state.shape[0], -1))
+        bz = self.backward_projector(
+            jnp.concatenate([state, z], axis=-1)
+        )  # (batch_size, latent_dim)
+        return bz
+
+    def distance(self, f_a, z):  # (batch_size, action_size, latent_dim), (batch_size, latent_dim)
+        f_a = jnp.einsum("baz,bz->ba", f_a, z)  # (batch_size, action_size)
+        f_a = f_a * self.forward_weight + self.forward_bias
+        q = -jax.nn.log_sigmoid(f_a) - 1.0  # [-1, inf]
+        return q
 
 
 class ZeroshotQFunctionBase(QFunction):
@@ -123,71 +115,59 @@ class ZeroshotQFunctionBase(QFunction):
         self,
         puzzle: Puzzle,
         zeroshot_model: nn.Module = ZeroshotQModelBase,
-        goal_projector: nn.Module = GoalProjector,
         init_params: bool = True,
         path: str = None,
         **kwargs,
     ):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
-        self.action_size = self._get_action_size()
+        self.action_size = puzzle.action_size
         self.model = zeroshot_model(self.action_size, **kwargs)
-        self.goal_projector = goal_projector(self.action_size, fixed_target=self.is_fixed, **kwargs)
         self.path = path
         if path is not None:
             if init_params:
-                self.params, self.goal_params = self.get_new_params()
+                self.params = self.get_new_params()
             else:
-                self.params, self.goal_params = self.load_model()
+                self.params = self.load_model()
         else:
-            self.params, self.goal_params = self.get_new_params()
-
-    def _get_action_size(self):
-        dummy_solve_config = self.puzzle.SolveConfig.default()
-        dummy_current = self.puzzle.State.default()
-        return self.puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[0][0]
+            self.params = self.get_new_params()
 
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
-        dummy_solve_config_processed = self.pre_process_solve_config(dummy_solve_config)
-        dummy_current_processed = self.pre_process_state(dummy_current)
-
-        goal_params = self.goal_projector.init(
-            jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(dummy_current_processed, axis=0),
-            jnp.expand_dims(dummy_solve_config_processed, axis=0),
-        )
-
+        dummy_solve_config_processed = self.pre_process_solve_config(dummy_solve_config)[
+            jnp.newaxis, :
+        ]
+        dummy_current_processed = self.pre_process_state(dummy_current)[jnp.newaxis, :]
         model_params = self.model.init(
             jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(dummy_current_processed, axis=0),
-            jnp.zeros((1, self.model.latent_dim)),
+            dummy_solve_config_processed,
+            dummy_current_processed,
         )
-        return model_params, goal_params
+        return model_params
 
     def load_model(self):
         try:
             if not is_model_downloaded(self.path):
                 download_model(self.path)
             with open(self.path, "rb") as f:
-                model_params, goal_params = pickle.load(f)
+                model_params = pickle.load(f)
             dummy_solve_config = self.puzzle.SolveConfig.default()
+            dummy_solve_config_processed = self.pre_process_solve_config(dummy_solve_config)[
+                jnp.newaxis, :
+            ]
             dummy_current = self.puzzle.State.default()
+            dummy_current_processed = self.pre_process_state(dummy_current)[jnp.newaxis, :]
             self.model.apply(
                 model_params,
-                jnp.expand_dims(self.pre_process_state(dummy_current), axis=0),
+                dummy_current_processed,
+                dummy_solve_config_processed,
                 training=False,
-            )  # check if the params are compatible with the model
-            self.goal_projector.apply(
-                goal_params,
-                jnp.expand_dims(self.pre_process_solve_config(dummy_solve_config), axis=0),
-                training=False,
-            )  # check if the params are compatible with the model
+            )  # check if the params are compatible with the modelWW
         except Exception as e:
             print(f"Error loading model: {e}")
-            model_params, goal_params = self.get_new_params()
-        return model_params, goal_params
+            model_params = self.get_new_params()
+        return model_params
 
     def save_model(self):
         if not os.path.exists(os.path.dirname(self.path)):
