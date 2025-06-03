@@ -12,21 +12,17 @@ puzzle_dict_ds: dict[str, Puzzle] = {
 }
 
 world_model_dict: dict[str, callable] = {
-    "rubikscube": lambda reset: RubiksCubeWorldModel()
-    if reset
-    else RubiksCubeWorldModel.load_model("puzzle/world_model/model/params/rubikscube.pkl"),
-    "rubikscube_optimized": lambda reset: RubiksCubeWorldModelOptimized()
-    if reset
-    else RubiksCubeWorldModelOptimized.load_model(
-        "puzzle/world_model/model/params/rubikscube_optimized.pkl"
+    "rubikscube": lambda reset: RubiksCubeWorldModel(
+        init_params=reset, path="puzzle/world_model/model/params/rubikscube.pkl"
     ),
-    "sokoban": lambda reset: SokobanWorldModel()
-    if reset
-    else SokobanWorldModel.load_model("puzzle/world_model/model/params/sokoban.pkl"),
-    "sokoban_optimized": lambda reset: SokobanWorldModelOptimized()
-    if reset
-    else SokobanWorldModelOptimized.load_model(
-        "puzzle/world_model/model/params/sokoban_optimized.pkl"
+    "rubikscube_optimized": lambda reset: RubiksCubeWorldModelOptimized(
+        init_params=reset, path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
+    ),
+    "sokoban": lambda reset: SokobanWorldModel(
+        init_params=reset, path="puzzle/world_model/model/params/sokoban.pkl"
+    ),
+    "sokoban_optimized": lambda reset: SokobanWorldModelOptimized(
+        init_params=reset, path="puzzle/world_model/model/params/sokoban_optimized.pkl"
     ),
 }
 
