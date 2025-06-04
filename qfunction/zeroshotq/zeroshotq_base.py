@@ -79,28 +79,23 @@ class ZeroshotQModelBase(nn.Module):
 
     def __call__(self, solve_config, state):
         z = self.solve_config_projection(solve_config)  # (batch_size, latent_dim)
-        bz = self.backward_projection(state, z)  # (batch_size, latent_dim)
+        bz = self.backward_projection(state)  # (batch_size, latent_dim)
         f_a = self.forward_projection(state, z)  # (batch_size, action_size, latent_dim)
         q = self.distance(f_a, bz)  # (batch_size, action_size)
         return q
 
     def solve_config_projection(self, solve_config):
-        solve_config = jnp.reshape(solve_config, (solve_config.shape[0], -1))
         z = self.solve_config_projector(solve_config)  # (batch_size, latent_dim)
         return z
 
     def forward_projection(self, state, z):
-        state = jnp.reshape(state, (state.shape[0], -1))
         f_a = self.forward_projector(
             jnp.concatenate([state, z], axis=-1)
         )  # (batch_size, action_size, latent_dim)
         return f_a
 
-    def backward_projection(self, state, z):
-        state = jnp.reshape(state, (state.shape[0], -1))
-        bz = self.backward_projector(
-            jnp.concatenate([state, z], axis=-1)
-        )  # (batch_size, latent_dim)
+    def backward_projection(self, state):
+        bz = self.backward_projector(state)  # (batch_size, latent_dim)
         return bz
 
     def distance(self, f_a, z):  # (batch_size, action_size, latent_dim), (batch_size, latent_dim)
