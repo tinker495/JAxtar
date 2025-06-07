@@ -118,8 +118,8 @@ def davi(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
-        target_heuristic = dataset[1]
-        diffs = dataset[2]
+        target_heuristic = dataset["target_heuristic"]
+        diffs = dataset["diff"]
         mean_target_heuristic = jnp.mean(target_heuristic)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
@@ -194,6 +194,7 @@ def qlearning(
     multi_device: bool,
     reset_interval: int,
     tau: float,
+    with_policy: bool,
     **kwargs,
 ):
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
@@ -231,6 +232,7 @@ def qlearning(
         dataset_minibatch_size,
         using_hindsight_target,
         n_devices=n_devices,
+        with_policy=with_policy,
     )
 
     pbar = trange(steps)
@@ -239,8 +241,8 @@ def qlearning(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
-        target_q = dataset[1]
-        diffs = dataset[3]
+        target_q = dataset["target_q"]
+        diffs = dataset["diff"]
         mean_target_q = jnp.mean(target_q)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
 

@@ -12,6 +12,9 @@ T = TypeVar("T")
 
 
 class Puzzle(ABC):
+
+    action_size: int = None
+
     class State(PuzzleState):
         pass
 
@@ -74,12 +77,24 @@ class Puzzle(ABC):
         self.is_solved = jax.jit(self.is_solved)
         self.batched_is_solved = jax.jit(self.batched_is_solved, static_argnums=(2,))
 
+        if self.action_size is None:
+            self.action_size = self._get_action_size()
+
     def data_init(self):
         """
         This function should be called in the __init__ of the subclass.
         If the puzzle need to load dataset, this function should be filled.
         """
         pass
+
+    def _get_action_size(self) -> int:
+        """
+        This function should return the size of the action.
+        """
+        dummy_solve_config = self.SolveConfig.default()
+        dummy_state = self.State.default()
+        _, costs = self.get_neighbours(dummy_solve_config, dummy_state)
+        return costs.shape[0]
 
     def get_solve_config_string_parser(self) -> callable:
         """
