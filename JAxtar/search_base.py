@@ -14,6 +14,7 @@ import chex
 import jax
 import jax.numpy as jnp
 from xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
+from xtructure.bgpq import merge_arrays_parallel
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -333,12 +334,13 @@ def merge_sort_split(
             - Second half of corresponding values
     """
     n = ak.shape[-1]  # size of group
-    key = jnp.concatenate([ak, bk])
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
 
-    uniques = unique_mask(val, 2 * n)
-    key = jnp.where(uniques, key, jnp.inf)  # Set duplicate keys to inf
-
-    sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(2 * n))
+    sorted_key, sorted_idx = merge_arrays_parallel(ak, bk)
     sorted_val = val[sorted_idx]
+
+    uniques = unique_mask(sorted_val, 2 * n)
+    sorted_key = jnp.where(uniques, sorted_key, jnp.inf)  # Set duplicate keys to inf
+    sorted_key, sorted_idx = jax.lax.sort_key_val(sorted_key, jnp.arange(2 * n))
+    sorted_val = sorted_val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
