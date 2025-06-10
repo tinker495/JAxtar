@@ -101,8 +101,8 @@ class ZeroshotQModelBase(nn.Module):
     def distance(self, f_a, z):  # (batch_size, action_size, latent_dim), (batch_size, latent_dim)
         f_a = jnp.einsum("baz,bz->ba", f_a, z)  # (batch_size, action_size)
         f_a = f_a * self.forward_weight + self.forward_bias
-        q = -jax.nn.log_sigmoid(f_a) - 1.0  # [-1, inf]
-        return q
+        # q = -jax.nn.log_sigmoid(f_a) - 1.0  # [-1, inf]
+        return f_a
 
 
 class ZeroshotQFunctionBase(QFunction):

@@ -17,6 +17,7 @@ from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 from qfunction.zeroshotq.zeroshot_qlearning import (
     get_zeroshot_qlearning_dataset_builder,
+    zeroshot_qlearning_builder,
 )
 from qfunction.zeroshotq.zeroshotq_base import ZeroshotQFunctionBase
 
@@ -310,20 +311,19 @@ def zeroshot_qlearning(
     key: int,
     **kwargs,
 ):
-    # writer = setup_logging(puzzle_name, puzzle_size, "zeroshot_qlearning")
-    # qfunc_model = zeroshot_qfunction.model
-    # goal_model = zeroshot_qfunction.goal_projector
-    qfunc_params, goal_params = zeroshot_qfunction.get_new_params()
-    # target_qfunc_params = qfunc_params
-    # target_goal_params = goal_params
+    writer = setup_logging(puzzle_name, puzzle_size, "zeroshot_qlearning")
+    zeroshot_q_params = zeroshot_qfunction.get_new_params()
     key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
     key, subkey = jax.random.split(key)
 
-    # optimizer_q, _ = setup_optimizer(qfunc_params, 1, steps)
-    # optimizer_goal, _ = setup_optimizer(qfunc_params, 1, steps)
+    target_zeroshot_q_params = zeroshot_q_params
+    zeroshot_q_params = scaled_by_reset(
+        target_zeroshot_q_params,
+        key,
+        0.2,
+    )
 
-    # opt_state_q = optimizer_q.init(qfunc_params)
-    # opt_state_goal = optimizer_goal.init(qfunc_params)
+    optimizer, opt_state = setup_optimizer(zeroshot_q_params, 1, steps, add_batch_size)
 
     buffer, buffer_state = init_trajectory_experience_replay(
         puzzle.SolveConfig,
@@ -341,7 +341,45 @@ def zeroshot_qlearning(
         add_batch_size,
     )
 
+    zeroshot_qlearning = zeroshot_qlearning_builder(
+        add_batch_size,
+        zeroshot_qfunction.model,
+        optimizer,
+        buffer,
+        zeroshot_qfunction.pre_process_solve_config,
+        zeroshot_qfunction.pre_process_state,
+    )
+
     pbar = trange(steps)
     for i in pbar:
         key, data_key = jax.random.split(key, 2)
         buffer_state = get_datasets(buffer_state, data_key)
+
+        (zeroshot_q_params, target_zeroshot_q_params, opt_state, metrics,) = zeroshot_qlearning(
+            key,
+            buffer_state,
+            zeroshot_q_params,
+            target_zeroshot_q_params,
+            opt_state,
+        )
+        mean_target_z = jnp.mean(metrics["target_z"])
+        mean_target_j = jnp.mean(metrics["target_j"])
+
+        pbar.set_description(
+            f"total_loss: {float(metrics['total_loss']):.4f}, "
+            f"loss_z: {float(metrics['loss_z']):.4f}, "
+            f"loss_j: {float(metrics['loss_j']):.4f}, "
+            f"loss_self: {float(metrics['loss_self']):.4f}"
+            f"target ({float(mean_target_z):.4f}:z, {float(mean_target_j):.4f}:j)"
+        )
+
+        writer.add_scalar("Losses/Total Loss", metrics["total_loss"], i)
+        writer.add_scalar("Losses/Loss Z", metrics["loss_z"], i)
+        writer.add_scalar("Losses/Loss J", metrics["loss_j"], i)
+        writer.add_scalar("Losses/Loss Self", metrics["loss_self"], i)
+        writer.add_scalar("Metrics/Mean Target Z", mean_target_z, i)
+        writer.add_scalar("Metrics/Mean Target J", mean_target_j, i)
+
+        if i % 10 == 0:
+            writer.add_histogram("Metrics/Target Z", metrics["target_z"], i)
+            writer.add_histogram("Metrics/Target J", metrics["target_j"], i)
