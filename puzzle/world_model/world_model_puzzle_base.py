@@ -258,23 +258,24 @@ class WorldModelPuzzleBase(Puzzle):
             solve_config: "WorldModelPuzzleBase.SolveConfig" = None,
             **kwargs,
         ):
+            str = ""
             if STR_PARSE_IMG:
                 state_img = state.img(
-                    show_target_state_img=False, resize_img=False, target_height=16
+                    show_target_state_img=False, resize_img=True, target_height=16
                 )
                 ascii_img = img_to_colored_str(state_img)
-                return ascii_img
-            else:
-                latent = state.latent
-                latent = np.array(latent)
-                latent = np.reshape(latent, newshape=(-1,))
-                latent_str = latent.tobytes().hex()
-                latent_str_len = len(latent_str)
-                if latent_str_len >= 25:
-                    prefix = latent_str[:10]
-                    suffix = latent_str[-10:]
-                    latent_str = prefix + "..." + suffix
-                return f"latent: 0x{latent_str}[{latent_str_len // 2} bytes]"
+                str += ascii_img + "\n"
+            latent = state.latent
+            latent = np.array(latent)
+            latent = np.reshape(latent, shape=(-1,))
+            latent_str = latent.tobytes().hex()
+            latent_str_len = len(latent_str)
+            if latent_str_len >= 25:
+                prefix = latent_str[:10]
+                suffix = latent_str[-10:]
+                latent_str = prefix + "..." + suffix
+            str += f"latent: 0x{latent_str}[{latent_str_len // 2} bytes]"
+            return str
 
         return parser
 
