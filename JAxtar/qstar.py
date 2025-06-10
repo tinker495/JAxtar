@@ -3,7 +3,6 @@ import time
 import chex
 import jax
 import jax.numpy as jnp
-from xtructure import HashTable
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import (
@@ -57,25 +56,20 @@ def qstar_builder(
         qstar is the implementation of the Q* algorithm.
         """
         search_result: SearchResult = SearchResult.build(statecls, batch_size, max_nodes)
-        states, filled = HashTable.make_batched(puzzle.State, start[jnp.newaxis, ...], batch_size)
 
         (
             search_result.hashtable,
             _,
-            _,
             idx,
             table_idx,
-        ) = search_result.hashtable.parallel_insert(states, filled)
+        ) = search_result.hashtable.insert(start)
 
-        cost = jnp.where(filled, 0, jnp.inf)
-        search_result.cost = set_array_as_condition(
-            search_result.cost,
-            filled,
-            cost,
-            idx,
-            table_idx,
-        )
-        hash_idxs = Current(hashidx=HashIdx(index=idx, table_index=table_idx), cost=cost)
+        search_result.cost = search_result.cost.at[idx, table_idx].set(0)
+        hash_idxs = Current(
+            hashidx=HashIdx(index=idx, table_index=table_idx),
+            cost=jnp.zeros((), dtype=KEY_DTYPE),
+        )[jnp.newaxis].padding_as_batch((batch_size,))
+        filled = jnp.zeros(batch_size, dtype=jnp.bool_).at[0].set(True)
 
         def _cond(input: tuple[SearchResult, Current, chex.Array]):
             search_result, parent, filled = input
@@ -109,7 +103,7 @@ def qstar_builder(
             flatten_q_vals = flatten_array(q_vals, 2)
             (
                 search_result.hashtable,
-                inserted,
+                _,
                 _,
                 idxs,
                 table_idxs,
