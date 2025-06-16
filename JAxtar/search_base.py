@@ -9,11 +9,18 @@ Key features:
 """
 
 from functools import partial
+from typing import Union
 
 import chex
 import jax
 import jax.numpy as jnp
-from xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
+from xtructure import (
+    BGPQ,
+    FieldDescriptor,
+    HashTable,
+    Xtructurable,
+    xtructure_dataclass,
+)
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -90,12 +97,12 @@ class SearchResult:
     hashtable: HashTable  # hash table
     priority_queue: BGPQ  # priority queue
     min_key_buffer: chex.Array  # buffer for minimum keys
-    min_val_buffer: Current_with_Parent  # buffer for minimum values
+    min_val_buffer: Union[Xtructurable, Current_with_Parent]  # buffer for minimum values
     cost: chex.Array  # cost array - g value
     dist: chex.Array  # distance array - calculated heuristic or Q value
-    parent: Parent  # parent array
+    parent: Union[Xtructurable, Parent]  # parent array
     solved: chex.Array  # solved array
-    solved_idx: Current  # solved index
+    solved_idx: Union[Xtructurable, Current]  # solved index
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2))
