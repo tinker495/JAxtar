@@ -17,6 +17,7 @@ import jax.numpy as jnp
 from xtructure import (
     BGPQ,
     FieldDescriptor,
+    HashIdx,
     HashTable,
     Xtructurable,
     xtructure_dataclass,
@@ -25,19 +26,11 @@ from xtructure import (
 from JAxtar.annotate import (
     ACTION_DTYPE,
     CUCKOO_TABLE_N,
-    HASH_POINT_DTYPE,
     HASH_SIZE_MULTIPLIER,
-    HASH_TABLE_IDX_DTYPE,
     KEY_DTYPE,
 )
 from JAxtar.util import set_array_as_condition
 from puzzle.puzzle_base import Puzzle
-
-
-@xtructure_dataclass
-class HashIdx:
-    index: FieldDescriptor[HASH_POINT_DTYPE]
-    table_index: FieldDescriptor[HASH_TABLE_IDX_DTYPE]
 
 
 @xtructure_dataclass
