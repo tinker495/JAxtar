@@ -306,7 +306,7 @@ def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
     Returns:
         jnp.ndarray: Boolean mask where True indicates unique values
     """
-    hash_idx_bytes = jax.vmap(lambda x: x.current.hashidx.bytes)(val)
+    hash_idx_bytes = jax.vmap(lambda x: x.current.hashidx.uint32ed)(val)
     unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
     uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
     return uniques
