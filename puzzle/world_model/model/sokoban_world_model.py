@@ -92,6 +92,9 @@ class WorldModel(nn.Module):
 
 
 class SokobanWorldModel(WorldModelPuzzleBase):
+
+    str_parse_img_size: int = 20
+
     def __init__(self, **kwargs):
 
         super().__init__(
@@ -191,6 +194,8 @@ class SokobanWorldModelOptimized(WorldModelPuzzleBase):
     sokoban has 4 components so one position could be 2 bits.
     so 10x10x2 is enough for the sokoban world model.
     """
+
+    str_parse_img_size: int = 20
 
     def __init__(self, **kwargs):
 
