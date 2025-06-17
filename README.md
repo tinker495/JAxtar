@@ -200,9 +200,9 @@ This is an implementation of learning a world model, as introduced in the paper 
 
 <!-- Currently, this implementation achieves node search speeds that are basically more than 10 times faster than those presented in the paper. -->
 
-| Terminal View                                | Rubiks Cube                                               | Sokoban                                             |
-| -------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------- |
-| ![terminal view](images/worldmodelsolve.png) | ![rubiks cube](images/worldmodel_rubiscube_animation.gif) | ![sokoban](images/worldmodel_sokoban_animation.gif) |
+| Terminal View                                | Rubiks Cube                                                |   Rubiks Cube Reversed | Sokoban                                             |
+| -------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------- |
+| ![terminal view](images/worldmodelsolve.png) | ![rubiks cube](images/worldmodel_rubikscube_animation.gif) | ![rubiks cube rev](images/worldmodel_rubikscube_rev_animation.gif) |![sokoban](images/worldmodel_sokoban_animation.gif) |
 
 ## Citation
 
