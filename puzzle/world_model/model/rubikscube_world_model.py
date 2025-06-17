@@ -25,6 +25,12 @@ class RubiksCubeWorldModel(WorldModelPuzzleBase):
         )
 
 
+class RubiksCubeWorldModel_reversed(RubiksCubeWorldModel):
+    def data_init(self):
+        super().data_init()
+        self.inits, self.targets = self.targets, self.inits
+
+
 class RubiksCubeWorldModelOptimized_test(WorldModelPuzzleBase):
     def __init__(self, **kwargs):
 
@@ -55,3 +61,9 @@ class RubiksCubeWorldModelOptimized(WorldModelPuzzleBase):
             action_size=12,
             **kwargs
         )
+
+
+class RubiksCubeWorldModelOptimized_reversed(RubiksCubeWorldModelOptimized):
+    def data_init(self):
+        super().data_init()
+        self.inits, self.targets = self.targets, self.inits
