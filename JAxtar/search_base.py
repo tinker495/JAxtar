@@ -269,29 +269,49 @@ class SearchResult:
         path.reverse()
         return path
 
-    def get_state(search_result, idx: Current) -> Puzzle.State:
+    def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:
         """
         Get the state from the hash table.
         """
-        return search_result.hashtable.table[idx.hashidx.index, idx.hashidx.table_index]
+        if isinstance(idx, Current) or isinstance(idx, Parent):
+            return search_result.hashtable.table[idx.hashidx.index, idx.hashidx.table_index]
+        elif isinstance(idx, HashIdx):
+            return search_result.hashtable.table[idx.index, idx.table_index]
+        else:
+            raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_cost(search_result, idx: Current) -> chex.Array:
+    def get_cost(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
         """
         Get the cost of the state from the cost array.
         """
-        return search_result.cost[idx.hashidx.index, idx.hashidx.table_index]
+        if isinstance(idx, Current) or isinstance(idx, Parent):
+            return search_result.cost[idx.hashidx.index, idx.hashidx.table_index]
+        elif isinstance(idx, HashIdx):
+            return search_result.cost[idx.index, idx.table_index]
+        else:
+            raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_dist(search_result, idx: Current) -> chex.Array:
+    def get_dist(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
         """
         Get the distance of the state from the distance array.
         """
-        return search_result.dist[idx.hashidx.index, idx.hashidx.table_index]
+        if isinstance(idx, Current) or isinstance(idx, Parent):
+            return search_result.dist[idx.hashidx.index, idx.hashidx.table_index]
+        elif isinstance(idx, HashIdx):
+            return search_result.dist[idx.index, idx.table_index]
+        else:
+            raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_parent(search_result, idx: Current) -> Parent:
+    def get_parent(search_result, idx: HashIdx | Current | Parent) -> Parent:
         """
         Get the parent action from the parent action array.
         """
-        return search_result.parent[idx.hashidx.index, idx.hashidx.table_index]
+        if isinstance(idx, Current) or isinstance(idx, Parent):
+            return search_result.parent[idx.hashidx.index, idx.hashidx.table_index]
+        elif isinstance(idx, HashIdx):
+            return search_result.parent[idx.index, idx.table_index]
+        else:
+            raise ValueError(f"Invalid index type: {type(idx)}")
 
 
 def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
