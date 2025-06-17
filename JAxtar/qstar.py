@@ -100,9 +100,7 @@ def qstar_builder(
                 flatten_tree(neighbours, 2), flatten_filleds
             )
 
-            optimal = (
-                jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx)) & flatten_filleds
-            )
+            optimal = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
             flatten_neighbour_key = jnp.where(optimal, flatten_neighbour_key, jnp.inf)
 
             # cache the q value but this is not using in search
