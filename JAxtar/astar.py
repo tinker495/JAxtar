@@ -83,7 +83,7 @@ def astar_builder(
 
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
             parent_action = jnp.tile(
-                jnp.expand_dims(jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE), axis=1),
+                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[jnp.newaxis, :],
                 (1, ncost.shape[1]),
             )  # [n_neighbours, batch_size]
             nextcosts = (cost[jnp.newaxis, :] + ncost).astype(
@@ -91,7 +91,8 @@ def astar_builder(
             )  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             parent_index = jnp.tile(
-                jnp.expand_dims(jnp.arange(ncost.shape[1]), axis=0), (ncost.shape[0],)
+                jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
+                (ncost.shape[0],),
             )  # [n_neighbours, batch_size]
 
             flatten_neighbours = flatten_tree(neighbours, 2)

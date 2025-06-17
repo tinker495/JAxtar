@@ -10,6 +10,7 @@ from JAxtar.util import (
     flatten_array,
     flatten_tree,
     set_array_as_condition,
+    unflatten_array,
     unflatten_tree,
 )
 from puzzle.puzzle_base import Puzzle
@@ -93,9 +94,16 @@ def qstar_builder(
 
             flatten_filleds = flatten_array(filleds, 2)
             flatten_q_vals = flatten_array(q_vals, 2)
+            flatten_nextcosts = flatten_array(nextcosts, 2)
+            flatten_neighbour_key = flatten_array(neighbour_key, 2)
             (search_result.hashtable, _, _, hash_idx,) = search_result.hashtable.parallel_insert(
                 flatten_tree(neighbours, 2), flatten_filleds
             )
+
+            optimal = (
+                jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx)) & flatten_filleds
+            )
+            flatten_neighbour_key = jnp.where(optimal, flatten_neighbour_key, jnp.inf)
 
             # cache the q value but this is not using in search
             search_result.dist = set_array_as_condition(
@@ -108,12 +116,10 @@ def qstar_builder(
 
             hash_idx = unflatten_tree(hash_idx, filleds.shape)
             current = Current(hashidx=hash_idx, cost=nextcosts)
+            neighbour_key = unflatten_array(flatten_neighbour_key, filleds.shape)
 
             def _scan(search_result: SearchResult, val):
                 neighbour_key, parent_action, current = val
-
-                optimal = jnp.less(current.cost, search_result.get_cost(current))
-                neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
                 parent_action = jnp.tile(parent_action, (neighbour_key.shape[0],))
                 vals = Current_with_Parent(
