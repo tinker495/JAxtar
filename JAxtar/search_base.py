@@ -245,10 +245,9 @@ class SearchResult:
             filled,
             min_val.current.cost,
             min_val.current.hashidx.index,
-            min_val.current.hashidx.table_index,
         )
         search_result.parent = search_result.parent.at[
-            min_val.current.hashidx.index, min_val.current.hashidx.table_index
+            min_val.current.hashidx.index
         ].set_as_condition(filled, min_val.parent)
         return search_result, min_val.current, filled
 
@@ -274,9 +273,9 @@ class SearchResult:
         Get the state from the hash table.
         """
         if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.hashtable.table[idx.hashidx.index, idx.hashidx.table_index]
+            return search_result.hashtable.get(idx.hashidx)
         elif isinstance(idx, HashIdx):
-            return search_result.hashtable.table[idx.index, idx.table_index]
+            return search_result.hashtable.get(idx)
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
@@ -285,9 +284,9 @@ class SearchResult:
         Get the cost of the state from the cost array.
         """
         if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.cost[idx.hashidx.index, idx.hashidx.table_index]
+            return search_result.cost[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
-            return search_result.cost[idx.index, idx.table_index]
+            return search_result.cost[idx.index]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
@@ -296,9 +295,9 @@ class SearchResult:
         Get the distance of the state from the distance array.
         """
         if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.dist[idx.hashidx.index, idx.hashidx.table_index]
+            return search_result.dist[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
-            return search_result.dist[idx.index, idx.table_index]
+            return search_result.dist[idx.index]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
@@ -307,9 +306,9 @@ class SearchResult:
         Get the parent action from the parent action array.
         """
         if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.parent[idx.hashidx.index, idx.hashidx.table_index]
+            return search_result.parent[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
-            return search_result.parent[idx.index, idx.table_index]
+            return search_result.parent[idx.index]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 

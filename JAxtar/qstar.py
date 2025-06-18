@@ -58,7 +58,7 @@ def qstar_builder(
             hash_idx,
         ) = search_result.hashtable.insert(start)
 
-        search_result.cost = search_result.cost.at[hash_idx.index, hash_idx.table_index].set(0)
+        search_result.cost = search_result.cost.at[hash_idx.index].set(0)
         hash_idxs = Current(hashidx=hash_idx, cost=jnp.zeros((), dtype=KEY_DTYPE),)[
             jnp.newaxis
         ].padding_as_batch((batch_size,))
@@ -109,7 +109,6 @@ def qstar_builder(
                 flatten_filleds,
                 flatten_q_vals,
                 hash_idx.index,
-                hash_idx.table_index,
             )
 
             hash_idx = unflatten_tree(hash_idx, filleds.shape)

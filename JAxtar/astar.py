@@ -58,7 +58,7 @@ def astar_builder(
             hash_idx,
         ) = search_result.hashtable.insert(start)
 
-        search_result.cost = search_result.cost.at[hash_idx.index, hash_idx.table_index].set(0)
+        search_result.cost = search_result.cost.at[hash_idx.index].set(0)
         hash_idxs = Current(hashidx=hash_idx, cost=jnp.zeros((), dtype=KEY_DTYPE),)[
             jnp.newaxis
         ].padding_as_batch((batch_size,))
@@ -135,7 +135,6 @@ def astar_builder(
                     inserted,
                     neighbour_heur,
                     current.hashidx.index,
-                    current.hashidx.table_index,
                 )
                 return search_result, neighbour_heur
 
