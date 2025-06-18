@@ -37,7 +37,6 @@ To address these challenges, I decided to develop code based on the following pr
 This project features specially written components, including:
 
 - [`Xtructure`](https://github.com/tinker495/Xtructure): A pip package providing JAX-compatible hash and priority queue implementations, originally developed as part of this project and later separated. This package includes:
-  - a hash function builder to convert defined states into hash keys
   - a hashtable for parallel lookup and insertion operations
   - a priority queue that supports batching, push, and pop operations
 - Implementations for puzzles such as Rubik's Cube, Slide Puzzle, Lights Out, and Sokoban
