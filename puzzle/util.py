@@ -47,10 +47,10 @@ def from_uint8(
 
     if active_bits == 1:
         all_unpacked_bits = jnp.unpackbits(
-            packed_bytes, bitorder="little"
-        ).flatten()  # shape: (packed_bytes.size * 8,), dtype: bool
-        return (
-            all_unpacked_bits[:num_target_elements].reshape(target_shape).astype(jnp.bool_)
+            packed_bytes, count=num_target_elements, bitorder="little"
+        )  # shape: (packed_bytes.size * 8,), dtype: bool
+        return all_unpacked_bits.reshape(target_shape).astype(
+            jnp.bool_
         )  # shape: target_shape, dtype: bool
     else:
         total_source_bits_needed = num_target_elements * active_bits

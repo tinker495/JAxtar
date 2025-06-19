@@ -37,7 +37,6 @@ To address these challenges, I decided to develop code based on the following pr
 This project features specially written components, including:
 
 - [`Xtructure`](https://github.com/tinker495/Xtructure): A pip package providing JAX-compatible hash and priority queue implementations, originally developed as part of this project and later separated. This package includes:
-  - a hash function builder to convert defined states into hash keys
   - a hashtable for parallel lookup and insertion operations
   - a priority queue that supports batching, push, and pop operations
 - Implementations for puzzles such as Rubik's Cube, Slide Puzzle, Lights Out, and Sokoban
@@ -81,8 +80,8 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Dist: 34.00
-Search Time:   0.36 seconds
-Search states: 1.7M(4.77M states/s)
+Search Time:   0.37 seconds
+Search states: 1.88M(5.15M states/s)
 
 
 Cost: 50.0
@@ -116,8 +115,8 @@ Target state
 ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
 vmap search
 # search_result, solved, solved_idx =jax.vmap(search_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
-Search Time:   7.69 seconds (x21.6/20)
-Search states: 33.9M (4.41M states/s) (x0.9 faster)
+Search Time:   7.68 seconds (x21.0/20)
+Search states: 37.6M (4.9M states/s) (x1.0 faster))
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
@@ -130,8 +129,8 @@ $ python main.py astar -nn -h -p rubikscube -w 0.2
 ...
 
 Dist: 13.88
-Search Time:   0.54 seconds
-Search states: 1.84M(3.4M states/s)
+Search Time:   0.51 seconds
+Search states: 1.84M(3.6M states/s)
 
 
 Cost: 22.0
@@ -146,8 +145,8 @@ $ python main.py qstar -nn -h -p rubikscube -w 0.2
 ...
 
 Dist: 'l_cw': 16.8 | 'l_ccw': 16.8 ... 'u_cw': 17.2 | 'u_ccw': 17.1
-Search Time:   0.20 seconds
-Search states: 1.75M(8.71M states/s)
+Search Time:   0.19 seconds
+Search states: 1.78M(9.4M states/s)
 
 
 Cost: 22.0
@@ -157,13 +156,13 @@ Solution found
 ### World Model Puzzle with A\* & Q\*
 
 ```bash
-$ python main.py qstar -p rubikscube_world_model -nn -w 0.6
+$ python main.py qstar -p rubikscube_world_model_optimized -nn -w 0.6
 
 ...
 
-Dist: 'action 0': 18.4 | 'action 1': 17.9 ... 'action 10': 18.2 | 'action 11': 16.5
-Search Time:   0.23 seconds
-Search states: 1.78M(7.83M states/s)
+Dist: 'action 0': 18.9 | 'action 1': 18.4 ... 'action 10': 18.4 | 'action 11': 18.0
+Search Time:   0.22 seconds
+Search states: 2M(9.19M states/s)
 
 
 Cost: 22.0
@@ -180,10 +179,10 @@ Solution found
 | ![Rubiks cube animate](images/rubikscube_animation.gif) | ![Slide puzzle animate](images/slidepuzzle_animation.gif) | ![Lights out animate](images/lightsout_animation.gif) | ![Sokoban animate](images/sokoban_animation.gif) |
 
 
-| Maze                                       | Pancake Sorting                                          | Hanoi                                        |
-| ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------- |
-| ![Maze solve](images/mazesolve.png)        | ![Pancake Sorting solve](images/pancakesolve.png)        | ![Hanoi solve](images/hanoisolve.png)        |
-| ![Maze animate](images/maze_animation.gif) | ![Pancake Sorting animate](images/pancake_animation.gif) | ![Hanoi animate](images/hanoi_animation.gif) |
+| Maze                                       | Pancake Sorting                                          | Hanoi                                        |  TopSpin |
+| ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------- | ------------------------------ |
+| ![Maze solve](images/mazesolve.png)        | ![Pancake Sorting solve](images/pancakesolve.png)        | ![Hanoi solve](images/hanoisolve.png)        | ![TopSpin Solve](images/topspinsolve.png) |
+| ![Maze animate](images/maze_animation.gif) | ![Pancake Sorting animate](images/pancake_animation.gif) | ![Hanoi animate](images/hanoi_animation.gif) | ![TopSpin Solve](images/topsplin_animation.gif) |
 
 ### Target not available puzzle
 
@@ -200,9 +199,9 @@ This is an implementation of learning a world model, as introduced in the paper 
 
 <!-- Currently, this implementation achieves node search speeds that are basically more than 10 times faster than those presented in the paper. -->
 
-| Terminal View                                | Rubiks Cube                                               | Sokoban                                             |
-| -------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------- |
-| ![terminal view](images/worldmodelsolve.png) | ![rubiks cube](images/worldmodel_rubiscube_animation.gif) | ![sokoban](images/worldmodel_sokoban_animation.gif) |
+| Terminal View                                | Rubiks Cube                                                |   Rubiks Cube Reversed | Sokoban                                             |
+| -------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------- |
+| ![terminal view](images/worldmodelsolve.png) | ![rubiks cube](images/worldmodel_rubikscube_animation.gif) | ![rubiks cube rev](images/worldmodel_rubikscube_rev_animation.gif) |![sokoban](images/worldmodel_sokoban_animation.gif) |
 
 ## Citation
 

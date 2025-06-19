@@ -13,24 +13,23 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from xtructure import BGPQ, FieldDescriptor, HashTable, xtructure_dataclass
+from xtructure import (
+    BGPQ,
+    FieldDescriptor,
+    HashIdx,
+    HashTable,
+    Xtructurable,
+    xtructure_dataclass,
+)
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
     CUCKOO_TABLE_N,
-    HASH_POINT_DTYPE,
     HASH_SIZE_MULTIPLIER,
-    HASH_TABLE_IDX_DTYPE,
     KEY_DTYPE,
 )
 from JAxtar.util import set_array_as_condition
 from puzzle.puzzle_base import Puzzle
-
-
-@xtructure_dataclass
-class HashIdx:
-    index: FieldDescriptor[HASH_POINT_DTYPE]
-    table_index: FieldDescriptor[HASH_TABLE_IDX_DTYPE]
 
 
 @xtructure_dataclass
@@ -90,12 +89,12 @@ class SearchResult:
     hashtable: HashTable  # hash table
     priority_queue: BGPQ  # priority queue
     min_key_buffer: chex.Array  # buffer for minimum keys
-    min_val_buffer: Current_with_Parent  # buffer for minimum values
+    min_val_buffer: Xtructurable | Current_with_Parent  # buffer for minimum values
     cost: chex.Array  # cost array - g value
     dist: chex.Array  # distance array - calculated heuristic or Q value
-    parent: Parent  # parent array
+    parent: Xtructurable | Parent  # parent array
     solved: chex.Array  # solved array
-    solved_idx: Current  # solved index
+    solved_idx: Xtructurable | Current  # solved index
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2))
@@ -113,8 +112,9 @@ class SearchResult:
             SearchResult: A new instance with initialized data structures
         """
         # Initialize the hash table for state storage
-        hashtable = HashTable.build(statecls, seed, max_nodes, CUCKOO_TABLE_N, HASH_SIZE_MULTIPLIER)
-        size_table = int(HASH_SIZE_MULTIPLIER * max_nodes / CUCKOO_TABLE_N)
+        hashtable: HashTable = HashTable.build(
+            statecls, seed, max_nodes, CUCKOO_TABLE_N, HASH_SIZE_MULTIPLIER
+        )
 
         # Initialize priority queue for state expansion
         priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent, KEY_DTYPE)
@@ -125,9 +125,9 @@ class SearchResult:
 
         # Initialize arrays for tracking costs and state relationships
         # +1 for -1 index as a dummy node
-        cost = jnp.full((size_table + 1, CUCKOO_TABLE_N), jnp.inf, dtype=KEY_DTYPE)
-        dist = jnp.full((size_table + 1, CUCKOO_TABLE_N), jnp.inf, dtype=KEY_DTYPE)
-        parent = Parent.default((size_table + 1, CUCKOO_TABLE_N))
+        cost = jnp.full(hashtable.table.shape.batch, jnp.inf, dtype=KEY_DTYPE)
+        dist = jnp.full(hashtable.table.shape.batch, jnp.inf, dtype=KEY_DTYPE)
+        parent = Parent.default(hashtable.table.shape.batch)
         solved = jnp.array(False)
         solved_idx = Current.default((1,))
 
@@ -200,7 +200,7 @@ class SearchResult:
             search_result.min_key_buffer,
             search_result.min_val_buffer,
         ) = merge_sort_split(
-            min_key, min_val, search_result.min_key_buffer, search_result.min_val_buffer
+            search_result.min_key_buffer, search_result.min_val_buffer, min_key, min_val
         )
         filled = jnp.isfinite(min_key)
 
@@ -245,10 +245,9 @@ class SearchResult:
             filled,
             min_val.current.cost,
             min_val.current.hashidx.index,
-            min_val.current.hashidx.table_index,
         )
         search_result.parent = search_result.parent.at[
-            min_val.current.hashidx.index, min_val.current.hashidx.table_index
+            min_val.current.hashidx.index
         ].set_as_condition(filled, min_val.parent)
         return search_result, min_val.current, filled
 
@@ -295,29 +294,49 @@ class SearchResult:
         _, (path, path_mask) = jax.lax.scan(scan_fn, parent, length=max_depth)
         return path, path_mask
 
-    def get_state(search_result, idx: Current) -> Puzzle.State:
+    def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:
         """
         Get the state from the hash table.
         """
-        return search_result.hashtable.table[idx.hashidx.index, idx.hashidx.table_index]
+        if isinstance(idx, Current) or isinstance(idx, Parent):
+            return search_result.hashtable.get(idx.hashidx)
+        elif isinstance(idx, HashIdx):
+            return search_result.hashtable.get(idx)
+        else:
+            raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_cost(search_result, idx: Current) -> chex.Array:
+    def get_cost(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
         """
         Get the cost of the state from the cost array.
         """
-        return search_result.cost[idx.hashidx.index, idx.hashidx.table_index]
+        if isinstance(idx, Current) or isinstance(idx, Parent):
+            return search_result.cost[idx.hashidx.index]
+        elif isinstance(idx, HashIdx):
+            return search_result.cost[idx.index]
+        else:
+            raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_dist(search_result, idx: Current) -> chex.Array:
+    def get_dist(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
         """
         Get the distance of the state from the distance array.
         """
-        return search_result.dist[idx.hashidx.index, idx.hashidx.table_index]
+        if isinstance(idx, Current) or isinstance(idx, Parent):
+            return search_result.dist[idx.hashidx.index]
+        elif isinstance(idx, HashIdx):
+            return search_result.dist[idx.index]
+        else:
+            raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_parent(search_result, idx: Current) -> Parent:
+    def get_parent(search_result, idx: HashIdx | Current | Parent) -> Parent:
         """
         Get the parent action from the parent action array.
         """
-        return search_result.parent[idx.hashidx.index, idx.hashidx.table_index]
+        if isinstance(idx, Current) or isinstance(idx, Parent):
+            return search_result.parent[idx.hashidx.index]
+        elif isinstance(idx, HashIdx):
+            return search_result.parent[idx.index]
+        else:
+            raise ValueError(f"Invalid index type: {type(idx)}")
 
 
 def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
@@ -332,7 +351,7 @@ def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
     Returns:
         jnp.ndarray: Boolean mask where True indicates unique values
     """
-    hash_idx_bytes = jax.vmap(lambda x: x.current.hashidx.bytes)(val)
+    hash_idx_bytes = jax.vmap(lambda x: x.current.hashidx.uint32ed)(val)
     unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
     uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
     return uniques

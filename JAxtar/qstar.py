@@ -6,18 +6,13 @@ import jax
 import jax.numpy as jnp
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.search_base import (
-    Current,
-    Current_with_Parent,
-    HashIdx,
-    Parent,
-    SearchResult,
-)
+from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
     set_array_as_condition,
     unflatten_array,
+    unflatten_tree,
 )
 from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
@@ -64,15 +59,13 @@ def qstar_builder(
         (
             search_result.hashtable,
             _,
-            idx,
-            table_idx,
+            hash_idx,
         ) = search_result.hashtable.insert(start)
 
-        search_result.cost = search_result.cost.at[idx, table_idx].set(0)
-        hash_idxs = Current(
-            hashidx=HashIdx(index=idx, table_index=table_idx),
-            cost=jnp.zeros((), dtype=KEY_DTYPE),
-        )[jnp.newaxis].padding_as_batch((batch_size,))
+        search_result.cost = search_result.cost.at[hash_idx.index].set(0)
+        hash_idxs = Current(hashidx=hash_idx, cost=jnp.zeros((), dtype=KEY_DTYPE),)[
+            jnp.newaxis
+        ].padding_as_batch((batch_size,))
         filled = jnp.zeros(batch_size, dtype=jnp.bool_).at[0].set(True)
 
         def _cond(input: tuple[SearchResult, Current, chex.Array]):
@@ -107,34 +100,29 @@ def qstar_builder(
 
             flatten_filleds = flatten_array(filleds, 2)
             flatten_q_vals = flatten_array(q_vals, 2)
-            (
-                search_result.hashtable,
-                _,
-                _,
-                idxs,
-                table_idxs,
-            ) = search_result.hashtable.parallel_insert(
+            flatten_nextcosts = flatten_array(nextcosts, 2)
+            flatten_neighbour_key = flatten_array(neighbour_key, 2)
+            (search_result.hashtable, _, _, hash_idx,) = search_result.hashtable.parallel_insert(
                 flatten_tree(neighbours, 2), flatten_filleds
             )
+
+            optimal = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
+            flatten_neighbour_key = jnp.where(optimal, flatten_neighbour_key, jnp.inf)
 
             # cache the q value but this is not using in search
             search_result.dist = set_array_as_condition(
                 search_result.dist,
                 flatten_filleds,
                 flatten_q_vals,
-                idxs,
-                table_idxs,
+                hash_idx.index,
             )
 
-            idxs = unflatten_array(idxs, filleds.shape)
-            table_idxs = unflatten_array(table_idxs, filleds.shape)
-            current = Current(hashidx=HashIdx(index=idxs, table_index=table_idxs), cost=nextcosts)
+            hash_idx = unflatten_tree(hash_idx, filleds.shape)
+            current = Current(hashidx=hash_idx, cost=nextcosts)
+            neighbour_key = unflatten_array(flatten_neighbour_key, filleds.shape)
 
             def _scan(search_result: SearchResult, val):
                 neighbour_key, parent_action, current = val
-
-                optimal = jnp.less(current.cost, search_result.get_cost(current))
-                neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
                 parent_action = jnp.tile(parent_action, (neighbour_key.shape[0],))
                 vals = Current_with_Parent(

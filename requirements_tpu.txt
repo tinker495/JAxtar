@@ -6,7 +6,7 @@ click
 tqdm
 pre-commit
 pytest
-jax[tpu]==0.5.2
+jax[tpu]
 chex
 dm_pix
 dm-haiku

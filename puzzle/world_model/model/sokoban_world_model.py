@@ -92,6 +92,9 @@ class WorldModel(nn.Module):
 
 
 class SokobanWorldModel(WorldModelPuzzleBase):
+
+    str_parse_img_size: int = 20
+
     def __init__(self, **kwargs):
 
         super().__init__(
@@ -101,7 +104,7 @@ class SokobanWorldModel(WorldModelPuzzleBase):
             action_size=4,
             AE=AutoEncoder,
             WM=WorldModel,
-            **kwargs
+            **kwargs,
         )
 
     def batched_get_inverse_neighbours(
@@ -119,6 +122,22 @@ class SokobanWorldModel(WorldModelPuzzleBase):
             "so sokoban world model's inverse neighbours is not implemented for now\n"
             "Please use '--using_hindsight_target' to train distance"
         )
+
+    def action_to_string(self, action: int) -> str:
+        """
+        This function should return a string representation of the action.
+        """
+        match action:
+            case 0:
+                return "←"
+            case 1:
+                return "→"
+            case 2:
+                return "↑"
+            case 3:
+                return "↓"
+            case _:
+                raise ValueError(f"Invalid action: {action}")
 
 
 class EncoderOptimized(nn.Module):
@@ -192,6 +211,8 @@ class SokobanWorldModelOptimized(WorldModelPuzzleBase):
     so 10x10x2 is enough for the sokoban world model.
     """
 
+    str_parse_img_size: int = 20
+
     def __init__(self, **kwargs):
 
         super().__init__(
@@ -201,7 +222,7 @@ class SokobanWorldModelOptimized(WorldModelPuzzleBase):
             action_size=4,
             AE=AutoEncoderOptimized,
             WM=WorldModel,
-            **kwargs
+            **kwargs,
         )
 
     def batched_get_inverse_neighbours(
@@ -219,3 +240,19 @@ class SokobanWorldModelOptimized(WorldModelPuzzleBase):
             "so sokoban world model's inverse neighbours is not implemented for now\n"
             "Please use '--using_hindsight_target' to train distance"
         )
+
+    def action_to_string(self, action: int) -> str:
+        """
+        This function should return a string representation of the action.
+        """
+        match action:
+            case 0:
+                return "←"
+            case 1:
+                return "→"
+            case 2:
+                return "↑"
+            case 3:
+                return "↓"
+            case _:
+                raise ValueError(f"Invalid action: {action}")
