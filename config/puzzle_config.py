@@ -42,8 +42,10 @@ from puzzle import (
 )
 from puzzle.world_model import (
     RubiksCubeWorldModel,
+    RubiksCubeWorldModel_reversed,
     RubiksCubeWorldModel_test,
     RubiksCubeWorldModelOptimized,
+    RubiksCubeWorldModelOptimized_reversed,
     RubiksCubeWorldModelOptimized_test,
     SokobanWorldModel,
     SokobanWorldModelOptimized,
@@ -90,8 +92,10 @@ default_puzzle_sizes: dict[str, int] = {
     "topspin": 20,
     "rubikscube_world_model": None,
     "rubikscube_world_model_test": None,
+    "rubikscube_world_model_reversed": None,
     "rubikscube_world_model_optimized": None,
     "rubikscube_world_model_optimized_test": None,
+    "rubikscube_world_model_optimized_reversed": None,
     "sokoban_world_model": None,
     "sokoban_world_model_optimized": None,
 }
@@ -118,10 +122,16 @@ puzzle_dict: dict[str, Puzzle] = {
     "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModel_test(
         path="puzzle/world_model/model/params/rubikscube.pkl"
     ),
+    "rubikscube_world_model_reversed": lambda **kwargs: RubiksCubeWorldModel_reversed(
+        path="puzzle/world_model/model/params/rubikscube.pkl"
+    ),
     "rubikscube_world_model_optimized": lambda **kwargs: RubiksCubeWorldModelOptimized(
         path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
     ),
     "rubikscube_world_model_optimized_test": lambda **kwargs: RubiksCubeWorldModelOptimized_test(
+        path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
+    ),
+    "rubikscube_world_model_optimized_reversed": lambda **kwargs: RubiksCubeWorldModelOptimized_reversed(
         path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
     ),
     "sokoban_world_model": lambda **kwargs: SokobanWorldModel(
@@ -222,12 +232,22 @@ puzzle_heuristic_dict_nn: dict[str, callable] = {
         path="heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl",
         init_params=reset,
     ),
+    "rubikscube_world_model_reversed": lambda n, puzzle, reset: WorldModelNeuralHeuristic(
+        puzzle=puzzle,
+        path="heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl",
+        init_params=reset,
+    ),
     "rubikscube_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralHeuristic(
         puzzle=puzzle,
         path="heuristic/neuralheuristic/model/params/rubikscube_world_model_optimized_None.pkl",
         init_params=reset,
     ),
     "rubikscube_world_model_optimized_test": lambda n, puzzle, reset: WorldModelNeuralHeuristic(
+        puzzle=puzzle,
+        path="heuristic/neuralheuristic/model/params/rubikscube_world_model_optimized_None.pkl",
+        init_params=reset,
+    ),
+    "rubikscube_world_model_optimized_reversed": lambda n, puzzle, reset: WorldModelNeuralHeuristic(
         puzzle=puzzle,
         path="heuristic/neuralheuristic/model/params/rubikscube_world_model_optimized_None.pkl",
         init_params=reset,
@@ -331,12 +351,22 @@ puzzle_q_dict_nn: dict[str, callable] = {
         path="qfunction/neuralq/model/params/rubikscube_world_model_None.pkl",
         init_params=reset,
     ),
+    "rubikscube_world_model_reversed": lambda n, puzzle, reset: WorldModelNeuralQ(
+        puzzle=puzzle,
+        path="qfunction/neuralq/model/params/rubikscube_world_model_None.pkl",
+        init_params=reset,
+    ),
     "rubikscube_world_model_optimized": lambda n, puzzle, reset: WorldModelNeuralQ(
         puzzle=puzzle,
         path="qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl",
         init_params=reset,
     ),
     "rubikscube_world_model_optimized_test": lambda n, puzzle, reset: WorldModelNeuralQ(
+        puzzle=puzzle,
+        path="qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl",
+        init_params=reset,
+    ),
+    "rubikscube_world_model_optimized_reversed": lambda n, puzzle, reset: WorldModelNeuralQ(
         puzzle=puzzle,
         path="qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl",
         init_params=reset,

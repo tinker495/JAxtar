@@ -6,13 +6,7 @@ import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.search_base import (
-    Current,
-    Current_with_Parent,
-    HashIdx,
-    Parent,
-    SearchResult,
-)
+from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
@@ -61,15 +55,13 @@ def astar_builder(
         (
             search_result.hashtable,
             _,
-            idx,
-            table_idx,
+            hash_idx,
         ) = search_result.hashtable.insert(start)
 
-        search_result.cost = search_result.cost.at[idx, table_idx].set(0)
-        hash_idxs = Current(
-            hashidx=HashIdx(index=idx, table_index=table_idx),
-            cost=jnp.zeros((), dtype=KEY_DTYPE),
-        )[jnp.newaxis].padding_as_batch((batch_size,))
+        search_result.cost = search_result.cost.at[hash_idx.index].set(0)
+        hash_idxs = Current(hashidx=hash_idx, cost=jnp.zeros((), dtype=KEY_DTYPE),)[
+            jnp.newaxis
+        ].padding_as_batch((batch_size,))
         filled = jnp.zeros(batch_size, dtype=jnp.bool_).at[0].set(True)
 
         def _cond(input: tuple[SearchResult, Current, chex.Array]):
@@ -91,7 +83,7 @@ def astar_builder(
 
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
             parent_action = jnp.tile(
-                jnp.expand_dims(jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE), axis=1),
+                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[jnp.newaxis, :],
                 (1, ncost.shape[1]),
             )  # [n_neighbours, batch_size]
             nextcosts = (cost[jnp.newaxis, :] + ncost).astype(
@@ -99,7 +91,8 @@ def astar_builder(
             )  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             parent_index = jnp.tile(
-                jnp.expand_dims(jnp.arange(ncost.shape[1]), axis=0), (ncost.shape[0],)
+                jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
+                (ncost.shape[0],),
             )  # [n_neighbours, batch_size]
 
             flatten_neighbours = flatten_tree(neighbours, 2)
@@ -111,8 +104,7 @@ def astar_builder(
                 search_result.hashtable,
                 flatten_inserted,
                 _,
-                idxs,
-                table_idxs,
+                hash_idx,
             ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
 
             argsort_idx = jnp.argsort(flatten_inserted, axis=0)  # sort by inserted
@@ -123,13 +115,11 @@ def astar_builder(
             flatten_parent_index = flatten_parent_index[argsort_idx]
             flatten_parent_action = flatten_parent_action[argsort_idx]
 
-            idxs = idxs[argsort_idx]
-            table_idxs = table_idxs[argsort_idx]
+            hash_idx = hash_idx[argsort_idx]
 
-            idxs = unflatten_array(idxs, filleds.shape)
-            table_idxs = unflatten_array(table_idxs, filleds.shape)
+            hash_idx = unflatten_tree(hash_idx, filleds.shape)
             nextcosts = unflatten_array(flatten_nextcosts, filleds.shape)
-            current = Current(hashidx=HashIdx(index=idxs, table_index=table_idxs), cost=nextcosts)
+            current = Current(hashidx=hash_idx, cost=nextcosts)
             parent_indexs = unflatten_array(flatten_parent_index, filleds.shape)
             parent_action = unflatten_array(flatten_parent_action, filleds.shape)
             neighbours = unflatten_tree(flatten_neighbours, filleds.shape)
@@ -145,7 +135,6 @@ def astar_builder(
                     inserted,
                     neighbour_heur,
                     current.hashidx.index,
-                    current.hashidx.table_index,
                 )
                 return search_result, neighbour_heur
 

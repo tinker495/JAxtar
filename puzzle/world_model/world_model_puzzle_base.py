@@ -20,8 +20,6 @@ from puzzle.puzzle_base import Puzzle
 from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 from puzzle.util import from_uint8, to_uint8
 
-STR_PARSE_IMG = True
-
 
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
@@ -96,7 +94,9 @@ class WorldModelPuzzleBase(Puzzle):
 
     inits: jnp.ndarray
     targets: jnp.ndarray
-    num_puzzles: int
+    init_state_size: int = 0
+    str_parse_img_size: int = 16
+    str_parse_img: bool = True
 
     def define_state_class(self) -> PuzzleState:
         """Defines the state class for WorldModelPuzzleBase using xtructure."""
@@ -250,7 +250,7 @@ class WorldModelPuzzleBase(Puzzle):
             download_world_model_dataset()
         self.inits = jnp.load(self.data_path + "/inits.npy").to_device(jax.devices("gpu")[0])
         self.targets = jnp.load(self.data_path + "/targets.npy").to_device(jax.devices("gpu")[0])
-        self.num_puzzles = self.inits.shape[0]
+        self.init_state_size = self.inits.shape[0]
 
     def get_string_parser(self):
         def parser(
@@ -259,9 +259,11 @@ class WorldModelPuzzleBase(Puzzle):
             **kwargs,
         ):
             str = ""
-            if STR_PARSE_IMG:
+            if self.str_parse_img:
                 state_img = state.img(
-                    show_target_state_img=False, resize_img=True, target_height=16
+                    show_target_state_img=False,
+                    resize_img=True,
+                    target_height=self.str_parse_img_size,
                 )
                 ascii_img = img_to_colored_str(state_img)
                 str += ascii_img + "\n"
@@ -329,7 +331,7 @@ class WorldModelPuzzleBase(Puzzle):
         return img_parser
 
     def get_data(self, key=None) -> tuple[chex.Array, chex.Array]:
-        idx = jax.random.randint(key, (), 0, self.num_puzzles)
+        idx = jax.random.randint(key, (), 0, self.init_state_size)
         target_data = jnp.expand_dims(self.targets[idx, ...], axis=0)
         init_data = jnp.expand_dims(self.inits[idx, ...], axis=0)
         return target_data, init_data
