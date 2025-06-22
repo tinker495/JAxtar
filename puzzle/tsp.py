@@ -13,7 +13,6 @@ TYPE = jnp.uint8
 class TSP(Puzzle):
 
     size: int
-    pad_size: int
 
     def define_state_class(self) -> PuzzleState:
         """Defines the state class for TSP using xtructure."""
@@ -57,7 +56,6 @@ class TSP(Puzzle):
 
     def __init__(self, size: int, **kwargs):
         self.size = size
-        self.pad_size = int(jnp.ceil(size / 8) * 8 - size)
         super().__init__(**kwargs)
 
     def get_solve_config_string_parser(self) -> callable:
