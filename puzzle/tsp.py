@@ -2,12 +2,14 @@ import chex
 import jax
 import jax.numpy as jnp
 
+from JAxtar.annotate import ACTION_DTYPE  # ensure consistency with search utilities
 from puzzle.annotate import IMG_SIZE
 from puzzle.puzzle_base import Puzzle
 from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 from puzzle.util import from_uint8, to_uint8
 
-TYPE = jnp.uint8
+# Use 16-bit unsigned integers so that problem sizes >255 are handled without overflow.
+TYPE = jnp.uint16
 
 
 class TSP(Puzzle):
@@ -45,8 +47,8 @@ class TSP(Puzzle):
 
         @state_dataclass
         class SolveConfig:
-            points: FieldDescriptor[jnp.float16, (self.size, 2)]
-            distance_matrix: FieldDescriptor[jnp.float16, (self.size, self.size)]
+            points: FieldDescriptor[jnp.float32, (self.size, 2)]
+            distance_matrix: FieldDescriptor[jnp.float32, (self.size, self.size)]
             start: FieldDescriptor[TYPE]
 
             def __str__(self, **kwargs):
@@ -88,13 +90,18 @@ class TSP(Puzzle):
         return self.State(mask=mask, point=point).packing()
 
     def get_solve_config(self, key=None, data=None) -> Puzzle.SolveConfig:
+        # Split PRNG key so that the start index is independent of point positions.
+        key_points, key_start = jax.random.split(key)
+
         points = jax.random.uniform(
-            key, shape=(self.size, 2), minval=0, maxval=1, dtype=jnp.float16
+            key_points, shape=(self.size, 2), minval=0, maxval=1, dtype=jnp.float32
         )
         distance_matrix = jnp.linalg.norm(points[:, None] - points[None, :], axis=-1).astype(
-            jnp.float16
+            jnp.float32
         )
-        start = jax.random.randint(key, shape=(), minval=0, maxval=self.size, dtype=TYPE)
+        start = jax.random.randint(
+            key_start, shape=(), minval=0, maxval=self.size, dtype=TYPE
+        )
         return self.SolveConfig(points=points, distance_matrix=distance_matrix, start=start)
 
     def get_neighbours(
