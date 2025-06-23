@@ -1,6 +1,17 @@
-# Base dependencies for CPU environment
 numpy
-pytest
-jax[cpu]
-chex
+opencv-python
+imageio
+click
 tqdm
+pre-commit
+pytest
+jax
+chex
+dm_pix
+dm-haiku
+huggingface_hub
+flax
+optax
+termcolor
+tensorboardX
+xtructure @ git+https://github.com/tinker495/xtructure.git
