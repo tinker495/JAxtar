@@ -20,8 +20,10 @@ class TSPQ(QFunction):
         return dists
 
     def _distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> float:
-        """
-        Return zero distance for any puzzle state.
+        """MST + 2-edge 휴리스틱과 동일한 계산을 수행하여 Q 값을 산출한다 (한국어).
+
+        각 neighbor state 에 대해 남은 최소 투어 비용을 추정한다.  A* 탐색에서 이 값을
+        엣지 비용에 더하면 f = g + h 와 동일한 효과를 준다.
         """
         # Adapted MST + two nearest edges heuristic (same as in TSPHeuristic).
         unpacked = current.unpacking()

@@ -1,0 +1,6 @@
+# Base dependencies for CPU environment
+numpy
+pytest
+jax[cpu]
+chex
+tqdm

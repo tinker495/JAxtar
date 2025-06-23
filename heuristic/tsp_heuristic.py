@@ -10,8 +10,17 @@ class TSPHeuristic(Heuristic):
         super().__init__(puzzle)
 
     def distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> float:
-        """
-        Return zero distance for any puzzle state.
+        """여행자 문제(TSP)용 MST + 2-edge 휴리스틱을 계산한다.
+
+        단계별 설명 (한국어):
+        1. `visited` 마스크를 풀어서 아직 방문하지 않은 도시 집합 **R** 을 구한다.
+        2. R 가 비어 있으면 남은 비용은 *현 위치 → 시작점* 거리뿐이다.
+        3. R 가 존재하면 다음 세 항을 더한다.
+           a. 현 위치에서 R 로 가는 최단 거리 (출발 간선)
+           b. R 로 유도된 최소 신장 트리(MST) 가중치 (집합 연결 비용)
+           c. 시작점에서 R 로 가는 최단 거리 (귀환 전 마지막 간선)
+
+        이 값은 실제 잔여 투어 비용의 하한이며, A* 탐색에서 허용적이다.
         """
         # Unpack visited mask and point index.
         unpacked = current.unpacking()
