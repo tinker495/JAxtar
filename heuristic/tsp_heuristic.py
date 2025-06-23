@@ -1,5 +1,5 @@
-import jax.numpy as jnp
 import jax
+import jax.numpy as jnp
 
 from heuristic.heuristic_base import Heuristic
 from puzzle import TSP
@@ -10,17 +10,17 @@ class TSPHeuristic(Heuristic):
         super().__init__(puzzle)
 
     def distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> float:
-        """여행자 문제(TSP)용 MST + 2-edge 휴리스틱을 계산한다.
+        """Computes MST + 2-edge heuristic for the Traveling Salesman Problem (TSP).
 
-        단계별 설명 (한국어):
-        1. `visited` 마스크를 풀어서 아직 방문하지 않은 도시 집합 **R** 을 구한다.
-        2. R 가 비어 있으면 남은 비용은 *현 위치 → 시작점* 거리뿐이다.
-        3. R 가 존재하면 다음 세 항을 더한다.
-           a. 현 위치에서 R 로 가는 최단 거리 (출발 간선)
-           b. R 로 유도된 최소 신장 트리(MST) 가중치 (집합 연결 비용)
-           c. 시작점에서 R 로 가는 최단 거리 (귀환 전 마지막 간선)
+        Step-by-step explanation:
+        1. Unpack the `visited` mask to get the set of unvisited cities **R**.
+        2. If R is empty, the remaining cost is only the distance from *current position → start point*.
+        3. If R exists, sum the following three terms:
+           a. Shortest distance from current position to R (departure edge)
+           b. Minimum Spanning Tree (MST) weight induced by R (cost to connect the set)
+           c. Shortest distance from start point to R (final edge before return)
 
-        이 값은 실제 잔여 투어 비용의 하한이며, A* 탐색에서 허용적이다.
+        This value is a lower bound of the actual remaining tour cost and is admissible for A* search.
         """
         # Unpack visited mask and point index.
         unpacked = current.unpacking()
