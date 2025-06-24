@@ -23,8 +23,8 @@ class SlidePuzzleHeuristic(Heuristic):
         """
         This function should return the distance between the state and the target.
         """
-        current = current.unpacking()
-        diff, tpos = self._diff_pos(current, solve_config.TargetState.unpacking())
+        current = current.unpacked
+        diff, tpos = self._diff_pos(current, solve_config.TargetState.unpacked)
         not_empty = current.board != 0
         return (
             self._manhattan_distance(not_empty, diff) + self._linear_conflict(tpos, not_empty, diff)

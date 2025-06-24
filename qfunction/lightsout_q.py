@@ -22,8 +22,8 @@ class LightsOutQ(QFunction):
         Get distance between current state and target state.
         """
         neq_state = jnp.not_equal(
-            current.unpacking().board,
-            target.unpacking().board,
+            current.unpacked.board,
+            target.unpacked.board,
         )
         sum_neq_state = jnp.sum(neq_state)
         return sum_neq_state / 5 * 2.0

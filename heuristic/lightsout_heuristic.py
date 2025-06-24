@@ -13,8 +13,8 @@ class LightsOutHeuristic(Heuristic):
         Get distance between current state and target state.
         """
         neq_state = jnp.not_equal(
-            current.unpacking().board,
-            solve_config.TargetState.unpacking().board,
+            current.unpacked.board,
+            solve_config.TargetState.unpacked.board,
         )
         sum_neq_state = jnp.sum(neq_state)
         return sum_neq_state / 5 * 2
