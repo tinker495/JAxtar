@@ -5,7 +5,6 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
-
 from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 

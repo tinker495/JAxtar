@@ -1,9 +1,9 @@
 import chex
 import flax.linen as nn
 import jax.numpy as jnp
+from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 from neural_util.modules import DTYPE, BatchNorm, ConvResBlock
-from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
 
 
 class Encoder(nn.Module):

@@ -132,10 +132,10 @@ tmp/
 runs/
 
 # ignore data folder this is quite large
-puzzle/world_model/data/
-puzzle/world_model/.gitattributes
+world_model_puzzle/data/
+world_model_puzzle/.gitattributes
 
 # ignore model params
 heuristic/neuralheuristic/model/params
 qfunction/neuralq/model/params
-puzzle/world_model/model/params
+world_model_puzzle/model/params
