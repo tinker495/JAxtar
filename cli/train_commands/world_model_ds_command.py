@@ -5,14 +5,14 @@ import click
 import cv2
 import jax
 import numpy as np
+from puxle import Puzzle
 from tqdm import trange
 
 from cli.train_commands.world_model_train_option import (
     dataset_options,
     puzzle_ds_options,
 )
-from puzzle.puzzle_base import Puzzle
-from puzzle.world_model.world_model_ds import (
+from world_model_puzzle.world_model_ds import (
     create_eval_trajectory,
     get_sample_data_builder,
     get_world_model_dataset_builder,

@@ -1,6 +1,7 @@
 import chex
 import jax.numpy as jnp
 from flax import linen as nn
+from puxle import LightsOut
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.modules import (
@@ -10,7 +11,6 @@ from neural_util.modules import (
     ResBlock,
     conditional_dummy_norm,
 )
-from puzzle import LightsOut
 
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):

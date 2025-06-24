@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
+from puxle import RubiksCube
 
-from puzzle.rubikscube import RubiksCube
 from qfunction.q_base import QFunction
 
 

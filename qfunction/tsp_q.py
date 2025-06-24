@@ -1,8 +1,8 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import TSP
 
-from puzzle import TSP
 from qfunction.q_base import QFunction
 
 

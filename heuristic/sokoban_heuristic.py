@@ -1,7 +1,7 @@
 import jax.numpy as jnp
+from puxle.puzzles.sokoban import Sokoban
 
 from heuristic.heuristic_base import Heuristic
-from puzzle.sokoban import Object, Sokoban
 
 
 class SokobanHeuristic(Heuristic):
@@ -17,12 +17,14 @@ class SokobanHeuristic(Heuristic):
         """
         # Count the total number of boxes in the target state
         target_board = self.puzzle.unpack_board(solve_config.TargetState.board)
-        target_box_count = jnp.sum(target_board == Object.BOX.value)
+        target_box_count = jnp.sum(target_board == Sokoban.Object.BOX.value)
 
         # Count the number of boxes in the same position in both current and target
         current_board = self.puzzle.unpack_board(current.board)
         matching_boxes = jnp.sum(
-            jnp.logical_and(current_board == Object.BOX.value, target_board == Object.BOX.value)
+            jnp.logical_and(
+                current_board == Sokoban.Object.BOX.value, target_board == Sokoban.Object.BOX.value
+            )
         )
 
         # The heuristic value is the boxes missing from their correct positions

@@ -3,7 +3,7 @@ import jax.numpy as jnp
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.modules import DTYPE
-from puzzle.world_model import WorldModelPuzzleBase
+from world_model_puzzle import WorldModelPuzzleBase
 
 
 class WorldModelNeuralHeuristic(NeuralHeuristicBase):

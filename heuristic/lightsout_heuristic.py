@@ -1,7 +1,7 @@
 import jax.numpy as jnp
+from puxle import LightsOut
 
 from heuristic.heuristic_base import Heuristic
-from puzzle import LightsOut
 
 
 class LightsOutHeuristic(Heuristic):

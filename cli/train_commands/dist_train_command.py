@@ -5,13 +5,13 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import tensorboardX
+from puxle import Puzzle
 from tqdm import trange
 
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.optimizer import setup_optimizer
 from neural_util.target_update import scaled_by_reset, soft_update
-from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 

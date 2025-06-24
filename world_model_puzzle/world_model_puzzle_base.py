@@ -5,10 +5,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
-from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle
-from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
-from puzzle.util import from_uint8, to_uint8
+from puxle import Puzzle
+from puxle.core.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
+from puxle.utils import from_uint8, to_uint8
+from puxle.utils.annotate import IMG_SIZE
 
 from helpers.formatting import img_to_colored_str
 from neural_util.modules import DTYPE, BatchNorm

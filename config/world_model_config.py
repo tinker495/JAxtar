@@ -1,5 +1,6 @@
-from puzzle import Puzzle, RubiksCubeDS, SokobanDS
-from puzzle.world_model import (
+from puxle import Puzzle, RubiksCubeDS, SokobanDS
+
+from world_model_puzzle import (
     RubiksCubeWorldModel,
     RubiksCubeWorldModelOptimized,
     SokobanWorldModel,

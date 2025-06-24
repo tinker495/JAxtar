@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
+from puxle import DotKnot
 
-from puzzle.dotknot import DotKnot
 from qfunction.q_base import QFunction
 
 

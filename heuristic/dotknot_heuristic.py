@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
+from puxle import DotKnot
 
 from heuristic.heuristic_base import Heuristic
-from puzzle.dotknot import DotKnot
 
 
 class DotKnotHeuristic(Heuristic):

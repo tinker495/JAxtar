@@ -1,8 +1,8 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import SlidePuzzle
 
-from puzzle.slidepuzzle import SlidePuzzle
 from qfunction.q_base import QFunction
 
 

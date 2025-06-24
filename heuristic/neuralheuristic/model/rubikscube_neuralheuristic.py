@@ -1,10 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import RubiksCube
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.modules import DTYPE
-from puzzle.rubikscube import RubiksCube
 
 
 class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):

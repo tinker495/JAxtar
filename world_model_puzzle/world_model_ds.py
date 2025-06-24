@@ -4,7 +4,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-from puzzle.puzzle_base import Puzzle
+from puxle import Puzzle
 from tqdm import trange
 
 

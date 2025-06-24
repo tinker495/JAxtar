@@ -1,10 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import PancakeSorting
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.modules import DTYPE
-from puzzle.pancake import PancakeSorting
 
 
 class PancakeNeuralHeuristic(NeuralHeuristicBase):

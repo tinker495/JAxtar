@@ -1,9 +1,9 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import Sokoban
 
 from neural_util.modules import DTYPE
-from puzzle.sokoban import Sokoban
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 

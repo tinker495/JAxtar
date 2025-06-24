@@ -1,7 +1,7 @@
 import jax.numpy as jnp
+from puxle import RubiksCube
 
 from heuristic.heuristic_base import Heuristic
-from puzzle.rubikscube import RubiksCube
 
 
 class RubiksCubeHeuristic(Heuristic):

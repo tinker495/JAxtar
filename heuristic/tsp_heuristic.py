@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
+from puxle import TSP
 
 from heuristic.heuristic_base import Heuristic
-from puzzle import TSP
 
 
 class TSPHeuristic(Heuristic):

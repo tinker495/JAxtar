@@ -2,8 +2,8 @@ import chex
 import jax.numpy as jnp
 
 from neural_util.modules import DTYPE
-from puzzle.world_model import WorldModelPuzzleBase
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+from world_model_puzzle import WorldModelPuzzleBase
 
 
 class WorldModelNeuralQ(NeuralQFunctionBase):

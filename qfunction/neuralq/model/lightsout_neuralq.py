@@ -1,6 +1,7 @@
 import chex
 import jax.numpy as jnp
 from flax import linen as nn
+from puxle import LightsOut
 
 from neural_util.modules import (
     DEFAULT_NORM_FN,
@@ -9,7 +10,6 @@ from neural_util.modules import (
     ResBlock,
     conditional_dummy_norm,
 )
-from puzzle import LightsOut
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 

@@ -1,9 +1,9 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import RubiksCube
 
 from neural_util.modules import DTYPE
-from puzzle.rubikscube import RubiksCube
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 

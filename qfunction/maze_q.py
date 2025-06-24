@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
+from puxle import Maze
 
-from puzzle.maze import Maze
 from qfunction.q_base import QFunction
 
 

@@ -6,6 +6,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
+from puxle import Puzzle
 
 from helpers.sampling import (
     create_hindsight_target_shuffled_path,
@@ -13,7 +14,6 @@ from helpers.sampling import (
     create_target_shuffled_path,
 )
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from puzzle.puzzle_base import Puzzle
 
 
 def davi_builder(

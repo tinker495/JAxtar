@@ -1,10 +1,10 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import Sokoban
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.modules import DTYPE
-from puzzle.sokoban import Sokoban
 
 
 class SokobanNeuralHeuristic(NeuralHeuristicBase):

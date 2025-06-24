@@ -1,7 +1,7 @@
 import jax.numpy as jnp
+from puxle import Maze
 
 from heuristic.heuristic_base import Heuristic
-from puzzle.maze import Maze
 
 
 class MazeHeuristic(Heuristic):
