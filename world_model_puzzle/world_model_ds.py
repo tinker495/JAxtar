@@ -4,9 +4,8 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import Puzzle
 from tqdm import trange
-
-from puzzle.puzzle_base import Puzzle
 
 
 def get_world_model_dataset_builder(

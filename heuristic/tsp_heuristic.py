@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
+from puxle import TSP
 
 from heuristic.heuristic_base import Heuristic
-from puzzle import TSP
 
 
 class TSPHeuristic(Heuristic):
@@ -23,7 +23,7 @@ class TSPHeuristic(Heuristic):
         This value is a lower bound of the actual remaining tour cost and is admissible for A* search.
         """
         # Unpack visited mask and point index.
-        unpacked = current.unpacking()
+        unpacked = current.unpacked
         visited = unpacked.mask.astype(jnp.bool_)
         current_idx = unpacked.point
 

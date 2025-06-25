@@ -1,9 +1,9 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import SlidePuzzle
 
 from heuristic.heuristic_base import Heuristic
-from puzzle.slidepuzzle import SlidePuzzle
 
 
 class SlidePuzzleHeuristic(Heuristic):
@@ -23,7 +23,8 @@ class SlidePuzzleHeuristic(Heuristic):
         """
         This function should return the distance between the state and the target.
         """
-        diff, tpos = self._diff_pos(current, solve_config.TargetState)
+        current = current.unpacked
+        diff, tpos = self._diff_pos(current, solve_config.TargetState.unpacked)
         not_empty = current.board != 0
         return (
             self._manhattan_distance(not_empty, diff) + self._linear_conflict(tpos, not_empty, diff)

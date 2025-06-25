@@ -3,9 +3,9 @@ import time
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import Puzzle
 
 from JAxtar.search_base import Current, SearchResult
-from puzzle.puzzle_base import Puzzle
 
 
 def flatten_array(array: chex.Array, dims: int) -> chex.Array:

@@ -1,6 +1,7 @@
 import chex
 import jax.numpy as jnp
 from flax import linen as nn
+from puxle import LightsOut
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.modules import (
@@ -10,7 +11,6 @@ from neural_util.modules import (
     ResBlock,
     conditional_dummy_norm,
 )
-from puzzle import LightsOut
 
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):
@@ -20,11 +20,11 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
     ) -> chex.Array:
-        current_map = current.unpacking().board.astype(DTYPE)
+        current_map = current.unpacked.board.astype(DTYPE)
         if self.is_fixed:
             one_hots = current_map
         else:
-            target_map = solve_config.TargetState.unpacking().board.astype(DTYPE)
+            target_map = solve_config.TargetState.unpacked.board.astype(DTYPE)
             one_hots = jnp.concatenate([target_map, current_map], axis=-1)
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
@@ -64,6 +64,6 @@ class LightsOutConvNeuralHeuristic(NeuralHeuristicBase):
         """
         This function should return the difference, not_equal of the current state and the target state
         """
-        current_map = current.unpacking().board.astype(DTYPE)
-        target_map = target.unpacking().board.astype(DTYPE)
+        current_map = current.unpacked.board.astype(DTYPE)
+        target_map = target.unpacked.board.astype(DTYPE)
         return jnp.not_equal(current_map, target_map).astype(DTYPE)

@@ -1,8 +1,8 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import TSP
 
-from puzzle import TSP
 from qfunction.q_base import QFunction
 
 
@@ -26,9 +26,9 @@ class TSPQ(QFunction):
         adding this value to the edge cost provides the same effect as f = g + h.
         """
         # Adapted MST + two nearest edges heuristic (same as in TSPHeuristic).
-        unpacked = current.unpacking()
-        visited = unpacked.mask.astype(jnp.bool_)
-        current_idx = unpacked.point
+        current = current.unpacked
+        visited = current.mask.astype(jnp.bool_)
+        current_idx = current.point
 
         distance_matrix = solve_config.distance_matrix
         start_idx = solve_config.start

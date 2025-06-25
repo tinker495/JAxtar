@@ -1,3 +1,23 @@
+from puxle import (
+    TSP,
+    DotKnot,
+    LightsOut,
+    LightsOutHard,
+    Maze,
+    PancakeSorting,
+    Puzzle,
+    RubiksCube,
+    RubiksCubeHard,
+    RubiksCubeRandom,
+    SlidePuzzle,
+    SlidePuzzleHard,
+    SlidePuzzleRandom,
+    Sokoban,
+    SokobanHard,
+    TopSpin,
+    TowerOfHanoi,
+)
+
 from heuristic import (
     DotKnotHeuristic,
     EmptyHeuristic,
@@ -20,35 +40,6 @@ from heuristic.neuralheuristic import (
     SokobanNeuralHeuristic,
     WorldModelNeuralHeuristic,
 )
-from puzzle import (
-    TSP,
-    DotKnot,
-    LightsOut,
-    LightsOutHard,
-    Maze,
-    PancakeSorting,
-    Puzzle,
-    RubiksCube,
-    RubiksCubeHard,
-    RubiksCubeRandom,
-    SlidePuzzle,
-    SlidePuzzleHard,
-    SlidePuzzleRandom,
-    Sokoban,
-    SokobanHard,
-    TopSpin,
-    TowerOfHanoi,
-)
-from puzzle.world_model import (
-    RubiksCubeWorldModel,
-    RubiksCubeWorldModel_reversed,
-    RubiksCubeWorldModel_test,
-    RubiksCubeWorldModelOptimized,
-    RubiksCubeWorldModelOptimized_reversed,
-    RubiksCubeWorldModelOptimized_test,
-    SokobanWorldModel,
-    SokobanWorldModelOptimized,
-)
 from qfunction import (
     TSPQ,
     DotKnotQ,
@@ -70,6 +61,16 @@ from qfunction.neuralq import (
     SlidePuzzleNeuralQ,
     SokobanNeuralQ,
     WorldModelNeuralQ,
+)
+from world_model_puzzle import (
+    RubiksCubeWorldModel,
+    RubiksCubeWorldModel_reversed,
+    RubiksCubeWorldModel_test,
+    RubiksCubeWorldModelOptimized,
+    RubiksCubeWorldModelOptimized_reversed,
+    RubiksCubeWorldModelOptimized_test,
+    SokobanWorldModel,
+    SokobanWorldModelOptimized,
 )
 
 default_puzzle_sizes: dict[str, int] = {
@@ -113,28 +114,28 @@ puzzle_dict: dict[str, Puzzle] = {
     "hanoi": TowerOfHanoi,
     "topspin": TopSpin,
     "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel(
-        path="puzzle/world_model/model/params/rubikscube.pkl"
+        path="world_model_puzzle/model/params/rubikscube.pkl"
     ),
     "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModel_test(
-        path="puzzle/world_model/model/params/rubikscube.pkl"
+        path="world_model_puzzle/model/params/rubikscube.pkl"
     ),
     "rubikscube_world_model_reversed": lambda **kwargs: RubiksCubeWorldModel_reversed(
-        path="puzzle/world_model/model/params/rubikscube.pkl"
+        path="world_model_puzzle/model/params/rubikscube.pkl"
     ),
     "rubikscube_world_model_optimized": lambda **kwargs: RubiksCubeWorldModelOptimized(
-        path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
+        path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
     ),
     "rubikscube_world_model_optimized_test": lambda **kwargs: RubiksCubeWorldModelOptimized_test(
-        path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
+        path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
     ),
     "rubikscube_world_model_optimized_reversed": lambda **kwargs: RubiksCubeWorldModelOptimized_reversed(
-        path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
+        path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
     ),
     "sokoban_world_model": lambda **kwargs: SokobanWorldModel(
-        path="puzzle/world_model/model/params/sokoban.pkl"
+        path="world_model_puzzle/model/params/sokoban.pkl"
     ),
     "sokoban_world_model_optimized": lambda **kwargs: SokobanWorldModelOptimized(
-        path="puzzle/world_model/model/params/sokoban_optimized.pkl"
+        path="world_model_puzzle/model/params/sokoban_optimized.pkl"
     ),
 }
 

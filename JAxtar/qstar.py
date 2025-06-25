@@ -3,6 +3,7 @@ import time
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
@@ -13,7 +14,6 @@ from JAxtar.util import (
     unflatten_array,
     unflatten_tree,
 )
-from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
 

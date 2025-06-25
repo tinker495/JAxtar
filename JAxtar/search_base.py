@@ -13,6 +13,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import Puzzle
 from xtructure import (
     BGPQ,
     FieldDescriptor,
@@ -29,7 +30,6 @@ from JAxtar.annotate import (
     KEY_DTYPE,
 )
 from JAxtar.util import set_array_as_condition
-from puzzle.puzzle_base import Puzzle
 
 
 @xtructure_dataclass

@@ -1,7 +1,7 @@
 import chex
 import jax.numpy as jnp
+from puxle import Puzzle
 
-from puzzle.puzzle_base import Puzzle
 from qfunction.q_base import QFunction
 
 

@@ -1,11 +1,11 @@
-from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
+from ..world_model_puzzle_base import WorldModelPuzzleBase
 
 
 class RubiksCubeWorldModel_test(WorldModelPuzzleBase):
     def __init__(self, **kwargs):
 
         super().__init__(
-            data_path="puzzle/world_model/data/rubikscube_test",
+            data_path="world_model_puzzle/data/rubikscube_test",
             data_shape=(32, 64, 3),
             latent_shape=(400,),
             action_size=12,
@@ -17,7 +17,7 @@ class RubiksCubeWorldModel(WorldModelPuzzleBase):
     def __init__(self, **kwargs):
 
         super().__init__(
-            data_path="puzzle/world_model/data/rubikscube",
+            data_path="world_model_puzzle/data/rubikscube",
             data_shape=(32, 64, 3),
             latent_shape=(400,),
             action_size=12,
@@ -35,7 +35,7 @@ class RubiksCubeWorldModelOptimized_test(WorldModelPuzzleBase):
     def __init__(self, **kwargs):
 
         super().__init__(
-            data_path="puzzle/world_model/data/rubikscube_test",
+            data_path="world_model_puzzle/data/rubikscube_test",
             data_shape=(32, 64, 3),
             latent_shape=(240,),  # almost optimal is 144 bits
             action_size=12,
@@ -55,7 +55,7 @@ class RubiksCubeWorldModelOptimized(WorldModelPuzzleBase):
     def __init__(self, **kwargs):
 
         super().__init__(
-            data_path="puzzle/world_model/data/rubikscube",
+            data_path="world_model_puzzle/data/rubikscube",
             data_shape=(32, 64, 3),
             latent_shape=(240,),
             action_size=12,
