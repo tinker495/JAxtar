@@ -62,6 +62,16 @@ from qfunction.neuralq import (
     SokobanNeuralQ,
     WorldModelNeuralQ,
 )
+from world_model_puzzle import (
+    RubiksCubeWorldModel,
+    RubiksCubeWorldModel_reversed,
+    RubiksCubeWorldModel_test,
+    RubiksCubeWorldModelOptimized,
+    RubiksCubeWorldModelOptimized_reversed,
+    RubiksCubeWorldModelOptimized_test,
+    SokobanWorldModel,
+    SokobanWorldModelOptimized,
+)
 
 default_puzzle_sizes: dict[str, int] = {
     "n-puzzle": 4,
@@ -103,6 +113,30 @@ puzzle_dict: dict[str, Puzzle] = {
     "pancake": PancakeSorting,
     "hanoi": TowerOfHanoi,
     "topspin": TopSpin,
+    "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel(
+        path="world_model_puzzle/model/params/rubikscube.pkl"
+    ),
+    "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModel_test(
+        path="world_model_puzzle/model/params/rubikscube.pkl"
+    ),
+    "rubikscube_world_model_reversed": lambda **kwargs: RubiksCubeWorldModel_reversed(
+        path="world_model_puzzle/model/params/rubikscube.pkl"
+    ),
+    "rubikscube_world_model_optimized": lambda **kwargs: RubiksCubeWorldModelOptimized(
+        path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
+    ),
+    "rubikscube_world_model_optimized_test": lambda **kwargs: RubiksCubeWorldModelOptimized_test(
+        path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
+    ),
+    "rubikscube_world_model_optimized_reversed": lambda **kwargs: RubiksCubeWorldModelOptimized_reversed(
+        path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
+    ),
+    "sokoban_world_model": lambda **kwargs: SokobanWorldModel(
+        path="world_model_puzzle/model/params/sokoban.pkl"
+    ),
+    "sokoban_world_model_optimized": lambda **kwargs: SokobanWorldModelOptimized(
+        path="world_model_puzzle/model/params/sokoban_optimized.pkl"
+    ),
 }
 
 puzzle_dict_hard: dict[str, Puzzle] = {
