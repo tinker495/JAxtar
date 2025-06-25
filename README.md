@@ -80,8 +80,8 @@ Target state
 ┃ D ┃ E ┃ F ┃   ┃
 ┗━━━┻━━━┻━━━┻━━━┛
 Dist: 34.00
-Search Time:   0.37 seconds
-Search states: 1.88M(5.15M states/s)
+Search Time:   0.34 seconds
+Search states: 1.88M(5.54M states/s)
 
 
 Cost: 50.0
@@ -116,7 +116,7 @@ Target state
 vmap search
 # search_result, solved, solved_idx =jax.vmap(search_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
 Search Time:   7.68 seconds (x21.0/20)
-Search states: 37.6M (4.9M states/s) (x1.0 faster))
+Search states: 37.6M (4.9M states/s) (x1.0 faster)
 Solution found: 100.00%
 # this means astart_fn is completely vmapable and jitable
 ```
