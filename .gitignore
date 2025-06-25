@@ -133,7 +133,6 @@ runs/
 
 # ignore data folder this is quite large
 world_model_puzzle/data/
-world_model_puzzle/.gitattributes
 
 # ignore model params
 heuristic/neuralheuristic/model/params
