@@ -39,7 +39,8 @@ This project features specially written components, including:
 - [`Xtructure`](https://github.com/tinker495/Xtructure): A pip package providing JAX-compatible hash and priority queue implementations, originally developed as part of this project and later separated. This package includes:
   - a hashtable for parallel lookup and insertion operations
   - a priority queue that supports batching, push, and pop operations
-- Implementations for puzzles such as Rubik's Cube, Slide Puzzle, Lights Out, and Sokoban
+- [`PuXle`](https://github.com/tinker495/PuXle): All puzzle implementations have been moved to this separate high-performance library for parallelized puzzle environments built on JAX
+- World model implementations based on PuXle for discrete world model learning and heuristic search
 - Network heuristics and Q-functions designed for JIT-compilable integration with A\* & Q\* algorithm
 - a fully JIT-compiled A\* & Q\* algorithm for puzzles
 
