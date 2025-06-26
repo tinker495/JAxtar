@@ -117,7 +117,7 @@ def search_options(func: callable) -> callable:
         "-m", "--max_node_size", default="2e6", type=str, help="Size of the puzzle"
     )  # this is a float for input like 2e6
     @click.option("-b", "--batch_size", default=int(1e4), type=int, help="Batch size for BGPQ")
-    @click.option("-w", "--cost_weight", default=1.0 - 1e-3, help="Weight for the A* search")
+    @click.option("-w", "--cost_weight", default=0.9, help="Weight for the A* search")
     @click.option("-vm", "--vmap_size", default=1, help="Size for the vmap")
     @click.option("--debug", is_flag=True, help="Debug mode")
     @click.option("--profile", is_flag=True, help="Profile mode")
