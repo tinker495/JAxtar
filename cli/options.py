@@ -92,12 +92,9 @@ def heuristic_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle_name"]
         neural_heuristic = kwargs["neural_heuristic"]
         puzzle = kwargs["puzzle"]
-        puzzle_size = kwargs["puzzle_size"]
         if neural_heuristic:
             try:
-                heuristic: Heuristic = puzzle_heuristic_dict_nn[puzzle_name](
-                    puzzle_size, puzzle, False
-                )
+                heuristic: Heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle, False)
             except KeyError:
                 print("Neural heuristic not available for this puzzle")
                 print(f"list of neural heuristic: {puzzle_heuristic_dict_nn.keys()}")
@@ -119,10 +116,9 @@ def qfunction_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle_name"]
         neural_qfunction = kwargs["neural_qfunction"]
         puzzle = kwargs["puzzle"]
-        puzzle_size = kwargs["puzzle_size"]
         if neural_qfunction:
             try:
-                qfunction: QFunction = puzzle_q_dict_nn[puzzle_name](puzzle_size, puzzle, False)
+                qfunction: QFunction = puzzle_q_dict_nn[puzzle_name](puzzle, False)
             except KeyError:
                 print("Neural qfunction not available for this puzzle")
                 print(f"list of neural qfunction: {puzzle_q_dict_nn.keys()}")
