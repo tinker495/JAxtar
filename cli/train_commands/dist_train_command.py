@@ -15,11 +15,11 @@ from neural_util.target_update import scaled_by_reset, soft_update
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 
-from .dist_train_option import (
-    heuristic_options,
-    puzzle_options,
-    qfunction_options,
-    train_option,
+from ..options import (
+    dist_heuristic_options,
+    dist_puzzle_options,
+    dist_qfunction_options,
+    dist_train_options,
 )
 
 
@@ -33,9 +33,9 @@ def setup_logging(
 
 
 @click.command()
-@puzzle_options
-@heuristic_options
-@train_option
+@dist_puzzle_options
+@dist_heuristic_options
+@dist_train_options
 def davi(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
@@ -158,9 +158,9 @@ def davi(
 
 
 @click.command()
-@puzzle_options
-@qfunction_options
-@train_option
+@dist_puzzle_options
+@dist_qfunction_options
+@dist_train_options
 def qlearning(
     puzzle: Puzzle,
     qfunction: NeuralQFunctionBase,

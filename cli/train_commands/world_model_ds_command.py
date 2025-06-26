@@ -8,15 +8,13 @@ import numpy as np
 from puxle import Puzzle
 from tqdm import trange
 
-from cli.train_commands.world_model_train_option import (
-    dataset_options,
-    puzzle_ds_options,
-)
 from world_model_puzzle.world_model_ds import (
     create_eval_trajectory,
     get_sample_data_builder,
     get_world_model_dataset_builder,
 )
+
+from ..options import wm_dataset_options, wm_puzzle_ds_options
 
 
 def convert_to_imgs(state: Puzzle.State, img_size: tuple):
@@ -26,8 +24,8 @@ def convert_to_imgs(state: Puzzle.State, img_size: tuple):
 
 
 @click.command()
-@puzzle_ds_options
-@dataset_options
+@wm_puzzle_ds_options
+@wm_dataset_options
 def make_puzzle_transition_dataset(
     puzzle: Puzzle,
     puzzle_name: str,
@@ -80,8 +78,8 @@ def make_puzzle_transition_dataset(
 
 
 @click.command()
-@puzzle_ds_options
-@dataset_options
+@wm_puzzle_ds_options
+@wm_dataset_options
 def make_puzzle_sample_data(
     puzzle: Puzzle,
     puzzle_name: str,
@@ -131,8 +129,8 @@ def make_puzzle_sample_data(
 
 
 @click.command()
-@puzzle_ds_options
-@dataset_options
+@wm_puzzle_ds_options
+@wm_dataset_options
 def make_puzzle_eval_trajectory(
     puzzle: Puzzle,
     puzzle_name: str,
