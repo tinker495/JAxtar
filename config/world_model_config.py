@@ -9,7 +9,9 @@ from world_model_puzzle import (
 
 puzzle_dict_ds: dict[str, Puzzle] = {
     "rubikscube": lambda **kwargs: RubiksCube(initial_shuffle=1000, **kwargs),
-    "sokoban": Sokoban,
+    "sokoban": lambda **kwargs: Sokoban(
+        solve_condition=Sokoban.SolveCondition.ALL_BOXES_ON_TARGET_AND_PLAYER_ON_TARGET, **kwargs
+    ),
 }
 
 world_model_dict: dict[str, callable] = {
