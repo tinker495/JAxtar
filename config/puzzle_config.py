@@ -2,12 +2,10 @@ from puxle import (
     TSP,
     DotKnot,
     LightsOut,
-    LightsOutHard,
     Maze,
     PancakeSorting,
     Puzzle,
     RubiksCube,
-    RubiksCubeHard,
     RubiksCubeRandom,
     SlidePuzzle,
     SlidePuzzleHard,
@@ -73,31 +71,6 @@ from world_model_puzzle import (
     SokobanWorldModelOptimized,
 )
 
-default_puzzle_sizes: dict[str, int] = {
-    "n-puzzle": 4,
-    "n-puzzle-conv": 4,
-    "n-puzzle-random": 4,
-    "lightsout": 7,
-    "lightsout-conv": 7,
-    "rubikscube": 3,
-    "rubikscube-random": 3,
-    "maze": 23,
-    "tsp": 16,
-    "dotknot": 8,
-    "sokoban": 10,
-    "pancake": 35,
-    "hanoi": 10,
-    "topspin": 20,
-    "rubikscube_world_model": None,
-    "rubikscube_world_model_test": None,
-    "rubikscube_world_model_reversed": None,
-    "rubikscube_world_model_optimized": None,
-    "rubikscube_world_model_optimized_test": None,
-    "rubikscube_world_model_optimized_reversed": None,
-    "sokoban_world_model": None,
-    "sokoban_world_model_optimized": None,
-}
-
 puzzle_dict: dict[str, Puzzle] = {
     "n-puzzle": SlidePuzzle,
     "n-puzzle-conv": SlidePuzzle,
@@ -142,9 +115,9 @@ puzzle_dict: dict[str, Puzzle] = {
 puzzle_dict_hard: dict[str, Puzzle] = {
     "n-puzzle": SlidePuzzleHard,
     "n-puzzle-conv": SlidePuzzleHard,
-    "lightsout": LightsOutHard,
-    "lightsout-conv": LightsOutHard,
-    "rubikscube": RubiksCubeHard,
+    "lightsout": lambda **kwargs: LightsOut(initial_shuffle=50, **kwargs),
+    "lightsout-conv": lambda **kwargs: LightsOut(initial_shuffle=50, **kwargs),
+    "rubikscube": lambda **kwargs: RubiksCube(initial_shuffle=50, **kwargs),
     "sokoban": SokobanHard,
 }
 

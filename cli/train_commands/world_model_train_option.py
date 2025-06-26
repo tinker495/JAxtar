@@ -1,14 +1,10 @@
+import json
 from functools import wraps
 
 import click
 import jax.numpy as jnp
 
-from config import (
-    default_puzzle_sizes,
-    puzzle_dict_ds,
-    world_model_dict,
-    world_model_ds_dict,
-)
+from config import puzzle_dict_ds, world_model_dict, world_model_ds_dict
 
 
 def get_ds_options(func: callable) -> callable:
@@ -76,16 +72,18 @@ def puzzle_ds_options(func: callable) -> callable:
         help="Puzzle to solve",
     )
     @click.option("-ps", "--puzzle_size", default="default", type=str, help="Size of the puzzle")
+    @click.option("-pargs", "--puzzle_args", default="", type=str, help="Arguments for the puzzle")
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_name = kwargs["puzzle"]
         puzzle_size = kwargs["puzzle_size"]
-        if puzzle_size == "default":
-            puzzle_size = default_puzzle_sizes[puzzle_name]
-        else:
+        input_args = {}
+        if kwargs["puzzle_args"]:
+            input_args = json.loads(kwargs["puzzle_args"])
+        if puzzle_size != "default":
             puzzle_size = int(puzzle_size)
 
-        kwargs["puzzle"] = puzzle_dict_ds[puzzle_name](size=puzzle_size)
+        kwargs["puzzle"] = puzzle_dict_ds[puzzle_name](**input_args)
         kwargs["puzzle_name"] = puzzle_name
         kwargs["puzzle_size"] = puzzle_size
         return func(*args, **kwargs)

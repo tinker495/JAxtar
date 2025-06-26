@@ -1,10 +1,10 @@
+import json
 from functools import wraps
 
 import click
 import jax
 
 from config import (
-    default_puzzle_sizes,
     puzzle_dict,
     puzzle_dict_hard,
     puzzle_heuristic_dict,
@@ -28,19 +28,22 @@ def puzzle_options(func: callable) -> callable:
     @click.option("-h", "--hard", default=False, is_flag=True, help="Use the hard puzzle")
     @click.option("-ps", "--puzzle_size", default="default", type=str, help="Size of the puzzle")
     @click.option("-s", "--seeds", default="0", type=str, help="Seed for the random puzzle")
+    @click.option("-pargs", "--puzzle_args", default="", type=str, help="Arguments for the puzzle")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if kwargs["puzzle_size"] == "default":
-            kwargs["puzzle_size"] = default_puzzle_sizes[kwargs["puzzle"]]
-        else:
+        input_args = {}
+        if kwargs["puzzle_args"]:
+            input_args = json.loads(kwargs["puzzle_args"])
+        if kwargs["puzzle_size"] != "default":
             kwargs["puzzle_size"] = int(kwargs["puzzle_size"])
+            input_args["size"] = kwargs["puzzle_size"]
 
         puzzle_name = kwargs["puzzle"]
         kwargs["puzzle_name"] = puzzle_name
         if kwargs["hard"]:
-            kwargs["puzzle"] = puzzle_dict_hard[puzzle_name](size=kwargs["puzzle_size"])
+            kwargs["puzzle"] = puzzle_dict_hard[puzzle_name](**input_args)
         else:
-            kwargs["puzzle"] = puzzle_dict[puzzle_name](size=kwargs["puzzle_size"])
+            kwargs["puzzle"] = puzzle_dict[puzzle_name](**input_args)
         kwargs.pop("hard")
 
         if kwargs["seeds"].isdigit():

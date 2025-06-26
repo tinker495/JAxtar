@@ -1,4 +1,4 @@
-from puxle import Puzzle, RubiksCubeDS, SokobanDS
+from puxle import Puzzle, RubiksCube, Sokoban
 
 from world_model_puzzle import (
     RubiksCubeWorldModel,
@@ -8,8 +8,8 @@ from world_model_puzzle import (
 )
 
 puzzle_dict_ds: dict[str, Puzzle] = {
-    "rubikscube": RubiksCubeDS,
-    "sokoban": SokobanDS,
+    "rubikscube": lambda **kwargs: RubiksCube(initial_shuffle=1000, **kwargs),
+    "sokoban": Sokoban,
 }
 
 world_model_dict: dict[str, callable] = {
