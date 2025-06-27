@@ -62,11 +62,9 @@ from qfunction.neuralq import (
 )
 from world_model_puzzle import (
     RubiksCubeWorldModel,
+    RubiksCubeWorldModel_reversed,
     RubiksCubeWorldModelOptimized,
-    RubiksCubeWorldModelOptimizedReversed,
-    RubiksCubeWorldModelOptimizedTest,
-    RubiksCubeWorldModelReversed,
-    RubiksCubeWorldModelTest,
+    RubiksCubeWorldModelOptimized_reversed,
     SokobanWorldModel,
     SokobanWorldModelOptimized,
 )
@@ -116,19 +114,13 @@ puzzle_dict: dict[str, Puzzle] = {
     "rubikscube_world_model": lambda **kwargs: RubiksCubeWorldModel(
         path="world_model_puzzle/model/params/rubikscube.pkl"
     ),
-    "rubikscube_world_model_test": lambda **kwargs: RubiksCubeWorldModelTest(
-        path="world_model_puzzle/model/params/rubikscube.pkl"
-    ),
-    "rubikscube_world_model_reversed": lambda **kwargs: RubiksCubeWorldModelReversed(
+    "rubikscube_world_model_reversed": lambda **kwargs: RubiksCubeWorldModel_reversed(
         path="world_model_puzzle/model/params/rubikscube.pkl"
     ),
     "rubikscube_world_model_optimized": lambda **kwargs: RubiksCubeWorldModelOptimized(
         path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
     ),
-    "rubikscube_world_model_optimized_test": lambda **kwargs: RubiksCubeWorldModelOptimizedTest(
-        path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
-    ),
-    "rubikscube_world_model_optimized_reversed": lambda **kwargs: RubiksCubeWorldModelOptimizedReversed(
+    "rubikscube_world_model_optimized_reversed": lambda **kwargs: RubiksCubeWorldModelOptimized_reversed(
         path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
     ),
     "sokoban_world_model": lambda **kwargs: SokobanWorldModel(

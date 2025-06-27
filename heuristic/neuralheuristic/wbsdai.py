@@ -5,6 +5,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
+from puxle import Puzzle
 
 from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
 from helpers.sampling import get_one_solved_branch_distance_samples
@@ -12,7 +13,6 @@ from heuristic.neuralheuristic.neuralheuristic_base import (
     NeuralHeuristicBase as NeuralHeuristic,
 )
 from JAxtar.astar import astar_builder
-from puzzle.puzzle_base import Puzzle
 
 
 def regression_replay_trainer_builder(

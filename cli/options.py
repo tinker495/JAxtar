@@ -11,8 +11,8 @@ from config import (
     puzzle_dict_hard,
     puzzle_heuristic_dict,
     puzzle_heuristic_dict_nn,
-    puzzle_q_dict,
-    puzzle_q_dict_nn,
+    puzzle_q_function_dict,
+    puzzle_q_function_dict_nn,
     world_model_dict,
     world_model_ds_dict,
 )
@@ -172,13 +172,13 @@ def qfunction_options(func: callable) -> callable:
         puzzle = kwargs["puzzle"]
         if neural_qfunction:
             try:
-                qfunction: QFunction = puzzle_q_dict_nn[puzzle_name](puzzle, False)
+                qfunction: QFunction = puzzle_q_function_dict_nn[puzzle_name](puzzle, False)
             except KeyError:
                 print("Neural qfunction not available for this puzzle")
-                print(f"list of neural qfunction: {puzzle_q_dict_nn.keys()}")
+                print(f"list of neural qfunction: {puzzle_q_function_dict_nn.keys()}")
                 exit(1)
         else:
-            qfunction: QFunction = puzzle_q_dict[puzzle_name](puzzle)
+            qfunction: QFunction = puzzle_q_function_dict[puzzle_name](puzzle)
         kwargs["qfunction"] = qfunction
         kwargs.pop("neural_qfunction")
         kwargs.pop("puzzle_size")
@@ -304,7 +304,7 @@ def dist_qfunction_options(func: callable) -> callable:
         puzzle = kwargs["puzzle"]
         reset = kwargs["reset"]
         try:
-            qfunction: NeuralQFunctionBase = puzzle_q_dict_nn[puzzle_name](
+            qfunction: NeuralQFunctionBase = puzzle_q_function_dict_nn[puzzle_name](
                 puzzle_size, puzzle, reset
             )
         except KeyError:

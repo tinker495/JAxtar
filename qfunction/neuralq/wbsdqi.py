@@ -5,11 +5,11 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
+from puxle import Puzzle
 
 from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
 from helpers.sampling import get_one_solved_branch_q_samples
 from JAxtar.qstar import qstar_builder
-from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import QModelBase as QModel
 
 

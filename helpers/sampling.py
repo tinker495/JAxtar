@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable
+from typing import Any, Callable, TypeAlias
 
 import chex
 import jax
@@ -8,13 +8,9 @@ import jax.test_util
 from puxle import Puzzle
 
 from helpers.util import flatten_array, flatten_tree
-from JAxtar.search_base import (
-    HASH_POINT_DTYPE,
-    HASH_TABLE_IDX_DTYPE,
-    Current,
-    Parent,
-    SearchResult,
-)
+from JAxtar.search_base import Current, HashIdx, Parent, SearchResult
+
+PARAM_DTYPE: TypeAlias = Any
 
 
 def get_random_inverse_trajectory(
@@ -348,8 +344,10 @@ def get_k_optimal_branchs_paths(
     sorted_cost = flattened_cost[flattend_sort_indices]
     sorted_mask = leaf_mask[sorted_idxs[:, 0], sorted_idxs[:, 1]]
     sorted_leaf_nodes = Current(
-        index=sorted_idxs[:, 0].astype(HASH_POINT_DTYPE),
-        table_index=sorted_idxs[:, 1].astype(HASH_TABLE_IDX_DTYPE),
+        hashidx=HashIdx(
+            index=sorted_idxs[:, 0].astype(jnp.uint32),
+            table_index=sorted_idxs[:, 1].astype(jnp.uint8),
+        ),
         cost=sorted_cost,
     )
 
@@ -363,11 +361,11 @@ def get_k_optimal_branchs_paths(
 
 def get_one_solved_branch_distance_samples(
     puzzle: Puzzle,
-    astar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
+    astar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, PARAM_DTYPE], SearchResult],
     max_depth: int,
     sample_ratio: float,
     use_optimal_branch: bool,
-    heuristic_params: jax.tree_util.PyTreeDef,
+    heuristic_params: PARAM_DTYPE,
     key: chex.PRNGKey,
 ):
     solve_config, initial_state = puzzle.get_inits(key)
@@ -470,11 +468,11 @@ def get_one_solved_branch_distance_samples(
 
 def get_one_solved_branch_q_samples(
     puzzle: Puzzle,
-    qstar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, jax.tree_util.PyTreeDef], SearchResult],
+    qstar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, PARAM_DTYPE], SearchResult],
     max_depth: int,
     sample_ratio: float,
     use_optimal_branch: bool,
-    qfunction_params: jax.tree_util.PyTreeDef,
+    qfunction_params: PARAM_DTYPE,
     key: chex.PRNGKey,
 ):
     solve_config, initial_state = puzzle.get_inits(key)
