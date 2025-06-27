@@ -3,8 +3,8 @@ from typing import Any, Optional
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import SlidePuzzle
 
-from puzzle.slidepuzzle import SlidePuzzle
 from qfunction.q_base import QFunction
 
 
@@ -38,7 +38,8 @@ class SlidePuzzleQ(QFunction):
         """
         This function should return the distance between the state and the target.
         """
-        diff, tpos = self._diff_pos(current, target)
+        current = current.unpacked
+        diff, tpos = self._diff_pos(current, target.unpacked)
         not_empty = current.board != 0
         return (
             self._manhattan_distance(not_empty, diff) + self._linear_conflict(tpos, not_empty, diff)

@@ -5,6 +5,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import jax.test_util
+from puxle import Puzzle
 
 from helpers.util import flatten_array, flatten_tree
 from JAxtar.search_base import (
@@ -14,7 +15,6 @@ from JAxtar.search_base import (
     Parent,
     SearchResult,
 )
-from puzzle.puzzle_base import Puzzle
 
 
 def get_random_inverse_trajectory(

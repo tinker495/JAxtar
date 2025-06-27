@@ -3,8 +3,8 @@ from typing import Any, Optional
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import PancakeSorting
 
-from puzzle.pancake import PancakeSorting
 from qfunction.q_base import QFunction
 
 

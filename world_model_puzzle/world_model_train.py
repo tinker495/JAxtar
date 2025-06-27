@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
+from .world_model_puzzle_base import WorldModelPuzzleBase
 
 
 def accuracy_fn(preds: chex.Array, labels: chex.Array) -> chex.Array:

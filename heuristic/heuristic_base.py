@@ -3,8 +3,7 @@ from typing import Any, Optional
 
 import chex
 import jax
-
-from puzzle.puzzle_base import Puzzle
+from puxle import Puzzle
 
 
 class Heuristic(ABC):

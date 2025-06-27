@@ -8,11 +8,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
+from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
 from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
 from neural_util.util import download_model, is_model_downloaded
-from puzzle.puzzle_base import Puzzle
 
 
 class HeuristicBase(nn.Module):

@@ -2,6 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
+from puxle import SlidePuzzle
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.modules import (
@@ -11,7 +12,6 @@ from neural_util.modules import (
     ResBlock,
     conditional_dummy_norm,
 )
-from puzzle.slidepuzzle import SlidePuzzle
 
 
 class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):

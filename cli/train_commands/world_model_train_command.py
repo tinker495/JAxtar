@@ -10,17 +10,13 @@ from tqdm import trange
 
 from neural_util.optimizer import setup_optimizer
 from neural_util.util import round_through_gradient
-from puzzle.world_model.world_model_puzzle_base import WorldModelPuzzleBase
-from puzzle.world_model.world_model_train import (
+from world_model_puzzle import WorldModelPuzzleBase
+from world_model_puzzle.world_model_train import (
     world_model_eval_builder,
     world_model_train_builder,
 )
 
-from .world_model_train_option import (
-    get_ds_options,
-    get_world_model_options,
-    train_options,
-)
+from ..options import wm_get_ds_options, wm_get_world_model_options, wm_train_options
 
 
 def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
@@ -29,9 +25,9 @@ def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
 
 
 @click.command()
-@get_ds_options
-@get_world_model_options
-@train_options
+@wm_get_ds_options
+@wm_get_world_model_options
+@wm_train_options
 def train(
     world_model_name: str,
     datas: chex.Array,

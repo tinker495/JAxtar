@@ -1,5 +1,6 @@
-from puzzle import Puzzle, RubiksCubeDS, SokobanDS
-from puzzle.world_model import (
+from puxle import Puzzle, RubiksCube, Sokoban
+
+from world_model_puzzle import (
     RubiksCubeWorldModel,
     RubiksCubeWorldModelOptimized,
     SokobanWorldModel,
@@ -7,27 +8,29 @@ from puzzle.world_model import (
 )
 
 puzzle_dict_ds: dict[str, Puzzle] = {
-    "rubikscube": RubiksCubeDS,
-    "sokoban": SokobanDS,
+    "rubikscube": lambda **kwargs: RubiksCube(initial_shuffle=1000, **kwargs),
+    "sokoban": lambda **kwargs: Sokoban(
+        solve_condition=Sokoban.SolveCondition.ALL_BOXES_ON_TARGET_AND_PLAYER_ON_TARGET, **kwargs
+    ),
 }
 
 world_model_dict: dict[str, callable] = {
     "rubikscube": lambda reset: RubiksCubeWorldModel(
-        init_params=reset, path="puzzle/world_model/model/params/rubikscube.pkl"
+        init_params=reset, path="world_model_puzzle/model/params/rubikscube.pkl"
     ),
     "rubikscube_optimized": lambda reset: RubiksCubeWorldModelOptimized(
-        init_params=reset, path="puzzle/world_model/model/params/rubikscube_optimized.pkl"
+        init_params=reset, path="world_model_puzzle/model/params/rubikscube_optimized.pkl"
     ),
     "sokoban": lambda reset: SokobanWorldModel(
-        init_params=reset, path="puzzle/world_model/model/params/sokoban.pkl"
+        init_params=reset, path="world_model_puzzle/model/params/sokoban.pkl"
     ),
     "sokoban_optimized": lambda reset: SokobanWorldModelOptimized(
-        init_params=reset, path="puzzle/world_model/model/params/sokoban_optimized.pkl"
+        init_params=reset, path="world_model_puzzle/model/params/sokoban_optimized.pkl"
     ),
 }
 
 
 world_model_ds_dict: dict[str, str] = {
-    "rubikscube": "puzzle/world_model/data/rubikscube/transition",
-    "sokoban": "puzzle/world_model/data/sokoban/transition",
+    "rubikscube": "world_model_puzzle/data/rubikscube/transition",
+    "sokoban": "world_model_puzzle/data/sokoban/transition",
 }

@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import tensorboardX
+from puxle import Puzzle
 from tqdm import trange
 
 from helpers.replay import init_experience_replay
@@ -20,7 +21,6 @@ from heuristic.neuralheuristic.wbsdai import (
 )
 from neural_util.optimizer import setup_optimizer
 from neural_util.target_update import scaled_by_reset, soft_update
-from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 from qfunction.neuralq.wbsdqi import (
@@ -28,12 +28,12 @@ from qfunction.neuralq.wbsdqi import (
     wbsdqi_dataset_builder,
 )
 
-from .dist_train_option import (
-    heuristic_options,
-    puzzle_options,
-    qfunction_options,
-    train_option,
-    train_wbs_option,
+from ..options import (
+    dist_heuristic_options,
+    dist_puzzle_options,
+    dist_qfunction_options,
+    dist_train_options,
+    wbs_dist_train_options,
 )
 
 
@@ -47,9 +47,9 @@ def setup_logging(
 
 
 @click.command()
-@puzzle_options
-@heuristic_options
-@train_option
+@dist_puzzle_options
+@dist_heuristic_options
+@dist_train_options
 def davi(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
@@ -172,9 +172,9 @@ def davi(
 
 
 @click.command()
-@puzzle_options
-@qfunction_options
-@train_option
+@dist_puzzle_options
+@dist_qfunction_options
+@dist_train_options
 def qlearning(
     puzzle: Puzzle,
     qfunction: NeuralQFunctionBase,
@@ -296,9 +296,9 @@ def qlearning(
 
 
 @click.command()
-@puzzle_options
-@heuristic_options
-@train_wbs_option
+@dist_puzzle_options
+@dist_heuristic_options
+@wbs_dist_train_options
 def wbsdai(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
@@ -406,9 +406,9 @@ def wbsdai(
 
 
 @click.command()
-@puzzle_options
-@qfunction_options
-@train_wbs_option
+@dist_puzzle_options
+@dist_qfunction_options
+@wbs_dist_train_options
 def wbsdqi(
     puzzle: Puzzle,
     qfunction: NeuralQFunctionBase,

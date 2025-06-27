@@ -1,5 +1,4 @@
 from .puzzle_config import (
-    default_puzzle_sizes,
     puzzle_dict,
     puzzle_dict_hard,
     puzzle_heuristic_dict,

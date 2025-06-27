@@ -5,6 +5,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
+from puxle import Puzzle
+from puxle.core.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
+from puxle.utils import from_uint8, to_uint8
+from puxle.utils.annotate import IMG_SIZE
 
 from helpers.formatting import img_to_colored_str
 from neural_util.modules import DTYPE, BatchNorm
@@ -15,10 +19,6 @@ from neural_util.util import (
     is_world_model_dataset_downloaded,
     round_through_gradient,
 )
-from puzzle.annotate import IMG_SIZE
-from puzzle.puzzle_base import Puzzle
-from puzzle.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
-from puzzle.util import from_uint8, to_uint8
 
 
 class Encoder(nn.Module):
@@ -112,11 +112,13 @@ class WorldModelPuzzleBase(Puzzle):
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)
 
-            def packing(self):
+            @property
+            def packed(self):
                 packed_latent = to_uint8(self.latent)
                 return State(latent=packed_latent)
 
-            def unpacking(self):
+            @property
+            def unpacked(self):
                 latent = from_uint8(self.latent, latent_shape)
                 return State(latent=latent)
 
@@ -296,7 +298,7 @@ class WorldModelPuzzleBase(Puzzle):
             target_height: int = IMG_SIZE[1],
             **kwargs,
         ) -> jnp.ndarray:
-            latent = state.unpacking().latent
+            latent = state.unpacked.latent
             latent = jnp.expand_dims(latent, axis=0)
             data = self.model.apply(
                 self.params, latent, training=False, method=self.model.decode
@@ -309,7 +311,7 @@ class WorldModelPuzzleBase(Puzzle):
             else:
                 img = data
             if solve_config is not None and show_target_state_img:
-                latent = solve_config.TargetState.unpacking().latent
+                latent = solve_config.TargetState.unpacked.latent
                 latent = jnp.expand_dims(latent, axis=0)
                 data = self.model.apply(
                     self.params, latent, training=False, method=self.model.decode
@@ -345,7 +347,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, target_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        return self.SolveConfig(TargetState=self.State(latent=latent).packing())
+        return self.SolveConfig(TargetState=self.State(latent=latent).packed)
 
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
@@ -358,7 +360,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, init_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        return self.State(latent=latent).packing()
+        return self.State(latent=latent).packed
 
     def batched_get_neighbours(
         self,
@@ -370,7 +372,7 @@ class WorldModelPuzzleBase(Puzzle):
         """
         This function should return a neighbours, and the cost of the move.
         """
-        bit_latent = jax.vmap(self.State.unpacking)(states).latent
+        bit_latent = jax.vmap(lambda x: x.unpacked.latent)(states)
         next_bit_latent = self.model.apply(
             self.params, bit_latent, training=False, method=self.model.transition
         )  # (batch_size, action_size, latent_size)
@@ -379,7 +381,7 @@ class WorldModelPuzzleBase(Puzzle):
             next_bit_latent, 0, 1
         )  # (action_size, batch_size, latent_size)
         next_states = self.State(latent=next_bit_latent)
-        next_states = jax.vmap(jax.vmap(self.State.packing))(next_states)
+        next_states = jax.vmap(jax.vmap(lambda x: x.packed))(next_states)
         cost = jnp.where(
             filleds,
             jnp.ones((self.action_size, states.latent.shape[0]), dtype=jnp.float16),

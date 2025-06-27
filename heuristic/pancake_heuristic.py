@@ -1,9 +1,9 @@
 from typing import Any, Optional
 
 import jax.numpy as jnp
+from puxle import PancakeSorting
 
 from heuristic.heuristic_base import Heuristic
-from puzzle.pancake import PancakeSorting
 
 
 class PancakeHeuristic(Heuristic):
