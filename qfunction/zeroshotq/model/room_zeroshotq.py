@@ -1,8 +1,8 @@
 import chex
 import jax.numpy as jnp
+from puxle import Room
 
 from neural_util.modules import DTYPE
-from puzzle.room import Room
 from qfunction.zeroshotq.zeroshotq_base import ZeroshotQFunctionBase
 
 
@@ -13,7 +13,7 @@ class RoomZeroshotQ(ZeroshotQFunctionBase):
         super().__init__(puzzle, **kwargs)
 
     def pre_process_solve_config(self, solve_config: Room.SolveConfig) -> Room.SolveConfig:
-        solve_config = solve_config.unpacking()
+        solve_config = solve_config.unpacked
         pos = solve_config.TargetState.pos
         maze = solve_config.Maze
         flatten_maze = maze.reshape(-1)

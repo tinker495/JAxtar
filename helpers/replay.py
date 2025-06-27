@@ -1,7 +1,6 @@
 import flashbax as fbx
 import jax.numpy as jnp
-
-from puzzle import Puzzle
+from puxle import Puzzle
 
 BUFFER_TYPE = fbx.flat_buffer.TrajectoryBuffer
 BUFFER_STATE_TYPE = fbx.flat_buffer.TrajectoryBufferState
