@@ -28,7 +28,7 @@ from .options import (
 @click.command()
 @puzzle_options
 @human_play_options
-def human_play(puzzle, seed):
+def human_play(puzzle, seed, **kwargs):
     has_target = puzzle.has_target
 
     solve_config, init_state = puzzle.get_inits(jax.random.PRNGKey(seed))
