@@ -6,13 +6,13 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
+from puxle import Puzzle
 
 from helpers.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
-from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import QModelBase
 
 

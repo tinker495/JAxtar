@@ -1,9 +1,9 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import Puzzle
 
 from helpers.util import flatten_array, flatten_tree
-from puzzle.puzzle_base import Puzzle
 
 
 def get_random_inverse_trajectory(

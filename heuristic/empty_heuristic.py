@@ -1,5 +1,6 @@
+from puxle import Puzzle
+
 from heuristic.heuristic_base import Heuristic
-from puzzle.puzzle_base import Puzzle
 
 
 class EmptyHeuristic(Heuristic):

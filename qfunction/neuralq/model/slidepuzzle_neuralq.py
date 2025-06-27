@@ -2,6 +2,7 @@ import chex
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
+from puxle import SlidePuzzle
 
 from neural_util.modules import (
     DEFAULT_NORM_FN,
@@ -10,7 +11,6 @@ from neural_util.modules import (
     ResBlock,
     conditional_dummy_norm,
 )
-from puzzle.slidepuzzle import SlidePuzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 

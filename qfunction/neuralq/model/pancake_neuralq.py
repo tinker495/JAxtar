@@ -1,9 +1,9 @@
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import PancakeSorting
 
 from neural_util.modules import DTYPE
-from puzzle.pancake import PancakeSorting
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 

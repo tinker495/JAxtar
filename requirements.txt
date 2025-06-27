@@ -1,11 +1,11 @@
-numpy>=2.2.0
+numpy
 opencv-python
 imageio
 click
 tqdm
 pre-commit
 pytest
-jax[cuda12]
+jax
 chex
 dm_pix
 dm-haiku
@@ -14,6 +14,5 @@ flax
 optax
 termcolor
 tensorboardX
-flashbax
 xtructure @ git+https://github.com/tinker495/xtructure.git
 puxle @ git+https://github.com/tinker495/PuXle.git

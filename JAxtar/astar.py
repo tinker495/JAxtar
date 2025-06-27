@@ -3,6 +3,7 @@ import time
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
@@ -14,7 +15,6 @@ from JAxtar.util import (
     unflatten_array,
     unflatten_tree,
 )
-from puzzle.puzzle_base import Puzzle
 
 
 def astar_builder(

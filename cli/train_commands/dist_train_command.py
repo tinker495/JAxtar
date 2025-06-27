@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import tensorboardX
+from puxle import Puzzle
 from tqdm import trange
 
 from helpers.replay import init_trajectory_experience_replay
@@ -12,7 +13,6 @@ from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_b
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.optimizer import setup_optimizer
 from neural_util.target_update import scaled_by_reset, soft_update
-from puzzle.puzzle_base import Puzzle
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 from qfunction.zeroshotq.zeroshot_qlearning import (
@@ -21,13 +21,13 @@ from qfunction.zeroshotq.zeroshot_qlearning import (
 )
 from qfunction.zeroshotq.zeroshotq_base import ZeroshotQFunctionBase
 
-from .dist_train_option import (
-    heuristic_options,
-    puzzle_options,
-    qfunction_options,
+from ..options import (
+    dist_heuristic_options,
+    dist_puzzle_options,
+    dist_qfunction_options,
+    dist_train_options,
+    dist_zeroshot_qfunction_options,
     replay_train_option,
-    train_option,
-    zeroshot_qfunction_options,
 )
 
 
@@ -41,9 +41,9 @@ def setup_logging(
 
 
 @click.command()
-@puzzle_options
-@heuristic_options
-@train_option
+@dist_puzzle_options
+@dist_heuristic_options
+@dist_train_options
 def davi(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
@@ -166,9 +166,9 @@ def davi(
 
 
 @click.command()
-@puzzle_options
-@qfunction_options
-@train_option
+@dist_puzzle_options
+@dist_qfunction_options
+@dist_train_options
 def qlearning(
     puzzle: Puzzle,
     qfunction: NeuralQFunctionBase,
@@ -290,8 +290,8 @@ def qlearning(
 
 
 @click.command()
-@puzzle_options
-@zeroshot_qfunction_options
+@dist_puzzle_options
+@dist_zeroshot_qfunction_options
 @replay_train_option
 @click.option(
     "--lambda-reg", type=float, default=0.001, help="Coefficient for orthonormality regularization."
