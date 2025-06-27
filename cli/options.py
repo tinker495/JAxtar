@@ -207,6 +207,7 @@ def human_play_options(func: callable) -> callable:
     def wrapper(*args, **kwargs):
         kwargs.pop("puzzle_name")
         kwargs.pop("puzzle_size")
+        kwargs.pop("puzzle_args", None)
         if len(kwargs["seeds"]) > 1:
             raise ValueError("human play is not supported multiple initial state")
         kwargs["seed"] = kwargs["seeds"][0]
