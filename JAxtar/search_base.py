@@ -315,20 +315,20 @@ class SearchResult:
 
 def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
     """
-    Creates a boolean mask identifying the first occurrence of unique values in a
-    Current_with_Parent pytree. It is robust to padding from jnp.unique.
+    Creates a boolean mask identifying unique values in a HashTableIdx_HeapValue tensor.
+    This function is used to filter out duplicate states in batched operations.
 
     Args:
-        val (Current_with_Parent): The pytree of values to check for uniqueness.
-        batch_len (int): The length of the batch dimension of the pytree.
+        val (HashTableIdx_HeapValue): The heap values to check for uniqueness
+        batch_len (int): The length of the batch
 
     Returns:
-        jnp.ndarray: Boolean mask where True indicates the first unique value.
+        jnp.ndarray: Boolean mask where True indicates unique values
     """
     hash_idx_bytes = jax.vmap(lambda x: x.current.hashidx.uint32ed)(val)
-    _, unique_indices = jnp.unique(hash_idx_bytes, axis=0, return_index=True, size=batch_len)
-    mask = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_indices].set(True)
-    return mask
+    unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
+    uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
+    return uniques
 
 
 def merge_sort_split(
@@ -337,8 +337,6 @@ def merge_sort_split(
     """
     Merges and sorts two key-value pairs, then splits them back into two equal parts.
     This operation is crucial for maintaining the heap property in the priority queue.
-    This implementation correctly handles duplicates by ensuring the entry with the
-    minimum key is kept, preserving optimality.
 
     Args:
         ak (chex.Array): First array of keys
@@ -357,13 +355,9 @@ def merge_sort_split(
     key = jnp.concatenate([ak, bk])
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
 
-    mask = unique_mask(val, 2 * n)
+    uniques = unique_mask(val, 2 * n)
+    key = jnp.where(uniques, key, jnp.inf)  # Set duplicate keys to inf
 
-    # Invalidate the keys of all non-optimal duplicates.
-    key_with_invalids = jnp.where(mask, key, jnp.inf)
-
-    # Final sort to compact the array by moving invalid keys to the end.
-    sorted_key, sorted_idx = jax.lax.sort_key_val(key_with_invalids, jnp.arange(2 * n))
+    sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(2 * n))
     sorted_val = val[sorted_idx]
-
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
