@@ -273,9 +273,9 @@ class SearchResult:
         Get the state from the hash table.
         """
         if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.hashtable.get(idx.hashidx)
+            return search_result.hashtable[idx.hashidx]
         elif isinstance(idx, HashIdx):
-            return search_result.hashtable.get(idx)
+            return search_result.hashtable[idx]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
