@@ -315,20 +315,35 @@ class SearchResult:
 
 def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
     """
-    Creates a boolean mask identifying unique values in a HashTableIdx_HeapValue tensor.
-    This function is used to filter out duplicate states in batched operations.
+    Creates a boolean mask identifying the first occurrence of unique values in a
+    Current_with_Parent pytree. It is robust to padding from jnp.unique.
 
     Args:
-        val (HashTableIdx_HeapValue): The heap values to check for uniqueness
-        batch_len (int): The length of the batch
+        val (Current_with_Parent): The pytree of values to check for uniqueness.
+        batch_len (int): The length of the batch dimension of the pytree.
 
     Returns:
-        jnp.ndarray: Boolean mask where True indicates unique values
+        jnp.ndarray: Boolean mask where True indicates the first unique value.
     """
     hash_idx_bytes = jax.vmap(lambda x: x.current.hashidx.uint32ed)(val)
-    unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
-    uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
-    return uniques
+    _unique_hashes, unique_indices = jnp.unique(
+        hash_idx_bytes, axis=0, return_index=True, size=batch_len
+    )
+
+    # The `size` argument to `jnp.unique` causes it to pad `unique_indices` with the
+    # value `batch_len`. We create the mask by scattering `True` into a boolean
+    # array, handling the out-of-bounds padded indices safely.
+    is_valid_update = unique_indices < batch_len
+    safe_indices = jnp.where(is_valid_update, unique_indices, 0)
+    # Sorting ensures that if a `False` and `True` update target index 0, the
+    # `True` is processed last, yielding the correct mask.
+    sorted_update_indices = jnp.argsort(is_valid_update)
+    mask = (
+        jnp.zeros((batch_len,), dtype=jnp.bool_)
+        .at[safe_indices[sorted_update_indices]]
+        .set(is_valid_update[sorted_update_indices])
+    )
+    return mask
 
 
 def merge_sort_split(
@@ -337,6 +352,8 @@ def merge_sort_split(
     """
     Merges and sorts two key-value pairs, then splits them back into two equal parts.
     This operation is crucial for maintaining the heap property in the priority queue.
+    This implementation correctly handles duplicates by ensuring the entry with the
+    minimum key is kept, preserving optimality.
 
     Args:
         ak (chex.Array): First array of keys
@@ -355,9 +372,20 @@ def merge_sort_split(
     key = jnp.concatenate([ak, bk])
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
 
-    uniques = unique_mask(val, 2 * n)
-    key = jnp.where(uniques, key, jnp.inf)  # Set duplicate keys to inf
+    # Sort by key first to prioritize cheaper paths for duplicate states.
+    sort_indices = jnp.argsort(key)
+    key_sorted = key[sort_indices]
+    val_sorted_by_key = jax.tree_util.tree_map(lambda leaf: leaf[sort_indices], val)
 
-    sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(2 * n))
-    sorted_val = val[sorted_idx]
+    # Now that states are sorted by key, the first occurrence of each unique state
+    # is guaranteed to be the one with the lowest key. We create a mask for these.
+    mask = unique_mask(val_sorted_by_key, 2 * n)
+
+    # Invalidate the keys of all non-optimal duplicates.
+    key_with_invalids = jnp.where(mask, key_sorted, jnp.inf)
+
+    # Final sort to compact the array by moving invalid keys to the end.
+    sorted_key, sorted_idx = jax.lax.sort_key_val(key_with_invalids, jnp.arange(2 * n))
+    sorted_val = jax.tree_util.tree_map(lambda leaf: leaf[sorted_idx], val_sorted_by_key)
+
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
