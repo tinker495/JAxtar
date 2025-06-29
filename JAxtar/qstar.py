@@ -123,6 +123,14 @@ def qstar_builder(
             # Apply the final mask to deactivate non-optimal nodes.
             flatten_neighbour_key = jnp.where(final_process_mask, flatten_neighbour_key, jnp.inf)
 
+            # Update the cost (g-value) for the newly found optimal paths.
+            search_result.cost = set_array_as_condition(
+                search_result.cost,
+                final_process_mask,
+                flatten_nextcosts,
+                hash_idx.index,
+            )
+
             # cache the q value but this is not using in search
             search_result.dist = set_array_as_condition(
                 search_result.dist,

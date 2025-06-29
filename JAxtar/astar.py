@@ -127,6 +127,15 @@ def astar_builder(
             # Combine all conditions for the final decision.
             final_process_mask = jnp.logical_and(process_mask, optimal_mask)
 
+            # Update the cost (g-value) for the newly found optimal paths before they are
+            # masked out. This ensures the cost table is always up-to-date.
+            search_result.cost = set_array_as_condition(
+                search_result.cost,
+                final_process_mask,
+                flatten_nextcosts,  # Use costs before they are set to inf
+                hash_idx.index,
+            )
+
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
