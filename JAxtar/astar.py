@@ -7,7 +7,13 @@ from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.search_base import (
+    Current,
+    Current_with_Parent,
+    Parent,
+    SearchResult,
+    unique_mask,
+)
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
@@ -107,6 +113,25 @@ def astar_builder(
                 hash_idx,
             ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
 
+            # Filter out duplicate nodes, keeping only the one with the lowest cost
+            flatten_current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
+            n_total_neighbours = flatten_filleds.shape[0]
+            cheapest_uniques_mask = unique_mask(flatten_current, n_total_neighbours)
+
+            # Nodes to process must be valid neighbors AND the cheapest unique ones
+            process_mask = jnp.logical_and(flatten_filleds, cheapest_uniques_mask)
+
+            # It must also be cheaper than any previously found path to this state.
+            optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
+
+            # Combine all conditions for the final decision.
+            final_process_mask = jnp.logical_and(process_mask, optimal_mask)
+
+            # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
+            # and updating the insertion flag. This ensures they are ignored in subsequent steps.
+            flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
+            flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
+
             argsort_idx = jnp.argsort(flatten_inserted, axis=0)  # sort by inserted
 
             flatten_inserted = flatten_inserted[argsort_idx]
@@ -156,9 +181,6 @@ def astar_builder(
                     inserted,
                 )
                 neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
-
-                optimal = jnp.less(current.cost, search_result.get_cost(current))
-                neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
                 aranged_parent = parent[parent_index]
                 vals = Current_with_Parent(

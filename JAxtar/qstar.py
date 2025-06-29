@@ -6,7 +6,13 @@ import jax.numpy as jnp
 from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.search_base import (
+    Current,
+    Current_with_Parent,
+    Parent,
+    SearchResult,
+    unique_mask,
+)
 from JAxtar.util import (
     flatten_array,
     flatten_tree,
@@ -100,13 +106,27 @@ def qstar_builder(
                 flatten_tree(neighbours, 2), flatten_filleds
             )
 
-            optimal = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
-            flatten_neighbour_key = jnp.where(optimal, flatten_neighbour_key, jnp.inf)
+            # Filter out duplicate nodes within this batch, keeping only the one with the lowest cost.
+            flatten_current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
+            n_total_neighbours = flatten_filleds.shape[0]
+            cheapest_uniques_mask = unique_mask(flatten_current, n_total_neighbours)
+
+            # A node is worth processing if it's a valid neighbor AND the cheapest unique one in the batch.
+            process_mask = jnp.logical_and(flatten_filleds, cheapest_uniques_mask)
+
+            # It must also be cheaper than any previously found path to this state.
+            optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
+
+            # Combine all conditions for the final decision.
+            final_process_mask = jnp.logical_and(process_mask, optimal_mask)
+
+            # Apply the final mask to deactivate non-optimal nodes.
+            flatten_neighbour_key = jnp.where(final_process_mask, flatten_neighbour_key, jnp.inf)
 
             # cache the q value but this is not using in search
             search_result.dist = set_array_as_condition(
                 search_result.dist,
-                flatten_filleds,
+                final_process_mask,
                 flatten_q_vals,
                 hash_idx.index,
             )
