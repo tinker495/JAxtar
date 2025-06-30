@@ -52,7 +52,7 @@ def astar_builder(
     def astar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
-    ) -> tuple[SearchResult, chex.Array]:
+    ) -> SearchResult:
         """
         astar is the implementation of the A* algorithm.
         """
@@ -140,10 +140,14 @@ def astar_builder(
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
             flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
+            sort_cost = (
+                flatten_inserted * 2 + final_process_mask * 1
+            )  # 2 is new, 1 is old but optimal, 0 is not optimal
 
-            argsort_idx = jnp.argsort(flatten_inserted, axis=0)  # sort by inserted
+            argsort_idx = jnp.argsort(sort_cost, axis=0)  # sort by inserted
 
             flatten_inserted = flatten_inserted[argsort_idx]
+            flatten_final_process_mask = final_process_mask[argsort_idx]
             flatten_neighbours = flatten_neighbours[argsort_idx]
             flatten_nextcosts = flatten_nextcosts[argsort_idx]
             flatten_parent_index = flatten_parent_index[argsort_idx]
@@ -158,6 +162,7 @@ def astar_builder(
             parent_action = unflatten_array(flatten_parent_action, filleds.shape)
             neighbours = unflatten_tree(flatten_neighbours, filleds.shape)
             inserted = unflatten_array(flatten_inserted, filleds.shape)
+            final_process_mask = unflatten_array(flatten_final_process_mask, filleds.shape)
 
             def _inserted(search_result: SearchResult, neighbour, current, inserted):
                 neighbour_heur = heuristic.batched_distance(solve_config, neighbour).astype(
@@ -172,23 +177,9 @@ def astar_builder(
                 )
                 return search_result, neighbour_heur
 
-            def _not_inserted(search_result: SearchResult, neighbour, current, inserted):
-                # get cached heuristic value
-                neighbour_heur = search_result.get_dist(current)
-                return search_result, neighbour_heur
-
-            def _scan(search_result: SearchResult, val):
-                neighbour, parent_action, current, inserted, parent_index = val
-
-                search_result, neighbour_heur = jax.lax.cond(
-                    jnp.any(inserted),
-                    _inserted,
-                    _not_inserted,
-                    search_result,
-                    neighbour,
-                    current,
-                    inserted,
-                )
+            def _queue_insert(
+                search_result: SearchResult, current, neighbour_heur, parent_index, parent_action
+            ):
                 neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
 
                 aranged_parent = parent[parent_index]
@@ -204,12 +195,37 @@ def astar_builder(
                     neighbour_key,
                     vals,
                 )
+                return search_result
+
+            def _scan(search_result: SearchResult, val):
+                neighbour, parent_action, current, inserted, final_process_mask, parent_index = val
+
+                search_result, neighbour_heur = jax.lax.cond(
+                    jnp.any(inserted),
+                    _inserted,
+                    _not_inserted,
+                    search_result,
+                    neighbour,
+                    current,
+                    inserted,
+                )
+
+                search_result = jax.lax.cond(
+                    jnp.any(final_process_mask),
+                    _queue_insert,
+                    _queue_not_insert,
+                    search_result,
+                    current,
+                    neighbour_heur,
+                    parent_index,
+                    parent_action,
+                )
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbours, parent_action, current, inserted, parent_indexs),
+                (neighbours, parent_action, current, inserted, final_process_mask, parent_indexs),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
@@ -243,3 +259,15 @@ def astar_builder(
         print("JIT compiled\n\n")
 
     return astar_fn
+
+
+def _not_inserted(search_result: SearchResult, neighbour, current, inserted):
+    # get cached heuristic value
+    neighbour_heur = search_result.get_dist(current)
+    return search_result, neighbour_heur
+
+
+def _queue_not_insert(
+    search_result: SearchResult, current, neighbour_heur, parent_index, parent_action
+):
+    return search_result

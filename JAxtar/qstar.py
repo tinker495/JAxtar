@@ -52,7 +52,7 @@ def qstar_builder(
     def qstar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
-    ) -> tuple[SearchResult, chex.Array]:
+    ) -> SearchResult:
         """
         qstar is the implementation of the Q* algorithm.
         """
@@ -88,30 +88,44 @@ def qstar_builder(
             states = search_result.get_state(parent)
 
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
-            parent_action = jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)
+            parent_action = jnp.tile(
+                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[jnp.newaxis, :],
+                (1, ncost.shape[1]),
+            )  # [n_neighbours, batch_size]
             nextcosts = (cost[jnp.newaxis, :] + ncost).astype(
                 KEY_DTYPE
             )  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
+            parent_index = jnp.tile(
+                jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
+                (ncost.shape[0],),
+            )  # [n_neighbours, batch_size]
+
+            # Compute Q-values for parent states (not neighbors)
+            # This gives us Q(s, a) for all actions from parent states
             q_vals = (
                 q_fn.batched_q_value(solve_config, states).transpose().astype(KEY_DTYPE)
             )  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
-            neighbour_key = (cost_weight * nextcosts + q_vals).astype(KEY_DTYPE)
 
+            flatten_neighbours = flatten_tree(neighbours, 2)
             flatten_filleds = flatten_array(filleds, 2)
-            flatten_q_vals = flatten_array(q_vals, 2)
             flatten_nextcosts = flatten_array(nextcosts, 2)
-            flatten_neighbour_key = flatten_array(neighbour_key, 2)
-            (search_result.hashtable, _, _, hash_idx,) = search_result.hashtable.parallel_insert(
-                flatten_tree(neighbours, 2), flatten_filleds
-            )
+            flatten_parent_index = flatten_array(parent_index, 2)
+            flatten_parent_action = flatten_array(parent_action, 2)
+            flatten_q_vals = flatten_array(q_vals, 2)
+            (
+                search_result.hashtable,
+                flatten_inserted,
+                _,
+                hash_idx,
+            ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
 
-            # Filter out duplicate nodes within this batch, keeping only the one with the lowest cost.
+            # Filter out duplicate nodes, keeping only the one with the lowest cost
             flatten_current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
             n_total_neighbours = flatten_filleds.shape[0]
             cheapest_uniques_mask = unique_mask(flatten_current, n_total_neighbours)
 
-            # A node is worth processing if it's a valid neighbor AND the cheapest unique one in the batch.
+            # Nodes to process must be valid neighbors AND the cheapest unique ones
             process_mask = jnp.logical_and(flatten_filleds, cheapest_uniques_mask)
 
             # It must also be cheaper than any previously found path to this state.
@@ -120,38 +134,54 @@ def qstar_builder(
             # Combine all conditions for the final decision.
             final_process_mask = jnp.logical_and(process_mask, optimal_mask)
 
-            # Apply the final mask to deactivate non-optimal nodes.
-            flatten_neighbour_key = jnp.where(final_process_mask, flatten_neighbour_key, jnp.inf)
-
-            # Update the cost (g-value) for the newly found optimal paths.
+            # Update the cost (g-value) for the newly found optimal paths before they are
+            # masked out. This ensures the cost table is always up-to-date.
             search_result.cost = set_array_as_condition(
                 search_result.cost,
                 final_process_mask,
-                flatten_nextcosts,
+                flatten_nextcosts,  # Use costs before they are set to inf
                 hash_idx.index,
             )
 
-            # cache the q value but this is not using in search
-            search_result.dist = set_array_as_condition(
-                search_result.dist,
-                final_process_mask,
-                flatten_q_vals,
-                hash_idx.index,
-            )
+            # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
+            # and updating the insertion flag. This ensures they are ignored in subsequent steps.
+            flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
+            flatten_q_vals = jnp.where(final_process_mask, flatten_q_vals, jnp.inf)
+            flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
+            sort_cost = (
+                flatten_inserted * 2 + final_process_mask * 1
+            )  # 2 is new, 1 is old but optimal, 0 is not optimal
+
+            argsort_idx = jnp.argsort(sort_cost, axis=0)  # sort by inserted
+
+            flatten_inserted = flatten_inserted[argsort_idx]
+            flatten_final_process_mask = final_process_mask[argsort_idx]
+            flatten_nextcosts = flatten_nextcosts[argsort_idx]
+            flatten_q_vals = flatten_q_vals[argsort_idx]
+            flatten_parent_index = flatten_parent_index[argsort_idx]
+            flatten_parent_action = flatten_parent_action[argsort_idx]
+
+            hash_idx = hash_idx[argsort_idx]
 
             hash_idx = unflatten_tree(hash_idx, filleds.shape)
+            nextcosts = unflatten_array(flatten_nextcosts, filleds.shape)
+            q_vals = unflatten_array(flatten_q_vals, filleds.shape)
             current = Current(hashidx=hash_idx, cost=nextcosts)
-            neighbour_key = unflatten_array(flatten_neighbour_key, filleds.shape)
+            parent_indexs = unflatten_array(flatten_parent_index, filleds.shape)
+            parent_action = unflatten_array(flatten_parent_action, filleds.shape)
+            final_process_mask = unflatten_array(flatten_final_process_mask, filleds.shape)
 
-            def _scan(search_result: SearchResult, val):
-                neighbour_key, parent_action, current = val
+            def _queue_insert(
+                search_result: SearchResult, current, q_vals, parent_index, parent_action
+            ):
+                neighbour_key = (cost_weight * current.cost + q_vals).astype(KEY_DTYPE)
 
-                parent_action = jnp.tile(parent_action, (neighbour_key.shape[0],))
+                aranged_parent = parent[parent_index]
                 vals = Current_with_Parent(
                     current=current,
                     parent=Parent(
                         action=parent_action,
-                        hashidx=parent.hashidx,
+                        hashidx=aranged_parent.hashidx,
                     ),
                 )
 
@@ -159,12 +189,32 @@ def qstar_builder(
                     neighbour_key,
                     vals,
                 )
+                return search_result
+
+            def _queue_not_insert(
+                search_result: SearchResult, current, q_vals, parent_index, parent_action
+            ):
+                return search_result
+
+            def _scan(search_result: SearchResult, val):
+                parent_action, current, q_vals, final_process_mask, parent_index = val
+
+                search_result = jax.lax.cond(
+                    jnp.any(final_process_mask),
+                    _queue_insert,
+                    _queue_not_insert,
+                    search_result,
+                    current,
+                    q_vals,
+                    parent_index,
+                    parent_action,
+                )
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbour_key, parent_action, current),
+                (parent_action, current, q_vals, final_process_mask, parent_indexs),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
