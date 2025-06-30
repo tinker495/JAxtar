@@ -260,9 +260,15 @@ class SearchResult:
 
         path = [solved_idx]
         parent_last = search_result.get_parent(solved_idx)
+        visited = set()
         while True:
-            if parent_last.hashidx.index == -1:
+            idx = int(parent_last.hashidx.index)
+            if idx == -1:
                 break
+            if idx in visited:
+                print(f"Loop detected in path reconstruction at index {idx}")
+                break
+            visited.add(idx)
             path.append(parent_last)
             parent_last = search_result.get_parent(parent_last)
         path.reverse()

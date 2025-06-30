@@ -79,6 +79,7 @@ def qstar_builder(
 
             states = search_result.get_state(parent)
             solved = puzzle.batched_is_solved(solve_config, states)
+            solved = jnp.logical_and(solved, filled)
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(input: tuple[SearchResult, Current, chex.Array]):
