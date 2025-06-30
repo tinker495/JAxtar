@@ -191,11 +191,6 @@ def qstar_builder(
                 )
                 return search_result
 
-            def _queue_not_insert(
-                search_result: SearchResult, current, q_vals, parent_index, parent_action
-            ):
-                return search_result
-
             def _scan(search_result: SearchResult, val):
                 parent_action, current, q_vals, final_process_mask, parent_index = val
 
@@ -248,3 +243,7 @@ def qstar_builder(
         print("JIT compiled\n\n")
 
     return qstar_fn
+
+
+def _queue_not_insert(search_result: SearchResult, current, q_vals, parent_index, parent_action):
+    return search_result
