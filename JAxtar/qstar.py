@@ -52,7 +52,7 @@ def qstar_builder(
     def qstar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
-    ) -> tuple[SearchResult, chex.Array]:
+    ) -> SearchResult:
         """
         qstar is the implementation of the Q* algorithm.
         """
