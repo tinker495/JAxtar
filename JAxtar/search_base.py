@@ -263,7 +263,7 @@ class SearchResult:
         visited = set()
         while True:
             idx = int(parent_last.hashidx.index)
-            if idx == -1:
+            if parent_last.hashidx.index == -1:
                 break
             if idx in visited:
                 print(f"Loop detected in path reconstruction at index {idx}")
