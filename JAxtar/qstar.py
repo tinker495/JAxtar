@@ -4,22 +4,11 @@ import chex
 import jax
 import jax.numpy as jnp
 from puxle import Puzzle
+from xtructure import xtructure_numpy as xnp
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.search_base import (
-    Current,
-    Current_with_Parent,
-    Parent,
-    SearchResult,
-    unique_mask,
-)
-from JAxtar.util import (
-    flatten_array,
-    flatten_tree,
-    set_array_as_condition,
-    unflatten_array,
-    unflatten_tree,
-)
+from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.util import flatten_array, flatten_tree, unflatten_array, unflatten_tree
 from qfunction.q_base import QFunction
 
 
@@ -122,9 +111,7 @@ def qstar_builder(
             ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
 
             # Filter out duplicate nodes, keeping only the one with the lowest cost
-            flatten_current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
-            n_total_neighbours = flatten_filleds.shape[0]
-            cheapest_uniques_mask = unique_mask(flatten_current, n_total_neighbours)
+            cheapest_uniques_mask = xnp.unique_mask(hash_idx, flatten_nextcosts)
 
             # Nodes to process must be valid neighbors AND the cheapest unique ones
             process_mask = jnp.logical_and(flatten_filleds, cheapest_uniques_mask)
@@ -137,11 +124,11 @@ def qstar_builder(
 
             # Update the cost (g-value) for the newly found optimal paths before they are
             # masked out. This ensures the cost table is always up-to-date.
-            search_result.cost = set_array_as_condition(
+            search_result.cost = xnp.set_as_condition_on_array(
                 search_result.cost,
+                hash_idx.index,
                 final_process_mask,
                 flatten_nextcosts,  # Use costs before they are set to inf
-                hash_idx.index,
             )
 
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity

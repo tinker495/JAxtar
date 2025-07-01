@@ -22,6 +22,7 @@ from xtructure import (
     Xtructurable,
     xtructure_dataclass,
 )
+from xtructure import xtructure_numpy as xnp
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -29,7 +30,6 @@ from JAxtar.annotate import (
     HASH_SIZE_MULTIPLIER,
     KEY_DTYPE,
 )
-from JAxtar.util import set_array_as_condition
 
 
 @xtructure_dataclass
@@ -240,11 +240,11 @@ class SearchResult:
         )
 
         # Update the closed set
-        search_result.cost = set_array_as_condition(
+        search_result.cost = xnp.set_as_condition_on_array(
             search_result.cost,
+            min_val.current.hashidx.index,
             filled,
             min_val.current.cost,
-            min_val.current.hashidx.index,
         )
         search_result.parent = search_result.parent.at[
             min_val.current.hashidx.index
@@ -319,53 +319,6 @@ class SearchResult:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
 
-def unique_mask(val: Current, batch_len: int) -> chex.Array:
-    """
-    Creates a boolean mask identifying unique values in a Current_with_Parent tensor,
-    keeping only the entry with the minimum cost for each unique state.
-    This function is used to filter out duplicate states in batched operations,
-    ensuring only the cheapest path to a state is considered.
-
-    Args:
-        val (Current_with_Parent): The values to check for uniqueness.
-        batch_len (int): The length of the batch.
-
-    Returns:
-        jnp.ndarray: Boolean mask where True indicates the single, cheapest unique value.
-    """
-    # 1. Isolate Keys
-    hash_bytes = jax.vmap(lambda x: x.hashidx.uint32ed)(val)
-    costs = val.cost
-    batch_idx = jnp.arange(batch_len, dtype=jnp.int32)
-
-    # 2. Group by Hash
-    # The size argument is crucial for JIT compilation
-    _unique_hashes, inv = jnp.unique(hash_bytes, axis=0, size=batch_len, return_inverse=True)
-
-    # 3. Find Minimum Cost per Group
-    min_costs_per_group = jnp.full((batch_len,), jnp.inf, dtype=costs.dtype)
-    min_costs_per_group = min_costs_per_group.at[inv].min(costs)
-
-    # 4. Primary Mask (Cost Criterion)
-    min_cost_for_each_item = min_costs_per_group[inv]
-    is_min_cost = costs == min_cost_for_each_item
-
-    # 5. Tie-Breaking (Index Criterion)
-    indices_to_consider = jnp.where(is_min_cost, batch_idx, batch_len)
-    winning_indices_per_group = jnp.full((batch_len,), batch_len, dtype=jnp.int32)
-    winning_indices_per_group = winning_indices_per_group.at[inv].min(indices_to_consider)
-
-    # 6. Final Mask
-    winning_index_for_each_item = winning_indices_per_group[inv]
-    final_mask = batch_idx == winning_index_for_each_item
-
-    # Ensure that invalid (padding) entries with infinite cost are not selected.
-    is_valid = costs < jnp.inf
-    final_mask = jnp.logical_and(final_mask, is_valid)
-
-    return final_mask
-
-
 def merge_sort_split(
     ak: chex.Array, av: Current_with_Parent, bk: chex.Array, bv: Current_with_Parent
 ) -> tuple[chex.Array, Current_with_Parent, chex.Array, Current_with_Parent]:
@@ -388,9 +341,9 @@ def merge_sort_split(
     """
     n = ak.shape[-1]  # size of group
     key = jnp.concatenate([ak, bk])
-    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+    val = xnp.concatenate([av, bv])
 
-    uniques = unique_mask(val.current, 2 * n)
+    uniques = xnp.unique_mask(val.current.hashidx, val.current.cost)
     key = jnp.where(uniques, key, jnp.inf)  # Set duplicate keys to inf
 
     sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(2 * n))
