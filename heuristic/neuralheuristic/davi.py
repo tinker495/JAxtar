@@ -13,12 +13,12 @@ from helpers.sampling import (
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
-from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
 
 
 def davi_builder(
     minibatch_size: int,
-    heuristic_model: NeuralHeuristicBase,
+    heuristic_model: HeuristicBase,
     optimizer: optax.GradientTransformation,
     importance_sampling: int = True,
     importance_sampling_alpha: float = 0.5,
@@ -160,7 +160,7 @@ def davi_builder(
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_model: NeuralHeuristicBase,
+    heuristic_model: HeuristicBase,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
@@ -239,7 +239,7 @@ def _get_datasets(
 def get_heuristic_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_model: NeuralHeuristicBase,
+    heuristic_model: HeuristicBase,
     dataset_size: int,
     shuffle_length: int,
     dataset_minibatch_size: int,
