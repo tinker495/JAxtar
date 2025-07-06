@@ -59,12 +59,11 @@ def davi(
         train_options.tau,
     )
 
-    n_devices = 1
     steps = train_options.steps
     update_interval = train_options.update_interval
     reset_interval = train_options.reset_interval
-    if train_options.multi_device:
-        n_devices = jax.device_count()
+    n_devices = jax.device_count()
+    if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
         update_interval = update_interval // n_devices
         reset_interval = reset_interval // n_devices
@@ -180,11 +179,11 @@ def qlearning(
         train_options.tau,
     )
 
-    n_devices = 1
     steps = train_options.steps
     update_interval = train_options.update_interval
     reset_interval = train_options.reset_interval
-    if train_options.multi_device:
+    n_devices = jax.device_count()
+    if train_options.multi_device and n_devices > 1:
         n_devices = jax.device_count()
         steps = steps // n_devices
         update_interval = update_interval // n_devices

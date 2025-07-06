@@ -64,7 +64,7 @@ class DistTrainOptions(BaseModel):
     using_hindsight_target: bool = False
     using_importance_sampling: bool = False
     debug: bool = False
-    multi_device: bool = False
+    multi_device: bool = True
     reset_interval: int = 4000
     tau: float = 0.2
 
