@@ -249,12 +249,14 @@ def dist_train_options(func: callable) -> callable:
     @click.option("--reset_interval", type=int, default=None)
     @click.option("--tau", type=float, default=None)
     @click.option(
+        "-sl",
         "--shuffle_length",
         type=int,
         default=None,
         help="Override puzzle's default shuffle length.",
     )
     @click.option(
+        "-pre",
         "--preset",
         type=click.Choice(list(train_presets.keys())),
         default="default",
