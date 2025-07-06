@@ -184,7 +184,6 @@ def qlearning(
     reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
-        n_devices = jax.device_count()
         steps = steps // n_devices
         update_interval = update_interval // n_devices
         reset_interval = reset_interval // n_devices
