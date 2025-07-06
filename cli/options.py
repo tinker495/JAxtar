@@ -3,20 +3,21 @@ from functools import wraps
 
 import click
 import jax
-import jax.numpy as jnp
 
-from config import (
-    puzzle_dict,
-    puzzle_dict_ds,
-    puzzle_dict_hard,
-    puzzle_heuristic_dict,
-    puzzle_heuristic_dict_nn,
-    puzzle_q_dict,
-    puzzle_q_dict_nn,
-    world_model_dict,
-    world_model_ds_dict,
+from config import puzzle_bundles, world_model_bundles
+from config.pydantic_models import (
+    DistQFunctionOptions,
+    DistTrainOptions,
+    HeuristicOptions,
+    PuzzleOptions,
+    QFunctionOptions,
+    SearchOptions,
+    VisualizeOptions,
+    WMDatasetOptions,
+    WMGetDSOptions,
+    WMGetModelOptions,
+    WMTrainOptions,
 )
-from helpers.formatting import human_format_to_float
 from heuristic.heuristic_base import Heuristic
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
@@ -24,7 +25,6 @@ from qfunction.q_base import QFunction
 
 
 def create_puzzle_options(
-    puzzle_dict_map,
     default_puzzle: str,
     use_hard_flag=False,
     puzzle_ds_flag=False,
@@ -33,35 +33,41 @@ def create_puzzle_options(
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            input_args = {}
-            if kwargs["puzzle_args"]:
-                input_args = json.loads(kwargs["puzzle_args"])
-            puzzle_name = kwargs["puzzle"]
-            puzzle_size = kwargs["puzzle_size"]
-            if puzzle_size != "default":
-                puzzle_size = int(puzzle_size)
-                input_args["size"] = puzzle_size
+            puzzle_opts = PuzzleOptions(**{k: kwargs.pop(k) for k in PuzzleOptions.model_fields})
+            puzzle_name = puzzle_opts.puzzle
+            puzzle_bundle = puzzle_bundles[puzzle_name]
 
-            if use_hard_flag and kwargs.get("hard"):
-                puzzle_instance = puzzle_dict_hard[puzzle_name](**input_args)
+            input_args = {}
+            if puzzle_opts.puzzle_args:
+                input_args = json.loads(puzzle_opts.puzzle_args)
+
+            if puzzle_opts.puzzle_size != "default":
+                input_args["size"] = int(puzzle_opts.puzzle_size)
+
+            if use_hard_flag and puzzle_opts.hard:
+                puzzle_callable = puzzle_bundle.puzzle_hard
+            elif puzzle_ds_flag:
+                # This part is tricky. world_model_bundles has the specific puzzle_for_ds_gen
+                # For now, let's assume the puzzle name exists in puzzle_bundles for ds-gen.
+                # This will be handled more robustly in the world model options.
+                puzzle_callable = puzzle_bundle.puzzle
             else:
-                puzzle_instance = puzzle_dict_map[puzzle_name](**input_args)
+                puzzle_callable = puzzle_bundle.puzzle
+
+            if puzzle_callable is None:
+                raise click.UsageError(
+                    f"Puzzle type for '{puzzle_name}'"
+                    f"{' (hard)' if puzzle_opts.hard else ''} is not defined."
+                )
+
+            puzzle_instance = puzzle_callable(**input_args)
 
             kwargs["puzzle"] = puzzle_instance
             kwargs["puzzle_name"] = puzzle_name
-            kwargs["puzzle_size"] = puzzle_size
-
-            if use_hard_flag:
-                kwargs.pop("hard", None)
+            kwargs["puzzle_bundle"] = puzzle_bundle
 
             if use_seeds_flag:
-                if kwargs["seeds"].isdigit():
-                    kwargs["seeds"] = [int(kwargs["seeds"])]
-                else:
-                    try:
-                        kwargs["seeds"] = [int(s) for s in kwargs["seeds"].split(",")]
-                    except ValueError:
-                        raise ValueError("Invalid seeds")
+                kwargs["seeds"] = puzzle_opts.get_seed_list()
 
             return func(*args, **kwargs)
 
@@ -76,18 +82,16 @@ def create_puzzle_options(
         wrapper = click.option(
             "-ps", "--puzzle_size", default="default", type=str, help="Size of the puzzle"
         )(wrapper)
+
         if use_hard_flag:
             wrapper = click.option(
                 "-h", "--hard", default=False, is_flag=True, help="Use the hard puzzle"
             )(wrapper)
 
-        choices = list(puzzle_dict_map.keys())
-        if use_hard_flag:
-            # To avoid duplicates and preserve order
-            hard_keys = [k for k in puzzle_dict_hard.keys() if k not in choices]
-            choices.extend(hard_keys)
-        elif puzzle_ds_flag:
-            choices = list(puzzle_dict_ds.keys())
+        if puzzle_ds_flag:
+            choices = list(world_model_bundles.keys())
+        else:
+            choices = list(puzzle_bundles.keys())
 
         wrapper = click.option(
             "-p",
@@ -102,20 +106,14 @@ def create_puzzle_options(
 
 
 puzzle_options = create_puzzle_options(
-    puzzle_dict, default_puzzle="n-puzzle", use_hard_flag=True, use_seeds_flag=True
+    default_puzzle="n-puzzle", use_hard_flag=True, use_seeds_flag=True
 )
-dist_puzzle_options = create_puzzle_options(
-    puzzle_dict, default_puzzle="rubikscube", use_hard_flag=True
-)
-wm_puzzle_ds_options = create_puzzle_options(
-    puzzle_dict_ds, default_puzzle="rubikscube", puzzle_ds_flag=True
-)
+dist_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", use_hard_flag=True)
+wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
 
 
 def search_options(func: callable) -> callable:
-    @click.option(
-        "-m", "--max_node_size", default="2e6", type=str, help="Size of the puzzle"
-    )  # this is a float for input like 2e6
+    @click.option("-m", "--max_node_size", default="2e6", type=str, help="Size of the puzzle")
     @click.option("-b", "--batch_size", default=int(1e4), type=int, help="Batch size for BGPQ")
     @click.option("-w", "--cost_weight", default=0.9, help="Weight for the A* search")
     @click.option("-vm", "--vmap_size", default=1, help="Size for the vmap")
@@ -124,16 +122,14 @@ def search_options(func: callable) -> callable:
     @click.option("--show_compile_time", is_flag=True, help="Show compile time")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if kwargs["debug"]:
-            # disable jit
+        search_opts = SearchOptions(**{k: kwargs.pop(k) for k in SearchOptions.model_fields})
+        if search_opts.debug:
             print("Disabling JIT")
             jax.config.update("jax_disable_jit", True)
+            search_opts.max_node_size = "10000"
+            search_opts.batch_size = 100
 
-            # scale down the sizes for debugging
-            kwargs["max_node_size"] = 10000
-            kwargs["batch_size"] = 100
-        kwargs.pop("debug")
-        kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
+        kwargs["search_options"] = search_opts
         return func(*args, **kwargs)
 
     return wrapper
@@ -143,21 +139,29 @@ def heuristic_options(func: callable) -> callable:
     @click.option("-nn", "--neural_heuristic", is_flag=True, help="Use neural heuristic")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        puzzle_name = kwargs["puzzle_name"]
-        neural_heuristic = kwargs["neural_heuristic"]
+        heuristic_opts = HeuristicOptions(
+            **{k: kwargs.pop(k) for k in HeuristicOptions.model_fields}
+        )
+        puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
-        if neural_heuristic:
-            try:
-                heuristic: Heuristic = puzzle_heuristic_dict_nn[puzzle_name](puzzle, False)
-            except KeyError:
-                print("Neural heuristic not available for this puzzle")
-                print(f"list of neural heuristic: {puzzle_heuristic_dict_nn.keys()}")
-                exit(1)
+
+        if heuristic_opts.neural_heuristic:
+            heuristic_callable = puzzle_bundle.heuristic_nn
+            if heuristic_callable is None:
+                raise click.UsageError(
+                    f"Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
+                )
+            heuristic: Heuristic = heuristic_callable(puzzle, False)
         else:
-            heuristic: Heuristic = puzzle_heuristic_dict[puzzle_name](puzzle)
+            heuristic_callable = puzzle_bundle.heuristic
+            if heuristic_callable is None:
+                raise click.UsageError(
+                    f"Heuristic not available for puzzle '{kwargs['puzzle_name']}'."
+                )
+            heuristic: Heuristic = heuristic_callable(puzzle)
+
         kwargs["heuristic"] = heuristic
-        kwargs.pop("neural_heuristic")
-        kwargs.pop("puzzle_size")
+        kwargs["heuristic_options"] = heuristic_opts
         return func(*args, **kwargs)
 
     return wrapper
@@ -167,21 +171,27 @@ def qfunction_options(func: callable) -> callable:
     @click.option("-nn", "--neural_qfunction", is_flag=True, help="Use neural q function")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        puzzle_name = kwargs["puzzle_name"]
-        neural_qfunction = kwargs["neural_qfunction"]
+        q_opts = QFunctionOptions(**{k: kwargs.pop(k) for k in QFunctionOptions.model_fields})
+        puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
-        if neural_qfunction:
-            try:
-                qfunction: QFunction = puzzle_q_dict_nn[puzzle_name](puzzle, False)
-            except KeyError:
-                print("Neural qfunction not available for this puzzle")
-                print(f"list of neural qfunction: {puzzle_q_dict_nn.keys()}")
-                exit(1)
+
+        if q_opts.neural_qfunction:
+            q_callable = puzzle_bundle.q_function_nn
+            if q_callable is None:
+                raise click.UsageError(
+                    f"Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
+                )
+            qfunction: QFunction = q_callable(puzzle, False)
         else:
-            qfunction: QFunction = puzzle_q_dict[puzzle_name](puzzle)
+            q_callable = puzzle_bundle.q_function
+            if q_callable is None:
+                raise click.UsageError(
+                    f"Q-function not available for puzzle '{kwargs['puzzle_name']}'."
+                )
+            qfunction: QFunction = q_callable(puzzle)
+
         kwargs["qfunction"] = qfunction
-        kwargs.pop("neural_qfunction")
-        kwargs.pop("puzzle_size")
+        kwargs["q_options"] = q_opts
         return func(*args, **kwargs)
 
     return wrapper
@@ -197,6 +207,8 @@ def visualize_options(func: callable) -> callable:
     @click.option("-mt", "--max_animation_time", default=10, type=int, help="Max animation time")
     @wraps(func)
     def wrapper(*args, **kwargs):
+        vis_opts = VisualizeOptions(**{k: kwargs.pop(k) for k in VisualizeOptions.model_fields})
+        kwargs["visualize_options"] = vis_opts
         return func(*args, **kwargs)
 
     return wrapper
@@ -205,13 +217,12 @@ def visualize_options(func: callable) -> callable:
 def human_play_options(func: callable) -> callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
+        kwargs.pop("puzzle_bundle")
         kwargs.pop("puzzle_name")
-        kwargs.pop("puzzle_size")
-        kwargs.pop("puzzle_args", None)
-        if len(kwargs["seeds"]) > 1:
+        seeds = kwargs.pop("seeds")
+        if len(seeds) > 1:
             raise ValueError("human play is not supported multiple initial state")
-        kwargs["seed"] = kwargs["seeds"][0]
-        kwargs.pop("seeds")
+        kwargs["seed"] = seeds[0]
         return func(*args, **kwargs)
 
     return wrapper
@@ -240,10 +251,11 @@ def dist_train_options(func: callable) -> callable:
     @click.option("--tau", type=float, default=0.2, help="Tau for scaled by reset")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if kwargs["debug"]:
-            # disable jit
+        train_opts = DistTrainOptions(**{k: kwargs.pop(k) for k in DistTrainOptions.model_fields})
+        if train_opts.debug:
             print("Disabling JIT")
             jax.config.update("jax_disable_jit", True)
+        kwargs["train_options"] = train_opts
         return func(*args, **kwargs)
 
     return wrapper
@@ -252,18 +264,18 @@ def dist_train_options(func: callable) -> callable:
 def dist_heuristic_options(func: callable) -> callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
-        puzzle_name = kwargs["puzzle_name"]
-        puzzle_size = kwargs["puzzle_size"]
+        puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
-        reset = kwargs["reset"]
-        try:
-            heuristic: NeuralHeuristicBase = puzzle_heuristic_dict_nn[puzzle_name](
-                puzzle_size, puzzle, reset
+        reset = kwargs["train_options"].reset
+
+        heuristic_callable = puzzle_bundle.heuristic_nn
+        if heuristic_callable is None:
+            raise click.UsageError(
+                f"Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
             )
-        except KeyError:
-            raise ValueError(f"No Neural Heuristic for {puzzle_name} with size {puzzle_size}")
+
+        heuristic: NeuralHeuristicBase = heuristic_callable(puzzle, reset)
         kwargs["heuristic"] = heuristic
-        kwargs.pop("reset")
         return func(*args, **kwargs)
 
     return wrapper
@@ -273,20 +285,22 @@ def dist_qfunction_options(func: callable) -> callable:
     @click.option("-nwp", "--not_with_policy", is_flag=True, help="Not use policy for training")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        puzzle_name = kwargs["puzzle_name"]
-        puzzle_size = kwargs["puzzle_size"]
+        q_opts = DistQFunctionOptions(
+            **{k: kwargs.pop(k) for k in DistQFunctionOptions.model_fields}
+        )
+        puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
-        reset = kwargs["reset"]
-        try:
-            qfunction: NeuralQFunctionBase = puzzle_q_dict_nn[puzzle_name](
-                puzzle_size, puzzle, reset
+        reset = kwargs["train_options"].reset
+
+        q_callable = puzzle_bundle.q_function_nn
+        if q_callable is None:
+            raise click.UsageError(
+                f"Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
             )
-        except KeyError:
-            raise ValueError(f"No Neural Q Function for {puzzle_name} with size {puzzle_size}")
+
+        qfunction: NeuralQFunctionBase = q_callable(puzzle, reset)
         kwargs["qfunction"] = qfunction
-        kwargs["with_policy"] = not kwargs["not_with_policy"]
-        kwargs.pop("not_with_policy")
-        kwargs.pop("reset")
+        kwargs["with_policy"] = not q_opts.not_with_policy
         return func(*args, **kwargs)
 
     return wrapper
@@ -297,24 +311,27 @@ def wm_get_ds_options(func: callable) -> callable:
         "-ds",
         "--dataset",
         default="rubikscube",
-        type=click.Choice(world_model_ds_dict.keys()),
+        type=click.Choice(list(world_model_bundles.keys())),
         help="Dataset to use",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        dataset_name = kwargs["dataset"]
-        dataset_path = world_model_ds_dict[dataset_name]
+        get_ds_opts = WMGetDSOptions(**{k: kwargs.pop(k) for k in WMGetDSOptions.model_fields})
+        dataset_name = get_ds_opts.dataset
+        wm_bundle = world_model_bundles[dataset_name]
+        dataset_path = wm_bundle.dataset_path
 
-        datas = jnp.load(dataset_path + "/images.npy")
-        next_datas = jnp.load(dataset_path + "/next_images.npy")
-        actions = jnp.load(dataset_path + "/actions.npy")
+        datas = jax.numpy.load(dataset_path + "/images.npy")
+        next_datas = jax.numpy.load(dataset_path + "/next_images.npy")
+        actions = jax.numpy.load(dataset_path + "/actions.npy")
         kwargs["datas"] = datas
         kwargs["next_datas"] = next_datas
         kwargs["actions"] = actions
 
-        eval_trajectory = jnp.load(dataset_path + "/eval_traj_images.npy")
-        eval_actions = jnp.load(dataset_path + "/eval_actions.npy")
+        eval_trajectory = jax.numpy.load(dataset_path + "/eval_traj_images.npy")
+        eval_actions = jax.numpy.load(dataset_path + "/eval_actions.npy")
         kwargs["eval_trajectory"] = (eval_trajectory, eval_actions)
+        kwargs["get_ds_options"] = get_ds_opts
         return func(*args, **kwargs)
 
     return wrapper
@@ -324,15 +341,20 @@ def wm_get_world_model_options(func: callable) -> callable:
     @click.option(
         "--world_model",
         default="rubikscube",
-        type=click.Choice(world_model_dict.keys()),
+        type=click.Choice(list(world_model_bundles.keys())),
         help="World model to use",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        world_model_name = kwargs["world_model"]
-        world_model = world_model_dict[world_model_name]
-        kwargs["world_model"] = world_model(reset=True)
+        wm_model_opts = WMGetModelOptions(
+            **{k: kwargs.pop(k) for k in WMGetModelOptions.model_fields}
+        )
+        world_model_name = wm_model_opts.world_model
+        wm_bundle = world_model_bundles[world_model_name]
+        world_model = wm_bundle.world_model(reset=True)
+        kwargs["world_model"] = world_model
         kwargs["world_model_name"] = world_model_name
+        kwargs["wm_model_options"] = wm_model_opts
         return func(*args, **kwargs)
 
     return wrapper
@@ -343,6 +365,8 @@ def wm_train_options(func: callable) -> callable:
     @click.option("--mini_batch_size", type=int, default=1000, help="Batch size")
     @wraps(func)
     def wrapper(*args, **kwargs):
+        wm_train_opts = WMTrainOptions(**{k: kwargs.pop(k) for k in WMTrainOptions.model_fields})
+        kwargs["wm_train_options"] = wm_train_opts
         return func(*args, **kwargs)
 
     return wrapper
@@ -356,6 +380,23 @@ def wm_dataset_options(func: callable) -> callable:
     @click.option("--key", type=int, default=0)
     @wraps(func)
     def wrapper(*args, **kwargs):
+        # This decorator passes puzzle_name from another decorator,
+        # but the puzzle object itself is what we need now.
+        # Overwriting the puzzle in kwargs with the one for dataset generation
+        puzzle_name = kwargs["puzzle_name"]
+        if puzzle_name not in world_model_bundles:
+            raise click.UsageError(
+                f"World model dataset generation is not defined for '{puzzle_name}'"
+            )
+
+        wm_bundle = world_model_bundles[puzzle_name]
+        puzzle_callable = wm_bundle.puzzle_for_ds_gen
+        kwargs["puzzle"] = puzzle_callable()
+
+        wm_dataset_opts = WMDatasetOptions(
+            **{k: kwargs.pop(k) for k in WMDatasetOptions.model_fields}
+        )
+        kwargs["wm_dataset_options"] = wm_dataset_opts
         return func(*args, **kwargs)
 
     return wrapper

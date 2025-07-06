@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import tensorboardX
 from tqdm import trange
 
+from config.pydantic_models import WMTrainOptions
 from neural_util.optimizer import setup_optimizer
 from neural_util.util import round_through_gradient
 from world_model_puzzle import WorldModelPuzzleBase
@@ -35,13 +36,12 @@ def train(
     actions: chex.Array,
     eval_trajectory: tuple[chex.Array, chex.Array],
     world_model: WorldModelPuzzleBase,
-    train_epochs: int,
-    mini_batch_size: int,
+    wm_train_options: WMTrainOptions,
     **kwargs,
 ):
 
     writer = setup_logging(world_model_name)
-    model: nn.Model = world_model.model
+    model: nn.Module = world_model.model
 
     def train_info_fn(params, data, next_data, action, training):
         return model.apply(
@@ -59,12 +59,16 @@ def train(
     dataset_size = actions.shape[0]
     print("initializing optimizer")
     optimizer, opt_state = setup_optimizer(
-        params, 1, train_epochs, dataset_size // mini_batch_size, lr_init=1e-2
+        params,
+        1,
+        wm_train_options.train_epochs,
+        dataset_size // wm_train_options.mini_batch_size,
+        lr_init=1e-2,
     )
 
     print("initializing train function")
     train_fn = world_model_train_builder(
-        mini_batch_size,
+        wm_train_options.mini_batch_size,
         train_info_fn,
         optimizer,
     )
@@ -72,14 +76,14 @@ def train(
     print("initializing eval function")
     eval_fn = world_model_eval_builder(
         train_info_fn,
-        mini_batch_size,
+        wm_train_options.mini_batch_size,
     )
 
     print("initializing key")
     key = jax.random.PRNGKey(0)
 
     print("training")
-    pbar = trange(train_epochs)
+    pbar = trange(wm_train_options.train_epochs)
     eval_data = (eval_trajectory[0][0], eval_trajectory[0][1], eval_trajectory[1][0])
     writer.add_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
     writer.add_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
