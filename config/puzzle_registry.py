@@ -75,6 +75,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "n-puzzle": PuzzleBundle(
         puzzle=SlidePuzzle,
         puzzle_hard=SlidePuzzleHard,
+        shuffle_length=500,
         heuristic=SlidePuzzleHeuristic,
         q_function=SlidePuzzleQ,
         heuristic_nn=lambda puzzle, reset: SlidePuzzleNeuralHeuristic(
@@ -91,6 +92,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "n-puzzle-conv": PuzzleBundle(
         puzzle=SlidePuzzle,
         puzzle_hard=SlidePuzzleHard,
+        shuffle_length=500,
         heuristic=SlidePuzzleHeuristic,
         q_function=SlidePuzzleQ,
         heuristic_nn=lambda puzzle, reset: SlidePuzzleConvNeuralHeuristic(
@@ -106,6 +108,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "n-puzzle-random": PuzzleBundle(
         puzzle=SlidePuzzleRandom,
+        shuffle_length=500,
         heuristic=SlidePuzzleHeuristic,
         q_function=SlidePuzzleQ,
         heuristic_nn=lambda puzzle, reset: SlidePuzzleNeuralHeuristic(

@@ -35,13 +35,14 @@ def setup_logging(
 
 @click.command()
 @dist_puzzle_options
-@dist_heuristic_options
 @dist_train_options
+@dist_heuristic_options
 def davi(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
+    shuffle_length: int,
     **kwargs,
 ):
     key = jax.random.PRNGKey(
@@ -87,7 +88,7 @@ def davi(
         heuristic.pre_process,
         heuristic_model,
         train_options.dataset_batch_size,
-        train_options.shuffle_length,
+        shuffle_length,
         train_options.dataset_minibatch_size,
         train_options.using_hindsight_target,
         n_devices=n_devices,
@@ -154,13 +155,14 @@ def davi(
 
 @click.command()
 @dist_puzzle_options
-@dist_qfunction_options
 @dist_train_options
+@dist_qfunction_options
 def qlearning(
     puzzle: Puzzle,
     qfunction: NeuralQFunctionBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
+    shuffle_length: int,
     with_policy: bool,
     **kwargs,
 ):
@@ -207,7 +209,7 @@ def qlearning(
         qfunction.pre_process,
         qfunc_model,
         train_options.dataset_batch_size,
-        train_options.shuffle_length,
+        shuffle_length,
         train_options.dataset_minibatch_size,
         train_options.using_hindsight_target,
         n_devices=n_devices,

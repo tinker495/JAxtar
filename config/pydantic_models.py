@@ -53,13 +53,12 @@ class QFunctionOptions(BaseModel):
 
 class DistTrainOptions(BaseModel):
     steps: int = int(2e4)
-    shuffle_length: int = 30
     dataset_batch_size: int = 524288
     dataset_minibatch_size: int = 8192
     train_minibatch_size: int = 8192
     key: int = 0
-    reset: bool = False
-    loss_threshold: float = 0.05
+    reset: bool = True
+    loss_threshold: float = float("inf")
     update_interval: int = 128
     use_soft_update: bool = False
     using_hindsight_target: bool = False
@@ -103,6 +102,7 @@ class PuzzleBundle(BaseModel):
     heuristic_nn: Optional[Callable] = None
     q_function: Callable = EmptyQFunction
     q_function_nn: Optional[Callable] = None
+    shuffle_length: int = 50
 
     class Config:
         arbitrary_types_allowed = True

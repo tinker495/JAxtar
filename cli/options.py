@@ -4,7 +4,7 @@ from functools import wraps
 import click
 import jax
 
-from config import puzzle_bundles, world_model_bundles
+from config import puzzle_bundles, train_presets, world_model_bundles
 from config.pydantic_models import (
     DistQFunctionOptions,
     DistTrainOptions,
@@ -33,7 +33,11 @@ def create_puzzle_options(
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            puzzle_opts = PuzzleOptions(**{k: kwargs.pop(k) for k in PuzzleOptions.model_fields})
+            puzzle_opt_keys = set(PuzzleOptions.model_fields.keys())
+            present_keys = puzzle_opt_keys.intersection(kwargs.keys())
+            puzzle_kwargs = {k: kwargs.pop(k) for k in present_keys}
+            puzzle_opts = PuzzleOptions(**puzzle_kwargs)
+
             puzzle_name = puzzle_opts.puzzle
             puzzle_bundle = puzzle_bundles[puzzle_name]
 
@@ -229,32 +233,62 @@ def human_play_options(func: callable) -> callable:
 
 
 def dist_train_options(func: callable) -> callable:
+    @click.option("--steps", type=int, default=None)
+    @click.option("--dataset_batch_size", type=int, default=None)
+    @click.option("--dataset_minibatch_size", type=int, default=None)
+    @click.option("--train_minibatch_size", type=int, default=None)
+    @click.option("--key", type=int, default=None)
+    @click.option("--reset", is_flag=True, default=None)
+    @click.option("--loss_threshold", type=float, default=None)
+    @click.option("--update_interval", type=int, default=None)
+    @click.option("--use_soft_update", is_flag=True, default=None)
+    @click.option("--using_hindsight_target", is_flag=True, default=None)
+    @click.option("--using_importance_sampling", is_flag=True, default=None)
+    @click.option("--debug", is_flag=True, default=None)
+    @click.option("--multi_device", is_flag=True, default=None)
+    @click.option("--reset_interval", type=int, default=None)
+    @click.option("--tau", type=float, default=None)
     @click.option(
-        "-s", "--steps", type=int, default=int(2e4)
-    )  # 50 * 2e4 = 1e6 / DeepCubeA settings
-    @click.option("-sl", "--shuffle_length", type=int, default=30)
-    @click.option("-b", "--dataset_batch_size", type=int, default=524288)  # 8192 * 64
-    @click.option("-mb", "--dataset_minibatch_size", type=int, default=8192)  # 128 * 16
-    @click.option("-tmb", "--train_minibatch_size", type=int, default=8192)  # 128 * 16
-    @click.option("-k", "--key", type=int, default=0)
-    @click.option("-r", "--reset", is_flag=True, help="Reset the target heuristic params")
-    @click.option("-l", "--loss_threshold", type=float, default=0.05)
-    @click.option("-u", "--update_interval", type=int, default=128)
-    @click.option("-su", "--use_soft_update", is_flag=True, help="Use soft update")
-    @click.option("-her", "--using_hindsight_target", is_flag=True, help="Use hindsight target")
-    @click.option(
-        "-per", "--using_importance_sampling", is_flag=True, help="Use importance sampling"
+        "--shuffle_length",
+        type=int,
+        default=None,
+        help="Override puzzle's default shuffle length.",
     )
-    @click.option("--debug", is_flag=True, help="Debug mode")
-    @click.option("-m", "--multi_device", is_flag=True, help="Use multi device")
-    @click.option("--reset_interval", type=int, default=4000, help="Reset interval")
-    @click.option("--tau", type=float, default=0.2, help="Tau for scaled by reset")
+    @click.option(
+        "--preset",
+        type=click.Choice(list(train_presets.keys())),
+        default="default",
+        help="Training configuration preset.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        train_opts = DistTrainOptions(**{k: kwargs.pop(k) for k in DistTrainOptions.model_fields})
+        puzzle_bundle = kwargs["puzzle_bundle"]
+
+        user_shuffle_length = kwargs.pop("shuffle_length")
+        final_shuffle_length = (
+            user_shuffle_length if user_shuffle_length is not None else puzzle_bundle.shuffle_length
+        )
+        kwargs["shuffle_length"] = final_shuffle_length
+
+        preset_name = kwargs.pop("preset")
+        preset = train_presets[preset_name]
+
+        # Collect any user-provided options to override the preset
+        overrides = {
+            k: v for k, v in kwargs.items() if v is not None and k in DistTrainOptions.model_fields
+        }
+
+        # Create a final options object by applying overrides to the preset
+        train_opts = preset.model_copy(update=overrides)
+
+        # Clean up kwargs so they don't get passed down
+        for k in DistTrainOptions.model_fields:
+            kwargs.pop(k, None)
+
         if train_opts.debug:
             print("Disabling JIT")
             jax.config.update("jax_disable_jit", True)
+
         kwargs["train_options"] = train_opts
         return func(*args, **kwargs)
 
