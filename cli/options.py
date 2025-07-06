@@ -233,21 +233,21 @@ def human_play_options(func: callable) -> callable:
 
 
 def dist_train_options(func: callable) -> callable:
-    @click.option("--steps", type=int, default=None)
-    @click.option("--dataset_batch_size", type=int, default=None)
-    @click.option("--dataset_minibatch_size", type=int, default=None)
-    @click.option("--train_minibatch_size", type=int, default=None)
-    @click.option("--key", type=int, default=None)
-    @click.option("--reset", is_flag=True, default=None)
-    @click.option("--loss_threshold", type=float, default=None)
-    @click.option("--update_interval", type=int, default=None)
-    @click.option("--use_soft_update", is_flag=True, default=None)
-    @click.option("--using_hindsight_target", is_flag=True, default=None)
-    @click.option("--using_importance_sampling", is_flag=True, default=None)
-    @click.option("--debug", is_flag=True, default=None)
-    @click.option("--multi_device", is_flag=True, default=None)
-    @click.option("--reset_interval", type=int, default=None)
-    @click.option("--tau", type=float, default=None)
+    @click.option("-s", "--steps", type=int, default=None)
+    @click.option("-db", "--dataset_batch_size", type=int, default=None)
+    @click.option("-dmb", "--dataset_minibatch_size", type=int, default=None)
+    @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
+    @click.option("-k", "--key", type=int, default=None)
+    @click.option("-r", "--reset", is_flag=True, default=None)
+    @click.option("-lt", "--loss_threshold", type=float, default=None)
+    @click.option("-ui", "--update_interval", type=int, default=None)
+    @click.option("-su", "--use_soft_update", is_flag=True, default=None)
+    @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
+    @click.option("-is", "--using_importance_sampling", is_flag=True, default=None)
+    @click.option("-d", "--debug", is_flag=True, default=None)
+    @click.option("-md", "--multi_device", is_flag=True, default=None)
+    @click.option("-ri", "--reset_interval", type=int, default=None)
+    @click.option("-t", "--tau", type=float, default=None)
     @click.option(
         "-sl",
         "--shuffle_length",
