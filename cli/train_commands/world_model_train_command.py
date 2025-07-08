@@ -97,9 +97,15 @@ def train(
         )
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, Loss: {float(loss):.4f},"
-            f"AE Loss: {float(AE_loss):.4f}, WM Loss: {float(WM_loss):.4f},"
-            f"Accuracy: {float(accuracy):.4f}, Eval Accuracy: {float(eval_accuracy):.4f}"
+            desc="Training",
+            desc_dict={
+                "lr": lr,
+                "Loss": float(loss),
+                "AE Loss": float(AE_loss),
+                "WM Loss": float(WM_loss),
+                "Accuracy": float(accuracy),
+                "Eval Accuracy": float(eval_accuracy),
+            },
         )
         if epoch % 10 == 0:
             writer.add_scalar("Metrics/Learning Rate", lr, epoch)

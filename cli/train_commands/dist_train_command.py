@@ -113,8 +113,13 @@ def davi(
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
-            f", target_heuristic: {float(mean_target_heuristic):.2f}"
+            desc="DAVI Training",
+            desc_dict={
+                "lr": lr,
+                "loss": float(loss),
+                "abs_diff": float(mean_abs_diff),
+                "target_heuristic": float(mean_target_heuristic),
+            },
         )
         writer.add_scalar("Metrics/Learning Rate", lr, i)
         writer.add_scalar("Losses/Loss", loss, i)
@@ -234,8 +239,13 @@ def qlearning(
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
-            f", target_q: {float(mean_target_q):.2f}"
+            desc="Q-Learning Training",
+            desc_dict={
+                "lr": lr,
+                "loss": float(loss),
+                "abs_diff": float(mean_abs_diff),
+                "target_q": float(mean_target_q),
+            },
         )
 
         writer.add_scalar("Metrics/Learning Rate", lr, i)
