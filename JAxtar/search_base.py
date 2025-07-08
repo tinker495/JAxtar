@@ -22,6 +22,7 @@ from xtructure import (
     Xtructurable,
     xtructure_dataclass,
 )
+from xtructure import xtructure_numpy as xnp
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -29,7 +30,6 @@ from JAxtar.annotate import (
     HASH_SIZE_MULTIPLIER,
     KEY_DTYPE,
 )
-from JAxtar.util import set_array_as_condition
 
 
 @xtructure_dataclass
@@ -190,7 +190,7 @@ class SearchResult:
 
         # Check if the states are in the open set
         min_val_cost = min_val.current.cost
-        optimal = jnp.less(min_val_cost, search_result.get_cost(min_val.current))
+        optimal = jnp.less_equal(min_val_cost, search_result.get_cost(min_val.current))
         min_key = jnp.where(optimal, min_key, jnp.inf)  # Set closed states to inf
 
         # Merge and sort with the buffer
@@ -220,7 +220,7 @@ class SearchResult:
                 new_val,
             ) = search_result.priority_queue.delete_mins()
             new_val_cost = new_val.current.cost
-            optimal = jnp.less(new_val_cost, search_result.get_cost(new_val.current))
+            optimal = jnp.less_equal(new_val_cost, search_result.get_cost(new_val.current))
             new_key = jnp.where(optimal, new_key, jnp.inf)
 
             # Merge new values with current minimum values
@@ -240,11 +240,11 @@ class SearchResult:
         )
 
         # Update the closed set
-        search_result.cost = set_array_as_condition(
+        search_result.cost = xnp.set_as_condition_on_array(
             search_result.cost,
+            min_val.current.hashidx.index,
             filled,
             min_val.current.cost,
-            min_val.current.hashidx.index,
         )
         search_result.parent = search_result.parent.at[
             min_val.current.hashidx.index
@@ -260,8 +260,21 @@ class SearchResult:
         """
         assert search_result.solved
         solved_idx = search_result.solved_idx
-        path, mask = search_result._get_path(solved_idx)
-        path = [path[i] for i in jnp.where(mask)[0][::-1]] + [solved_idx]
+
+        path = [solved_idx]
+        parent_last = search_result.get_parent(solved_idx)
+        visited = set()
+        while True:
+            idx = int(parent_last.hashidx.index)
+            if parent_last.hashidx.index == -1:
+                break
+            if idx in visited:
+                print(f"Loop detected in path reconstruction at index {idx}")
+                break
+            visited.add(idx)
+            path.append(parent_last)
+            parent_last = search_result.get_parent(parent_last)
+        path.reverse()
         return path
 
     @partial(jax.jit, static_argnums=(3,))
@@ -299,9 +312,9 @@ class SearchResult:
         Get the state from the hash table.
         """
         if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.hashtable.get(idx.hashidx)
+            return search_result.hashtable[idx.hashidx]
         elif isinstance(idx, HashIdx):
-            return search_result.hashtable.get(idx)
+            return search_result.hashtable[idx]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
@@ -339,24 +352,6 @@ class SearchResult:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
 
-def unique_mask(val: Current_with_Parent, batch_len: int) -> chex.Array:
-    """
-    Creates a boolean mask identifying unique values in a HashTableIdx_HeapValue tensor.
-    This function is used to filter out duplicate states in batched operations.
-
-    Args:
-        val (HashTableIdx_HeapValue): The heap values to check for uniqueness
-        batch_len (int): The length of the batch
-
-    Returns:
-        jnp.ndarray: Boolean mask where True indicates unique values
-    """
-    hash_idx_bytes = jax.vmap(lambda x: x.current.hashidx.uint32ed)(val)
-    unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
-    uniques = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(True)
-    return uniques
-
-
 def merge_sort_split(
     ak: chex.Array, av: Current_with_Parent, bk: chex.Array, bv: Current_with_Parent
 ) -> tuple[chex.Array, Current_with_Parent, chex.Array, Current_with_Parent]:
@@ -379,9 +374,9 @@ def merge_sort_split(
     """
     n = ak.shape[-1]  # size of group
     key = jnp.concatenate([ak, bk])
-    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+    val = xnp.concatenate([av, bv])
 
-    uniques = unique_mask(val, 2 * n)
+    uniques = xnp.unique_mask(val.current.hashidx, val.current.cost)
     key = jnp.where(uniques, key, jnp.inf)  # Set duplicate keys to inf
 
     sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(2 * n))

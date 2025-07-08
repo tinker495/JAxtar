@@ -5,17 +5,12 @@ import chex
 import jax
 import jax.numpy as jnp
 from puxle import Puzzle
+from xtructure import xtructure_numpy as xnp
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
-from JAxtar.util import (
-    flatten_array,
-    flatten_tree,
-    set_array_as_condition,
-    unflatten_array,
-    unflatten_tree,
-)
+from JAxtar.util import flatten_array, flatten_tree, unflatten_array, unflatten_tree
 
 
 def astar_builder(
@@ -50,7 +45,7 @@ def astar_builder(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
         heuristic_params: Optional[Any] = None,
-    ) -> tuple[SearchResult, chex.Array]:
+    ) -> SearchResult:
         """
         astar is the implementation of the A* algorithm.
         """
@@ -77,6 +72,7 @@ def astar_builder(
 
             states = search_result.get_state(parent)
             solved = puzzle.batched_is_solved(solve_config, states)
+            solved = jnp.logical_and(solved, filled)
             return jnp.logical_and(size_cond, ~solved.any())
 
         def _body(input: tuple[SearchResult, Current, chex.Array]):
@@ -111,9 +107,39 @@ def astar_builder(
                 hash_idx,
             ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
 
-            argsort_idx = jnp.argsort(flatten_inserted, axis=0)  # sort by inserted
+            # Filter out duplicate nodes, keeping only the one with the lowest cost
+            cheapest_uniques_mask = xnp.unique_mask(hash_idx, flatten_nextcosts)
+
+            # Nodes to process must be valid neighbors AND the cheapest unique ones
+            process_mask = jnp.logical_and(flatten_filleds, cheapest_uniques_mask)
+
+            # It must also be cheaper than any previously found path to this state.
+            optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
+
+            # Combine all conditions for the final decision.
+            final_process_mask = jnp.logical_and(process_mask, optimal_mask)
+
+            # Update the cost (g-value) for the newly found optimal paths before they are
+            # masked out. This ensures the cost table is always up-to-date.
+            search_result.cost = xnp.set_as_condition_on_array(
+                search_result.cost,
+                hash_idx.index,
+                final_process_mask,
+                flatten_nextcosts,  # Use costs before they are set to inf
+            )
+
+            # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
+            # and updating the insertion flag. This ensures they are ignored in subsequent steps.
+            flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
+            flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
+            sort_cost = (
+                flatten_inserted * 2 + final_process_mask * 1
+            )  # 2 is new, 1 is old but optimal, 0 is not optimal
+
+            argsort_idx = jnp.argsort(sort_cost, axis=0)  # sort by inserted
 
             flatten_inserted = flatten_inserted[argsort_idx]
+            flatten_final_process_mask = final_process_mask[argsort_idx]
             flatten_neighbours = flatten_neighbours[argsort_idx]
             flatten_nextcosts = flatten_nextcosts[argsort_idx]
             flatten_parent_index = flatten_parent_index[argsort_idx]
@@ -128,41 +154,25 @@ def astar_builder(
             parent_action = unflatten_array(flatten_parent_action, filleds.shape)
             neighbours = unflatten_tree(flatten_neighbours, filleds.shape)
             inserted = unflatten_array(flatten_inserted, filleds.shape)
+            final_process_mask = unflatten_array(flatten_final_process_mask, filleds.shape)
 
             def _inserted(search_result: SearchResult, neighbour, current, inserted):
                 neighbour_heur = heuristic.batched_distance(
-                    solve_config, neighbour, heuristic_params
+                    solve_config, neighbour, params=heuristic_params
                 ).astype(KEY_DTYPE)
                 # cache the heuristic value
-                search_result.dist = set_array_as_condition(
+                search_result.dist = xnp.set_as_condition_on_array(
                     search_result.dist,
+                    current.hashidx.index,
                     inserted,
                     neighbour_heur,
-                    current.hashidx.index,
                 )
                 return search_result, neighbour_heur
 
-            def _not_inserted(search_result: SearchResult, neighbour, current, inserted):
-                # get cached heuristic value
-                neighbour_heur = search_result.get_dist(current)
-                return search_result, neighbour_heur
-
-            def _scan(search_result: SearchResult, val):
-                neighbour, parent_action, current, inserted, parent_index = val
-
-                search_result, neighbour_heur = jax.lax.cond(
-                    jnp.any(inserted),
-                    _inserted,
-                    _not_inserted,
-                    search_result,
-                    neighbour,
-                    current,
-                    inserted,
-                )
+            def _queue_insert(
+                search_result: SearchResult, current, neighbour_heur, parent_index, parent_action
+            ):
                 neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
-
-                optimal = jnp.less(current.cost, search_result.get_cost(current))
-                neighbour_key = jnp.where(optimal, neighbour_key, jnp.inf)
 
                 aranged_parent = parent[parent_index]
                 vals = Current_with_Parent(
@@ -177,12 +187,37 @@ def astar_builder(
                     neighbour_key,
                     vals,
                 )
+                return search_result
+
+            def _scan(search_result: SearchResult, val):
+                neighbour, parent_action, current, inserted, final_process_mask, parent_index = val
+
+                search_result, neighbour_heur = jax.lax.cond(
+                    jnp.any(inserted),
+                    _inserted,
+                    _not_inserted,
+                    search_result,
+                    neighbour,
+                    current,
+                    inserted,
+                )
+
+                search_result = jax.lax.cond(
+                    jnp.any(final_process_mask),
+                    _queue_insert,
+                    _queue_not_insert,
+                    search_result,
+                    current,
+                    neighbour_heur,
+                    parent_index,
+                    parent_action,
+                )
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbours, parent_action, current, inserted, parent_indexs),
+                (neighbours, parent_action, current, inserted, final_process_mask, parent_indexs),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
@@ -222,3 +257,15 @@ def astar_builder(
         print("JIT compiled\n\n")
 
     return astar_fn
+
+
+def _not_inserted(search_result: SearchResult, neighbour, current, inserted):
+    # get cached heuristic value
+    neighbour_heur = search_result.get_dist(current)
+    return search_result, neighbour_heur
+
+
+def _queue_not_insert(
+    search_result: SearchResult, current, neighbour_heur, parent_index, parent_action
+):
+    return search_result

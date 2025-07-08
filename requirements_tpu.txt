@@ -3,7 +3,7 @@ numpy
 opencv-python
 imageio
 click
-tqdm
+rich
 pre-commit
 pytest
 jax[tpu]
@@ -16,5 +16,6 @@ optax
 termcolor
 tensorboardX
 flashbax
+pydantic
 xtructure @ git+https://github.com/tinker495/xtructure.git
 puxle @ git+https://github.com/tinker495/PuXle.git

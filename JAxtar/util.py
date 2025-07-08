@@ -29,26 +29,3 @@ def unflatten_tree(tree: chex.Array, shape: tuple) -> chex.Array:
     Unflatten the tree to the given shape.
     """
     return jax.tree_util.tree_map(lambda t: unflatten_array(t, shape), tree)
-
-
-def set_array(array: chex.Array, insert_value: chex.Array, *indexs) -> chex.Array:
-    """
-    Set the value of the array at the given indexs to the insert_value.
-    """
-    return array.at[indexs].set(insert_value)
-
-
-def set_array_as_condition(
-    array: chex.Array, condition: chex.Array, insert_value: chex.Array, *indexs
-) -> chex.Array:
-    """
-    Set the value of the array at the given indexs to the insert_value if the condition is true,
-    otherwise keep the original value.
-    """
-    return array.at[indexs].set(
-        jnp.where(
-            jnp.reshape(condition, (-1,) + (insert_value.ndim - 1) * (1,)),
-            insert_value,
-            array[indexs],
-        )
-    )

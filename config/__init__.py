@@ -1,22 +1,40 @@
-from .puzzle_config import (
-    puzzle_dict,
-    puzzle_dict_hard,
-    puzzle_heuristic_dict,
-    puzzle_heuristic_dict_nn,
-    puzzle_q_function_dict,
-    puzzle_q_function_dict_nn,
+from .puzzle_registry import puzzle_bundles
+from .pydantic_models import (
+    DistQFunctionOptions,
+    DistTrainOptions,
+    HeuristicOptions,
+    PuzzleBundle,
+    PuzzleOptions,
+    QFunctionOptions,
+    SearchOptions,
+    VisualizeOptions,
+    WBSDistTrainOptions,
+    WMDatasetOptions,
+    WMGetDSOptions,
+    WMGetModelOptions,
+    WMTrainOptions,
+    WorldModelBundle,
 )
-from .world_model_config import puzzle_dict_ds, world_model_dict, world_model_ds_dict
+from .train_presets import train_presets, wbs_train_presets
+from .world_model_registry import world_model_bundles
 
 __all__ = [
-    "default_puzzle_sizes",
-    "puzzle_dict",
-    "puzzle_dict_hard",
-    "puzzle_heuristic_dict",
-    "puzzle_heuristic_dict_nn",
-    "puzzle_q_function_dict",
-    "puzzle_q_function_dict_nn",
-    "puzzle_dict_ds",
-    "world_model_dict",
-    "world_model_ds_dict",
+    "puzzle_bundles",
+    "world_model_bundles",
+    "train_presets",
+    "wbs_train_presets",
+    "PuzzleOptions",
+    "SearchOptions",
+    "VisualizeOptions",
+    "HeuristicOptions",
+    "QFunctionOptions",
+    "DistTrainOptions",
+    "DistQFunctionOptions",
+    "WBSDistTrainOptions",
+    "WMDatasetOptions",
+    "WMGetDSOptions",
+    "WMGetModelOptions",
+    "WMTrainOptions",
+    "PuzzleBundle",
+    "WorldModelBundle",
 ]

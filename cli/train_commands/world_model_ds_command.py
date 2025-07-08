@@ -6,8 +6,9 @@ import cv2
 import jax
 import numpy as np
 from puxle import Puzzle
-from tqdm import trange
 
+from config.pydantic_models import WMDatasetOptions
+from helpers.rich_progress import trange
 from world_model_puzzle.world_model_ds import (
     create_eval_trajectory,
     get_sample_data_builder,
@@ -29,19 +30,23 @@ def convert_to_imgs(state: Puzzle.State, img_size: tuple):
 def make_puzzle_transition_dataset(
     puzzle: Puzzle,
     puzzle_name: str,
-    dataset_size: int,
-    dataset_minibatch_size: int,
-    shuffle_length: int,
-    img_size: tuple,
-    key: int,
+    wm_dataset_options: WMDatasetOptions,
     **kwargs,
 ):
-    shuffle_parallel = int(math.ceil(dataset_minibatch_size / shuffle_length))
+    shuffle_parallel = int(
+        math.ceil(wm_dataset_options.dataset_minibatch_size / wm_dataset_options.shuffle_length)
+    )
     get_datasets = get_world_model_dataset_builder(
-        puzzle, dataset_size, shuffle_parallel, shuffle_length, dataset_minibatch_size
+        puzzle,
+        wm_dataset_options.dataset_size,
+        shuffle_parallel,
+        wm_dataset_options.shuffle_length,
+        wm_dataset_options.dataset_minibatch_size,
     )
 
-    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key = jax.random.PRNGKey(
+        np.random.randint(0, 1000000) if wm_dataset_options.key == 0 else wm_dataset_options.key
+    )
     key, subkey = jax.random.split(key)
     states, actions, next_states = get_datasets(subkey)
 
@@ -50,8 +55,10 @@ def make_puzzle_transition_dataset(
     images_stack = []
     next_images_stack = []
     for i in trange(len(actions)):
-        state_img, small_state_img = convert_to_imgs(states[i], img_size)
-        next_state_img, small_next_state_img = convert_to_imgs(next_states[i], img_size)
+        state_img, small_state_img = convert_to_imgs(states[i], wm_dataset_options.img_size)
+        next_state_img, small_next_state_img = convert_to_imgs(
+            next_states[i], wm_dataset_options.img_size
+        )
         if i < 3:
             cv2.imwrite(
                 f"tmp/{puzzle_name}/state_img_{i}.png", cv2.cvtColor(state_img, cv2.COLOR_BGR2RGB)
@@ -83,16 +90,17 @@ def make_puzzle_transition_dataset(
 def make_puzzle_sample_data(
     puzzle: Puzzle,
     puzzle_name: str,
-    dataset_size: int,
-    dataset_minibatch_size: int,
-    img_size: tuple,
-    key: int,
+    wm_dataset_options: WMDatasetOptions,
     **kwargs,
 ):
-    shuffle_parallel = int(math.ceil(dataset_minibatch_size))
-    get_datasets = get_sample_data_builder(puzzle, dataset_size, shuffle_parallel)
+    shuffle_parallel = int(math.ceil(wm_dataset_options.dataset_minibatch_size))
+    get_datasets = get_sample_data_builder(
+        puzzle, wm_dataset_options.dataset_size, shuffle_parallel
+    )
 
-    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key = jax.random.PRNGKey(
+        np.random.randint(0, 1000000) if wm_dataset_options.key == 0 else wm_dataset_options.key
+    )
     key, subkey = jax.random.split(key)
     target_states, initial_states = get_datasets(subkey)
 
@@ -100,8 +108,12 @@ def make_puzzle_sample_data(
     target_images_stack = []
     initial_images_stack = []
     for i in trange(len(target_states)):
-        target_img, small_target_img = convert_to_imgs(target_states[i], img_size)
-        initial_img, small_initial_img = convert_to_imgs(initial_states[i], img_size)
+        target_img, small_target_img = convert_to_imgs(
+            target_states[i], wm_dataset_options.img_size
+        )
+        initial_img, small_initial_img = convert_to_imgs(
+            initial_states[i], wm_dataset_options.img_size
+        )
         if i < 3:
             cv2.imwrite(
                 f"tmp/{puzzle_name}/initial_img_{i}.png",
@@ -134,12 +146,13 @@ def make_puzzle_sample_data(
 def make_puzzle_eval_trajectory(
     puzzle: Puzzle,
     puzzle_name: str,
-    img_size: tuple,
-    key: int,
+    wm_dataset_options: WMDatasetOptions,
     **kwargs,
 ):
 
-    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key = jax.random.PRNGKey(
+        np.random.randint(0, 1000000) if wm_dataset_options.key == 0 else wm_dataset_options.key
+    )
     shuffle_length = 10000
     states, actions = create_eval_trajectory(puzzle, shuffle_length, key)
     print(f"states.shape: {states.shape}")
@@ -149,7 +162,7 @@ def make_puzzle_eval_trajectory(
     np.save(f"tmp/{puzzle_name}/eval_actions.npy", actions)
     state_images_stack = []
     for i in trange(len(states)):
-        state_img, small_state_img = convert_to_imgs(states[i], img_size)
+        state_img, small_state_img = convert_to_imgs(states[i], wm_dataset_options.img_size)
         if i < 3:
             cv2.imwrite(
                 f"tmp/{puzzle_name}/state_img_{i}.png",
