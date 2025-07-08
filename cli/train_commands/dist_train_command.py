@@ -6,9 +6,9 @@ import jax.numpy as jnp
 import numpy as np
 import tensorboardX
 from puxle import Puzzle
-from tqdm import trange
 
 from config.pydantic_models import DistTrainOptions
+from helpers.rich_progress import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.optimizer import setup_optimizer

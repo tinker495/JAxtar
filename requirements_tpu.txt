@@ -3,7 +3,7 @@ numpy
 opencv-python
 imageio
 click
-tqdm
+rich
 pre-commit
 pytest
 jax[tpu]

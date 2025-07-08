@@ -5,7 +5,8 @@ import chex
 import jax
 import jax.numpy as jnp
 from puxle import Puzzle
-from tqdm import trange
+
+from helpers.rich_progress import trange
 
 
 def get_world_model_dataset_builder(

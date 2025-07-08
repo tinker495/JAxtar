@@ -6,9 +6,9 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import tensorboardX
-from tqdm import trange
 
 from config.pydantic_models import WMTrainOptions
+from helpers.rich_progress import trange
 from neural_util.optimizer import setup_optimizer
 from neural_util.util import round_through_gradient
 from world_model_puzzle import WorldModelPuzzleBase

@@ -6,9 +6,9 @@ import cv2
 import jax
 import numpy as np
 from puxle import Puzzle
-from tqdm import trange
 
 from config.pydantic_models import WMDatasetOptions
+from helpers.rich_progress import trange
 from world_model_puzzle.world_model_ds import (
     create_eval_trajectory,
     get_sample_data_builder,
