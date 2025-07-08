@@ -3,7 +3,9 @@ import time
 import click
 import jax
 import jax.numpy as jnp
+from puxle import Puzzle
 
+from config.pydantic_models import SearchOptions, VisualizeOptions
 from helpers import (
     heuristic_dist_format,
     human_format,
@@ -12,8 +14,10 @@ from helpers import (
     vmapping_init_target,
     vmapping_search,
 )
+from heuristic.heuristic_base import Heuristic
 from JAxtar.astar import astar_builder
 from JAxtar.qstar import qstar_builder
+from qfunction.q_base import QFunction
 
 from .options import (
     heuristic_options,
@@ -28,7 +32,7 @@ from .options import (
 @click.command()
 @puzzle_options
 @human_play_options
-def human_play(puzzle, seed, **kwargs):
+def human_play(puzzle: Puzzle, seed: int):
     has_target = puzzle.has_target
 
     solve_config, init_state = puzzle.get_inits(jax.random.PRNGKey(seed))
@@ -101,16 +105,13 @@ def human_play(puzzle, seed, **kwargs):
 
 def search_samples(
     search_fn,
-    puzzle,
-    puzzle_name,
+    puzzle: Puzzle,
+    puzzle_name: str,
     dist_fn,
     dist_fn_format,
-    seeds,
-    profile,
-    visualize_terminal,
-    visualize_imgs,
-    max_animation_time,
-    **kwargs,
+    seeds: list[int],
+    search_options: SearchOptions,
+    visualize_options: VisualizeOptions,
 ):
     has_target = puzzle.has_target
 
@@ -128,7 +129,7 @@ def search_samples(
             print(solve_config)
         print(f"Dist: {dist_fn_format(puzzle, dist_values)}")
 
-        if profile:
+        if search_options.profile:
             print("Profiling")
             jax.profiler.start_trace("tmp/tensorboard")
 
@@ -155,7 +156,7 @@ def search_samples(
         total_search_times.append(single_search_time)
         total_states.append(search_result.generated_size)
         total_solved.append(solved)
-        if profile:
+        if search_options.profile:
             jax.profiler.stop_trace()
 
         if solved:
@@ -164,10 +165,10 @@ def search_samples(
 
             print(f"Cost: {solved_cost:.1f}")
             print("Solution found\n\n")
-            if visualize_terminal or visualize_imgs:
+            if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
                 path = search_result.get_solved_path()
 
-                if visualize_terminal:
+                if visualize_options.visualize_terminal:
                     for p in path[:-1]:
                         print(search_result.get_state(p).str(solve_config=solve_config))
                         print(
@@ -178,7 +179,7 @@ def search_samples(
                     print(search_result.get_state(path[-1]).str(solve_config=solve_config))
                     print(f"Cost: {search_result.get_cost(path[-1]):.1f}, Dist: {0.0:.1f}")
                     print("\n\n")
-                if visualize_imgs:
+                if visualize_options.visualize_imgs:
                     import os
                     from datetime import datetime
 
@@ -191,24 +192,24 @@ def search_samples(
                     os.makedirs(f"tmp/{logging_name}", exist_ok=True)
                     path_states = [search_result.get_state(p) for p in path]
                     for idx, p in enumerate(path):
-                        cost = search_result.get_cost(p)
-                        dist = search_result.get_dist(p)
                         img = search_result.get_state(p).img(
                             idx=idx, path=path_states, solve_config=solve_config
                         )
                         imgs.append(img)
                         cv2.imwrite(
-                            f"tmp/{logging_name}/img_{idx}_c{cost:.1f}_d{dist:.1f}.png",
+                            (
+                                f"tmp/{logging_name}/img_{idx}_c"
+                                f"{search_result.get_cost(p):.1f}_d"
+                                f"{search_result.get_dist(p):.1f}.png"
+                            ),
                             cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
                         )
                     gif_path = f"tmp/{logging_name}/animation.gif"
-                    # Calculate the appropriate fps based on max_animation_time
                     num_frames = len(imgs)
-                    fps = 4  # Default fps
+                    fps = 4
 
-                    # If animation would be longer than max_animation_time, adjust fps
-                    if num_frames / fps > max_animation_time:
-                        fps = num_frames / max_animation_time
+                    if num_frames / fps > visualize_options.max_animation_time:
+                        fps = num_frames / visualize_options.max_animation_time
                     imageio.mimsave(gif_path, imgs, fps=fps)
         else:
             print("No solution found\n\n")
@@ -236,17 +237,16 @@ def search_samples(
 
 def vmapped_search_samples(
     vmapped_search,
-    puzzle,
-    seeds,
-    vmap_size,
-    total_search_times,
-    states_per_second,
-    single_search_time,
-    **kwargs,
+    puzzle: Puzzle,
+    seeds: list[int],
+    search_options: SearchOptions,
+    total_search_times: jnp.ndarray,
+    states_per_second: float,
+    single_search_time: float,
 ):
     has_target = puzzle.has_target
+    vmap_size = search_options.vmap_size
 
-    # for benchmark, same initial states
     states, solve_configs = vmapping_init_target(puzzle, vmap_size, seeds)
 
     print("Vmapped search, multiple initial state solution")
@@ -266,7 +266,7 @@ def vmapped_search_samples(
     search_result = vmapped_search(solve_configs, states)
     solved = search_result.solved.block_until_ready()
     end = time.time()
-    vmapped_search_time = end - start  # subtract jit time from the vmapped search time
+    vmapped_search_time = end - start
 
     if not has_target:
         if solved.any():
@@ -304,7 +304,6 @@ def vmapped_search_samples(
             f" (x{vmapped_states_per_second/states_per_second:.1f} faster)"
         )
         print("Solution found:", f"{jnp.mean(solved)*100:.2f}%")
-    # this means astart_fn is completely vmapable and jitable
 
 
 @click.command()
@@ -312,32 +311,48 @@ def vmapped_search_samples(
 @search_options
 @heuristic_options
 @visualize_options
-def astar(**kwargs):
-    puzzle = kwargs["puzzle"]
+def astar(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    heuristic: Heuristic,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
     astar_fn = astar_builder(
         puzzle,
-        kwargs["heuristic"],
-        kwargs["batch_size"],
-        kwargs["max_node_size"],
-        cost_weight=kwargs["cost_weight"],
-        show_compile_time=kwargs["show_compile_time"],
+        heuristic,
+        search_options.batch_size,
+        search_options.get_max_node_size(),
+        cost_weight=search_options.cost_weight,
+        show_compile_time=search_options.show_compile_time,
     )
-    dist_fn = kwargs["heuristic"].distance
-    kwargs["dist_fn"] = dist_fn
-    kwargs["dist_fn_format"] = heuristic_dist_format
-    total_search_times, states_per_second, single_search_time = search_samples(astar_fn, **kwargs)
+    dist_fn = heuristic.distance
+    total_search_times, states_per_second, single_search_time = search_samples(
+        search_fn=astar_fn,
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        dist_fn=dist_fn,
+        dist_fn_format=heuristic_dist_format,
+        seeds=seeds,
+        search_options=search_options,
+        visualize_options=visualize_options,
+    )
 
-    if kwargs["vmap_size"] == 1:
+    if search_options.vmap_size == 1:
         return
 
     vmapped_search_samples(
-        vmapping_search(puzzle, astar_fn, kwargs["vmap_size"], kwargs["show_compile_time"]),
-        puzzle,
-        kwargs["seeds"],
-        kwargs["vmap_size"],
-        total_search_times,
-        states_per_second,
-        single_search_time,
+        vmapped_search=vmapping_search(
+            puzzle, astar_fn, search_options.vmap_size, search_options.show_compile_time
+        ),
+        puzzle=puzzle,
+        seeds=seeds,
+        search_options=search_options,
+        total_search_times=total_search_times,
+        states_per_second=states_per_second,
+        single_search_time=single_search_time,
     )
 
 
@@ -346,30 +361,46 @@ def astar(**kwargs):
 @search_options
 @qfunction_options
 @visualize_options
-def qstar(**kwargs):
-    puzzle = kwargs["puzzle"]
+def qstar(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    qfunction: QFunction,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
     qstar_fn = qstar_builder(
         puzzle,
-        kwargs["qfunction"],
-        kwargs["batch_size"],
-        kwargs["max_node_size"],
-        cost_weight=kwargs["cost_weight"],
-        show_compile_time=kwargs["show_compile_time"],
+        qfunction,
+        search_options.batch_size,
+        search_options.get_max_node_size(),
+        cost_weight=search_options.cost_weight,
+        show_compile_time=search_options.show_compile_time,
     )
-    dist_fn = kwargs["qfunction"].q_value
-    kwargs["dist_fn"] = dist_fn
-    kwargs["dist_fn_format"] = qfunction_dist_format
-    total_search_times, states_per_second, single_search_time = search_samples(qstar_fn, **kwargs)
+    dist_fn = qfunction.q_value
+    total_search_times, states_per_second, single_search_time = search_samples(
+        search_fn=qstar_fn,
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        dist_fn=dist_fn,
+        dist_fn_format=qfunction_dist_format,
+        seeds=seeds,
+        search_options=search_options,
+        visualize_options=visualize_options,
+    )
 
-    if kwargs["vmap_size"] == 1:
+    if search_options.vmap_size == 1:
         return
 
     vmapped_search_samples(
-        vmapping_search(puzzle, qstar_fn, kwargs["vmap_size"], kwargs["show_compile_time"]),
-        puzzle,
-        kwargs["seeds"],
-        kwargs["vmap_size"],
-        total_search_times,
-        states_per_second,
-        single_search_time,
+        vmapped_search=vmapping_search(
+            puzzle, qstar_fn, search_options.vmap_size, search_options.show_compile_time
+        ),
+        puzzle=puzzle,
+        seeds=seeds,
+        search_options=search_options,
+        total_search_times=total_search_times,
+        states_per_second=states_per_second,
+        single_search_time=single_search_time,
     )

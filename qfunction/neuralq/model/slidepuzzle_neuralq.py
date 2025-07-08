@@ -34,13 +34,13 @@ class SlidePuzzleNeuralQ(NeuralQFunctionBase):
         """
         # Create a one-hot encoding of the current state
         # Shape will be [puzzle_size, puzzle_size, puzzle_size*puzzle_size]
-        current_board = current.board
+        current_board = current.unpacked.board
         current_board_one_hot = jax.nn.one_hot(current_board, self.size_square).flatten()
 
         if self.is_fixed:
             one_hots = current_board_one_hot
         else:
-            target_board = solve_config.TargetState.board
+            target_board = solve_config.TargetState.unpacked.board
             target_board_one_hot = jax.nn.one_hot(target_board, self.size_square).flatten()
             one_hots = jnp.concatenate([target_board_one_hot, current_board_one_hot], axis=-1)
 
@@ -79,9 +79,11 @@ class SlidePuzzleConvNeuralQ(NeuralQFunctionBase):
     def pre_process(
         self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
     ) -> chex.Array:
-        diff = self.to_2d(self._diff_pos(current, solve_config.TargetState))  # [n, n, 2]
+        current = current.unpacked
+        target = solve_config.TargetState.unpacked
+        diff = self.to_2d(self._diff_pos(current, target))  # [n, n, 2]
         c_zero = self.to_2d(self._zero_pos(current))  # [n, n, 1]
-        t_zero = self.to_2d(self._zero_pos(solve_config.TargetState))  # [n, n, 1]
+        t_zero = self.to_2d(self._zero_pos(target))  # [n, n, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1)  # [n, n, 4]
         return x.astype(DTYPE)
 
