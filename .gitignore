@@ -128,8 +128,14 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# ignore tmp folder
 tmp/
+
+# ignore runs folder
 runs/
+
+# ignore aim folders
+.aim/
 
 # ignore data folder this is quite large
 world_model_puzzle/data/

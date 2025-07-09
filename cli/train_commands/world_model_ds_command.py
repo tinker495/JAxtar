@@ -9,6 +9,7 @@ from puxle import Puzzle
 
 from config.pydantic_models import WMDatasetOptions
 from helpers.config_printer import print_config
+from helpers.logger import TensorboardLogger
 from helpers.rich_progress import trange
 from world_model_puzzle.world_model_ds import (
     create_eval_trajectory,
@@ -41,6 +42,8 @@ def make_puzzle_transition_dataset(
         **kwargs,
     }
     print_config("Make Puzzle Transition Dataset Configuration", config)
+    logger = TensorboardLogger(f"{puzzle_name}_make_transition_dataset", config)
+
     shuffle_parallel = int(
         math.ceil(wm_dataset_options.dataset_minibatch_size / wm_dataset_options.shuffle_length)
     )
@@ -68,20 +71,9 @@ def make_puzzle_transition_dataset(
             next_states[i], wm_dataset_options.img_size
         )
         if i < 3:
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/state_img_{i}.png", cv2.cvtColor(state_img, cv2.COLOR_BGR2RGB)
-            )
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/next_state_img_{i}.png",
-                cv2.cvtColor(next_state_img, cv2.COLOR_BGR2RGB),
-            )
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/small_state_img_{i}.png",
-                cv2.cvtColor(small_state_img, cv2.COLOR_BGR2RGB),
-            )
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/small_next_state_img_{i}.png",
-                cv2.cvtColor(small_next_state_img, cv2.COLOR_BGR2RGB),
+            logger.log_image(f"State/{i}", cv2.cvtColor(small_state_img, cv2.COLOR_BGR2RGB), i)
+            logger.log_image(
+                f"Next_State/{i}", cv2.cvtColor(small_next_state_img, cv2.COLOR_BGR2RGB), i
             )
 
         images_stack.append(small_state_img)
@@ -90,6 +82,7 @@ def make_puzzle_transition_dataset(
     next_images_stack = np.stack(next_images_stack, axis=0)
     np.save(f"tmp/{puzzle_name}/images.npy", images_stack)
     np.save(f"tmp/{puzzle_name}/next_images.npy", next_images_stack)
+    logger.close()
 
 
 @click.command()
@@ -108,6 +101,7 @@ def make_puzzle_sample_data(
         **kwargs,
     }
     print_config("Make Puzzle Sample Data Configuration", config)
+    logger = TensorboardLogger(f"{puzzle_name}_make_sample_data", config)
     shuffle_parallel = int(math.ceil(wm_dataset_options.dataset_minibatch_size))
     get_datasets = get_sample_data_builder(
         puzzle, wm_dataset_options.dataset_size, shuffle_parallel
@@ -130,21 +124,11 @@ def make_puzzle_sample_data(
             initial_states[i], wm_dataset_options.img_size
         )
         if i < 3:
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/initial_img_{i}.png",
-                cv2.cvtColor(initial_img, cv2.COLOR_BGR2RGB),
+            logger.log_image(
+                f"Initial_State/{i}", cv2.cvtColor(small_initial_img, cv2.COLOR_BGR2RGB), i
             )
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/target_img_{i}.png",
-                cv2.cvtColor(target_img, cv2.COLOR_BGR2RGB),
-            )
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/small_initial_img_{i}.png",
-                cv2.cvtColor(small_initial_img, cv2.COLOR_BGR2RGB),
-            )
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/small_target_img_{i}.png",
-                cv2.cvtColor(small_target_img, cv2.COLOR_BGR2RGB),
+            logger.log_image(
+                f"Target_State/{i}", cv2.cvtColor(small_target_img, cv2.COLOR_BGR2RGB), i
             )
 
         initial_images_stack.append(small_initial_img)
@@ -153,6 +137,7 @@ def make_puzzle_sample_data(
     target_images_stack = np.stack(target_images_stack, axis=0)
     np.save(f"tmp/{puzzle_name}/inits.npy", initial_images_stack)
     np.save(f"tmp/{puzzle_name}/targets.npy", target_images_stack)
+    logger.close()
 
 
 @click.command()
@@ -171,6 +156,7 @@ def make_puzzle_eval_trajectory(
         **kwargs,
     }
     print_config("Make Puzzle Eval Trajectory Configuration", config)
+    logger = TensorboardLogger(f"{puzzle_name}_make_eval_trajectory", config)
 
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if wm_dataset_options.key == 0 else wm_dataset_options.key
@@ -186,14 +172,8 @@ def make_puzzle_eval_trajectory(
     for i in trange(len(states)):
         state_img, small_state_img = convert_to_imgs(states[i], wm_dataset_options.img_size)
         if i < 3:
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/state_img_{i}.png",
-                cv2.cvtColor(state_img, cv2.COLOR_BGR2RGB),
-            )
-            cv2.imwrite(
-                f"tmp/{puzzle_name}/small_state_img_{i}.png",
-                cv2.cvtColor(small_state_img, cv2.COLOR_BGR2RGB),
-            )
+            logger.log_image(f"State/{i}", cv2.cvtColor(small_state_img, cv2.COLOR_BGR2RGB), i)
         state_images_stack.append(small_state_img)
     state_images_stack = np.stack(state_images_stack, axis=0)
     np.save(f"tmp/{puzzle_name}/eval_traj_images.npy", state_images_stack)
+    logger.close()

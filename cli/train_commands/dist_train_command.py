@@ -1,14 +1,12 @@
-from datetime import datetime
-
 import click
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tensorboardX
 from puxle import Puzzle
 
 from config.pydantic_models import DistTrainOptions
 from helpers.config_printer import print_config
+from helpers.logger import TensorboardLogger
 from helpers.rich_progress import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
@@ -23,15 +21,6 @@ from ..options import (
     dist_qfunction_options,
     dist_train_options,
 )
-
-
-def setup_logging(
-    puzzle_name: str, puzzle_size: int, train_type: str
-) -> tensorboardX.SummaryWriter:
-    log_dir = (
-        f"runs/{puzzle_name}_{puzzle_size}_{train_type}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    )
-    return tensorboardX.SummaryWriter(log_dir)
 
 
 @click.command()
@@ -55,12 +44,12 @@ def davi(
         **kwargs,
     }
     print_config("DAVI Training Configuration", config)
+    logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_davi", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
     key, subkey = jax.random.split(key)
 
-    writer = setup_logging(puzzle_name, puzzle.size, "davi")
     heuristic_model = heuristic.model
     target_heuristic_params = heuristic.params
     heuristic_params = scaled_by_reset(
@@ -132,15 +121,15 @@ def davi(
                 "target_heuristic": float(mean_target_heuristic),
             },
         )
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
-        writer.add_scalar("Losses/Loss", loss, i)
-        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-        writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Losses/Loss", loss, i)
+        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if i % 10 == 0:
-            writer.add_histogram("Losses/Diff", diffs, i)
-            writer.add_histogram("Metrics/Target", target_heuristic, i)
+            logger.log_histogram("Losses/Diff", diffs, i)
+            logger.log_histogram("Metrics/Target", target_heuristic, i)
 
         if train_options.use_soft_update:
             target_heuristic_params = soft_update(
@@ -166,6 +155,7 @@ def davi(
             heuristic.save_model()
     heuristic.params = heuristic_params
     heuristic.save_model()
+    logger.close()
 
 
 @click.command()
@@ -191,12 +181,12 @@ def qlearning(
         **kwargs,
     }
     print_config("Q-Learning Training Configuration", config)
+    logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_qlearning", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
     key, subkey = jax.random.split(key)
 
-    writer = setup_logging(puzzle_name, puzzle.size, "qlearning")
     qfunc_model = qfunction.model
     target_qfunc_params = qfunction.params
     qfunc_params = scaled_by_reset(
@@ -270,15 +260,15 @@ def qlearning(
             },
         )
 
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
-        writer.add_scalar("Losses/Loss", loss, i)
-        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-        writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
-        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Losses/Loss", loss, i)
+        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
+        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if i % 10 == 0:
-            writer.add_histogram("Losses/Diff", diffs, i)
-            writer.add_histogram("Metrics/Target", target_q, i)
+            logger.log_histogram("Losses/Diff", diffs, i)
+            logger.log_histogram("Metrics/Target", target_q, i)
 
         if train_options.use_soft_update:
             target_qfunc_params = soft_update(
@@ -304,3 +294,4 @@ def qlearning(
             qfunction.save_model()
     qfunction.params = qfunc_params
     qfunction.save_model()
+    logger.close()
