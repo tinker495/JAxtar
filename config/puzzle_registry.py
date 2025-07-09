@@ -38,6 +38,12 @@ from heuristic.neuralheuristic import (
     SokobanNeuralHeuristic,
     WorldModelNeuralHeuristic,
 )
+from heuristic.neuralheuristic.spr_model.rubikscube_spr_neuralheuristic import (
+    RubiksCubeSPRNeuralHeuristic,
+)
+from heuristic.neuralheuristic.spr_model.world_model_spr_neuralheuristic import (
+    WorldModelSPRNeuralHeuristic,
+)
 from qfunction import (
     TSPQ,
     DotKnotQ,
@@ -58,6 +64,8 @@ from qfunction.neuralq import (
     SokobanNeuralQ,
     WorldModelNeuralQ,
 )
+from qfunction.neuralq.spr_model.rubikscube_spr_neuralq import RubiksCubeSPRNeuralQ
+from qfunction.neuralq.spr_model.world_model_spr_neuralq import WorldModelSPRNeuralQ
 from world_model_puzzle import (
     RubiksCubeWorldModel,
     RubiksCubeWorldModel_reversed,
@@ -169,6 +177,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path=f"qfunction/neuralq/model/params/rubikscube_{puzzle.size}.pkl",
             init_params=reset,
         ),
+        heuristic_spr=lambda puzzle, reset: RubiksCubeSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path=f"heuristic/neuralheuristic/spr_model/params/rubikscube_{puzzle.size}.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: RubiksCubeSPRNeuralQ(
+            puzzle=puzzle,
+            path=f"qfunction/neuralq/spr_model/params/rubikscube_{puzzle.size}.pkl",
+            init_params=reset,
+        ),
     ),
     "rubikscube-random": PuzzleBundle(
         puzzle=RubiksCubeRandom,
@@ -236,6 +254,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path="qfunction/neuralq/model/params/rubikscube_world_model_None.pkl",
             init_params=reset,
         ),
+        heuristic_spr=lambda puzzle, reset: WorldModelSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path="heuristic/neuralheuristic/spr_model/params/rubikscube_world_model_None.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: WorldModelSPRNeuralQ(
+            puzzle=puzzle,
+            path="qfunction/neuralq/spr_model/params/rubikscube_world_model_None.pkl",
+            init_params=reset,
+        ),
     ),
     "rubikscube_world_model_test": PuzzleBundle(
         puzzle=lambda **kwargs: RubiksCubeWorldModel_test(
@@ -249,6 +277,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function_nn=lambda puzzle, reset: WorldModelNeuralQ(
             puzzle=puzzle,
             path="qfunction/neuralq/model/params/rubikscube_world_model_None.pkl",
+            init_params=reset,
+        ),
+        heuristic_spr=lambda puzzle, reset: WorldModelSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path="heuristic/neuralheuristic/spr_model/params/rubikscube_world_model_None.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: WorldModelSPRNeuralQ(
+            puzzle=puzzle,
+            path="qfunction/neuralq/spr_model/params/rubikscube_world_model_None.pkl",
             init_params=reset,
         ),
     ),
@@ -266,6 +304,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path="qfunction/neuralq/model/params/rubikscube_world_model_None.pkl",
             init_params=reset,
         ),
+        heuristic_spr=lambda puzzle, reset: WorldModelSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path="heuristic/neuralheuristic/spr_model/params/rubikscube_world_model_None.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: WorldModelSPRNeuralQ(
+            puzzle=puzzle,
+            path="qfunction/neuralq/spr_model/params/rubikscube_world_model_None.pkl",
+            init_params=reset,
+        ),
     ),
     "rubikscube_world_model_optimized": PuzzleBundle(
         puzzle=lambda **kwargs: RubiksCubeWorldModelOptimized(
@@ -279,6 +327,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function_nn=lambda puzzle, reset: WorldModelNeuralQ(
             puzzle=puzzle,
             path="qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl",
+            init_params=reset,
+        ),
+        heuristic_spr=lambda puzzle, reset: WorldModelSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path="heuristic/neuralheuristic/spr_model/params/rubikscube_world_model_optimized_None.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: WorldModelSPRNeuralQ(
+            puzzle=puzzle,
+            path="qfunction/neuralq/spr_model/params/rubikscube_world_model_optimized_None.pkl",
             init_params=reset,
         ),
     ),
@@ -296,6 +354,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path="qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl",
             init_params=reset,
         ),
+        heuristic_spr=lambda puzzle, reset: WorldModelSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path="heuristic/neuralheuristic/spr_model/params/rubikscube_world_model_optimized_None.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: WorldModelSPRNeuralQ(
+            puzzle=puzzle,
+            path="qfunction/neuralq/spr_model/params/rubikscube_world_model_optimized_None.pkl",
+            init_params=reset,
+        ),
     ),
     "rubikscube_world_model_optimized_reversed": PuzzleBundle(
         puzzle=lambda **kwargs: RubiksCubeWorldModelOptimized_reversed(
@@ -309,6 +377,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function_nn=lambda puzzle, reset: WorldModelNeuralQ(
             puzzle=puzzle,
             path="qfunction/neuralq/model/params/rubikscube_world_model_optimized_None.pkl",
+            init_params=reset,
+        ),
+        heuristic_spr=lambda puzzle, reset: WorldModelSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path="heuristic/neuralheuristic/spr_model/params/rubikscube_world_model_optimized_None.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: WorldModelSPRNeuralQ(
+            puzzle=puzzle,
+            path="qfunction/neuralq/spr_model/params/rubikscube_world_model_optimized_None.pkl",
             init_params=reset,
         ),
     ),
@@ -326,6 +404,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path="qfunction/neuralq/model/params/sokoban_world_model_None.pkl",
             init_params=reset,
         ),
+        heuristic_spr=lambda puzzle, reset: WorldModelSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path="heuristic/neuralheuristic/spr_model/params/sokoban_world_model_None.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: WorldModelSPRNeuralQ(
+            puzzle=puzzle,
+            path="qfunction/neuralq/spr_model/params/sokoban_world_model_None.pkl",
+            init_params=reset,
+        ),
     ),
     "sokoban_world_model_optimized": PuzzleBundle(
         puzzle=lambda **kwargs: SokobanWorldModelOptimized(
@@ -339,6 +427,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function_nn=lambda puzzle, reset: WorldModelNeuralQ(
             puzzle=puzzle,
             path="qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl",
+            init_params=reset,
+        ),
+        heuristic_spr=lambda puzzle, reset: WorldModelSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path="heuristic/neuralheuristic/spr_model/params/sokoban_world_model_optimized_None.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: WorldModelSPRNeuralQ(
+            puzzle=puzzle,
+            path="qfunction/neuralq/spr_model/params/sokoban_world_model_optimized_None.pkl",
             init_params=reset,
         ),
     ),

@@ -103,8 +103,10 @@ class PuzzleBundle(BaseModel):
     puzzle_ds: Optional[Callable] = None
     heuristic: Callable = EmptyHeuristic
     heuristic_nn: Optional[Callable] = None
+    heuristic_spr: Optional[Callable] = None
     q_function: Callable = EmptyQFunction
     q_function_nn: Optional[Callable] = None
+    q_function_spr: Optional[Callable] = None
     shuffle_length: int = 50
 
     class Config:
