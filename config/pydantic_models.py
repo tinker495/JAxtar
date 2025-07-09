@@ -67,6 +67,7 @@ class DistTrainOptions(BaseModel):
     multi_device: bool = True
     reset_interval: int = 4000
     tau: float = 0.2
+    optimizer: str = "adam"
 
 
 class DistQFunctionOptions(BaseModel):
@@ -92,6 +93,7 @@ class WMGetModelOptions(BaseModel):
 class WMTrainOptions(BaseModel):
     train_epochs: int = 2000
     mini_batch_size: int = 1000
+    optimizer: str = "adam"
 
 
 class PuzzleBundle(BaseModel):

@@ -63,6 +63,7 @@ def train(
         1,
         wm_train_options.train_epochs,
         dataset_size // wm_train_options.mini_batch_size,
+        wm_train_options.optimizer,
         lr_init=1e-2,
     )
 

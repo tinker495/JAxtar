@@ -8,6 +8,12 @@ from jax import numpy as jnp
 PyTree = Any
 
 
+def scale_by_rmsprop(
+    b2: float = 0.999, eps: float = 1e-8, initial_scale: float = 0.0
+) -> optax.GradientTransformation:
+    return optax.scale_by_rms(b2=b2, eps=eps, initial_scale=initial_scale)
+
+
 def scale_by_adopt(
     b1: float = 0.9,
     b2: float = 0.9999,
@@ -80,8 +86,20 @@ def scale_by_adopt(
     return optax.GradientTransformation(init_fn, update_fn)
 
 
+OPTIMIZERS = {
+    "adam": optax.scale_by_adam,
+    "adopt": scale_by_adopt,
+    "rmsprop": scale_by_rmsprop,
+}
+
+
 def setup_optimizer(
-    params: PyTree, num_devices: int, steps: int, one_iter_size: int, lr_init: float = 1e-3
+    params: PyTree,
+    num_devices: int,
+    steps: int,
+    one_iter_size: int,
+    optimizer_name: str,
+    lr_init: float = 1e-3,
 ) -> optax.OptState:
     # Add warmup to the learning rate schedule
     lr = lr_init * num_devices
@@ -117,9 +135,11 @@ def setup_optimizer(
     mask = jax.tree_util.tree_map_with_path(_is_batch_stat_or_bias, params)
 
     def optimizer_fn(learning_rate):
+        if optimizer_name not in OPTIMIZERS:
+            raise ValueError(f"Unknown optimizer: {optimizer_name}")
+        scaler = OPTIMIZERS[optimizer_name]()
         return optax.chain(
-            # optax.scale_by_adam(),
-            scale_by_adopt(use_clipping=True),
+            scaler,
             optax.add_decayed_weights(0.001, mask=mask),
             optax.scale_by_learning_rate(learning_rate),
         )

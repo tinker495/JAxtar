@@ -74,6 +74,7 @@ def davi(
         n_devices,
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
     )
     davi_fn = davi_builder(
         train_options.train_minibatch_size,
@@ -199,6 +200,7 @@ def qlearning(
         n_devices,
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
     )
     qlearning_fn = qlearning_builder(
         train_options.train_minibatch_size,

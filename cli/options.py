@@ -20,6 +20,7 @@ from config.pydantic_models import (
 )
 from heuristic.heuristic_base import Heuristic
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.optimizer import OPTIMIZERS
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.q_base import QFunction
 
@@ -249,6 +250,12 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-ri", "--reset_interval", type=int, default=None)
     @click.option("-t", "--tau", type=float, default=None)
     @click.option(
+        "--optimizer",
+        type=click.Choice(list(OPTIMIZERS.keys())),
+        default="adam",
+        help="Optimizer to use",
+    )
+    @click.option(
         "-sl",
         "--shuffle_length",
         type=int,
@@ -399,6 +406,12 @@ def wm_get_world_model_options(func: callable) -> callable:
 def wm_train_options(func: callable) -> callable:
     @click.option("--train_epochs", type=int, default=2000, help="Number of training steps")
     @click.option("--mini_batch_size", type=int, default=1000, help="Batch size")
+    @click.option(
+        "--optimizer",
+        type=click.Choice(list(OPTIMIZERS.keys())),
+        default="adam",
+        help="Optimizer to use",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         wm_train_opts = WMTrainOptions(**{k: kwargs.pop(k) for k in WMTrainOptions.model_fields})
