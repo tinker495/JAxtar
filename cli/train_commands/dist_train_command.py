@@ -90,6 +90,7 @@ def davi(
         shuffle_length,
         train_options.dataset_minibatch_size,
         train_options.using_hindsight_target,
+        train_options.using_triangular_sampling,
         n_devices=n_devices,
     )
 
@@ -227,6 +228,7 @@ def qlearning(
         shuffle_length,
         train_options.dataset_minibatch_size,
         train_options.using_hindsight_target,
+        train_options.using_triangular_sampling,
         n_devices=n_devices,
         with_policy=with_policy,
     )

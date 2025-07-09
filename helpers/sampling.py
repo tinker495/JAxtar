@@ -237,66 +237,68 @@ def create_hindsight_target_triangular_shuffled_path(
     key: chex.PRNGKey,
 ):
     assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
-    trajectory = get_random_trajectory(puzzle, shuffle_length, shuffle_parallel, key)
+    key, subkey = jax.random.split(key)
+    trajectory = get_random_trajectory(puzzle, shuffle_length, shuffle_parallel, subkey)
 
-    solve_configs = trajectory["solve_configs"]  # [shuffle_parallel, ...]
-    states = trajectory["states"]  # [shuffle_length + 1, shuffle_parallel, ...]
-    move_costs = trajectory["move_costs"]  # [shuffle_length + 1, shuffle_parallel]
-    actions = trajectory["actions"]  # [shuffle_length, shuffle_parallel]
-    action_costs = trajectory["action_costs"]  # [shuffle_length, shuffle_parallel]
+    solve_configs = trajectory["solve_configs"]  # [P, ...]
+    states = trajectory["states"]  # [L+1, P, ...]
+    move_costs = trajectory["move_costs"]  # [L+1, P]
+    actions = trajectory["actions"]  # [L, P]
+    action_costs = trajectory["action_costs"]  # [L, P]
 
-    solve_configs = jax.vmap(puzzle.batched_hindsight_transform)(
-        solve_configs, states
-    )  # [shuffle_length + 1, shuffle_parallel, ...]
-    move_costs = (
-        move_costs[jnp.newaxis, ...]
-        - move_costs[  # [1, shuffle_length + 1, shuffle_parallel]
-            :, jnp.newaxis, ...
-        ]  # [shuffle_length + 1, 1, shuffle_parallel]
-    )  # [shuffle_length + 1, shuffle_length + 1, shuffle_parallel]
+    # For each starting point i, uniformly sample a future point j.
+    start_indices = jnp.arange(shuffle_length)  # [L]
 
-    solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length + 1, 1) + (x.ndim - 1) * (1,)),
+    key, subkey = jax.random.split(key)
+    # Generate random floats for each start_idx and each parallel trajectory
+    random_floats = jax.random.uniform(subkey, shape=(shuffle_length, shuffle_parallel))  # [L, P]
+
+    # Number of choices for each start_idx `i` is (shuffle_length - i)
+    num_choices = (shuffle_length - start_indices)[:, jnp.newaxis]  # [L, 1]
+
+    # j_offset is in [0, L-i-1]
+    j_offset = (random_floats * num_choices).astype(jnp.int32)  # [L, P]
+
+    # Calculate target indices `j = i + 1 + offset`
+    start_indices_grid = start_indices[:, jnp.newaxis]  # [L, 1]
+    target_indices = start_indices_grid + 1 + j_offset  # [L, P]
+
+    start_indices_flat = jnp.tile(start_indices_grid, (1, shuffle_parallel))  # [L, P]
+    parallel_indices = jnp.tile(
+        jnp.arange(shuffle_parallel)[None, :], (shuffle_length, 1)
+    )  # [L, P]
+
+    # Gather data using the sampled indices
+    start_states = states[start_indices_flat, parallel_indices]
+    target_states = states[target_indices, parallel_indices]
+
+    start_move_costs = move_costs[start_indices_flat, parallel_indices]
+    target_move_costs = move_costs[target_indices, parallel_indices]
+    final_move_costs = target_move_costs - start_move_costs
+
+    final_actions = actions[start_indices_flat, parallel_indices]
+    final_action_costs = action_costs[start_indices_flat, parallel_indices]
+
+    # Apply hindsight transform
+    tiled_solve_configs = jax.tree_util.tree_map(
+        lambda x: jnp.tile(x[None, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
         solve_configs,
-    )  # [shuffle_length + 1, shuffle_length + 1, shuffle_parallel, ...]
-    states = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length + 1) + (x.ndim - 1) * (1,)),
-        states,
-    )  # [shuffle_length + 1, shuffle_length + 1, shuffle_parallel, ...]
+    )  # [L, P, ...]
 
-    # Create an explicit upper triangular mask
-    upper_tri_mask = jnp.expand_dims(
-        jnp.tril(jnp.ones((shuffle_length + 1, shuffle_length + 1)), k=1), axis=-1
-    )  # [shuffle_length + 1, shuffle_length + 1, 1]
-    # Combine with positive cost condition
+    flat_tiled_sc = flatten_tree(tiled_solve_configs, 2)
+    flat_target_states = flatten_tree(target_states, 2)
+    final_solve_configs = puzzle.batched_hindsight_transform(flat_tiled_sc, flat_target_states)
 
-    valid_indices = (move_costs > 0) & (
-        upper_tri_mask > 0
-    )  # [shuffle_length + 1, shuffle_length + 1, shuffle_parallel]
-    idxs = jnp.where(
-        valid_indices, size=(shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel)
-    )  # [shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel]
-
-    solve_configs = solve_configs[
-        idxs[0], idxs[1], idxs[2], ...
-    ]  # [shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel, ...]
-    states = states[
-        idxs[0], idxs[1], idxs[2], ...
-    ]  # [shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel, ...]
-    move_costs = move_costs[
-        idxs[0], idxs[1], idxs[2]
-    ]  # [shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel]
-    actions = actions[
-        idxs[0], idxs[1], idxs[2]
-    ]  # [shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel]
-    action_costs = action_costs[
-        idxs[0], idxs[1], idxs[2]
-    ]  # [shuffle_length * (shuffle_length + 1) // 2 * shuffle_parallel]
+    # Flatten the rest of the data
+    final_start_states = flatten_tree(start_states, 2)
+    final_move_costs = flatten_array(final_move_costs, 2)
+    final_actions = flatten_array(final_actions, 2)
+    final_action_costs = flatten_array(final_action_costs, 2)
 
     return {
-        "solve_configs": solve_configs,
-        "states": states,
-        "move_costs": move_costs,
-        "actions": actions,
-        "action_costs": action_costs,
+        "solve_configs": final_solve_configs,
+        "states": final_start_states,
+        "move_costs": final_move_costs,
+        "actions": final_actions,
+        "action_costs": final_action_costs,
     }

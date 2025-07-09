@@ -358,18 +358,18 @@ def get_qlearning_dataset_builder(
     shuffle_length: int,
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
-    using_triangular_target: bool = False,
+    using_triangular_sampling: bool = False,
     with_policy: bool = False,
     n_devices: int = 1,
 ):
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
         # Calculate appropriate shuffle_parallel for hindsight sampling
-        if using_triangular_target:
-            triangle_size = shuffle_length * (shuffle_length + 1) // 2
-            needed_parallel = math.ceil(dataset_size / triangle_size)
-            shuffle_parallel = int(min(needed_parallel, dataset_minibatch_size))
-            steps = math.ceil(dataset_size / (shuffle_parallel * triangle_size))
+        shuffle_parallel = int(
+            min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
+        )
+        steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
+        if using_triangular_sampling:
             create_shuffled_path_fn = partial(
                 create_hindsight_target_triangular_shuffled_path,
                 puzzle,
@@ -377,10 +377,6 @@ def get_qlearning_dataset_builder(
                 shuffle_parallel,
             )
         else:
-            shuffle_parallel = int(
-                min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
-            )
-            steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
             create_shuffled_path_fn = partial(
                 create_hindsight_target_shuffled_path,
                 puzzle,
