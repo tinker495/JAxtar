@@ -14,15 +14,19 @@ class TensorboardLogger:
         self.writer = tensorboardX.SummaryWriter(self.log_dir)
 
         # Initialize Aim run
-        self.aim_run = aim.Run(
-            experiment=log_dir_base,
-        )
+        self.aim_run = None
+        try:
+            self.aim_run = aim.Run(
+                experiment=log_dir_base,
+            )
+            print(f"Aim logging enabled. Repo: {self.aim_run.repo.path}")
+            print(f"Aim run hash: {self.aim_run.hash}")
+        except Exception as e:
+            print(f"Could not initialize Aim, disabling Aim logging. Error: {e}")
 
         self.log_hyperparameters()
         self.log_git_info()
         print(f"Tensorboard log directory: {self.log_dir}")
-        print(f"Aim repo location: {self.aim_run.repo.path}")
-        print(f"Aim run hash: {self.aim_run.hash}")
 
     def _create_log_dir(self, log_dir_base: str) -> str:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -40,7 +44,8 @@ class TensorboardLogger:
             f.write(config_str)
 
         # Log hyperparameters to Aim
-        self.aim_run["hparams"] = self.config
+        if self.aim_run:
+            self.aim_run["hparams"] = self.config
 
     def log_git_info(self):
         try:
@@ -48,35 +53,42 @@ class TensorboardLogger:
                 subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
             )
             self.writer.add_text("Git Commit", commit_hash)
-            self.aim_run["git_commit"] = commit_hash
+            if self.aim_run:
+                self.aim_run["git_commit"] = commit_hash
         except (subprocess.CalledProcessError, FileNotFoundError):
             self.writer.add_text("Git Commit", "N/A")
-            self.aim_run["git_commit"] = "N/A"
+            if self.aim_run:
+                self.aim_run["git_commit"] = "N/A"
 
     def log_scalar(self, tag: str, value: float, step: int):
         self.writer.add_scalar(tag, value, step)
-        self.aim_run.track(float(value), name=tag, step=step)
+        if self.aim_run:
+            self.aim_run.track(float(value), name=tag, step=step)
 
     def log_histogram(self, tag: str, values: np.ndarray, step: int):
         self.writer.add_histogram(tag, values, step)
-        # Aim doesn't have a direct histogram equivalent, but we can log distributions
-        # For simplicity, we can log mean/std/min/max or just skip it.
-        # Let's log a distribution for now.
-        self.aim_run.track(aim.Distribution(values), name=tag, step=step)
+        if self.aim_run:
+            # Aim doesn't have a direct histogram equivalent, but we can log distributions
+            # For simplicity, we can log mean/std/min/max or just skip it.
+            # Let's log a distribution for now.
+            self.aim_run.track(aim.Distribution(values), name=tag, step=step)
 
     def log_image(self, tag: str, image: np.ndarray, step: int, dataformats="HWC"):
         self.writer.add_image(tag, image, step, dataformats=dataformats)
-        # Aim's Image requires channel-first format (CHW)
-        if dataformats == "HWC":
-            aim_image = np.transpose(image, (2, 0, 1))
-        else:
-            aim_image = image
-        self.aim_run.track(aim.Image(aim_image), name=tag, step=step)
+        if self.aim_run:
+            # Aim's Image requires channel-first format (CHW)
+            if dataformats == "HWC":
+                aim_image = np.transpose(image, (2, 0, 1))
+            else:
+                aim_image = image
+            self.aim_run.track(aim.Image(aim_image), name=tag, step=step)
 
     def log_text(self, tag: str, text: str, step: int = 0):
         self.writer.add_text(tag, text, step)
-        self.aim_run.track(aim.Text(text), name=tag, step=step)
+        if self.aim_run:
+            self.aim_run.track(aim.Text(text), name=tag, step=step)
 
     def close(self):
         self.writer.close()
-        self.aim_run.close()
+        if self.aim_run:
+            self.aim_run.close()
