@@ -46,6 +46,12 @@ This project features specially written components, including:
 
 This project was quite challenging to develop, and it felt like performing acrobatics with JAX. However, I managed to create a fully functional version, and hopefully it will inspire you to discover something amazing as you delve into JAX.
 
+## Usage and Documentation
+
+For detailed information on all available commands and their options, please refer to the official documentation.
+
+[**Go to Documentation**](./docs/README.md)
+
 ## Result
 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.
