@@ -182,6 +182,7 @@ def create_hindsight_target_shuffled_path(
     shuffle_parallel: int,
     key: chex.PRNGKey,
 ):
+    assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
     trajectory = get_random_trajectory(puzzle, shuffle_length, shuffle_parallel, key)
 
     solve_configs = trajectory["solve_configs"]  # [shuffle_parallel, ...]
@@ -235,6 +236,7 @@ def create_hindsight_target_triangular_shuffled_path(
     shuffle_parallel: int,
     key: chex.PRNGKey,
 ):
+    assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
     trajectory = get_random_trajectory(puzzle, shuffle_length, shuffle_parallel, key)
 
     solve_configs = trajectory["solve_configs"]  # [shuffle_parallel, ...]
