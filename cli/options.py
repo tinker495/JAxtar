@@ -8,6 +8,7 @@ from config import puzzle_bundles, train_presets, world_model_bundles
 from config.pydantic_models import (
     DistQFunctionOptions,
     DistTrainOptions,
+    EvalOptions,
     HeuristicOptions,
     PuzzleOptions,
     QFunctionOptions,
@@ -34,6 +35,7 @@ def create_puzzle_options(
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
+            is_eval = kwargs.get("eval_options", None) is not None
             puzzle_opt_keys = set(PuzzleOptions.model_fields.keys())
             present_keys = puzzle_opt_keys.intersection(kwargs.keys())
             puzzle_kwargs = {k: kwargs.pop(k) for k in present_keys}
@@ -49,7 +51,7 @@ def create_puzzle_options(
             if puzzle_opts.puzzle_size != "default":
                 input_args["size"] = int(puzzle_opts.puzzle_size)
 
-            if use_hard_flag and puzzle_opts.hard:
+            if use_hard_flag and (puzzle_opts.hard or is_eval):
                 puzzle_callable = puzzle_bundle.puzzle_hard
             elif puzzle_ds_flag:
                 # This part is tricky. world_model_bundles has the specific puzzle_for_ds_gen
@@ -140,6 +142,25 @@ def search_options(func: callable) -> callable:
     return wrapper
 
 
+def eval_options(func: callable) -> callable:
+    @click.option("--batch-size", type=int, default=None, help="Batch size for search.")
+    @click.option(
+        "--max-node-size", type=int, default=None, help="Maximum number of nodes to search."
+    )
+    @click.option("--cost-weight", type=float, default=None, help="Weight for cost in search.")
+    @click.option("--num-eval", type=int, default=None, help="Number of puzzles to evaluate.")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Collect any user-provided options to override the preset
+        overrides = {
+            k: v for k, v in kwargs.items() if v is not None and k in EvalOptions.model_fields
+        }
+        kwargs["eval_options"] = EvalOptions(**overrides)
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 def heuristic_options(func: callable) -> callable:
     @click.option("-nn", "--neural_heuristic", is_flag=True, help="Use neural heuristic")
     @wraps(func)
@@ -149,8 +170,9 @@ def heuristic_options(func: callable) -> callable:
         )
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
+        is_eval = kwargs.get("eval_options", None) is not None
 
-        if heuristic_opts.neural_heuristic:
+        if heuristic_opts.neural_heuristic or is_eval:
             heuristic_callable = puzzle_bundle.heuristic_nn
             if heuristic_callable is None:
                 raise click.UsageError(
@@ -179,8 +201,9 @@ def qfunction_options(func: callable) -> callable:
         q_opts = QFunctionOptions(**{k: kwargs.pop(k) for k in QFunctionOptions.model_fields})
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
+        is_eval = kwargs.get("eval_options", None) is not None
 
-        if q_opts.neural_qfunction:
+        if q_opts.neural_qfunction or is_eval:
             q_callable = puzzle_bundle.q_function_nn
             if q_callable is None:
                 raise click.UsageError(

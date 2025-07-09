@@ -25,3 +25,10 @@ These commands are used to train neural network models for heuristic search.
 -   [**`qlearning`**](./qlearning_train.md): Trains a neural network to serve as a Q-function for estimating action costs.
 -   [**`world_model_train`**](./world_model_train.md): Trains a discrete world model that learns the puzzle's transition dynamics.
 -   [**`world_model_dataset`**](./world_model_dataset.md): A set of commands to generate datasets for training world models.
+
+### Evaluation Commands
+
+These commands are used to evaluate trained models and search algorithms.
+
+-   [**`eval heuristic`**](./eval_heuristic.md): Evaluates a heuristic on a set of puzzles.
+-   [**`eval qlearning`**](./eval_qlearning.md): Evaluates a Q-function on a set of puzzles.

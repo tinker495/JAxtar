@@ -1,8 +1,7 @@
 from typing import Callable, List, Optional, Tuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from helpers.formatting import human_format_to_float
 from heuristic import EmptyHeuristic
 from qfunction import EmptyQFunction
 
@@ -25,20 +24,29 @@ class PuzzleOptions(BaseModel):
 
 
 class SearchOptions(BaseModel):
-    max_node_size: str = "2e6"
-    batch_size: int = int(1e4)
-    cost_weight: float = 0.9
-    vmap_size: int = 1
-    debug: bool = False
-    profile: bool = False
-    show_compile_time: bool = False
+    batch_size: int = Field(10000, description="Batch size for search.")
+    max_node_size: int = Field(2000000, description="Maximum number of nodes to search.")
+    cost_weight: float = Field(0.5, description="Weight for cost in search.")
+    vmap_size: int = Field(1, description="Size of vmap for search.")
+    show_compile_time: bool = Field(False, description="Show compile time for search.")
+    profile: bool = Field(False, description="Profile search.")
 
-    def get_max_node_size(self) -> int:
-        return int(human_format_to_float(self.max_node_size))
+    def get_max_node_size(self):
+        return self.max_node_size // self.batch_size * self.batch_size
+
+
+class EvalOptions(BaseModel):
+    batch_size: int = Field(10000, description="Batch size for search.")
+    max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
+    cost_weight: float = Field(0.6, description="Weight for cost in search.")
+    num_eval: int = Field(200, description="Number of puzzles to evaluate.")
+
+    def get_max_node_size(self):
+        return self.max_node_size // self.batch_size * self.batch_size
 
 
 class VisualizeOptions(BaseModel):
-    visualize_terminal: bool = False
+    visualize_terminal: bool = Field(False, description="Visualize path in terminal.")
     visualize_imgs: bool = False
     max_animation_time: int = 10
 
