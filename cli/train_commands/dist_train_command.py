@@ -8,6 +8,7 @@ import tensorboardX
 from puxle import Puzzle
 
 from config.pydantic_models import DistTrainOptions
+from helpers.config_printer import print_config
 from helpers.rich_progress import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
@@ -45,6 +46,15 @@ def davi(
     shuffle_length: int,
     **kwargs,
 ):
+    config = {
+        "puzzle": {"name": puzzle_name, "size": puzzle.size},
+        "heuristic": heuristic.__class__.__name__,
+        "puzzle_name": puzzle_name,
+        "train_options": train_options.dict(),
+        "shuffle_length": shuffle_length,
+        **kwargs,
+    }
+    print_config("DAVI Training Configuration", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -171,6 +181,16 @@ def qlearning(
     with_policy: bool,
     **kwargs,
 ):
+    config = {
+        "puzzle": {"name": puzzle_name, "size": puzzle.size},
+        "qfunction": qfunction.__class__.__name__,
+        "puzzle_name": puzzle_name,
+        "train_options": train_options.dict(),
+        "shuffle_length": shuffle_length,
+        "with_policy": with_policy,
+        **kwargs,
+    }
+    print_config("Q-Learning Training Configuration", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )

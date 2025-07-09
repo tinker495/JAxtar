@@ -8,6 +8,7 @@ import numpy as np
 from puxle import Puzzle
 
 from config.pydantic_models import WMDatasetOptions
+from helpers.config_printer import print_config
 from helpers.rich_progress import trange
 from world_model_puzzle.world_model_ds import (
     create_eval_trajectory,
@@ -33,6 +34,13 @@ def make_puzzle_transition_dataset(
     wm_dataset_options: WMDatasetOptions,
     **kwargs,
 ):
+    config = {
+        "puzzle": {"name": puzzle_name, "size": puzzle.size},
+        "puzzle_name": puzzle_name,
+        "wm_dataset_options": wm_dataset_options.dict(),
+        **kwargs,
+    }
+    print_config("Make Puzzle Transition Dataset Configuration", config)
     shuffle_parallel = int(
         math.ceil(wm_dataset_options.dataset_minibatch_size / wm_dataset_options.shuffle_length)
     )
@@ -93,6 +101,13 @@ def make_puzzle_sample_data(
     wm_dataset_options: WMDatasetOptions,
     **kwargs,
 ):
+    config = {
+        "puzzle": {"name": puzzle_name, "size": puzzle.size},
+        "puzzle_name": puzzle_name,
+        "wm_dataset_options": wm_dataset_options.dict(),
+        **kwargs,
+    }
+    print_config("Make Puzzle Sample Data Configuration", config)
     shuffle_parallel = int(math.ceil(wm_dataset_options.dataset_minibatch_size))
     get_datasets = get_sample_data_builder(
         puzzle, wm_dataset_options.dataset_size, shuffle_parallel
@@ -149,6 +164,13 @@ def make_puzzle_eval_trajectory(
     wm_dataset_options: WMDatasetOptions,
     **kwargs,
 ):
+    config = {
+        "puzzle": {"name": puzzle_name, "size": puzzle.size},
+        "puzzle_name": puzzle_name,
+        "wm_dataset_options": wm_dataset_options.dict(),
+        **kwargs,
+    }
+    print_config("Make Puzzle Eval Trajectory Configuration", config)
 
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if wm_dataset_options.key == 0 else wm_dataset_options.key

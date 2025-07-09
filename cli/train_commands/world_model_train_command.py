@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import tensorboardX
 
 from config.pydantic_models import WMTrainOptions
+from helpers.config_printer import print_config
 from helpers.rich_progress import trange
 from neural_util.optimizer import setup_optimizer
 from neural_util.util import round_through_gradient
@@ -39,6 +40,20 @@ def train(
     wm_train_options: WMTrainOptions,
     **kwargs,
 ):
+    config = {
+        "world_model_name": world_model_name,
+        "world_model": world_model.__class__.__name__,
+        "wm_train_options": wm_train_options.dict(),
+        "dataset_shapes": {
+            "datas": str(datas.shape),
+            "next_datas": str(next_datas.shape),
+            "actions": str(actions.shape),
+            "eval_trajectory_states": str(eval_trajectory[0].shape),
+            "eval_trajectory_actions": str(eval_trajectory[1].shape),
+        },
+        **kwargs,
+    }
+    print_config("World Model Training Configuration", config)
 
     writer = setup_logging(world_model_name)
     model: nn.Module = world_model.model
