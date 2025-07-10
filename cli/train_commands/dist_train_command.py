@@ -38,7 +38,6 @@ def davi(
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "heuristic": heuristic.__class__.__name__,
-        "puzzle_name": puzzle_name,
         "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
         **kwargs,
@@ -75,6 +74,8 @@ def davi(
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
     )
+    if train_options.opt_state_reset:
+        inited_opt_state = opt_state
     davi_fn = davi_builder(
         train_options.train_minibatch_size,
         heuristic_model,
@@ -128,7 +129,7 @@ def davi(
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if i % 10 == 0:
+        if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
 
@@ -140,8 +141,10 @@ def davi(
         elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
             target_heuristic_params = heuristic_params
             updated = True
+            if train_options.opt_state_reset:
+                opt_state = inited_opt_state
 
-        if i - last_reset_time >= reset_interval and updated and i < steps / 3:
+        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
             last_reset_time = i
             heuristic_params = scaled_by_reset(
                 heuristic_params,
@@ -175,7 +178,6 @@ def qlearning(
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "qfunction": qfunction.__class__.__name__,
-        "puzzle_name": puzzle_name,
         "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
         "with_policy": with_policy,
@@ -213,6 +215,8 @@ def qlearning(
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
     )
+    if train_options.opt_state_reset:
+        inited_opt_state = opt_state
     qlearning_fn = qlearning_builder(
         train_options.train_minibatch_size,
         qfunc_model,
@@ -268,7 +272,7 @@ def qlearning(
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if i % 10 == 0:
+        if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
 
@@ -280,8 +284,10 @@ def qlearning(
         elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
             target_qfunc_params = qfunc_params
             updated = True
+            if train_options.opt_state_reset:
+                opt_state = inited_opt_state
 
-        if i - last_reset_time >= reset_interval and updated and i < steps / 3:
+        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
             last_reset_time = i
             qfunc_params = scaled_by_reset(
                 qfunc_params,

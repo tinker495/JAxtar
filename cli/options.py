@@ -270,8 +270,9 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-is", "--using_importance_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
     @click.option("-d", "--debug", is_flag=True, default=None)
-    @click.option("-md", "--multi_device", is_flag=True, default=None)
+    @click.option("-md", "--multi_device", type=bool, default=None)
     @click.option("-ri", "--reset_interval", type=int, default=None)
+    @click.option("-osr", "--opt_state_reset", type=bool, default=None)
     @click.option("-t", "--tau", type=float, default=None)
     @click.option(
         "--optimizer",

@@ -76,6 +76,7 @@ class DistTrainOptions(BaseModel):
     multi_device: bool = True
     reset_interval: int = 4000
     tau: float = 0.2
+    opt_state_reset: bool = True
     optimizer: str = "adam"
 
 
