@@ -264,7 +264,7 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-dmb", "--dataset_minibatch_size", type=int, default=None)
     @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
     @click.option("-k", "--key", type=int, default=None)
-    @click.option("-r", "--reset", is_flag=True, default=None)
+    @click.option("-r", "--reset", type=bool, default=None)
     @click.option("-lt", "--loss_threshold", type=float, default=None)
     @click.option("-ui", "--update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
