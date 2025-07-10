@@ -21,10 +21,12 @@ These commands are used to solve puzzles using different search algorithms.
 
 These commands are used to train neural network models for heuristic search.
 
--   [**`davi`**](./davi_train.md): Trains a neural network to act as a heuristic function by predicting the distance to the goal.
--   [**`qlearning`**](./qlearning_train.md): Trains a neural network to serve as a Q-function for estimating action costs.
--   [**`world_model_train`**](./world_model_train.md): Trains a discrete world model that learns the puzzle's transition dynamics.
--   [**`world_model_dataset`**](./world_model_dataset.md): A set of commands to generate datasets for training world models.
+-   [**`distance_train davi`**](./davi_train.md): Trains a neural network to act as a heuristic function by predicting the distance to the goal.
+-   [**`distance_train qlearning`**](./qlearning_train.md): Trains a neural network to serve as a Q-function for estimating action costs.
+-   [**`world_model_train train`**](./world_model_train.md): Trains a discrete world model that learns the puzzle's transition dynamics.
+-   [**`world_model_train make_transition_dataset`**](./world_model_dataset.md): Generates a dataset of state transitions for training world models.
+-   [**`world_model_train make_sample_data`**](./world_model_dataset.md): Generates a dataset of initial and target state pairs.
+-   [**`world_model_train make_eval_trajectory`**](./world_model_dataset.md): Generates a long trajectory for evaluating world model predictions.
 
 ### Evaluation Commands
 

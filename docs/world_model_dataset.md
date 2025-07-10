@@ -4,14 +4,14 @@ This document describes the set of commands used to generate various datasets re
 
 ## Usage
 
-These commands are typically run before `world_model_train` to prepare the necessary `.npy` files.
+These commands are typically run before `world_model_train train` to prepare the necessary `.npy` files.
 
 ```bash
 # Example: Create a transition dataset for the Rubik's Cube
-python main.py make_puzzle_transition_dataset -p rubikscube
+python main.py world_model_train make_transition_dataset -p rubikscube
 
 # Example: Create an evaluation trajectory
-python main.py make_puzzle_eval_trajectory -p rubikscube
+python main.py world_model_train make_eval_trajectory -p rubikscube
 ```
 
 ## Common Options
@@ -53,7 +53,7 @@ All commands in this group share the following option sets, which are used to co
 
 ## Commands
 
-### `make_puzzle_transition_dataset`
+### `world_model_train make_transition_dataset`
 
 This command generates a dataset of state transitions. For each sample, it records a starting state, the action taken, and the resulting next state. This is the primary dataset used for training the world model's transition dynamics.
 
@@ -62,7 +62,7 @@ This command generates a dataset of state transitions. For each sample, it recor
     -   `tmp/<puzzle_name>/images.npy` (the starting states)
     -   `tmp/<puzzle_name>/next_images.npy` (the resulting states)
 
-### `make_puzzle_sample_data`
+### `world_model_train make_sample_data`
 
 This command generates a dataset of initial and target state pairs. This can be useful for tasks that require a set of problems to solve, such as evaluating a planner.
 
@@ -70,10 +70,10 @@ This command generates a dataset of initial and target state pairs. This can be 
     -   `tmp/<puzzle_name>/inits.npy` (initial states)
     -   `tmp/<puzzle_name>/targets.npy` (target states)
 
-### `make_puzzle_eval_trajectory`
+### `world_model_train make_eval_trajectory`
 
 This command generates a long trajectory of states and actions by starting from a solved state and applying a large number of random moves. This trajectory is used as a consistent benchmark to evaluate the world model's prediction accuracy over multiple steps during training.
 
 -   **Outputs:**
     -   `tmp/<puzzle_name>/eval_actions.npy`
-    -   `tmp/<puzzle_name}/eval_traj_images.npy`
+    -   `tmp/<puzzle_name>/eval_traj_images.npy`
