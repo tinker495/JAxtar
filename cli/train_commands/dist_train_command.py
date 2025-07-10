@@ -74,8 +74,6 @@ def davi(
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
     )
-    if train_options.opt_state_reset:
-        inited_opt_state = opt_state
     davi_fn = davi_builder(
         train_options.train_minibatch_size,
         heuristic_model,
@@ -142,7 +140,7 @@ def davi(
             target_heuristic_params = heuristic_params
             updated = True
             if train_options.opt_state_reset:
-                opt_state = inited_opt_state
+                opt_state = optimizer.init(heuristic_params)
 
         if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
             last_reset_time = i
@@ -215,8 +213,6 @@ def qlearning(
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
     )
-    if train_options.opt_state_reset:
-        inited_opt_state = opt_state
     qlearning_fn = qlearning_builder(
         train_options.train_minibatch_size,
         qfunc_model,
@@ -285,7 +281,7 @@ def qlearning(
             target_qfunc_params = qfunc_params
             updated = True
             if train_options.opt_state_reset:
-                opt_state = inited_opt_state
+                opt_state = optimizer.init(qfunc_params)
 
         if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
             last_reset_time = i
