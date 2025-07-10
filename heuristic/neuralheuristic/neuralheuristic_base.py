@@ -80,10 +80,11 @@ class NeuralHeuristicBase(Heuristic):
             print(f"Error loading model: {e}")
             return self.get_new_params()
 
-    def save_model(self):
-        if not os.path.exists(os.path.dirname(self.path)):
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        with open(self.path, "wb") as f:
+    def save_model(self, path: str = None):
+        path = path or self.path
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
             pickle.dump(self.params, f)
 
     def batched_distance(

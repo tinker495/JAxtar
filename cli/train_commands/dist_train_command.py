@@ -1,10 +1,13 @@
+import os
+
 import click
 import jax
 import jax.numpy as jnp
 import numpy as np
 from puxle import Puzzle
 
-from config.pydantic_models import DistTrainOptions
+from cli.eval_commands import run_evaluation
+from config.pydantic_models import DistTrainOptions, EvalOptions
 from helpers.config_printer import print_config
 from helpers.logger import TensorboardLogger
 from helpers.rich_progress import trange
@@ -15,6 +18,8 @@ from heuristic.neuralheuristic.spr_davi import (
     spr_davi_builder,
 )
 from heuristic.neuralheuristic.spr_neuralheuristic_base import SPRNeuralHeuristic
+from JAxtar.astar import astar_builder
+from JAxtar.qstar import qstar_builder
 from neural_util.optimizer import setup_optimizer
 from neural_util.target_update import scaled_by_reset, soft_update
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
@@ -30,6 +35,7 @@ from ..options import (
     dist_puzzle_options,
     dist_qfunction_options,
     dist_train_options,
+    eval_options,
 )
 
 
@@ -37,20 +43,22 @@ from ..options import (
 @dist_puzzle_options
 @dist_train_options
 @dist_heuristic_options
+@eval_options
 def davi(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
     shuffle_length: int,
+    eval_options: EvalOptions,
     **kwargs,
 ):
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "heuristic": heuristic.__class__.__name__,
-        "puzzle_name": puzzle_name,
         "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
+        "eval_options": eval_options.dict(),
         **kwargs,
     }
     print_config("DAVI Training Configuration", config)
@@ -138,7 +146,7 @@ def davi(
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if i % 10 == 0:
+        if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
 
@@ -150,8 +158,10 @@ def davi(
         elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
             target_heuristic_params = heuristic_params
             updated = True
+            if train_options.opt_state_reset:
+                opt_state = optimizer.init(heuristic_params)
 
-        if i - last_reset_time >= reset_interval and updated and i < steps / 3:
+        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
             last_reset_time = i
             heuristic_params = scaled_by_reset(
                 heuristic_params,
@@ -161,11 +171,55 @@ def davi(
             opt_state = optimizer.init(heuristic_params)
             updated = False
 
-        if i % 1000 == 0 and i != 0:
+        if i % (steps // 5) == 0 and i != 0:
             heuristic.params = heuristic_params
-            heuristic.save_model()
+            backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
+            heuristic.save_model(path=backup_path)
     heuristic.params = heuristic_params
-    heuristic.save_model()
+    backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
+    heuristic.save_model(path=backup_path)
+
+    # Evaluation
+    eval_seeds = list(range(eval_options.num_eval))
+    if eval_seeds:
+        config["evaluation"] = {
+            "search_algorithm": "A*",
+            "eval_options": eval_options.dict(),
+            "num_eval": len(eval_seeds),
+            "seeds": tuple(eval_seeds),
+        }
+        print_config("Heuristic Evaluation Configuration", config["evaluation"])
+
+        astar_fn = astar_builder(
+            puzzle,
+            heuristic,
+            eval_options.batch_size,
+            eval_options.get_max_node_size(),
+            cost_weight=eval_options.cost_weight,
+        )
+
+        results = run_evaluation(
+            search_fn=astar_fn,
+            puzzle=puzzle,
+            seeds=eval_seeds,
+            eval_options=eval_options,
+        )
+
+        num_puzzles = len(eval_seeds)
+        num_solved = sum(r["solved"] for r in results)
+        success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
+        total_times = [r["search_time_s"] for r in results]
+        total_nodes = [r["nodes_generated"] for r in results]
+        solved_paths = [r["path_length"] for r in results if r["solved"]]
+
+        logger.log_scalar("Evaluation/Success Rate", success_rate, steps)
+        logger.log_scalar("Evaluation/Avg Search Time", jnp.mean(jnp.array(total_times)), steps)
+        logger.log_scalar("Evaluation/Avg Generated Nodes", jnp.mean(jnp.array(total_nodes)), steps)
+        if solved_paths:
+            logger.log_scalar(
+                "Evaluation/Avg Path Length", jnp.mean(jnp.array(solved_paths)), steps
+            )
+
     logger.close()
 
 
@@ -173,6 +227,7 @@ def davi(
 @dist_puzzle_options
 @dist_train_options
 @dist_qfunction_options
+@eval_options
 def qlearning(
     puzzle: Puzzle,
     qfunction: NeuralQFunctionBase,
@@ -180,15 +235,16 @@ def qlearning(
     train_options: DistTrainOptions,
     shuffle_length: int,
     with_policy: bool,
+    eval_options: EvalOptions,
     **kwargs,
 ):
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "qfunction": qfunction.__class__.__name__,
-        "puzzle_name": puzzle_name,
         "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
         "with_policy": with_policy,
+        "eval_options": eval_options.dict(),
         **kwargs,
     }
     print_config("Q-Learning Training Configuration", config)
@@ -278,7 +334,7 @@ def qlearning(
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if i % 10 == 0:
+        if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
 
@@ -290,8 +346,10 @@ def qlearning(
         elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
             target_qfunc_params = qfunc_params
             updated = True
+            if train_options.opt_state_reset:
+                opt_state = optimizer.init(qfunc_params)
 
-        if i - last_reset_time >= reset_interval and updated and i < steps / 3:
+        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
             last_reset_time = i
             qfunc_params = scaled_by_reset(
                 qfunc_params,
@@ -301,11 +359,55 @@ def qlearning(
             opt_state = optimizer.init(qfunc_params)
             updated = False
 
-        if i % 1000 == 0 and i != 0:
+        if i % (steps // 5) == 0 and i != 0:
             qfunction.params = qfunc_params
-            qfunction.save_model()
+            backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
+            qfunction.save_model(path=backup_path)
     qfunction.params = qfunc_params
-    qfunction.save_model()
+    backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
+    qfunction.save_model(path=backup_path)
+
+    # Evaluation
+    eval_seeds = list(range(eval_options.num_eval))
+    if eval_seeds:
+        config["evaluation"] = {
+            "search_algorithm": "Q*",
+            "eval_options": eval_options.dict(),
+            "num_eval": len(eval_seeds),
+            "seeds": tuple(eval_seeds),
+        }
+        print_config("Q-Learning Evaluation Configuration", config["evaluation"])
+
+        qstar_fn = qstar_builder(
+            puzzle,
+            qfunction,
+            eval_options.batch_size,
+            eval_options.get_max_node_size(),
+            cost_weight=eval_options.cost_weight,
+        )
+
+        results = run_evaluation(
+            search_fn=qstar_fn,
+            puzzle=puzzle,
+            seeds=eval_seeds,
+            eval_options=eval_options,
+        )
+
+        num_puzzles = len(eval_seeds)
+        num_solved = sum(r["solved"] for r in results)
+        success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
+        total_times = [r["search_time_s"] for r in results]
+        total_nodes = [r["nodes_generated"] for r in results]
+        solved_paths = [r["path_length"] for r in results if r["solved"]]
+
+        logger.log_scalar("Evaluation/Success Rate", success_rate, steps)
+        logger.log_scalar("Evaluation/Avg Search Time", jnp.mean(jnp.array(total_times)), steps)
+        logger.log_scalar("Evaluation/Avg Generated Nodes", jnp.mean(jnp.array(total_nodes)), steps)
+        if solved_paths:
+            logger.log_scalar(
+                "Evaluation/Avg Path Length", jnp.mean(jnp.array(solved_paths)), steps
+            )
+
     logger.close()
 
 

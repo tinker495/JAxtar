@@ -1,26 +1,26 @@
-# World Model Training Command (`world_model_train`)
+# World Model Training Command (`world_model_train train`)
 
-The `world_model_train` command trains a discrete world model for a specific puzzle environment. This model learns the transition dynamics of the puzzle—that is, given a state and an action, it predicts the next state. It typically consists of an encoder, a decoder, and a transition model. This allows for planning and search to be performed in a learned latent space, which can be much more efficient than searching in the original state space.
+The `world_model_train train` command trains a discrete world model for a specific puzzle environment. This model learns the transition dynamics of the puzzle—that is, given a state and an action, it predicts the next state. It typically consists of an encoder, a decoder, and a transition model. This allows for planning and search to be performed in a learned latent space, which can be much more efficient than searching in the original state space.
 
 This command is intended for users interested in model-based reinforcement learning and heuristic search.
 
 ## Usage
 
-The basic syntax for the `world_model_train` command is:
+The basic syntax for the `world_model_train train` command is:
 
 ```bash
-python main.py world_model_train [OPTIONS]
+python main.py world_model_train train [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py world_model_train --dataset rubikscube --world_model rubikscube --train_epochs 2000
+python main.py world_model_train train --dataset rubikscube --world_model rubikscube --train_epochs 2000
 ```
 
 ## Options
 
-The `world_model_train` command uses several option groups to configure the dataset, the model architecture, and the training process.
+The `world_model_train train` command uses several option groups to configure the dataset, the model architecture, and the training process.
 
 ### Dataset Options (`@wm_get_ds_options`)
 

@@ -1,10 +1,22 @@
 import os
 import subprocess
 from datetime import datetime
+from typing import Any
 
 import aim
 import numpy as np
 import tensorboardX
+from pydantic import BaseModel
+
+
+def _convert_to_dict_if_pydantic(obj: Any) -> Any:
+    if isinstance(obj, BaseModel):
+        return obj.dict()
+    if isinstance(obj, dict):
+        return {k: _convert_to_dict_if_pydantic(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_convert_to_dict_if_pydantic(i) for i in obj]
+    return obj
 
 
 class TensorboardLogger:
@@ -45,7 +57,8 @@ class TensorboardLogger:
 
         # Log hyperparameters to Aim
         if self.aim_run:
-            self.aim_run["hparams"] = self.config
+            hparams = _convert_to_dict_if_pydantic(self.config)
+            self.aim_run["hparams"] = hparams
 
     def log_git_info(self):
         try:
@@ -73,11 +86,12 @@ class TensorboardLogger:
             # Let's log a distribution for now.
             self.aim_run.track(aim.Distribution(values), name=tag, step=step)
 
-    def log_image(self, tag: str, image: np.ndarray, step: int, dataformats="HWC"):
+    def log_image(self, tag: str, image, step: int, dataformats="HWC"):
+        image = np.asarray(image)
         self.writer.add_image(tag, image, step, dataformats=dataformats)
         if self.aim_run:
             # Aim's Image requires channel-first format (CHW)
-            if dataformats == "HWC":
+            if dataformats == "CHW":
                 aim_image = np.transpose(image, (2, 0, 1))
             else:
                 aim_image = image
