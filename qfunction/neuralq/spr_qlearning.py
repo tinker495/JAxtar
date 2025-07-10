@@ -32,8 +32,8 @@ def spr_qlearning_builder(
 ):
     def cosine_similarity_loss(p, z):
         z = jax.lax.stop_gradient(z)
-        p = p / jnp.linalg.norm(p, axis=-1, keepdims=True)
-        z = z / jnp.linalg.norm(z, axis=-1, keepdims=True)
+        p = p / (jnp.linalg.norm(p, axis=-1, keepdims=True) + 1e-8)
+        z = z / (jnp.linalg.norm(z, axis=-1, keepdims=True) + 1e-8)
         return -jnp.mean(jnp.sum(p * z, axis=-1))
 
     def spr_qlearning_loss(
@@ -59,7 +59,9 @@ def spr_qlearning_builder(
 
         # --- SPR Loss ---
         # Online network predictions
-        (_, _, pred_next_p_all) = q_model.apply(q_params, preproc, training=True, mutable=False)[0]
+        (_, _, pred_next_p_all) = q_model.apply(
+            q_params, preproc, training=True, mutable=["batch_stats"]
+        )[0]
 
         pred_next_p_all = jnp.reshape(
             pred_next_p_all, (pred_next_p_all.shape[0], q_model.action_size, -1)
@@ -70,7 +72,7 @@ def spr_qlearning_builder(
 
         # Target network predictions
         (_, target_next_p, _) = q_model.apply(
-            target_q_params, next_preproc, training=False, mutable=False
+            target_q_params, next_preproc, training=False, mutable=["batch_stats"]
         )[0]
 
         spr_loss = cosine_similarity_loss(pred_next_p, target_next_p)
@@ -244,7 +246,9 @@ def _get_datasets_with_policy(
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        q_values, _, _ = q_model.apply(q_params, preproc, training=False, mutable=False)[0]
+        q_values, _, _ = q_model.apply(q_params, preproc, training=False, mutable=["batch_stats"])[
+            0
+        ]
 
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
@@ -280,7 +284,7 @@ def _get_datasets_with_policy(
 
         # Use target network for next state Q-values
         next_q_values, _, _ = q_model.apply(
-            target_q_params, next_preproc, training=False, mutable=False
+            target_q_params, next_preproc, training=False, mutable=["batch_stats"]
         )[0]
 
         mask_neighbor = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))

@@ -59,7 +59,7 @@ class SPRNeuralHeuristic(NeuralHeuristicBase):
         # Get action size for the model
         dummy_solve_config = puzzle.SolveConfig.default()
         dummy_current = puzzle.State.default()
-        action_size = puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[0]
+        action_size = len(puzzle.get_neighbours(dummy_solve_config, dummy_current))
 
         # Add action_size to kwargs for the model
         model_kwargs = kwargs.copy()

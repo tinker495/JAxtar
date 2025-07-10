@@ -21,8 +21,10 @@ from config.pydantic_models import (
 )
 from heuristic.heuristic_base import Heuristic
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from heuristic.neuralheuristic.spr_neuralheuristic_base import SPRNeuralHeuristic
 from neural_util.optimizer import OPTIMIZERS
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+from qfunction.neuralq.spr_neuralq_base import SPRNeuralQFunction
 from qfunction.q_base import QFunction
 
 
@@ -369,6 +371,51 @@ def dist_qfunction_options(func: callable) -> callable:
             )
 
         qfunction: NeuralQFunctionBase = q_callable(puzzle, reset)
+        kwargs["qfunction"] = qfunction
+        kwargs["with_policy"] = not q_opts.not_with_policy
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def dist_spr_heuristic_options(func: callable) -> callable:
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        puzzle_bundle = kwargs.pop("puzzle_bundle")
+        puzzle = kwargs["puzzle"]
+        reset = kwargs["train_options"].reset
+
+        heuristic_callable = puzzle_bundle.heuristic_spr
+        if heuristic_callable is None:
+            raise click.UsageError(
+                f"SPR Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
+            )
+
+        heuristic: SPRNeuralHeuristic = heuristic_callable(puzzle, reset)
+        kwargs["heuristic"] = heuristic
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def dist_spr_qfunction_options(func: callable) -> callable:
+    @click.option("-nwp", "--not_with_policy", is_flag=True, help="Not use policy for training")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        q_opts = DistQFunctionOptions(
+            **{k: kwargs.pop(k) for k in DistQFunctionOptions.model_fields}
+        )
+        puzzle_bundle = kwargs.pop("puzzle_bundle")
+        puzzle = kwargs["puzzle"]
+        reset = kwargs["train_options"].reset
+
+        q_callable = puzzle_bundle.q_function_spr
+        if q_callable is None:
+            raise click.UsageError(
+                f"SPR Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
+            )
+
+        qfunction: SPRNeuralQFunction = q_callable(puzzle, reset)
         kwargs["qfunction"] = qfunction
         kwargs["with_policy"] = not q_opts.not_with_policy
         return func(*args, **kwargs)

@@ -31,8 +31,8 @@ def spr_davi_builder(
 ):
     def cosine_similarity_loss(p, z):
         z = jax.lax.stop_gradient(z)
-        p = p / jnp.linalg.norm(p, axis=-1, keepdims=True)
-        z = z / jnp.linalg.norm(z, axis=-1, keepdims=True)
+        p = p / (jnp.linalg.norm(p, axis=-1, keepdims=True) + 1e-8)
+        z = z / (jnp.linalg.norm(z, axis=-1, keepdims=True) + 1e-8)
         return -jnp.mean(jnp.sum(p * z, axis=-1))
 
     def spr_davi_loss(
@@ -61,7 +61,7 @@ def spr_davi_builder(
         # --- SPR Loss ---
         # Online network predictions
         (_, projected_p, pred_next_p_all) = heuristic_model.apply(
-            heuristic_params, preproc, training=True, mutable=False
+            heuristic_params, preproc, training=True, mutable=["batch_stats"]
         )[0]
 
         pred_next_p_all = jnp.reshape(
@@ -73,7 +73,7 @@ def spr_davi_builder(
 
         # Target network predictions
         (_, target_next_p, _) = heuristic_model.apply(
-            target_heuristic_params, next_preproc, training=False, mutable=False
+            target_heuristic_params, next_preproc, training=False, mutable=["batch_stats"]
         )[0]
 
         spr_loss = cosine_similarity_loss(pred_next_p, target_next_p)
@@ -291,7 +291,7 @@ def _get_datasets(
 
         def heur_scan(n_states):
             heur, _, _ = heuristic_model.apply(
-                target_heuristic_params, n_states, training=False, mutable=False
+                target_heuristic_params, n_states, training=False, mutable=["batch_stats"]
             )[0]
             return heur.squeeze()
 
@@ -308,7 +308,7 @@ def _get_datasets(
         actions = min_indices
 
         # The next_state is the one corresponding to the selected action
-        batch_size = states.shape[0]
+        batch_size = jax.tree_util.tree_leaves(states)[0].shape[0]
         next_states = jax.tree_util.tree_map(
             lambda x: x[actions, jnp.arange(batch_size), :], neighbors
         )
@@ -319,7 +319,7 @@ def _get_datasets(
 
         # --- Diff for Importance Sampling ---
         current_heur, _, _ = heuristic_model.apply(
-            heuristic_params, preproc, training=False, mutable=False
+            heuristic_params, preproc, training=False, mutable=["batch_stats"]
         )[0]
         diff = target_heuristic - current_heur.squeeze()
 

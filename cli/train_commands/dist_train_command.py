@@ -34,6 +34,8 @@ from ..options import (
     dist_heuristic_options,
     dist_puzzle_options,
     dist_qfunction_options,
+    dist_spr_heuristic_options,
+    dist_spr_qfunction_options,
     dist_train_options,
     eval_options,
 )
@@ -414,7 +416,7 @@ def qlearning(
 @click.command()
 @dist_puzzle_options
 @dist_train_options
-@dist_qfunction_options
+@dist_spr_qfunction_options
 def spr_qlearning(
     puzzle: Puzzle,
     qfunction: SPRNeuralQFunction,
@@ -522,6 +524,9 @@ def spr_qlearning(
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if i % 100 == 0:
+            logger.log_histogram("Losses/Diff", diffs, i)
+            logger.log_histogram("Metrics/Target", target_q, i)
 
         if i % 1000 == 0 and i != 0:
             qfunction.params = qfunc_params
@@ -535,7 +540,7 @@ def spr_qlearning(
 @click.command()
 @dist_puzzle_options
 @dist_train_options
-@dist_heuristic_options
+@dist_spr_heuristic_options
 def spr_davi(
     puzzle: Puzzle,
     heuristic: SPRNeuralHeuristic,
@@ -641,6 +646,9 @@ def spr_davi(
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if i % 100 == 0:
+            logger.log_histogram("Losses/Diff", diffs, i)
+            logger.log_histogram("Metrics/Target", target_heuristic, i)
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = heuristic_params
