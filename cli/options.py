@@ -156,6 +156,8 @@ def eval_options(func: callable) -> callable:
             k: v for k, v in kwargs.items() if v is not None and k in EvalOptions.model_fields
         }
         kwargs["eval_options"] = EvalOptions(**overrides)
+        for k in EvalOptions.model_fields:
+            kwargs.pop(k, None)
         return func(*args, **kwargs)
 
     return wrapper

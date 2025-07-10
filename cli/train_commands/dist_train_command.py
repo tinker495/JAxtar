@@ -46,6 +46,7 @@ def davi(
         "heuristic": heuristic.__class__.__name__,
         "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
+        "eval_options": eval_options.dict(),
         **kwargs,
     }
     print_config("DAVI Training Configuration", config)
@@ -229,6 +230,7 @@ def qlearning(
         "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
         "with_policy": with_policy,
+        "eval_options": eval_options.dict(),
         **kwargs,
     }
     print_config("Q-Learning Training Configuration", config)
