@@ -39,7 +39,6 @@ def davi(
     train_options: DistTrainOptions,
     shuffle_length: int,
     eval_options: EvalOptions,
-    seeds: tuple[int],
     **kwargs,
 ):
     config = {
@@ -166,9 +165,7 @@ def davi(
     heuristic.save_model()
 
     # Evaluation
-    eval_seeds = (
-        list(seeds) if len(seeds) > 1 else list(range(seeds[0], seeds[0] + eval_options.num_eval))
-    )
+    eval_seeds = list(range(eval_options.num_eval))
     if eval_seeds:
         config["evaluation"] = {
             "search_algorithm": "A*",
@@ -224,7 +221,6 @@ def qlearning(
     shuffle_length: int,
     with_policy: bool,
     eval_options: EvalOptions,
-    seeds: tuple[int],
     **kwargs,
 ):
     config = {
@@ -354,9 +350,7 @@ def qlearning(
     qfunction.save_model()
 
     # Evaluation
-    eval_seeds = (
-        list(seeds) if len(seeds) > 1 else list(range(seeds[0], seeds[0] + eval_options.num_eval))
-    )
+    eval_seeds = list(range(eval_options.num_eval))
     if eval_seeds:
         config["evaluation"] = {
             "search_algorithm": "Q*",
