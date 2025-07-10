@@ -161,7 +161,7 @@ def davi(
             opt_state = optimizer.init(heuristic_params)
             updated = False
 
-        if i % 1000 == 0 and i != 0:
+        if i % (steps // 5) == 0 and i != 0:
             heuristic.params = heuristic_params
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
@@ -349,7 +349,7 @@ def qlearning(
             opt_state = optimizer.init(qfunc_params)
             updated = False
 
-        if i % 1000 == 0 and i != 0:
+        if i % (steps // 5) == 0 and i != 0:
             qfunction.params = qfunc_params
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
