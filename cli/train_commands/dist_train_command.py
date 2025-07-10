@@ -1,3 +1,5 @@
+import os
+
 import click
 import jax
 import jax.numpy as jnp
@@ -161,9 +163,11 @@ def davi(
 
         if i % 1000 == 0 and i != 0:
             heuristic.params = heuristic_params
-            heuristic.save_model()
+            backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
+            heuristic.save_model(path=backup_path)
     heuristic.params = heuristic_params
-    heuristic.save_model()
+    backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
+    heuristic.save_model(path=backup_path)
 
     # Evaluation
     eval_seeds = list(range(eval_options.num_eval))
@@ -347,9 +351,11 @@ def qlearning(
 
         if i % 1000 == 0 and i != 0:
             qfunction.params = qfunc_params
-            qfunction.save_model()
+            backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
+            qfunction.save_model(path=backup_path)
     qfunction.params = qfunc_params
-    qfunction.save_model()
+    backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
+    qfunction.save_model(path=backup_path)
 
     # Evaluation
     eval_seeds = list(range(eval_options.num_eval))
