@@ -451,6 +451,8 @@ def spr_qlearning(
     )
 
     steps = train_options.steps
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
@@ -469,7 +471,7 @@ def spr_qlearning(
         optimizer,
         train_options.using_importance_sampling,
         spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
-        ema_tau=(1 - 1 / (train_options.update_interval * 50.0)),
+        ema_tau=(1 - 1 / (update_interval * 50.0)),
         n_devices=n_devices,
     )
     get_datasets = get_spr_qlearning_dataset_builder(
@@ -486,6 +488,8 @@ def spr_qlearning(
     )
 
     pbar = trange(steps)
+    updated = False
+    last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
@@ -531,12 +535,24 @@ def spr_qlearning(
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
 
-        if i % 1000 == 0 and i != 0:
+        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
+            last_reset_time = i
+            qfunc_params = scaled_by_reset(
+                qfunc_params,
+                key,
+                train_options.tau,
+            )
+            opt_state = optimizer.init(qfunc_params)
+            updated = False
+
+        if i % (steps // 5) == 0 and i != 0:
             qfunction.params = qfunc_params
-            qfunction.save_model()
+            backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
+            qfunction.save_model(path=backup_path)
 
     qfunction.params = qfunc_params
-    qfunction.save_model()
+    backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
+    qfunction.save_model(path=backup_path)
     logger.close()
 
 
@@ -577,6 +593,8 @@ def spr_davi(
     )
 
     steps = train_options.steps
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
@@ -594,8 +612,8 @@ def spr_davi(
         heuristic_model,
         optimizer,
         train_options.using_importance_sampling,
-        spr_loss_weight=kwargs.get("spr_loss_weight", 1.0),
-        ema_tau=kwargs.get("ema_tau", 0.99),
+        spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
+        ema_tau=(1 - 1 / (update_interval * 50.0)),
         n_devices=n_devices,
     )
     get_datasets = get_spr_heuristic_dataset_builder(
@@ -611,6 +629,8 @@ def spr_davi(
     )
 
     pbar = trange(steps)
+    updated = False
+    last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
         # The dataset builder now needs both online and target params to calculate the initial diff
@@ -653,10 +673,22 @@ def spr_davi(
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
 
-        if i % 1000 == 0 and i != 0:
+        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
+            last_reset_time = i
+            heuristic_params = scaled_by_reset(
+                heuristic_params,
+                key,
+                train_options.tau,
+            )
+            opt_state = optimizer.init(heuristic_params)
+            updated = False
+
+        if i % (steps // 5) == 0 and i != 0:
             heuristic.params = heuristic_params
-            heuristic.save_model()
+            backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
+            heuristic.save_model(path=backup_path)
 
     heuristic.params = heuristic_params
-    heuristic.save_model()
+    backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
+    heuristic.save_model(path=backup_path)
     logger.close()
