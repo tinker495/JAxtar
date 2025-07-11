@@ -202,6 +202,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path=f"qfunction/neuralq/model/params/rubikscube-random_{puzzle.size}.pkl",
             init_params=reset,
         ),
+        heuristic_spr=lambda puzzle, reset: RubiksCubeSPRNeuralHeuristic(
+            puzzle=puzzle,
+            path=f"heuristic/neuralheuristic/spr_model/params/rubikscube-random_{puzzle.size}.pkl",
+            init_params=reset,
+        ),
+        q_function_spr=lambda puzzle, reset: RubiksCubeSPRNeuralQ(
+            puzzle=puzzle,
+            path=f"qfunction/neuralq/spr_model/params/rubikscube-random_{puzzle.size}.pkl",
+            init_params=reset,
+        ),
     ),
     "maze": PuzzleBundle(puzzle=Maze, heuristic=MazeHeuristic, q_function=MazeQ),
     "room": PuzzleBundle(puzzle=Room, heuristic=MazeHeuristic, q_function=MazeQ),
