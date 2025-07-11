@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 import jax
 import jax.numpy as jnp
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -24,6 +25,8 @@ from JAxtar.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
 from .options import eval_options, heuristic_options, puzzle_options, qfunction_options
+
+matplotlib.use("Agg")
 
 
 @click.group(name="eval")
