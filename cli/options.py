@@ -115,8 +115,8 @@ def create_puzzle_options(
 puzzle_options = create_puzzle_options(
     default_puzzle="n-puzzle", use_hard_flag=True, use_seeds_flag=True
 )
-eval_puzzle_options = create_puzzle_options(default_puzzle="n-puzzle", use_hard_flag=True)
-dist_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", use_hard_flag=True)
+eval_puzzle_options = create_puzzle_options(default_puzzle="n-puzzle", default_hard=True)
+dist_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
 wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
 
 
