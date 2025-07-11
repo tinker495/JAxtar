@@ -276,6 +276,14 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
     @click.option("-is", "--using_importance_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
+    @click.option(
+        "-tcw",
+        "--target_confidence_weighting",
+        "use_target_confidence_weighting",
+        is_flag=True,
+        default=None,
+        help="Weight loss by target confidence (inverse of move_cost).",
+    )
     @click.option("-d", "--debug", is_flag=True, default=None)
     @click.option("-md", "--multi_device", type=bool, default=None)
     @click.option("-ri", "--reset_interval", type=int, default=None)

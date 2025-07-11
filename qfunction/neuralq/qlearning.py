@@ -25,6 +25,7 @@ def qlearning_builder(
     importance_sampling_beta: float = 0.1,
     importance_sampling_eps: float = 1.0,
     n_devices: int = 1,
+    use_target_confidence_weighting: bool = False,
 ):
     def qlearning_loss(
         q_params: Any,
@@ -90,6 +91,11 @@ def qlearning_builder(
                 axis=0,
             )  # [batch_size * minibatch_size]
             loss_weights = jnp.ones_like(batch_indexs)
+        if use_target_confidence_weighting:
+            cost = dataset["cost"]
+            cost_weights = 1.0 / jnp.maximum(cost, 1.0)
+            cost_weights = cost_weights / jnp.mean(cost_weights)
+            loss_weights = loss_weights * cost_weights
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_preproc = jnp.take(preproc, batch_indexs, axis=0)
@@ -187,6 +193,7 @@ def _get_datasets_with_policy(
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
+    move_costs = shuffled_path["move_costs"]
 
     minibatched_solve_configs = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
@@ -194,10 +201,11 @@ def _get_datasets_with_policy(
     minibatched_states = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), states
     )
+    minibatched_move_costs = move_costs.reshape((-1, minibatch_size, *move_costs.shape[1:]))
 
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
-        solve_configs, states = vals
+        solve_configs, states, move_costs = vals
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
@@ -244,24 +252,26 @@ def _get_datasets_with_policy(
 
         diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
-        return key, (preproc, target_q, actions, diff)
+        return key, (preproc, target_q, actions, diff, move_costs)
 
-    _, (preproc, target_q, actions, diff) = jax.lax.scan(
+    _, (preproc, target_q, actions, diff, cost) = jax.lax.scan(
         get_minibatched_datasets,
         key,
-        (minibatched_solve_configs, minibatched_states),
+        (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
     )
 
     preproc = preproc.reshape((-1, *preproc.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
     diff = diff.reshape((-1, *diff.shape[2:]))
+    cost = cost.reshape((-1, *cost.shape[2:]))
 
     return {
         "preproc": preproc,
         "target_q": target_q,
         "actions": actions,
         "diff": diff,
+        "cost": cost,
     }
 
 
@@ -278,6 +288,7 @@ def _get_datasets_with_trajectory(
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
     actions = shuffled_path["actions"]
+    move_costs = shuffled_path["move_costs"]
 
     minibatched_solve_configs = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
@@ -288,10 +299,11 @@ def _get_datasets_with_trajectory(
     minibatched_actions = jax.tree_util.tree_map(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), actions
     )
+    minibatched_move_costs = move_costs.reshape((-1, minibatch_size, *move_costs.shape[1:]))
 
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
-        solve_configs, states, actions = vals
+        solve_configs, states, actions, move_costs = vals
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
@@ -329,24 +341,31 @@ def _get_datasets_with_trajectory(
 
         diff = jnp.zeros_like(target_q)
         # if the puzzle is already solved, the all q is 0
-        return key, (preproc, target_q, actions, diff)
+        return key, (preproc, target_q, actions, diff, move_costs)
 
-    _, (preproc, target_q, actions, diff) = jax.lax.scan(
+    _, (preproc, target_q, actions, diff, cost) = jax.lax.scan(
         get_minibatched_datasets,
         key,
-        (minibatched_solve_configs, minibatched_states, minibatched_actions),
+        (
+            minibatched_solve_configs,
+            minibatched_states,
+            minibatched_actions,
+            minibatched_move_costs,
+        ),
     )
 
     preproc = preproc.reshape((-1, *preproc.shape[2:]))
     target_q = target_q.reshape((-1, *target_q.shape[2:]))
     actions = actions.reshape((-1, *actions.shape[2:]))
     diff = diff.reshape((-1, *diff.shape[2:]))
+    cost = cost.reshape((-1, *cost.shape[2:]))
 
     return {
         "preproc": preproc,
         "target_q": target_q,
         "actions": actions,
         "diff": diff,
+        "cost": cost,
     }
 
 

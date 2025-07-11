@@ -89,6 +89,7 @@ def davi(
         optimizer,
         train_options.using_importance_sampling,
         n_devices=n_devices,
+        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -260,6 +261,7 @@ def qlearning(
         optimizer,
         train_options.using_importance_sampling,
         n_devices=n_devices,
+        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,

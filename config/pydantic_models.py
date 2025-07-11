@@ -73,6 +73,7 @@ class DistTrainOptions(BaseModel):
     using_hindsight_target: bool = False
     using_importance_sampling: bool = False
     using_triangular_sampling: bool = False
+    use_target_confidence_weighting: bool = False
     debug: bool = False
     multi_device: bool = True
     reset_interval: int = 4000
