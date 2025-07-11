@@ -167,7 +167,13 @@ class TensorboardLogger:
             plt.close(fig)
 
             fig, ax = plt.subplots(figsize=(10, 6))
-            sns.boxplot(data=solved_df, x="path_cost", y="search_time_s", ax=ax)
+            sns.boxplot(
+                data=solved_df,
+                x="path_cost",
+                y="search_time_s",
+                ax=ax,
+                flierprops=dict(markerfacecolor="silver", markeredgecolor="gray"),
+            )
             sns.pointplot(
                 data=solved_df,
                 x="path_cost",
@@ -183,7 +189,13 @@ class TensorboardLogger:
             plt.close(fig)
 
             fig, ax = plt.subplots(figsize=(10, 6))
-            sns.boxplot(data=solved_df, x="path_cost", y="nodes_generated", ax=ax)
+            sns.boxplot(
+                data=solved_df,
+                x="path_cost",
+                y="nodes_generated",
+                ax=ax,
+                flierprops=dict(markerfacecolor="silver", markeredgecolor="gray"),
+            )
             sns.pointplot(
                 data=solved_df,
                 x="path_cost",
@@ -216,7 +228,13 @@ class TensorboardLogger:
                 }
             )
 
-            sns.boxplot(data=plot_df, x="Actual Cost to Goal", y="Estimated Distance", ax=ax)
+            sns.boxplot(
+                data=plot_df,
+                x="Actual Cost to Goal",
+                y="Estimated Distance",
+                ax=ax,
+                flierprops=dict(markerfacecolor="silver", markeredgecolor="gray"),
+            )
             sns.pointplot(
                 data=plot_df,
                 x="Actual Cost to Goal",
