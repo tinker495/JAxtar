@@ -47,8 +47,13 @@ def spr_qlearning_builder(
         weights: chex.Array,
     ):
         # --- Standard Q-Learning Loss ---
-        (q_values, _, pred_next_p_all), variable_updates = q_model.apply(
-            q_params, preproc, training=True, mutable=["batch_stats"]
+        (q_values, _, pred_next_p), variable_updates = q_model.apply(
+            q_params,
+            preproc,
+            actions,
+            training=True,
+            mutable=["batch_stats"],
+            method=q_model.get_q_and_predicted_next_p,
         )
         if n_devices > 1:
             variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
@@ -59,17 +64,13 @@ def spr_qlearning_builder(
         q_loss = jnp.mean(jnp.square(q_diff) * weights)
 
         # --- SPR Loss ---
-        # Online network predictions
-        pred_next_p_all = jnp.reshape(
-            pred_next_p_all, (pred_next_p_all.shape[0], q_model.action_size, -1)
-        )
-        pred_next_p = jnp.take_along_axis(
-            pred_next_p_all, actions[:, jnp.newaxis, jnp.newaxis], axis=1
-        ).squeeze(1)
-
         # Target network predictions
-        (_, target_next_p, _) = q_model.apply(
-            target_q_params, next_preproc, training=False, mutable=["batch_stats"]
+        target_next_p = q_model.apply(
+            target_q_params,
+            next_preproc,
+            training=False,
+            mutable=["batch_stats"],
+            method=q_model.get_projected_p,
         )[0]
 
         spr_loss = cosine_similarity_loss(pred_next_p, target_next_p)
@@ -272,9 +273,9 @@ def _get_datasets_with_policy(
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        q_values, _, _ = q_model.apply(q_params, preproc, training=False, mutable=["batch_stats"])[
-            0
-        ]
+        q_values = q_model.apply(
+            q_params, preproc, training=False, mutable=["batch_stats"], method=q_model.get_q
+        )[0]
 
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
@@ -309,8 +310,12 @@ def _get_datasets_with_policy(
         next_preproc = jax.vmap(preproc_fn)(solve_configs, selected_neighbors)
 
         # Use target network for next state Q-values
-        next_q_values, _, _ = q_model.apply(
-            target_q_params, next_preproc, training=False, mutable=["batch_stats"]
+        next_q_values = q_model.apply(
+            target_q_params,
+            next_preproc,
+            training=False,
+            mutable=["batch_stats"],
+            method=q_model.get_q,
         )[0]
 
         mask_neighbor = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))

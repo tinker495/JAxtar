@@ -35,29 +35,52 @@ class SPRQModel(nn.Module):
     Res_N_Q: int = 2
     latent_dim: int = 1000
 
-    @nn.compact
-    def __call__(self, x, training=False):
-        # Online network
-        encoder = Encoder(Res_N=self.Res_N_Encoder, latent_dim=self.latent_dim, name="encoder")
-        q_head = QHead(
+    def setup(self) -> None:
+        self.encoder = Encoder(Res_N=self.Res_N_Encoder, latent_dim=self.latent_dim, name="encoder")
+        self.q_head = QHead(
             action_size=self.action_size,
             Res_N=self.Res_N_Q,
             latent_dim=self.latent_dim,
             name="q_head",
         )
-        projection_head = ProjectionHead(output_dim=self.latent_dim, name="projection_head")
-        transition_model = TransitionModel(
+        self.projection_head = ProjectionHead(output_dim=self.latent_dim, name="projection_head")
+        self.transition_model = TransitionModel(
             action_size=self.action_size, latent_dim=self.latent_dim, name="transition_model"
         )
+        self.predicton_head = ProjectionHead(output_dim=self.latent_dim, name="prediction_head")
 
-        # Forward pass
-        latent_z = encoder(x, training)
-        q_values = q_head(latent_z, training)
+    @nn.compact
+    def __call__(self, x, training=False):
+        # Online network
+        latent_z = self.encoder(x, training)  # (batch_size, latent_dim)
+        q_values = self.q_head(latent_z, training)  # (batch_size, action_size)
 
-        projected_p = projection_head(latent_z)
-        predicted_next_p_all_actions = transition_model(latent_z)
+        projected_p = self.projection_head(latent_z)  # (batch_size, latent_dim)
+        transition = self.transition_model(latent_z)  # (batch_size, action_size, latent_dim)
+        transition = transition[:, 0]  # (batch_size, latent_dim)
 
-        return q_values, projected_p, predicted_next_p_all_actions
+        predicted_next_p = self.predicton_head(transition)  # (batch_size, latent_dim)
+
+        return q_values, projected_p, predicted_next_p
+
+    def get_q(self, x, training=False):
+        latent_z = self.encoder(x, training)
+        return self.q_head(latent_z, training)
+
+    def get_projected_p(self, x, training=False):
+        latent_z = self.encoder(x, training)
+        return self.projection_head(latent_z)
+
+    def get_q_and_predicted_next_p(self, x, actions, training=False):
+        latent_z = self.encoder(x, training)
+        q_values = self.q_head(latent_z, training)
+        projected_p = self.projection_head(latent_z)
+        transition = self.transition_model(latent_z)
+        transition = jnp.take_along_axis(
+            transition, actions[:, jnp.newaxis, jnp.newaxis], axis=1
+        ).squeeze(1)
+        predicted_next_p = self.predicton_head(transition)
+        return q_values, projected_p, predicted_next_p
 
 
 class SPRNeuralQFunction(NeuralQFunctionBase):
@@ -66,11 +89,15 @@ class SPRNeuralQFunction(NeuralQFunctionBase):
 
     def batched_param_q_value(self, params, solve_config, current):
         x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
-        q_values, _, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])[0]
+        q_values = self.model.apply(
+            params, x, training=False, mutable=["batch_stats"], method=self.model.get_q
+        )[0]
         return self.post_process(q_values)
 
     def param_q_value(self, params, solve_config, current):
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        q_values, _, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])[0]
+        q_values = self.model.apply(
+            params, x, training=False, mutable=["batch_stats"], method=self.model.get_q
+        )[0]
         return self.post_process(q_values)

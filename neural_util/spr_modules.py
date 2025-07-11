@@ -48,4 +48,5 @@ class TransitionModel(nn.Module):
         z = nn.Dense(self.hidden_dim, dtype=DTYPE)(z)
         z = nn.relu(z)
         z = nn.Dense(self.latent_dim * self.action_size, dtype=DTYPE)(z)
+        z = z.reshape((-1, self.action_size, self.latent_dim))
         return z
