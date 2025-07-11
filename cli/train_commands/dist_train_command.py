@@ -390,6 +390,176 @@ def qlearning(
 @click.command()
 @dist_puzzle_options
 @dist_train_options
+@dist_spr_heuristic_options
+@eval_options
+def spr_davi(
+    puzzle: Puzzle,
+    heuristic: SPRNeuralHeuristic,
+    puzzle_name: str,
+    train_options: DistTrainOptions,
+    shuffle_length: int,
+    eval_options: EvalOptions,
+    **kwargs,
+):
+    kwargs.pop("puzzle_bundle", None)
+    config = {
+        "puzzle": {"name": puzzle_name, "size": puzzle.size},
+        "heuristic": heuristic.__class__.__name__,
+        "train_options": train_options.dict(),
+        "shuffle_length": shuffle_length,
+        **kwargs,
+    }
+    print_config("SPR-DAVI Training Configuration", config)
+    logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_spr_davi", config)
+    key = jax.random.PRNGKey(
+        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
+    )
+    key, subkey = jax.random.split(key)
+
+    heuristic_model = heuristic.model
+    target_heuristic_params = heuristic.params
+    # Initialize online network with slight noise from target network
+    heuristic_params = scaled_by_reset(
+        target_heuristic_params,
+        key,
+        train_options.tau,
+    )
+
+    steps = train_options.steps
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
+    n_devices = jax.device_count()
+    if train_options.multi_device and n_devices > 1:
+        steps = steps // n_devices
+        update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
+        print(f"Training with {n_devices} devices")
+
+    optimizer, opt_state = setup_optimizer(
+        heuristic_params,
+        n_devices,
+        steps,
+        train_options.dataset_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
+    )
+    spr_davi_fn = spr_davi_builder(
+        train_options.train_minibatch_size,
+        heuristic_model,
+        optimizer,
+        train_options.using_importance_sampling,
+        spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
+        ema_tau=(1 - 1 / (update_interval * 50.0)),
+        n_devices=n_devices,
+        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+    )
+    get_datasets = get_spr_heuristic_dataset_builder(
+        puzzle,
+        heuristic.pre_process,
+        heuristic_model,
+        train_options.dataset_batch_size,
+        shuffle_length,
+        train_options.dataset_minibatch_size,
+        train_options.using_hindsight_target,
+        train_options.using_triangular_sampling,
+        n_devices=n_devices,
+    )
+
+    pbar = trange(steps)
+    last_reset_time = 0
+    for i in pbar:
+        key, subkey = jax.random.split(key)
+        # The dataset builder now needs both online and target params to calculate the initial diff
+        dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
+
+        target_heuristic = dataset["target_heuristic"]
+        diffs = dataset["diff"]
+        mean_target_heuristic = jnp.mean(target_heuristic)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
+
+        (
+            heuristic_params,
+            target_heuristic_params,
+            opt_state,
+            loss,
+            davi_loss,
+            spr_loss,
+            grad_magnitude,
+            weight_magnitude,
+        ) = spr_davi_fn(key, dataset, heuristic_params, target_heuristic_params, opt_state)
+
+        lr = opt_state.hyperparams["learning_rate"]
+        pbar.set_description(
+            desc="SPR-DAVI Training",
+            desc_dict={
+                "lr": lr,
+                "loss": float(loss),
+                "davi_loss": float(davi_loss),
+                "spr_loss": float(spr_loss),
+                "abs_diff": float(mean_abs_diff),
+                "target_h": float(mean_target_heuristic),
+            },
+        )
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Losses/Total Loss", loss, i)
+        logger.log_scalar("Losses/DAVI Loss", davi_loss, i)
+        logger.log_scalar("Losses/SPR Loss", spr_loss, i)
+        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if i % 100 == 0:
+            logger.log_histogram("Losses/Diff", diffs, i)
+            logger.log_histogram("Metrics/Target", target_heuristic, i)
+
+        if i - last_reset_time >= reset_interval and i < steps * 2 / 3:
+            last_reset_time = i
+            heuristic_params = scaled_by_reset(
+                heuristic_params,
+                key,
+                train_options.tau,
+            )
+            opt_state = optimizer.init(heuristic_params)
+
+        if i % (steps // 5) == 0 and i != 0:
+            heuristic.params = heuristic_params
+            backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
+            heuristic.save_model(path=backup_path)
+    heuristic.params = heuristic_params
+    backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
+    heuristic.save_model(path=backup_path)
+
+    # Evaluation
+    eval_seeds = list(range(eval_options.num_eval))
+    if eval_seeds:
+        config["evaluation"] = {
+            "search_algorithm": "A*",
+            "eval_options": eval_options.dict(),
+            "num_eval": len(eval_seeds),
+            "seeds": tuple(eval_seeds),
+        }
+        print_config("SPR-DAVI Evaluation Configuration", config["evaluation"])
+
+        astar_fn = astar_builder(
+            puzzle,
+            heuristic,
+            eval_options.batch_size,
+            eval_options.get_max_node_size(),
+            cost_weight=eval_options.cost_weight,
+        )
+
+        results = run_evaluation(
+            search_fn=astar_fn,
+            puzzle=puzzle,
+            seeds=eval_seeds,
+        )
+        logger.log_evaluation_results(results, steps)
+
+    logger.close()
+
+
+@click.command()
+@dist_puzzle_options
+@dist_train_options
 @dist_spr_qfunction_options
 @eval_options
 def spr_qlearning(
@@ -556,145 +726,4 @@ def spr_qlearning(
         )
         logger.log_evaluation_results(results, steps)
 
-    logger.close()
-
-
-@click.command()
-@dist_puzzle_options
-@dist_train_options
-@dist_spr_heuristic_options
-def spr_davi(
-    puzzle: Puzzle,
-    heuristic: SPRNeuralHeuristic,
-    puzzle_name: str,
-    train_options: DistTrainOptions,
-    shuffle_length: int,
-    **kwargs,
-):
-    kwargs.pop("puzzle_bundle", None)
-    config = {
-        "puzzle": {"name": puzzle_name, "size": puzzle.size},
-        "heuristic": heuristic.__class__.__name__,
-        "train_options": train_options.dict(),
-        "shuffle_length": shuffle_length,
-        **kwargs,
-    }
-    print_config("SPR-DAVI Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_spr_davi", config)
-    key = jax.random.PRNGKey(
-        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
-    )
-    key, subkey = jax.random.split(key)
-
-    heuristic_model = heuristic.model
-    target_heuristic_params = heuristic.params
-    # Initialize online network with slight noise from target network
-    heuristic_params = scaled_by_reset(
-        target_heuristic_params,
-        key,
-        train_options.tau,
-    )
-
-    steps = train_options.steps
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
-    n_devices = jax.device_count()
-    if train_options.multi_device and n_devices > 1:
-        steps = steps // n_devices
-        update_interval = update_interval // n_devices
-        reset_interval = reset_interval // n_devices
-        print(f"Training with {n_devices} devices")
-
-    optimizer, opt_state = setup_optimizer(
-        heuristic_params,
-        n_devices,
-        steps,
-        train_options.dataset_batch_size // train_options.train_minibatch_size,
-        train_options.optimizer,
-    )
-    spr_davi_fn = spr_davi_builder(
-        train_options.train_minibatch_size,
-        heuristic_model,
-        optimizer,
-        train_options.using_importance_sampling,
-        spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
-        ema_tau=(1 - 1 / (update_interval * 50.0)),
-        n_devices=n_devices,
-        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
-    )
-    get_datasets = get_spr_heuristic_dataset_builder(
-        puzzle,
-        heuristic.pre_process,
-        heuristic_model,
-        train_options.dataset_batch_size,
-        shuffle_length,
-        train_options.dataset_minibatch_size,
-        train_options.using_hindsight_target,
-        train_options.using_triangular_sampling,
-        n_devices=n_devices,
-    )
-
-    pbar = trange(steps)
-    last_reset_time = 0
-    for i in pbar:
-        key, subkey = jax.random.split(key)
-        # The dataset builder now needs both online and target params to calculate the initial diff
-        dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
-
-        target_heuristic = dataset["target_heuristic"]
-        diffs = dataset["diff"]
-        mean_target_heuristic = jnp.mean(target_heuristic)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
-
-        (
-            heuristic_params,
-            target_heuristic_params,
-            opt_state,
-            loss,
-            davi_loss,
-            spr_loss,
-            grad_magnitude,
-            weight_magnitude,
-        ) = spr_davi_fn(key, dataset, heuristic_params, target_heuristic_params, opt_state)
-
-        lr = opt_state.hyperparams["learning_rate"]
-        pbar.set_description(
-            desc="SPR-DAVI Training",
-            desc_dict={
-                "lr": lr,
-                "loss": float(loss),
-                "davi_loss": float(davi_loss),
-                "spr_loss": float(spr_loss),
-                "abs_diff": float(mean_abs_diff),
-                "target_h": float(mean_target_heuristic),
-            },
-        )
-        logger.log_scalar("Metrics/Learning Rate", lr, i)
-        logger.log_scalar("Losses/Total Loss", loss, i)
-        logger.log_scalar("Losses/DAVI Loss", davi_loss, i)
-        logger.log_scalar("Losses/SPR Loss", spr_loss, i)
-        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-        logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if i % 100 == 0:
-            logger.log_histogram("Losses/Diff", diffs, i)
-            logger.log_histogram("Metrics/Target", target_heuristic, i)
-
-        if i - last_reset_time >= reset_interval and i < steps * 2 / 3:
-            last_reset_time = i
-            heuristic_params = scaled_by_reset(
-                heuristic_params,
-                key,
-                train_options.tau,
-            )
-            opt_state = optimizer.init(heuristic_params)
-
-        if i % (steps // 5) == 0 and i != 0:
-            heuristic.params = heuristic_params
-            backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
-            heuristic.save_model(path=backup_path)
-    heuristic.params = heuristic_params
-    backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
-    heuristic.save_model(path=backup_path)
     logger.close()
