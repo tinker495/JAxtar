@@ -192,23 +192,8 @@ def davi(
             search_fn=astar_fn,
             puzzle=puzzle,
             seeds=eval_seeds,
-            eval_options=eval_options,
         )
-
-        num_puzzles = len(eval_seeds)
-        num_solved = sum(r["solved"] for r in results)
-        success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
-        total_times = [r["search_time_s"] for r in results]
-        total_nodes = [r["nodes_generated"] for r in results]
-        solved_paths = [r["path_length"] for r in results if r["solved"]]
-
-        logger.log_scalar("Evaluation/Success Rate", success_rate, steps)
-        logger.log_scalar("Evaluation/Avg Search Time", jnp.mean(jnp.array(total_times)), steps)
-        logger.log_scalar("Evaluation/Avg Generated Nodes", jnp.mean(jnp.array(total_nodes)), steps)
-        if solved_paths:
-            logger.log_scalar(
-                "Evaluation/Avg Path Length", jnp.mean(jnp.array(solved_paths)), steps
-            )
+        logger.log_evaluation_results(results, steps)
 
     logger.close()
 
@@ -380,22 +365,7 @@ def qlearning(
             search_fn=qstar_fn,
             puzzle=puzzle,
             seeds=eval_seeds,
-            eval_options=eval_options,
         )
-
-        num_puzzles = len(eval_seeds)
-        num_solved = sum(r["solved"] for r in results)
-        success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
-        total_times = [r["search_time_s"] for r in results]
-        total_nodes = [r["nodes_generated"] for r in results]
-        solved_paths = [r["path_length"] for r in results if r["solved"]]
-
-        logger.log_scalar("Evaluation/Success Rate", success_rate, steps)
-        logger.log_scalar("Evaluation/Avg Search Time", jnp.mean(jnp.array(total_times)), steps)
-        logger.log_scalar("Evaluation/Avg Generated Nodes", jnp.mean(jnp.array(total_nodes)), steps)
-        if solved_paths:
-            logger.log_scalar(
-                "Evaluation/Avg Path Length", jnp.mean(jnp.array(solved_paths)), steps
-            )
+        logger.log_evaluation_results(results, steps)
 
     logger.close()

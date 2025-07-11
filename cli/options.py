@@ -51,7 +51,11 @@ def create_puzzle_options(
             if puzzle_opts.puzzle_size != "default":
                 input_args["size"] = int(puzzle_opts.puzzle_size)
 
-            if use_hard_flag and (puzzle_opts.hard or is_eval):
+            if (
+                use_hard_flag
+                and (puzzle_opts.hard or is_eval)
+                and puzzle_bundle.puzzle_hard is not None
+            ):
                 puzzle_callable = puzzle_bundle.puzzle_hard
             elif puzzle_ds_flag:
                 # This part is tricky. world_model_bundles has the specific puzzle_for_ds_gen
@@ -149,6 +153,7 @@ def eval_options(func: callable) -> callable:
     )
     @click.option("--cost-weight", type=float, default=None, help="Weight for cost in search.")
     @click.option("--num-eval", type=int, default=None, help="Number of puzzles to evaluate.")
+    @click.option("--run-name", type=str, default=None, help="Name of the evaluation run.")
     @wraps(func)
     def wrapper(*args, **kwargs):
         # Collect any user-provided options to override the preset

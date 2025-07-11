@@ -40,6 +40,7 @@ class EvalOptions(BaseModel):
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
     cost_weight: float = Field(0.6, description="Weight for cost in search.")
     num_eval: int = Field(200, description="Number of puzzles to evaluate.")
+    run_name: Optional[str] = Field(None, description="Name of the evaluation run.")
 
     def get_max_node_size(self):
         return self.max_node_size // self.batch_size * self.batch_size
