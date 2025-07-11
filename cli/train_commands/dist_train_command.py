@@ -488,7 +488,6 @@ def spr_qlearning(
     )
 
     pbar = trange(steps)
-    updated = False
     last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -535,7 +534,7 @@ def spr_qlearning(
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
 
-        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
+        if i - last_reset_time >= reset_interval and i < steps * 2 / 3:
             last_reset_time = i
             qfunc_params = scaled_by_reset(
                 qfunc_params,
@@ -543,7 +542,6 @@ def spr_qlearning(
                 train_options.tau,
             )
             opt_state = optimizer.init(qfunc_params)
-            updated = False
 
         if i % (steps // 5) == 0 and i != 0:
             qfunction.params = qfunc_params
@@ -629,7 +627,6 @@ def spr_davi(
     )
 
     pbar = trange(steps)
-    updated = False
     last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -673,7 +670,7 @@ def spr_davi(
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
 
-        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
+        if i - last_reset_time >= reset_interval and i < steps * 2 / 3:
             last_reset_time = i
             heuristic_params = scaled_by_reset(
                 heuristic_params,
@@ -681,7 +678,6 @@ def spr_davi(
                 train_options.tau,
             )
             opt_state = optimizer.init(heuristic_params)
-            updated = False
 
         if i % (steps // 5) == 0 and i != 0:
             heuristic.params = heuristic_params
