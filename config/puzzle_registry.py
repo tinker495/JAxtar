@@ -69,7 +69,7 @@ from world_model_puzzle import (
     SokobanWorldModelOptimized,
 )
 
-from .pydantic_models import PuzzleBundle
+from .pydantic_models import EvalOptions, PuzzleBundle, SearchOptions
 
 puzzle_bundles: Dict[str, PuzzleBundle] = {
     "n-puzzle": PuzzleBundle(
@@ -203,6 +203,12 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             puzzle=puzzle,
             path=f"qfunction/neuralq/model/params/sokoban_{puzzle.size}.pkl",
             init_params=reset,
+        ),
+        eval_options=EvalOptions(
+            batch_size=100,
+        ),
+        search_options=SearchOptions(
+            batch_size=100,
         ),
     ),
     "pancake": PuzzleBundle(
@@ -340,6 +346,12 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             puzzle=puzzle,
             path="qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl",
             init_params=reset,
+        ),
+        eval_options=EvalOptions(
+            batch_size=100,
+        ),
+        search_options=SearchOptions(
+            batch_size=100,
         ),
     ),
 }
