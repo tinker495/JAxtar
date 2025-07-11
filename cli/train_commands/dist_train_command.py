@@ -523,6 +523,34 @@ def spr_qlearning(
     qfunction.save_model(path=backup_path)
     logger.close()
 
+    # Evaluation
+    eval_seeds = list(range(eval_options.num_eval))
+    if eval_seeds:
+        config["evaluation"] = {
+            "search_algorithm": "Q*",
+            "eval_options": eval_options.dict(),
+            "num_eval": len(eval_seeds),
+            "seeds": tuple(eval_seeds),
+        }
+        print_config("Q-Learning Evaluation Configuration", config["evaluation"])
+
+        qstar_fn = qstar_builder(
+            puzzle,
+            qfunction,
+            eval_options.batch_size,
+            eval_options.get_max_node_size(),
+            cost_weight=eval_options.cost_weight,
+        )
+
+        results = run_evaluation(
+            search_fn=qstar_fn,
+            puzzle=puzzle,
+            seeds=eval_seeds,
+        )
+        logger.log_evaluation_results(results, steps)
+
+    logger.close()
+
 
 @click.command()
 @dist_puzzle_options
