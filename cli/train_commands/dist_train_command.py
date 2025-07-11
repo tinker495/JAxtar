@@ -651,6 +651,7 @@ def spr_davi(
             target_heuristic_params,
             opt_state,
             loss,
+            davi_loss,
             spr_loss,
             grad_magnitude,
             weight_magnitude,
@@ -662,6 +663,7 @@ def spr_davi(
             desc_dict={
                 "lr": lr,
                 "loss": float(loss),
+                "davi_loss": float(davi_loss),
                 "spr_loss": float(spr_loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_h": float(mean_target_heuristic),
@@ -669,6 +671,7 @@ def spr_davi(
         )
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Total Loss", loss, i)
+        logger.log_scalar("Losses/DAVI Loss", davi_loss, i)
         logger.log_scalar("Losses/SPR Loss", spr_loss, i)
         logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)

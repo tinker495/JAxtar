@@ -34,24 +34,49 @@ class SPRHeuristicModel(nn.Module):
     Res_N_Dist: int = 2
     latent_dim: int = 1000
 
+    def setup(self) -> None:
+        self.encoder = Encoder(Res_N=self.Res_N_Encoder, latent_dim=self.latent_dim, name="encoder")
+        self.dist_head = DistHead(
+            Res_N=self.Res_N_Dist, latent_dim=self.latent_dim, name="dist_head"
+        )
+        self.projection_head = ProjectionHead(output_dim=self.latent_dim, name="projection_head")
+        self.transition_model = TransitionModel(
+            action_size=self.action_size, latent_dim=self.latent_dim, name="transition_model"
+        )
+        self.predicton_head = ProjectionHead(output_dim=self.latent_dim, name="prediction_head")
+
     @nn.compact
     def __call__(self, x, training=False):
         # Online network
-        encoder = Encoder(Res_N=self.Res_N_Encoder, latent_dim=self.latent_dim, name="encoder")
-        dist_head = DistHead(Res_N=self.Res_N_Dist, latent_dim=self.latent_dim, name="dist_head")
-        projection_head = ProjectionHead(output_dim=self.latent_dim, name="projection_head")
-        transition_model = TransitionModel(
-            action_size=self.action_size, latent_dim=self.latent_dim, name="transition_model"
-        )
+        latent_z = self.encoder(x, training)
+        heuristic = self.dist_head(latent_z, training)
 
-        # Forward pass
-        latent_z = encoder(x, training)
-        heuristic = dist_head(latent_z, training)
+        projected_p = self.projection_head(latent_z)
+        transition = self.transition_model(latent_z)
+        transition = transition[:, 0]
 
-        projected_p = projection_head(latent_z)
-        predicted_next_p_all_actions = transition_model(latent_z)
+        predicted_next_p = self.predicton_head(transition)
 
-        return heuristic, projected_p, predicted_next_p_all_actions
+        return heuristic, projected_p, predicted_next_p
+
+    def get_heuristic(self, x, training=False):
+        latent_z = self.encoder(x, training)
+        return self.dist_head(latent_z, training)
+
+    def get_projected_p(self, x, training=False):
+        latent_z = self.encoder(x, training)
+        return self.projection_head(latent_z)
+
+    def get_heuristic_and_predicted_next_p(self, x, actions, training=False):
+        latent_z = self.encoder(x, training)
+        heuristic = self.dist_head(latent_z, training)
+        transition = self.transition_model(latent_z)
+        transition = jnp.take_along_axis(
+            transition, actions[:, jnp.newaxis, jnp.newaxis], axis=1
+        ).squeeze(1)
+        projected_p = self.projection_head(transition)
+        predicted_next_p = self.predicton_head(projected_p)
+        return heuristic, predicted_next_p
 
 
 class SPRNeuralHeuristic(NeuralHeuristicBase):
@@ -69,11 +94,15 @@ class SPRNeuralHeuristic(NeuralHeuristicBase):
 
     def batched_param_distance(self, params, solve_config, current):
         x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
-        heuristic, _, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])[0]
+        heuristic = self.model.apply(
+            params, x, training=False, mutable=["batch_stats"], method=self.model.get_heuristic
+        )[0]
         return self.post_process(heuristic)
 
     def param_distance(self, params, solve_config, current):
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        heuristic, _, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])[0]
+        heuristic = self.model.apply(
+            params, x, training=False, mutable=["batch_stats"], method=self.model.get_heuristic
+        )[0]
         return self.post_process(heuristic)

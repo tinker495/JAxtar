@@ -74,13 +74,13 @@ class SPRQModel(nn.Module):
     def get_q_and_predicted_next_p(self, x, actions, training=False):
         latent_z = self.encoder(x, training)
         q_values = self.q_head(latent_z, training)
-        projected_p = self.projection_head(latent_z)
         transition = self.transition_model(latent_z)
         transition = jnp.take_along_axis(
             transition, actions[:, jnp.newaxis, jnp.newaxis], axis=1
         ).squeeze(1)
-        predicted_next_p = self.predicton_head(transition)
-        return q_values, projected_p, predicted_next_p
+        projected_p = self.projection_head(transition)
+        predicted_next_p = self.predicton_head(projected_p)
+        return q_values, predicted_next_p
 
 
 class SPRNeuralQFunction(NeuralQFunctionBase):

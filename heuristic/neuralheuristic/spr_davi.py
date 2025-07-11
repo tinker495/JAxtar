@@ -34,7 +34,7 @@ def spr_davi_builder(
         z = jax.lax.stop_gradient(z)
         p = p / (jnp.linalg.norm(p, axis=-1, keepdims=True) + 1e-8)
         z = z / (jnp.linalg.norm(z, axis=-1, keepdims=True) + 1e-8)
-        return -jnp.mean(jnp.sum(p * z, axis=-1))
+        return 1.0 - jnp.mean(jnp.sum(p * z, axis=-1))
 
     def spr_davi_loss(
         heuristic_params: Any,
@@ -46,8 +46,13 @@ def spr_davi_builder(
         weights: chex.Array,
     ):
         # --- Standard DAVI Loss ---
-        (current_heuristic, _, _), variable_updates = heuristic_model.apply(
-            heuristic_params, preproc, training=True, mutable=["batch_stats"]
+        (current_heuristic, pred_next_p,), variable_updates = heuristic_model.apply(
+            heuristic_params,
+            preproc,
+            actions,
+            training=True,
+            mutable=["batch_stats"],
+            method=heuristic_model.get_heuristic_and_predicted_next_p,
         )
         if n_devices > 1:
             variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
@@ -60,21 +65,13 @@ def spr_davi_builder(
         davi_loss = jnp.mean(jnp.square(davi_diff) * weights)
 
         # --- SPR Loss ---
-        # Online network predictions
-        (_, projected_p, pred_next_p_all) = heuristic_model.apply(
-            heuristic_params, preproc, training=True, mutable=["batch_stats"]
-        )[0]
-
-        pred_next_p_all = jnp.reshape(
-            pred_next_p_all, (pred_next_p_all.shape[0], heuristic_model.action_size, -1)
-        )
-        pred_next_p = jnp.take_along_axis(
-            pred_next_p_all, actions[:, jnp.newaxis, jnp.newaxis], axis=1
-        ).squeeze(1)
-
         # Target network predictions
-        (_, target_next_p, _) = heuristic_model.apply(
-            target_heuristic_params, next_preproc, training=False, mutable=["batch_stats"]
+        target_next_p = heuristic_model.apply(
+            target_heuristic_params,
+            next_preproc,
+            training=False,
+            mutable=["batch_stats"],
+            method=heuristic_model.get_projected_p,
         )[0]
 
         spr_loss = cosine_similarity_loss(pred_next_p, target_next_p)
@@ -82,7 +79,7 @@ def spr_davi_builder(
         # --- Combined Loss ---
         total_loss = davi_loss + spr_loss_weight * spr_loss
 
-        return total_loss, (new_params, davi_diff, spr_loss)
+        return total_loss, (new_params, davi_loss, spr_loss)
 
     def spr_davi(
         key: chex.PRNGKey,
@@ -148,7 +145,7 @@ def spr_davi_builder(
             preproc, next_preproc, target_h, actions, weights = batched_dataset
 
             grad_fn = jax.value_and_grad(spr_davi_loss, has_aux=True)
-            (loss, (heuristic_params, _, spr_loss)), grads = grad_fn(
+            (loss, (new_params, davi_loss, spr_loss)), grads = grad_fn(
                 heuristic_params,
                 target_heuristic_params,
                 preproc,
@@ -161,8 +158,8 @@ def spr_davi_builder(
             if n_devices > 1:
                 grads = jax.lax.psum(grads, axis_name="devices")
 
-            updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
-            heuristic_params = optax.apply_updates(heuristic_params, updates)
+            updates, opt_state = optimizer.update(grads, opt_state, params=new_params)
+            heuristic_params = optax.apply_updates(new_params, updates)
 
             # EMA update for the target network
             target_heuristic_params = soft_update(
@@ -176,12 +173,14 @@ def spr_davi_builder(
 
             return (heuristic_params, target_heuristic_params, opt_state), (
                 loss,
+                davi_loss,
                 spr_loss,
                 grad_magnitude_mean,
             )
 
         (heuristic_params, target_heuristic_params, opt_state), (
             losses,
+            davi_losses,
             spr_losses,
             grad_means,
         ) = jax.lax.scan(
@@ -197,6 +196,7 @@ def spr_davi_builder(
         )
 
         loss = jnp.mean(losses)
+        davi_loss_mean = jnp.mean(davi_losses)
         spr_loss_mean = jnp.mean(spr_losses)
         grad_magnitude_mean = jnp.mean(grad_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -210,6 +210,7 @@ def spr_davi_builder(
             target_heuristic_params,
             opt_state,
             loss,
+            davi_loss_mean,
             spr_loss_mean,
             grad_magnitude_mean,
             weights_magnitude_mean,
@@ -225,6 +226,7 @@ def spr_davi_builder(
                 target_heuristic_params,
                 opt_state,
                 loss,
+                davi_loss,
                 spr_loss,
                 grad_mag,
                 weight_mag,
@@ -244,6 +246,7 @@ def spr_davi_builder(
                 target_heuristic_params,
                 opt_state,
                 jnp.mean(loss),
+                jnp.mean(davi_loss),
                 jnp.mean(spr_loss),
                 jnp.mean(grad_mag),
                 jnp.mean(weight_mag),
@@ -298,8 +301,12 @@ def _get_datasets(
         )
 
         def heur_scan(n_states):
-            heur, _, _ = heuristic_model.apply(
-                target_heuristic_params, n_states, training=False, mutable=["batch_stats"]
+            heur = heuristic_model.apply(
+                target_heuristic_params,
+                n_states,
+                training=False,
+                mutable=["batch_stats"],
+                method=heuristic_model.get_heuristic,
             )[0]
             return heur.squeeze()
 
@@ -317,17 +324,21 @@ def _get_datasets(
 
         # The next_state is the one corresponding to the selected action
         batch_size = jax.tree_util.tree_leaves(states)[0].shape[0]
-        next_states = jax.tree_util.tree_map(
+        selected_neighbors = jax.tree_util.tree_map(
             lambda x: x[actions, jnp.arange(batch_size), :], neighbors
         )
 
         # Preprocess current and next states
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        next_preproc = jax.vmap(preproc_fn)(solve_configs, next_states)
+        next_preproc = jax.vmap(preproc_fn)(solve_configs, selected_neighbors)
 
         # --- Diff for Importance Sampling ---
-        current_heur, _, _ = heuristic_model.apply(
-            heuristic_params, preproc, training=False, mutable=["batch_stats"]
+        current_heur = heuristic_model.apply(
+            heuristic_params,
+            preproc,
+            training=False,
+            mutable=["batch_stats"],
+            method=heuristic_model.get_heuristic,
         )[0]
         diff = target_heuristic - current_heur.squeeze()
 

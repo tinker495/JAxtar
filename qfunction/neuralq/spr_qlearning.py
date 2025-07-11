@@ -47,7 +47,7 @@ def spr_qlearning_builder(
         weights: chex.Array,
     ):
         # --- Standard Q-Learning Loss ---
-        (q_values, _, pred_next_p), variable_updates = q_model.apply(
+        (q_values, pred_next_p), variable_updates = q_model.apply(
             q_params,
             preproc,
             actions,
