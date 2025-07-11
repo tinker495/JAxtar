@@ -389,6 +389,7 @@ def qlearning(
 @dist_puzzle_options
 @dist_train_options
 @dist_spr_qfunction_options
+@eval_options
 def spr_qlearning(
     puzzle: Puzzle,
     qfunction: SPRNeuralQFunction,
@@ -396,18 +397,19 @@ def spr_qlearning(
     train_options: DistTrainOptions,
     shuffle_length: int,
     with_policy: bool,
+    eval_options: EvalOptions,
     **kwargs,
 ):
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "qfunction": qfunction.__class__.__name__,
-        "puzzle_name": puzzle_name,
         "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
         "with_policy": with_policy,
+        "eval_options": eval_options.dict(),
         **kwargs,
     }
-    print_config("SPR Q-Learning Training Configuration", config)
+    print_config("SPR-Q-Learning Training Configuration", config)
     logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_spr_qlearning", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
@@ -428,6 +430,8 @@ def spr_qlearning(
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
+        update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
@@ -437,7 +441,7 @@ def spr_qlearning(
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
     )
-    qlearning_fn = spr_qlearning_builder(
+    spr_qlearning_fn = spr_qlearning_builder(
         train_options.train_minibatch_size,
         qfunc_model,
         optimizer,
@@ -445,6 +449,7 @@ def spr_qlearning(
         spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
         ema_tau=(1 - 1 / (update_interval * 50.0)),
         n_devices=n_devices,
+        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
     get_datasets = get_spr_qlearning_dataset_builder(
         puzzle,
@@ -479,11 +484,11 @@ def spr_qlearning(
             spr_loss,
             grad_magnitude,
             weight_magnitude,
-        ) = qlearning_fn(key, dataset, qfunc_params, target_qfunc_params, opt_state)
+        ) = spr_qlearning_fn(key, dataset, qfunc_params, target_qfunc_params, opt_state)
 
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
-            desc="SPR Q-Learning Training",
+            desc="SPR-Q-Learning Training",
             desc_dict={
                 "lr": lr,
                 "loss": float(loss),
@@ -493,7 +498,6 @@ def spr_qlearning(
                 "target_q": float(mean_target_q),
             },
         )
-
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Total Loss", loss, i)
         logger.log_scalar("Losses/Q Loss", q_loss, i)
@@ -519,11 +523,9 @@ def spr_qlearning(
             qfunction.params = qfunc_params
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
-
     qfunction.params = qfunc_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
-    logger.close()
 
     # Evaluation
     eval_seeds = list(range(eval_options.num_eval))
@@ -569,7 +571,6 @@ def spr_davi(
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "heuristic": heuristic.__class__.__name__,
-        "puzzle_name": puzzle_name,
         "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
         **kwargs,
@@ -596,6 +597,8 @@ def spr_davi(
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
+        update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
@@ -605,7 +608,7 @@ def spr_davi(
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
     )
-    davi_fn = spr_davi_builder(
+    spr_davi_fn = spr_davi_builder(
         train_options.train_minibatch_size,
         heuristic_model,
         optimizer,
@@ -613,6 +616,7 @@ def spr_davi(
         spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
         ema_tau=(1 - 1 / (update_interval * 50.0)),
         n_devices=n_devices,
+        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
     get_datasets = get_spr_heuristic_dataset_builder(
         puzzle,
@@ -646,7 +650,7 @@ def spr_davi(
             spr_loss,
             grad_magnitude,
             weight_magnitude,
-        ) = davi_fn(key, dataset, heuristic_params, target_heuristic_params, opt_state)
+        ) = spr_davi_fn(key, dataset, heuristic_params, target_heuristic_params, opt_state)
 
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
@@ -683,7 +687,6 @@ def spr_davi(
             heuristic.params = heuristic_params
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
-
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
