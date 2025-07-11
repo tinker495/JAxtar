@@ -6,12 +6,15 @@ from typing import Any
 
 import aim
 import jax.numpy as jnp
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import tensorboardX
 from pydantic import BaseModel
+
+matplotlib.use("Agg")
 
 
 def _convert_to_dict_if_pydantic(obj: Any) -> Any:
