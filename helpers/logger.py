@@ -1,10 +1,15 @@
 import os
 import subprocess
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import aim
+import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 import tensorboardX
 from pydantic import BaseModel
 
@@ -101,6 +106,88 @@ class TensorboardLogger:
         self.writer.add_text(tag, text, step)
         if self.aim_run:
             self.aim_run.track(aim.Text(text), name=tag, step=step)
+
+    def log_evaluation_results(self, results: list[dict], step: int):
+        """Logs evaluation results to files and logs summary to TensorBoard/Aim."""
+        run_dir = Path(self.log_dir)
+        df = pd.DataFrame(results)
+        df.to_csv(run_dir / "results.csv", index=False)
+
+        num_puzzles = len(results)
+        solved_results = [r for r in results if r["solved"]]
+        num_solved = len(solved_results)
+        success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
+
+        self.log_scalar("Evaluation/Success Rate", success_rate, step)
+
+        if solved_results:
+            solved_times = [r["search_time_s"] for r in solved_results]
+            solved_nodes = [r["nodes_generated"] for r in solved_results]
+            solved_paths = [r["path_length"] for r in solved_results]
+
+            self.log_scalar(
+                "Evaluation/Avg Search Time (Solved)", jnp.mean(jnp.array(solved_times)), step
+            )
+            self.log_scalar(
+                "Evaluation/Avg Generated Nodes (Solved)", jnp.mean(jnp.array(solved_nodes)), step
+            )
+            self.log_scalar("Evaluation/Avg Path Length", jnp.mean(jnp.array(solved_paths)), step)
+        else:
+            self.log_scalar("Evaluation/Avg Search Time (Solved)", 0, step)
+            self.log_scalar("Evaluation/Avg Generated Nodes (Solved)", 0, step)
+            self.log_scalar("Evaluation/Avg Path Length", 0, step)
+
+        solved_df = df[df["solved"]]
+        if not solved_df.empty:
+            fig = plt.figure(figsize=(10, 6))
+            sns.histplot(data=solved_df, x="search_time_s", kde=True)
+            plt.title("Distribution of Search Time")
+            self.writer.add_figure("Evaluation/Plots/Search Time Distribution", fig, step)
+            plt.close()
+
+            fig = plt.figure(figsize=(10, 6))
+            sns.histplot(data=solved_df, x="nodes_generated", kde=True)
+            plt.title("Distribution of Generated Nodes")
+            self.writer.add_figure("Evaluation/Plots/Nodes Generated Distribution", fig, step)
+            plt.close()
+
+            fig = plt.figure(figsize=(10, 6))
+            sns.histplot(data=solved_df, x="path_length", kde=True)
+            plt.title("Distribution of Path Length")
+            self.writer.add_figure("Evaluation/Plots/Path Length Distribution", fig, step)
+            plt.close()
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.boxplot(data=solved_df, x="path_length", y="search_time_s", ax=ax)
+            sns.pointplot(
+                data=solved_df,
+                x="path_length",
+                y="search_time_s",
+                estimator=np.median,
+                color="red",
+                linestyles="--",
+                errorbar=None,
+                ax=ax,
+            )
+            ax.set_title("Search Time Distribution by Path Length")
+            self.writer.add_figure("Evaluation/Plots/Search Time by Path Length", fig, step)
+            plt.close()
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.boxplot(data=solved_df, x="path_length", y="nodes_generated", ax=ax)
+            sns.pointplot(
+                data=solved_df,
+                x="path_length",
+                y="nodes_generated",
+                estimator=np.median,
+                color="red",
+                linestyles="--",
+                errorbar=None,
+                ax=ax,
+            )
+            ax.set_title("Generated Nodes Distribution by Path Length")
+            self.writer.add_figure("Evaluation/Plots/Generated Nodes by Path Length", fig, step)
+            plt.close()
 
     def close(self):
         self.writer.close()

@@ -1,8 +1,14 @@
 import time
+from datetime import datetime
+from pathlib import Path
 
 import click
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 from puxle import Puzzle
 from rich.console import Console
 from rich.panel import Panel
@@ -26,13 +32,117 @@ def evaluation():
     pass
 
 
+def log_and_summarize_evaluation(results: list[dict], run_dir: Path, console: Console):
+    """Logs evaluation results to files and prints a summary."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    console.print(f"Saving results to [bold]{run_dir}[/bold]")
+
+    df = pd.DataFrame(results)
+    df.to_csv(run_dir / "results.csv", index=False)
+
+    summary_table = Table(
+        title="[bold cyan]Evaluation Summary[/bold cyan]",
+        show_header=True,
+        header_style="bold magenta",
+    )
+    summary_table.add_column("Metric", style="dim", width=30)
+    summary_table.add_column("Value", justify="right")
+
+    num_puzzles = len(results)
+    solved_results = [r for r in results if r["solved"]]
+    num_solved = len(solved_results)
+    success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
+
+    summary_table.add_row("Puzzles Attempted", str(num_puzzles))
+    summary_table.add_row("Success Rate", f"{success_rate:.2f}% ({num_solved}/{num_puzzles})")
+
+    if solved_results:
+        solved_times = [r["search_time_s"] for r in solved_results]
+        solved_nodes = [r["nodes_generated"] for r in solved_results]
+        solved_paths = [r["path_length"] for r in solved_results]
+
+        summary_table.add_row(
+            "Avg. Search Time (Solved)", f"{jnp.mean(jnp.array(solved_times)):.3f} s"
+        )
+        summary_table.add_row(
+            "Avg. Generated Nodes (Solved)", human_format(jnp.mean(jnp.array(solved_nodes)))
+        )
+        summary_table.add_row("Avg. Path Length", f"{jnp.mean(jnp.array(solved_paths)):.2f}")
+    else:
+        summary_table.add_row("Avg. Search Time (Solved)", "N/A")
+        summary_table.add_row("Avg. Generated Nodes (Solved)", "N/A")
+        summary_table.add_row("Avg. Path Length", "N/A")
+
+    console.print(Panel(summary_table, border_style="green", expand=False))
+
+    solved_df = df[df["solved"]]
+    if not solved_df.empty:
+        plt.figure(figsize=(10, 6))
+        sns.histplot(data=solved_df, x="search_time_s", kde=True)
+        plt.title("Distribution of Search Time")
+        plt.xlabel("Search Time (s)")
+        plt.ylabel("Frequency")
+        plt.savefig(run_dir / "search_time_distribution.png")
+        plt.close()
+
+        plt.figure(figsize=(10, 6))
+        sns.histplot(data=solved_df, x="nodes_generated", kde=True)
+        plt.title("Distribution of Generated Nodes")
+        plt.xlabel("Nodes Generated")
+        plt.ylabel("Frequency")
+        plt.savefig(run_dir / "nodes_generated_distribution.png")
+        plt.close()
+
+        plt.figure(figsize=(10, 6))
+        sns.histplot(data=solved_df, x="path_length", kde=True)
+        plt.title("Distribution of Path Length")
+        plt.xlabel("Path Length")
+        plt.ylabel("Frequency")
+        plt.savefig(run_dir / "path_length_distribution.png")
+        plt.close()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.boxplot(data=solved_df, x="path_length", y="search_time_s", ax=ax)
+        sns.pointplot(
+            data=solved_df,
+            x="path_length",
+            y="search_time_s",
+            estimator=np.median,
+            color="red",
+            linestyles="--",
+            errorbar=None,
+            ax=ax,
+        )
+        ax.set_title("Search Time Distribution by Path Length")
+        ax.set_xlabel("Path Length")
+        ax.set_ylabel("Search Time (s)")
+        plt.savefig(run_dir / "search_time_by_path_length.png")
+        plt.close()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.boxplot(data=solved_df, x="path_length", y="nodes_generated", ax=ax)
+        sns.pointplot(
+            data=solved_df,
+            x="path_length",
+            y="nodes_generated",
+            estimator=np.median,
+            color="red",
+            linestyles="--",
+            errorbar=None,
+            ax=ax,
+        )
+        ax.set_title("Generated Nodes Distribution by Path Length")
+        ax.set_xlabel("Path Length")
+        ax.set_ylabel("Nodes Generated")
+        plt.savefig(run_dir / "nodes_generated_by_path_length.png")
+        plt.close()
+
+
 def run_evaluation(
     search_fn,
     puzzle: Puzzle,
     seeds: list[int],
-    eval_options: EvalOptions,
-):
-    console = Console()
+) -> list[dict]:
     num_puzzles = len(seeds)
     results = []
 
@@ -68,45 +178,21 @@ def run_evaluation(
 
         results.append(result_item)
 
-        # Update progress bar with moving averages
-        num_solved = sum(r["solved"] for r in results)
+        solved_results = [r for r in results if r["solved"]]
+        num_solved = len(solved_results)
         success_rate = (num_solved / (i + 1)) * 100
-        avg_time = sum(r["search_time_s"] for r in results) / (i + 1)
-        avg_nodes = sum(r["nodes_generated"] for r in results) / (i + 1)
-        pbar.set_description(
-            "Evaluating",
-            desc_dict={
-                "Success Rate": f"{success_rate:.2f}%",
-                "Avg Time": f"{avg_time:.2f}s",
-                "Avg Nodes": f"{human_format(avg_nodes)}",
-            },
-        )
 
-    # Summary Table
-    summary_table = Table(
-        title="[bold cyan]Evaluation Summary[/bold cyan]",
-        show_header=True,
-        header_style="bold magenta",
-    )
-    summary_table.add_column("Metric", style="dim", width=25)
-    summary_table.add_column("Value", justify="right")
-
-    num_solved = sum(r["solved"] for r in results)
-    success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
-    total_times = [r["search_time_s"] for r in results]
-    total_nodes = [r["nodes_generated"] for r in results]
-    solved_paths = [r["path_length"] for r in results if r["solved"]]
-
-    summary_table.add_row("Puzzles Attempted", str(num_puzzles))
-    summary_table.add_row("Success Rate", f"{success_rate:.2f}% ({num_solved}/{num_puzzles})")
-    summary_table.add_row("Avg. Search Time", f"{jnp.mean(jnp.array(total_times)):.3f} s")
-    summary_table.add_row("Avg. Generated Nodes", human_format(jnp.mean(jnp.array(total_nodes))))
-    if solved_paths:
-        summary_table.add_row("Avg. Path Length", f"{jnp.mean(jnp.array(solved_paths)):.2f}")
-    else:
-        summary_table.add_row("Avg. Path Length", "N/A")
-
-    console.print(Panel(summary_table, border_style="green", expand=False))
+        pbar_desc_dict = {"Success Rate": f"{success_rate:.2f}%"}
+        if num_solved > 0:
+            avg_time = sum(r["search_time_s"] for r in solved_results) / num_solved
+            avg_nodes = sum(r["nodes_generated"] for r in solved_results) / num_solved
+            pbar_desc_dict.update(
+                {
+                    "Avg Time (Solved)": f"{avg_time:.2f}s",
+                    "Avg Nodes (Solved)": f"{human_format(avg_nodes)}",
+                }
+            )
+        pbar.set_description("Evaluating", desc_dict=pbar_desc_dict)
 
     return results
 
@@ -123,6 +209,7 @@ def eval_heuristic(
     heuristic: Heuristic,
     **kwargs,
 ):
+    console = Console()
     eval_seeds = (
         list(seeds) if len(seeds) > 1 else list(range(seeds[0], seeds[0] + eval_options.num_eval))
     )
@@ -145,15 +232,23 @@ def eval_heuristic(
     )
 
     if not eval_seeds:
-        print("No puzzles to evaluate. Please provide seeds or set --num-puzzles > 0.")
+        console.print("No puzzles to evaluate. Please provide seeds or set --num-puzzles > 0.")
         return
 
-    run_evaluation(
+    results = run_evaluation(
         search_fn=astar_fn,
         puzzle=puzzle,
         seeds=eval_seeds,
-        eval_options=eval_options,
     )
+
+    if eval_options.run_name:
+        run_name = eval_options.run_name
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_name = f"{puzzle_name}_{timestamp}"
+
+    run_dir = Path("runs") / run_name
+    log_and_summarize_evaluation(results, run_dir, console)
 
 
 @evaluation.command(name="qlearning")
@@ -168,6 +263,7 @@ def eval_qlearning(
     qfunction: QFunction,
     **kwargs,
 ):
+    console = Console()
     eval_seeds = (
         list(seeds) if len(seeds) > 1 else list(range(seeds[0], seeds[0] + eval_options.num_eval))
     )
@@ -190,12 +286,20 @@ def eval_qlearning(
     )
 
     if not eval_seeds:
-        print("No puzzles to evaluate. Please provide seeds or set --num-puzzles > 0.")
+        console.print("No puzzles to evaluate. Please provide seeds or set --num-puzzles > 0.")
         return
 
-    run_evaluation(
+    results = run_evaluation(
         search_fn=qstar_fn,
         puzzle=puzzle,
         seeds=eval_seeds,
-        eval_options=eval_options,
     )
+
+    if eval_options.run_name:
+        run_name = eval_options.run_name
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_name = f"{puzzle_name}_{timestamp}"
+
+    run_dir = Path("runs") / run_name
+    log_and_summarize_evaluation(results, run_dir, console)

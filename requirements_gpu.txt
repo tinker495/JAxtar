@@ -18,3 +18,6 @@ pydantic
 xtructure @ git+https://github.com/tinker495/xtructure.git
 puxle @ git+https://github.com/tinker495/PuXle.git
 aim
+pandas
+seaborn
+matplotlib
