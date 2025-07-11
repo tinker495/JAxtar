@@ -24,7 +24,12 @@ from JAxtar.astar import astar_builder
 from JAxtar.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
-from .options import eval_options, heuristic_options, puzzle_options, qfunction_options
+from .options import (
+    eval_options,
+    eval_puzzle_options,
+    heuristic_options,
+    qfunction_options,
+)
 
 matplotlib.use("Agg")
 
@@ -201,28 +206,23 @@ def run_evaluation(
 
 
 @evaluation.command(name="heuristic")
+@eval_puzzle_options
 @eval_options
-@puzzle_options
 @heuristic_options
 def eval_heuristic(
     puzzle: Puzzle,
     puzzle_name: str,
-    seeds: tuple[int],
     eval_options: EvalOptions,
     heuristic: Heuristic,
     **kwargs,
 ):
     console = Console()
-    eval_seeds = (
-        list(seeds) if len(seeds) > 1 else list(range(seeds[0], seeds[0] + eval_options.num_eval))
-    )
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "search_algorithm": "A*",
         "heuristic": heuristic.__class__.__name__,
         "eval_options": eval_options.dict(),
         "num_eval": eval_options.num_eval,
-        "seeds": tuple(eval_seeds),
     }
     print_config("Heuristic Evaluation Configuration", config)
 
@@ -234,9 +234,7 @@ def eval_heuristic(
         cost_weight=eval_options.cost_weight,
     )
 
-    if not eval_seeds:
-        console.print("No puzzles to evaluate. Please provide seeds or set --num-puzzles > 0.")
-        return
+    eval_seeds = list(range(eval_options.num_eval))
 
     results = run_evaluation(
         search_fn=astar_fn,
@@ -255,28 +253,23 @@ def eval_heuristic(
 
 
 @evaluation.command(name="qlearning")
+@eval_puzzle_options
 @eval_options
-@puzzle_options
 @qfunction_options
 def eval_qlearning(
     puzzle: Puzzle,
     puzzle_name: str,
-    seeds: tuple[int],
     eval_options: EvalOptions,
     qfunction: QFunction,
     **kwargs,
 ):
     console = Console()
-    eval_seeds = (
-        list(seeds) if len(seeds) > 1 else list(range(seeds[0], seeds[0] + eval_options.num_eval))
-    )
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "search_algorithm": "Q*",
         "q_function": qfunction.__class__.__name__,
         "eval_options": eval_options.dict(),
         "num_eval": eval_options.num_eval,
-        "seeds": tuple(eval_seeds),
     }
     print_config("Q-Learning Evaluation Configuration", config)
 
@@ -288,9 +281,7 @@ def eval_qlearning(
         cost_weight=eval_options.cost_weight,
     )
 
-    if not eval_seeds:
-        console.print("No puzzles to evaluate. Please provide seeds or set --num-puzzles > 0.")
-        return
+    eval_seeds = list(range(eval_options.num_eval))
 
     results = run_evaluation(
         search_fn=qstar_fn,

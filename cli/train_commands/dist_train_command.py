@@ -55,6 +55,7 @@ def davi(
     eval_options: EvalOptions,
     **kwargs,
 ):
+    kwargs.pop("puzzle_bundle", None)
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "heuristic": heuristic.__class__.__name__,
@@ -226,6 +227,7 @@ def qlearning(
     eval_options: EvalOptions,
     **kwargs,
 ):
+    kwargs.pop("puzzle_bundle", None)
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "qfunction": qfunction.__class__.__name__,

@@ -30,6 +30,7 @@ class SearchOptions(BaseModel):
     vmap_size: int = Field(1, description="Size of vmap for search.")
     show_compile_time: bool = Field(False, description="Show compile time for search.")
     profile: bool = Field(False, description="Profile search.")
+    debug: bool = Field(False, description="Debug mode.")
 
     def get_max_node_size(self):
         return self.max_node_size // self.batch_size * self.batch_size
@@ -119,6 +120,8 @@ class PuzzleBundle(BaseModel):
     q_function_nn: Optional[Callable] = None
     q_function_spr: Optional[Callable] = None
     shuffle_length: int = 50
+    eval_options: EvalOptions = Field(default_factory=EvalOptions)
+    search_options: SearchOptions = Field(default_factory=SearchOptions)
 
     class Config:
         arbitrary_types_allowed = True
