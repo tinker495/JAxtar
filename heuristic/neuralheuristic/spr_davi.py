@@ -324,13 +324,12 @@ def _get_datasets(
 
         # The next_state is the one corresponding to the selected action
         batch_size = jax.tree_util.tree_leaves(states)[0].shape[0]
-        selected_neighbors = jax.tree_util.tree_map(
-            lambda x: x[actions, jnp.arange(batch_size), :], neighbors
-        )
 
         # Preprocess current and next states
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        next_preproc = jax.vmap(preproc_fn)(solve_configs, selected_neighbors)
+        next_preproc = jax.tree_util.tree_map(
+            lambda x: x[actions, jnp.arange(batch_size), :], preproc_neighbors
+        )
 
         # --- Diff for Importance Sampling ---
         current_heur = heuristic_model.apply(

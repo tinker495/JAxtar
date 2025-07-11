@@ -29,7 +29,7 @@ class SPRHeuristicModel(nn.Module):
     and transition model.
     """
 
-    action_size: int
+    action_size: int = 4
     Res_N_Encoder: int = 2
     Res_N_Dist: int = 2
     latent_dim: int = 1000
@@ -81,16 +81,18 @@ class SPRHeuristicModel(nn.Module):
 
 class SPRNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: Puzzle, **kwargs):
-        # Get action size for the model
-        dummy_solve_config = puzzle.SolveConfig.default()
-        dummy_current = puzzle.State.default()
-        action_size = len(puzzle.get_neighbours(dummy_solve_config, dummy_current))
+        action_size = self._get_action_size(puzzle)
 
         # Add action_size to kwargs for the model
         model_kwargs = kwargs.copy()
         model_kwargs["action_size"] = action_size
 
         super().__init__(puzzle, model=SPRHeuristicModel, **model_kwargs)
+
+    def _get_action_size(self, puzzle: Puzzle):
+        dummy_solve_config = puzzle.SolveConfig.default()
+        dummy_current = puzzle.State.default()
+        return puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[0][0]
 
     def batched_param_distance(self, params, solve_config, current):
         x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
