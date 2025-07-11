@@ -404,7 +404,7 @@ def dist_qfunction_options(func: callable) -> callable:
 def dist_spr_heuristic_options(func: callable) -> callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
-        puzzle_bundle = kwargs.pop("puzzle_bundle")
+        puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
 
@@ -428,7 +428,7 @@ def dist_spr_qfunction_options(func: callable) -> callable:
         q_opts = DistQFunctionOptions(
             **{k: kwargs.pop(k) for k in DistQFunctionOptions.model_fields}
         )
-        puzzle_bundle = kwargs.pop("puzzle_bundle")
+        puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
 
