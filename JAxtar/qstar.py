@@ -139,6 +139,12 @@ def qstar_builder(
             sort_cost = (
                 flatten_inserted * 2 + final_process_mask * 1
             )  # 2 is new, 1 is old but optimal, 0 is not optimal
+            search_result.dist = xnp.set_as_condition_on_array(
+                search_result.dist,
+                hash_idx.index,
+                final_process_mask,
+                flatten_q_vals,
+            )
 
             argsort_idx = jnp.argsort(sort_cost, axis=0)  # sort by inserted
 

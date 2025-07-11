@@ -67,7 +67,7 @@ def log_and_summarize_evaluation(results: list[dict], run_dir: Path, console: Co
     if solved_results:
         solved_times = [r["search_time_s"] for r in solved_results]
         solved_nodes = [r["nodes_generated"] for r in solved_results]
-        solved_paths = [r["path_length"] for r in solved_results]
+        solved_paths = [r["path_cost"] for r in solved_results]
 
         summary_table.add_row(
             "Avg. Search Time (Solved)", f"{jnp.mean(jnp.array(solved_times)):.3f} s"
@@ -75,45 +75,29 @@ def log_and_summarize_evaluation(results: list[dict], run_dir: Path, console: Co
         summary_table.add_row(
             "Avg. Generated Nodes (Solved)", human_format(jnp.mean(jnp.array(solved_nodes)))
         )
-        summary_table.add_row("Avg. Path Length", f"{jnp.mean(jnp.array(solved_paths)):.2f}")
+        summary_table.add_row("Avg. Path Cost", f"{jnp.mean(jnp.array(solved_paths)):.2f}")
     else:
         summary_table.add_row("Avg. Search Time (Solved)", "N/A")
         summary_table.add_row("Avg. Generated Nodes (Solved)", "N/A")
-        summary_table.add_row("Avg. Path Length", "N/A")
+        summary_table.add_row("Avg. Path Cost", "N/A")
 
     console.print(Panel(summary_table, border_style="green", expand=False))
 
     solved_df = df[df["solved"]]
     if not solved_df.empty:
         plt.figure(figsize=(10, 6))
-        sns.histplot(data=solved_df, x="search_time_s", kde=True)
-        plt.title("Distribution of Search Time")
-        plt.xlabel("Search Time (s)")
+        sns.histplot(data=solved_df, x="path_cost", kde=True)
+        plt.title("Distribution of Path Cost")
+        plt.xlabel("Path Cost")
         plt.ylabel("Frequency")
-        plt.savefig(run_dir / "search_time_distribution.png")
-        plt.close()
-
-        plt.figure(figsize=(10, 6))
-        sns.histplot(data=solved_df, x="nodes_generated", kde=True)
-        plt.title("Distribution of Generated Nodes")
-        plt.xlabel("Nodes Generated")
-        plt.ylabel("Frequency")
-        plt.savefig(run_dir / "nodes_generated_distribution.png")
-        plt.close()
-
-        plt.figure(figsize=(10, 6))
-        sns.histplot(data=solved_df, x="path_length", kde=True)
-        plt.title("Distribution of Path Length")
-        plt.xlabel("Path Length")
-        plt.ylabel("Frequency")
-        plt.savefig(run_dir / "path_length_distribution.png")
+        plt.savefig(run_dir / "path_cost_distribution.png")
         plt.close()
 
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.boxplot(data=solved_df, x="path_length", y="search_time_s", ax=ax)
+        sns.boxplot(data=solved_df, x="path_cost", y="search_time_s", ax=ax)
         sns.pointplot(
             data=solved_df,
-            x="path_length",
+            x="path_cost",
             y="search_time_s",
             estimator=np.median,
             color="red",
@@ -121,17 +105,17 @@ def log_and_summarize_evaluation(results: list[dict], run_dir: Path, console: Co
             errorbar=None,
             ax=ax,
         )
-        ax.set_title("Search Time Distribution by Path Length")
-        ax.set_xlabel("Path Length")
+        ax.set_title("Search Time Distribution by Path Cost")
+        ax.set_xlabel("Path Cost")
         ax.set_ylabel("Search Time (s)")
-        plt.savefig(run_dir / "search_time_by_path_length.png")
+        plt.savefig(run_dir / "search_time_by_path_cost.png")
         plt.close()
 
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.boxplot(data=solved_df, x="path_length", y="nodes_generated", ax=ax)
+        sns.boxplot(data=solved_df, x="path_cost", y="nodes_generated", ax=ax)
         sns.pointplot(
             data=solved_df,
-            x="path_length",
+            x="path_cost",
             y="nodes_generated",
             estimator=np.median,
             color="red",
@@ -139,11 +123,74 @@ def log_and_summarize_evaluation(results: list[dict], run_dir: Path, console: Co
             errorbar=None,
             ax=ax,
         )
-        ax.set_title("Generated Nodes Distribution by Path Length")
-        ax.set_xlabel("Path Length")
+        ax.set_title("Generated Nodes Distribution by Path Cost")
+        ax.set_xlabel("Path Cost")
         ax.set_ylabel("Nodes Generated")
-        plt.savefig(run_dir / "nodes_generated_by_path_length.png")
+        plt.savefig(run_dir / "nodes_generated_by_path_cost.png")
         plt.close()
+
+    all_actual_dists = []
+    all_estimated_dists = []
+    for r in solved_results:
+        if r.get("path_analysis"):
+            analysis_data = r["path_analysis"]
+            if analysis_data.get("actual") and analysis_data.get("estimated"):
+                all_actual_dists.extend(analysis_data["actual"])
+                all_estimated_dists.extend(analysis_data["estimated"])
+
+    if all_actual_dists:
+        fig, ax = plt.subplots(figsize=(12, 12))
+        plot_df = pd.DataFrame(
+            {
+                "Actual Cost to Goal": all_actual_dists,
+                "Estimated Distance": all_estimated_dists,
+            }
+        )
+
+        sns.boxplot(data=plot_df, x="Actual Cost to Goal", y="Estimated Distance", ax=ax)
+        sns.pointplot(
+            data=plot_df,
+            x="Actual Cost to Goal",
+            y="Estimated Distance",
+            estimator=np.median,
+            color="red",
+            linestyles="--",
+            errorbar=None,
+            ax=ax,
+        )
+
+        max_val = 0
+        if all_actual_dists and all_estimated_dists:
+            max_val = max(np.max(all_actual_dists), np.max(all_estimated_dists))
+
+        limit = int(max_val) + 1 if max_val > 0 else 10
+
+        ax.plot(
+            [0, limit], [0, limit], "g--", alpha=0.75, zorder=0, label="y=x (Perfect Heuristic)"
+        )
+        ax.set_xlim(0, limit)
+        ax.set_ylim(0, limit)
+
+        # Set x-axis ticks to cover the full range up to 'limit'
+        xticks = range(int(limit) + 1)
+        ax.set_xticks(xticks)
+        ax.set_xticklabels([f"{x:.1f}" for x in xticks])
+        # Reduce number of x-axis labels if there are too many
+        xticklabels = ax.get_xticklabels()
+        if len(xticklabels) > 10:
+            step = int(np.ceil(len(xticklabels) / 10))
+            for i, label in enumerate(xticklabels):
+                if i % step != 0:
+                    label.set_visible(False)
+
+        ax.set_title("Heuristic/Q-function Accuracy Analysis")
+        ax.set_xlabel("Actual Cost to Goal")
+        ax.set_ylabel("Estimated Distance (Heuristic/Q-Value)")
+        ax.legend()
+        ax.grid(True)
+        fig.tight_layout()
+        fig.savefig(run_dir / "heuristic_accuracy.png")
+        plt.close(fig)
 
 
 def run_evaluation(
@@ -176,13 +223,29 @@ def run_evaluation(
             "solved": solved,
             "search_time_s": search_time,
             "nodes_generated": generated_nodes,
-            "path_length": 0,
+            "path_cost": 0,
+            "path_analysis": None,
         }
 
         if solved:
             path = search_result.get_solved_path()
-            path_length = len(path)
-            result_item["path_length"] = path_length
+            path_cost = search_result.get_cost(path[-1])
+            result_item["path_cost"] = float(path_cost)
+
+            actual_dists = []
+            estimated_dists = []
+            for state_in_path in path:
+                actual_dist = float(path_cost - search_result.get_cost(state_in_path))
+                estimated_dist = float(search_result.get_dist(state_in_path))
+
+                if np.isfinite(estimated_dist):
+                    actual_dists.append(actual_dist)
+                    estimated_dists.append(estimated_dist)
+
+            result_item["path_analysis"] = {
+                "actual": actual_dists,
+                "estimated": estimated_dists,
+            }
 
         results.append(result_item)
 
