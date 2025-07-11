@@ -34,7 +34,7 @@ def spr_qlearning_builder(
         z = jax.lax.stop_gradient(z)
         p = p / (jnp.linalg.norm(p, axis=-1, keepdims=True) + 1e-8)
         z = z / (jnp.linalg.norm(z, axis=-1, keepdims=True) + 1e-8)
-        return -jnp.mean(jnp.sum(p * z, axis=-1))
+        return 1.0 - jnp.mean(jnp.sum(p * z, axis=-1))
 
     def spr_qlearning_loss(
         q_params: Any,
@@ -46,7 +46,7 @@ def spr_qlearning_builder(
         weights: chex.Array,
     ):
         # --- Standard Q-Learning Loss ---
-        (q_values, _, _), variable_updates = q_model.apply(
+        (q_values, _, pred_next_p_all), variable_updates = q_model.apply(
             q_params, preproc, training=True, mutable=["batch_stats"]
         )
         if n_devices > 1:
@@ -59,10 +59,6 @@ def spr_qlearning_builder(
 
         # --- SPR Loss ---
         # Online network predictions
-        (_, _, pred_next_p_all) = q_model.apply(
-            q_params, preproc, training=True, mutable=["batch_stats"]
-        )[0]
-
         pred_next_p_all = jnp.reshape(
             pred_next_p_all, (pred_next_p_all.shape[0], q_model.action_size, -1)
         )
@@ -80,7 +76,7 @@ def spr_qlearning_builder(
         # --- Combined Loss ---
         total_loss = q_loss + spr_loss_weight * spr_loss
 
-        return total_loss, (new_params, q_diff, spr_loss)
+        return total_loss, (new_params, q_loss, spr_loss)
 
     def spr_qlearning(
         key: chex.PRNGKey,
@@ -138,7 +134,7 @@ def spr_qlearning_builder(
             preproc, next_preproc, target_q, actions, weights = batched_dataset
 
             grad_fn = jax.value_and_grad(spr_qlearning_loss, has_aux=True)
-            (loss, (q_params, _, spr_loss)), grads = grad_fn(
+            (loss, (q_params, q_loss, spr_loss)), grads = grad_fn(
                 q_params,
                 target_q_params,
                 preproc,
@@ -161,9 +157,19 @@ def spr_qlearning_builder(
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
 
-            return (q_params, target_q_params, opt_state), (loss, spr_loss, grad_magnitude_mean)
+            return (q_params, target_q_params, opt_state), (
+                loss,
+                q_loss,
+                spr_loss,
+                grad_magnitude_mean,
+            )
 
-        (q_params, target_q_params, opt_state), (losses, spr_losses, grad_means) = jax.lax.scan(
+        (q_params, target_q_params, opt_state), (
+            losses,
+            q_losses,
+            spr_losses,
+            grad_means,
+        ) = jax.lax.scan(
             train_loop,
             (q_params, target_q_params, opt_state),
             (
@@ -176,6 +182,7 @@ def spr_qlearning_builder(
         )
 
         loss = jnp.mean(losses)
+        q_loss_mean = jnp.mean(q_losses)
         spr_loss_mean = jnp.mean(spr_losses)
         grad_magnitude_mean = jnp.mean(grad_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -188,6 +195,7 @@ def spr_qlearning_builder(
             target_q_params,
             opt_state,
             loss,
+            q_loss_mean,
             spr_loss_mean,
             grad_magnitude_mean,
             weights_magnitude_mean,
@@ -197,9 +205,18 @@ def spr_qlearning_builder(
 
         def pmap_spr_qlearning(key, dataset, q_params, target_q_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (q_params, target_q_params, opt_state, loss, spr_loss, grad_mag, weight_mag) = jax.pmap(
-                spr_qlearning, in_axes=(0, 0, None, None, None), axis_name="devices"
-            )(keys, dataset, q_params, target_q_params, opt_state)
+            (
+                q_params,
+                target_q_params,
+                opt_state,
+                loss,
+                q_loss,
+                spr_loss,
+                grad_mag,
+                weight_mag,
+            ) = jax.pmap(spr_qlearning, in_axes=(0, 0, None, None, None), axis_name="devices")(
+                keys, dataset, q_params, target_q_params, opt_state
+            )
 
             q_params = jax.tree_util.tree_map(lambda xs: xs[0], q_params)
             target_q_params = jax.tree_util.tree_map(lambda xs: xs[0], target_q_params)
@@ -210,6 +227,7 @@ def spr_qlearning_builder(
                 target_q_params,
                 opt_state,
                 jnp.mean(loss),
+                jnp.mean(q_loss),
                 jnp.mean(spr_loss),
                 jnp.mean(grad_mag),
                 jnp.mean(weight_mag),

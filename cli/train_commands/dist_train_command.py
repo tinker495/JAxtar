@@ -468,8 +468,8 @@ def spr_qlearning(
         qfunc_model,
         optimizer,
         train_options.using_importance_sampling,
-        spr_loss_weight=kwargs.get("spr_loss_weight", 1.0),
-        ema_tau=kwargs.get("ema_tau", 0.99),
+        spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
+        ema_tau=(1 - 1 / (train_options.update_interval * 50.0)),
         n_devices=n_devices,
     )
     get_datasets = get_spr_qlearning_dataset_builder(
@@ -500,6 +500,7 @@ def spr_qlearning(
             target_qfunc_params,
             opt_state,
             loss,
+            q_loss,
             spr_loss,
             grad_magnitude,
             weight_magnitude,
@@ -511,6 +512,7 @@ def spr_qlearning(
             desc_dict={
                 "lr": lr,
                 "loss": float(loss),
+                "q_loss": float(q_loss),
                 "spr_loss": float(spr_loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_q": float(mean_target_q),
@@ -519,6 +521,7 @@ def spr_qlearning(
 
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Total Loss", loss, i)
+        logger.log_scalar("Losses/Q Loss", q_loss, i)
         logger.log_scalar("Losses/SPR Loss", spr_loss, i)
         logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
