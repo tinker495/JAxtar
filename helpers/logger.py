@@ -110,6 +110,12 @@ class TensorboardLogger:
         if self.aim_run:
             self.aim_run.track(aim.Text(text), name=tag, step=step)
 
+    def log_figure(self, tag: str, figure, step: int):
+        """Logs a Matplotlib figure to TensorBoard and Aim."""
+        self.writer.add_figure(tag, figure, step)
+        if self.aim_run:
+            self.aim_run.track(aim.Figure(figure), name=tag, step=step)
+
     def log_evaluation_results(self, results: list[dict], step: int):
         """Logs evaluation results to files and logs summary to TensorBoard/Aim."""
         run_dir = Path(self.log_dir)
@@ -145,19 +151,19 @@ class TensorboardLogger:
             fig = plt.figure(figsize=(10, 6))
             sns.histplot(data=solved_df, x="search_time_s", kde=True)
             plt.title("Distribution of Search Time")
-            self.writer.add_figure("Evaluation/Plots/Search Time Distribution", fig, step)
+            self.log_figure("Evaluation/Plots/Search Time Distribution", fig, step)
             plt.close(fig)
 
             fig = plt.figure(figsize=(10, 6))
             sns.histplot(data=solved_df, x="nodes_generated", kde=True)
             plt.title("Distribution of Generated Nodes")
-            self.writer.add_figure("Evaluation/Plots/Nodes Generated Distribution", fig, step)
+            self.log_figure("Evaluation/Plots/Nodes Generated Distribution", fig, step)
             plt.close(fig)
 
             fig = plt.figure(figsize=(10, 6))
             sns.histplot(data=solved_df, x="path_cost", kde=True)
             plt.title("Distribution of Path Cost")
-            self.writer.add_figure("Evaluation/Plots/Path Cost Distribution", fig, step)
+            self.log_figure("Evaluation/Plots/Path Cost Distribution", fig, step)
             plt.close(fig)
 
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -173,7 +179,7 @@ class TensorboardLogger:
                 ax=ax,
             )
             ax.set_title("Search Time Distribution by Path Cost")
-            self.writer.add_figure("Evaluation/Plots/Search Time by Path Cost", fig, step)
+            self.log_figure("Evaluation/Plots/Search Time by Path Cost", fig, step)
             plt.close(fig)
 
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -189,7 +195,7 @@ class TensorboardLogger:
                 ax=ax,
             )
             ax.set_title("Generated Nodes Distribution by Path Cost")
-            self.writer.add_figure("Evaluation/Plots/Generated Nodes by Path Cost", fig, step)
+            self.log_figure("Evaluation/Plots/Generated Nodes by Path Cost", fig, step)
             plt.close(fig)
 
         all_actual_dists = []
@@ -239,10 +245,11 @@ class TensorboardLogger:
             ax.set_xlim(0, limit)
             ax.set_ylim(0, limit)
 
+            # Set x-axis ticks to cover the full range up to 'limit'
             xticks = range(int(limit) + 1)
             ax.set_xticks(xticks)
             ax.set_xticklabels([f"{x:.1f}" for x in xticks])
-
+            # Reduce number of x-axis labels if there are too many
             xticklabels = ax.get_xticklabels()
             if len(xticklabels) > 10:
                 step = int(np.ceil(len(xticklabels) / 10))
@@ -256,7 +263,7 @@ class TensorboardLogger:
             ax.legend()
             ax.grid(True)
             fig.tight_layout()
-            self.writer.add_figure("Evaluation/Plots/Heuristic Accuracy", fig, step)
+            self.log_figure("Evaluation/Plots/Heuristic Accuracy", fig, step)
             plt.close(fig)
 
     def close(self):
