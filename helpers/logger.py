@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import aim
+import imageio.v2 as imageio  # For saving images as PNG
 import jax.numpy as jnp
 import matplotlib
 import matplotlib.pyplot as plt
@@ -111,6 +112,17 @@ class TensorboardLogger:
             else:
                 aim_image = image
             self.aim_run.track(aim.Image(aim_image), name=tag, step=step)
+        # Save image as PNG in log_dir
+        # Sanitize tag for filename
+        safe_tag = tag.replace("/", "_").replace(" ", "_")
+        filename = f"{safe_tag}_step{step}.png"
+        filepath = os.path.join(self.log_dir, filename)
+        # If image is float, convert to uint8
+        if image.dtype in [np.float32, np.float64]:
+            img_to_save = np.clip(image * 255, 0, 255).astype(np.uint8)
+        else:
+            img_to_save = image
+        imageio.imwrite(filepath, img_to_save)
 
     def log_text(self, tag: str, text: str, step: int = 0):
         self.writer.add_text(tag, text, step)
