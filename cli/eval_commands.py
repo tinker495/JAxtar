@@ -542,9 +542,10 @@ def eval_compare(run_dirs: list[str]):
 
         plt.figure(figsize=(12, 8))
         sns.boxplot(data=solved_df, x="run_label", y="search_time_s", order=sorted_run_labels)
+        plt.yscale("log")
         plt.title("Search Time Comparison")
         plt.xlabel("Run")
-        plt.ylabel("Search Time (s)")
+        plt.ylabel("Search Time (s, log scale)")
         plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
         plt.savefig(comparison_dir / "search_time_comparison.png")
@@ -558,4 +559,114 @@ def eval_compare(run_dirs: list[str]):
         plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
         plt.savefig(comparison_dir / "nodes_generated_comparison.png")
+        plt.close()
+
+        # Scatter plot: nodes_generated (x) vs search_time_s (y), colored by run_label
+        plt.figure(figsize=(12, 8))
+        sns.scatterplot(
+            data=solved_df,
+            x="nodes_generated",
+            y="search_time_s",
+            hue="run_label",
+            palette="tab10",
+            alpha=0.7,
+            edgecolor=None,
+        )
+        plt.xscale("log")
+        plt.yscale("log")
+        plt.title("Search Time vs. Generated Nodes (Scatter)")
+        plt.xlabel("Nodes Generated (log scale)")
+        plt.ylabel("Search Time (s, log scale)")
+        plt.legend(title="Run", bbox_to_anchor=(1.05, 1), loc="upper left")
+        plt.tight_layout()
+
+        # Add grid lines
+        plt.grid(True, which="both", linestyle="--", linewidth=0.7, alpha=0.6)
+
+        # Overlay Gaussian (confidence ellipse) and mean for each run_label
+        import matplotlib.transforms as transforms
+        from matplotlib.patches import Ellipse
+
+        def plot_confidence_ellipse(x, y, ax, n_std=1.0, facecolor="none", **kwargs):
+            if x.size <= 1 or y.size <= 1:
+                return
+            cov = np.cov(x, y)
+            if np.any(np.isnan(cov)) or np.any(np.isinf(cov)):
+                return
+            pearson = cov[0, 1] / np.sqrt(cov[0, 0] * cov[1, 1])
+            mean_x = np.mean(x)
+            mean_y = np.mean(y)
+            ell_radius_x = np.sqrt(1 + pearson)
+            ell_radius_y = np.sqrt(1 - pearson)
+            # Eigenvalues for scaling
+            scale_x = np.sqrt(cov[0, 0]) * n_std
+            scale_y = np.sqrt(cov[1, 1]) * n_std
+            ellipse = Ellipse(
+                (0, 0),
+                width=2 * ell_radius_x,
+                height=2 * ell_radius_y,
+                facecolor=facecolor,
+                **kwargs,
+            )
+            transf = (
+                transforms.Affine2D()
+                .rotate_deg(45 if pearson != 0 else 0)
+                .scale(scale_x, scale_y)
+                .translate(mean_x, mean_y)
+            )
+            ellipse.set_transform(transf + ax.transData)
+            return ax.add_patch(ellipse)
+
+        ax = plt.gca()
+        palette = sns.color_palette("tab10")
+        for i, (run_label, group) in enumerate(solved_df.groupby("run_label")):
+            x = group["nodes_generated"].values
+            y = group["search_time_s"].values
+            color = palette[i % len(palette)]
+            # Plot mean
+            mean_x = np.mean(x)
+            mean_y = np.mean(y)
+            ax.scatter(
+                mean_x,
+                mean_y,
+                color=color,
+                s=120,
+                marker="X",
+                edgecolor="black",
+                zorder=10,
+                label=f"{run_label} mean",
+            )
+            # Plot confidence ellipse
+            plot_confidence_ellipse(x, y, ax, n_std=1.0, edgecolor=color, linewidth=2, alpha=0.5)
+
+        # Add directional arrows and labels for axis interpretation
+        # Left arrow for x-axis (fewer nodes)
+        ax.annotate(
+            "Fewer nodes (better)",
+            xy=(0.03, 0.02),
+            xycoords="axes fraction",
+            xytext=(0.35, 0.02),
+            textcoords="axes fraction",
+            ha="center",
+            va="center",
+            fontsize=12,
+            arrowprops=dict(arrowstyle="->", lw=2, color="black"),
+            color="black",
+        )
+        # Down arrow for y-axis (faster)
+        ax.annotate(
+            "Faster (better)",
+            xy=(0.03, 0.02),
+            xycoords="axes fraction",
+            xytext=(0.03, 0.35),
+            textcoords="axes fraction",
+            ha="center",
+            va="center",
+            fontsize=12,
+            rotation=90,
+            arrowprops=dict(arrowstyle="->", lw=2, color="black"),
+            color="black",
+        )
+
+        plt.savefig(comparison_dir / "nodes_vs_time_scatter.png")
         plt.close()
