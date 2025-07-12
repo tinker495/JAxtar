@@ -294,6 +294,7 @@ def eval_heuristic(
         heuristic,
         eval_options.batch_size,
         eval_options.get_max_node_size(),
+        pop_ratio=eval_options.pop_ratio,
         cost_weight=eval_options.cost_weight,
     )
 
@@ -341,6 +342,7 @@ def eval_qlearning(
         qfunction,
         eval_options.batch_size,
         eval_options.get_max_node_size(),
+        pop_ratio=eval_options.pop_ratio,
         cost_weight=eval_options.cost_weight,
     )
 

@@ -325,6 +325,7 @@ def astar(
         heuristic,
         search_options.batch_size,
         search_options.get_max_node_size(),
+        pop_ratio=search_options.pop_ratio,
         cost_weight=search_options.cost_weight,
         show_compile_time=search_options.show_compile_time,
     )
@@ -375,6 +376,7 @@ def qstar(
         qfunction,
         search_options.batch_size,
         search_options.get_max_node_size(),
+        pop_ratio=search_options.pop_ratio,
         cost_weight=search_options.cost_weight,
         show_compile_time=search_options.show_compile_time,
     )

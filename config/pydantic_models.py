@@ -26,20 +26,36 @@ class PuzzleOptions(BaseModel):
 class SearchOptions(BaseModel):
     batch_size: int = Field(10000, description="Batch size for search.")
     max_node_size: int = Field(2000000, description="Maximum number of nodes to search.")
-    cost_weight: float = Field(0.5, description="Weight for cost in search.")
+    cost_weight: float = Field(0.6, description="Weight for cost in search.")
+    pop_ratio: float = Field(
+        float("inf"),
+        description=(
+            "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
+            "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "
+            "A value of 'inf' corresponds to a fixed-width beam search determined by the batch size."
+        ),
+    )
     vmap_size: int = Field(1, description="Size of vmap for search.")
     show_compile_time: bool = Field(False, description="Show compile time for search.")
     profile: bool = Field(False, description="Profile search.")
     debug: bool = Field(False, description="Debug mode.")
 
     def get_max_node_size(self):
-        return self.max_node_size // self.batch_size * self.batch_size
+        return int(self.max_node_size) // int(self.batch_size) * int(self.batch_size)
 
 
 class EvalOptions(BaseModel):
     batch_size: int = Field(10000, description="Batch size for search.")
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
     cost_weight: float = Field(0.6, description="Weight for cost in search.")
+    pop_ratio: float = Field(
+        float("inf"),
+        description=(
+            "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
+            "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "
+            "A value of 'inf' corresponds to a fixed-width beam search determined by the batch size."
+        ),
+    )
     num_eval: int = Field(200, description="Number of puzzles to evaluate.")
     run_name: Optional[str] = Field(None, description="Name of the evaluation run.")
 

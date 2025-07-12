@@ -88,8 +88,7 @@ class SearchResult:
 
     hashtable: HashTable  # hash table
     priority_queue: BGPQ  # priority queue
-    min_key_buffer: chex.Array  # buffer for minimum keys
-    min_val_buffer: Xtructurable | Current_with_Parent  # buffer for minimum values
+    pop_ratio: float  # ratio of states to pop from the priority queue
     cost: chex.Array  # cost array - g value
     dist: chex.Array  # distance array - calculated heuristic or Q value
     parent: Xtructurable | Parent  # parent array
@@ -98,7 +97,9 @@ class SearchResult:
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2))
-    def build(statecls: Puzzle.State, batch_size: int, max_nodes: int, seed=42):
+    def build(
+        statecls: Puzzle.State, batch_size: int, max_nodes: int, pop_ratio: float = jnp.inf, seed=42
+    ):
         """
         Creates a new instance of SearchResult with initialized data structures.
 
@@ -106,6 +107,10 @@ class SearchResult:
             statecls (Puzzle.State): The state class for the puzzle being solved
             batch_size (int): Size of batches for parallel processing
             max_nodes (int): Maximum number of nodes to store
+            pop_ratio (float): Controls the search beam width. Nodes are expanded if their cost is
+                within `pop_ratio` percent of the best node's cost. For instance, 0.1 allows for a
+                10% margin. A value of 'inf' corresponds to a fixed-width beam search determined
+                by the batch size.
             seed (int): Random seed for hash function initialization
 
         Returns:
@@ -119,10 +124,6 @@ class SearchResult:
         # Initialize priority queue for state expansion
         priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent, KEY_DTYPE)
 
-        # Initialize buffers for minimum values
-        min_key_buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
-        min_val_buffer = Current_with_Parent.default((batch_size,))
-
         # Initialize arrays for tracking costs and state relationships
         # +1 for -1 index as a dummy node
         cost = jnp.full(hashtable.table.shape.batch, jnp.inf, dtype=KEY_DTYPE)
@@ -134,8 +135,7 @@ class SearchResult:
         return SearchResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
-            min_key_buffer=min_key_buffer,
-            min_val_buffer=min_val_buffer,
+            pop_ratio=jnp.maximum(1.0 + pop_ratio, 1.1),  # minimum 10% margin
             cost=cost,
             dist=dist,
             parent=parent,
@@ -174,7 +174,8 @@ class SearchResult:
     def pop_full(search_result) -> tuple["SearchResult", Current, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
-        the heap property. This function handles batched operations efficiently.
+        the heap property. This function handles batched operations efficiently,
+        respecting the pop_ratio to control search width without losing nodes.
 
         Args:
             search_result (SearchResult): The current search state
@@ -182,74 +183,100 @@ class SearchResult:
         Returns:
             tuple: Contains:
                 - Updated SearchResult
-                - Minimum values removed from the queue
-                - Boolean mask indicating which entries were filled
+                - A batch of the best values to be processed
+                - A boolean mask indicating which entries in the batch are valid
         """
-        # Delete minimum elements from the priority queue
+
+        # Helper to merge, sort, and split two batches of nodes
+        def _unique_sort_merge_and_split(k1, v1, k2, v2):
+            batch_size = k1.shape[-1]
+            merged_key = jnp.concatenate([k1, k2])
+            merged_val = xnp.concatenate([v1, v2])
+
+            # Sort and remove duplicates from the combined batch
+            sorted_key, sorted_val = unique_sort(merged_key, merged_val)
+
+            # Split into a main batch and an overflow batch
+            main_keys = sorted_key[:batch_size]
+            main_vals = sorted_val[:batch_size]
+            overflow_keys = sorted_key[batch_size:]
+            overflow_vals = sorted_val[batch_size:]
+            return main_keys, main_vals, overflow_keys, overflow_vals
+
+        # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
+        min_key = search_result.mask_unoptimal(min_key, min_val)
 
-        # Check if the states are in the open set
-        min_val_cost = min_val.current.cost
-        optimal = jnp.less_equal(min_val_cost, search_result.get_cost(min_val.current))
-        min_key = jnp.where(optimal, min_key, jnp.inf)  # Set closed states to inf
+        # 2. Loop to fill the batch if it's not full of valid nodes
+        def _cond(state):
+            search_result, key, _ = state
+            pq_not_empty = search_result.priority_queue.size > 0
+            batch_has_empty_slots = jnp.isinf(key).any()
 
-        # Merge and sort with the buffer
-        (
-            min_key,
-            min_val,
-            search_result.min_key_buffer,
-            search_result.min_val_buffer,
-        ) = merge_sort_split(
-            search_result.min_key_buffer, search_result.min_val_buffer, min_key, min_val
-        )
-        filled = jnp.isfinite(min_key)
+            # Early exit if a node exceeds the pop_ratio threshold
+            best_key = key[0]
+            threshold = best_key * search_result.pop_ratio + 1e-6
+            finite_keys_mask = jnp.isfinite(key)
+            exceeds_threshold = jnp.any(jnp.where(finite_keys_mask, key, -jnp.inf) > threshold)
 
-        def _cond(val):
-            """Check if we need to continue popping elements."""
-            search_result, _, _, filled = val
-            cond1 = search_result.priority_queue.size > 0  # if queue is empty, we are done
-            cond2 = ~filled.all()  # if all states are filled, we are done
-            return jnp.logical_and(cond1, cond2)
+            # Continue if PQ is not empty, batch has slots, and no node has exceeded the threshold
+            return jnp.logical_and(
+                pq_not_empty,
+                jnp.logical_and(batch_has_empty_slots, jnp.logical_not(exceeds_threshold)),
+            )
 
-        def _body(val):
-            """Process one batch of elements from the priority queue."""
-            search_result, min_key, min_val, filled = val
+        def _body(state):
+            search_result, key, val = state
+            # Pop new nodes from PQ
             (
                 search_result.priority_queue,
                 new_key,
                 new_val,
             ) = search_result.priority_queue.delete_mins()
-            new_val_cost = new_val.current.cost
-            optimal = jnp.less_equal(new_val_cost, search_result.get_cost(new_val.current))
-            new_key = jnp.where(optimal, new_key, jnp.inf)
+            new_key = search_result.mask_unoptimal(new_key, new_val)
 
-            # Merge new values with current minimum values
-            # if filled is not all true, min buffer is will be empty(filled with inf keys)
-            (
-                min_key,
-                min_val,
-                search_result.min_key_buffer,
-                search_result.min_val_buffer,
-            ) = merge_sort_split(min_key, min_val, new_key, new_val)
-            filled = jnp.isfinite(min_key)
-            return search_result, min_key, min_val, filled
+            # Merge current batch with new nodes, splitting into main and overflow
+            main_keys, main_vals, overflow_keys, overflow_vals = _unique_sort_merge_and_split(
+                key, val, new_key, new_val
+            )
 
-        # Continue popping elements until we have enough or queue is empty
-        search_result, min_key, min_val, filled = jax.lax.while_loop(
-            _cond, _body, (search_result, min_key, min_val, filled)
+            # Put overflow nodes back into the PQ so they are never lost
+            search_result.priority_queue = search_result.priority_queue.insert(
+                overflow_keys, overflow_vals
+            )
+
+            return search_result, main_keys, main_vals
+
+        # Run the loop until we have a full batch of the best available nodes
+        search_result, min_key, min_val = jax.lax.while_loop(
+            _cond, _body, (search_result, min_key, min_val)
         )
 
-        # Update the closed set
+        # 3. Apply pop_ratio to the full batch
+        filled = jnp.isfinite(min_key)
+        # Add a small epsilon for floating point comparisons
+        threshold = min_key[0] * search_result.pop_ratio + 1e-6
+
+        # Identify nodes to process now vs. nodes to return to PQ
+        process_mask = jnp.less_equal(min_key, threshold)
+        final_process_mask = jnp.logical_and(filled, process_mask)
+
+        # Separate the nodes to be returned and re-insert them into the PQ
+        return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
+        search_result.priority_queue = search_result.priority_queue.insert(return_keys, min_val)
+
+        # 4. Update the closed set with the nodes we are processing
         search_result.cost = xnp.set_as_condition_on_array(
             search_result.cost,
             min_val.current.hashidx.index,
-            filled,
+            final_process_mask,
             min_val.current.cost,
         )
         search_result.parent = search_result.parent.at[
             min_val.current.hashidx.index
-        ].set_as_condition(filled, min_val.parent)
-        return search_result, min_val.current, filled
+        ].set_as_condition(final_process_mask, min_val.parent)
+
+        return search_result, min_val.current, final_process_mask
 
     def get_solved_path(search_result) -> list[Parent]:
         """
@@ -318,34 +345,34 @@ class SearchResult:
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
+    def mask_unoptimal(
+        search_result, min_key: chex.Array, min_val: Current_with_Parent
+    ) -> chex.Array:
+        """
+        Mask the unoptimal states.
+        """
+        optimal = jnp.less_equal(min_val.current.cost, search_result.get_cost(min_val.current))
+        return jnp.where(optimal, min_key, jnp.inf)
 
-def merge_sort_split(
-    ak: chex.Array, av: Current_with_Parent, bk: chex.Array, bv: Current_with_Parent
-) -> tuple[chex.Array, Current_with_Parent, chex.Array, Current_with_Parent]:
+
+def unique_sort(
+    key: chex.Array, val: Current_with_Parent
+) -> tuple[chex.Array, Current_with_Parent]:
     """
-    Merges and sorts two key-value pairs, then splits them back into two equal parts.
-    This operation is crucial for maintaining the heap property in the priority queue.
+    Sorts the keys and corresponding values.
 
     Args:
-        ak (chex.Array): First array of keys
-        av (Current_with_Parent): First array of values
-        bk (chex.Array): Second array of keys
-        bv (Current_with_Parent): Second array of values
+        key (chex.Array): Array of keys.
+        val (Current_with_Parent): Array of values.
 
     Returns:
-        tuple: Contains:
-            - First half of sorted keys
-            - First half of corresponding values
-            - Second half of sorted keys
-            - Second half of corresponding values
+        tuple:
+            - sorted_key (chex.Array): Sorted array of keys.
+            - sorted_val (Current_with_Parent): Values corresponding to the sorted keys.
     """
-    n = ak.shape[-1]  # size of group
-    key = jnp.concatenate([ak, bk])
-    val = xnp.concatenate([av, bv])
-
-    uniques = xnp.unique_mask(val.current.hashidx, val.current.cost)
-    key = jnp.where(uniques, key, jnp.inf)  # Set duplicate keys to inf
-
-    sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(2 * n))
+    n = key.shape[-1]
+    mask = xnp.unique_mask(val.current.hashidx, val.current.cost)
+    key = jnp.where(mask, key, jnp.inf)
+    sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(n))
     sorted_val = val[sorted_idx]
-    return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
+    return sorted_key, sorted_val

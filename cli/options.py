@@ -19,6 +19,7 @@ from config.pydantic_models import (
     WMGetModelOptions,
     WMTrainOptions,
 )
+from helpers.formatting import human_format_to_float
 from heuristic.heuristic_base import Heuristic
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.optimizer import OPTIMIZERS
@@ -124,12 +125,22 @@ def search_options(func: callable) -> callable:
     @click.option("-m", "--max_node_size", default=None, type=str, help="Size of the puzzle")
     @click.option("-b", "--batch_size", default=None, type=int, help="Batch size for BGPQ")
     @click.option("-w", "--cost_weight", default=None, type=float, help="Weight for the A* search")
+    @click.option(
+        "-pr",
+        "--pop_ratio",
+        default=None,
+        type=float,
+        help="Ratio for popping nodes from the priority queue.",
+    )
     @click.option("-vm", "--vmap_size", default=None, type=int, help="Size for the vmap")
     @click.option("--debug", is_flag=True, default=None, help="Debug mode")
     @click.option("--profile", is_flag=True, default=None, help="Profile mode")
     @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
     @wraps(func)
     def wrapper(*args, **kwargs):
+        if kwargs.get("max_node_size", None) is not None:
+            kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
+
         puzzle_bundle = kwargs["puzzle_bundle"]
         base_search_options = puzzle_bundle.search_options
 
@@ -154,15 +165,29 @@ def search_options(func: callable) -> callable:
 
 
 def eval_options(func: callable) -> callable:
-    @click.option("--batch-size", type=int, default=None, help="Batch size for search.")
+    @click.option("-b", "--batch-size", type=int, default=None, help="Batch size for search.")
     @click.option(
-        "--max-node-size", type=int, default=None, help="Maximum number of nodes to search."
+        "-m", "--max-node-size", type=str, default=None, help="Maximum number of nodes to search."
     )
-    @click.option("--cost-weight", type=float, default=None, help="Weight for cost in search.")
-    @click.option("--num-eval", type=int, default=None, help="Number of puzzles to evaluate.")
-    @click.option("--run-name", type=str, default=None, help="Name of the evaluation run.")
+    @click.option(
+        "-w", "--cost-weight", type=float, default=None, help="Weight for cost in search."
+    )
+    @click.option(
+        "-pr",
+        "--pop_ratio",
+        type=float,
+        default=None,
+        help="Ratio for popping nodes from the priority queue.",
+    )
+    @click.option(
+        "-ne", "--num-eval", type=int, default=None, help="Number of puzzles to evaluate."
+    )
+    @click.option("-rn", "--run-name", type=str, default=None, help="Name of the evaluation run.")
     @wraps(func)
     def wrapper(*args, **kwargs):
+        if kwargs.get("max_node_size", None) is not None:
+            kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
+
         puzzle_bundle = kwargs["puzzle_bundle"]
         base_eval_options = puzzle_bundle.eval_options
         # Collect any user-provided options to override the preset
