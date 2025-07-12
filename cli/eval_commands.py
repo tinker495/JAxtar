@@ -1,4 +1,7 @@
+import json
+import os
 import time
+from collections.abc import MutableMapping
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +17,7 @@ from puxle import Puzzle
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from xtructure import xtructure_numpy as xnp
 
 from config.pydantic_models import EvalOptions
 from helpers import human_format
@@ -40,10 +44,22 @@ def evaluation():
     pass
 
 
-def log_and_summarize_evaluation(results: list[dict], run_dir: Path, console: Console):
-    """Logs evaluation results to files and prints a summary."""
+def log_and_summarize_evaluation(
+    results: list[dict], run_dir: Path, console: Console, config: dict
+):
+    """Logs evaluation results and config to files and prints a summary."""
     run_dir.mkdir(parents=True, exist_ok=True)
     console.print(f"Saving results to [bold]{run_dir}[/bold]")
+
+    # Save config
+    with open(run_dir / "config.json", "w") as f:
+        json.dump(config, f, indent=4)
+
+    os.makedirs(run_dir / "path_states", exist_ok=True)
+    for r in results:
+        if r.get("path_analysis"):
+            states = r["path_analysis"]["states"]
+            states.save(run_dir / "path_states" / f"{r['seed']}.npz")
 
     df = pd.DataFrame(results)
     df.to_csv(run_dir / "results.csv", index=False)
@@ -232,9 +248,11 @@ def run_evaluation(
             path_cost = search_result.get_cost(path[-1])
             result_item["path_cost"] = float(path_cost)
 
+            states = []
             actual_dists = []
             estimated_dists = []
             for state_in_path in path:
+                states.append(search_result.get_state(state_in_path))
                 actual_dist = float(path_cost - search_result.get_cost(state_in_path))
                 estimated_dist = float(search_result.get_dist(state_in_path))
 
@@ -245,6 +263,7 @@ def run_evaluation(
             result_item["path_analysis"] = {
                 "actual": actual_dists,
                 "estimated": estimated_dists,
+                "states": xnp.concatenate(states),
             }
 
         results.append(result_item)
@@ -313,7 +332,7 @@ def eval_heuristic(
         run_name = f"{puzzle_name}_{timestamp}"
 
     run_dir = Path("runs") / run_name
-    log_and_summarize_evaluation(results, run_dir, console)
+    log_and_summarize_evaluation(results, run_dir, console, config)
 
 
 @evaluation.command(name="qlearning")
@@ -361,4 +380,182 @@ def eval_qlearning(
         run_name = f"{puzzle_name}_{timestamp}"
 
     run_dir = Path("runs") / run_name
-    log_and_summarize_evaluation(results, run_dir, console)
+    log_and_summarize_evaluation(results, run_dir, console, config)
+
+
+def flatten_dict(d: MutableMapping, parent_key: str = "", sep: str = "."):
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, MutableMapping):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
+@evaluation.command(name="compare")
+@click.argument("run_dirs", nargs=-1, type=click.Path(exists=True, file_okay=False))
+def eval_compare(run_dirs: list[str]):
+    """Compare multiple evaluation runs."""
+    console = Console()
+    all_dfs = []
+    all_configs = {}
+
+    for run_dir_str in run_dirs:
+        run_dir = Path(run_dir_str)
+        run_name = run_dir.name
+
+        results_path = run_dir / "results.csv"
+        if not results_path.exists():
+            console.print(
+                f"[bold red]Warning: Cannot find results.csv in {run_dir_str}. Skipping.[/bold red]"
+            )
+            continue
+
+        config_path = run_dir / "config.json"
+        if not config_path.exists():
+            console.print(
+                f"[bold red]Warning: Cannot find config.json in {run_dir_str}. Skipping.[/bold red]"
+            )
+            continue
+
+        df = pd.read_csv(results_path)
+        df["run_name"] = run_name
+        all_dfs.append(df)
+
+        with open(config_path, "r") as f:
+            all_configs[run_name] = json.load(f)
+
+    if not all_dfs:
+        console.print("[bold red]No valid evaluation runs found to compare.[/bold red]")
+        return
+
+    # Config comparison
+    flat_configs = {name: flatten_dict(cfg) for name, cfg in all_configs.items()}
+    config_df = pd.DataFrame.from_dict(flat_configs, orient="index")
+
+    differing_params = []
+    if not config_df.empty:
+        # Use sorted columns to ensure consistent order
+        for col in sorted(config_df.columns):
+            if config_df[col].nunique() > 1:
+                differing_params.append(col)
+
+    if differing_params:
+        config_table = Table(
+            title="[bold cyan]Configuration Differences[/bold cyan]",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        config_table.add_column("Parameter", style="dim", width=30)
+        for run_name in sorted(all_configs.keys()):
+            config_table.add_column(run_name, justify="right")
+
+        for param in differing_params:
+            values = [
+                str(config_df.loc[run_name, param]) for run_name in sorted(all_configs.keys())
+            ]
+            config_table.add_row(param, *values)
+
+        console.print(Panel(config_table, border_style="yellow", expand=False))
+    else:
+        console.print("[bold yellow]No configuration differences found among runs.[/bold yellow]")
+
+    # Create new labels for the plots
+    run_labels = {}
+    if differing_params:
+        for run_name in sorted(config_df.index):
+            diff_parts = [
+                f"{param.split('.')[-1]}={config_df.loc[run_name, param]}"
+                for param in differing_params
+            ]
+            run_labels[run_name] = f"{run_name}\n({', '.join(diff_parts)})"
+    else:
+        for run_name in sorted(config_df.index):
+            run_labels[run_name] = run_name
+
+    # Results comparison
+    combined_df = pd.concat(all_dfs, ignore_index=True)
+    # Add the new labels to the dataframe for plotting
+    combined_df["run_label"] = combined_df["run_name"].map(run_labels)
+
+    summary_table = Table(
+        title="[bold cyan]Evaluation Comparison Summary[/bold cyan]",
+        show_header=True,
+        header_style="bold magenta",
+    )
+    summary_table.add_column("Run Name", style="dim", width=30)
+    summary_table.add_column("Success Rate", justify="right")
+    summary_table.add_column("Avg. Search Time (Solved)", justify="right")
+    summary_table.add_column("Avg. Generated Nodes (Solved)", justify="right")
+    summary_table.add_column("Avg. Path Cost", justify="right")
+
+    # Group by the original run_name but display the new run_label
+    for run_name, group in combined_df.groupby("run_name"):
+        num_puzzles = len(group)
+        solved_group = group[group["solved"]]
+        num_solved = len(solved_group)
+        success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
+
+        if not solved_group.empty:
+            avg_time = solved_group["search_time_s"].mean()
+            avg_nodes = solved_group["nodes_generated"].mean()
+            avg_path_cost = solved_group["path_cost"].mean()
+            summary_table.add_row(
+                run_labels[run_name].replace("\n", " "),  # Use new label in table
+                f"{success_rate:.2f}% ({num_solved}/{num_puzzles})",
+                f"{avg_time:.3f} s",
+                human_format(avg_nodes),
+                f"{avg_path_cost:.2f}",
+            )
+        else:
+            summary_table.add_row(
+                run_labels[run_name].replace("\n", " "),  # Use new label in table
+                f"{success_rate:.2f}% ({num_solved}/{num_puzzles})",
+                "N/A",
+                "N/A",
+                "N/A",
+            )
+
+    console.print(Panel(summary_table, border_style="green", expand=False))
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    comparison_dir = Path("runs") / f"comparison_{timestamp}"
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+    console.print(f"Saving comparison plots to [bold]{comparison_dir}[/bold]")
+
+    solved_df = combined_df[combined_df["solved"]].copy()
+    if not solved_df.empty:
+        # Ensure the order of categories for plotting is consistent
+        sorted_run_labels = [run_labels[name] for name in sorted(all_configs.keys())]
+
+        plt.figure(figsize=(12, 8))
+        sns.boxplot(data=solved_df, x="run_label", y="path_cost", order=sorted_run_labels)
+        plt.title("Path Cost Comparison")
+        plt.xlabel("Run")
+        plt.ylabel("Path Cost")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.savefig(comparison_dir / "path_cost_comparison.png")
+        plt.close()
+
+        plt.figure(figsize=(12, 8))
+        sns.boxplot(data=solved_df, x="run_label", y="search_time_s", order=sorted_run_labels)
+        plt.title("Search Time Comparison")
+        plt.xlabel("Run")
+        plt.ylabel("Search Time (s)")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.savefig(comparison_dir / "search_time_comparison.png")
+        plt.close()
+
+        plt.figure(figsize=(12, 8))
+        sns.boxplot(data=solved_df, x="run_label", y="nodes_generated", order=sorted_run_labels)
+        plt.title("Generated Nodes Comparison")
+        plt.xlabel("Run")
+        plt.ylabel("Nodes Generated")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.savefig(comparison_dir / "nodes_generated_comparison.png")
+        plt.close()
