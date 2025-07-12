@@ -92,7 +92,14 @@ class TensorboardLogger:
             # Aim doesn't have a direct histogram equivalent, but we can log distributions
             # For simplicity, we can log mean/std/min/max or just skip it.
             # Let's log a distribution for now.
-            self.aim_run.track(aim.Distribution(values), name=tag, step=step)
+            try:
+                self.aim_run.track(aim.Distribution(values), name=tag, step=step)
+            except ValueError as e:
+                # This can happen if all values are the same, and numpy can't create bins.
+                print(
+                    f"Warning: Could not log histogram '{tag}' to Aim at step {step}. "
+                    f"This is likely due to all values in the histogram being the same. Error: {e}"
+                )
 
     def log_image(self, tag: str, image, step: int, dataformats="HWC"):
         image = np.asarray(image)
@@ -114,7 +121,22 @@ class TensorboardLogger:
         """Logs a Matplotlib figure to TensorBoard and Aim."""
         self.writer.add_figure(tag, figure, step)
         if self.aim_run:
-            self.aim_run.track(aim.Figure(figure), name=tag, step=step)
+            try:
+                self.aim_run.track(aim.Figure(figure), name=tag, step=step)
+            except ValueError as e:
+                print(
+                    f"Warning: Could not log figure '{tag}' to Aim at step {step}. "
+                    f"This might be due to an incompatibility between matplotlib/seaborn and plotly used by Aim. "
+                    f"The figure will still be logged as a static image. Error: {e}"
+                )
+
+        # Also log as a static image
+        figure.canvas.draw()
+        # Use buffer_rgba for compatibility, then convert RGBA to RGB
+        buf = figure.canvas.buffer_rgba()
+        width, height = figure.canvas.get_width_height()
+        image_from_plot = np.frombuffer(buf, dtype=np.uint8).reshape((height, width, 4))[..., :3]
+        self.log_image(f"{tag}_image", image_from_plot, step)
 
     def log_evaluation_results(self, results: list[dict], step: int):
         """Logs evaluation results to files and logs summary to TensorBoard/Aim."""

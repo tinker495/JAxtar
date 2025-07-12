@@ -61,11 +61,7 @@ def davi(
 
     heuristic_model = heuristic.model
     target_heuristic_params = heuristic.params
-    heuristic_params = scaled_by_reset(
-        target_heuristic_params,
-        key,
-        train_options.tau,
-    )
+    heuristic_params = target_heuristic_params
 
     steps = train_options.steps
     update_interval = train_options.update_interval
@@ -234,11 +230,7 @@ def qlearning(
 
     qfunc_model = qfunction.model
     target_qfunc_params = qfunction.params
-    qfunc_params = scaled_by_reset(
-        target_qfunc_params,
-        key,
-        train_options.tau,
-    )
+    qfunc_params = target_qfunc_params
 
     steps = train_options.steps
     update_interval = train_options.update_interval
