@@ -124,6 +124,13 @@ def search_options(func: callable) -> callable:
     @click.option("-m", "--max_node_size", default=None, type=str, help="Size of the puzzle")
     @click.option("-b", "--batch_size", default=None, type=int, help="Batch size for BGPQ")
     @click.option("-w", "--cost_weight", default=None, type=float, help="Weight for the A* search")
+    @click.option(
+        "-pr",
+        "--pop_ratio",
+        default=None,
+        type=float,
+        help="Ratio for popping nodes from the priority queue.",
+    )
     @click.option("-vm", "--vmap_size", default=None, type=int, help="Size for the vmap")
     @click.option("--debug", is_flag=True, default=None, help="Debug mode")
     @click.option("--profile", is_flag=True, default=None, help="Profile mode")
@@ -159,6 +166,13 @@ def eval_options(func: callable) -> callable:
         "--max-node-size", type=int, default=None, help="Maximum number of nodes to search."
     )
     @click.option("--cost-weight", type=float, default=None, help="Weight for cost in search.")
+    @click.option(
+        "-pr",
+        "--pop_ratio",
+        type=float,
+        default=None,
+        help="Ratio for popping nodes from the priority queue.",
+    )
     @click.option("--num-eval", type=int, default=None, help="Number of puzzles to evaluate.")
     @click.option("--run-name", type=str, default=None, help="Name of the evaluation run.")
     @wraps(func)

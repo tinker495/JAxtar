@@ -17,6 +17,7 @@ def astar_builder(
     heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
+    pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
 ):
@@ -45,7 +46,9 @@ def astar_builder(
         """
         astar is the implementation of the A* algorithm.
         """
-        search_result: SearchResult = SearchResult.build(statecls, batch_size, max_nodes)
+        search_result: SearchResult = SearchResult.build(
+            statecls, batch_size, max_nodes, pop_ratio=pop_ratio
+        )
 
         (
             search_result.hashtable,
