@@ -28,7 +28,12 @@ class SearchOptions(BaseModel):
     max_node_size: int = Field(2000000, description="Maximum number of nodes to search.")
     cost_weight: float = Field(0.6, description="Weight for cost in search.")
     pop_ratio: float = Field(
-        float("inf"), description="Ratio for popping nodes from the priority queue."
+        float("inf"),
+        description=(
+            "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
+            "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "
+            "A value of 'inf' corresponds to a fixed-width beam search determined by the batch size."
+        ),
     )
     vmap_size: int = Field(1, description="Size of vmap for search.")
     show_compile_time: bool = Field(False, description="Show compile time for search.")
@@ -44,7 +49,12 @@ class EvalOptions(BaseModel):
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
     cost_weight: float = Field(0.6, description="Weight for cost in search.")
     pop_ratio: float = Field(
-        float("inf"), description="Ratio for popping nodes from the priority queue."
+        float("inf"),
+        description=(
+            "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
+            "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "
+            "A value of 'inf' corresponds to a fixed-width beam search determined by the batch size."
+        ),
     )
     num_eval: int = Field(200, description="Number of puzzles to evaluate.")
     run_name: Optional[str] = Field(None, description="Name of the evaluation run.")

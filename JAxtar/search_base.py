@@ -107,6 +107,10 @@ class SearchResult:
             statecls (Puzzle.State): The state class for the puzzle being solved
             batch_size (int): Size of batches for parallel processing
             max_nodes (int): Maximum number of nodes to store
+            pop_ratio (float): Controls the search beam width. Nodes are expanded if their cost is
+                within `pop_ratio` percent of the best node's cost. For instance, 0.1 allows for a
+                10% margin. A value of 'inf' corresponds to a fixed-width beam search determined
+                by the batch size.
             seed (int): Random seed for hash function initialization
 
         Returns:
@@ -131,7 +135,7 @@ class SearchResult:
         return SearchResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
-            pop_ratio=pop_ratio,
+            pop_ratio=jnp.maximum(1.0 + pop_ratio, 1.1),  # minimum 10% margin
             cost=cost,
             dist=dist,
             parent=parent,
