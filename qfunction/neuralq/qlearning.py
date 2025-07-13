@@ -228,7 +228,6 @@ def _get_datasets_with_policy(
             lambda x: x[actions, jnp.arange(batch_size), :],
             neighbors,
         )
-        selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
         _, neighbor_cost = puzzle.batched_get_neighbours(
             solve_configs,
             selected_neighbors,
@@ -246,9 +245,13 @@ def _get_datasets_with_policy(
         )  # [minibatch_size, action_shape]
         mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
         q = jnp.where(mask, q, jnp.inf)
-        min_q = jnp.min(q, axis=1)
-        target_q = jnp.maximum(min_q, 0.0) + selected_costs
-        target_q = jnp.where(selected_neighbors_solved, selected_costs, target_q)
+        argmin_q = jnp.argmin(q, axis=1)
+        min_q = jnp.take_along_axis(q, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
+        selected_neighbor_costs = jnp.take_along_axis(
+            neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
+        ).squeeze(0)
+        target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
+        target_q = jnp.where(selected_neighbors_solved, 0, target_q)
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = target_q - selected_q
@@ -317,7 +320,6 @@ def _get_datasets_with_trajectory(
             lambda x: x[actions, jnp.arange(batch_size), :],
             neighbors,
         )
-        selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
         _, neighbor_cost = puzzle.batched_get_neighbours(
             solve_configs,
             selected_neighbors,
@@ -335,9 +337,13 @@ def _get_datasets_with_trajectory(
         )  # [minibatch_size, action_shape]
         mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
         q = jnp.where(mask, q, jnp.inf)
-        min_q = jnp.min(q, axis=1)
-        target_q = jnp.maximum(min_q, 0.0) + selected_costs
-        target_q = jnp.where(selected_neighbors_solved, selected_costs, target_q)
+        argmin_q = jnp.argmin(q, axis=1)
+        min_q = jnp.take_along_axis(q, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
+        selected_neighbor_costs = jnp.take_along_axis(
+            neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
+        ).squeeze(0)
+        target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
+        target_q = jnp.where(selected_neighbors_solved, 0, target_q)
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = jnp.zeros_like(target_q)
