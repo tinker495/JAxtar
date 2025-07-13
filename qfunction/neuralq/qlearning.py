@@ -248,7 +248,7 @@ def _get_datasets_with_policy(
         q = jnp.where(mask, q, jnp.inf)
         min_q = jnp.min(q, axis=1)
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
-        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
+        target_q = jnp.where(selected_neighbors_solved, selected_costs, target_q)
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = target_q - selected_q
@@ -337,7 +337,7 @@ def _get_datasets_with_trajectory(
         q = jnp.where(mask, q, jnp.inf)
         min_q = jnp.min(q, axis=1)
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
-        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
+        target_q = jnp.where(selected_neighbors_solved, selected_costs, target_q)
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = jnp.zeros_like(target_q)
