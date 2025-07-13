@@ -399,6 +399,7 @@ def qlearning(
 @eval_options
 def spr_davi(
     puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
     heuristic: SPRNeuralHeuristic,
     puzzle_name: str,
     train_options: DistTrainOptions,
@@ -408,14 +409,15 @@ def spr_davi(
 ):
     kwargs.pop("puzzle_bundle", None)
     config = {
-        "puzzle": {"name": puzzle_name, "size": puzzle.size},
+        "puzzle_options": puzzle_opts,
+        "train_options": train_options,
+        "eval_options": eval_options,
         "heuristic": heuristic.__class__.__name__,
-        "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
         **kwargs,
     }
     print_config("SPR-DAVI Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_spr_davi", config)
+    logger = TensorboardLogger(f"{puzzle_name}_{puzzle_opts.puzzle_size}_spr_davi", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -536,13 +538,13 @@ def spr_davi(
     # Evaluation
     eval_seeds = list(range(eval_options.num_eval))
     if eval_seeds:
-        config["evaluation"] = {
+        eval_config = {
             "search_algorithm": "A*",
-            "eval_options": eval_options.dict(),
+            "eval_options": eval_options,
             "num_eval": len(eval_seeds),
             "seeds": tuple(eval_seeds),
         }
-        print_config("SPR-DAVI Evaluation Configuration", config["evaluation"])
+        print_config("SPR-DAVI Evaluation Configuration", eval_config)
 
         astar_fn = astar_builder(
             puzzle,
@@ -569,6 +571,7 @@ def spr_davi(
 @eval_options
 def spr_qlearning(
     puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
     qfunction: SPRNeuralQFunction,
     puzzle_name: str,
     train_options: DistTrainOptions,
@@ -579,16 +582,16 @@ def spr_qlearning(
 ):
     kwargs.pop("puzzle_bundle", None)
     config = {
-        "puzzle": {"name": puzzle_name, "size": puzzle.size},
+        "puzzle_options": puzzle_opts,
+        "train_options": train_options,
+        "eval_options": eval_options,
         "qfunction": qfunction.__class__.__name__,
-        "train_options": train_options.dict(),
         "shuffle_length": shuffle_length,
         "with_policy": with_policy,
-        "eval_options": eval_options.dict(),
         **kwargs,
     }
     print_config("SPR-Q-Learning Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_spr_qlearning", config)
+    logger = TensorboardLogger(f"{puzzle_name}_{puzzle_opts.puzzle_size}_spr_qlearning", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -708,13 +711,13 @@ def spr_qlearning(
     # Evaluation
     eval_seeds = list(range(eval_options.num_eval))
     if eval_seeds:
-        config["evaluation"] = {
+        eval_config = {
             "search_algorithm": "Q*",
-            "eval_options": eval_options.dict(),
+            "eval_options": eval_options,
             "num_eval": len(eval_seeds),
             "seeds": tuple(eval_seeds),
         }
-        print_config("Q-Learning Evaluation Configuration", config["evaluation"])
+        print_config("Q-Learning Evaluation Configuration", eval_config)
 
         qstar_fn = qstar_builder(
             puzzle,

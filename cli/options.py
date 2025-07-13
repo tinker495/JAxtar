@@ -524,13 +524,23 @@ def dist_spr_heuristic_options(func: callable) -> callable:
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
 
-        heuristic_callable = puzzle_bundle.heuristic_spr
-        if heuristic_callable is None:
+        heuristic_config = puzzle_bundle.heuristic_spr_config
+        if heuristic_config is None:
             raise click.UsageError(
                 f"SPR Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
             )
 
-        heuristic: SPRNeuralHeuristic = heuristic_callable(puzzle, reset)
+        # heuristic_spr_config is expected to be a NeuralCallableConfig, not a direct callable
+        if hasattr(heuristic_config, "callable"):
+            param_path = None
+            if hasattr(heuristic_config, "path_template"):
+                param_path = heuristic_config.path_template.format(size=puzzle.size)
+            heuristic: SPRNeuralHeuristic = heuristic_config.callable(
+                puzzle=puzzle, path=param_path, init_params=reset
+            )
+        else:
+            # fallback for legacy direct callable
+            heuristic: SPRNeuralHeuristic = heuristic_config(puzzle, reset)
         kwargs["heuristic"] = heuristic
         return func(*args, **kwargs)
 
@@ -548,13 +558,26 @@ def dist_spr_qfunction_options(func: callable) -> callable:
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
 
-        q_callable = puzzle_bundle.q_function_spr
-        if q_callable is None:
-            raise click.UsageError(
-                f"SPR Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
+        q_config = (
+            puzzle_bundle.q_function_spr_config
+            if hasattr(puzzle_bundle, "q_function_spr_config")
+            else None
+        )
+        if q_config is None:
+            # fallback for legacy direct callable
+            q_callable = getattr(puzzle_bundle, "q_function_spr", None)
+            if q_callable is None:
+                raise click.UsageError(
+                    f"SPR Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
+                )
+            qfunction: SPRNeuralQFunction = q_callable(puzzle, reset)
+        else:
+            param_path = None
+            if hasattr(q_config, "path_template"):
+                param_path = q_config.path_template.format(size=puzzle.size)
+            qfunction: SPRNeuralQFunction = q_config.callable(
+                puzzle=puzzle, path=param_path, init_params=reset
             )
-
-        qfunction: SPRNeuralQFunction = q_callable(puzzle, reset)
         kwargs["qfunction"] = qfunction
         kwargs["with_policy"] = not q_opts.not_with_policy
         return func(*args, **kwargs)
