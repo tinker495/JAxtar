@@ -254,6 +254,7 @@ def _get_datasets_with_policy(
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    temperature: float = 1.0 / 3.0,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -283,7 +284,7 @@ def _get_datasets_with_policy(
         mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
 
         # Action selection
-        probs = boltzmann_action_selection(q_values, mask=mask)
+        probs = boltzmann_action_selection(q_values, temperature=temperature, mask=mask)
         idxs = jnp.arange(q_values.shape[1])
         actions = jax.vmap(lambda k, p: jax.random.choice(k, idxs, p=p))(
             jax.random.split(subkey, q_values.shape[0]), probs
@@ -367,6 +368,7 @@ def get_spr_qlearning_dataset_builder(
     using_triangular_sampling: bool = False,
     with_policy: bool = True,  # Q-learning usually needs a policy
     n_devices: int = 1,
+    temperature: float = 1.0 / 3.0,
 ):
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target not supported for hindsight target"
@@ -402,7 +404,14 @@ def get_spr_qlearning_dataset_builder(
 
     # For now, we only implement the policy-based version
     jited_get_datasets = jax.jit(
-        partial(_get_datasets_with_policy, puzzle, preproc_fn, q_model, dataset_minibatch_size)
+        partial(
+            _get_datasets_with_policy,
+            puzzle,
+            preproc_fn,
+            q_model,
+            dataset_minibatch_size,
+            temperature=temperature,
+        )
     )
 
     @jax.jit

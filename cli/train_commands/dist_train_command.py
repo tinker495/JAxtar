@@ -654,6 +654,7 @@ def spr_qlearning(
         train_options.using_triangular_sampling,
         n_devices=n_devices,
         with_policy=with_policy,
+        temperature=train_options.temperature,
     )
 
     pbar = trange(steps)
