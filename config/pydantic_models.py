@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -26,22 +26,42 @@ class PuzzleOptions(BaseModel):
 class SearchOptions(BaseModel):
     batch_size: int = Field(10000, description="Batch size for search.")
     max_node_size: int = Field(2000000, description="Maximum number of nodes to search.")
-    cost_weight: float = Field(0.5, description="Weight for cost in search.")
+    cost_weight: float = Field(0.6, description="Weight for cost in search.")
+    pop_ratio: float = Field(
+        float("inf"),
+        description=(
+            "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
+            "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "
+            "A value of 'inf' corresponds to a fixed-width beam search determined by the batch size."
+        ),
+    )
     vmap_size: int = Field(1, description="Size of vmap for search.")
     show_compile_time: bool = Field(False, description="Show compile time for search.")
     profile: bool = Field(False, description="Profile search.")
     debug: bool = Field(False, description="Debug mode.")
 
     def get_max_node_size(self):
-        return self.max_node_size // self.batch_size * self.batch_size
+        return int(self.max_node_size) // int(self.batch_size) * int(self.batch_size)
 
 
 class EvalOptions(BaseModel):
     batch_size: int = Field(10000, description="Batch size for search.")
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
     cost_weight: float = Field(0.6, description="Weight for cost in search.")
+    pop_ratio: Union[float, List[float]] = Field(
+        [float("inf"), 0.4, 0.3, 0.2, 0.1],
+        description=(
+            "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
+            "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "
+            "A value of 'inf' corresponds to a fixed-width beam search determined by the batch size. "
+            "Can be a single float or a list of floats for multiple evaluations."
+        ),
+    )
     num_eval: int = Field(200, description="Number of puzzles to evaluate.")
     run_name: Optional[str] = Field(None, description="Name of the evaluation run.")
+    scatter_max_points: int = Field(
+        2000, description="Maximum number of points to plot in scatter plots."
+    )
 
     def get_max_node_size(self):
         return self.max_node_size // self.batch_size * self.batch_size
@@ -55,10 +75,12 @@ class VisualizeOptions(BaseModel):
 
 class HeuristicOptions(BaseModel):
     neural_heuristic: bool = False
+    param_path: Optional[str] = None
 
 
 class QFunctionOptions(BaseModel):
     neural_qfunction: bool = False
+    param_path: Optional[str] = None
 
 
 class DistTrainOptions(BaseModel):
@@ -109,16 +131,40 @@ class WMTrainOptions(BaseModel):
     optimizer: str = "adam"
 
 
+class NeuralCallableConfig(BaseModel):
+    callable: Callable
+    path_template: str
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class WorldModelPuzzleConfig(BaseModel):
+    callable: Callable
+    path: str
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class PuzzleConfig(BaseModel):
+    callable: Callable
+    initial_shuffle: Optional[int] = None
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
 class PuzzleBundle(BaseModel):
-    puzzle: Optional[Callable] = None
-    puzzle_hard: Optional[Callable] = None
+    puzzle: Optional[Union[Callable, WorldModelPuzzleConfig]] = None
+    puzzle_hard: Optional[Union[Callable, PuzzleConfig]] = None
     puzzle_ds: Optional[Callable] = None
     heuristic: Callable = EmptyHeuristic
-    heuristic_nn: Optional[Callable] = None
-    heuristic_spr: Optional[Callable] = None
+    heuristic_nn_config: Optional[NeuralCallableConfig] = None
+    heuristic_spr_config: Optional[NeuralCallableConfig] = None
     q_function: Callable = EmptyQFunction
-    q_function_nn: Optional[Callable] = None
-    q_function_spr: Optional[Callable] = None
+    q_function_nn_config: Optional[NeuralCallableConfig] = None
+    q_function_spr_config: Optional[NeuralCallableConfig] = None
     shuffle_length: int = 50
     eval_options: EvalOptions = Field(default_factory=EvalOptions)
     search_options: SearchOptions = Field(default_factory=SearchOptions)

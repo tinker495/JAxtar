@@ -46,6 +46,9 @@ These options control the evaluation process itself. They override the default e
 -   `--cost-weight`: The weight `w` for the path cost in the Q* search priority calculation.
     -   Type: `Float`
     -   Default: `0.6`
+-   `--pop-ratio`: Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` percent of the best node's cost (e.g., 0.1 allows a 10% margin). A value of `inf` corresponds to a fixed-width beam search determined by the batch size.
+    -   Type: `Float`
+    -   Default: `inf`
 
 ### Puzzle Options (`@puzzle_options`)
 

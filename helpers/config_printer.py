@@ -7,6 +7,8 @@ from rich.pretty import Pretty
 from rich.table import Table
 from rich.text import Text
 
+from helpers.util import convert_to_serializable_dict
+
 
 def print_config(title: str, config: dict):
     """
@@ -14,6 +16,7 @@ def print_config(title: str, config: dict):
 
     Truncates long non-dict values (especially long tuples, lists, and strings).
     """
+    config = convert_to_serializable_dict(config)
     console = Console()
     TRUNCATE_LENGTH = 80  # Character length threshold for truncation
     TRUNCATE_SEQ_LENGTH = 10  # Number of items to show for long tuples/lists/sets

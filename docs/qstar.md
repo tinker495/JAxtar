@@ -53,6 +53,9 @@ These options control the behavior of the Q\* search algorithm itself.
 -   `-w, --cost_weight`: The weight `w` for the path cost in the search priority calculation, which is analogous to `f(n) = w * g(n) + Q(s,a)`. A lower value prioritizes states with better Q-values, making the search greedier.
     -   Type: `Float`
     -   Default: `0.9`
+-   `--pop-ratio`: Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` percent of the best node's cost (e.g., 0.1 allows a 10% margin). A value of `inf` corresponds to a fixed-width beam search determined by the batch size.
+    -   Type: `Float`
+    -   Default: `inf`
 -   `-vm, --vmap_size`: The number of different initial states to solve in parallel using `jax.vmap`.
     -   Type: `Integer`
     -   Default: `1`

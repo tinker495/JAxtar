@@ -1,5 +1,3 @@
-import pickle
-
 import chex
 import jax
 import jax.numpy as jnp
@@ -12,6 +10,10 @@ from puxle.utils.annotate import IMG_SIZE
 
 from helpers.formatting import img_to_colored_str
 from neural_util.modules import DTYPE, BatchNorm
+from neural_util.param_manager import (
+    load_params_with_metadata,
+    save_params_with_metadata,
+)
 from neural_util.util import (
     download_model,
     download_world_model_dataset,
@@ -146,6 +148,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.pad_size = 0
         self.action_size = action_size
         self.path = path
+        self.metadata = {}
 
         class total_model(nn.Module):
             autoencoder: AutoEncoder
@@ -228,8 +231,15 @@ class WorldModelPuzzleBase(Puzzle):
         try:
             if not is_model_downloaded(self.path):
                 download_model(self.path)
-            with open(self.path, "rb") as f:
-                params = pickle.load(f)
+            params, metadata = load_params_with_metadata(self.path)
+            if params is None:
+                print(
+                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
+                    "Initializing new parameters."
+                )
+                self.metadata = {}
+                return self.get_new_params()
+            self.metadata = metadata
             self.model.apply(
                 params,
                 jnp.zeros((1, *self.data_shape)),
@@ -239,9 +249,14 @@ class WorldModelPuzzleBase(Puzzle):
             print(f"Error loading model: {e}")
             return self.get_new_params()
 
-    def save_model(self):
-        with open(self.path, "wb") as f:
-            pickle.dump(self.params, f)
+    def save_model(self, metadata: dict = None):
+        if metadata is None:
+            metadata = {}
+        metadata["data_path"] = self.data_path
+        metadata["data_shape"] = self.data_shape
+        metadata["latent_shape"] = self.latent_shape
+        metadata["action_size"] = self.action_size
+        save_params_with_metadata(self.path, self.params, metadata)
 
     def data_init(self):
         """
