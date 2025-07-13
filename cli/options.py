@@ -10,6 +10,7 @@ from config.pydantic_models import (
     DistTrainOptions,
     EvalOptions,
     HeuristicOptions,
+    PuzzleConfig,
     PuzzleOptions,
     QFunctionOptions,
     SearchOptions,
@@ -18,6 +19,7 @@ from config.pydantic_models import (
     WMGetDSOptions,
     WMGetModelOptions,
     WMTrainOptions,
+    WorldModelPuzzleConfig,
 )
 from helpers.formatting import human_format_to_float
 from heuristic.heuristic_base import Heuristic
@@ -62,13 +64,19 @@ def create_puzzle_options(
             else:
                 puzzle_callable = puzzle_bundle.puzzle
 
-            if puzzle_callable is None:
+            if isinstance(puzzle_callable, WorldModelPuzzleConfig):
+                puzzle_instance = puzzle_callable.callable(path=puzzle_callable.path, **input_args)
+            elif isinstance(puzzle_callable, PuzzleConfig):
+                puzzle_instance = puzzle_callable.callable(
+                    initial_shuffle=puzzle_callable.initial_shuffle, **input_args
+                )
+            elif puzzle_callable is None:
                 raise click.UsageError(
                     f"Puzzle type for '{puzzle_name}'"
                     f"{' (hard)' if puzzle_opts.hard else ''} is not defined."
                 )
-
-            puzzle_instance = puzzle_callable(**input_args)
+            else:
+                puzzle_instance = puzzle_callable(**input_args)
 
             kwargs["puzzle"] = puzzle_instance
             kwargs["puzzle_name"] = puzzle_name
@@ -116,7 +124,7 @@ def create_puzzle_options(
 puzzle_options = create_puzzle_options(
     default_puzzle="n-puzzle", use_hard_flag=True, use_seeds_flag=True
 )
-eval_puzzle_options = create_puzzle_options(default_puzzle="n-puzzle", default_hard=True)
+eval_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
 dist_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
 wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
 
@@ -205,6 +213,12 @@ def eval_options(func: callable) -> callable:
 
 def heuristic_options(func: callable) -> callable:
     @click.option("-nn", "--neural_heuristic", is_flag=True, help="Use neural heuristic")
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the heuristic parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         heuristic_opts = HeuristicOptions(
@@ -215,12 +229,22 @@ def heuristic_options(func: callable) -> callable:
         is_eval = kwargs.get("eval_options", None) is not None
 
         if heuristic_opts.neural_heuristic or is_eval:
-            heuristic_callable = puzzle_bundle.heuristic_nn
-            if heuristic_callable is None:
+            heuristic_config = puzzle_bundle.heuristic_nn_config
+            if heuristic_config is None:
                 raise click.UsageError(
                     f"Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
                 )
-            heuristic: Heuristic = heuristic_callable(puzzle, False)
+
+            param_path = heuristic_opts.param_path
+            if param_path is None:
+                if "{size}" in heuristic_config.path_template:
+                    param_path = heuristic_config.path_template.format(size=puzzle.size)
+                else:
+                    param_path = heuristic_config.path_template
+
+            heuristic: Heuristic = heuristic_config.callable(
+                puzzle=puzzle, path=param_path, init_params=False
+            )
         else:
             heuristic_callable = puzzle_bundle.heuristic
             if heuristic_callable is None:
@@ -238,6 +262,12 @@ def heuristic_options(func: callable) -> callable:
 
 def qfunction_options(func: callable) -> callable:
     @click.option("-nn", "--neural_qfunction", is_flag=True, help="Use neural q function")
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the Q-function parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         q_opts = QFunctionOptions(**{k: kwargs.pop(k) for k in QFunctionOptions.model_fields})
@@ -246,12 +276,22 @@ def qfunction_options(func: callable) -> callable:
         is_eval = kwargs.get("eval_options", None) is not None
 
         if q_opts.neural_qfunction or is_eval:
-            q_callable = puzzle_bundle.q_function_nn
-            if q_callable is None:
+            q_config = puzzle_bundle.q_function_nn_config
+            if q_config is None:
                 raise click.UsageError(
                     f"Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
                 )
-            qfunction: QFunction = q_callable(puzzle, False)
+
+            param_path = q_opts.param_path
+            if param_path is None:
+                if "{size}" in q_config.path_template:
+                    param_path = q_config.path_template.format(size=puzzle.size)
+                else:
+                    param_path = q_config.path_template
+
+            qfunction: QFunction = q_config.callable(
+                puzzle=puzzle, path=param_path, init_params=False
+            )
         else:
             q_callable = puzzle_bundle.q_function
             if q_callable is None:
@@ -380,19 +420,31 @@ def dist_train_options(func: callable) -> callable:
 
 
 def dist_heuristic_options(func: callable) -> callable:
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the heuristic parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
 
-        heuristic_callable = puzzle_bundle.heuristic_nn
-        if heuristic_callable is None:
+        heuristic_config = puzzle_bundle.heuristic_nn_config
+        if heuristic_config is None:
             raise click.UsageError(
                 f"Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
             )
 
-        heuristic: NeuralHeuristicBase = heuristic_callable(puzzle, reset)
+        param_path = kwargs.pop("param_path")
+        if param_path is None:
+            param_path = heuristic_config.path_template.format(size=puzzle.size)
+
+        heuristic: NeuralHeuristicBase = heuristic_config.callable(
+            puzzle=puzzle, path=param_path, init_params=reset
+        )
         kwargs["heuristic"] = heuristic
         return func(*args, **kwargs)
 
@@ -401,6 +453,12 @@ def dist_heuristic_options(func: callable) -> callable:
 
 def dist_qfunction_options(func: callable) -> callable:
     @click.option("-nwp", "--not_with_policy", is_flag=True, help="Not use policy for training")
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the Q-function parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         q_opts = DistQFunctionOptions(
@@ -410,13 +468,19 @@ def dist_qfunction_options(func: callable) -> callable:
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
 
-        q_callable = puzzle_bundle.q_function_nn
-        if q_callable is None:
+        q_config = puzzle_bundle.q_function_nn_config
+        if q_config is None:
             raise click.UsageError(
                 f"Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
             )
 
-        qfunction: NeuralQFunctionBase = q_callable(puzzle, reset)
+        param_path = kwargs.pop("param_path")
+        if param_path is None:
+            param_path = q_config.path_template.format(size=puzzle.size)
+
+        qfunction: NeuralQFunctionBase = q_config.callable(
+            puzzle=puzzle, path=param_path, init_params=reset
+        )
         kwargs["qfunction"] = qfunction
         kwargs["with_policy"] = not q_opts.not_with_policy
         return func(*args, **kwargs)

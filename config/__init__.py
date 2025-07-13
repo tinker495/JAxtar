@@ -3,6 +3,7 @@ from .pydantic_models import (
     DistQFunctionOptions,
     DistTrainOptions,
     HeuristicOptions,
+    NeuralCallableConfig,
     PuzzleBundle,
     PuzzleOptions,
     QFunctionOptions,
@@ -13,6 +14,7 @@ from .pydantic_models import (
     WMGetModelOptions,
     WMTrainOptions,
     WorldModelBundle,
+    WorldModelPuzzleConfig,
 )
 from .train_presets import train_presets
 from .world_model_registry import world_model_bundles
@@ -34,4 +36,7 @@ __all__ = [
     "WMTrainOptions",
     "PuzzleBundle",
     "WorldModelBundle",
+    "WorldModelPuzzleConfig",
+    "NeuralCallableConfig",
+    "PuzzleConfig",
 ]
