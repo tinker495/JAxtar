@@ -294,7 +294,6 @@ def _get_datasets_with_policy(
         selected_neighbors = jax.tree_util.tree_map(
             lambda x: x[actions, jnp.arange(batch_size), :], neighbors
         )
-        selected_costs = jnp.take_along_axis(cost, actions[jnp.newaxis, :], axis=0).squeeze(0)
 
         # --- Target Q Calculation ---
         _, neighbor_cost = puzzle.batched_get_neighbours(
@@ -320,9 +319,13 @@ def _get_datasets_with_policy(
 
         mask_neighbor = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
         next_q_values = jnp.where(mask_neighbor, next_q_values, jnp.inf)
-        min_q = jnp.min(next_q_values, axis=1)
-        target_q = jnp.maximum(min_q, 0.0) + selected_costs
-        target_q = jnp.where(selected_neighbors_solved, selected_costs, target_q)
+        argmin_q = jnp.argmin(next_q_values, axis=1)
+        min_q = jnp.take_along_axis(next_q_values, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
+        selected_neighbor_costs = jnp.take_along_axis(
+            neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
+        ).squeeze(0)
+        target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
+        target_q = jnp.where(selected_neighbors_solved, 0, target_q)
         target_q = jnp.where(solved, 0.0, target_q)
 
         # --- Diff for Importance Sampling ---
