@@ -48,6 +48,7 @@ class SPRQModel(nn.Module):
             action_size=self.action_size,
             Res_N=self.Res_N_Q,
             latent_dim=self.latent_dim,
+            norm_fn=self.norm_fn,
             name="q_head",
         )
         self.projection_head = ProjectionHead(output_dim=self.latent_dim, name="projection_head")
@@ -81,13 +82,14 @@ class SPRQModel(nn.Module):
     def get_q_and_predicted_next_p(self, x, actions, training=False):
         latent_z = self.encoder(x, training)
         q_values = self.q_head(latent_z, training)
+        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         transition = self.transition_model(latent_z)
         transition = jnp.take_along_axis(
             transition, actions[:, jnp.newaxis, jnp.newaxis], axis=1
         ).squeeze(1)
         projected_p = self.projection_head(transition)
         predicted_next_p = self.predicton_head(projected_p)
-        return q_values, predicted_next_p
+        return q_values_at_actions, predicted_next_p
 
 
 class SPRNeuralQFunction(NeuralQFunctionBase):

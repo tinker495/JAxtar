@@ -47,7 +47,7 @@ def spr_qlearning_builder(
         weights: chex.Array,
     ):
         # --- Standard Q-Learning Loss ---
-        (q_values, pred_next_p), variable_updates = q_model.apply(
+        (q_values_at_actions, pred_next_p), variable_updates = q_model.apply(
             q_params,
             preproc,
             actions,
@@ -59,7 +59,6 @@ def spr_qlearning_builder(
             variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
 
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
-        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         q_diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         q_loss = jnp.mean(jnp.square(q_diff) * weights)
 
