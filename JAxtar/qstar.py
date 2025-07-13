@@ -98,7 +98,7 @@ def qstar_builder(
             # This gives us Q(s, a) for all actions from parent states
             q_vals = (
                 q_fn.batched_q_value(solve_config, states).transpose().astype(KEY_DTYPE)
-            ) - ncost  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
+            )  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
 
             flatten_neighbours = flatten_tree(neighbours, 2)
             flatten_filleds = flatten_array(filleds, 2)
