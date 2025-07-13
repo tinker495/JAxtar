@@ -323,7 +323,7 @@ def _get_datasets_with_policy(
         next_q_values = jnp.where(mask_neighbor, next_q_values, jnp.inf)
         min_q = jnp.min(next_q_values, axis=1)
         target_q = jnp.maximum(min_q, 0.0) + selected_costs
-        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
+        target_q = jnp.where(selected_neighbors_solved, selected_costs, target_q)
         target_q = jnp.where(solved, 0.0, target_q)
 
         # --- Diff for Importance Sampling ---
