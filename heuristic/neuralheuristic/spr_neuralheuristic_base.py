@@ -4,7 +4,7 @@ from flax import linen as nn
 from puxle import Puzzle
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.modules import DTYPE, ResBlock, conditional_dummy_norm
+from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
 from neural_util.spr_modules import Encoder, ProjectionHead, TransitionModel
 
 
@@ -13,13 +13,14 @@ class DistHead(nn.Module):
 
     Res_N: int = 2
     latent_dim: int = 1000
+    norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x, training=False):
         for _ in range(self.Res_N):
-            x = ResBlock(self.latent_dim)(x, training)
+            x = ResBlock(self.latent_dim, norm_fn=self.norm_fn)(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
-        _ = conditional_dummy_norm(x, training)
+        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 
@@ -33,11 +34,20 @@ class SPRHeuristicModel(nn.Module):
     Res_N_Encoder: int = 2
     Res_N_Dist: int = 2
     latent_dim: int = 1000
+    norm_fn: callable = DEFAULT_NORM_FN
 
     def setup(self) -> None:
-        self.encoder = Encoder(Res_N=self.Res_N_Encoder, latent_dim=self.latent_dim, name="encoder")
+        self.encoder = Encoder(
+            Res_N=self.Res_N_Encoder,
+            latent_dim=self.latent_dim,
+            norm_fn=self.norm_fn,
+            name="encoder",
+        )
         self.dist_head = DistHead(
-            Res_N=self.Res_N_Dist, latent_dim=self.latent_dim, name="dist_head"
+            Res_N=self.Res_N_Dist,
+            latent_dim=self.latent_dim,
+            norm_fn=self.norm_fn,
+            name="dist_head",
         )
         self.projection_head = ProjectionHead(output_dim=self.latent_dim, name="projection_head")
         self.transition_model = TransitionModel(
@@ -80,14 +90,14 @@ class SPRHeuristicModel(nn.Module):
 
 
 class SPRNeuralHeuristic(NeuralHeuristicBase):
-    def __init__(self, puzzle: Puzzle, **kwargs):
+    def __init__(self, puzzle: Puzzle, norm_fn: callable = None, **kwargs):
         action_size = self._get_action_size(puzzle)
 
         # Add action_size to kwargs for the model
         model_kwargs = kwargs.copy()
         model_kwargs["action_size"] = action_size
 
-        super().__init__(puzzle, model=SPRHeuristicModel, **model_kwargs)
+        super().__init__(puzzle, model=SPRHeuristicModel, norm_fn=norm_fn, **model_kwargs)
 
     def _get_action_size(self, puzzle: Puzzle):
         dummy_solve_config = puzzle.SolveConfig.default()

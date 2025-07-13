@@ -8,17 +8,18 @@ class Encoder(nn.Module):
 
     Res_N: int = 2
     latent_dim: int = 1000
+    norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(self.latent_dim, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         for _ in range(self.Res_N):
-            x = ResBlock(self.latent_dim)(x, training)
+            x = ResBlock(self.latent_dim, norm_fn=self.norm_fn)(x, training)
         return x
 
 

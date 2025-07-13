@@ -415,16 +415,14 @@ def spr_davi(
     train_options: DistTrainOptions,
     shuffle_length: int,
     eval_options: EvalOptions,
+    heuristic_config: NeuralCallableConfig,
     **kwargs,
 ):
-    kwargs.pop("puzzle_bundle", None)
     config = {
         "puzzle_options": puzzle_opts,
+        "heuristic_config": heuristic_config,
         "train_options": train_options,
         "eval_options": eval_options,
-        "heuristic": heuristic.__class__.__name__,
-        "shuffle_length": shuffle_length,
-        **kwargs,
     }
     print_config("SPR-DAVI Training Configuration", config)
     logger = TensorboardLogger(f"{puzzle_name}_{puzzle_opts.puzzle_size}_spr_davi", config)
@@ -598,17 +596,14 @@ def spr_qlearning(
     shuffle_length: int,
     with_policy: bool,
     eval_options: EvalOptions,
+    q_config: NeuralCallableConfig,
     **kwargs,
 ):
-    kwargs.pop("puzzle_bundle", None)
     config = {
         "puzzle_options": puzzle_opts,
         "train_options": train_options,
         "eval_options": eval_options,
-        "qfunction": qfunction.__class__.__name__,
-        "shuffle_length": shuffle_length,
-        "with_policy": with_policy,
-        **kwargs,
+        "q_config": q_config,
     }
     print_config("SPR-Q-Learning Training Configuration", config)
     logger = TensorboardLogger(f"{puzzle_name}_{puzzle_opts.puzzle_size}_spr_qlearning", config)

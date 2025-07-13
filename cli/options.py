@@ -530,11 +530,18 @@ def dist_qfunction_options(func: callable) -> callable:
 
 
 def dist_spr_heuristic_options(func: callable) -> callable:
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the heuristic parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
+        param_path = kwargs.pop("param_path")
 
         heuristic_config = puzzle_bundle.heuristic_spr_config
         if heuristic_config is None:
@@ -544,31 +551,47 @@ def dist_spr_heuristic_options(func: callable) -> callable:
 
         # heuristic_spr_config is expected to be a NeuralCallableConfig, not a direct callable
         if hasattr(heuristic_config, "callable"):
-            param_path = None
-            if hasattr(heuristic_config, "path_template"):
-                param_path = heuristic_config.path_template.format(size=puzzle.size)
+            if param_path is None:
+                if "{size}" in heuristic_config.path_template:
+                    param_path = heuristic_config.path_template.format(size=puzzle.size)
+                else:
+                    param_path = heuristic_config.path_template
             heuristic: SPRNeuralHeuristic = heuristic_config.callable(
-                puzzle=puzzle, path=param_path, init_params=reset
+                puzzle=puzzle,
+                path=param_path,
+                init_params=reset,
+                norm_fn=heuristic_config.norm_fn,
             )
         else:
             # fallback for legacy direct callable
             heuristic: SPRNeuralHeuristic = heuristic_config(puzzle, reset)
         kwargs["heuristic"] = heuristic
+        kwargs["heuristic_config"] = heuristic_config
         return func(*args, **kwargs)
 
     return wrapper
 
 
 def dist_spr_qfunction_options(func: callable) -> callable:
-    @click.option("-nwp", "--not_with_policy", is_flag=True, help="Not use policy for training")
+    @click.option("--with_policy", type=bool, default=None, help="Use policy for training")
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the Q-function parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        q_opts = DistQFunctionOptions(
-            **{k: kwargs.pop(k) for k in DistQFunctionOptions.model_fields}
-        )
+        overrides = {
+            k: v
+            for k, v in kwargs.items()
+            if v is not None and k in DistQFunctionOptions.model_fields
+        }
+        q_opts = DistQFunctionOptions(**overrides)
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
+        param_path = kwargs.pop("param_path")
 
         q_config = (
             puzzle_bundle.q_function_spr_config
@@ -588,10 +611,11 @@ def dist_spr_qfunction_options(func: callable) -> callable:
             if hasattr(q_config, "path_template"):
                 param_path = q_config.path_template.format(size=puzzle.size)
             qfunction: SPRNeuralQFunction = q_config.callable(
-                puzzle=puzzle, path=param_path, init_params=reset
+                puzzle=puzzle, path=param_path, init_params=reset, norm_fn=q_config.norm_fn
             )
         kwargs["qfunction"] = qfunction
-        kwargs["with_policy"] = not q_opts.not_with_policy
+        kwargs["with_policy"] = q_opts.with_policy
+        kwargs["q_config"] = q_config
         return func(*args, **kwargs)
 
     return wrapper
