@@ -35,8 +35,8 @@ def train(
 ):
     config = {
         "world_model_name": world_model_name,
-        "world_model": world_model.__class__.__name__,
-        "wm_train_options": wm_train_options.dict(),
+        "world_model": world_model,
+        "wm_train_options": wm_train_options,
         "dataset_shapes": {
             "datas": str(datas.shape),
             "next_datas": str(next_datas.shape),

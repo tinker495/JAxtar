@@ -7,7 +7,7 @@ import numpy as np
 from puxle import Puzzle
 
 from cli.eval_commands import run_evaluation
-from config.pydantic_models import DistTrainOptions, EvalOptions
+from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import TensorboardLogger
 from helpers.rich_progress import trange
@@ -36,6 +36,7 @@ from ..options import (
 @eval_options
 def davi(
     puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
@@ -45,15 +46,12 @@ def davi(
 ):
 
     config = {
-        "puzzle": {"name": puzzle_name, "size": puzzle.size},
-        "heuristic": heuristic.__class__.__name__,
-        "train_options": train_options.dict(),
-        "shuffle_length": shuffle_length,
-        "eval_options": eval_options.dict(),
-        **kwargs,
+        "puzzle_options": puzzle_opts,
+        "train_options": train_options,
+        "eval_options": eval_options,
     }
     print_config("DAVI Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_davi", config)
+    logger = TensorboardLogger(f"{puzzle_name}-dist-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -170,13 +168,13 @@ def davi(
     # Evaluation
     eval_seeds = list(range(eval_options.num_eval))
     if eval_seeds:
-        config["evaluation"] = {
+        eval_config = {
             "search_algorithm": "A*",
-            "eval_options": eval_options.dict(),
+            "eval_options": eval_options,
             "num_eval": len(eval_seeds),
             "seeds": tuple(eval_seeds),
         }
-        print_config("Heuristic Evaluation Configuration", config["evaluation"])
+        print_config("Heuristic Evaluation Configuration", eval_config)
 
         # Handle multiple pop_ratios
         pop_ratios = eval_options.pop_ratio
@@ -212,6 +210,7 @@ def davi(
 @eval_options
 def qlearning(
     puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
     qfunction: NeuralQFunctionBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
@@ -222,16 +221,12 @@ def qlearning(
 ):
 
     config = {
-        "puzzle": {"name": puzzle_name, "size": puzzle.size},
-        "qfunction": qfunction.__class__.__name__,
-        "train_options": train_options.dict(),
-        "shuffle_length": shuffle_length,
-        "with_policy": with_policy,
-        "eval_options": eval_options.dict(),
-        **kwargs,
+        "puzzle_options": puzzle_opts,
+        "train_options": train_options,
+        "eval_options": eval_options,
     }
     print_config("Q-Learning Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}_{puzzle.size}_qlearning", config)
+    logger = TensorboardLogger(f"{puzzle_name}-dist-q-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -350,13 +345,13 @@ def qlearning(
     # Evaluation
     eval_seeds = list(range(eval_options.num_eval))
     if eval_seeds:
-        config["evaluation"] = {
+        eval_config = {
             "search_algorithm": "Q*",
-            "eval_options": eval_options.dict(),
+            "eval_options": eval_options,
             "num_eval": len(eval_seeds),
             "seeds": tuple(eval_seeds),
         }
-        print_config("Q-Learning Evaluation Configuration", config["evaluation"])
+        print_config("Q-Learning Evaluation Configuration", eval_config)
 
         # Handle multiple pop_ratios
         pop_ratios = eval_options.pop_ratio

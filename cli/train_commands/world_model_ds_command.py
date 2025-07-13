@@ -38,7 +38,7 @@ def make_puzzle_transition_dataset(
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "puzzle_name": puzzle_name,
-        "wm_dataset_options": wm_dataset_options.dict(),
+        "wm_dataset_options": wm_dataset_options,
         **kwargs,
     }
     print_config("Make Puzzle Transition Dataset Configuration", config)
@@ -97,7 +97,7 @@ def make_puzzle_sample_data(
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "puzzle_name": puzzle_name,
-        "wm_dataset_options": wm_dataset_options.dict(),
+        "wm_dataset_options": wm_dataset_options,
         **kwargs,
     }
     print_config("Make Puzzle Sample Data Configuration", config)
@@ -152,7 +152,7 @@ def make_puzzle_eval_trajectory(
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "puzzle_name": puzzle_name,
-        "wm_dataset_options": wm_dataset_options.dict(),
+        "wm_dataset_options": wm_dataset_options,
         **kwargs,
     }
     print_config("Make Puzzle Eval Trajectory Configuration", config)

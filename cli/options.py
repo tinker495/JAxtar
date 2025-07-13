@@ -54,7 +54,8 @@ def create_puzzle_options(
             if puzzle_opts.puzzle_size != "default":
                 input_args["size"] = int(puzzle_opts.puzzle_size)
 
-            if (default_hard or puzzle_opts.hard) and puzzle_bundle.puzzle_hard is not None:
+            puzzle_opts.hard = default_hard or puzzle_opts.hard
+            if puzzle_opts.hard and puzzle_bundle.puzzle_hard is not None:
                 puzzle_callable = puzzle_bundle.puzzle_hard
             elif puzzle_ds_flag:
                 # This part is tricky. world_model_bundles has the specific puzzle_for_ds_gen
@@ -85,6 +86,7 @@ def create_puzzle_options(
             if use_seeds_flag:
                 kwargs["seeds"] = puzzle_opts.get_seed_list()
 
+            kwargs["puzzle_opts"] = puzzle_opts
             return func(*args, **kwargs)
 
         if use_seeds_flag:

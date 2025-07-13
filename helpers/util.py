@@ -1,11 +1,33 @@
+import json
 import time
+from typing import Any
 
 import chex
 import jax
 import jax.numpy as jnp
 from puxle import Puzzle
+from pydantic import BaseModel
 
 from JAxtar.search_base import Current, SearchResult
+
+
+def convert_to_serializable_dict(obj: Any) -> Any:
+    if isinstance(obj, BaseModel):
+        # Recursively process the dict representation
+        return convert_to_serializable_dict(obj.dict())
+    if isinstance(obj, dict):
+        return {str(k): convert_to_serializable_dict(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [convert_to_serializable_dict(i) for i in obj]
+    if isinstance(obj, type):
+        return obj.__name__
+    if callable(obj):
+        return str(obj)
+    try:
+        json.dumps(obj)
+        return obj
+    except Exception:
+        return str(obj)
 
 
 def flatten_array(array: chex.Array, dims: int) -> chex.Array:

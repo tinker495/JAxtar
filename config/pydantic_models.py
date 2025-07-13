@@ -59,6 +59,9 @@ class EvalOptions(BaseModel):
     )
     num_eval: int = Field(200, description="Number of puzzles to evaluate.")
     run_name: Optional[str] = Field(None, description="Name of the evaluation run.")
+    scatter_max_points: int = Field(
+        2000, description="Maximum number of points to plot in scatter plots."
+    )
 
     def get_max_node_size(self):
         return self.max_node_size // self.batch_size * self.batch_size

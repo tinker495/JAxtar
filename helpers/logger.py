@@ -2,39 +2,27 @@ import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import aim
 import imageio.v2 as imageio  # For saving images as PNG
 import jax.numpy as jnp
 import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorboardX
-from pydantic import BaseModel
+
+from helpers.plots import (
+    plot_heuristic_accuracy,
+    plot_nodes_generated_by_path_cost,
+    plot_path_cost_distribution,
+    plot_pop_ratio_analysis,
+    plot_search_time_by_path_cost,
+)
+from helpers.results import save_evaluation_results
+from helpers.util import convert_to_serializable_dict
 
 matplotlib.use("Agg")
-
-
-def _convert_to_dict_if_pydantic(obj: Any) -> Any:
-    if isinstance(obj, BaseModel):
-        # Recursively process the dict representation
-        return _convert_to_dict_if_pydantic(obj.dict())
-    if isinstance(obj, dict):
-        return {str(k): _convert_to_dict_if_pydantic(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set)):
-        return [_convert_to_dict_if_pydantic(i) for i in obj]
-    if isinstance(obj, type):
-        return obj.__name__
-    if callable(obj):
-        return str(obj)
-    try:
-        import json
-
-        json.dumps(obj)
-        return obj
-    except Exception:
-        return str(obj)
 
 
 class TensorboardLogger:
@@ -75,7 +63,7 @@ class TensorboardLogger:
 
         # Log hyperparameters to Aim
         if self.aim_run:
-            hparams = _convert_to_dict_if_pydantic(self.config)
+            hparams = convert_to_serializable_dict(self.config)
             self.aim_run["hparams"] = hparams
 
     def log_git_info(self):
@@ -159,221 +147,85 @@ class TensorboardLogger:
         image_from_plot = np.frombuffer(buf, dtype=np.uint8).reshape((height, width, 4))[..., :3]
         self.log_image(f"{tag}_image", image_from_plot, step)
 
-    def log_evaluation_results(self, results: list[dict], step: int):
-        """Logs evaluation results to files and logs summary to TensorBoard/Aim."""
-        run_dir = Path(self.log_dir)
-        df = pd.DataFrame(results)
-        df.to_csv(run_dir / "results.csv", index=False)
-
-        # If pop_ratio column exists and has >1 unique value, log per-pop_ratio summaries
-        if "pop_ratio" in df.columns and df["pop_ratio"].nunique() > 1:
-            for pr, group in df.groupby("pop_ratio"):
-                num_puzzles = len(group)
-                solved_results = [r for r in group.to_dict("records") if r["solved"]]
-                num_solved = len(solved_results)
-                success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
-                tag_suffix = f" (pop_ratio={pr})"
-                self.log_scalar(f"Evaluation/Success Rate{tag_suffix}", success_rate, step)
-                if solved_results:
-                    solved_times = [r["search_time_s"] for r in solved_results]
-                    solved_nodes = [r["nodes_generated"] for r in solved_results]
-                    solved_paths = [r["path_cost"] for r in solved_results]
-                    self.log_scalar(
-                        f"Evaluation/Avg Search Time (Solved){tag_suffix}",
-                        jnp.mean(jnp.array(solved_times)),
-                        step,
-                    )
-                    self.log_scalar(
-                        f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}",
-                        jnp.mean(jnp.array(solved_nodes)),
-                        step,
-                    )
-                    self.log_scalar(
-                        f"Evaluation/Avg Path Cost{tag_suffix}",
-                        jnp.mean(jnp.array(solved_paths)),
-                        step,
-                    )
-                else:
-                    self.log_scalar(f"Evaluation/Avg Search Time (Solved){tag_suffix}", 0, step)
-                    self.log_scalar(f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}", 0, step)
-                    self.log_scalar(f"Evaluation/Avg Path Cost{tag_suffix}", 0, step)
-            # Also log a pop_ratio comparison plot (boxplot of path_cost by pop_ratio)
-            solved_df = df[df["solved"]].copy()
-            if not solved_df.empty:
-                import matplotlib.pyplot as plt
-                import seaborn as sns
-
-                plt.figure(figsize=(10, 6))
-                # Convert inf to string for categorical coloring
-                solved_df["pop_ratio_str"] = (
-                    solved_df["pop_ratio"].replace([np.inf, -np.inf], "inf").astype(str)
-                )
-                sns.boxplot(data=solved_df, x="pop_ratio_str", y="path_cost")
-                plt.title("Path Cost by Pop Ratio")
-                plt.xlabel("Pop Ratio")
-                plt.ylabel("Path Cost")
-                plt.tight_layout()
-                self.log_figure("Evaluation/Plots/Path Cost by Pop Ratio", plt.gcf(), step)
-                plt.close()
-        # Log overall summary as before
+    def _log_summary_metrics(self, results: list[dict], step: int, tag_suffix: str = ""):
+        """Helper to log scalar summary metrics for a given set of results."""
         num_puzzles = len(results)
         solved_results = [r for r in results if r["solved"]]
         num_solved = len(solved_results)
         success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
-        self.log_scalar("Evaluation/Success Rate", success_rate, step)
+        self.log_scalar(f"Evaluation/Success Rate{tag_suffix}", success_rate, step)
+
         if solved_results:
             solved_times = [r["search_time_s"] for r in solved_results]
             solved_nodes = [r["nodes_generated"] for r in solved_results]
             solved_paths = [r["path_cost"] for r in solved_results]
             self.log_scalar(
-                "Evaluation/Avg Search Time (Solved)", jnp.mean(jnp.array(solved_times)), step
+                f"Evaluation/Avg Search Time (Solved){tag_suffix}",
+                jnp.mean(jnp.array(solved_times)),
+                step,
             )
             self.log_scalar(
-                "Evaluation/Avg Generated Nodes (Solved)", jnp.mean(jnp.array(solved_nodes)), step
+                f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}",
+                jnp.mean(jnp.array(solved_nodes)),
+                step,
             )
-            self.log_scalar("Evaluation/Avg Path Cost", jnp.mean(jnp.array(solved_paths)), step)
+            self.log_scalar(
+                f"Evaluation/Avg Path Cost{tag_suffix}",
+                jnp.mean(jnp.array(solved_paths)),
+                step,
+            )
         else:
-            self.log_scalar("Evaluation/Avg Search Time (Solved)", 0, step)
-            self.log_scalar("Evaluation/Avg Generated Nodes (Solved)", 0, step)
-            self.log_scalar("Evaluation/Avg Path Cost", 0, step)
+            self.log_scalar(f"Evaluation/Avg Search Time (Solved){tag_suffix}", 0, step)
+            self.log_scalar(f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}", 0, step)
+            self.log_scalar(f"Evaluation/Avg Path Cost{tag_suffix}", 0, step)
 
+    def log_evaluation_results(self, results: list[dict], step: int):
+        """Logs evaluation results to files and logs summary to TensorBoard/Aim."""
+        run_dir = Path(self.log_dir)
+        # Save raw results, config, and path states using the helper
+        save_evaluation_results(results=results, run_dir=run_dir, config=self.config)
+
+        df = pd.DataFrame(results)
+
+        # Log overall summary metrics
+        self._log_summary_metrics(results, step)
+
+        # If pop_ratio column exists, log per-pop_ratio summaries and plots
+        if "pop_ratio" in df.columns and df["pop_ratio"].nunique() > 1:
+            for pr, group in df.groupby("pop_ratio"):
+                self._log_summary_metrics(
+                    group.to_dict("records"), step, tag_suffix=f" (pop_ratio={pr})"
+                )
+
+            solved_df = df[df["solved"]].copy()
+            if not solved_df.empty:
+                scatter_max_points = self.config.get("eval_options").scatter_max_points
+                pop_ratio_plots = plot_pop_ratio_analysis(
+                    solved_df, scatter_max_points=scatter_max_points
+                )
+                for plot_name, fig in pop_ratio_plots.items():
+                    self.log_figure(f"Evaluation/Plots/{plot_name}", fig, step)
+                    plt.close(fig)
+
+        # Log distribution and analysis plots for all solved puzzles
         solved_df = df[df["solved"]]
         if not solved_df.empty:
-            fig = plt.figure(figsize=(10, 6))
-            sns.histplot(data=solved_df, x="search_time_s", kde=True)
-            plt.title("Distribution of Search Time")
-            self.log_figure("Evaluation/Plots/Search Time Distribution", fig, step)
-            plt.close(fig)
-
-            fig = plt.figure(figsize=(10, 6))
-            sns.histplot(data=solved_df, x="nodes_generated", kde=True)
-            plt.title("Distribution of Generated Nodes")
-            self.log_figure("Evaluation/Plots/Nodes Generated Distribution", fig, step)
-            plt.close(fig)
-
-            fig = plt.figure(figsize=(10, 6))
-            sns.histplot(data=solved_df, x="path_cost", kde=True)
-            plt.title("Distribution of Path Cost")
+            fig = plot_path_cost_distribution(solved_df)
             self.log_figure("Evaluation/Plots/Path Cost Distribution", fig, step)
             plt.close(fig)
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            sns.boxplot(
-                data=solved_df,
-                x="path_cost",
-                y="search_time_s",
-                ax=ax,
-                flierprops=dict(markerfacecolor="silver", markeredgecolor="gray"),
-            )
-            sns.pointplot(
-                data=solved_df,
-                x="path_cost",
-                y="search_time_s",
-                estimator=np.median,
-                color="red",
-                linestyles="--",
-                errorbar=None,
-                ax=ax,
-            )
-            ax.set_title("Search Time Distribution by Path Cost")
+            fig = plot_search_time_by_path_cost(solved_df)
             self.log_figure("Evaluation/Plots/Search Time by Path Cost", fig, step)
             plt.close(fig)
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            sns.boxplot(
-                data=solved_df,
-                x="path_cost",
-                y="nodes_generated",
-                ax=ax,
-                flierprops=dict(markerfacecolor="silver", markeredgecolor="gray"),
-            )
-            sns.pointplot(
-                data=solved_df,
-                x="path_cost",
-                y="nodes_generated",
-                estimator=np.median,
-                color="red",
-                linestyles="--",
-                errorbar=None,
-                ax=ax,
-            )
-            ax.set_title("Generated Nodes Distribution by Path Cost")
+            fig = plot_nodes_generated_by_path_cost(solved_df)
             self.log_figure("Evaluation/Plots/Generated Nodes by Path Cost", fig, step)
             plt.close(fig)
 
-        all_actual_dists = []
-        all_estimated_dists = []
-        for r in solved_results:
-            if r.get("path_analysis"):
-                analysis_data = r["path_analysis"]
-                if analysis_data.get("actual") and analysis_data.get("estimated"):
-                    all_actual_dists.extend(analysis_data["actual"])
-                    all_estimated_dists.extend(analysis_data["estimated"])
-
-        if all_actual_dists:
-            fig, ax = plt.subplots(figsize=(12, 12))
-            plot_df = pd.DataFrame(
-                {
-                    "Actual Cost to Goal": all_actual_dists,
-                    "Estimated Distance": all_estimated_dists,
-                }
-            )
-
-            sns.boxplot(
-                data=plot_df,
-                x="Actual Cost to Goal",
-                y="Estimated Distance",
-                ax=ax,
-                flierprops=dict(markerfacecolor="silver", markeredgecolor="gray"),
-            )
-            sns.pointplot(
-                data=plot_df,
-                x="Actual Cost to Goal",
-                y="Estimated Distance",
-                estimator=np.median,
-                color="red",
-                linestyles="--",
-                errorbar=None,
-                ax=ax,
-            )
-
-            max_val = 0
-            if all_actual_dists and all_estimated_dists:
-                max_val = max(np.max(all_actual_dists), np.max(all_estimated_dists))
-
-            limit = int(max_val) + 1 if max_val > 0 else 10
-
-            ax.plot(
-                [0, limit],
-                [0, limit],
-                "g--",
-                alpha=0.75,
-                zorder=0,
-                label="y=x (Perfect Heuristic)",
-            )
-            ax.set_xlim(0, limit)
-            ax.set_ylim(0, limit)
-
-            # Set x-axis ticks to cover the full range up to 'limit'
-            xticks = range(int(limit) + 1)
-            ax.set_xticks(xticks)
-            ax.set_xticklabels([f"{x:.1f}" for x in xticks])
-            # Reduce number of x-axis labels if there are too many
-            xticklabels = ax.get_xticklabels()
-            if len(xticklabels) > 10:
-                step = int(np.ceil(len(xticklabels) / 10))
-                for i, label in enumerate(xticklabels):
-                    if i % step != 0:
-                        label.set_visible(False)
-
-            ax.set_title("Heuristic/Q-function Accuracy Analysis")
-            ax.set_xlabel("Actual Cost to Goal")
-            ax.set_ylabel("Estimated Distance (Heuristic/Q-Value)")
-            ax.legend()
-            ax.grid(True)
-            fig.tight_layout()
-            self.log_figure("Evaluation/Plots/Heuristic Accuracy", fig, step)
-            plt.close(fig)
+        # Log heuristic accuracy plot for all results (including unsolved for context)
+        fig = plot_heuristic_accuracy(results)
+        self.log_figure("Evaluation/Plots/Heuristic Accuracy", fig, step)
+        plt.close(fig)
 
     def close(self):
         self.writer.close()
