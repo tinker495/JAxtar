@@ -123,6 +123,20 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path_template="qfunction/neuralq/model/params/n-puzzle-random_{size}.pkl",
         ),
     ),
+    "n-puzzle-random-conv": PuzzleBundle(
+        puzzle=SlidePuzzleRandom,
+        shuffle_length=500,
+        heuristic=SlidePuzzleHeuristic,
+        q_function=SlidePuzzleQ,
+        heuristic_nn_config=NeuralCallableConfig(
+            callable=SlidePuzzleConvNeuralHeuristic,
+            path_template="heuristic/neuralheuristic/model/params/n-puzzle-conv_{size}.pkl",
+        ),
+        q_function_nn_config=NeuralCallableConfig(
+            callable=SlidePuzzleConvNeuralQ,
+            path_template="qfunction/neuralq/model/params/n-puzzle-conv_{size}.pkl",
+        ),
+    ),
     "lightsout": PuzzleBundle(
         puzzle=LightsOut,
         puzzle_hard=PuzzleConfig(callable=LightsOut, initial_shuffle=50),
