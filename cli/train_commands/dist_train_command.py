@@ -546,20 +546,30 @@ def spr_davi(
         }
         print_config("SPR-DAVI Evaluation Configuration", eval_config)
 
-        astar_fn = astar_builder(
-            puzzle,
-            heuristic,
-            eval_options.batch_size,
-            eval_options.get_max_node_size(),
-            cost_weight=eval_options.cost_weight,
-        )
-
-        results = run_evaluation(
-            search_fn=astar_fn,
-            puzzle=puzzle,
-            seeds=eval_seeds,
-        )
-        logger.log_evaluation_results(results, steps)
+        # Handle multiple pop_ratios as in davi
+        pop_ratios = getattr(eval_options, "pop_ratio", None)
+        if pop_ratios is None or not isinstance(pop_ratios, list):
+            pop_ratios = [pop_ratios] if pop_ratios is not None else [None]
+        all_results = []
+        for pr in pop_ratios:
+            astar_fn = astar_builder(
+                puzzle,
+                heuristic,
+                eval_options.batch_size,
+                eval_options.get_max_node_size(),
+                pop_ratio=pr,
+                cost_weight=eval_options.cost_weight,
+            )
+            results = run_evaluation(
+                search_fn=astar_fn,
+                puzzle=puzzle,
+                seeds=eval_seeds,
+            )
+            if pr is not None:
+                for r in results:
+                    r["pop_ratio"] = pr
+            all_results.extend(results)
+        logger.log_evaluation_results(all_results, steps)
 
     logger.close()
 
@@ -719,19 +729,29 @@ def spr_qlearning(
         }
         print_config("Q-Learning Evaluation Configuration", eval_config)
 
-        qstar_fn = qstar_builder(
-            puzzle,
-            qfunction,
-            eval_options.batch_size,
-            eval_options.get_max_node_size(),
-            cost_weight=eval_options.cost_weight,
-        )
-
-        results = run_evaluation(
-            search_fn=qstar_fn,
-            puzzle=puzzle,
-            seeds=eval_seeds,
-        )
-        logger.log_evaluation_results(results, steps)
+        # Handle multiple pop_ratios as in qlearning
+        pop_ratios = getattr(eval_options, "pop_ratio", None)
+        if pop_ratios is None or not isinstance(pop_ratios, list):
+            pop_ratios = [pop_ratios] if pop_ratios is not None else [None]
+        all_results = []
+        for pr in pop_ratios:
+            qstar_fn = qstar_builder(
+                puzzle,
+                qfunction,
+                eval_options.batch_size,
+                eval_options.get_max_node_size(),
+                pop_ratio=pr,
+                cost_weight=eval_options.cost_weight,
+            )
+            results = run_evaluation(
+                search_fn=qstar_fn,
+                puzzle=puzzle,
+                seeds=eval_seeds,
+            )
+            if pr is not None:
+                for r in results:
+                    r["pop_ratio"] = pr
+            all_results.extend(results)
+        logger.log_evaluation_results(all_results, steps)
 
     logger.close()
