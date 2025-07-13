@@ -7,7 +7,13 @@ import numpy as np
 from flax import linen as nn
 from puxle import Puzzle
 
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    ResBlock,
+    conditional_dummy_norm,
+    get_norm_fn,
+)
 from neural_util.param_manager import (
     load_params_with_metadata,
     save_params_with_metadata,
@@ -19,21 +25,22 @@ from qfunction.q_base import QFunction
 class QModelBase(nn.Module):
     action_size: int = 4
     Res_N: int = 4
+    norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(1000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         for _ in range(self.Res_N):
-            x = ResBlock(1000)(x, training)
+            x = ResBlock(1000, norm_fn=self.norm_fn)(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
-        _ = conditional_dummy_norm(x, training)
+        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 
@@ -44,12 +51,14 @@ class NeuralQFunctionBase(QFunction):
         model: nn.Module = QModelBase,
         init_params: bool = True,
         path: str = None,
+        norm_fn=None,
         **kwargs,
     ):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
         self.action_size = self._get_action_size()
-        self.model = model(self.action_size, **kwargs)
+        resolved_norm_fn = get_norm_fn(norm_fn)
+        self.model = model(self.action_size, norm_fn=resolved_norm_fn, **kwargs)
         self.path = path
         self.metadata = {}
         if path is not None:

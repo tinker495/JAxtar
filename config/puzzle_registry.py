@@ -233,7 +233,8 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "topspin": PuzzleBundle(puzzle=TopSpin),
     "rubikscube_world_model": PuzzleBundle(
         puzzle=WorldModelPuzzleConfig(
-            callable=RubiksCubeWorldModel, path="world_model_puzzle/model/params/rubikscube.pkl"
+            callable=RubiksCubeWorldModel,
+            path="world_model_puzzle/model/params/rubikscube.pkl",
         ),
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,

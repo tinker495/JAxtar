@@ -270,7 +270,7 @@ def heuristic_options(func: callable) -> callable:
                     param_path = heuristic_config.path_template
 
             heuristic: Heuristic = heuristic_config.callable(
-                puzzle=puzzle, path=param_path, init_params=False
+                puzzle=puzzle, path=param_path, init_params=False, norm_fn=heuristic_config.norm_fn
             )
         else:
             heuristic_callable = puzzle_bundle.heuristic
@@ -317,7 +317,7 @@ def qfunction_options(func: callable) -> callable:
                     param_path = q_config.path_template
 
             qfunction: QFunction = q_config.callable(
-                puzzle=puzzle, path=param_path, init_params=False
+                puzzle=puzzle, path=param_path, init_params=False, norm_fn=q_config.norm_fn
             )
         else:
             q_callable = puzzle_bundle.q_function
@@ -477,16 +477,17 @@ def dist_heuristic_options(func: callable) -> callable:
             param_path = heuristic_config.path_template.format(size=puzzle.size)
 
         heuristic: NeuralHeuristicBase = heuristic_config.callable(
-            puzzle=puzzle, path=param_path, init_params=reset
+            puzzle=puzzle, path=param_path, init_params=reset, norm_fn=heuristic_config.norm_fn
         )
         kwargs["heuristic"] = heuristic
+        kwargs["heuristic_config"] = heuristic_config
         return func(*args, **kwargs)
 
     return wrapper
 
 
 def dist_qfunction_options(func: callable) -> callable:
-    @click.option("-nwp", "--not_with_policy", is_flag=True, help="Not use policy for training")
+    @click.option("--with_policy", type=bool, default=None, help="Use policy for training")
     @click.option(
         "--param-path",
         type=str,
@@ -495,9 +496,12 @@ def dist_qfunction_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        q_opts = DistQFunctionOptions(
-            **{k: kwargs.pop(k) for k in DistQFunctionOptions.model_fields}
-        )
+        overrides = {
+            k: v
+            for k, v in kwargs.items()
+            if v is not None and k in DistQFunctionOptions.model_fields
+        }
+        q_opts = DistQFunctionOptions(**overrides)
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
@@ -513,10 +517,11 @@ def dist_qfunction_options(func: callable) -> callable:
             param_path = q_config.path_template.format(size=puzzle.size)
 
         qfunction: NeuralQFunctionBase = q_config.callable(
-            puzzle=puzzle, path=param_path, init_params=reset
+            puzzle=puzzle, path=param_path, init_params=reset, norm_fn=q_config.norm_fn
         )
         kwargs["qfunction"] = qfunction
-        kwargs["with_policy"] = not q_opts.not_with_policy
+        kwargs["with_policy"] = q_opts.with_policy
+        kwargs["q_config"] = q_config
         return func(*args, **kwargs)
 
     return wrapper

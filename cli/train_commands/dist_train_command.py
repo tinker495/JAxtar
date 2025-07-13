@@ -7,7 +7,12 @@ import numpy as np
 from puxle import Puzzle
 
 from cli.eval_commands import run_evaluation
-from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
+from config.pydantic_models import (
+    DistTrainOptions,
+    EvalOptions,
+    NeuralCallableConfig,
+    PuzzleOptions,
+)
 from helpers.config_printer import print_config
 from helpers.logger import TensorboardLogger
 from helpers.rich_progress import trange
@@ -42,11 +47,13 @@ def davi(
     train_options: DistTrainOptions,
     shuffle_length: int,
     eval_options: EvalOptions,
+    heuristic_config: NeuralCallableConfig,
     **kwargs,
 ):
 
     config = {
         "puzzle_options": puzzle_opts,
+        "heuristic_config": heuristic_config,
         "train_options": train_options,
         "eval_options": eval_options,
     }
@@ -217,6 +224,7 @@ def qlearning(
     shuffle_length: int,
     with_policy: bool,
     eval_options: EvalOptions,
+    q_config: NeuralCallableConfig,
     **kwargs,
 ):
 
@@ -224,6 +232,7 @@ def qlearning(
         "puzzle_options": puzzle_opts,
         "train_options": train_options,
         "eval_options": eval_options,
+        "q_config": q_config,
     }
     print_config("Q-Learning Training Configuration", config)
     logger = TensorboardLogger(f"{puzzle_name}-dist-q-train", config)

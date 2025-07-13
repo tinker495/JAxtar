@@ -9,7 +9,7 @@ from puxle.utils import from_uint8, to_uint8
 from puxle.utils.annotate import IMG_SIZE
 
 from helpers.formatting import img_to_colored_str
-from neural_util.modules import DTYPE, BatchNorm
+from neural_util.modules import DTYPE, BatchNorm, get_norm_fn
 from neural_util.param_manager import (
     load_params_with_metadata,
     save_params_with_metadata,
@@ -25,6 +25,7 @@ from neural_util.util import (
 
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
+    norm_fn: callable = BatchNorm
 
     @nn.compact
     def __call__(self, data, training=False):
@@ -33,7 +34,7 @@ class Encoder(nn.Module):
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(1000, dtype=DTYPE)(flatten)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(latent_size, dtype=DTYPE)(x)
         logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
@@ -42,13 +43,14 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     data_shape: tuple[int, ...]
+    norm_fn: callable = BatchNorm
 
     @nn.compact
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.Dense(1000, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(output_size, dtype=DTYPE)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
@@ -59,10 +61,11 @@ class Decoder(nn.Module):
 class AutoEncoder(nn.Module):
     data_shape: tuple[int, ...]
     latent_shape: tuple[int, ...]
+    norm_fn: callable = BatchNorm
 
     def setup(self):
-        self.encoder = Encoder(self.latent_shape)
-        self.decoder = Decoder(self.data_shape)
+        self.encoder = Encoder(self.latent_shape, norm_fn=self.norm_fn)
+        self.decoder = Decoder(self.data_shape, norm_fn=self.norm_fn)
 
     def __call__(self, x0, training=False):
         latent = self.encoder(x0, training)
@@ -73,18 +76,19 @@ class AutoEncoder(nn.Module):
 class WorldModel(nn.Module):
     latent_shape: tuple[int, ...]
     action_size: int
+    norm_fn: callable = BatchNorm
 
     @nn.compact
     def __call__(self, latent, training=False):
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
         logits = nn.Dense(latent_size * self.action_size, dtype=DTYPE)(x)
@@ -136,6 +140,7 @@ class WorldModelPuzzleBase(Puzzle):
         WM=WorldModel,
         init_params: bool = False,
         path: str = None,
+        norm_fn=None,
         **kwargs,
     ):
         self.data_path = data_path
@@ -149,6 +154,7 @@ class WorldModelPuzzleBase(Puzzle):
         self.action_size = action_size
         self.path = path
         self.metadata = {}
+        resolved_norm_fn = get_norm_fn(norm_fn)
 
         class total_model(nn.Module):
             autoencoder: AutoEncoder
@@ -206,8 +212,14 @@ class WorldModelPuzzleBase(Puzzle):
                 )
 
         self.model = total_model(
-            autoencoder=AE(data_shape=self.data_shape, latent_shape=self.latent_shape),
-            world_model=WM(latent_shape=self.latent_shape, action_size=self.action_size),
+            autoencoder=AE(
+                data_shape=self.data_shape, latent_shape=self.latent_shape, norm_fn=resolved_norm_fn
+            ),
+            world_model=WM(
+                latent_shape=self.latent_shape,
+                action_size=self.action_size,
+                norm_fn=resolved_norm_fn,
+            ),
         )
 
         if path is not None:
