@@ -31,21 +31,22 @@ class LightsOutNeuralQ(NeuralQFunctionBase):
 
 class Model(nn.Module):
     action_size: int
+    norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(64, (3, 3), strides=1, padding="SAME", dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = ConvResBlock(64, (3, 3), strides=1)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(1024, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = ResBlock(1024)(x, training)
         x = nn.Dense(self.action_size, dtype=DTYPE)(x)
-        _ = conditional_dummy_norm(x, training)
+        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 

@@ -30,20 +30,22 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
 
 
 class Model(nn.Module):
+    norm_fn: callable = DEFAULT_NORM_FN
+
     @nn.compact
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(64, (3, 3), strides=1, padding="SAME", dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
-        x = ConvResBlock(64, (3, 3), strides=1)(x, training)
+        x = ConvResBlock(64, (3, 3), strides=1, norm_fn=self.norm_fn)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
-        x = ResBlock(512)(x, training)
+        x = ResBlock(512, norm_fn=self.norm_fn)(x, training)
         x = nn.Dense(1, dtype=DTYPE)(x)
-        _ = conditional_dummy_norm(x, training)
+        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 

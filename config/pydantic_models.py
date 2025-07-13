@@ -107,7 +107,7 @@ class DistTrainOptions(BaseModel):
 
 
 class DistQFunctionOptions(BaseModel):
-    not_with_policy: bool = False
+    with_policy: bool = True
 
 
 class WMDatasetOptions(BaseModel):
@@ -135,6 +135,7 @@ class WMTrainOptions(BaseModel):
 class NeuralCallableConfig(BaseModel):
     callable: Callable
     path_template: str
+    norm_fn: Optional[Union[str, Callable]] = "batch"
 
     class Config:
         arbitrary_types_allowed = True
@@ -143,6 +144,7 @@ class NeuralCallableConfig(BaseModel):
 class WorldModelPuzzleConfig(BaseModel):
     callable: Callable
     path: str
+    norm_fn: Optional[Union[str, Callable]] = "batch"
 
     class Config:
         arbitrary_types_allowed = True
