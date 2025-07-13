@@ -208,11 +208,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function=PancakeQ,
         heuristic_nn_config=NeuralCallableConfig(
             callable=PancakeNeuralHeuristic,
-            path_template="heuristic/neuralheuristic/model/params/sokoban_{size}.pkl",
+            path_template="heuristic/neuralheuristic/model/params/pancake_{size}.pkl",
         ),
         q_function_nn_config=NeuralCallableConfig(
             callable=PancakeNeuralQ,
-            path_template="qfunction/neuralq/model/params/sokoban_{size}.pkl",
+            path_template="qfunction/neuralq/model/params/pancake_{size}.pkl",
         ),
     ),
     "hanoi": PuzzleBundle(puzzle=TowerOfHanoi),
