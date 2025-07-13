@@ -183,9 +183,10 @@ def eval_options(func: callable) -> callable:
     @click.option(
         "-pr",
         "--pop_ratio",
-        type=float,
+        type=str,
         default=None,
-        help="Ratio for popping nodes from the priority queue.",
+        help="Ratio(s) for popping nodes from the priority queue. Can be a single float, "
+        "'inf', or a comma-separated list (e.g., 'inf,0.4,0.3').",
     )
     @click.option(
         "-ne", "--num-eval", type=int, default=None, help="Number of puzzles to evaluate."
@@ -202,6 +203,30 @@ def eval_options(func: callable) -> callable:
         overrides = {
             k: v for k, v in kwargs.items() if v is not None and k in EvalOptions.model_fields
         }
+
+        # Handle pop_ratio specifically to allow multiple values
+        if "pop_ratio" in kwargs and kwargs["pop_ratio"] is not None:
+            pop_ratio_str = str(kwargs["pop_ratio"])
+            if "," in pop_ratio_str:
+                pop_ratios = []
+                for pr_val in pop_ratio_str.split(","):
+                    try:
+                        pop_ratios.append(float(pr_val.strip()))
+                    except ValueError:
+                        if pr_val.strip().lower() == "inf":
+                            pop_ratios.append(float("inf"))
+                        else:
+                            raise click.BadParameter(f"Invalid pop_ratio value: {pr_val}")
+                overrides["pop_ratio"] = pop_ratios
+            else:
+                try:
+                    overrides["pop_ratio"] = float(pop_ratio_str.strip())
+                except ValueError:
+                    if pop_ratio_str.strip().lower() == "inf":
+                        overrides["pop_ratio"] = float("inf")
+                    else:
+                        raise click.BadParameter(f"Invalid pop_ratio value: {pop_ratio_str}")
+
         eval_opts = base_eval_options.model_copy(update=overrides)
         kwargs["eval_options"] = eval_opts
         for k in EvalOptions.model_fields:

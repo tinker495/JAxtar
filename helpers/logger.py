@@ -8,10 +8,8 @@ import aim
 import imageio.v2 as imageio  # For saving images as PNG
 import jax.numpy as jnp
 import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import tensorboardX
 from pydantic import BaseModel
 
@@ -20,12 +18,23 @@ matplotlib.use("Agg")
 
 def _convert_to_dict_if_pydantic(obj: Any) -> Any:
     if isinstance(obj, BaseModel):
-        return obj.dict()
+        # Recursively process the dict representation
+        return _convert_to_dict_if_pydantic(obj.dict())
     if isinstance(obj, dict):
-        return {k: _convert_to_dict_if_pydantic(v) for k, v in obj.items()}
-    if isinstance(obj, list):
+        return {str(k): _convert_to_dict_if_pydantic(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
         return [_convert_to_dict_if_pydantic(i) for i in obj]
-    return obj
+    if isinstance(obj, type):
+        return obj.__name__
+    if callable(obj):
+        return str(obj)
+    try:
+        import json
+
+        json.dumps(obj)
+        return obj
+    except Exception:
+        return str(obj)
 
 
 class TensorboardLogger:
@@ -156,18 +165,66 @@ class TensorboardLogger:
         df = pd.DataFrame(results)
         df.to_csv(run_dir / "results.csv", index=False)
 
+        # If pop_ratio column exists and has >1 unique value, log per-pop_ratio summaries
+        if "pop_ratio" in df.columns and df["pop_ratio"].nunique() > 1:
+            for pr, group in df.groupby("pop_ratio"):
+                num_puzzles = len(group)
+                solved_results = [r for r in group.to_dict("records") if r["solved"]]
+                num_solved = len(solved_results)
+                success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
+                tag_suffix = f" (pop_ratio={pr})"
+                self.log_scalar(f"Evaluation/Success Rate{tag_suffix}", success_rate, step)
+                if solved_results:
+                    solved_times = [r["search_time_s"] for r in solved_results]
+                    solved_nodes = [r["nodes_generated"] for r in solved_results]
+                    solved_paths = [r["path_cost"] for r in solved_results]
+                    self.log_scalar(
+                        f"Evaluation/Avg Search Time (Solved){tag_suffix}",
+                        jnp.mean(jnp.array(solved_times)),
+                        step,
+                    )
+                    self.log_scalar(
+                        f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}",
+                        jnp.mean(jnp.array(solved_nodes)),
+                        step,
+                    )
+                    self.log_scalar(
+                        f"Evaluation/Avg Path Cost{tag_suffix}",
+                        jnp.mean(jnp.array(solved_paths)),
+                        step,
+                    )
+                else:
+                    self.log_scalar(f"Evaluation/Avg Search Time (Solved){tag_suffix}", 0, step)
+                    self.log_scalar(f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}", 0, step)
+                    self.log_scalar(f"Evaluation/Avg Path Cost{tag_suffix}", 0, step)
+            # Also log a pop_ratio comparison plot (boxplot of path_cost by pop_ratio)
+            solved_df = df[df["solved"]].copy()
+            if not solved_df.empty:
+                import matplotlib.pyplot as plt
+                import seaborn as sns
+
+                plt.figure(figsize=(10, 6))
+                # Convert inf to string for categorical coloring
+                solved_df["pop_ratio_str"] = (
+                    solved_df["pop_ratio"].replace([np.inf, -np.inf], "inf").astype(str)
+                )
+                sns.boxplot(data=solved_df, x="pop_ratio_str", y="path_cost")
+                plt.title("Path Cost by Pop Ratio")
+                plt.xlabel("Pop Ratio")
+                plt.ylabel("Path Cost")
+                plt.tight_layout()
+                self.log_figure("Evaluation/Plots/Path Cost by Pop Ratio", plt.gcf(), step)
+                plt.close()
+        # Log overall summary as before
         num_puzzles = len(results)
         solved_results = [r for r in results if r["solved"]]
         num_solved = len(solved_results)
         success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
-
         self.log_scalar("Evaluation/Success Rate", success_rate, step)
-
         if solved_results:
             solved_times = [r["search_time_s"] for r in solved_results]
             solved_nodes = [r["nodes_generated"] for r in solved_results]
             solved_paths = [r["path_cost"] for r in solved_results]
-
             self.log_scalar(
                 "Evaluation/Avg Search Time (Solved)", jnp.mean(jnp.array(solved_times)), step
             )

@@ -178,20 +178,29 @@ def davi(
         }
         print_config("Heuristic Evaluation Configuration", config["evaluation"])
 
-        astar_fn = astar_builder(
-            puzzle,
-            heuristic,
-            eval_options.batch_size,
-            eval_options.get_max_node_size(),
-            cost_weight=eval_options.cost_weight,
-        )
-
-        results = run_evaluation(
-            search_fn=astar_fn,
-            puzzle=puzzle,
-            seeds=eval_seeds,
-        )
-        logger.log_evaluation_results(results, steps)
+        # Handle multiple pop_ratios
+        pop_ratios = eval_options.pop_ratio
+        if not isinstance(pop_ratios, list):
+            pop_ratios = [pop_ratios]
+        all_results = []
+        for pr in pop_ratios:
+            astar_fn = astar_builder(
+                puzzle,
+                heuristic,
+                eval_options.batch_size,
+                eval_options.get_max_node_size(),
+                pop_ratio=pr,
+                cost_weight=eval_options.cost_weight,
+            )
+            results = run_evaluation(
+                search_fn=astar_fn,
+                puzzle=puzzle,
+                seeds=eval_seeds,
+            )
+            for r in results:
+                r["pop_ratio"] = pr
+            all_results.extend(results)
+        logger.log_evaluation_results(all_results, steps)
 
     logger.close()
 
@@ -349,19 +358,28 @@ def qlearning(
         }
         print_config("Q-Learning Evaluation Configuration", config["evaluation"])
 
-        qstar_fn = qstar_builder(
-            puzzle,
-            qfunction,
-            eval_options.batch_size,
-            eval_options.get_max_node_size(),
-            cost_weight=eval_options.cost_weight,
-        )
-
-        results = run_evaluation(
-            search_fn=qstar_fn,
-            puzzle=puzzle,
-            seeds=eval_seeds,
-        )
-        logger.log_evaluation_results(results, steps)
+        # Handle multiple pop_ratios
+        pop_ratios = eval_options.pop_ratio
+        if not isinstance(pop_ratios, list):
+            pop_ratios = [pop_ratios]
+        all_results = []
+        for pr in pop_ratios:
+            qstar_fn = qstar_builder(
+                puzzle,
+                qfunction,
+                eval_options.batch_size,
+                eval_options.get_max_node_size(),
+                pop_ratio=pr,
+                cost_weight=eval_options.cost_weight,
+            )
+            results = run_evaluation(
+                search_fn=qstar_fn,
+                puzzle=puzzle,
+                seeds=eval_seeds,
+            )
+            for r in results:
+                r["pop_ratio"] = pr
+            all_results.extend(results)
+        logger.log_evaluation_results(all_results, steps)
 
     logger.close()
