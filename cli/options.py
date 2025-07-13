@@ -386,11 +386,18 @@ def dist_train_options(func: callable) -> callable:
         default=None,
         help="Weight loss by target confidence (inverse of move_cost).",
     )
+    @click.option(
+        "-tp",
+        "--temperature",
+        type=float,
+        default=None,
+        help="Boltzmann temperature for action selection.",
+    )
     @click.option("-d", "--debug", is_flag=True, default=None)
     @click.option("-md", "--multi_device", type=bool, default=None)
     @click.option("-ri", "--reset_interval", type=int, default=None)
     @click.option("-osr", "--opt_state_reset", type=bool, default=None)
-    @click.option("-t", "--tau", type=float, default=None)
+    @click.option("--tau", type=float, default=None)
     @click.option(
         "--optimizer",
         type=click.Choice(list(OPTIMIZERS.keys())),
