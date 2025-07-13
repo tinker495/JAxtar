@@ -190,6 +190,7 @@ def _get_datasets_with_policy(
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    temperature: float = 1.0 / 3.0,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -215,7 +216,7 @@ def _get_datasets_with_policy(
         )  # [action_size, batch_size] [action_size, batch_size]
         mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
 
-        probs = boltzmann_action_selection(q_values, mask=mask)
+        probs = boltzmann_action_selection(q_values, temperature=temperature, mask=mask)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
@@ -380,6 +381,7 @@ def get_qlearning_dataset_builder(
     using_triangular_sampling: bool = False,
     with_policy: bool = False,
     n_devices: int = 1,
+    temperature: float = 1.0 / 3.0,
 ):
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
@@ -424,6 +426,7 @@ def get_qlearning_dataset_builder(
             preproc_fn,
             q_model,
             dataset_minibatch_size,
+            temperature=temperature if with_policy else None,
         )
     )
 

@@ -103,6 +103,7 @@ class DistTrainOptions(BaseModel):
     tau: float = 0.2
     opt_state_reset: bool = True
     optimizer: str = "adam"
+    temperature: float = 1.0 / 3.0
 
 
 class DistQFunctionOptions(BaseModel):
