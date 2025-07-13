@@ -299,10 +299,12 @@ def eval_heuristic(
     **kwargs,
 ):
     console = Console()
+    heuristic_metadata = heuristic.metadata if hasattr(heuristic, "metadata") else {}
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "search_algorithm": "A*",
         "heuristic": heuristic.__class__.__name__,
+        "heuristic_metadata": heuristic_metadata,
         "eval_options": eval_options.dict(),
         "num_eval": eval_options.num_eval,
     }
@@ -347,10 +349,12 @@ def eval_qlearning(
     **kwargs,
 ):
     console = Console()
+    qfunction_metadata = qfunction.metadata if hasattr(qfunction, "metadata") else {}
     config = {
         "puzzle": {"name": puzzle_name, "size": puzzle.size},
         "search_algorithm": "Q*",
         "q_function": qfunction.__class__.__name__,
+        "qfunction_metadata": qfunction_metadata,
         "eval_options": eval_options.dict(),
         "num_eval": eval_options.num_eval,
     }

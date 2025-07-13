@@ -1,5 +1,3 @@
-import os
-import pickle
 from abc import abstractmethod
 
 import chex
@@ -11,6 +9,10 @@ from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
 from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
+from neural_util.param_manager import (
+    load_params_with_metadata,
+    save_params_with_metadata,
+)
 from neural_util.util import download_model, is_model_downloaded
 
 
@@ -46,6 +48,7 @@ class NeuralHeuristicBase(Heuristic):
         self.model = model(**kwargs)
         self.is_fixed = puzzle.fixed_target
         self.path = path
+        self.metadata = {}
         if path is not None:
             if init_params:
                 self.params = self.get_new_params()
@@ -66,8 +69,16 @@ class NeuralHeuristicBase(Heuristic):
         try:
             if not is_model_downloaded(self.path):
                 download_model(self.path)
-            with open(self.path, "rb") as f:
-                params = pickle.load(f)
+            params, metadata = load_params_with_metadata(self.path)
+            if params is None:
+                print(
+                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
+                    "Initializing new parameters."
+                )
+                self.metadata = {}
+                return self.get_new_params()
+            self.metadata = metadata
+
             dummy_solve_config = self.puzzle.SolveConfig.default()
             dummy_current = self.puzzle.State.default()
             self.model.apply(
@@ -80,12 +91,12 @@ class NeuralHeuristicBase(Heuristic):
             print(f"Error loading model: {e}")
             return self.get_new_params()
 
-    def save_model(self, path: str = None):
+    def save_model(self, path: str = None, metadata: dict = None):
         path = path or self.path
-        if not os.path.exists(os.path.dirname(path)):
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as f:
-            pickle.dump(self.params, f)
+        if metadata is None:
+            metadata = {}
+        metadata["puzzle_type"] = str(type(self.puzzle))
+        save_params_with_metadata(path, self.params, metadata)
 
     def batched_distance(
         self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
