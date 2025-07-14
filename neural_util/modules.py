@@ -37,7 +37,7 @@ DEFAULT_NORM_FN = BatchNorm
 
 def conditional_dummy_norm(x, norm_fn, training):
     if norm_fn != BatchNorm and norm_fn != BatchReNorm:
-        return norm_fn(x, training)
+        return BatchNorm(x, training)
     else:
         return x
 
