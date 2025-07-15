@@ -98,6 +98,7 @@ class SearchResult:
     increase_moving_average: chex.Array  # moving average of the increase of the min key
     moving_average_weight: float  # weight of the moving average
     margin: chex.Array  # margin for the adaptive search margin
+    distribution_weight: float  # weight for the distribution-based margin
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2))
@@ -108,6 +109,7 @@ class SearchResult:
         pop_ratio: float = jnp.inf,
         moving_average_weight: float = 0.9,
         margin: float = 0.2,
+        distribution_weight: float = 0.1,
         seed=42,
     ):
         """
@@ -124,6 +126,7 @@ class SearchResult:
                 by the batch size.
             moving_average_weight (float): Weight of the moving average.
             margin (float): Margin for the adaptive search margin.
+            distribution_weight (float): Weight to scale the effect of the distribution-based margin.
             seed (int): Random seed for hash function initialization
 
         Returns:
@@ -161,6 +164,7 @@ class SearchResult:
             increase_moving_average=increase_moving_average,
             moving_average_weight=moving_average_weight,
             margin=margin,
+            distribution_weight=distribution_weight,
         )
 
     @property
@@ -230,15 +234,30 @@ class SearchResult:
         buffer_val = Current_with_Parent.default(min_key.shape)
 
         current_min_key = min_key[0]
+        # --- Adaptive margin based on cost increase (from previous state) ---
         key_increase = jnp.maximum(0.01, current_min_key - search_result.last_popped_min_key)
         search_result.increase_moving_average = (
             search_result.increase_moving_average * search_result.moving_average_weight
             + key_increase * (1 - search_result.moving_average_weight)
         )
-        # The margin is at least 1.0, or proportional to the cost increase.
-        margin = (
-            search_result.increase_moving_average * search_result.pop_ratio + search_result.margin
-        )
+        cost_increase_margin = search_result.increase_moving_average * search_result.pop_ratio
+
+        # --- Adaptive margin based on current key distribution ---
+        filled_mask_initial = jnp.isfinite(min_key)
+        # To compute standard deviation in a JIT-compatible way, replace non-finite
+        # values with NaN and use jnp.nanstd. This avoids non-concrete indexing.
+        keys_with_nan = jnp.where(filled_mask_initial, min_key, jnp.nan)
+        std_dev = jnp.nanstd(keys_with_nan)
+
+        # jnp.nanstd returns NaN if all inputs are NaN. We replace this with 0.0.
+        # It correctly returns 0.0 for a single non-NaN value.
+        std_dev = jnp.nan_to_num(std_dev, nan=0.0)
+
+        # Inverse relationship: low std_dev -> high margin component.
+        distribution_margin = search_result.distribution_weight / (std_dev + 1e-6)
+
+        # --- Combine margins to create the final threshold ---
+        margin = cost_increase_margin + distribution_margin + search_result.margin
         threshold = current_min_key + margin
 
         # 2. Loop to fill the batch if it's not full of valid nodes
