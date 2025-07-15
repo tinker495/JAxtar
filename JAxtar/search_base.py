@@ -206,10 +206,12 @@ class SearchResult:
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
         min_key = search_result.mask_unoptimal(min_key, min_val)
+        buffer = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
+        buffer_val = Current_with_Parent.default(min_key.shape)
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
-            search_result, key, _ = state
+            search_result, key, _, _, _ = state
             pq_not_empty = search_result.priority_queue.size > 0
             batch_has_empty_slots = jnp.isinf(key).any()
 
@@ -226,7 +228,7 @@ class SearchResult:
             )
 
         def _body(state):
-            search_result, key, val = state
+            search_result, key, val, _, _ = state
             # Pop new nodes from PQ
             (
                 search_result.priority_queue,
@@ -239,17 +241,18 @@ class SearchResult:
             main_keys, main_vals, overflow_keys, overflow_vals = _unique_sort_merge_and_split(
                 key, val, new_key, new_val
             )
-
-            # Put overflow nodes back into the PQ so they are never lost
-            search_result.priority_queue = search_result.priority_queue.insert(
-                overflow_keys, overflow_vals
-            )
-
-            return search_result, main_keys, main_vals
+            return search_result, main_keys, main_vals, overflow_keys, overflow_vals
 
         # Run the loop until we have a full batch of the best available nodes
-        search_result, min_key, min_val = jax.lax.while_loop(
-            _cond, _body, (search_result, min_key, min_val)
+        search_result, min_key, min_val, overflow_keys, overflow_vals = jax.lax.while_loop(
+            _cond, _body, (search_result, min_key, min_val, buffer, buffer_val)
+        )
+
+        # Put overflow nodes back into the PQ so they are never lost
+        search_result.priority_queue = jax.lax.cond(
+            jnp.any(jnp.isfinite(overflow_keys)),
+            lambda: search_result.priority_queue.insert(overflow_keys, overflow_vals),
+            lambda: search_result.priority_queue,
         )
 
         # 3. Apply pop_ratio to the full batch
