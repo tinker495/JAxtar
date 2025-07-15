@@ -104,5 +104,5 @@ class TSPHeuristic(Heuristic):
 
             return h1 + h2 + h_mst
 
-        heuristic = jax.lax.cond(all_visited, lambda _: if_distance, lambda _: not_solved(), None)
+        heuristic = jax.lax.cond(all_visited, lambda: if_distance, not_solved)
         return heuristic
