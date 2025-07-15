@@ -49,7 +49,7 @@ class EvalOptions(BaseModel):
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
     cost_weight: float = Field(0.6, description="Weight for cost in search.")
     pop_ratio: Union[float, List[float]] = Field(
-        [float("inf"), 0.4, 0.3, 0.2, 0.1],
+        [float("inf"), 3.0, 2.0, 1.5],
         description=(
             "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
             "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "

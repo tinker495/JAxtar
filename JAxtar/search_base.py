@@ -94,11 +94,21 @@ class SearchResult:
     parent: Xtructurable | Parent  # parent array
     solved: chex.Array  # solved array
     solved_idx: Xtructurable | Current  # solved index
+    last_popped_min_key: chex.Array  # min key from the last pop_full call
+    increase_moving_average: chex.Array  # moving average of the increase of the min key
+    moving_average_weight: float  # weight of the moving average
+    margin: chex.Array  # margin for the adaptive search margin
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2))
     def build(
-        statecls: Puzzle.State, batch_size: int, max_nodes: int, pop_ratio: float = jnp.inf, seed=42
+        statecls: Puzzle.State,
+        batch_size: int,
+        max_nodes: int,
+        pop_ratio: float = jnp.inf,
+        moving_average_weight: float = 0.9,
+        margin: float = 0.2,
+        seed=42,
     ):
         """
         Creates a new instance of SearchResult with initialized data structures.
@@ -107,10 +117,13 @@ class SearchResult:
             statecls (Puzzle.State): The state class for the puzzle being solved
             batch_size (int): Size of batches for parallel processing
             max_nodes (int): Maximum number of nodes to store
-            pop_ratio (float): Controls the search beam width. Nodes are expanded if their cost is
-                within `pop_ratio` percent of the best node's cost. For instance, 0.1 allows for a
-                10% margin. A value of 'inf' corresponds to a fixed-width beam search determined
+            pop_ratio (float): Proportionality factor for the adaptive search margin. The margin
+                added to the current best cost is calculated based on the cost increase from the
+                last expansion, multiplied by `pop_ratio`. A higher value leads to a wider
+                search. A value of 'inf' corresponds to a fixed-width beam search determined
                 by the batch size.
+            moving_average_weight (float): Weight of the moving average.
+            margin (float): Margin for the adaptive search margin.
             seed (int): Random seed for hash function initialization
 
         Returns:
@@ -131,16 +144,23 @@ class SearchResult:
         parent = Parent.default(hashtable.table.shape.batch)
         solved = jnp.array(False)
         solved_idx = Current.default((1,))
+        last_popped_min_key = jnp.array(0.0, dtype=KEY_DTYPE)
+        increase_moving_average = jnp.array(3.0, dtype=KEY_DTYPE)
+        margin = jnp.array(margin, dtype=KEY_DTYPE)
 
         return SearchResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
-            pop_ratio=jnp.maximum(1.0 + pop_ratio, 1.1),  # minimum 10% margin
+            pop_ratio=pop_ratio,
             cost=cost,
             dist=dist,
             parent=parent,
             solved=solved,
             solved_idx=solved_idx,
+            last_popped_min_key=last_popped_min_key,
+            increase_moving_average=increase_moving_average,
+            moving_average_weight=moving_average_weight,
+            margin=margin,
         )
 
     @property
@@ -209,6 +229,18 @@ class SearchResult:
         buffer = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
         buffer_val = Current_with_Parent.default(min_key.shape)
 
+        current_min_key = min_key[0]
+        key_increase = jnp.maximum(0.01, current_min_key - search_result.last_popped_min_key)
+        search_result.increase_moving_average = (
+            search_result.increase_moving_average * search_result.moving_average_weight
+            + key_increase * (1 - search_result.moving_average_weight)
+        )
+        # The margin is at least 1.0, or proportional to the cost increase.
+        margin = (
+            search_result.increase_moving_average * search_result.pop_ratio + search_result.margin
+        )
+        threshold = current_min_key + margin
+
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
             search_result, key, _, _, _ = state
@@ -216,8 +248,6 @@ class SearchResult:
             batch_has_empty_slots = jnp.isinf(key).any()
 
             # Early exit if a node exceeds the pop_ratio threshold
-            best_key = key[0]
-            threshold = best_key * search_result.pop_ratio + 1e-6
             finite_keys_mask = jnp.isfinite(key)
             exceeds_threshold = jnp.any(jnp.where(finite_keys_mask, key, -jnp.inf) > threshold)
 
@@ -257,8 +287,6 @@ class SearchResult:
 
         # 3. Apply pop_ratio to the full batch
         filled = jnp.isfinite(min_key)
-        # Add a small epsilon for floating point comparisons
-        threshold = min_key[0] * search_result.pop_ratio + 1e-6
 
         # Identify nodes to process now vs. nodes to return to PQ
         process_mask = jnp.less_equal(min_key, threshold)
@@ -278,6 +306,8 @@ class SearchResult:
         search_result.parent = search_result.parent.at[
             min_val.current.hashidx.index
         ].set_as_condition(final_process_mask, min_val.parent)
+
+        search_result.last_popped_min_key = current_min_key
 
         return search_result, min_val.current, final_process_mask
 
