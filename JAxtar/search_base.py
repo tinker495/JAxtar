@@ -77,8 +77,8 @@ class SearchResult:
     Attributes:
         hashtable (HashTable): Stores all encountered states for efficient lookup
         priority_queue (BGPQ): Priority queue for ordering state expansions
-        min_key_buffer (chex.Array): Buffer for minimum keys in the priority queue
-        min_val_buffer (Current_with_Parent): Buffer for minimum values in the priority queue
+        pop_ratio: float  # ratio of states to pop from the priority queue
+        min_pop: int  # minimum number of nodes to pop from the priority queue
         cost (chex.Array): Cost array tracking path costs to each state (g value)
         dist (chex.Array): Distance array storing calculated heuristic or Q values
         parent (Parent): Array storing parent state indices for path reconstruction
@@ -89,6 +89,7 @@ class SearchResult:
     hashtable: HashTable  # hash table
     priority_queue: BGPQ  # priority queue
     pop_ratio: float  # ratio of states to pop from the priority queue
+    min_pop: int  # minimum number of nodes to pop from the priority queue
     cost: chex.Array  # cost array - g value
     dist: chex.Array  # distance array - calculated heuristic or Q value
     parent: Xtructurable | Parent  # parent array
@@ -107,9 +108,10 @@ class SearchResult:
         batch_size: int,
         max_nodes: int,
         pop_ratio: float = jnp.inf,
+        min_pop: int = 1,  # minimum number of nodes to pop from the priority queue
         moving_average_weight: float = 0.9,
         margin: float = 0.2,
-        distribution_weight: float = 0.1,
+        distribution_weight: float = 0.2,
         seed=42,
     ):
         """
@@ -124,6 +126,7 @@ class SearchResult:
                 last expansion, multiplied by `pop_ratio`. A higher value leads to a wider
                 search. A value of 'inf' corresponds to a fixed-width beam search determined
                 by the batch size.
+            min_pop (int): Minimum number of nodes to pop from the priority queue.
             moving_average_weight (float): Weight of the moving average.
             margin (float): Margin for the adaptive search margin.
             distribution_weight (float): Weight to scale the effect of the distribution-based margin.
@@ -155,6 +158,7 @@ class SearchResult:
             hashtable=hashtable,
             priority_queue=priority_queue,
             pop_ratio=pop_ratio,
+            min_pop=min_pop,
             cost=cost,
             dist=dist,
             parent=parent,
@@ -200,6 +204,7 @@ class SearchResult:
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
         respecting the pop_ratio to control search width without losing nodes.
+        It also ensures that at least `min_pop` nodes are popped if available.
 
         Args:
             search_result (SearchResult): The current search state
@@ -228,7 +233,11 @@ class SearchResult:
             return main_keys, main_vals, overflow_keys, overflow_vals
 
         # 1. Get an initial batch from the Priority Queue (PQ)
-        search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
+        (
+            search_result.priority_queue,
+            min_key,
+            min_val,
+        ) = search_result.priority_queue.delete_mins()
         min_key = search_result.mask_unoptimal(min_key, min_val)
         buffer = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
         buffer_val = Current_with_Parent.default(min_key.shape)
@@ -304,12 +313,23 @@ class SearchResult:
             lambda: search_result.priority_queue,
         )
 
-        # 3. Apply pop_ratio to the full batch
+        # 3. Apply pop_ratio and min_pop to the full batch
         filled = jnp.isfinite(min_key)
 
-        # Identify nodes to process now vs. nodes to return to PQ
+        # Identify nodes to process based on threshold
         process_mask = jnp.less_equal(min_key, threshold)
-        final_process_mask = jnp.logical_and(filled, process_mask)
+
+        # Ensure min_pop is respected
+        num_to_process_by_threshold = jnp.sum(jnp.logical_and(filled, process_mask))
+        min_pop_mask = (
+            jnp.arange(min_key.shape[-1]) < search_result.min_pop
+        )  # Assumes min_key is sorted
+        num_to_process_under_min_pop = jnp.sum(jnp.logical_and(filled, min_pop_mask))
+        num_to_process = jnp.maximum(num_to_process_by_threshold, num_to_process_under_min_pop)
+
+        # final mask respects filled nodes and either threshold or min_pop
+        process_mask_with_min_pop = jnp.arange(min_key.shape[-1]) < num_to_process
+        final_process_mask = jnp.logical_and(filled, process_mask_with_min_pop)
 
         # Separate the nodes to be returned and re-insert them into the PQ
         return_keys = jnp.where(final_process_mask, jnp.inf, min_key)

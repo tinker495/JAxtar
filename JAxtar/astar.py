@@ -46,8 +46,9 @@ def astar_builder(
         """
         astar is the implementation of the A* algorithm.
         """
+        min_pop = batch_size // (puzzle.action_size - 1) if puzzle.action_size > 1 else 1
         search_result: SearchResult = SearchResult.build(
-            statecls, batch_size, max_nodes, pop_ratio=pop_ratio
+            statecls, batch_size, max_nodes, pop_ratio=pop_ratio, min_pop=min_pop
         )
 
         (
