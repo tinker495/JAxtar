@@ -68,6 +68,35 @@ def get_norm_fn(norm_name_or_fn=None):
     raise TypeError(f"norm_fn must be a string or callable, got {type(norm_name_or_fn)}")
 
 
+class Shift(nn.Module):
+    @nn.compact
+    def __call__(self, x):
+        shift = self.param("shift", nn.initializers.constant(0.0), (x.shape[1],))
+        return x + shift
+
+
+class L2Norm(nn.Module):
+    @nn.compact
+    def __call__(self, x):
+        norm = jnp.linalg.norm(x, axis=1, keepdims=True) + 1e-8  # prevent division by zero
+        return x / norm
+
+
+class SHIFT_L2Norm(nn.Module):
+    @nn.compact
+    def __call__(self, x):
+        x = Shift()(x)
+        x = L2Norm()(x)
+        return x
+
+
+class LERP(nn.Module):
+    @nn.compact
+    def __call__(self, x0, x1, training=False):
+        alpha = self.param("alpha", nn.initializers.constant(0.5), (x0.shape[1],))
+        return alpha * x0 + (1.0 - alpha) * x1
+
+
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int
@@ -76,11 +105,10 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0, training=False):
         x = nn.Dense(self.node_size, dtype=DTYPE)(x0)
-        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(self.node_size, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        return nn.relu(x + x0)
+        x = LERP()(x, x0)
+        return self.norm_fn(x, training)
 
 
 # Conv Residual Block

@@ -11,6 +11,7 @@ from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
     ResBlock,
+    SHIFT_L2Norm,
     conditional_dummy_norm,
     get_norm_fn,
 )
@@ -29,6 +30,7 @@ class QModelBase(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=False):
+        x = SHIFT_L2Norm()(x)
         x = nn.Dense(5000, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         x = nn.relu(x)
