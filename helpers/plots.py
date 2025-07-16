@@ -254,8 +254,12 @@ def _plot_scatter_with_ellipses(
     x_log: bool,
     y_log: bool,
     add_annotations: bool = False,
+    varying_params: Optional[List[str]] = None,
 ) -> plt.Figure:
-    """Internal function to generate a generic scatter plot with confidence ellipses."""
+    """
+    Internal function to generate a generic scatter plot with confidence ellipses.
+    If varying_params are provided, it connects the centers of runs that share common parameters.
+    """
     fig, ax = plt.subplots(figsize=(12, 8))
 
     plot_df = solved_df.copy()
@@ -306,25 +310,83 @@ def _plot_scatter_with_ellipses(
     palette = sns.color_palette("tab10")
     grouped = solved_df.groupby(hue_col)
 
+    # Pre-calculate run means for centers and lines
+    run_means = {}
+    for label, group_data in grouped:
+        if not group_data.empty:
+            run_means[label] = (
+                np.mean(group_data[x_col]),
+                np.mean(group_data[y_col]),
+            )
+
+    # Plot ellipses and centers
     for i, label in enumerate(sorted_labels):
         if label not in grouped.groups:
             continue
-        group = grouped.get_group(label)
-        x = group[x_col].values
-        y = group[y_col].values
+        group_data = grouped.get_group(label)
         color = palette[i % len(palette)]
-        mean_x = np.mean(x)
-        mean_y = np.mean(y)
-        ax.scatter(
-            mean_x,
-            mean_y,
-            color=color,
-            s=120,
-            marker="X",
-            edgecolor="black",
-            zorder=10,
+        if label in run_means:
+            mean_x, mean_y = run_means[label]
+            ax.scatter(
+                mean_x,
+                mean_y,
+                color=color,
+                s=120,
+                marker="X",
+                edgecolor="black",
+                zorder=10,
+            )
+            plot_confidence_ellipse(
+                group_data[x_col].values,
+                group_data[y_col].values,
+                ax,
+                n_std=1.0,
+                edgecolor=color,
+                linewidth=2,
+                alpha=0.5,
+            )
+
+    # Connect centers if there are parameters to group by
+    if varying_params and len(varying_params) > 1:
+        if not run_means:
+            return fig
+
+        param_mapping = solved_df[["run_label"] + varying_params].drop_duplicates("run_label")
+        mean_coords_df = (
+            pd.DataFrame.from_dict(run_means, orient="index", columns=[x_col, y_col])
+            .reset_index()
+            .rename(columns={"index": "run_label"})
         )
-        plot_confidence_ellipse(x, y, ax, n_std=1.0, edgecolor=color, linewidth=2, alpha=0.5)
+        mean_points_df = pd.merge(mean_coords_df, param_mapping, on="run_label")
+
+        sorted_params = sorted(
+            varying_params, key=lambda p: mean_points_df[p].nunique(), reverse=True
+        )
+        line_var = sorted_params[0]
+        grouping_vars = sorted_params[1:]
+
+        if grouping_vars:
+            line_groups = mean_points_df.groupby(grouping_vars)
+            for _, group_df in line_groups:
+                group_df_copy = group_df.copy()
+                try:
+                    sort_key_series = group_df_copy[line_var].replace(
+                        [np.inf, -np.inf], float("inf")
+                    )
+                    pd.to_numeric(sort_key_series)
+                    group_df_copy["sort_key"] = sort_key_series.astype(float)
+                except (ValueError, TypeError):
+                    group_df_copy["sort_key"] = group_df_copy[line_var].astype(str)
+
+                sorted_group = group_df_copy.sort_values("sort_key")
+                ax.plot(
+                    sorted_group[x_col],
+                    sorted_group[y_col],
+                    linestyle=":",
+                    alpha=0.7,
+                    marker="o",
+                    markersize=4,
+                )
 
     if add_annotations:
         ax.annotate(
@@ -589,6 +651,7 @@ def plot_comparison_analysis(
         x_log=True,
         y_log=True,
         add_annotations=True,
+        varying_params=varying_params,
     )
 
     # NEW PLOT: Scatter plot for nodes vs path cost
@@ -604,6 +667,7 @@ def plot_comparison_analysis(
         x_log=True,
         y_log=False,
         add_annotations=False,
+        varying_params=varying_params,
     )
 
     return plots
