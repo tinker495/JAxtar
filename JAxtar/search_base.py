@@ -94,6 +94,8 @@ class SearchResult:
     parent: Xtructurable | Parent  # parent array
     solved: chex.Array  # solved array
     solved_idx: Xtructurable | Current  # solved index
+    pop_generation: chex.Array  # records which pop generation a node was expanded in
+    pop_count: chex.Array  # counter for pop_full calls
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2))
@@ -131,6 +133,8 @@ class SearchResult:
         parent = Parent.default(hashtable.table.shape.batch)
         solved = jnp.array(False)
         solved_idx = Current.default((1,))
+        pop_generation = jnp.full(hashtable.table.shape.batch, -1, dtype=jnp.int32)
+        pop_count = jnp.array(0, dtype=jnp.int32)
 
         return SearchResult(
             hashtable=hashtable,
@@ -141,6 +145,8 @@ class SearchResult:
             parent=parent,
             solved=solved,
             solved_idx=solved_idx,
+            pop_generation=pop_generation,
+            pop_count=pop_count,
         )
 
     @property
@@ -278,6 +284,13 @@ class SearchResult:
         search_result.parent = search_result.parent.at[
             min_val.current.hashidx.index
         ].set_as_condition(final_process_mask, min_val.parent)
+        search_result.pop_generation = xnp.set_as_condition_on_array(
+            search_result.pop_generation,
+            min_val.current.hashidx.index,
+            final_process_mask,
+            search_result.pop_count,
+        )
+        search_result.pop_count += 1
 
         return search_result, min_val.current, final_process_mask
 

@@ -45,11 +45,16 @@ class SearchOptions(BaseModel):
 
 
 class EvalOptions(BaseModel):
-    batch_size: int = Field(10000, description="Batch size for search.")
+    batch_size: Union[int, List[int]] = Field(
+        [10000], description="Batch size for search. Can be a single int or a list of ints."
+    )
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
-    cost_weight: float = Field(0.6, description="Weight for cost in search.")
+    cost_weight: Union[float, List[float]] = Field(
+        [0.9, 0.6, 0.3],
+        description="Weight for cost in search. Can be a single float or a list of floats.",
+    )
     pop_ratio: Union[float, List[float]] = Field(
-        [float("inf"), 0.4, 0.3, 0.2, 0.1],
+        [float("inf"), 0.35, 0.2],
         description=(
             "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
             "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "
@@ -60,11 +65,15 @@ class EvalOptions(BaseModel):
     num_eval: int = Field(200, description="Number of puzzles to evaluate.")
     run_name: Optional[str] = Field(None, description="Name of the evaluation run.")
     scatter_max_points: int = Field(
-        2000, description="Maximum number of points to plot in scatter plots."
+        200, description="Maximum number of points to plot in scatter plots."
+    )
+    max_expansion_plots: int = Field(
+        3,
+        description="Maximum number of individual expansion plots to generate per run. Set to 0 to disable.",
     )
 
-    def get_max_node_size(self):
-        return self.max_node_size // self.batch_size * self.batch_size
+    def get_max_node_size(self, batch_size: int) -> int:
+        return self.max_node_size // batch_size * batch_size
 
 
 class VisualizeOptions(BaseModel):

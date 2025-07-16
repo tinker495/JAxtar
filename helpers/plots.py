@@ -1,3 +1,5 @@
+from typing import List, Optional
+
 import matplotlib.pyplot as plt
 import matplotlib.transforms as transforms
 import numpy as np
@@ -56,6 +58,122 @@ def plot_nodes_generated_by_path_cost(solved_df: pd.DataFrame) -> plt.Figure:
     ax.set_xlabel("Path Cost")
     ax.set_ylabel("Nodes Generated")
     fig.tight_layout()
+    return fig
+
+
+def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5000) -> plt.Figure:
+    """Plots the distribution of node costs, heuristics, and keys over expansion steps."""
+    expansion_data = []
+    for r in results:
+        if r.get("expansion_analysis"):
+            df = pd.DataFrame(r["expansion_analysis"])
+            df["seed"] = r["seed"]
+            expansion_data.append(df)
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 18), sharex=True)
+
+    title = "Node Value Distribution over Expansion Steps"
+    if len(results) == 1 and "seed" in results[0]:
+        title += f" (Seed: {results[0]['seed']})"
+    fig.suptitle(title, fontsize=16)
+
+    if not expansion_data:
+        for ax in axes:
+            ax.text(
+                0.5,
+                0.5,
+                "No expansion data available.",
+                ha="center",
+                va="center",
+                fontsize=12,
+            )
+        return fig
+
+    combined_df = pd.concat(expansion_data, ignore_index=True)
+    combined_df["key"] = combined_df["cost"] + combined_df["dist"]
+
+    # Use a smaller sample for scatter plot if data is too large, to avoid overplotting
+    sample_df = combined_df
+    if len(combined_df) > scatter_max_points:
+        sample_df = combined_df.sample(n=scatter_max_points, random_state=42)
+
+    # Plot Cost (g) vs. Expansion Step
+    sns.lineplot(
+        data=combined_df,
+        x="pop_generation",
+        y="cost",
+        ax=axes[0],
+        color="blue",
+        label="Mean Cost",
+        errorbar="sd",
+    )
+    sns.scatterplot(
+        data=sample_df,
+        x="pop_generation",
+        y="cost",
+        ax=axes[0],
+        alpha=0.1,
+        color="blue",
+        edgecolor=None,
+        label="Expanded Nodes",
+    )
+    axes[0].set_title("Cost (g) Distribution")
+    axes[0].set_ylabel("Cost")
+    axes[0].legend()
+    axes[0].grid(True, linestyle="--", alpha=0.6)
+
+    # Plot Heuristic (h) vs. Expansion Step
+    sns.lineplot(
+        data=combined_df,
+        x="pop_generation",
+        y="dist",
+        ax=axes[1],
+        color="green",
+        label="Mean Heuristic",
+        errorbar="sd",
+    )
+    sns.scatterplot(
+        data=sample_df,
+        x="pop_generation",
+        y="dist",
+        ax=axes[1],
+        alpha=0.1,
+        color="green",
+        edgecolor=None,
+        label="Expanded Nodes",
+    )
+    axes[1].set_title("Heuristic (h) Distribution")
+    axes[1].set_ylabel("Heuristic")
+    axes[1].legend()
+    axes[1].grid(True, linestyle="--", alpha=0.6)
+
+    # Plot Key (f) vs. Expansion Step
+    sns.lineplot(
+        data=combined_df,
+        x="pop_generation",
+        y="key",
+        ax=axes[2],
+        color="red",
+        label="Mean Key (f=g+h)",
+        errorbar="sd",
+    )
+    sns.scatterplot(
+        data=sample_df,
+        x="pop_generation",
+        y="key",
+        ax=axes[2],
+        alpha=0.1,
+        color="red",
+        edgecolor=None,
+        label="Expanded Nodes",
+    )
+    axes[2].set_title("Key (f=g+h) Distribution")
+    axes[2].set_xlabel("Expansion Step (Pop Generation)")
+    axes[2].set_ylabel("Key Value")
+    axes[2].legend()
+    axes[2].grid(True, linestyle="--", alpha=0.6)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     return fig
 
 
@@ -124,37 +242,43 @@ def plot_heuristic_accuracy(results: list[dict]) -> plt.Figure:
     return fig
 
 
-def _plot_scatter_analysis(
+def _plot_scatter_with_ellipses(
     solved_df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
     hue_col: str,
     sorted_labels: list[str],
     scatter_max_points: int,
     legend_title: str,
+    title: str,
+    x_log: bool,
+    y_log: bool,
+    add_annotations: bool = False,
 ) -> plt.Figure:
-    """Internal function to generate scatter plot with confidence ellipses."""
-    fig_scatter, ax_scatter = plt.subplots(figsize=(12, 8))
+    """Internal function to generate a generic scatter plot with confidence ellipses."""
+    fig, ax = plt.subplots(figsize=(12, 8))
 
-    plot_df = solved_df
-    if len(solved_df) > scatter_max_points:
-        plot_df = solved_df.sample(n=scatter_max_points, random_state=42)
+    plot_df = solved_df.copy()
+    if len(plot_df) > scatter_max_points:
+        plot_df = plot_df.sample(n=scatter_max_points, random_state=42)
 
     sns.scatterplot(
         data=plot_df,
-        x="nodes_generated",
-        y="search_time_s",
+        x=x_col,
+        y=y_col,
         hue=hue_col,
         hue_order=sorted_labels,
         palette="tab10",
         alpha=0.7,
         edgecolor=None,
-        ax=ax_scatter,
+        ax=ax,
     )
 
     def plot_confidence_ellipse(x, y, ax, n_std=1.0, facecolor="none", **kwargs):
         if x.size <= 1 or y.size <= 1:
             return
         cov = np.cov(x, y)
-        if np.any(np.isnan(cov)) or np.any(np.isinf(cov)):
+        if np.any(np.isnan(cov)) or np.any(np.isinf(cov)) or cov[0, 0] == 0 or cov[1, 1] == 0:
             return
         pearson = cov[0, 1] / np.sqrt(cov[0, 0] * cov[1, 1])
         mean_x = np.mean(x)
@@ -186,12 +310,12 @@ def _plot_scatter_analysis(
         if label not in grouped.groups:
             continue
         group = grouped.get_group(label)
-        x = group["nodes_generated"].values
-        y = group["search_time_s"].values
+        x = group[x_col].values
+        y = group[y_col].values
         color = palette[i % len(palette)]
         mean_x = np.mean(x)
         mean_y = np.mean(y)
-        ax_scatter.scatter(
+        ax.scatter(
             mean_x,
             mean_y,
             color=color,
@@ -200,45 +324,50 @@ def _plot_scatter_analysis(
             edgecolor="black",
             zorder=10,
         )
-        plot_confidence_ellipse(
-            x, y, ax_scatter, n_std=1.0, edgecolor=color, linewidth=2, alpha=0.5
+        plot_confidence_ellipse(x, y, ax, n_std=1.0, edgecolor=color, linewidth=2, alpha=0.5)
+
+    if add_annotations:
+        ax.annotate(
+            "Fewer nodes (better)",
+            xy=(0.03, 0.02),
+            xycoords="axes fraction",
+            xytext=(0.35, 0.02),
+            textcoords="axes fraction",
+            ha="center",
+            va="center",
+            fontsize=12,
+            arrowprops=dict(arrowstyle="->", lw=2, color="black"),
+            color="black",
+        )
+        ax.annotate(
+            "Faster (better)",
+            xy=(0.03, 0.02),
+            xycoords="axes fraction",
+            xytext=(0.03, 0.35),
+            textcoords="axes fraction",
+            ha="center",
+            va="center",
+            fontsize=12,
+            rotation=90,
+            arrowprops=dict(arrowstyle="->", lw=2, color="black"),
+            color="black",
         )
 
-    ax_scatter.annotate(
-        "Fewer nodes (better)",
-        xy=(0.03, 0.02),
-        xycoords="axes fraction",
-        xytext=(0.35, 0.02),
-        textcoords="axes fraction",
-        ha="center",
-        va="center",
-        fontsize=12,
-        arrowprops=dict(arrowstyle="->", lw=2, color="black"),
-        color="black",
-    )
-    ax_scatter.annotate(
-        "Faster (better)",
-        xy=(0.03, 0.02),
-        xycoords="axes fraction",
-        xytext=(0.03, 0.35),
-        textcoords="axes fraction",
-        ha="center",
-        va="center",
-        fontsize=12,
-        rotation=90,
-        arrowprops=dict(arrowstyle="->", lw=2, color="black"),
-        color="black",
-    )
+    if x_log:
+        ax.set_xscale("log")
+    if y_log:
+        ax.set_yscale("log")
 
-    ax_scatter.set_xscale("log")
-    ax_scatter.set_yscale("log")
-    ax_scatter.set_title(f"Search Time vs. Generated Nodes by {legend_title}")
-    ax_scatter.set_xlabel("Nodes Generated (log scale)")
-    ax_scatter.set_ylabel("Search Time (s, log scale)")
-    ax_scatter.legend(title=legend_title, bbox_to_anchor=(1.05, 1), loc="upper left")
-    ax_scatter.grid(True, which="both", linestyle="--", linewidth=0.7, alpha=0.6)
-    fig_scatter.tight_layout()
-    return fig_scatter
+    x_label = x_col.replace("_", " ").title() + (" (log scale)" if x_log else "")
+    y_label = y_col.replace("_", " ").title() + (" (log scale)" if y_log else "")
+
+    ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.legend(title=legend_title, bbox_to_anchor=(1.05, 1), loc="upper left")
+    ax.grid(True, which="both", linestyle="--", linewidth=0.7, alpha=0.6)
+    fig.tight_layout()
+    return fig
 
 
 def plot_pop_ratio_analysis(
@@ -251,10 +380,10 @@ def plot_pop_ratio_analysis(
     plots = {}
     hue_col = "pop_ratio"
     if "pop_ratio" in solved_df.columns:
-        solved_df["pop_ratio_str"] = (
+        solved_df["pop_ratio"] = (
             solved_df["pop_ratio"].replace([np.inf, -np.inf], "inf").astype(str)
         )
-        hue_col = "pop_ratio_str"
+        hue_col = "pop_ratio"
 
     hue_labels = solved_df[hue_col].unique()
     try:
@@ -291,64 +420,190 @@ def plot_pop_ratio_analysis(
     plots["nodes_generated_by_popratio"] = fig_ng
 
     # Scatter plot
-    plots["nodes_vs_time_popratio_scatter"] = _plot_scatter_analysis(
+    plots["nodes_vs_time_popratio_scatter"] = _plot_scatter_with_ellipses(
         solved_df=solved_df,
+        x_col="nodes_generated",
+        y_col="search_time_s",
         hue_col=hue_col,
         sorted_labels=hue_labels,
         scatter_max_points=scatter_max_points,
         legend_title="Pop Ratio",
+        title="Search Time vs. Generated Nodes by Pop Ratio",
+        x_log=True,
+        y_log=True,
+        add_annotations=True,
     )
 
     return plots
 
 
 def plot_comparison_analysis(
-    solved_df: pd.DataFrame, sorted_labels: list[str], scatter_max_points: int = 2000
+    solved_df: pd.DataFrame,
+    sorted_labels: list[str],
+    scatter_max_points: int = 2000,
+    varying_params: Optional[List[str]] = None,
 ) -> dict[str, plt.Figure]:
-    """Generates a dictionary of plots for comparing multiple evaluation runs."""
+    """
+    Generates a dictionary of plots for comparing multiple evaluation runs.
+    Dynamically creates 1D, 2D, or faceted plots based on the number of varying parameters.
+    """
     if solved_df.empty:
         return {}
 
     plots = {}
+    plot_df = solved_df.copy()
 
-    # Path cost comparison
-    fig_pc, ax_pc = plt.subplots(figsize=(12, 8))
-    sns.boxplot(data=solved_df, x="run_label", y="path_cost", order=sorted_labels, ax=ax_pc)
-    ax_pc.set_title("Path Cost Comparison")
-    ax_pc.set_xlabel("Run (Config Differences)")
-    ax_pc.set_ylabel("Path Cost")
-    plt.setp(ax_pc.get_xticklabels(), rotation=45, ha="right")
-    fig_pc.tight_layout()
-    plots["path_cost_comparison"] = fig_pc
+    if varying_params is None:
+        varying_params = []
 
-    # Search time comparison
-    fig_st, ax_st = plt.subplots(figsize=(12, 8))
-    sns.boxplot(data=solved_df, x="run_label", y="search_time_s", order=sorted_labels, ax=ax_st)
-    ax_st.set_yscale("log")
-    ax_st.set_title("Search Time Comparison")
-    ax_st.set_xlabel("Run (Config Differences)")
-    ax_st.set_ylabel("Search Time (s, log scale)")
-    plt.setp(ax_st.get_xticklabels(), rotation=45, ha="right")
-    fig_st.tight_layout()
-    plots["search_time_comparison"] = fig_st
+    def create_faceted_boxplot(y_metric, y_label, base_title):
+        """Helper to create simple, 2D, or faceted plots."""
+        # 0 or 1 varying parameter
+        if len(varying_params) <= 1:
+            fig, ax = plt.subplots(figsize=(12, 8))
+            x_var = "run_label" if not varying_params else varying_params[0]
+            order = sorted_labels if x_var == "run_label" else None
 
-    # Nodes generated comparison
-    fig_ng, ax_ng = plt.subplots(figsize=(12, 8))
-    sns.boxplot(data=solved_df, x="run_label", y="nodes_generated", order=sorted_labels, ax=ax_ng)
-    ax_ng.set_title("Generated Nodes Comparison")
-    ax_ng.set_xlabel("Run (Config Differences)")
-    ax_ng.set_ylabel("Nodes Generated")
-    plt.setp(ax_ng.get_xticklabels(), rotation=45, ha="right")
-    fig_ng.tight_layout()
-    plots["nodes_generated_comparison"] = fig_ng
+            if x_var != "run_label":
+                plot_df[x_var] = plot_df[x_var].replace([np.inf, -np.inf], "inf").astype(str)
+                try:
+                    order = sorted(
+                        plot_df[x_var].unique(),
+                        key=lambda x: float(x) if x != "inf" else float("inf"),
+                    )
+                except (ValueError, TypeError):
+                    order = sorted(plot_df[x_var].unique())
 
-    # Scatter plot
-    plots["nodes_vs_time_scatter"] = _plot_scatter_analysis(
-        solved_df=solved_df,
+            sns.boxplot(data=plot_df, x=x_var, y=y_metric, order=order, ax=ax)
+            y_label_final = y_label
+            if y_metric in ["search_time_s", "nodes_generated"]:
+                ax.set_yscale("log")
+                y_label_final += " (log scale)"
+            ax.set_title(f"{base_title} by {x_var}")
+            ax.set_xlabel(x_var)
+            ax.set_ylabel(y_label_final)
+            plt.setp(ax.get_xticklabels(), rotation=30, ha="right", fontsize=10)
+            fig.tight_layout()
+            return fig
+
+        # 2 or more varying parameters
+        # Sort params by cardinality (descending) to decide axes.
+        sorted_params = sorted(varying_params, key=lambda p: plot_df[p].nunique(), reverse=True)
+        p_x, p_hue = sorted_params[0], sorted_params[1]
+        p_col = None
+        if len(varying_params) == 3:
+            p_col = sorted_params[2]
+        elif len(varying_params) > 3:
+            p_col_list = sorted_params[2:]
+            p_col = " & ".join(p.split(".")[-1] for p in p_col_list)
+            plot_df[p_col] = plot_df[p_col_list].apply(
+                lambda row: ",\n".join(f"{col.split('.')[-1]}={row[col]}" for col in p_col_list),
+                axis=1,
+            )
+
+        # Prepare for sorting categorical axes
+        def get_sorted_unique(param_name):
+            if param_name not in plot_df.columns:
+                return None
+            # Convert to string for consistent sorting
+            plot_df[param_name] = plot_df[param_name].replace([np.inf, -np.inf], "inf").astype(str)
+            try:
+                return sorted(
+                    plot_df[param_name].unique(),
+                    key=lambda x: float(x) if x != "inf" else float("inf"),
+                )
+            except (ValueError, TypeError):
+                return sorted(plot_df[param_name].unique())
+
+        x_order, hue_order = get_sorted_unique(p_x), get_sorted_unique(p_hue)
+        y_label_final = (
+            f"{y_label} (log scale)"
+            if y_metric in ["search_time_s", "nodes_generated"]
+            else y_label
+        )
+
+        if p_col:
+            g = sns.catplot(
+                data=plot_df,
+                x=p_x,
+                y=y_metric,
+                hue=p_hue,
+                col=p_col,
+                kind="box",
+                order=x_order,
+                hue_order=hue_order,
+                height=5,
+                aspect=1.3,
+                legend_out=True,
+                col_wrap=min(3, plot_df[p_col].nunique()),
+            )
+            if y_metric in ["search_time_s", "nodes_generated"]:
+                g.set(yscale="log")
+            g.fig.suptitle(f"{base_title} by {p_x}, {p_hue}, and {p_col}", y=1.03)
+            g.set_axis_labels(x_var=p_x, y_var=y_label_final)
+            g.set_titles(col_template="{col_name}")
+            fig = g.fig
+        else:  # 2 params
+            fig, ax = plt.subplots(figsize=(12, 8))
+            sns.boxplot(
+                data=plot_df,
+                x=p_x,
+                y=y_metric,
+                hue=p_hue,
+                order=x_order,
+                hue_order=hue_order,
+                ax=ax,
+            )
+            if y_metric in ["search_time_s", "nodes_generated"]:
+                ax.set_yscale("log")
+            ax.set_title(f"{base_title} by {p_x} and {p_hue}")
+            ax.set_xlabel(p_x)
+            ax.set_ylabel(y_label_final)
+
+        for ax in fig.axes:
+            plt.setp(ax.get_xticklabels(), rotation=30, ha="right", fontsize=10)
+        fig.tight_layout(rect=[0, 0, 1, 0.97])
+        return fig
+
+    # Generate plots for each metric
+    plots["path_cost_comparison"] = create_faceted_boxplot(
+        "path_cost", "Path Cost", "Path Cost Comparison"
+    )
+    plots["search_time_comparison"] = create_faceted_boxplot(
+        "search_time_s", "Search Time (s)", "Search Time Comparison"
+    )
+    plots["nodes_generated_comparison"] = create_faceted_boxplot(
+        "nodes_generated", "Nodes Generated", "Generated Nodes Comparison"
+    )
+
+    # Scatter plot remains the same, showing all combinations distinctly
+    plots["nodes_vs_time_scatter"] = _plot_scatter_with_ellipses(
+        solved_df=plot_df,
+        x_col="nodes_generated",
+        y_col="search_time_s",
         hue_col="run_label",
         sorted_labels=sorted_labels,
         scatter_max_points=scatter_max_points,
         legend_title="Run (Config Differences)",
+        title="Search Time vs. Generated Nodes by Run",
+        x_log=True,
+        y_log=True,
+        add_annotations=True,
+    )
+
+    # NEW PLOT: Scatter plot for nodes vs path cost
+    plots["nodes_vs_path_cost_scatter"] = _plot_scatter_with_ellipses(
+        solved_df=plot_df,
+        x_col="nodes_generated",
+        y_col="path_cost",
+        hue_col="run_label",
+        sorted_labels=sorted_labels,
+        scatter_max_points=scatter_max_points,
+        legend_title="Run (Config Differences)",
+        title="Generated Nodes vs. Path Cost by Run",
+        x_log=True,
+        y_log=False,
+        add_annotations=False,
     )
 
     return plots
