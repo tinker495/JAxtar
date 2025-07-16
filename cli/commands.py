@@ -10,6 +10,7 @@ from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from config.pydantic_models import SearchOptions, VisualizeOptions
 from helpers import (
@@ -250,7 +251,9 @@ def search_samples(
                 grid.add_row(Align.center("[bold blue]Start State[/bold blue]"))
                 grid.add_row(state.str(solve_config=solve_config))
 
-            grid.add_row(f"Dist: {dist_fn_format(puzzle, dist_values)}")
+            grid.add_row(
+                Text.assemble(Text("Dist: ", style="bold"), dist_fn_format(puzzle, dist_values))
+            )
             console.print(Panel(grid, title=f"[bold blue]Seed {seed}[/bold blue]", expand=False))
 
         if search_options.profile:

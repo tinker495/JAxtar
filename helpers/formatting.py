@@ -1,4 +1,5 @@
 import numpy as np
+from rich.text import Text
 
 
 def human_format_to_float(num_str):
@@ -18,26 +19,32 @@ def human_format(num):
     )
 
 
-def heuristic_dist_format(puzzle, dist):
-    return f"{dist:.2f}"
+def heuristic_dist_format(puzzle, dist) -> Text:
+    """Formats the heuristic distance using Rich."""
+    return Text(f"{dist:.2f}", style="blue")
 
 
-def qfunction_dist_format(puzzle, qvalues):
+def qfunction_dist_format(puzzle, qvalues) -> Text:
+    """Formats the Q-function distribution using Rich."""
     action_len = qvalues.shape[0]
+
+    def format_part(i):
+        action_str = f"'{puzzle.action_to_string(i)}'"
+        q_value = f"{float(qvalues[i]):.1f}"
+        return Text.assemble((action_str, "green"), (": ", "white"), (q_value, "magenta"))
+
     if action_len <= 6:
-        return " | ".join(
-            f"'{puzzle.action_to_string(i)}': {float(qvalues[i]):.1f}" for i in range(action_len)
-        )
+        parts = [format_part(i) for i in range(action_len)]
+        return Text(" | ", style="white").join(parts)
     else:
-        str = " | ".join(
-            f"'{puzzle.action_to_string(i)}': {float(qvalues[i]):.1f}" for i in range(2)
-        )
-        str += " ... "
-        str += " | ".join(
-            f"'{puzzle.action_to_string(i)}': {float(qvalues[i]):.1f}"
-            for i in range(action_len - 2, action_len)
-        )
-        return str
+        first_parts = [format_part(i) for i in range(2)]
+        last_parts = [format_part(i) for i in range(action_len - 2, action_len)]
+
+        final_text = Text()
+        final_text.append(Text(" | ", style="white").join(first_parts))
+        final_text.append(" ... ", style="dim white")
+        final_text.append(Text(" | ", style="white").join(last_parts))
+        return final_text
 
 
 def img_to_colored_str(img: np.ndarray) -> str:
