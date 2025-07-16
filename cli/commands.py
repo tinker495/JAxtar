@@ -20,6 +20,7 @@ from helpers import (
     vmapping_init_target,
     vmapping_search,
 )
+from helpers.config_printer import print_config
 from helpers.rich_progress import tqdm
 from heuristic.heuristic_base import Heuristic
 from JAxtar.astar import astar_builder
@@ -574,6 +575,14 @@ def astar(
     visualize_options: VisualizeOptions,
     **kwargs,
 ):
+    config = {
+        "puzzle_name": puzzle_name,
+        "search_options": search_options.dict(),
+        "heuristic": heuristic.__class__.__name__,
+        "heuristic_metadata": getattr(heuristic, "metadata", {}),
+        "visualize_options": visualize_options.dict(),
+    }
+    print_config("A* Search Configuration", config)
     astar_fn = astar_builder(
         puzzle,
         heuristic,
@@ -625,6 +634,14 @@ def qstar(
     visualize_options: VisualizeOptions,
     **kwargs,
 ):
+    config = {
+        "puzzle_name": puzzle_name,
+        "search_options": search_options.dict(),
+        "qfunction": qfunction.__class__.__name__,
+        "qfunction_metadata": getattr(qfunction, "metadata", {}),
+        "visualize_options": visualize_options.dict(),
+    }
+    print_config("Q* Search Configuration", config)
     qstar_fn = qstar_builder(
         puzzle,
         qfunction,
