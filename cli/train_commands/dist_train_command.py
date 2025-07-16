@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import click
 import jax
@@ -6,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from puxle import Puzzle
 
-from cli.eval_commands import run_evaluation
+from cli.eval_commands import _run_evaluation_sweep
 from config.pydantic_models import (
     DistTrainOptions,
     EvalOptions,
@@ -173,39 +174,19 @@ def davi(
     heuristic.save_model(path=backup_path)
 
     # Evaluation
-    eval_seeds = list(range(eval_options.num_eval))
-    if eval_seeds:
-        eval_config = {
-            "search_algorithm": "A*",
-            "eval_options": eval_options,
-            "num_eval": len(eval_seeds),
-            "seeds": tuple(eval_seeds),
-        }
-        print_config("Heuristic Evaluation Configuration", eval_config)
-
-        # Handle multiple pop_ratios
-        pop_ratios = eval_options.pop_ratio
-        if not isinstance(pop_ratios, list):
-            pop_ratios = [pop_ratios]
-        all_results = []
-        for pr in pop_ratios:
-            astar_fn = astar_builder(
-                puzzle,
-                heuristic,
-                eval_options.batch_size,
-                eval_options.get_max_node_size(),
-                pop_ratio=pr,
-                cost_weight=eval_options.cost_weight,
-            )
-            results = run_evaluation(
-                search_fn=astar_fn,
-                puzzle=puzzle,
-                seeds=eval_seeds,
-            )
-            for r in results:
-                r["pop_ratio"] = pr
-            all_results.extend(results)
-        logger.log_evaluation_results(all_results, steps)
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=heuristic,
+            search_model_name="heuristic",
+            search_builder_fn=astar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            **kwargs,
+        )
 
     logger.close()
 
@@ -353,38 +334,18 @@ def qlearning(
     qfunction.save_model(path=backup_path)
 
     # Evaluation
-    eval_seeds = list(range(eval_options.num_eval))
-    if eval_seeds:
-        eval_config = {
-            "search_algorithm": "Q*",
-            "eval_options": eval_options,
-            "num_eval": len(eval_seeds),
-            "seeds": tuple(eval_seeds),
-        }
-        print_config("Q-Learning Evaluation Configuration", eval_config)
-
-        # Handle multiple pop_ratios
-        pop_ratios = eval_options.pop_ratio
-        if not isinstance(pop_ratios, list):
-            pop_ratios = [pop_ratios]
-        all_results = []
-        for pr in pop_ratios:
-            qstar_fn = qstar_builder(
-                puzzle,
-                qfunction,
-                eval_options.batch_size,
-                eval_options.get_max_node_size(),
-                pop_ratio=pr,
-                cost_weight=eval_options.cost_weight,
-            )
-            results = run_evaluation(
-                search_fn=qstar_fn,
-                puzzle=puzzle,
-                seeds=eval_seeds,
-            )
-            for r in results:
-                r["pop_ratio"] = pr
-            all_results.extend(results)
-        logger.log_evaluation_results(all_results, steps)
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=qfunction,
+            search_model_name="qfunction",
+            search_builder_fn=qstar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            **kwargs,
+        )
 
     logger.close()

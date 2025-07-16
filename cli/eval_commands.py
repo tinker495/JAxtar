@@ -4,7 +4,7 @@ import time
 from collections.abc import MutableMapping
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, List, Union
+from typing import Callable, List, Optional, Union
 
 import click
 import jax
@@ -181,6 +181,7 @@ def _run_evaluation_sweep(
     search_builder_fn: Callable,
     eval_options: EvalOptions,
     puzzle_opts: PuzzleOptions,
+    output_dir: Optional[Path] = None,
     **kwargs,
 ):
     console = Console()
@@ -210,7 +211,7 @@ def _run_evaluation_sweep(
         if eval_options.run_name
         else f"{puzzle_name}_{search_model_name}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     )
-    main_run_dir = Path("runs") / base_run_name
+    main_run_dir = output_dir if output_dir else Path("runs") / base_run_name
     main_run_dir.mkdir(parents=True, exist_ok=True)
 
     if is_sweep:
@@ -265,16 +266,17 @@ def _run_evaluation_sweep(
             r["cost_weight"] = cw
             r["batch_size"] = bs
 
-        save_evaluation_results(
-            results=results, run_dir=run_dir, config=config, save_per_pop_ratio=False
-        )
-        print_config(f"{search_model_name.capitalize()} Evaluation Configuration", config)
+        save_evaluation_results(results=results, run_dir=run_dir, config=config)
 
         solved_df = pd.DataFrame([r for r in results if r["solved"]])
-        console.print(create_summary_panel(results))
+        if not is_sweep:
+            console.print(create_summary_panel(results))
 
         if not solved_df.empty:
-            if len(pop_ratios) > 1 and not is_sweep:
+            is_pop_ratio_list = (
+                isinstance(eval_options.pop_ratio, list) and len(eval_options.pop_ratio) > 1
+            )
+            if is_pop_ratio_list and not is_sweep:
                 console.print(create_pop_ratio_summary_panel(results))
                 plots = plot_pop_ratio_analysis(
                     solved_df, scatter_max_points=eval_options.scatter_max_points

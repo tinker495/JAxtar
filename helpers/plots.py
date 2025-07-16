@@ -496,6 +496,21 @@ def plot_pop_ratio_analysis(
         add_annotations=True,
     )
 
+    # NEW PLOT: Scatter plot for nodes vs path cost
+    plots["nodes_vs_path_cost_popratio_scatter"] = _plot_scatter_with_ellipses(
+        solved_df=solved_df,
+        x_col="nodes_generated",
+        y_col="path_cost",
+        hue_col=hue_col,
+        sorted_labels=hue_labels,
+        scatter_max_points=scatter_max_points,
+        legend_title="Pop Ratio",
+        title="Generated Nodes vs. Path Cost by Pop Ratio",
+        x_log=True,
+        y_log=False,
+        add_annotations=False,
+    )
+
     return plots
 
 
