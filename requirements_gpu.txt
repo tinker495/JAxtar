@@ -2,7 +2,7 @@ numpy>=2.2.0
 opencv-python
 imageio
 click
-rich
+rich @ git+https://github.com/tinker495/rich.git
 pre-commit
 pytest
 jax[cuda12]
