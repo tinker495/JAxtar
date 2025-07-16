@@ -77,8 +77,10 @@ class SearchResult:
     Attributes:
         hashtable (HashTable): Stores all encountered states for efficient lookup
         priority_queue (BGPQ): Priority queue for ordering state expansions
-        min_key_buffer (chex.Array): Buffer for minimum keys in the priority queue
-        min_val_buffer (Current_with_Parent): Buffer for minimum values in the priority queue
+        pop_ratio (float): The final pop ratio for the search, controlling the
+                beam width. It is used to calculate a multiplier `M = max(1.0 + pop_ratio, 1.01)`.
+                The search beam will include all nodes with a cost up to `min_cost * M`.
+        min_pop (int): Minimum number of states to pop from the priority queue
         cost (chex.Array): Cost array tracking path costs to each state (g value)
         dist (chex.Array): Distance array storing calculated heuristic or Q values
         parent (Parent): Array storing parent state indices for path reconstruction
@@ -89,6 +91,7 @@ class SearchResult:
     hashtable: HashTable  # hash table
     priority_queue: BGPQ  # priority queue
     pop_ratio: float  # ratio of states to pop from the priority queue
+    min_pop: int  # minimum number of states to pop from the priority queue
     cost: chex.Array  # cost array - g value
     dist: chex.Array  # distance array - calculated heuristic or Q value
     parent: Xtructurable | Parent  # parent array
@@ -100,7 +103,12 @@ class SearchResult:
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2))
     def build(
-        statecls: Puzzle.State, batch_size: int, max_nodes: int, pop_ratio: float = jnp.inf, seed=42
+        statecls: Puzzle.State,
+        batch_size: int,
+        max_nodes: int,
+        pop_ratio: float = jnp.inf,
+        min_pop: int = 1,
+        seed=42,
     ):
         """
         Creates a new instance of SearchResult with initialized data structures.
@@ -109,10 +117,15 @@ class SearchResult:
             statecls (Puzzle.State): The state class for the puzzle being solved
             batch_size (int): Size of batches for parallel processing
             max_nodes (int): Maximum number of nodes to store
-            pop_ratio (float): Controls the search beam width. Nodes are expanded if their cost is
-                within `pop_ratio` percent of the best node's cost. For instance, 0.1 allows for a
-                10% margin. A value of 'inf' corresponds to a fixed-width beam search determined
-                by the batch size.
+            pop_ratio (float): Controls the search beam width. It is used to calculate
+                a multiplier `M = max(1.0 + pop_ratio, 1.01)`. The search beam will
+                include all nodes with a cost up to `min_cost * M`.
+                - `pop_ratio = 0`: Results in a narrow beam (`M=1.01`).
+                - `pop_ratio > 0`: Creates a wider beam. A larger `pop_ratio`
+                                 results in a wider beam.
+                - `pop_ratio = inf`: Effectively becomes batched A*, processing all
+                                 available nodes in the batch.
+            min_pop (int): Minimum number of nodes to pop from the priority queue.
             seed (int): Random seed for hash function initialization
 
         Returns:
@@ -139,7 +152,8 @@ class SearchResult:
         return SearchResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
-            pop_ratio=jnp.maximum(1.0 + pop_ratio, 1.1),  # minimum 10% margin
+            pop_ratio=jnp.maximum(1.0 + pop_ratio, 1.01),
+            min_pop=min_pop,
             cost=cost,
             dist=dist,
             parent=parent,
@@ -221,17 +235,10 @@ class SearchResult:
             pq_not_empty = search_result.priority_queue.size > 0
             batch_has_empty_slots = jnp.isinf(key).any()
 
-            # Early exit if a node exceeds the pop_ratio threshold
-            best_key = key[0]
-            threshold = best_key * search_result.pop_ratio + 1e-6
-            finite_keys_mask = jnp.isfinite(key)
-            exceeds_threshold = jnp.any(jnp.where(finite_keys_mask, key, -jnp.inf) > threshold)
-
-            # Continue if PQ is not empty, batch has slots, and no node has exceeded the threshold
-            return jnp.logical_and(
-                pq_not_empty,
-                jnp.logical_and(batch_has_empty_slots, jnp.logical_not(exceeds_threshold)),
-            )
+            # For pop_ratio = inf, we don't check threshold and fill the batch completely.
+            # For other cases, we can stop early, but the final filtering is done later.
+            # This loop is mainly for ensuring we have enough candidates to select from.
+            return jnp.logical_and(pq_not_empty, batch_has_empty_slots)
 
         def _body(state):
             search_result, key, val, _, _ = state
@@ -268,7 +275,13 @@ class SearchResult:
 
         # Identify nodes to process now vs. nodes to return to PQ
         process_mask = jnp.less_equal(min_key, threshold)
-        final_process_mask = jnp.logical_and(filled, process_mask)
+        base_process_mask = jnp.logical_and(filled, process_mask)
+
+        # Enforce min_pop: ensure that we pop at least min_pop nodes if they are available.
+        min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= search_result.min_pop, filled)
+
+        # The final mask includes nodes within the threshold OR nodes to meet min_pop.
+        final_process_mask = jnp.logical_or(base_process_mask, min_pop_mask)
 
         # Separate the nodes to be returned and re-insert them into the PQ
         return_keys = jnp.where(final_process_mask, jnp.inf, min_key)

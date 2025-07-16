@@ -39,6 +39,15 @@ def astar_builder(
 
     statecls = puzzle.State
 
+    # min_pop determines the minimum number of states to pop from the priority queue in each batch.
+    # This value is set to optimize the efficiency of batched operations.
+    # By ensuring that at least this many states are processed together,
+    # we maximize parallelism and hardware utilization,
+    # which is especially important for JAX and accelerator-based computation.
+    # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
+    # so that each batch is filled as evenly as possible and computational resources are used efficiently.
+    min_pop = batch_size // (puzzle.action_size // 2)
+
     def astar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
@@ -47,7 +56,7 @@ def astar_builder(
         astar is the implementation of the A* algorithm.
         """
         search_result: SearchResult = SearchResult.build(
-            statecls, batch_size, max_nodes, pop_ratio=pop_ratio
+            statecls, batch_size, max_nodes, pop_ratio=pop_ratio, min_pop=min_pop
         )
 
         (
