@@ -94,4 +94,4 @@ class TSPQ(QFunction):
 
             return h1 + h2 + h_mst
 
-        return jax.lax.cond(all_visited, lambda _: if_distance, lambda _: not_solved(), None)
+        return jax.lax.cond(all_visited, lambda: if_distance, not_solved)

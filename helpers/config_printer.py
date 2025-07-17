@@ -92,5 +92,7 @@ def print_config(title: str, config: dict):
                 renderables.append(item_grid)
         layout = Columns(renderables, equal=True, expand=True) if renderables else Text("")
 
-    panel = Panel(layout, title=f"[bold green]{title}[/bold green]", border_style="dim")
+    panel = Panel(
+        layout, title=f"[bold green]{title}[/bold green]", border_style="dim", expand=False
+    )
     console.print(panel)

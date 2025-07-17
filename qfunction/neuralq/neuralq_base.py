@@ -25,6 +25,7 @@ from qfunction.q_base import QFunction
 class QModelBase(nn.Module):
     action_size: int = 4
     Res_N: int = 4
+    hidden_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact
@@ -32,11 +33,11 @@ class QModelBase(nn.Module):
         x = nn.Dense(5000, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         x = nn.relu(x)
-        x = nn.Dense(1000, dtype=DTYPE)(x)
+        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         x = nn.relu(x)
         for _ in range(self.Res_N):
-            x = ResBlock(1000, norm_fn=self.norm_fn)(x, training)
+            x = ResBlock(self.hidden_dim, norm_fn=self.norm_fn)(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
@@ -51,14 +52,13 @@ class NeuralQFunctionBase(QFunction):
         model: nn.Module = QModelBase,
         init_params: bool = True,
         path: str = None,
-        norm_fn=None,
         **kwargs,
     ):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
         self.action_size = self._get_action_size()
-        resolved_norm_fn = get_norm_fn(norm_fn)
-        self.model = model(self.action_size, norm_fn=resolved_norm_fn, **kwargs)
+        kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
+        self.model = model(self.action_size, **kwargs)
         self.path = path
         self.metadata = {}
         if path is not None:
