@@ -241,15 +241,15 @@ def search_samples(
                     "[bold blue]Target State[/bold blue]",
                 )
                 states_grid.add_row(
-                    state.str(solve_config=solve_config),
+                    Text.from_ansi(state.str(solve_config=solve_config)),
                     Align.center("[bold blue] → [/bold blue]", vertical="middle"),
-                    str(solve_config),
+                    Text.from_ansi(str(solve_config)),
                 )
                 grid.add_row(states_grid)
             else:
                 grid.add_column()
                 grid.add_row(Align.center("[bold blue]Start State[/bold blue]"))
-                grid.add_row(state.str(solve_config=solve_config))
+                grid.add_row(Text.from_ansi(state.str(solve_config=solve_config)))
 
             grid.add_row(
                 Text.assemble(Text("Dist: ", style="bold"), dist_fn_format(puzzle, dist_values))
@@ -269,7 +269,11 @@ def search_samples(
 
         if not has_target and solved:
             solved_st = search_result.get_state(search_result.solved_idx)
-            console.print(Panel(str(solved_st), title="[bold green]Solution State[/bold green]"))
+            console.print(
+                Panel(
+                    Text.from_ansi(str(solved_st)), title="[bold green]Solution State[/bold green]"
+                )
+            )
 
         total_search_times.append(single_search_time)
         total_states.append(search_result.generated_size)
@@ -321,7 +325,9 @@ def search_samples(
                         panel_content = Table.grid(expand=False)
                         panel_content.add_row(
                             Align.center(
-                                f"{search_result.get_state(p).str(solve_config=solve_config)}"
+                                Text.from_ansi(
+                                    search_result.get_state(p).str(solve_config=solve_config)
+                                )
                             )
                         )
                         panel_content.add_row(
@@ -342,7 +348,9 @@ def search_samples(
                     final_panel_content = Table.grid(expand=False)
                     final_panel_content.add_row(
                         Align.center(
-                            f"{search_result.get_state(path[-1]).str(solve_config=solve_config)}"
+                            Text.from_ansi(
+                                search_result.get_state(path[-1]).str(solve_config=solve_config)
+                            )
                         )
                     )
                     final_panel_content.add_row(Align.center("[bold green]Solved![/bold green]"))
@@ -500,10 +508,10 @@ def vmapped_search_samples(
     states, solve_configs = vmapping_init_target(puzzle, vmap_size, seeds)
 
     grid = Table.grid(expand=False)
-    grid.add_row(states.str(solve_config=solve_configs))
+    grid.add_row(Text.from_ansi(states.str(solve_config=solve_configs)))
     if has_target:
         grid.add_row(Align.center("[bold blue]↓[/bold blue]\n", vertical="middle"))
-        grid.add_row(str(solve_configs))
+        grid.add_row(Text.from_ansi(str(solve_configs)))
     console.print(Panel(grid, title="[bold blue]Vmapped Search Setup[/bold blue]", expand=False))
 
     start = time.time()
@@ -517,7 +525,7 @@ def vmapped_search_samples(
         grid = Table.grid(expand=False)
         grid.add_column()
         grid.add_row(Align.center("[bold green]Solution State[/bold green]"))
-        grid.add_row(str(solved_st))
+        grid.add_row(Text.from_ansi(str(solved_st)))
         console.print(Panel(grid, title="[bold green]Vmapped Solution[/bold green]", expand=False))
 
     search_states = jnp.sum(search_result.generated_size)

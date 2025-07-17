@@ -2,7 +2,7 @@ numpy
 opencv-python
 imageio
 click
-rich @ git+https://github.com/tinker495/rich.git
+rich
 pre-commit
 pytest
 jax
