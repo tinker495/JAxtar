@@ -402,7 +402,11 @@ def spr_davi(
     )
 
     steps = train_options.steps
-    update_interval = train_options.update_interval
+    update_interval = (
+        train_options.update_interval
+        * train_options.dataset_batch_size
+        // train_options.train_minibatch_size
+    )
     reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
@@ -572,7 +576,11 @@ def spr_qlearning(
     )
 
     steps = train_options.steps
-    update_interval = train_options.update_interval
+    update_interval = (
+        train_options.update_interval
+        * train_options.dataset_batch_size
+        // train_options.train_minibatch_size
+    )
     reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
