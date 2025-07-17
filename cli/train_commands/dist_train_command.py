@@ -424,7 +424,7 @@ def spr_davi(
         optimizer,
         train_options.using_importance_sampling,
         spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
-        ema_tau=(1 - 1 / (update_interval * 50.0)) if train_options.use_soft_update else 1.0,
+        ema_tau=(1 - 1 / (update_interval * 50.0)),
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
@@ -594,7 +594,7 @@ def spr_qlearning(
         optimizer,
         train_options.using_importance_sampling,
         spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
-        ema_tau=(1 - 1 / (update_interval * 50.0)) if train_options.use_soft_update else 1.0,
+        ema_tau=(1 - 1 / (update_interval * 50.0)),
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
