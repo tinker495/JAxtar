@@ -29,9 +29,11 @@ def qfunction_dist_format(puzzle, qvalues) -> Text:
     action_len = qvalues.shape[0]
 
     def format_part(i):
-        action_str = f"'{puzzle.action_to_string(i)}'"
+        action_str = Text.from_ansi(f"'{puzzle.action_to_string(i)}'")
+        if action_str.style == "":
+            action_str.style = "green"
         q_value = f"{float(qvalues[i]):.1f}"
-        return Text.assemble((action_str, "green"), (": ", "white"), (q_value, "magenta"))
+        return Text.assemble(action_str, (": ", "white"), (Text(q_value, "magenta")))
 
     if action_len <= 6:
         parts = [format_part(i) for i in range(action_len)]

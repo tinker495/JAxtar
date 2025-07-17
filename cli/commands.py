@@ -331,7 +331,9 @@ def search_samples(
                             )
                         )
                         panel_content.add_row(
-                            Align.center(f"Action: {puzzle.action_to_string(p.action)}")
+                            Align.center(
+                                Text.from_ansi(f"Action: {puzzle.action_to_string(p.action)}")
+                            )
                         )
                         panel_content = Align.center(panel_content)
                         solution_panels.append(
