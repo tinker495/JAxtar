@@ -573,6 +573,12 @@ def dist_spr_heuristic_options(func: callable) -> callable:
         default=None,
         help="Path to the heuristic parameter file.",
     )
+    @click.option(
+        "--neural_config",
+        type=str,
+        default=None,
+        help="Neural configuration. Overrides the default configuration.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
@@ -593,11 +599,19 @@ def dist_spr_heuristic_options(func: callable) -> callable:
                     param_path = heuristic_config.path_template.format(size=puzzle.size)
                 else:
                     param_path = heuristic_config.path_template
+
+            neural_config_override = kwargs.pop("neural_config")
+            final_neural_config = heuristic_config.neural_config.copy()
+            if neural_config_override is not None:
+                final_neural_config.update(json.loads(neural_config_override))
+            heuristic_config.neural_config = final_neural_config
+
             heuristic: SPRNeuralHeuristic = heuristic_config.callable(
                 puzzle=puzzle,
                 path=param_path,
                 init_params=reset,
                 norm_fn=heuristic_config.norm_fn,
+                **heuristic_config.neural_config,
             )
         else:
             # fallback for legacy direct callable
@@ -616,6 +630,12 @@ def dist_spr_qfunction_options(func: callable) -> callable:
         type=str,
         default=None,
         help="Path to the Q-function parameter file.",
+    )
+    @click.option(
+        "--neural_config",
+        type=str,
+        default=None,
+        help="Neural configuration. Overrides the default configuration.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -647,8 +667,19 @@ def dist_spr_qfunction_options(func: callable) -> callable:
             param_path = None
             if hasattr(q_config, "path_template"):
                 param_path = q_config.path_template.format(size=puzzle.size)
+
+            neural_config_override = kwargs.pop("neural_config")
+            final_neural_config = q_config.neural_config.copy()
+            if neural_config_override is not None:
+                final_neural_config.update(json.loads(neural_config_override))
+            q_config.neural_config = final_neural_config
+
             qfunction: SPRNeuralQFunction = q_config.callable(
-                puzzle=puzzle, path=param_path, init_params=reset, norm_fn=q_config.norm_fn
+                puzzle=puzzle,
+                path=param_path,
+                init_params=reset,
+                norm_fn=q_config.norm_fn,
+                **q_config.neural_config,
             )
         kwargs["qfunction"] = qfunction
         kwargs["with_policy"] = q_opts.with_policy

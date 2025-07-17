@@ -424,7 +424,7 @@ def spr_davi(
         optimizer,
         train_options.using_importance_sampling,
         spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
-        ema_tau=(1 - 1 / (update_interval * 50.0)),
+        ema_tau=(1 - 1 / (update_interval * 50.0)) if train_options.use_soft_update else 1.0,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
@@ -441,6 +441,7 @@ def spr_davi(
     )
 
     pbar = trange(steps)
+    updated = False
     last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -487,7 +488,16 @@ def spr_davi(
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
 
-        if i - last_reset_time >= reset_interval and i < steps * 2 / 3:
+        if not train_options.use_soft_update:
+            if (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
+                target_heuristic_params = heuristic_params
+                updated = True
+                if train_options.opt_state_reset:
+                    opt_state = optimizer.init(heuristic_params)
+        else:
+            updated = True
+
+        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
             last_reset_time = i
             heuristic_params = scaled_by_reset(
                 heuristic_params,
@@ -495,6 +505,7 @@ def spr_davi(
                 train_options.tau,
             )
             opt_state = optimizer.init(heuristic_params)
+            updated = False
 
         if i % (steps // 5) == 0 and i != 0:
             heuristic.params = heuristic_params
@@ -505,40 +516,19 @@ def spr_davi(
     heuristic.save_model(path=backup_path)
 
     # Evaluation
-    eval_seeds = list(range(eval_options.num_eval))
-    if eval_seeds:
-        eval_config = {
-            "search_algorithm": "A*",
-            "eval_options": eval_options,
-            "num_eval": len(eval_seeds),
-            "seeds": tuple(eval_seeds),
-        }
-        print_config("SPR-DAVI Evaluation Configuration", eval_config)
-
-        # Handle multiple pop_ratios as in davi
-        pop_ratios = getattr(eval_options, "pop_ratio", None)
-        if pop_ratios is None or not isinstance(pop_ratios, list):
-            pop_ratios = [pop_ratios] if pop_ratios is not None else [None]
-        all_results = []
-        for pr in pop_ratios:
-            astar_fn = astar_builder(
-                puzzle,
-                heuristic,
-                eval_options.batch_size,
-                eval_options.get_max_node_size(),
-                pop_ratio=pr,
-                cost_weight=eval_options.cost_weight,
-            )
-            results = run_evaluation(
-                search_fn=astar_fn,
-                puzzle=puzzle,
-                seeds=eval_seeds,
-            )
-            if pr is not None:
-                for r in results:
-                    r["pop_ratio"] = pr
-            all_results.extend(results)
-        logger.log_evaluation_results(all_results, steps)
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=heuristic,
+            search_model_name="heuristic",
+            search_builder_fn=astar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            **kwargs,
+        )
 
     logger.close()
 
@@ -604,7 +594,7 @@ def spr_qlearning(
         optimizer,
         train_options.using_importance_sampling,
         spr_loss_weight=kwargs.get("spr_loss_weight", 0.1),
-        ema_tau=(1 - 1 / (update_interval * 50.0)),
+        ema_tau=(1 - 1 / (update_interval * 50.0)) if train_options.use_soft_update else 1.0,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
@@ -623,6 +613,7 @@ def spr_qlearning(
     )
 
     pbar = trange(steps)
+    updated = False
     last_reset_time = 0
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -668,7 +659,16 @@ def spr_qlearning(
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
 
-        if i - last_reset_time >= reset_interval and i < steps * 2 / 3:
+        if not train_options.use_soft_update:
+            if (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
+                target_qfunc_params = qfunc_params
+                updated = True
+                if train_options.opt_state_reset:
+                    opt_state = optimizer.init(qfunc_params)
+        else:
+            updated = True
+
+        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
             last_reset_time = i
             qfunc_params = scaled_by_reset(
                 qfunc_params,
@@ -676,6 +676,7 @@ def spr_qlearning(
                 train_options.tau,
             )
             opt_state = optimizer.init(qfunc_params)
+            updated = False
 
         if i % (steps // 5) == 0 and i != 0:
             qfunction.params = qfunc_params
@@ -686,39 +687,18 @@ def spr_qlearning(
     qfunction.save_model(path=backup_path)
 
     # Evaluation
-    eval_seeds = list(range(eval_options.num_eval))
-    if eval_seeds:
-        eval_config = {
-            "search_algorithm": "Q*",
-            "eval_options": eval_options,
-            "num_eval": len(eval_seeds),
-            "seeds": tuple(eval_seeds),
-        }
-        print_config("Q-Learning Evaluation Configuration", eval_config)
-
-        # Handle multiple pop_ratios as in qlearning
-        pop_ratios = getattr(eval_options, "pop_ratio", None)
-        if pop_ratios is None or not isinstance(pop_ratios, list):
-            pop_ratios = [pop_ratios] if pop_ratios is not None else [None]
-        all_results = []
-        for pr in pop_ratios:
-            qstar_fn = qstar_builder(
-                puzzle,
-                qfunction,
-                eval_options.batch_size,
-                eval_options.get_max_node_size(),
-                pop_ratio=pr,
-                cost_weight=eval_options.cost_weight,
-            )
-            results = run_evaluation(
-                search_fn=qstar_fn,
-                puzzle=puzzle,
-                seeds=eval_seeds,
-            )
-            if pr is not None:
-                for r in results:
-                    r["pop_ratio"] = pr
-            all_results.extend(results)
-        logger.log_evaluation_results(all_results, steps)
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=qfunction,
+            search_model_name="qfunction",
+            search_builder_fn=qstar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            **kwargs,
+        )
 
     logger.close()
