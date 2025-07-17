@@ -32,7 +32,7 @@ def load_params_with_metadata(path: str) -> Tuple[Any, Dict[str, Any]]:
 
         # New format: dictionary with 'params' and 'metadata' keys
         if isinstance(loaded_content, dict) and "metadata" in loaded_content:
-            return loaded_content, loaded_content.get("metadata", {})
+            return loaded_content.get("params", None), loaded_content.get("metadata", {})
         # Old format: just the parameters directly
         else:
             # Validate if the old format content is a non-empty dictionary (typical Flax params)
