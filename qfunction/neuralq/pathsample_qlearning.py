@@ -178,6 +178,7 @@ def _get_datasets_with_pathsample(
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
     actions = shuffled_path["actions"]
+    action_costs = shuffled_path["action_costs"]
     move_costs = shuffled_path["move_costs"]
 
     minibatched_solve_configs = jax.tree_util.tree_map(
@@ -190,14 +191,15 @@ def _get_datasets_with_pathsample(
         lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), actions
     )
     minibatched_move_costs = move_costs.reshape((-1, minibatch_size, *move_costs.shape[1:]))
+    minibatched_action_costs = action_costs.reshape((-1, minibatch_size, *action_costs.shape[1:]))
 
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
-        solve_configs, states, actions, move_costs = vals
+        solve_configs, states, actions, move_costs, action_costs = vals
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        target_q = jnp.maximum(move_costs - 1.0, 0.0)
+        target_q = jnp.maximum(move_costs - action_costs, 0.0)
         target_q = jnp.where(solved, 0.0, target_q)
 
         return key, (preproc, target_q, actions)
@@ -210,6 +212,7 @@ def _get_datasets_with_pathsample(
             minibatched_states,
             minibatched_actions,
             minibatched_move_costs,
+            minibatched_action_costs,
         ),
     )
 
