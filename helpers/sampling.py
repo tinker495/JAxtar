@@ -246,38 +246,40 @@ def create_hindsight_target_triangular_shuffled_path(
     actions = trajectory["actions"]  # [L, P]
     action_costs = trajectory["action_costs"]  # [L, P]
 
-    # For each starting point i, uniformly sample a future point j.
-    start_indices = jnp.arange(shuffle_length)  # [L]
+    # Uniformly sample path length `k` and then a valid starting point `i`.
+    # This ensures that the distribution of path lengths `k` is uniform.
+    key, key_k, key_i = jax.random.split(key, 3)
 
-    key, subkey = jax.random.split(key)
-    # Generate random floats for each start_idx and each parallel trajectory
-    random_floats = jax.random.uniform(subkey, shape=(shuffle_length, shuffle_parallel))  # [L, P]
+    # 1. Sample path lengths `k` uniformly from [1, L]
+    k = jax.random.randint(
+        key_k,
+        shape=(shuffle_length, shuffle_parallel),
+        minval=1,
+        maxval=shuffle_length + 1,
+    )  # [L, P]
 
-    # Number of choices for each start_idx `i` is (shuffle_length - i)
-    num_choices = (shuffle_length - start_indices)[:, jnp.newaxis]  # [L, 1]
+    # 2. For each `k`, sample start_index `i` uniformly from [0, L-k]
+    random_floats = jax.random.uniform(key_i, shape=(shuffle_length, shuffle_parallel))  # [L, P]
+    max_start_idx = shuffle_length - k
+    start_indices = (random_floats * (max_start_idx + 1)).astype(jnp.int32)  # [L, P]
 
-    # j_offset is in [0, L-i-1]
-    j_offset = (random_floats * num_choices).astype(jnp.int32)  # [L, P]
+    # 3. The target_index `j` is simply i + k
+    target_indices = start_indices + k  # [L, P]
 
-    # Calculate target indices `j = i + 1 + offset`
-    start_indices_grid = start_indices[:, jnp.newaxis]  # [L, 1]
-    target_indices = start_indices_grid + 1 + j_offset  # [L, P]
-
-    start_indices_flat = jnp.tile(start_indices_grid, (1, shuffle_parallel))  # [L, P]
     parallel_indices = jnp.tile(
         jnp.arange(shuffle_parallel)[None, :], (shuffle_length, 1)
     )  # [L, P]
 
     # Gather data using the sampled indices
-    start_states = states[start_indices_flat, parallel_indices]
+    start_states = states[start_indices, parallel_indices]
     target_states = states[target_indices, parallel_indices]
 
-    start_move_costs = move_costs[start_indices_flat, parallel_indices]
+    start_move_costs = move_costs[start_indices, parallel_indices]
     target_move_costs = move_costs[target_indices, parallel_indices]
     final_move_costs = target_move_costs - start_move_costs
 
-    final_actions = actions[start_indices_flat, parallel_indices]
-    final_action_costs = action_costs[start_indices_flat, parallel_indices]
+    final_actions = actions[start_indices, parallel_indices]
+    final_action_costs = action_costs[start_indices, parallel_indices]
 
     # Apply hindsight transform
     tiled_solve_configs = jax.tree_util.tree_map(
