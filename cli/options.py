@@ -270,7 +270,10 @@ def heuristic_options(func: callable) -> callable:
                     param_path = heuristic_config.path_template
 
             heuristic: Heuristic = heuristic_config.callable(
-                puzzle=puzzle, path=param_path, init_params=False, norm_fn=heuristic_config.norm_fn
+                puzzle=puzzle,
+                path=param_path,
+                init_params=False,
+                **heuristic_config.neural_config,
             )
         else:
             heuristic_callable = puzzle_bundle.heuristic
@@ -317,7 +320,10 @@ def qfunction_options(func: callable) -> callable:
                     param_path = q_config.path_template
 
             qfunction: QFunction = q_config.callable(
-                puzzle=puzzle, path=param_path, init_params=False, norm_fn=q_config.norm_fn
+                puzzle=puzzle,
+                path=param_path,
+                init_params=False,
+                **q_config.neural_config,
             )
         else:
             q_callable = puzzle_bundle.q_function
@@ -460,6 +466,12 @@ def dist_heuristic_options(func: callable) -> callable:
         default=None,
         help="Path to the heuristic parameter file.",
     )
+    @click.option(
+        "--neural_config",
+        type=dict,
+        default=None,
+        help="Neural configuration. Overrides the default configuration.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
@@ -477,7 +489,10 @@ def dist_heuristic_options(func: callable) -> callable:
             param_path = heuristic_config.path_template.format(size=puzzle.size)
 
         heuristic: NeuralHeuristicBase = heuristic_config.callable(
-            puzzle=puzzle, path=param_path, init_params=reset, norm_fn=heuristic_config.norm_fn
+            puzzle=puzzle,
+            path=param_path,
+            init_params=reset,
+            **heuristic_config.neural_config,
         )
         kwargs["heuristic"] = heuristic
         kwargs["heuristic_config"] = heuristic_config
@@ -493,6 +508,12 @@ def dist_qfunction_options(func: callable) -> callable:
         type=str,
         default=None,
         help="Path to the Q-function parameter file.",
+    )
+    @click.option(
+        "--neural_config",
+        type=dict,
+        default=None,
+        help="Neural configuration. Overrides the default configuration.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -517,7 +538,10 @@ def dist_qfunction_options(func: callable) -> callable:
             param_path = q_config.path_template.format(size=puzzle.size)
 
         qfunction: NeuralQFunctionBase = q_config.callable(
-            puzzle=puzzle, path=param_path, init_params=reset, norm_fn=q_config.norm_fn
+            puzzle=puzzle,
+            path=param_path,
+            init_params=reset,
+            **q_config.neural_config,
         )
         kwargs["qfunction"] = qfunction
         kwargs["with_policy"] = q_opts.with_policy

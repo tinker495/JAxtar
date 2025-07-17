@@ -144,7 +144,11 @@ class WMTrainOptions(BaseModel):
 class NeuralCallableConfig(BaseModel):
     callable: Callable
     path_template: str
-    norm_fn: Optional[Union[str, Callable]] = "batch"
+    neural_config: Optional[dict] = {
+        "norm_fn": "batch",
+        "Res_N": 4,
+        "hidden_dim": 1000,
+    }
 
     class Config:
         arbitrary_types_allowed = True
