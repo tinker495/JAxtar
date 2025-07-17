@@ -24,6 +24,10 @@ from JAxtar.qstar import qstar_builder
 from neural_util.optimizer import setup_optimizer
 from neural_util.target_update import scaled_by_reset, soft_update
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+from qfunction.neuralq.pathsample_qlearning import (
+    get_qlearning_pathsample_dataset_builder,
+    pathsample_qlearning_builder,
+)
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 
 from ..options import (
@@ -324,6 +328,131 @@ def qlearning(
             )
             opt_state = optimizer.init(qfunc_params)
             updated = False
+
+        if i % (steps // 5) == 0 and i != 0:
+            qfunction.params = qfunc_params
+            backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
+            qfunction.save_model(path=backup_path)
+    qfunction.params = qfunc_params
+    backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
+    qfunction.save_model(path=backup_path)
+
+    # Evaluation
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=qfunction,
+            search_model_name="qfunction",
+            search_builder_fn=qstar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            **kwargs,
+        )
+
+    logger.close()
+
+
+@click.command()
+@dist_puzzle_options
+@dist_train_options
+@dist_qfunction_options
+@eval_options
+def pathsample_qlearning(
+    puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
+    qfunction: NeuralQFunctionBase,
+    puzzle_name: str,
+    train_options: DistTrainOptions,
+    shuffle_length: int,
+    eval_options: EvalOptions,
+    q_config: NeuralCallableConfig,
+    **kwargs,
+):
+    config = {
+        "puzzle_options": puzzle_opts,
+        "train_options": train_options,
+        "eval_options": eval_options,
+        "q_config": q_config,
+    }
+    print_config("Pathsample Q-Learning Training Configuration", config)
+    logger = TensorboardLogger(f"{puzzle_name}-dist-pathsample-q-train", config)
+    key = jax.random.PRNGKey(
+        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
+    )
+    key, subkey = jax.random.split(key)
+
+    qfunc_model = qfunction.model
+    qfunc_params = qfunction.params
+
+    steps = train_options.steps
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
+    n_devices = jax.device_count()
+    if train_options.multi_device and n_devices > 1:
+        steps = steps // n_devices
+        update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
+        print(f"Training with {n_devices} devices")
+
+    optimizer, opt_state = setup_optimizer(
+        qfunc_params,
+        n_devices,
+        steps,
+        train_options.dataset_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
+    )
+    pathsample_qlearning_fn = pathsample_qlearning_builder(
+        train_options.train_minibatch_size,
+        qfunc_model,
+        optimizer,
+        n_devices=n_devices,
+        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+    )
+    get_datasets = get_qlearning_pathsample_dataset_builder(
+        puzzle,
+        qfunction.pre_process,
+        train_options.dataset_batch_size,
+        shuffle_length,
+        train_options.dataset_minibatch_size,
+        train_options.using_hindsight_target,
+        train_options.using_triangular_sampling,
+        n_devices=n_devices,
+    )
+
+    pbar = trange(steps)
+    for i in pbar:
+        key, subkey = jax.random.split(key)
+        dataset = get_datasets(subkey)
+
+        (
+            qfunc_params,
+            opt_state,
+            loss,
+            grad_magnitude,
+            weight_magnitude,
+            q_values,
+        ) = pathsample_qlearning_fn(key, dataset, qfunc_params, opt_state)
+        lr = opt_state.hyperparams["learning_rate"]
+        mean_q_values = jnp.mean(q_values)
+        pbar.set_description(
+            desc="Pathsample Q-Learning Training",
+            desc_dict={
+                "lr": lr,
+                "loss": float(loss),
+                "mean_q_values": float(mean_q_values),
+            },
+        )
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Losses/Loss", loss, i)
+        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        logger.log_scalar("Metrics/Mean Q Values", mean_q_values, i)
+        if i % 100 == 0:
+            logger.log_histogram("Metrics/Target", dataset["target_q"], i)
+            logger.log_histogram("Metrics/Q Values", q_values, i)
 
         if i % (steps // 5) == 0 and i != 0:
             qfunction.params = qfunc_params
