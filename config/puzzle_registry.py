@@ -210,10 +210,12 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         heuristic_spr_config=NeuralCallableConfig(
             callable=RubiksCubeSPRNeuralHeuristic,
             path_template="heuristic/neuralheuristic/spr_model/params/rubikscube-random_{size}.pkl",
+            neural_config={},
         ),
         q_function_spr_config=NeuralCallableConfig(
             callable=RubiksCubeSPRNeuralQ,
             path_template="qfunction/neuralq/spr_model/params/rubikscube-random_{size}.pkl",
+            neural_config={},
         ),
     ),
     "maze": PuzzleBundle(puzzle=Maze, heuristic=MazeHeuristic, q_function=MazeQ),

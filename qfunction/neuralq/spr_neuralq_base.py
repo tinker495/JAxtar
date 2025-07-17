@@ -93,8 +93,8 @@ class SPRQModel(nn.Module):
 
 
 class SPRNeuralQFunction(NeuralQFunctionBase):
-    def __init__(self, puzzle, norm_fn: callable = None, **kwargs):
-        super().__init__(puzzle, model=SPRQModel, norm_fn=norm_fn, **kwargs)
+    def __init__(self, puzzle, **kwargs):
+        super().__init__(puzzle, model=SPRQModel, **kwargs)
 
     def batched_param_q_value(self, params, solve_config, current):
         x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)

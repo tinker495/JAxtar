@@ -574,6 +574,7 @@ def dist_spr_heuristic_options(func: callable) -> callable:
         help="Path to the heuristic parameter file.",
     )
     @click.option(
+        "-nc",
         "--neural_config",
         type=str,
         default=None,
@@ -610,7 +611,6 @@ def dist_spr_heuristic_options(func: callable) -> callable:
                 puzzle=puzzle,
                 path=param_path,
                 init_params=reset,
-                norm_fn=heuristic_config.norm_fn,
                 **heuristic_config.neural_config,
             )
         else:
@@ -632,6 +632,7 @@ def dist_spr_qfunction_options(func: callable) -> callable:
         help="Path to the Q-function parameter file.",
     )
     @click.option(
+        "-nc",
         "--neural_config",
         type=str,
         default=None,
@@ -678,7 +679,6 @@ def dist_spr_qfunction_options(func: callable) -> callable:
                 puzzle=puzzle,
                 path=param_path,
                 init_params=reset,
-                norm_fn=q_config.norm_fn,
                 **q_config.neural_config,
             )
         kwargs["qfunction"] = qfunction
