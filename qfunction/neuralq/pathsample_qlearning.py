@@ -42,7 +42,7 @@ def pathsample_qlearning_builder(
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         loss = quantile_weighted_huber_loss(
-            q_values_at_actions.squeeze(), target_qs.squeeze(), quantile=0.05
+            q_values_at_actions.squeeze(), target_qs.squeeze(), quantile=0.2
         )
         return loss, (new_params, q_values_at_actions)
 
