@@ -25,6 +25,7 @@ from qfunction.q_base import QFunction
 class QModelBase(nn.Module):
     action_size: int = 4
     Res_N: int = 4
+    hidden_N: int = 1
     hidden_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
 
@@ -37,7 +38,7 @@ class QModelBase(nn.Module):
         x = self.norm_fn(x, training)
         x = nn.relu(x)
         for _ in range(self.Res_N):
-            x = ResBlock(self.hidden_dim, norm_fn=self.norm_fn)(x, training)
+            x = ResBlock(self.hidden_dim, norm_fn=self.norm_fn, hidden_N=self.hidden_N)(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)

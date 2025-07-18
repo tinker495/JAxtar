@@ -71,13 +71,16 @@ def get_norm_fn(norm_name_or_fn=None):
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int
+    hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = nn.Dense(self.node_size, dtype=DTYPE)(x0)
-        x = self.norm_fn(x, training)
-        x = nn.relu(x)
+        x = x0
+        for _ in range(self.hidden_N):
+            x = nn.Dense(self.node_size, dtype=DTYPE)(x)
+            x = self.norm_fn(x, training)
+            x = nn.relu(x)
         x = nn.Dense(self.node_size, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         return nn.relu(x + x0)
@@ -88,15 +91,18 @@ class ConvResBlock(nn.Module):
     filters: int
     kernel_size: int
     strides: int
+    hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x0, training=False):
-        x = nn.Conv(
-            self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
-        )(x0)
-        x = self.norm_fn(x, training)
-        x = nn.relu(x)
+        x = x0
+        for _ in range(self.hidden_N):
+            x = nn.Conv(
+                self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
+            )(x)
+            x = self.norm_fn(x, training)
+            x = nn.relu(x)
         x = nn.Conv(
             self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
         )(x)
