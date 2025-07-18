@@ -144,18 +144,27 @@ def davi(
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
 
+        target_updated = False
         if train_options.use_soft_update:
             target_heuristic_params = soft_update(
                 target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
             )
             updated = True
+            if i % update_interval == 0 and i != 0:
+                target_updated = True
         elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
             target_heuristic_params = heuristic_params
             updated = True
             if train_options.opt_state_reset:
                 opt_state = optimizer.init(heuristic_params)
+            target_updated = True
 
-        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
+        if (
+            target_updated
+            and i - last_reset_time >= reset_interval
+            and updated
+            and i < steps * 2 / 3
+        ):
             last_reset_time = i
             heuristic_params = scaled_by_reset(
                 heuristic_params,
@@ -304,18 +313,27 @@ def qlearning(
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
 
+        target_updated = False
         if train_options.use_soft_update:
             target_qfunc_params = soft_update(
                 target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
             )
             updated = True
+            if i % update_interval == 0 and i != 0:
+                target_updated = True
         elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
             target_qfunc_params = qfunc_params
             updated = True
             if train_options.opt_state_reset:
                 opt_state = optimizer.init(qfunc_params)
+            target_updated = True
 
-        if i - last_reset_time >= reset_interval and updated and i < steps * 2 / 3:
+        if (
+            target_updated
+            and i - last_reset_time >= reset_interval
+            and updated
+            and i < steps * 2 / 3
+        ):
             last_reset_time = i
             qfunc_params = scaled_by_reset(
                 qfunc_params,
