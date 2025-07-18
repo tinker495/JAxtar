@@ -140,7 +140,6 @@ class WorldModelPuzzleBase(Puzzle):
         WM=WorldModel,
         init_params: bool = False,
         path: str = None,
-        norm_fn=None,
         **kwargs,
     ):
         self.data_path = data_path
@@ -154,7 +153,7 @@ class WorldModelPuzzleBase(Puzzle):
         self.action_size = action_size
         self.path = path
         self.metadata = {}
-        resolved_norm_fn = get_norm_fn(norm_fn)
+        kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
 
         class total_model(nn.Module):
             autoencoder: AutoEncoder
@@ -213,12 +212,14 @@ class WorldModelPuzzleBase(Puzzle):
 
         self.model = total_model(
             autoencoder=AE(
-                data_shape=self.data_shape, latent_shape=self.latent_shape, norm_fn=resolved_norm_fn
+                data_shape=self.data_shape,
+                latent_shape=self.latent_shape,
+                **kwargs,
             ),
             world_model=WM(
                 latent_shape=self.latent_shape,
                 action_size=self.action_size,
-                norm_fn=resolved_norm_fn,
+                **kwargs,
             ),
         )
 
