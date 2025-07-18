@@ -21,22 +21,19 @@ from xtructure import xtructure_numpy as xnp
 from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers import human_format
 from helpers.config_printer import print_config
+from helpers.logger import TensorboardLogger
+from helpers.metrics import calculate_heuristic_metrics
 from helpers.plots import (
     plot_comparison_analysis,
     plot_expansion_distribution,
     plot_heuristic_accuracy,
     plot_nodes_generated_by_path_cost,
     plot_path_cost_distribution,
-    plot_pop_ratio_analysis,
     plot_search_time_by_path_cost,
 )
 from helpers.results import save_evaluation_results
 from helpers.rich_progress import trange
-from helpers.summaries import (
-    create_comparison_summary_panel,
-    create_pop_ratio_summary_panel,
-    create_summary_panel,
-)
+from helpers.summaries import create_comparison_summary_panel, create_summary_panel
 from heuristic.heuristic_base import Heuristic
 from JAxtar.astar import astar_builder
 from JAxtar.qstar import qstar_builder
@@ -182,6 +179,8 @@ def _run_evaluation_sweep(
     eval_options: EvalOptions,
     puzzle_opts: PuzzleOptions,
     output_dir: Optional[Path] = None,
+    logger: Optional[TensorboardLogger] = None,
+    step: int = 0,
     **kwargs,
 ):
     console = Console()
@@ -223,8 +222,8 @@ def _run_evaluation_sweep(
     sub_run_dirs = []
     for i, (pr, cw, bs) in enumerate(param_combinations):
         run_dir = main_run_dir
+        run_name = f"pr_{pr}_cw_{cw}_bs_{bs}".replace("inf", "Infinity")
         if is_sweep:
-            run_name = f"pr_{pr}_cw_{cw}_bs_{bs}".replace("inf", "Infinity")
             run_dir = main_run_dir / run_name
             sub_run_dirs.append(str(run_dir))
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -266,39 +265,65 @@ def _run_evaluation_sweep(
             r["cost_weight"] = cw
             r["batch_size"] = bs
 
+        # Calculate and store heuristic metrics
+        heuristic_metrics = calculate_heuristic_metrics(results)
+        if heuristic_metrics:
+            config["heuristic_metrics"] = heuristic_metrics
+
         save_evaluation_results(results=results, run_dir=run_dir, config=config)
 
         solved_df = pd.DataFrame([r for r in results if r["solved"]])
         if not is_sweep:
-            console.print(create_summary_panel(results))
+            console.print(create_summary_panel(results, heuristic_metrics))
 
         if not solved_df.empty:
-            is_pop_ratio_list = (
-                isinstance(eval_options.pop_ratio, list) and len(eval_options.pop_ratio) > 1
-            )
-            if is_pop_ratio_list and not is_sweep:
-                console.print(create_pop_ratio_summary_panel(results))
-                plots = plot_pop_ratio_analysis(
-                    solved_df, scatter_max_points=eval_options.scatter_max_points
+            fig = plot_path_cost_distribution(solved_df)
+            fig.savefig(run_dir / "path_cost_distribution.png")
+            if logger:
+                logger.log_figure(f"Comparison/{run_name}/path_cost_distribution", fig, step)
+            plt.close(fig)
+
+            fig = plot_search_time_by_path_cost(solved_df)
+            fig.savefig(run_dir / "search_time_by_path_cost.png")
+            if logger:
+                logger.log_figure(f"Comparison/{run_name}/search_time_by_path_cost", fig, step)
+            plt.close(fig)
+
+            fig = plot_nodes_generated_by_path_cost(solved_df)
+            fig.savefig(run_dir / "nodes_generated_by_path_cost.png")
+            if logger:
+                logger.log_figure(f"Comparison/{run_name}/nodes_generated_by_path_cost", fig, step)
+            plt.close(fig)
+
+            if logger:
+                logger.log_scalar(
+                    f"Comparison/{run_name}/time_to_solve", solved_df["search_time_s"].mean(), step
                 )
-                for plot_name, fig in plots.items():
-                    fig.savefig(run_dir / f"{plot_name}.png")
-                    plt.close(fig)
-            else:
-                fig = plot_path_cost_distribution(solved_df)
-                fig.savefig(run_dir / "path_cost_distribution.png")
-                plt.close(fig)
+                logger.log_scalar(
+                    f"Comparison/{run_name}/nodes_generated",
+                    solved_df["nodes_generated"].mean(),
+                    step,
+                )
+                logger.log_scalar(
+                    f"Comparison/{run_name}/path_cost", solved_df["path_cost"].mean(), step
+                )
 
-                fig = plot_search_time_by_path_cost(solved_df)
-                fig.savefig(run_dir / "search_time_by_path_cost.png")
-                plt.close(fig)
+        if logger:
+            logger.log_scalar(
+                f"Comparison/{run_name}/heuristic_r_squared",
+                heuristic_metrics["r_squared"],
+                step,
+            )
+            logger.log_scalar(
+                f"Comparison/{run_name}/heuristic_ccc",
+                heuristic_metrics["ccc"],
+                step,
+            )
 
-                fig = plot_nodes_generated_by_path_cost(solved_df)
-                fig.savefig(run_dir / "nodes_generated_by_path_cost.png")
-                plt.close(fig)
-
-        fig = plot_heuristic_accuracy(results)
+        fig = plot_heuristic_accuracy(results, metrics=heuristic_metrics)
         fig.savefig(run_dir / "heuristic_accuracy.png")
+        if logger:
+            logger.log_figure(f"Comparison/{run_name}/heuristic_accuracy", fig, step)
         plt.close(fig)
 
         expansion_plot_dir = run_dir / "expansion_plots"
@@ -312,6 +337,10 @@ def _run_evaluation_sweep(
                     [r], scatter_max_points=current_eval_opts.scatter_max_points
                 )
                 fig.savefig(expansion_plot_dir / f"expansion_dist_seed_{r['seed']}.png")
+                if logger:
+                    logger.log_figure(
+                        f"Comparison/{run_name}/expansion_dist_seed_{r['seed']}", fig, step
+                    )
                 plt.close(fig)
                 plots_generated += 1
 
@@ -321,6 +350,8 @@ def _run_evaluation_sweep(
             run_dirs=sub_run_dirs,
             output_dir=main_run_dir,
             scatter_max_points=eval_options.scatter_max_points,
+            logger=logger,
+            step=step,
         )
         console.print(f"Comparison report saved in [bold]{main_run_dir}[/bold]")
 
@@ -386,7 +417,13 @@ def flatten_dict(d: MutableMapping, parent_key: str = "", sep: str = "."):
     return dict(items)
 
 
-def _generate_comparison_report(run_dirs: List[str], output_dir: Path, scatter_max_points: int):
+def _generate_comparison_report(
+    run_dirs: List[str],
+    output_dir: Path,
+    scatter_max_points: int,
+    logger: Optional[TensorboardLogger] = None,
+    step: int = 0,
+):
     console = Console()
     all_dfs = []
     all_configs = {}
@@ -440,6 +477,7 @@ def _generate_comparison_report(run_dirs: List[str], output_dir: Path, scatter_m
                 if col not in priority_params
                 and "metadata" not in col
                 and "puzzle_options" not in col
+                and "heuristic_metrics" not in col
             ]
         )
 
@@ -488,6 +526,16 @@ def _generate_comparison_report(run_dirs: List[str], output_dir: Path, scatter_m
 
     # Results comparison
     combined_df = pd.concat(all_dfs, ignore_index=True)
+
+    # Add heuristic metrics from config to the dataframe for easy access in summaries
+    if "heuristic_metrics.r_squared" in config_df.columns:
+        combined_df = combined_df.merge(
+            config_df[["heuristic_metrics.r_squared", "heuristic_metrics.ccc"]],
+            left_on="run_label",
+            right_index=True,
+            how="left",
+        )
+
     combined_df["run_label"] = combined_df["run_label"].map(run_labels)
 
     console.print(create_comparison_summary_panel(combined_df))
@@ -510,6 +558,8 @@ def _generate_comparison_report(run_dirs: List[str], output_dir: Path, scatter_m
         )
         for plot_name, fig in plots.items():
             fig.savefig(output_dir / f"{plot_name}.png")
+            if logger:
+                logger.log_figure(f"Comparison/{plot_name}", fig, step)
             plt.close(fig)
 
 

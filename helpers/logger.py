@@ -1,25 +1,14 @@
 import os
 import subprocess
 from datetime import datetime
-from pathlib import Path
 
 import aim
 import imageio.v2 as imageio  # For saving images as PNG
 import jax.numpy as jnp
 import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import tensorboardX
 
-from helpers.plots import (
-    plot_heuristic_accuracy,
-    plot_nodes_generated_by_path_cost,
-    plot_path_cost_distribution,
-    plot_pop_ratio_analysis,
-    plot_search_time_by_path_cost,
-)
-from helpers.results import save_evaluation_results
 from helpers.util import convert_to_serializable_dict
 
 matplotlib.use("Agg")
@@ -127,25 +116,18 @@ class TensorboardLogger:
             self.aim_run.track(aim.Text(text), name=tag, step=step)
 
     def log_figure(self, tag: str, figure, step: int):
-        """Logs a Matplotlib figure to TensorBoard and Aim."""
+        """Logs a Matplotlib figure to TensorBoard and as a static image to Aim."""
         self.writer.add_figure(tag, figure, step)
-        if self.aim_run:
-            try:
-                self.aim_run.track(aim.Figure(figure), name=tag, step=step)
-            except ValueError as e:
-                print(
-                    f"Warning: Could not log figure '{tag}' to Aim at step {step}. "
-                    f"This might be due to an incompatibility between matplotlib/seaborn and plotly used by Aim. "
-                    f"The figure will still be logged as a static image. Error: {e}"
-                )
 
-        # Also log as a static image
+        # Convert to image for Aim and for saving as a file
         figure.canvas.draw()
-        # Use buffer_rgba for compatibility, then convert RGBA to RGB
         buf = figure.canvas.buffer_rgba()
         width, height = figure.canvas.get_width_height()
         image_from_plot = np.frombuffer(buf, dtype=np.uint8).reshape((height, width, 4))[..., :3]
-        self.log_image(f"{tag}_image", image_from_plot, step)
+
+        # Log to Aim as image
+        if self.aim_run:
+            self.aim_run.track(aim.Image(image_from_plot), name=tag, step=step)
 
     def _log_summary_metrics(self, results: list[dict], step: int, tag_suffix: str = ""):
         """Helper to log scalar summary metrics for a given set of results."""
@@ -159,6 +141,7 @@ class TensorboardLogger:
             solved_times = [r["search_time_s"] for r in solved_results]
             solved_nodes = [r["nodes_generated"] for r in solved_results]
             solved_paths = [r["path_cost"] for r in solved_results]
+            heuristic_metrics = [r["heuristic_metrics"] for r in solved_results]
             self.log_scalar(
                 f"Evaluation/Avg Search Time (Solved){tag_suffix}",
                 jnp.mean(jnp.array(solved_times)),
@@ -174,58 +157,22 @@ class TensorboardLogger:
                 jnp.mean(jnp.array(solved_paths)),
                 step,
             )
+            self.log_scalar(
+                f"Evaluation/Heuristic R-squared (R²){tag_suffix}",
+                heuristic_metrics["r_squared"],
+                step,
+            )
+            self.log_scalar(
+                f"Evaluation/Heuristic CCC (ρc){tag_suffix}",
+                heuristic_metrics["ccc"],
+                step,
+            )
         else:
-            self.log_scalar(f"Evaluation/Avg Search Time (Solved){tag_suffix}", 0, step)
-            self.log_scalar(f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}", 0, step)
-            self.log_scalar(f"Evaluation/Avg Path Cost{tag_suffix}", 0, step)
-
-    def log_evaluation_results(self, results: list[dict], step: int):
-        """Logs evaluation results to files and logs summary to TensorBoard/Aim."""
-        run_dir = Path(self.log_dir)
-        # Save raw results, config, and path states using the helper
-        save_evaluation_results(results=results, run_dir=run_dir, config=self.config)
-
-        df = pd.DataFrame(results)
-
-        # Log overall summary metrics
-        self._log_summary_metrics(results, step)
-
-        # If pop_ratio column exists, log per-pop_ratio summaries and plots
-        if "pop_ratio" in df.columns and df["pop_ratio"].nunique() > 1:
-            for pr, group in df.groupby("pop_ratio"):
-                self._log_summary_metrics(
-                    group.to_dict("records"), step, tag_suffix=f" (pop_ratio={pr})"
-                )
-
-            solved_df = df[df["solved"]].copy()
-            if not solved_df.empty:
-                scatter_max_points = self.config.get("eval_options").scatter_max_points
-                pop_ratio_plots = plot_pop_ratio_analysis(
-                    solved_df, scatter_max_points=scatter_max_points
-                )
-                for plot_name, fig in pop_ratio_plots.items():
-                    self.log_figure(f"Evaluation/Plots/{plot_name}", fig, step)
-                    plt.close(fig)
-
-        # Log distribution and analysis plots for all solved puzzles
-        solved_df = df[df["solved"]]
-        if not solved_df.empty:
-            fig = plot_path_cost_distribution(solved_df)
-            self.log_figure("Evaluation/Plots/Path Cost Distribution", fig, step)
-            plt.close(fig)
-
-            fig = plot_search_time_by_path_cost(solved_df)
-            self.log_figure("Evaluation/Plots/Search Time by Path Cost", fig, step)
-            plt.close(fig)
-
-            fig = plot_nodes_generated_by_path_cost(solved_df)
-            self.log_figure("Evaluation/Plots/Generated Nodes by Path Cost", fig, step)
-            plt.close(fig)
-
-        # Log heuristic accuracy plot for all results (including unsolved for context)
-        fig = plot_heuristic_accuracy(results)
-        self.log_figure("Evaluation/Plots/Heuristic Accuracy", fig, step)
-        plt.close(fig)
+            self.log_scalar(f"Evaluation/Avg Search Time (Solved){tag_suffix}", np.nan, step)
+            self.log_scalar(f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}", np.nan, step)
+            self.log_scalar(f"Evaluation/Avg Path Cost{tag_suffix}", np.nan, step)
+            self.log_scalar(f"Evaluation/Heuristic R-squared (R²){tag_suffix}", np.nan, step)
+            self.log_scalar(f"Evaluation/Heuristic CCC (ρc){tag_suffix}", np.nan, step)
 
     def close(self):
         self.writer.close()

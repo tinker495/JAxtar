@@ -194,6 +194,8 @@ def davi(
             eval_options=eval_options,
             puzzle_opts=puzzle_opts,
             output_dir=eval_run_dir,
+            logger=logger,
+            step=steps,
             **kwargs,
         )
 
@@ -363,6 +365,8 @@ def qlearning(
             eval_options=eval_options,
             puzzle_opts=puzzle_opts,
             output_dir=eval_run_dir,
+            logger=logger,
+            step=steps,
             **kwargs,
         )
 
