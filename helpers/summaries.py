@@ -68,7 +68,7 @@ def create_comparison_summary_panel(combined_df: pd.DataFrame) -> Panel:
     summary_table.add_column("Avg. Generated Nodes (Solved)", justify="right")
     summary_table.add_column("Avg. Path Cost", justify="right")
     summary_table.add_column("R²", justify="right")
-    summary_table.add_column("ρc", justify="right")
+    summary_table.add_column("CCC", justify="right")
 
     for label, group in combined_df.groupby("run_label"):
         num_puzzles = len(group)
