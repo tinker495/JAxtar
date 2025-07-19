@@ -4,7 +4,6 @@ from datetime import datetime
 
 import aim
 import imageio.v2 as imageio  # For saving images as PNG
-import jax.numpy as jnp
 import matplotlib
 import numpy as np
 import tensorboardX
@@ -128,51 +127,6 @@ class TensorboardLogger:
         # Log to Aim as image
         if self.aim_run:
             self.aim_run.track(aim.Image(image_from_plot), name=tag, step=step)
-
-    def _log_summary_metrics(self, results: list[dict], step: int, tag_suffix: str = ""):
-        """Helper to log scalar summary metrics for a given set of results."""
-        num_puzzles = len(results)
-        solved_results = [r for r in results if r["solved"]]
-        num_solved = len(solved_results)
-        success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
-        self.log_scalar(f"Evaluation/Success Rate{tag_suffix}", success_rate, step)
-
-        if solved_results:
-            solved_times = [r["search_time_s"] for r in solved_results]
-            solved_nodes = [r["nodes_generated"] for r in solved_results]
-            solved_paths = [r["path_cost"] for r in solved_results]
-            heuristic_metrics = [r["heuristic_metrics"] for r in solved_results]
-            self.log_scalar(
-                f"Evaluation/Avg Search Time (Solved){tag_suffix}",
-                jnp.mean(jnp.array(solved_times)),
-                step,
-            )
-            self.log_scalar(
-                f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}",
-                jnp.mean(jnp.array(solved_nodes)),
-                step,
-            )
-            self.log_scalar(
-                f"Evaluation/Avg Path Cost{tag_suffix}",
-                jnp.mean(jnp.array(solved_paths)),
-                step,
-            )
-            self.log_scalar(
-                f"Evaluation/Heuristic R-squared (R²){tag_suffix}",
-                heuristic_metrics["r_squared"],
-                step,
-            )
-            self.log_scalar(
-                f"Evaluation/Heuristic CCC (ρc){tag_suffix}",
-                heuristic_metrics["ccc"],
-                step,
-            )
-        else:
-            self.log_scalar(f"Evaluation/Avg Search Time (Solved){tag_suffix}", np.nan, step)
-            self.log_scalar(f"Evaluation/Avg Generated Nodes (Solved){tag_suffix}", np.nan, step)
-            self.log_scalar(f"Evaluation/Avg Path Cost{tag_suffix}", np.nan, step)
-            self.log_scalar(f"Evaluation/Heuristic R-squared (R²){tag_suffix}", np.nan, step)
-            self.log_scalar(f"Evaluation/Heuristic CCC (ρc){tag_suffix}", np.nan, step)
 
     def close(self):
         self.writer.close()
