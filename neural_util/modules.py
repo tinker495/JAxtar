@@ -68,11 +68,37 @@ def get_norm_fn(norm_name_or_fn=None):
     raise TypeError(f"norm_fn must be a string or callable, got {type(norm_name_or_fn)}")
 
 
+ACTIVATION_FN_REGISTRY = {
+    "relu": nn.relu,
+    "gelu": nn.gelu,
+    "swish": nn.swish,
+    "silu": nn.silu,
+}
+
+
+def get_activation_fn(activation_name_or_fn=None):
+    if activation_name_or_fn is None:
+        return nn.relu
+    if callable(activation_name_or_fn):
+        return activation_name_or_fn
+    if isinstance(activation_name_or_fn, str):
+        key = activation_name_or_fn.lower()
+        if key in ACTIVATION_FN_REGISTRY:
+            return ACTIVATION_FN_REGISTRY[key]
+        raise ValueError(
+            f"Unknown activation_fn: {activation_name_or_fn}. Available: {list(ACTIVATION_FN_REGISTRY.keys())}"
+        )
+    raise TypeError(
+        f"activation_fn must be a string or callable, got {type(activation_name_or_fn)}"
+    )
+
+
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
 
     @nn.compact
     def __call__(self, x0, training=False):
@@ -80,10 +106,10 @@ class ResBlock(nn.Module):
         for _ in range(self.hidden_N):
             x = nn.Dense(self.node_size, dtype=DTYPE)(x)
             x = self.norm_fn(x, training)
-            x = nn.relu(x)
+            x = self.activation(x)
         x = nn.Dense(self.node_size, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
-        return nn.relu(x + x0)
+        return self.activation(x + x0)
 
 
 # Conv Residual Block
@@ -93,6 +119,7 @@ class ConvResBlock(nn.Module):
     strides: int
     hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
 
     @nn.compact
     def __call__(self, x0, training=False):
@@ -102,9 +129,9 @@ class ConvResBlock(nn.Module):
                 self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
             )(x)
             x = self.norm_fn(x, training)
-            x = nn.relu(x)
+            x = self.activation(x)
         x = nn.Conv(
             self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
         )(x)
         x = self.norm_fn(x, training)
-        return nn.relu(x + x0)
+        return self.activation(x + x0)

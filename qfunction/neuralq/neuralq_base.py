@@ -12,6 +12,7 @@ from neural_util.modules import (
     DTYPE,
     ResBlock,
     conditional_dummy_norm,
+    get_activation_fn,
     get_norm_fn,
 )
 from neural_util.param_manager import (
@@ -27,18 +28,24 @@ class QModelBase(nn.Module):
     Res_N: int = 4
     hidden_N: int = 1
     hidden_dim: int = 1000
+    activation: str = nn.relu
     norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
-        x = nn.relu(x)
+        x = self.activation(x)
         x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
-        x = nn.relu(x)
+        x = self.activation(x)
         for _ in range(self.Res_N):
-            x = ResBlock(self.hidden_dim, norm_fn=self.norm_fn, hidden_N=self.hidden_N)(x, training)
+            x = ResBlock(
+                self.hidden_dim,
+                norm_fn=self.norm_fn,
+                hidden_N=self.hidden_N,
+                activation=self.activation,
+            )(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
@@ -59,6 +66,7 @@ class NeuralQFunctionBase(QFunction):
         self.is_fixed = puzzle.fixed_target
         self.action_size = self._get_action_size()
         kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
+        kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         self.model = model(self.action_size, **kwargs)
         self.path = path
         self.metadata = {}

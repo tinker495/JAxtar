@@ -13,6 +13,7 @@ from neural_util.modules import (
     DTYPE,
     ResBlock,
     conditional_dummy_norm,
+    get_activation_fn,
     get_norm_fn,
 )
 from neural_util.param_manager import (
@@ -28,17 +29,23 @@ class HeuristicBase(nn.Module):
     hidden_N: int = 1
     hidden_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
 
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
-        x = nn.relu(x)
+        x = self.activation(x)
         x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
-        x = nn.relu(x)
+        x = self.activation(x)
         for _ in range(self.Res_N):
-            x = ResBlock(self.hidden_dim, norm_fn=self.norm_fn, hidden_N=self.hidden_N)(x, training)
+            x = ResBlock(
+                self.hidden_dim,
+                norm_fn=self.norm_fn,
+                hidden_N=self.hidden_N,
+                activation=self.activation,
+            )(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
@@ -55,6 +62,7 @@ class NeuralHeuristicBase(Heuristic):
     ):
         self.puzzle = puzzle
         kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
+        kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         self.model = model(**kwargs)
         self.is_fixed = puzzle.fixed_target
         self.path = path
