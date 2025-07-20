@@ -123,13 +123,27 @@ def setup_optimizer(
         schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
     )
 
+    def mask_batch_stat_or_bias(params):
+        def mask_fn(path, value):
+            # Check if 'batch_stats' is part of any dictionary key in the path
+            is_batch_stat = any(
+                isinstance(entry, jax.tree_util.DictKey) and "batch_stats" in entry.key
+                for entry in path
+            )
+            is_bias = (
+                path and isinstance(path[-1], jax.tree_util.DictKey) and path[-1].key == "bias"
+            )
+            return not (is_batch_stat or is_bias)
+
+        return jax.tree_util.tree_map_with_path(mask_fn, params)
+
     def optimizer_fn(learning_rate):
         if optimizer_name not in OPTIMIZERS:
             raise ValueError(f"Unknown optimizer: {optimizer_name}")
         scaler = OPTIMIZERS[optimizer_name]()
         return optax.chain(
             scaler,
-            optax.add_decayed_weights(weight_decay_size),
+            optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias),
             optax.scale_by_learning_rate(learning_rate),
         )
 
