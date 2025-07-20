@@ -4,6 +4,7 @@ import jax
 import optax
 import optax.tree_utils as otu
 from jax import numpy as jnp
+from optax.contrib import schedule_free
 
 PyTree = Any
 
@@ -90,6 +91,8 @@ OPTIMIZERS = {
     "adam": optax.scale_by_adam,
     "adopt": scale_by_adopt,
     "rmsprop": scale_by_rmsprop,
+    "schedule_free_adam": None,  # This is a placeholder for the schedule_free optimizer
+    "schedule_free_adopt": None,  # This is a placeholder for the schedule_free optimizer
 }
 
 
@@ -111,17 +114,25 @@ def setup_optimizer(
         init_value=0.0, end_value=lr, transition_steps=warmup_steps
     )
 
-    # Create the main decay schedule
-    decay_schedule = optax.schedules.exponential_decay(
-        lr,
-        5000,
-        0.995,
-    )
+    # Create the main decay schedule, making it conditional
+    if optimizer_name.startswith("schedule_free"):
+        is_schedule_free = True
+        optimizer_name = optimizer_name.replace("schedule_free_", "")
+    else:
+        is_schedule_free = False
 
-    # Combine the schedules
-    lr_schedule = optax.join_schedules(
-        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
-    )
+    if is_schedule_free:
+        lr_schedule = optax.constant_schedule(lr)
+    else:
+        decay_schedule = optax.schedules.exponential_decay(
+            lr,
+            5000,
+            0.995,
+        )
+        # Combine the schedules
+        lr_schedule = optax.join_schedules(
+            schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
+        )
 
     def mask_batch_stat_or_bias(params):
         def mask_fn(path, value):
@@ -140,12 +151,22 @@ def setup_optimizer(
     def optimizer_fn(learning_rate):
         if optimizer_name not in OPTIMIZERS:
             raise ValueError(f"Unknown optimizer: {optimizer_name}")
-        scaler = OPTIMIZERS[optimizer_name]()
-        return optax.chain(
+
+        if is_schedule_free:
+            scaler = OPTIMIZERS[optimizer_name](b1=0.0)
+        else:
+            scaler = OPTIMIZERS[optimizer_name]()
+
+        chain = optax.chain(
             scaler,
             optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias),
             optax.scale_by_learning_rate(learning_rate),
         )
+
+        if is_schedule_free:
+            return schedule_free(chain, learning_rate, b1=0.9)
+        else:
+            return chain
 
     optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
     return optimizer, optimizer.init(params)
