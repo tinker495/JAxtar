@@ -411,6 +411,13 @@ def dist_train_options(func: callable) -> callable:
         help="Optimizer to use",
     )
     @click.option(
+        "-wd",
+        "--weight_decay_size",
+        type=float,
+        default=None,
+        help="Weight decay size for regularization.",
+    )
+    @click.option(
         "-sl",
         "--shuffle_length",
         type=int,

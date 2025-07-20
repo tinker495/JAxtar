@@ -100,6 +100,7 @@ def setup_optimizer(
     one_iter_size: int,
     optimizer_name: str,
     lr_init: float = 1e-3,
+    weight_decay_size: float = 0.001,
 ) -> optax.OptState:
     # Add warmup to the learning rate schedule
     lr = lr_init * num_devices
@@ -122,25 +123,13 @@ def setup_optimizer(
         schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
     )
 
-    def _is_batch_stat_or_bias(path, value):
-        # Check if 'batch_stats' is part of any dictionary key in the path
-        is_batch_stat = any(
-            isinstance(entry, jax.tree_util.DictKey) and "batch_stats" in entry.key
-            for entry in path
-        )
-        # Check if the last part of the path is a dictionary key named 'bias'
-        is_bias = path and isinstance(path[-1], jax.tree_util.DictKey) and path[-1].key == "bias"
-        return not (is_batch_stat or is_bias)
-
-    mask = jax.tree_util.tree_map_with_path(_is_batch_stat_or_bias, params)
-
     def optimizer_fn(learning_rate):
         if optimizer_name not in OPTIMIZERS:
             raise ValueError(f"Unknown optimizer: {optimizer_name}")
         scaler = OPTIMIZERS[optimizer_name]()
         return optax.chain(
             scaler,
-            optax.add_decayed_weights(0.001, mask=mask),
+            optax.add_decayed_weights(weight_decay_size),
             optax.scale_by_learning_rate(learning_rate),
         )
 
