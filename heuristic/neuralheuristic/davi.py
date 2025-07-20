@@ -271,6 +271,7 @@ def get_heuristic_dataset_builder(
                 puzzle,
                 shuffle_length,
                 shuffle_parallel,
+                True,
             )
         else:
             create_shuffled_path_fn = partial(
@@ -278,6 +279,7 @@ def get_heuristic_dataset_builder(
                 puzzle,
                 shuffle_length,
                 shuffle_parallel,
+                True,
             )
     else:
         shuffle_parallel = int(
@@ -289,6 +291,7 @@ def get_heuristic_dataset_builder(
             puzzle,
             shuffle_length,
             shuffle_parallel,
+            True,
         )
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)

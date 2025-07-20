@@ -402,6 +402,7 @@ def get_qlearning_dataset_builder(
                 puzzle,
                 shuffle_length,
                 shuffle_parallel,
+                False,
             )
         else:
             create_shuffled_path_fn = partial(
@@ -409,6 +410,7 @@ def get_qlearning_dataset_builder(
                 puzzle,
                 shuffle_length,
                 shuffle_parallel,
+                False,
             )
     else:
         with_policy = True  # if not using hindsight target, must use policy for training
@@ -421,6 +423,7 @@ def get_qlearning_dataset_builder(
             puzzle,
             shuffle_length,
             shuffle_parallel,
+            False,
         )
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
