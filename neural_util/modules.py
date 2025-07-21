@@ -95,6 +95,22 @@ def get_activation_fn(activation_name_or_fn=None):
     )
 
 
+class InputEncoder(nn.Module):
+    hidden_dim: int = 1000
+    norm_fn: Callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        x = nn.Dense(5000, dtype=DTYPE)(x)
+        x = self.norm_fn(x, training)
+        x = self.activation(x)
+        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+        x = self.norm_fn(x, training)
+        x = self.activation(x)
+        return x
+
+
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int

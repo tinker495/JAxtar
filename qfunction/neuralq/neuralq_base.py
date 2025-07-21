@@ -10,6 +10,7 @@ from puxle import Puzzle
 from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
+    InputEncoder,
     ResBlock,
     conditional_dummy_norm,
     get_activation_fn,
@@ -33,12 +34,11 @@ class QModelBase(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(5000, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        x = self.activation(x)
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        x = self.activation(x)
+        x = InputEncoder(
+            hidden_dim=self.hidden_dim,
+            norm_fn=self.norm_fn,
+            activation=self.activation,
+        )(x, training)
         for _ in range(self.Res_N):
             x = ResBlock(
                 self.hidden_dim,
@@ -78,17 +78,23 @@ class NeuralQFunctionBase(QFunction):
         else:
             self.params = self.get_new_params()
 
-    def _get_action_size(self):
+    def _get_dummy_solve_config_and_current(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
+        return dummy_solve_config, dummy_current
+
+    def _get_dummy_pre_process(self):
+        dummy_solve_config, dummy_current = self._get_dummy_solve_config_and_current()
+        return jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0)
+
+    def _get_action_size(self):
+        dummy_solve_config, dummy_current = self._get_dummy_solve_config_and_current()
         return self.puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[0][0]
 
     def get_new_params(self):
-        dummy_solve_config = self.puzzle.SolveConfig.default()
-        dummy_current = self.puzzle.State.default()
         return self.model.init(
             jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+            self._get_dummy_pre_process(),
         )
 
     def load_model(self):
@@ -105,11 +111,9 @@ class NeuralQFunctionBase(QFunction):
                 return self.get_new_params()
             self.metadata = metadata
 
-            dummy_solve_config = self.puzzle.SolveConfig.default()
-            dummy_current = self.puzzle.State.default()
             self.model.apply(
                 params,
-                jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+                self._get_dummy_pre_process(),
                 training=False,
             )  # check if the params are compatible with the model
             return params
@@ -168,3 +172,10 @@ class NeuralQFunctionBase(QFunction):
         This function should return the post-processed distance.
         """
         return x
+
+    def __str__(self):
+        dummy_pre_process = self._get_dummy_pre_process()
+        tabulate_fn = nn.tabulate(
+            self.model, jax.random.key(0), compute_flops=True, compute_vjp_flops=True, depth=1
+        )
+        return tabulate_fn(dummy_pre_process)
