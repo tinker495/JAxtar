@@ -104,22 +104,26 @@ def setup_optimizer(
     optimizer_name: str,
     lr_init: float = 1e-3,
     weight_decay_size: float = 0.001,
+    schedule_free_lr_multiplier: float = 5.0,
 ) -> optax.OptState:
-    # Add warmup to the learning rate schedule
-    lr = lr_init * num_devices
-    warmup_steps = 10 * one_iter_size
-
-    # Create a warmup schedule that linearly increases from 0 to init_value
-    warmup_schedule = optax.linear_schedule(
-        init_value=0.0, end_value=lr, transition_steps=warmup_steps
-    )
-
     # Create the main decay schedule, making it conditional
     if optimizer_name.startswith("schedule_free"):
         is_schedule_free = True
         optimizer_name = optimizer_name.replace("schedule_free_", "")
     else:
         is_schedule_free = False
+
+    # Add warmup to the learning rate schedule
+    lr = lr_init * num_devices
+    if is_schedule_free:
+        lr = lr * schedule_free_lr_multiplier
+
+    warmup_steps = 10 * one_iter_size
+
+    # Create a warmup schedule that linearly increases from 0 to init_value
+    warmup_schedule = optax.linear_schedule(
+        init_value=0.0, end_value=lr, transition_steps=warmup_steps
+    )
 
     if is_schedule_free:
         lr_schedule = optax.constant_schedule(lr)
