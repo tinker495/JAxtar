@@ -110,7 +110,7 @@ def setup_optimizer(
 
     # Add warmup to the learning rate schedule
     if is_lamb:
-        lr = lr_init * num_devices * 10.0
+        lr = lr_init * num_devices * 3.0
     else:
         lr = lr_init
 
