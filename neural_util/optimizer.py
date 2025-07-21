@@ -109,7 +109,10 @@ def setup_optimizer(
     optimizer_name = optimizer_name.replace("lamb_", "")
 
     # Add warmup to the learning rate schedule
-    lr = lr_init * num_devices
+    if is_lamb:
+        lr = lr_init * num_devices * 10.0
+    else:
+        lr = lr_init
 
     warmup_steps = 10 * one_iter_size
 
