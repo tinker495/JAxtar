@@ -70,8 +70,10 @@ def get_norm_fn(norm_name_or_fn=None):
 
 ACTIVATION_FN_REGISTRY = {
     "relu": nn.relu,
+    "leaky_relu": nn.leaky_relu,
     "gelu": nn.gelu,
     "swish": nn.swish,
+    "hard_swish": nn.hard_swish,
     "silu": nn.silu,
 }
 
