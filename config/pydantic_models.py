@@ -103,7 +103,6 @@ class DistTrainOptions(BaseModel):
     update_interval: int = 128
     use_soft_update: bool = False
     using_hindsight_target: bool = False
-    using_importance_sampling: bool = False
     using_triangular_sampling: bool = False
     use_target_confidence_weighting: bool = False
     debug: bool = False

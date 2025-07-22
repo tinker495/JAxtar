@@ -382,7 +382,6 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-ui", "--update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
-    @click.option("-is", "--using_importance_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
     @click.option(
         "-tcw",
