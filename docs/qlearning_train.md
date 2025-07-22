@@ -72,7 +72,7 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `Flag`
 -   `--optimizer`: The optimization algorithm to use.
     -   Type: `Choice`
-    -   Choices: `adam`, `sgd`, etc.
+    -   Choices: `adam`, `adopt`, `rmsprop`, `lamb_adam`, `lamb_adopt`, etc.
     -   Default: `adam`
 -   `-d, --debug`: Disables JIT compilation for easier debugging.
     -   Type: `Flag`
