@@ -85,9 +85,9 @@ $ python main.py astar
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           50.0 │
-│ Search Time   │         0.15 s │
+│ Search Time   │         0.12 s │
 │ Search States │           738K │
-│ States/s      │          5.04M │
+│ States/s      │          6.03M │
 └───────────────┴────────────────┘
 ```
 
@@ -127,9 +127,9 @@ $ python main.py astar --vmap_size 20
 ┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Metric          ┃                  Value ┃
 ┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Search Time     │       3.26s (x22.3/20) │
-│ Search States   │ 14.8M (4.53M states/s) │
-│ Speedup         │                   x0.9 │
+│ Search Time     │       3.23s (x26.4/20) │
+│ Search States   │ 14.8M (4.57M states/s) │
+│ Speedup         │                   x0.8 │
 │ Solutions Found │                100.00% │
 └─────────────────┴────────────────────────┘
 ```
@@ -141,15 +141,15 @@ $ python main.py astar -nn -h -p rubikscube -w 0.2
 
 ...
 
-    Search Result for Seed 0
+     Search Result for Seed 0
 ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
 ┃ Metric        ┃          Value ┃
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           22.0 │
-│ Search Time   │         0.52 s │
+│ Search Time   │         0.49 s │
 │ Search States │          1.85M │
-│ States/s      │          3.59M │
+│ States/s      │          3.73M │
 └───────────────┴────────────────┘
 ```
 
@@ -166,9 +166,9 @@ $ python main.py qstar -nn -h -p rubikscube -w 0.2
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           22.0 │
-│ Search Time   │         0.19 s │
+│ Search Time   │         0.18 s │
 │ Search States │          1.79M │
-│ States/s      │          9.61M │
+│ States/s      │            10M │
 └───────────────┴────────────────┘
 ```
 
@@ -185,9 +185,9 @@ $ python main.py qstar -p rubikscube_world_model_optimized -nn -w 0.6
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           22.0 │
-│ Search Time   │         0.19 s │
+│ Search Time   │         0.18 s │
 │ Search States │          1.82M │
-│ States/s      │          9.52M │
+│ States/s      │          10.1M │
 └───────────────┴────────────────┘
 ```
 
