@@ -68,7 +68,7 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `Flag`
 -   `-her, --using_hindsight_target`: Use Hindsight Experience Replay (HER) for generating target values.
     -   Type: `Flag`
--   `-is, --using_importance_sampling`: Use importance sampling to weigh losses during training.
+-   `-tcw, --target_confidence_weighting`: Use target confidence weighting to weigh losses during training.
     -   Type: `Flag`
 -   `--optimizer`: The optimization algorithm to use.
     -   Type: `Choice`
