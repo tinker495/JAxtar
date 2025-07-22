@@ -85,7 +85,8 @@ def davi(
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
-        train_options.weight_decay_size,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
     )
     davi_fn = davi_builder(
         train_options.train_minibatch_size,
@@ -254,7 +255,8 @@ def qlearning(
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
-        train_options.weight_decay_size,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
     )
     qlearning_fn = qlearning_builder(
         train_options.train_minibatch_size,

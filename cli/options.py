@@ -410,6 +410,7 @@ def dist_train_options(func: callable) -> callable:
         default="adam",
         help="Optimizer to use",
     )
+    @click.option("-lr", "--learning_rate", type=float, default=None)
     @click.option(
         "-wd",
         "--weight_decay_size",

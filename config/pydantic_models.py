@@ -110,6 +110,7 @@ class DistTrainOptions(BaseModel):
     multi_device: bool = True
     reset_interval: int = 4000
     tau: float = 0.2
+    learning_rate: float = 1e-3
     weight_decay_size: Optional[float] = 0.001
     opt_state_reset: bool = False
     optimizer: str = "adam"

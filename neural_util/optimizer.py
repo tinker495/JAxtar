@@ -107,6 +107,7 @@ def setup_optimizer(
     # Create the main decay schedule, making it conditional
     is_lamb = optimizer_name.startswith("lamb")
     optimizer_name = optimizer_name.replace("lamb_", "")
+    is_no_wd = weight_decay_size == 0.0
 
     # Add warmup to the learning rate schedule
     if is_lamb:
@@ -154,7 +155,9 @@ def setup_optimizer(
         if is_lamb:
             chain = optax.chain(
                 scaler,
-                optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias),
+                optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias)
+                if not is_no_wd
+                else optax.identity(),
                 optax.scale_by_trust_ratio(),
                 optax.scale_by_learning_rate(learning_rate),
             )
@@ -162,7 +165,9 @@ def setup_optimizer(
         else:
             chain = optax.chain(
                 scaler,
-                optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias),
+                optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias)
+                if not is_no_wd
+                else optax.identity(),
                 optax.scale_by_learning_rate(learning_rate),
             )
             return chain
