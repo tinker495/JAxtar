@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from helpers.logger import TensorboardLogger
+from helpers.logger import BaseLogger
 from helpers.plots import plot_comparison_analysis
 from helpers.summaries import create_comparison_summary_panel
 from helpers.util import display_value, flatten_dict, make_hashable
@@ -20,7 +20,7 @@ class ComparisonGenerator:
         run_dirs: List[str],
         output_dir: Path,
         scatter_max_points: int,
-        logger: Optional[TensorboardLogger] = None,
+        logger: Optional[BaseLogger] = None,
         step: int = 0,
     ):
         self.run_dirs = run_dirs

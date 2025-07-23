@@ -114,6 +114,7 @@ class DistTrainOptions(BaseModel):
     opt_state_reset: bool = False
     optimizer: str = "adam"
     temperature: float = 3.0
+    logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
 
 
 class DistQFunctionOptions(BaseModel):

@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from config.pydantic_models import WMTrainOptions
 from helpers.config_printer import print_config
-from helpers.logger import TensorboardLogger
+from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from neural_util.optimizer import setup_optimizer
 from neural_util.util import round_through_gradient
@@ -48,7 +48,7 @@ def train(
     }
     print_config("World Model Training Configuration", config)
 
-    logger = TensorboardLogger(world_model_name, config)
+    logger = create_logger("aim", world_model_name, config)
     model: nn.Module = world_model.model
 
     def train_info_fn(params, data, next_data, action, training):
