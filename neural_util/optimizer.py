@@ -110,10 +110,7 @@ def setup_optimizer(
     is_no_wd = weight_decay_size == 0.0
 
     # Add warmup to the learning rate schedule
-    if is_lamb:
-        lr = lr_init * num_devices * 3.0
-    else:
-        lr = lr_init
+    lr = lr_init * num_devices
 
     warmup_steps = 10 * one_iter_size
 
