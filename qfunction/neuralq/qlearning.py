@@ -20,10 +20,6 @@ def qlearning_builder(
     minibatch_size: int,
     q_fn: QModelBase,
     optimizer: optax.GradientTransformation,
-    importance_sampling: int = True,
-    importance_sampling_alpha: float = 0.5,
-    importance_sampling_beta: float = 0.1,
-    importance_sampling_eps: float = 1.0,
     n_devices: int = 1,
     use_target_confidence_weighting: bool = False,
 ):
@@ -43,7 +39,7 @@ def qlearning_builder(
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, new_params
+        return loss, (new_params, diff)
 
     def qlearning(
         key: chex.PRNGKey,
@@ -57,43 +53,20 @@ def qlearning_builder(
         preproc = dataset["preproc"]
         target_q = dataset["target_q"]
         actions = dataset["actions"]
-        diff = dataset["diff"]
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        if importance_sampling:
-            # Calculate sampling probabilities based on diff (error) for importance sampling
-            # Higher diff values get higher probability (similar to PER - Prioritized Experience Replay)
-            abs_diff = jnp.abs(diff)
-            sampling_weights = jnp.power(
-                abs_diff + importance_sampling_eps, importance_sampling_alpha
-            )
-            sampling_probs = sampling_weights / jnp.sum(sampling_weights)
-            loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
-            loss_weights = loss_weights / jnp.max(loss_weights)
-
-            # Sample indices based on the calculated probabilities
-            batch_indexs = jax.random.choice(
-                key,
-                jnp.arange(data_size),
-                shape=(batch_size * minibatch_size,),
-                replace=False,
-                p=sampling_probs,
-            )
-        else:
-            batch_indexs = jnp.concatenate(
-                [
-                    jax.random.permutation(key, jnp.arange(data_size)),
-                    jax.random.randint(
-                        key, (batch_size * minibatch_size - data_size,), 0, data_size
-                    ),
-                ],
-                axis=0,
-            )  # [batch_size * minibatch_size]
-            loss_weights = jnp.ones_like(batch_indexs)
+        batch_indexs = jnp.concatenate(
+            [
+                jax.random.permutation(key, jnp.arange(data_size)),
+                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
+            ],
+            axis=0,
+        )  # [batch_size * minibatch_size]
+        loss_weights = jnp.ones_like(batch_indexs)
         if use_target_confidence_weighting:
             cost = dataset["cost"]
-            cost_weights = 1.0 / jnp.maximum(cost, 1.0)
+            cost_weights = 1.0 / jnp.sqrt(jnp.maximum(cost, 1.0))
             cost_weights = cost_weights / jnp.mean(cost_weights)
             loss_weights = loss_weights * cost_weights
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
@@ -106,7 +79,7 @@ def qlearning_builder(
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
             preproc, target_q, actions, weights = batched_dataset
-            (loss, q_params), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
+            (loss, (q_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
                 q_params,
                 preproc,
                 actions,
@@ -122,14 +95,15 @@ def qlearning_builder(
                 lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (q_params, opt_state), (loss, grad_magnitude_mean)
+            return (q_params, opt_state), (loss, grad_magnitude_mean, diff)
 
-        (q_params, opt_state), (losses, grad_magnitude_means) = jax.lax.scan(
+        (q_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
             train_loop,
             (q_params, opt_state),
             (batched_preproc, batched_target_q, batched_actions, batched_weights),
         )
         loss = jnp.mean(losses)
+        diffs = jnp.concatenate(diffs)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -142,13 +116,14 @@ def qlearning_builder(
             loss,
             grad_magnitude_mean,
             weights_magnitude_mean,
+            diffs,
         )
 
     if n_devices > 1:
 
         def pmap_qlearning(key, dataset, q_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude,) = jax.pmap(
+            (qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs) = jax.pmap(
                 qlearning, in_axes=(0, 0, None, None), axis_name="devices"
             )(keys, dataset, q_params, opt_state)
             qfunc_params = jax.tree_util.tree_map(lambda xs: xs[0], qfunc_params)
@@ -156,7 +131,8 @@ def qlearning_builder(
             loss = jnp.mean(loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
-            return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude
+            diffs = jnp.concatenate(diffs)
+            return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs
 
         return pmap_qlearning
     else:

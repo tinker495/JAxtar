@@ -85,13 +85,13 @@ def davi(
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
-        train_options.weight_decay_size,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
     )
     davi_fn = davi_builder(
         train_options.train_minibatch_size,
         heuristic_model,
         optimizer,
-        train_options.using_importance_sampling,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
@@ -114,9 +114,7 @@ def davi(
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
         target_heuristic = dataset["target_heuristic"]
-        diffs = dataset["diff"]
         mean_target_heuristic = jnp.mean(target_heuristic)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         (
             heuristic_params,
@@ -124,7 +122,9 @@ def davi(
             loss,
             grad_magnitude,
             weight_magnitude,
+            diffs,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             desc="DAVI Training",
@@ -254,13 +254,13 @@ def qlearning(
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
         train_options.optimizer,
-        train_options.weight_decay_size,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
     )
     qlearning_fn = qlearning_builder(
         train_options.train_minibatch_size,
         qfunc_model,
         optimizer,
-        train_options.using_importance_sampling,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
@@ -285,9 +285,7 @@ def qlearning(
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
         target_q = dataset["target_q"]
-        diffs = dataset["diff"]
         mean_target_q = jnp.mean(target_q)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         (
             qfunc_params,
@@ -295,7 +293,9 @@ def qlearning(
             loss,
             grad_magnitude,
             weight_magnitude,
+            diffs,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             desc="Q-Learning Training",

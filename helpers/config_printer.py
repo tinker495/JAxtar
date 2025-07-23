@@ -6,15 +6,15 @@ from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.table import Table
 from rich.text import Text
+from rich.tree import Tree
 
 from helpers.util import convert_to_serializable_dict
 
 
 def print_config(title: str, config: dict):
     """
-    Prints a configuration in a dynamic main/side panel layout.
-
-    Truncates long non-dict values (especially long tuples, lists, and strings).
+    Prints a configuration in a hierarchical tree layout, wrapped in a panel.
+    Uses a two-column layout for a larger number of top-level items.
     """
     config = convert_to_serializable_dict(config)
     console = Console()
@@ -30,9 +30,10 @@ def print_config(title: str, config: dict):
         # Truncate long tuples/lists/sets
         elif isinstance(value, (tuple, list, set)):
             if len(value) > TRUNCATE_SEQ_LENGTH:
-                # Show first N items, then ...
-                shown_front = list(value)[: TRUNCATE_SEQ_LENGTH // 2 - 1]
-                shown_back = list(value)[-TRUNCATE_SEQ_LENGTH // 2 + 1 :]
+                # Symmetrical truncation
+                half = TRUNCATE_SEQ_LENGTH // 2
+                shown_front = list(value)[:half]
+                shown_back = list(value)[-half:]
                 str_value = f"[{', '.join(str(x) for x in shown_front)} ... {', '.join(str(x) for x in shown_back)}]"
                 return str_value
             return value
@@ -45,52 +46,68 @@ def print_config(title: str, config: dict):
             return s[:TRUNCATE_LENGTH] + " ..."
         return value
 
-    main_key = None
-    # Use sidebar layout only if there are more than 2 config items.
-    if len(config) > 2:
-        # Only consider dict values for main_key selection.
-        dict_keys = [k for k, v in config.items() if isinstance(v, dict)]
-        if dict_keys:
-            try:
-                # Select the dict key with the longest JSON string representation.
-                main_key = max(
-                    dict_keys, key=lambda k: len(json.dumps(config.get(k, ""), default=str))
-                )
-            except (TypeError, OverflowError):
-                main_key = None
-
-    # If main_key is determined, use sidebar layout.
-    if main_key:
-        side_items = {k: v for k, v in config.items() if k != main_key}
-        main_item_value = config[main_key]
-
-        layout = Table.grid(expand=True, padding=1)
-        layout.add_column(ratio=35)  # Sidebar
-        layout.add_column(ratio=65)  # Main content
-
-        side_table = Table.grid(padding=(0, 1))
-        for key, value in side_items.items():
+    def add_node(parent: Tree, key: str, value):
+        """Recursively adds config items to the tree."""
+        if isinstance(value, dict):
+            # Create a new branch for a dictionary
+            style = "bold magenta"
+            branch = parent.add(f"[{style}]{key}[/{style}]")
+            for k, v in value.items():
+                add_node(branch, k, v)
+        else:
+            # Add a leaf node for a simple value, truncating if necessary.
             display_value = maybe_truncate(value)
-            side_table.add_row(Text(f"{key}:", style="bold magenta"), Pretty(display_value))
 
-        main_content = Table.grid(padding=(0, 1))
-        main_content.add_row(
-            Text(f"{main_key}:", style="bold magenta"), Pretty(main_item_value, expand_all=True)
-        )
+            item_grid = Table.grid(padding=(0, 1))
+            item_grid.add_column(no_wrap=True)
+            item_grid.add_column()
+            item_grid.add_row(Text(f"{key}:", style="bold magenta"), Pretty(display_value))
+            parent.add(item_grid)
 
-        layout.add_row(side_table, main_content)
-    # Otherwise, use the previous multi-column layout.
+    if not config:
+        layout = Text("Configuration is empty.", justify="center")
+    # For a small number of items, use a single, wide tree.
+    elif len(config) <= 2:
+        layout = Tree("", guide_style="bright_blue")
+        for key, value in config.items():
+            add_node(layout, key, value)
+    # For more items, put the longest item in the first column, and the rest in the second.
     else:
-        renderables = []
-        if config:
+        main_key = None
+        try:
+            # Select the key with the longest JSON string representation as the main item.
+            main_key = max(config.keys(), key=lambda k: len(json.dumps(config.get(k), default=str)))
+        except (TypeError, OverflowError, ValueError):
+            # Fallback if max() is empty or another error occurs.
+            main_key = None
+
+        # If a main key is found, use the main/side layout.
+        if main_key:
+            main_tree = Tree("", guide_style="bright_blue")
+            add_node(main_tree, main_key, config[main_key])
+
+            side_tree = Tree("", guide_style="bright_blue")
             for key, value in config.items():
-                display_value = maybe_truncate(value)
-                item_grid = Table.grid(padding=(0, 1), expand=True)
-                item_grid.add_column(style="bold magenta", no_wrap=True)
-                item_grid.add_column(ratio=1)
-                item_grid.add_row(f"{key}:", Pretty(display_value, overflow="fold"))
-                renderables.append(item_grid)
-        layout = Columns(renderables, equal=True, expand=True) if renderables else Text("")
+                if key != main_key:
+                    add_node(side_tree, key, value)
+
+            layout = Columns([main_tree, side_tree], equal=True, expand=True)
+        # Fallback to the 50/50 split if no main key was determined.
+        else:
+            items = list(config.items())
+            midpoint = (len(items) + 1) // 2
+            left_items, right_items = items[:midpoint], items[midpoint:]
+
+            left_tree = Tree("", guide_style="bright_blue")
+            for key, value in left_items:
+                add_node(left_tree, key, value)
+
+            right_tree = Tree("", guide_style="bright_blue")
+            if right_items:
+                for key, value in right_items:
+                    add_node(right_tree, key, value)
+
+            layout = Columns([left_tree, right_tree], equal=True, expand=True)
 
     panel = Panel(
         layout, title=f"[bold green]{title}[/bold green]", border_style="dim", expand=False

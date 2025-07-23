@@ -88,7 +88,9 @@ def scale_by_adopt(
 
 OPTIMIZERS = {
     "adam": optax.scale_by_adam,
+    "nadam": lambda **kwargs: optax.scale_by_adam(nesterov=True, **kwargs),
     "adopt": scale_by_adopt,
+    "nadopt": lambda **kwargs: scale_by_adopt(nesterov=True, **kwargs),
     "rmsprop": scale_by_rmsprop,
     "lamb_adam": None,  # This is a placeholder for the lamb optimizer
     "lamb_adopt": None,  # This is a placeholder for the lamb optimizer
@@ -107,12 +109,10 @@ def setup_optimizer(
     # Create the main decay schedule, making it conditional
     is_lamb = optimizer_name.startswith("lamb")
     optimizer_name = optimizer_name.replace("lamb_", "")
+    is_no_wd = weight_decay_size == 0.0
 
     # Add warmup to the learning rate schedule
-    if is_lamb:
-        lr = lr_init * num_devices * 3.0
-    else:
-        lr = lr_init
+    lr = lr_init * num_devices
 
     warmup_steps = 10 * one_iter_size
 
@@ -154,7 +154,9 @@ def setup_optimizer(
         if is_lamb:
             chain = optax.chain(
                 scaler,
-                optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias),
+                optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias)
+                if not is_no_wd
+                else optax.identity(),
                 optax.scale_by_trust_ratio(),
                 optax.scale_by_learning_rate(learning_rate),
             )
@@ -162,7 +164,9 @@ def setup_optimizer(
         else:
             chain = optax.chain(
                 scaler,
-                optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias),
+                optax.add_decayed_weights(weight_decay_size, mask=mask_batch_stat_or_bias)
+                if not is_no_wd
+                else optax.identity(),
                 optax.scale_by_learning_rate(learning_rate),
             )
             return chain

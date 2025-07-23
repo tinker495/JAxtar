@@ -194,6 +194,7 @@ def human_play(puzzle: Puzzle, seed: int, **kwargs):
                 Panel(
                     current_state.str(solve_config=solve_config),
                     title="[bold green]Solution Found![/bold green]",
+                    expand=False,
                 )
             )
             console.print(f"Total Cost: [bold green]{sum_cost}[/bold green]")
@@ -271,7 +272,9 @@ def search_samples(
             solved_st = search_result.get_state(search_result.solved_idx)
             console.print(
                 Panel(
-                    Text.from_ansi(str(solved_st)), title="[bold green]Solution State[/bold green]"
+                    Text.from_ansi(str(solved_st)),
+                    title="[bold green]Solution State[/bold green]",
+                    expand=False,
                 )
             )
 
