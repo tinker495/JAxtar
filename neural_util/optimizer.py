@@ -88,7 +88,9 @@ def scale_by_adopt(
 
 OPTIMIZERS = {
     "adam": optax.scale_by_adam,
+    "nadam": lambda **kwargs: optax.scale_by_adam(nesterov=True, **kwargs),
     "adopt": scale_by_adopt,
+    "nadopt": lambda **kwargs: scale_by_adopt(nesterov=True, **kwargs),
     "rmsprop": scale_by_rmsprop,
     "lamb_adam": None,  # This is a placeholder for the lamb optimizer
     "lamb_adopt": None,  # This is a placeholder for the lamb optimizer
