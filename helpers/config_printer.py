@@ -11,6 +11,15 @@ from rich.tree import Tree
 from helpers.util import convert_to_serializable_dict
 
 
+def _is_single_level(config: dict) -> bool:
+    """
+    Checks if the config dictionary has only one level of hierarchy.
+    """
+    if not isinstance(config, dict):
+        return True  # Not a dictionary, so can't have multiple levels.
+    return not any(isinstance(v, dict) for v in config.values())
+
+
 def print_config(title: str, config: dict):
     """
     Prints a configuration in a hierarchical tree layout, wrapped in a panel.
@@ -66,8 +75,8 @@ def print_config(title: str, config: dict):
 
     if not config:
         layout = Text("Configuration is empty.", justify="center")
-    # For a small number of items, use a single, wide tree.
-    elif len(config) <= 2:
+    # For a small number of items or a single-level hierarchy, use a single, wide tree.
+    elif len(config) <= 2 or _is_single_level(config):
         layout = Tree("", guide_style="bright_blue")
         for key, value in config.items():
             add_node(layout, key, value)

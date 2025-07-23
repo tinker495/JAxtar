@@ -5,12 +5,12 @@ from typing import Dict, List, Optional
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from helpers.logger import TensorboardLogger
+from helpers.logger import BaseLogger
 from helpers.util import convert_to_serializable_dict
 
 
 class ArtifactManager:
-    def __init__(self, run_dir: Path, logger: Optional[TensorboardLogger] = None, step: int = 0):
+    def __init__(self, run_dir: Path, logger: Optional[BaseLogger] = None, step: int = 0):
         self.run_dir = run_dir
         self.logger = logger
         self.step = step

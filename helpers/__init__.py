@@ -4,10 +4,11 @@ from .config_printer import print_config
 from .formatting import (
     heuristic_dist_format,
     human_format,
+    human_format_to_float,
     img_to_colored_str,
     qfunction_dist_format,
 )
-from .logger import TensorboardLogger
+from .logger import AimLogger, BaseLogger, NoOpLogger, TensorboardLogger, create_logger
 from .metrics import calculate_heuristic_metrics
 from .rich_progress import RichProgressBar, tqdm, trange
 from .sampling import (
@@ -39,7 +40,11 @@ __all__ = [
     "qfunction_dist_format",
     "img_to_colored_str",
     # Logger
+    "AimLogger",
+    "BaseLogger",
+    "NoOpLogger",
     "TensorboardLogger",
+    "create_logger",
     # Metrics
     "calculate_heuristic_metrics",
     # Progress

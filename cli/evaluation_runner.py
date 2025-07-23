@@ -15,7 +15,7 @@ from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers import human_format
 from helpers.artifact_manager import ArtifactManager
 from helpers.config_printer import print_config
-from helpers.logger import TensorboardLogger
+from helpers.logger import BaseLogger
 from helpers.metrics import calculate_heuristic_metrics
 from helpers.plots import (
     plot_expansion_distribution,
@@ -43,7 +43,7 @@ class EvaluationRunner:
         eval_options: EvalOptions,
         puzzle_opts: PuzzleOptions,
         output_dir: Optional[Path] = None,
-        logger: Optional[TensorboardLogger] = None,
+        logger: Optional[BaseLogger] = None,
         step: int = 0,
         **kwargs,
     ):

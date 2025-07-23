@@ -8,7 +8,8 @@ from puxle import Puzzle
 from rich.console import Console
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
-from helpers.logger import TensorboardLogger
+from helpers.config_printer import print_config
+from helpers.logger import BaseLogger
 from heuristic.heuristic_base import Heuristic
 from JAxtar.astar import astar_builder
 from JAxtar.qstar import qstar_builder
@@ -41,10 +42,19 @@ def _run_evaluation_sweep(
     eval_options: EvalOptions,
     puzzle_opts: PuzzleOptions,
     output_dir: Optional[Path] = None,
-    logger: Optional[TensorboardLogger] = None,
+    logger: Optional[BaseLogger] = None,
     step: int = 0,
     **kwargs,
 ):
+    print_config(
+        "Evaluation Configuration",
+        {
+            "puzzle_options": puzzle_opts.dict(),
+            search_model_name: search_model.__class__.__name__,
+            f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
+            "eval_options": eval_options.dict(),
+        },
+    )
     runner = EvaluationRunner(
         puzzle=puzzle,
         puzzle_name=puzzle_name,

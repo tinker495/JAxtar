@@ -425,6 +425,12 @@ def dist_train_options(func: callable) -> callable:
         help="Override puzzle's default shuffle length.",
     )
     @click.option(
+        "--logger",
+        type=click.Choice(["aim", "tensorboard", "none"]),
+        default=None,
+        help="Logger to use.",
+    )
+    @click.option(
         "-pre",
         "--preset",
         type=click.Choice(list(train_presets.keys())),

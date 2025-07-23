@@ -15,7 +15,7 @@ from config.pydantic_models import (
     PuzzleOptions,
 )
 from helpers.config_printer import print_config
-from helpers.logger import TensorboardLogger
+from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
@@ -59,7 +59,7 @@ def davi(
         "eval_options": eval_options,
     }
     print_config("DAVI Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}-dist-train", config)
+    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -228,7 +228,7 @@ def qlearning(
         "q_config": q_config,
     }
     print_config("Q-Learning Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}-dist-q-train", config)
+    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-q-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
