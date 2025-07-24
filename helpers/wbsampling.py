@@ -18,7 +18,7 @@ PARAM_DTYPE: TypeAlias = Any
         2,
     ),
 )
-def get_k_optimal_branchs_paths(
+def get_k_promising_branch_paths(
     search_result: SearchResult, optimal_k: int = 1000, max_depth: int = 100
 ) -> tuple[Current, Parent, chex.Array]:
     """
@@ -28,39 +28,45 @@ def get_k_optimal_branchs_paths(
     If the heuristic is not admissible, the optimality of these paths cannot be guaranteed.
     All closed states are generally close to optimal paths, even if the heuristic is not perfectly admissible.
     """
-    closed_masks = jnp.isfinite(search_result.cost)  # [size_table, n_table]
-    closed_masks = closed_masks.at[-1, :].set(False)  # mask the last row as a dummy node
+    # Ensure optimal_k is not larger than the total number of elements
+    optimal_k = min(optimal_k, search_result.cost.size)
+    closed_masks = jnp.isfinite(search_result.cost)  # [size_table]
+    closed_masks = closed_masks.at[-1].set(False)  # mask the last row as a dummy node
     no_parented_masks = (
         jnp.ones_like(closed_masks, dtype=jnp.bool_)
-        .at[search_result.parent.index, search_result.parent.table_index]
+        .at[search_result.parent.hashidx.index]
         .set(False)
     )
     leaf_mask = jnp.logical_and(closed_masks, no_parented_masks)
-    masked_cost = jnp.where(leaf_mask, search_result.cost, jnp.inf)  # [size_table, n_table]
-    masked_dist = jnp.where(leaf_mask, search_result.dist, jnp.inf)  # [size_table, n_table]
-    masked_sum = masked_cost + masked_dist  # [size_table, n_table]
-    flattened_cost = jnp.reshape(masked_sum, (-1,))  # [size_table * n_table]
+    masked_cost = jnp.where(leaf_mask, search_result.cost, jnp.inf)  # [size_table]
+    masked_dist = jnp.where(leaf_mask, search_result.dist, jnp.inf)  # [size_table]
+    masked_sum = masked_cost + masked_dist  # [size_table]
+    flattened_cost = jnp.reshape(masked_sum, (-1,))  # [size_table]
     flattened_idxs = jnp.stack(
         jnp.unravel_index(jnp.arange(search_result.cost.size), search_result.cost.shape), axis=1
     ).astype(jnp.uint32)
-    flattend_sort_indices = jnp.argsort(flattened_cost, descending=False)
-    sorted_idxs = flattened_idxs[flattend_sort_indices]
+    # Get top_k indices using partition, which is more efficient than argsort.
+    # We get optimal_k smallest elements, but they are not sorted among themselves.
+    top_k_indices = jnp.argpartition(flattened_cost, kth=optimal_k - 1)[:optimal_k]
+    # Sort only the top_k elements
+    top_k_costs = flattened_cost[top_k_indices]
+    sorted_order_in_top_k = jnp.argsort(top_k_costs)
+    flattend_sort_indices = top_k_indices[sorted_order_in_top_k]
+
+    sorted_idxs = flattened_idxs[flattend_sort_indices].squeeze(axis=-1)
     sorted_cost = flattened_cost[flattend_sort_indices]
-    sorted_mask = leaf_mask[sorted_idxs[:, 0], sorted_idxs[:, 1]]
-    sorted_leaf_nodes = Current(
+    sorted_mask = leaf_mask[sorted_idxs]
+    promising_leaf_nodes = Current(
         hashidx=HashIdx(
-            index=sorted_idxs[:, 0].astype(jnp.uint32),
-            table_index=sorted_idxs[:, 1].astype(jnp.uint8),
+            index=sorted_idxs.astype(jnp.uint32),
         ),
         cost=sorted_cost,
     )
 
-    optimal_k_leaf_nodes = sorted_leaf_nodes[:optimal_k]
-    optimal_k_mask = sorted_mask[:optimal_k]
     paths, path_masks = jax.vmap(SearchResult._get_path, in_axes=(None, 0, 0, None))(
-        search_result, optimal_k_leaf_nodes, optimal_k_mask, max_depth
+        search_result, promising_leaf_nodes, sorted_mask, max_depth
     )
-    return optimal_k_leaf_nodes, paths, path_masks
+    return promising_leaf_nodes, paths, path_masks
 
 
 def get_one_solved_branch_distance_samples(
@@ -68,7 +74,7 @@ def get_one_solved_branch_distance_samples(
     astar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, PARAM_DTYPE], SearchResult],
     max_depth: int,
     sample_ratio: float,
-    use_optimal_branch: bool,
+    use_promising_branch: bool,
     heuristic_params: PARAM_DTYPE,
     key: chex.PRNGKey,
 ):
@@ -77,8 +83,8 @@ def get_one_solved_branch_distance_samples(
     search_result, leafs, filled = astar_fn(solve_config, initial_state, heuristic_params)
     batch_size = filled.shape[0]
 
-    if use_optimal_branch:
-        leafs, paths, masks = get_k_optimal_branchs_paths(
+    if use_promising_branch:
+        leafs, paths, masks = get_k_promising_branch_paths(
             search_result, optimal_k=batch_size, max_depth=max_depth - 1
         )
     else:
@@ -173,7 +179,7 @@ def get_one_solved_branch_q_samples(
     qstar_fn: Callable[[Puzzle.SolveConfig, Puzzle.State, PARAM_DTYPE], SearchResult],
     max_depth: int,
     sample_ratio: float,
-    use_optimal_branch: bool,
+    use_promising_branch: bool,
     qfunction_params: PARAM_DTYPE,
     key: chex.PRNGKey,
 ):
@@ -182,8 +188,8 @@ def get_one_solved_branch_q_samples(
     search_result, leafs, filled = qstar_fn(solve_config, initial_state, qfunction_params)
     batch_size = filled.shape[0]
 
-    if use_optimal_branch:
-        leafs, paths, masks = get_k_optimal_branchs_paths(
+    if use_promising_branch:
+        leafs, paths, masks = get_k_promising_branch_paths(
             search_result, optimal_k=batch_size, max_depth=max_depth - 1
         )
     else:

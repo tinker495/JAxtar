@@ -469,7 +469,7 @@ def wbsdai(
         sample_ratio=train_options.sample_ratio,
         cost_weight=train_options.cost_weight,
         pop_ratio=train_options.pop_ratio,
-        use_optimal_branch=train_options.use_optimal_branch,
+        use_promising_branch=train_options.use_promising_branch,
     )
 
     pbar = trange(steps)
@@ -628,7 +628,7 @@ def wbsdqi(
         sample_ratio=train_options.sample_ratio,
         cost_weight=train_options.cost_weight,
         pop_ratio=train_options.pop_ratio,
-        use_optimal_branch=train_options.use_optimal_branch,
+        use_promising_branch=train_options.use_promising_branch,
     )
 
     pbar = trange(steps)

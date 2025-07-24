@@ -134,7 +134,7 @@ class WBSDistTrainOptions(BaseModel):
     cost_weight: float = 0.8
     key: int = 0
     reset: bool = True
-    use_optimal_branch: bool = False
+    use_promising_branch: bool = False
     debug: bool = False
     multi_device: bool = False
     optimizer: str = "adam"

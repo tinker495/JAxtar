@@ -487,7 +487,7 @@ def wbs_dist_train_options(func: callable) -> callable:
     @click.option("-k", "--key", type=int, default=None)
     @click.option("-r", "--reset", type=bool, default=None)
     @click.option(
-        "-ob", "--use_optimal_branch", is_flag=True, default=None, help="Use optimal branch"
+        "-pb", "--use_promising_branch", is_flag=True, default=None, help="Use promising branch"
     )
     @click.option("--debug", is_flag=True, default=None, help="Debug mode")
     @click.option("-md", "--multi_device", is_flag=True, default=None, help="Use multi device")
