@@ -1,6 +1,12 @@
+import jax
 from flax import linen as nn
 
 from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock
+
+
+def vector_augmentation(x, rngkey):
+    noise = jax.random.normal(rngkey, x.shape) * 0.1
+    return x + noise
 
 
 class Encoder(nn.Module):

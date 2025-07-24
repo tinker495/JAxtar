@@ -13,6 +13,7 @@ from helpers.sampling import (
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
+from neural_util.spr_modules import vector_augmentation
 from neural_util.target_update import soft_update
 from qfunction.neuralq.qlearning import boltzmann_action_selection
 from qfunction.neuralq.spr_neuralq_base import SPRQModel
@@ -256,7 +257,7 @@ def _get_datasets_with_policy(
     minibatched_move_costs = move_costs.reshape((-1, minibatch_size, *move_costs.shape[1:]))
 
     def get_minibatched_datasets(key, vals):
-        key, subkey = jax.random.split(key)
+        key, subkey, subkey2, subkey3 = jax.random.split(key, 4)
         solve_configs, states, move_costs = vals
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
@@ -264,6 +265,7 @@ def _get_datasets_with_policy(
         q_values = q_model.apply(
             q_params, preproc, training=False, mutable=["batch_stats"], method=q_model.get_q
         )[0]
+        preproc = vector_augmentation(preproc, subkey)
 
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
@@ -274,7 +276,7 @@ def _get_datasets_with_policy(
         probs = boltzmann_action_selection(q_values, temperature=temperature, mask=mask)
         idxs = jnp.arange(q_values.shape[1])
         actions = jax.vmap(lambda k, p: jax.random.choice(k, idxs, p=p))(
-            jax.random.split(subkey, q_values.shape[0]), probs
+            jax.random.split(subkey2, q_values.shape[0]), probs
         )
 
         # Get next state based on action
@@ -304,6 +306,7 @@ def _get_datasets_with_policy(
             mutable=["batch_stats"],
             method=q_model.get_q,
         )[0]
+        next_preproc = vector_augmentation(next_preproc, subkey3)
 
         mask_neighbor = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
         next_q_values = jnp.where(mask_neighbor, next_q_values, jnp.inf)

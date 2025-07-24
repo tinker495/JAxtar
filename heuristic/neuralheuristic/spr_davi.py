@@ -14,6 +14,7 @@ from helpers.sampling import (
     create_target_shuffled_path,
 )
 from heuristic.neuralheuristic.spr_neuralheuristic_base import SPRHeuristicModel
+from neural_util.spr_modules import vector_augmentation
 from neural_util.target_update import soft_update
 
 
@@ -267,7 +268,8 @@ def _get_datasets(
     )
     minibatched_move_costs = move_costs.reshape((-1, minibatch_size, *move_costs.shape[1:]))
 
-    def get_minibatched_datasets(_, vals):
+    def get_minibatched_datasets(key, vals):
+        key, subkey, subkey2 = jax.random.split(key, 3)
         solve_configs, states, move_costs = vals
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
@@ -329,11 +331,23 @@ def _get_datasets(
         )[0]
         diff = target_heuristic - current_heur.squeeze()
 
-        return None, (preproc, next_preproc, target_heuristic, actions, diff, move_costs)
+        preproc = vector_augmentation(preproc, subkey)
+        next_preproc = vector_augmentation(next_preproc, subkey2)
+
+        return key, (
+            preproc,
+            next_preproc,
+            target_heuristic,
+            actions,
+            diff,
+            move_costs,
+            subkey,
+            subkey2,
+        )
 
     _, (preproc, next_preproc, target_heuristic, actions, diff, cost) = jax.lax.scan(
         get_minibatched_datasets,
-        None,
+        key,
         (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
     )
 
