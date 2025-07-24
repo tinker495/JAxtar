@@ -480,6 +480,7 @@ def dist_heuristic_options(func: callable) -> callable:
         help="Path to the heuristic parameter file.",
     )
     @click.option(
+        "-nc",
         "--neural_config",
         type=str,
         default=None,
