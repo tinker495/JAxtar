@@ -410,7 +410,7 @@ def spr_davi(
         "eval_options": eval_options,
     }
     print_config("SPR-DAVI Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}_{puzzle_opts.puzzle_size}_spr_davi", config)
+    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-spr-davi", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -555,6 +555,8 @@ def spr_davi(
             eval_options=eval_options,
             puzzle_opts=puzzle_opts,
             output_dir=eval_run_dir,
+            logger=logger,
+            step=steps,
             **kwargs,
         )
 
@@ -585,7 +587,7 @@ def spr_qlearning(
         "q_config": q_config,
     }
     print_config("SPR-Q-Learning Training Configuration", config)
-    logger = TensorboardLogger(f"{puzzle_name}_{puzzle_opts.puzzle_size}_spr_qlearning", config)
+    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-spr-qlearning", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -730,6 +732,8 @@ def spr_qlearning(
             eval_options=eval_options,
             puzzle_opts=puzzle_opts,
             output_dir=eval_run_dir,
+            logger=logger,
+            step=steps,
             **kwargs,
         )
 
