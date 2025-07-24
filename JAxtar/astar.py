@@ -18,6 +18,7 @@ def astar_builder(
     heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
+    pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     use_heuristic_params: bool = False,
@@ -41,6 +42,15 @@ def astar_builder(
 
     statecls = puzzle.State
 
+    # min_pop determines the minimum number of states to pop from the priority queue in each batch.
+    # This value is set to optimize the efficiency of batched operations.
+    # By ensuring that at least this many states are processed together,
+    # we maximize parallelism and hardware utilization,
+    # which is especially important for JAX and accelerator-based computation.
+    # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
+    # so that each batch is filled as evenly as possible and computational resources are used efficiently.
+    min_pop = batch_size // (puzzle.action_size // 2)
+
     def astar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
@@ -49,7 +59,9 @@ def astar_builder(
         """
         astar is the implementation of the A* algorithm.
         """
-        search_result: SearchResult = SearchResult.build(statecls, batch_size, max_nodes)
+        search_result: SearchResult = SearchResult.build(
+            statecls, batch_size, max_nodes, pop_ratio=pop_ratio, min_pop=min_pop
+        )
 
         (
             search_result.hashtable,
@@ -83,7 +95,7 @@ def astar_builder(
 
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
             parent_action = jnp.tile(
-                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[jnp.newaxis, :],
+                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[:, jnp.newaxis],
                 (1, ncost.shape[1]),
             )  # [n_neighbours, batch_size]
             nextcosts = (cost[jnp.newaxis, :] + ncost).astype(
@@ -92,7 +104,7 @@ def astar_builder(
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             parent_index = jnp.tile(
                 jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
-                (ncost.shape[0],),
+                (ncost.shape[0], 1),
             )  # [n_neighbours, batch_size]
 
             flatten_neighbours = flatten_tree(neighbours, 2)

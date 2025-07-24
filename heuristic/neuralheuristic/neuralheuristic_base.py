@@ -1,5 +1,3 @@
-import os
-import pickle
 from abc import abstractmethod
 from typing import Any, Optional
 
@@ -11,26 +9,46 @@ from flax import linen as nn
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    ResBlock,
+    conditional_dummy_norm,
+    get_activation_fn,
+    get_norm_fn,
+)
+from neural_util.param_manager import (
+    load_params_with_metadata,
+    save_params_with_metadata,
+)
 from neural_util.util import download_model, is_model_downloaded
 
 
 class HeuristicBase(nn.Module):
 
     Res_N: int = 4
+    hidden_N: int = 1
+    hidden_dim: int = 1000
+    norm_fn: callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
 
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
-        x = nn.relu(x)
-        x = nn.Dense(1000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
-        x = nn.relu(x)
+        x = self.norm_fn(x, training)
+        x = self.activation(x)
+        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+        x = self.norm_fn(x, training)
+        x = self.activation(x)
         for _ in range(self.Res_N):
-            x = ResBlock(1000)(x, training)
+            x = ResBlock(
+                self.hidden_dim,
+                norm_fn=self.norm_fn,
+                hidden_N=self.hidden_N,
+                activation=self.activation,
+            )(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
-        _ = conditional_dummy_norm(x, training)
+        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 
@@ -44,9 +62,12 @@ class NeuralHeuristicBase(Heuristic):
         **kwargs,
     ):
         self.puzzle = puzzle
+        kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
+        kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         self.model = model(**kwargs)
         self.is_fixed = puzzle.fixed_target
         self.path = path
+        self.metadata = {}
         if path is not None:
             if init_params:
                 self.params = self.get_new_params()
@@ -76,23 +97,27 @@ class NeuralHeuristicBase(Heuristic):
         try:
             if not is_model_downloaded(self.path):
                 download_model(self.path)
-            with open(self.path, "rb") as f:
-                params = pickle.load(f)
+            params, metadata = load_params_with_metadata(self.path)
+            if params is None:  # Handle case where loading fails or returns None
+                raise ValueError(f"Failed to load valid parameters from {self.path}")
+
             self.model.apply(
                 params,
                 jnp.expand_dims(self.get_dummy_preprocessed_state(), axis=0),
                 training=False,
             )  # check if the params are compatible with the model
+            self.metadata = metadata
             return params
         except Exception as e:
             print(f"Error loading model: {e}")
             return self.get_new_params()
 
-    def save_model(self):
-        if not os.path.exists(os.path.dirname(self.path)):
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        with open(self.path, "wb") as f:
-            pickle.dump(self.params, f)
+    def save_model(self, path: str = None, metadata: dict = None):
+        path = path or self.path
+        if metadata is None:
+            metadata = {}
+        metadata["puzzle_type"] = str(type(self.puzzle))
+        save_params_with_metadata(path, self.params, metadata)
 
     def batched_distance(
         self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
@@ -104,10 +129,15 @@ class NeuralHeuristicBase(Heuristic):
     def batched_param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
+        x = self.batched_pre_process(solve_config, current)
         x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
         x = self.post_process(x)
         return x
+
+    def batched_pre_process(
+        self, solve_configs: Puzzle.SolveConfig, current: Puzzle.State
+    ) -> chex.Array:
+        return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
 
     def distance(
         self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None

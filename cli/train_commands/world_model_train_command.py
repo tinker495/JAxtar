@@ -1,13 +1,12 @@
-from datetime import datetime
-
 import chex
 import click
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import tensorboardX
 
 from config.pydantic_models import WMTrainOptions
+from helpers.config_printer import print_config
+from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from neural_util.optimizer import setup_optimizer
 from neural_util.util import round_through_gradient
@@ -18,11 +17,6 @@ from world_model_puzzle.world_model_train import (
 )
 
 from ..options import wm_get_ds_options, wm_get_world_model_options, wm_train_options
-
-
-def setup_logging(world_model_name: str) -> tensorboardX.SummaryWriter:
-    log_dir = f"runs/{world_model_name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    return tensorboardX.SummaryWriter(log_dir)
 
 
 @click.command()
@@ -39,8 +33,22 @@ def train(
     wm_train_options: WMTrainOptions,
     **kwargs,
 ):
+    config = {
+        "world_model_name": world_model_name,
+        "world_model": world_model,
+        "wm_train_options": wm_train_options,
+        "dataset_shapes": {
+            "datas": str(datas.shape),
+            "next_datas": str(next_datas.shape),
+            "actions": str(actions.shape),
+            "eval_trajectory_states": str(eval_trajectory[0].shape),
+            "eval_trajectory_actions": str(eval_trajectory[1].shape),
+        },
+        **kwargs,
+    }
+    print_config("World Model Training Configuration", config)
 
-    writer = setup_logging(world_model_name)
+    logger = create_logger("aim", world_model_name, config)
     model: nn.Module = world_model.model
 
     def train_info_fn(params, data, next_data, action, training):
@@ -63,6 +71,7 @@ def train(
         1,
         wm_train_options.train_epochs,
         dataset_size // wm_train_options.mini_batch_size,
+        wm_train_options.optimizer,
         lr_init=1e-2,
     )
 
@@ -85,10 +94,10 @@ def train(
     print("training")
     pbar = trange(wm_train_options.train_epochs)
     eval_data = (eval_trajectory[0][0], eval_trajectory[0][1], eval_trajectory[1][0])
-    writer.add_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
-    writer.add_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
+    logger.log_image("Current/Ground Truth", eval_data[0], 0, dataformats="HWC")
+    logger.log_image("Next/Ground Truth", eval_data[1], 0, dataformats="HWC")
     eval_accuracy = eval_fn(params, eval_trajectory)
-    writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, 0)
+    logger.log_scalar("Metrics/Eval Accuracy", eval_accuracy, 0)
 
     for epoch in pbar:
         key, subkey = jax.random.split(key)
@@ -108,15 +117,15 @@ def train(
             },
         )
         if epoch % 10 == 0:
-            writer.add_scalar("Metrics/Learning Rate", lr, epoch)
-            writer.add_scalar("Losses/Loss", loss, epoch)
-            writer.add_scalar("Losses/AE Loss", AE_loss, epoch)
-            writer.add_scalar("Losses/WM Loss", WM_loss, epoch)
-            writer.add_scalar("Metrics/Accuracy", accuracy, epoch)
+            logger.log_scalar("Metrics/Learning Rate", lr, epoch)
+            logger.log_scalar("Losses/Loss", loss, epoch)
+            logger.log_scalar("Losses/AE Loss", AE_loss, epoch)
+            logger.log_scalar("Losses/WM Loss", WM_loss, epoch)
+            logger.log_scalar("Metrics/Accuracy", accuracy, epoch)
 
         if epoch % 100 == 0:
             eval_accuracy = eval_fn(params, eval_trajectory)
-            writer.add_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
+            logger.log_scalar("Metrics/Eval Accuracy", eval_accuracy, epoch)
 
             data = jnp.expand_dims(eval_data[0], axis=0)
             latent = model.apply(params, data, training=False, method=model.encode)
@@ -129,7 +138,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Current/Decoded", decoded[0], epoch, dataformats="HWC")
+            logger.log_image("Current/Decoded", decoded[0], epoch, dataformats="HWC")
 
             next_data = jnp.expand_dims(eval_data[1], axis=0)
             next_latent = model.apply(params, next_data, training=False, method=model.encode)
@@ -142,7 +151,7 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Next/Decoded", next_decoded[0], epoch, dataformats="HWC")
+            logger.log_image("Next/Decoded", next_decoded[0], epoch, dataformats="HWC")
 
             next_latent_pred = model.apply(
                 params, rounded_latent, training=False, method=model.transition
@@ -162,12 +171,12 @@ def train(
                 0,
                 255,
             ).astype(jnp.uint8)
-            writer.add_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
+            logger.log_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
 
             world_model.params = params
             world_model.save_model()
 
-    writer.close()
+    logger.close()
 
     world_model.params = params
     world_model.save_model()

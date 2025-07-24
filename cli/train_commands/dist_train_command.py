@@ -1,15 +1,23 @@
+import os
 import time
-from datetime import datetime
+from pathlib import Path
 
 import click
 import jax
 import jax.numpy as jnp
 import numpy as np
-import tensorboardX
 from puxle import Puzzle
 
-from config.pydantic_models import DistTrainOptions
-from helpers.replay import init_experience_replay
+from cli.eval_commands import _run_evaluation_sweep
+from config.pydantic_models import (
+    DistTrainOptions,
+    EvalOptions,
+    NeuralCallableConfig,
+    PuzzleOptions,
+    WBSDistTrainOptions,
+)
+from helpers.config_printer import print_config
+from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from heuristic.neuralheuristic.davi import (
     get_davi_dataset_builder,
@@ -20,6 +28,8 @@ from heuristic.neuralheuristic.wbsdai import (
     regression_replay_trainer_builder,
     wbsdai_dataset_builder,
 )
+from JAxtar.astar import astar_builder
+from JAxtar.qstar import qstar_builder
 from neural_util.optimizer import setup_optimizer
 from neural_util.target_update import scaled_by_reset, soft_update
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
@@ -34,44 +44,44 @@ from ..options import (
     dist_puzzle_options,
     dist_qfunction_options,
     dist_train_options,
+    eval_options,
     wbs_dist_train_options,
 )
-
-
-def setup_logging(
-    puzzle_name: str, puzzle_size: int, train_type: str
-) -> tensorboardX.SummaryWriter:
-    log_dir = (
-        f"runs/{puzzle_name}_{puzzle_size}_{train_type}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    )
-    return tensorboardX.SummaryWriter(log_dir)
 
 
 @click.command()
 @dist_puzzle_options
 @dist_train_options
 @dist_heuristic_options
+@eval_options
 def davi(
     puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
     shuffle_length: int,
+    eval_options: EvalOptions,
+    heuristic_config: NeuralCallableConfig,
     **kwargs,
 ):
+
+    config = {
+        "puzzle_options": puzzle_opts,
+        "heuristic_config": heuristic_config,
+        "train_options": train_options,
+        "eval_options": eval_options,
+    }
+    print_config("DAVI Training Configuration", config)
+    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
     key, subkey = jax.random.split(key)
 
-    writer = setup_logging(puzzle_name, puzzle.size, "davi")
     heuristic_model = heuristic.model
     target_heuristic_params = heuristic.params
-    heuristic_params = scaled_by_reset(
-        target_heuristic_params,
-        key,
-        train_options.tau,
-    )
+    heuristic_params = target_heuristic_params
 
     steps = train_options.steps
     update_interval = train_options.update_interval
@@ -88,13 +98,16 @@ def davi(
         n_devices,
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
     )
     davi_fn = regression_trainer_builder(
         train_options.train_minibatch_size,
         heuristic_model,
         optimizer,
-        train_options.using_importance_sampling,
         n_devices=n_devices,
+        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
     get_datasets = get_davi_dataset_builder(
         puzzle,
@@ -104,6 +117,7 @@ def davi(
         shuffle_length,
         train_options.dataset_minibatch_size,
         train_options.using_hindsight_target,
+        train_options.using_triangular_sampling,
         n_devices=n_devices,
     )
 
@@ -113,10 +127,7 @@ def davi(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
-        target_heuristic = dataset["target_heuristic"]
-        diffs = dataset["diff"]
-        mean_target_heuristic = jnp.mean(target_heuristic)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
+        target_heuristic = jnp.mean(dataset["target_heuristic"])
 
         (
             heuristic_params,
@@ -124,7 +135,9 @@ def davi(
             loss,
             grad_magnitude,
             weight_magnitude,
+            diffs,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             desc="DAVI Training",
@@ -132,29 +145,40 @@ def davi(
                 "lr": lr,
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
-                "target_heuristic": float(mean_target_heuristic),
+                "target_heuristic": float(target_heuristic),
             },
         )
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
-        writer.add_scalar("Losses/Loss", loss, i)
-        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-        writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if i % 10 == 0:
-            writer.add_histogram("Losses/Diff", diffs, i)
-            writer.add_histogram("Metrics/Target", target_heuristic, i)
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Losses/Loss", loss, i)
+        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Metrics/Mean Target", target_heuristic, i)
+        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if i % 100 == 0:
+            logger.log_histogram("Losses/Diff", diffs, i)
+            logger.log_histogram("Metrics/Target", dataset["target_heuristic"], i)
 
+        target_updated = False
         if train_options.use_soft_update:
             target_heuristic_params = soft_update(
                 target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
             )
             updated = True
+            if i % update_interval == 0 and i != 0:
+                target_updated = True
         elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
             target_heuristic_params = heuristic_params
             updated = True
+            if train_options.opt_state_reset:
+                opt_state = optimizer.init(heuristic_params)
+            target_updated = True
 
-        if i - last_reset_time >= reset_interval and updated and i < steps / 3:
+        if (
+            target_updated
+            and i - last_reset_time >= reset_interval
+            and updated
+            and i < steps * 2 / 3
+        ):
             last_reset_time = i
             heuristic_params = scaled_by_reset(
                 heuristic_params,
@@ -164,39 +188,68 @@ def davi(
             opt_state = optimizer.init(heuristic_params)
             updated = False
 
-        if i % 1000 == 0 and i != 0:
+        if i % (steps // 5) == 0 and i != 0:
             heuristic.params = heuristic_params
-            heuristic.save_model()
+            backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
+            heuristic.save_model(path=backup_path)
     heuristic.params = heuristic_params
-    heuristic.save_model()
+    backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
+    heuristic.save_model(path=backup_path)
+
+    # Evaluation
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=heuristic,
+            search_model_name="heuristic",
+            search_builder_fn=astar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            logger=logger,
+            step=steps,
+            **kwargs,
+        )
+
+    logger.close()
 
 
 @click.command()
 @dist_puzzle_options
 @dist_train_options
 @dist_qfunction_options
+@eval_options
 def qlearning(
     puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
     qfunction: NeuralQFunctionBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
     shuffle_length: int,
     with_policy: bool,
+    eval_options: EvalOptions,
+    q_config: NeuralCallableConfig,
     **kwargs,
 ):
+
+    config = {
+        "puzzle_options": puzzle_opts,
+        "train_options": train_options,
+        "eval_options": eval_options,
+        "q_config": q_config,
+    }
+    print_config("Q-Learning Training Configuration", config)
+    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-q-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
     key, subkey = jax.random.split(key)
 
-    writer = setup_logging(puzzle_name, puzzle.size, "qlearning")
     qfunc_model = qfunction.model
     target_qfunc_params = qfunction.params
-    qfunc_params = scaled_by_reset(
-        target_qfunc_params,
-        key,
-        train_options.tau,
-    )
+    qfunc_params = target_qfunc_params
 
     steps = train_options.steps
     update_interval = train_options.update_interval
@@ -213,13 +266,16 @@ def qlearning(
         n_devices,
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
     )
     qlearning_fn = qlearning_builder(
         train_options.train_minibatch_size,
         qfunc_model,
         optimizer,
-        train_options.using_importance_sampling,
         n_devices=n_devices,
+        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
@@ -229,8 +285,10 @@ def qlearning(
         shuffle_length,
         train_options.dataset_minibatch_size,
         train_options.using_hindsight_target,
+        train_options.using_triangular_sampling,
         n_devices=n_devices,
         with_policy=with_policy,
+        temperature=train_options.temperature,
     )
 
     pbar = trange(steps)
@@ -239,10 +297,7 @@ def qlearning(
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
-        target_q = dataset["target_q"]
-        diffs = dataset["diff"]
-        mean_target_q = jnp.mean(target_q)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
+        target_q = jnp.mean(dataset["target_q"])
 
         (
             qfunc_params,
@@ -250,7 +305,9 @@ def qlearning(
             loss,
             grad_magnitude,
             weight_magnitude,
+            diffs,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
             desc="Q-Learning Training",
@@ -258,30 +315,41 @@ def qlearning(
                 "lr": lr,
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
-                "target_q": float(mean_target_q),
+                "target_q": float(target_q),
             },
         )
 
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
-        writer.add_scalar("Losses/Loss", loss, i)
-        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-        writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
-        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if i % 10 == 0:
-            writer.add_histogram("Losses/Diff", diffs, i)
-            writer.add_histogram("Metrics/Target", target_q, i)
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Losses/Loss", loss, i)
+        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Metrics/Mean Target", target_q, i)
+        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if i % 100 == 0:
+            logger.log_histogram("Losses/Diff", diffs, i)
+            logger.log_histogram("Metrics/Target", dataset["target_q"], i)
 
+        target_updated = False
         if train_options.use_soft_update:
             target_qfunc_params = soft_update(
                 target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
             )
             updated = True
+            if i % update_interval == 0 and i != 0:
+                target_updated = True
         elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
             target_qfunc_params = qfunc_params
             updated = True
+            if train_options.opt_state_reset:
+                opt_state = optimizer.init(qfunc_params)
+            target_updated = True
 
-        if i - last_reset_time >= reset_interval and updated and i < steps / 3:
+        if (
+            target_updated
+            and i - last_reset_time >= reset_interval
+            and updated
+            and i < steps * 2 / 3
+        ):
             last_reset_time = i
             qfunc_params = scaled_by_reset(
                 qfunc_params,
@@ -291,11 +359,32 @@ def qlearning(
             opt_state = optimizer.init(qfunc_params)
             updated = False
 
-        if i % 1000 == 0 and i != 0:
+        if i % (steps // 5) == 0 and i != 0:
             qfunction.params = qfunc_params
-            qfunction.save_model()
+            backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
+            qfunction.save_model(path=backup_path)
     qfunction.params = qfunc_params
-    qfunction.save_model()
+    backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
+    qfunction.save_model(path=backup_path)
+
+    # Evaluation
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=qfunction,
+            search_model_name="qfunction",
+            search_builder_fn=qstar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            logger=logger,
+            step=steps,
+            **kwargs,
+        )
+
+    logger.close()
 
 
 @click.command()
@@ -306,59 +395,66 @@ def wbsdai(
     puzzle: Puzzle,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
-    puzzle_size: int,
-    steps: int,
-    replay_size: int,
-    max_nodes: int,
-    search_batch_size: int,
-    add_batch_size: int,
-    train_minibatch_size: int,
-    sample_ratio: float,
-    cost_weight: float,
-    use_optimal_branch: bool,
-    key: int,
-    multi_device: bool,
+    train_options: WBSDistTrainOptions,
+    heuristic_config: NeuralCallableConfig,
     **kwargs,
 ):
-    writer = setup_logging(puzzle_name, puzzle_size, "wbsdai")
+    config = {
+        "puzzle_options": puzzle.SolveConfig.default(),
+        "heuristic_config": heuristic_config,
+        "train_options": train_options,
+    }
+    print_config("WBSDAI Training Configuration", config)
+    logger = create_logger(
+        "aim", f"{puzzle_name}-{puzzle.size}-wbsdai", config
+    )  # Assuming "aim" as logger type
+
     heuristic_model = heuristic.model
     heuristic_params = heuristic.params
-    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key = jax.random.PRNGKey(
+        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
+    )
     key, subkey = jax.random.split(key)
 
     n_devices = 1
-    if multi_device:
+    if train_options.multi_device:
         n_devices = jax.device_count()
-        steps = steps // n_devices
+        steps = train_options.steps // n_devices
         print(f"Training with {n_devices} devices")
+
+    from helpers.replay import init_experience_replay
 
     buffer, buffer_state = init_experience_replay(
         puzzle.SolveConfig.default(),
         puzzle.State.default(),
-        max_length=replay_size,
-        min_length=train_minibatch_size * 10,
-        sample_batch_size=train_minibatch_size,
-        add_batch_size=add_batch_size,
+        max_length=train_options.replay_size,
+        min_length=train_options.train_minibatch_size * 10,
+        sample_batch_size=train_options.train_minibatch_size,
+        add_batch_size=train_options.add_batch_size,
     )
     optimizer, opt_state = setup_optimizer(
         heuristic_params,
         n_devices,
         steps,
-        100,
+        train_options.search_batch_size // train_options.train_minibatch_size,
     )
     replay_trainer = regression_replay_trainer_builder(
-        buffer, 100, heuristic.pre_process, heuristic_model, optimizer
+        buffer,
+        train_options.search_batch_size // train_options.train_minibatch_size,
+        heuristic.pre_process,
+        heuristic_model,
+        optimizer,
     )
     get_datasets = wbsdai_dataset_builder(
         puzzle,
         heuristic,
         buffer,
-        max_nodes=max_nodes,
-        add_batch_size=add_batch_size,
-        search_batch_size=search_batch_size,
-        sample_ratio=sample_ratio,
-        cost_weight=cost_weight,
-        use_optimal_branch=use_optimal_branch,
+        max_nodes=train_options.max_nodes,
+        add_batch_size=train_options.add_batch_size,
+        search_batch_size=train_options.search_batch_size,
+        sample_ratio=train_options.sample_ratio,
+        cost_weight=train_options.cost_weight,
+        use_optimal_branch=train_options.use_optimal_branch,
     )
 
     pbar = trange(steps)
@@ -370,10 +466,10 @@ def wbsdai(
                 heuristic_params, buffer_state, subkey
             )
             dt = time.time() - t
-            writer.add_scalar("Samples/Data sample time", dt, i)
-            writer.add_scalar("Samples/Search Count", search_count, i)
-            writer.add_scalar("Samples/Solved Count", solved_count, i)
-            writer.add_scalar("Samples/Solved Ratio", solved_count / search_count, i)
+            logger.log_scalar("Samples/Data sample time", dt, i)
+            logger.log_scalar("Samples/Search Count", search_count, i)
+            logger.log_scalar("Samples/Solved Count", solved_count, i)
+            logger.log_scalar("Samples/Solved Ratio", solved_count / search_count, i)
 
         (
             heuristic_params,
@@ -388,24 +484,32 @@ def wbsdai(
         lr = opt_state.hyperparams["learning_rate"]
         mean_target_heuristic = jnp.mean(sampled_target_heuristics)
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
-            f", target_heuristic: {float(mean_target_heuristic):.2f}"
+            desc="WBSDAI Training",
+            desc_dict={
+                "lr": lr,
+                "loss": float(loss),
+                "abs_diff": float(mean_abs_diff),
+                "target_heuristic": float(mean_target_heuristic),
+            },
         )
-        writer.add_scalar("Losses/Loss", loss, i)
-        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
-        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        writer.add_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-        writer.add_histogram("Losses/Diff", diffs, i)
-        writer.add_histogram("Metrics/Target", sampled_target_heuristics, i)
+        logger.log_scalar("Losses/Loss", loss, i)
+        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+        logger.log_histogram("Losses/Diff", diffs, i)
+        logger.log_histogram("Metrics/Target", sampled_target_heuristics, i)
 
         if i % 100 == 0 and i != 0:
             heuristic.params = heuristic_params
-            heuristic.save_model()
+            backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
+            heuristic.save_model(path=backup_path)
 
     heuristic.params = heuristic_params
-    heuristic.save_model()
+    backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
+    heuristic.save_model(path=backup_path)
+    logger.close()
 
 
 @click.command()
@@ -416,60 +520,67 @@ def wbsdqi(
     puzzle: Puzzle,
     qfunction: NeuralQFunctionBase,
     puzzle_name: str,
-    puzzle_size: int,
-    steps: int,
-    replay_size: int,
-    max_nodes: int,
-    search_batch_size: int,
-    add_batch_size: int,
-    train_minibatch_size: int,
-    sample_ratio: float,
-    cost_weight: float,
-    use_optimal_branch: bool,
-    key: int,
-    multi_device: bool,
+    train_options: WBSDistTrainOptions,
+    q_config: NeuralCallableConfig,
     **kwargs,
 ):
-    writer = setup_logging(puzzle_name, puzzle_size, "wbsdai")
+    config = {
+        "puzzle_options": puzzle.SolveConfig.default(),
+        "qfunction_config": q_config,
+        "train_options": train_options,
+    }
+    print_config("WBSDQI Training Configuration", config)
+    logger = create_logger(
+        "aim", f"{puzzle_name}-{puzzle.size}-wbsdqi", config
+    )  # Assuming "aim" as logger type
+
     qfunction_model = qfunction.model
     qfunction_params = qfunction.params
-    key = jax.random.PRNGKey(np.random.randint(0, 1000000) if key == 0 else key)
+    key = jax.random.PRNGKey(
+        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
+    )
     key, subkey = jax.random.split(key)
 
     n_devices = 1
-    if multi_device:
+    if train_options.multi_device:
         n_devices = jax.device_count()
-        steps = steps // n_devices
+        steps = train_options.steps // n_devices
         print(f"Training with {n_devices} devices")
+
+    from helpers.replay import init_experience_replay
 
     buffer, buffer_state = init_experience_replay(
         puzzle.SolveConfig.default(),
         puzzle.State.default(),
-        max_length=replay_size,
-        min_length=train_minibatch_size * 10,
-        sample_batch_size=train_minibatch_size,
-        add_batch_size=add_batch_size,
+        max_length=train_options.replay_size,
+        min_length=train_options.train_minibatch_size * 10,
+        sample_batch_size=train_options.train_minibatch_size,
+        add_batch_size=train_options.add_batch_size,
         use_action=True,
     )
     optimizer, opt_state = setup_optimizer(
         qfunction_params,
         n_devices,
         steps,
-        100,
+        train_options.search_batch_size // train_options.train_minibatch_size,
     )
     replay_trainer = regression_replay_q_trainer_builder(
-        buffer, 100, qfunction.pre_process, qfunction_model, optimizer
+        buffer,
+        train_options.search_batch_size // train_options.train_minibatch_size,
+        qfunction.pre_process,
+        qfunction_model,
+        optimizer,
     )
     get_datasets = wbsdqi_dataset_builder(
         puzzle,
         qfunction,
         buffer,
-        max_nodes=max_nodes,
-        add_batch_size=add_batch_size,
-        search_batch_size=search_batch_size,
-        sample_ratio=sample_ratio,
-        cost_weight=cost_weight,
-        use_optimal_branch=use_optimal_branch,
+        max_nodes=train_options.max_nodes,
+        add_batch_size=train_options.add_batch_size,
+        search_batch_size=train_options.search_batch_size,
+        sample_ratio=train_options.sample_ratio,
+        cost_weight=train_options.cost_weight,
+        use_optimal_branch=train_options.use_optimal_branch,
     )
 
     pbar = trange(steps)
@@ -481,10 +592,10 @@ def wbsdqi(
                 qfunction_params, buffer_state, subkey
             )
             dt = time.time() - t
-            writer.add_scalar("Samples/Data sample time", dt, i)
-            writer.add_scalar("Samples/Search Count", search_count, i)
-            writer.add_scalar("Samples/Solved Count", solved_count, i)
-            writer.add_scalar("Samples/Solved Ratio", solved_count / search_count, i)
+            logger.log_scalar("Samples/Data sample time", dt, i)
+            logger.log_scalar("Samples/Search Count", search_count, i)
+            logger.log_scalar("Samples/Solved Count", solved_count, i)
+            logger.log_scalar("Samples/Solved Ratio", solved_count / search_count, i)
 
         (
             qfunction_params,
@@ -499,21 +610,29 @@ def wbsdqi(
         lr = opt_state.hyperparams["learning_rate"]
         mean_target_q = jnp.mean(sampled_target_q)
         pbar.set_description(
-            f"lr: {lr:.4f}, loss: {float(loss):.4f}, abs_diff: {float(mean_abs_diff):.2f}"
-            f", target_q: {float(mean_target_q):.2f}"
+            desc="WBSDQI Training",
+            desc_dict={
+                "lr": lr,
+                "loss": float(loss),
+                "abs_diff": float(mean_abs_diff),
+                "target_q": float(mean_target_q),
+            },
         )
-        writer.add_scalar("Losses/Loss", loss, i)
-        writer.add_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
-        writer.add_scalar("Metrics/Learning Rate", lr, i)
-        writer.add_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        writer.add_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        writer.add_scalar("Metrics/Mean Target", mean_target_q, i)
-        writer.add_histogram("Losses/Diff", diffs, i)
-        writer.add_histogram("Metrics/Target", sampled_target_q, i)
+        logger.log_scalar("Losses/Loss", loss, i)
+        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
+        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
+        logger.log_histogram("Losses/Diff", diffs, i)
+        logger.log_histogram("Metrics/Target", sampled_target_q, i)
 
         if i % 100 == 0 and i != 0:
             qfunction.params = qfunction_params
-            qfunction.save_model()
+            backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
+            qfunction.save_model(path=backup_path)
 
     qfunction.params = qfunction_params
-    qfunction.save_model()
+    backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
+    qfunction.save_model(path=backup_path)
+    logger.close()

@@ -46,6 +46,12 @@ This project features specially written components, including:
 
 This project was quite challenging to develop, and it felt like performing acrobatics with JAX. However, I managed to create a fully functional version, and hopefully it will inspire you to discover something amazing as you delve into JAX.
 
+## Usage and Documentation
+
+For detailed information on all available commands and their options, please refer to the official documentation.
+
+[**Go to Documentation**](./docs/README.md)
+
 ## Result
 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.
@@ -60,66 +66,72 @@ You can easily test it yourself with the colab link below.
 
 ```bash
 $ python main.py astar
-Start state
-┏━━━┳━━━┳━━━┳━━━┓
-┃ 9 ┃ E ┃ 6 ┃ 8 ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ D ┃ 4 ┃ 7 ┃   ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ B ┃ 1 ┃ A ┃ C ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ 5 ┃ 3 ┃ F ┃ 2 ┃
-┗━━━┻━━━┻━━━┻━━━┛
-Target state
-┏━━━┳━━━┳━━━┳━━━┓
-┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ 9 ┃ A ┃ B ┃ C ┃
-┣━━━╋━━━╋━━━╋━━━┫
-┃ D ┃ E ┃ F ┃   ┃
-┗━━━┻━━━┻━━━┻━━━┛
-Dist: 34.00
-Search Time:   0.13 seconds
-Search states: 893K(6.64M states/s)
-
-
-Cost: 50.0
-Solution found
+╭─────────────── Seed 0 ────────────────╮
+│    Start State        Target State    │
+│ ┏━━━┳━━━┳━━━┳━━━┓   ┏━━━┳━━━┳━━━┳━━━┓ │
+│ ┃ 9 ┃ E ┃ 6 ┃ 8 ┃   ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃ │
+│ ┣━━━╋━━━╋━━━╋━━━┫   ┣━━━╋━━━╋━━━╋━━━┫ │
+│ ┃ D ┃ 4 ┃ 7 ┃   ┃   ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃ │
+│ ┣━━━╋━━━╋━━━╋━━━┫ → ┣━━━╋━━━╋━━━╋━━━┫ │
+│ ┃ B ┃ 1 ┃ A ┃ C ┃   ┃ 9 ┃ A ┃ B ┃ C ┃ │
+│ ┣━━━╋━━━╋━━━╋━━━┫   ┣━━━╋━━━╋━━━╋━━━┫ │
+│ ┃ 5 ┃ 3 ┃ F ┃ 2 ┃   ┃ D ┃ E ┃ F ┃   ┃ │
+│ ┗━━━┻━━━┻━━━┻━━━┛   ┗━━━┻━━━┻━━━┻━━━┛ │
+│              Dist: 34.00              │
+╰───────────────────────────────────────╯
+     Search Result for Seed 0
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Metric        ┃          Value ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ Status        │ Solution Found │
+│ Cost          │           50.0 │
+│ Search Time   │         0.12 s │
+│ Search States │           738K │
+│ States/s      │          6.03M │
+└───────────────┴────────────────┘
 ```
 
 ### Test vmapped run
 
 ```bash
 $ python main.py astar --vmap_size 20
-Vmapped search, multiple initial state solution
-Start states
-┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
-┃ 9 ┃ E ┃ 6 ┃ 8 ┃  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  (batch : (20,))  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃
-┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ D ┃ 4 ┃ 7 ┃   ┃  ┃ D ┃ 4 ┃ 7 ┃   ┃                   ┃ D ┃ 4 ┃ 7 ┃   ┃  ┃ D ┃ 4 ┃ 7 ┃   ┃
-┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ B ┃ 1 ┃ A ┃ C ┃  ┃ B ┃ 1 ┃ A ┃ C ┃                   ┃ B ┃ 1 ┃ A ┃ C ┃  ┃ B ┃ 1 ┃ A ┃ C ┃
-┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ 5 ┃ 3 ┃ F ┃ 2 ┃  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃                   ┃ 5 ┃ 3 ┃ F ┃ 2 ┃  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃
-┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
-Target state
-┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  ...              ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓
-┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  (batch : (20,))  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃
-┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃                   ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃
-┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ 9 ┃ A ┃ B ┃ C ┃  ┃ 9 ┃ A ┃ B ┃ C ┃                   ┃ 9 ┃ A ┃ B ┃ C ┃  ┃ 9 ┃ A ┃ B ┃ C ┃
-┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫                   ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫
-┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃                   ┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃
-┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛                   ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛
-vmap search
-# search_result, solved, solved_idx =jax.vmap(search_fn, in_axes=(None, 0, 0, None))(inital_search_result, states, filled, target)
-Search Time:   3.09 seconds (x23.0/20)
-Search states: 17.9M (5.78M states/s) (x0.9 faster)
-Solution found: 100.00%
-# this means astart_fn is completely vmapable and jitable
+╭──────────────────────────────── Vmapped Search Setup ─────────────────────────────────╮
+│ ╭────────────────────────────────── Batched State ──────────────────────────────────╮ │
+│ │  ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓       ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  │ │
+│ │  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃       ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  │ │
+│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫       ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
+│ │  ┃ D ┃ 4 ┃ 7 ┃   ┃  ┃ D ┃ 4 ┃ 7 ┃   ┃       ┃ D ┃ 4 ┃ 7 ┃   ┃  ┃ D ┃ 4 ┃ 7 ┃   ┃  │ │
+│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  ...  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
+│ │  ┃ B ┃ 1 ┃ A ┃ C ┃  ┃ B ┃ 1 ┃ A ┃ C ┃       ┃ B ┃ 1 ┃ A ┃ C ┃  ┃ B ┃ 1 ┃ A ┃ C ┃  │ │
+│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫       ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
+│ │  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃       ┃ 5 ┃ 3 ┃ F ┃ 2 ┃  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃  │ │
+│ │  ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛       ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛  │ │
+│ ╰────────────────────────────────── shape: (20,) ───────────────────────────────────╯ │
+│                                                                                       │
+│                                           ↓                                           │
+│                                                                                       │
+│ ╭─────────────────────────────── Batched SolveConfig ───────────────────────────────╮ │
+│ │  ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓       ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  │ │
+│ │  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃       ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  │ │
+│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫       ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
+│ │  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃       ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  │ │
+│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  ...  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
+│ │  ┃ 9 ┃ A ┃ B ┃ C ┃  ┃ 9 ┃ A ┃ B ┃ C ┃       ┃ 9 ┃ A ┃ B ┃ C ┃  ┃ 9 ┃ A ┃ B ┃ C ┃  │ │
+│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫       ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
+│ │  ┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃       ┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃  │ │
+│ │  ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛       ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛  │ │
+│ ╰────────────────────────────────── shape: (20,) ───────────────────────────────────╯ │
+│                                                                                       │
+╰───────────────────────────────────────────────────────────────────────────────────────╯
+           Vmapped Search Result
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric          ┃                  Value ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Search Time     │       3.23s (x26.4/20) │
+│ Search States   │ 14.8M (4.57M states/s) │
+│ Speedup         │                   x0.8 │
+│ Solutions Found │                100.00% │
+└─────────────────┴────────────────────────┘
 ```
 
 ### A\* with neural heuristic model
@@ -129,13 +141,16 @@ $ python main.py astar -nn -h -p rubikscube -w 0.2
 
 ...
 
-Dist: 13.88
-Search Time:   0.50 seconds
-Search states: 1.85M(3.69M states/s)
-
-
-Cost: 22.0
-Solution found
+     Search Result for Seed 0
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Metric        ┃          Value ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ Status        │ Solution Found │
+│ Cost          │           22.0 │
+│ Search Time   │         0.49 s │
+│ Search States │          1.85M │
+│ States/s      │          3.73M │
+└───────────────┴────────────────┘
 ```
 
 ### Q\* with neural Q model
@@ -145,13 +160,16 @@ $ python main.py qstar -nn -h -p rubikscube -w 0.2
 
 ...
 
-Dist: 'l_cw': 16.8 | 'l_ccw': 16.8 ... 'u_cw': 17.2 | 'u_ccw': 17.1
-Search Time:   0.18 seconds
-Search states: 1.79M(10.2M states/s)
-
-
-Cost: 22.0
-Solution found
+     Search Result for Seed 0
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Metric        ┃          Value ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ Status        │ Solution Found │
+│ Cost          │           22.0 │
+│ Search Time   │         0.18 s │
+│ Search States │          1.79M │
+│ States/s      │            10M │
+└───────────────┴────────────────┘
 ```
 
 ### World Model Puzzle with A\* & Q\*
@@ -161,13 +179,16 @@ $ python main.py qstar -p rubikscube_world_model_optimized -nn -w 0.6
 
 ...
 
-Dist: 'action 0': 18.9 | 'action 1': 18.4 ... 'action 10': 18.4 | 'action 11': 18.0
-Search Time:   0.19 seconds
-Search states: 1.82M(9.79M states/s)
-
-
-Cost: 22.0
-Solution found
+     Search Result for Seed 0
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Metric        ┃          Value ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ Status        │ Solution Found │
+│ Cost          │           22.0 │
+│ Search Time   │         0.18 s │
+│ Search States │          1.82M │
+│ States/s      │          10.1M │
+└───────────────┴────────────────┘
 ```
 
 ## Puzzles

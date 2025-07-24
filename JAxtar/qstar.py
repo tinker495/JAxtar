@@ -18,6 +18,7 @@ def qstar_builder(
     q_fn: QFunction,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
+    pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     use_q_fn_params: bool = False,
@@ -41,6 +42,15 @@ def qstar_builder(
 
     statecls = puzzle.State
 
+    # min_pop determines the minimum number of states to pop from the priority queue in each batch.
+    # This value is set to optimize the efficiency of batched operations.
+    # By ensuring that at least this many states are processed together,
+    # we maximize parallelism and hardware utilization,
+    # which is especially important for JAX and accelerator-based computation.
+    # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
+    # so that each batch is filled as evenly as possible and computational resources are used efficiently.
+    min_pop = batch_size // (puzzle.action_size // 2)
+
     def qstar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
@@ -49,7 +59,9 @@ def qstar_builder(
         """
         qstar is the implementation of the Q* algorithm.
         """
-        search_result: SearchResult = SearchResult.build(statecls, batch_size, max_nodes)
+        search_result: SearchResult = SearchResult.build(
+            statecls, batch_size, max_nodes, pop_ratio=pop_ratio, min_pop=min_pop
+        )
 
         (
             search_result.hashtable,
@@ -83,7 +95,7 @@ def qstar_builder(
 
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
             parent_action = jnp.tile(
-                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[jnp.newaxis, :],
+                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[:, jnp.newaxis],
                 (1, ncost.shape[1]),
             )  # [n_neighbours, batch_size]
             nextcosts = (cost[jnp.newaxis, :] + ncost).astype(
@@ -92,7 +104,7 @@ def qstar_builder(
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             parent_index = jnp.tile(
                 jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
-                (ncost.shape[0],),
+                (ncost.shape[0], 1),
             )  # [n_neighbours, batch_size]
 
             # Compute Q-values for parent states (not neighbors)
@@ -137,10 +149,29 @@ def qstar_builder(
                 flatten_nextcosts,  # Use costs before they are set to inf
             )
 
+            # 1. Identify where we've found a better (lower) heuristic.
+            previous_dist = search_result.dist[hash_idx.index]
+            is_more_optimistic_h = jnp.logical_and(
+                flatten_filleds, jnp.less(flatten_q_vals, previous_dist)
+            )
+
+            # 2. Update the global heuristic map (dist) based on this finding.
+            #    We use the original flatten_q_vals here.
+            search_result.dist = xnp.set_as_condition_on_array(
+                search_result.dist,
+                hash_idx.index,
+                is_more_optimistic_h,
+                flatten_q_vals,
+            )
+
+            # 3. For processing in this iteration (e.g., priority queue insertion),
+            #    we should use the best heuristic known *after* the potential update.
+            optimistic_q_vals = jnp.where(is_more_optimistic_h, flatten_q_vals, previous_dist)
+
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
-            flatten_q_vals = jnp.where(final_process_mask, flatten_q_vals, jnp.inf)
+            flatten_q_vals = jnp.where(final_process_mask, optimistic_q_vals, jnp.inf)
             flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
             sort_cost = (
                 flatten_inserted * 2 + final_process_mask * 1

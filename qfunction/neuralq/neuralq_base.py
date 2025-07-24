@@ -1,5 +1,3 @@
-import os
-import pickle
 from abc import abstractmethod
 from typing import Any, Optional
 
@@ -10,7 +8,18 @@ import numpy as np
 from flax import linen as nn
 from puxle import Puzzle
 
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    ResBlock,
+    conditional_dummy_norm,
+    get_activation_fn,
+    get_norm_fn,
+)
+from neural_util.param_manager import (
+    load_params_with_metadata,
+    save_params_with_metadata,
+)
 from neural_util.util import download_model, is_model_downloaded
 from qfunction.q_base import QFunction
 
@@ -18,21 +27,30 @@ from qfunction.q_base import QFunction
 class QModelBase(nn.Module):
     action_size: int = 4
     Res_N: int = 4
+    hidden_N: int = 1
+    hidden_dim: int = 1000
+    activation: str = nn.relu
+    norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(5000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
-        x = nn.relu(x)
-        x = nn.Dense(1000, dtype=DTYPE)(x)
-        x = DEFAULT_NORM_FN(x, training)
-        x = nn.relu(x)
+        x = self.norm_fn(x, training)
+        x = self.activation(x)
+        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+        x = self.norm_fn(x, training)
+        x = self.activation(x)
         for _ in range(self.Res_N):
-            x = ResBlock(1000)(x, training)
+            x = ResBlock(
+                self.hidden_dim,
+                norm_fn=self.norm_fn,
+                hidden_N=self.hidden_N,
+                activation=self.activation,
+            )(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
-        _ = conditional_dummy_norm(x, training)
+        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 
@@ -48,8 +66,11 @@ class NeuralQFunctionBase(QFunction):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
         self.action_size = self._get_action_size()
+        kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
+        kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         self.model = model(self.action_size, **kwargs)
         self.path = path
+        self.metadata = {}
         if path is not None:
             if init_params:
                 self.params = self.get_new_params()
@@ -75,8 +96,16 @@ class NeuralQFunctionBase(QFunction):
         try:
             if not is_model_downloaded(self.path):
                 download_model(self.path)
-            with open(self.path, "rb") as f:
-                params = pickle.load(f)
+            params, metadata = load_params_with_metadata(self.path)
+            if params is None:
+                print(
+                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
+                    "Initializing new parameters."
+                )
+                self.metadata = {}
+                return self.get_new_params()
+            self.metadata = metadata
+
             dummy_solve_config = self.puzzle.SolveConfig.default()
             dummy_current = self.puzzle.State.default()
             self.model.apply(
@@ -89,11 +118,12 @@ class NeuralQFunctionBase(QFunction):
             print(f"Error loading model: {e}")
             return self.get_new_params()
 
-    def save_model(self):
-        if not os.path.exists(os.path.dirname(self.path)):
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        with open(self.path, "wb") as f:
-            pickle.dump(self.params, f)
+    def save_model(self, path: str = None, metadata: dict = None):
+        path = path or self.path
+        if metadata is None:
+            metadata = {}
+        metadata["puzzle_type"] = str(type(self.puzzle))
+        save_params_with_metadata(path, self.params, metadata)
 
     def batched_q_value(
         self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
@@ -105,10 +135,15 @@ class NeuralQFunctionBase(QFunction):
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
+        x = self.batched_pre_process(solve_config, current)
         x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
         x = self.post_process(x)
         return x
+
+    def batched_pre_process(
+        self, solve_configs: Puzzle.SolveConfig, current: Puzzle.State
+    ) -> chex.Array:
+        return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
 
     def q_value(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
         """

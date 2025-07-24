@@ -1,5 +1,3 @@
-import pickle
-
 import chex
 import jax
 import jax.numpy as jnp
@@ -11,7 +9,11 @@ from puxle.utils import from_uint8, to_uint8
 from puxle.utils.annotate import IMG_SIZE
 
 from helpers.formatting import img_to_colored_str
-from neural_util.modules import DTYPE, BatchNorm
+from neural_util.modules import DTYPE, BatchNorm, get_norm_fn
+from neural_util.param_manager import (
+    load_params_with_metadata,
+    save_params_with_metadata,
+)
 from neural_util.util import (
     download_model,
     download_world_model_dataset,
@@ -23,6 +25,7 @@ from neural_util.util import (
 
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
+    norm_fn: callable = BatchNorm
 
     @nn.compact
     def __call__(self, data, training=False):
@@ -31,7 +34,7 @@ class Encoder(nn.Module):
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(1000, dtype=DTYPE)(flatten)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(latent_size, dtype=DTYPE)(x)
         logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
@@ -40,13 +43,14 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     data_shape: tuple[int, ...]
+    norm_fn: callable = BatchNorm
 
     @nn.compact
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.Dense(1000, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(output_size, dtype=DTYPE)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
@@ -57,10 +61,11 @@ class Decoder(nn.Module):
 class AutoEncoder(nn.Module):
     data_shape: tuple[int, ...]
     latent_shape: tuple[int, ...]
+    norm_fn: callable = BatchNorm
 
     def setup(self):
-        self.encoder = Encoder(self.latent_shape)
-        self.decoder = Decoder(self.data_shape)
+        self.encoder = Encoder(self.latent_shape, norm_fn=self.norm_fn)
+        self.decoder = Decoder(self.data_shape, norm_fn=self.norm_fn)
 
     def __call__(self, x0, training=False):
         latent = self.encoder(x0, training)
@@ -71,18 +76,19 @@ class AutoEncoder(nn.Module):
 class WorldModel(nn.Module):
     latent_shape: tuple[int, ...]
     action_size: int
+    norm_fn: callable = BatchNorm
 
     @nn.compact
     def __call__(self, latent, training=False):
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = BatchNorm(x, training)
+        x = self.norm_fn(x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
         logits = nn.Dense(latent_size * self.action_size, dtype=DTYPE)(x)
@@ -146,6 +152,8 @@ class WorldModelPuzzleBase(Puzzle):
             self.pad_size = 0
         self.action_size = action_size
         self.path = path
+        self.metadata = {}
+        kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
 
         class total_model(nn.Module):
             autoencoder: AutoEncoder
@@ -203,8 +211,16 @@ class WorldModelPuzzleBase(Puzzle):
                 )
 
         self.model = total_model(
-            autoencoder=AE(data_shape=self.data_shape, latent_shape=self.latent_shape),
-            world_model=WM(latent_shape=self.latent_shape, action_size=self.action_size),
+            autoencoder=AE(
+                data_shape=self.data_shape,
+                latent_shape=self.latent_shape,
+                **kwargs,
+            ),
+            world_model=WM(
+                latent_shape=self.latent_shape,
+                action_size=self.action_size,
+                **kwargs,
+            ),
         )
 
         if path is not None:
@@ -228,8 +244,15 @@ class WorldModelPuzzleBase(Puzzle):
         try:
             if not is_model_downloaded(self.path):
                 download_model(self.path)
-            with open(self.path, "rb") as f:
-                params = pickle.load(f)
+            params, metadata = load_params_with_metadata(self.path)
+            if params is None:
+                print(
+                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
+                    "Initializing new parameters."
+                )
+                self.metadata = {}
+                return self.get_new_params()
+            self.metadata = metadata
             self.model.apply(
                 params,
                 jnp.zeros((1, *self.data_shape)),
@@ -239,9 +262,14 @@ class WorldModelPuzzleBase(Puzzle):
             print(f"Error loading model: {e}")
             return self.get_new_params()
 
-    def save_model(self):
-        with open(self.path, "wb") as f:
-            pickle.dump(self.params, f)
+    def save_model(self, metadata: dict = None):
+        if metadata is None:
+            metadata = {}
+        metadata["data_path"] = self.data_path
+        metadata["data_shape"] = self.data_shape
+        metadata["latent_shape"] = self.latent_shape
+        metadata["action_size"] = self.action_size
+        save_params_with_metadata(self.path, self.params, metadata)
 
     def data_init(self):
         """

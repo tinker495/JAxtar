@@ -8,7 +8,9 @@ from config import puzzle_bundles, train_presets, wbs_train_presets, world_model
 from config.pydantic_models import (
     DistQFunctionOptions,
     DistTrainOptions,
+    EvalOptions,
     HeuristicOptions,
+    PuzzleConfig,
     PuzzleOptions,
     QFunctionOptions,
     SearchOptions,
@@ -18,15 +20,19 @@ from config.pydantic_models import (
     WMGetDSOptions,
     WMGetModelOptions,
     WMTrainOptions,
+    WorldModelPuzzleConfig,
 )
+from helpers.formatting import human_format_to_float
 from heuristic.heuristic_base import Heuristic
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.optimizer import OPTIMIZERS
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.q_base import QFunction
 
 
 def create_puzzle_options(
     default_puzzle: str,
+    default_hard=False,
     use_hard_flag=False,
     puzzle_ds_flag=False,
     use_seeds_flag=False,
@@ -49,7 +55,8 @@ def create_puzzle_options(
             if puzzle_opts.puzzle_size != "default":
                 input_args["size"] = int(puzzle_opts.puzzle_size)
 
-            if use_hard_flag and puzzle_opts.hard:
+            puzzle_opts.hard = default_hard or puzzle_opts.hard
+            if puzzle_opts.hard and puzzle_bundle.puzzle_hard is not None:
                 puzzle_callable = puzzle_bundle.puzzle_hard
             elif puzzle_ds_flag:
                 # This part is tricky. world_model_bundles has the specific puzzle_for_ds_gen
@@ -59,13 +66,19 @@ def create_puzzle_options(
             else:
                 puzzle_callable = puzzle_bundle.puzzle
 
-            if puzzle_callable is None:
+            if isinstance(puzzle_callable, WorldModelPuzzleConfig):
+                puzzle_instance = puzzle_callable.callable(path=puzzle_callable.path, **input_args)
+            elif isinstance(puzzle_callable, PuzzleConfig):
+                puzzle_instance = puzzle_callable.callable(
+                    initial_shuffle=puzzle_callable.initial_shuffle, **input_args
+                )
+            elif puzzle_callable is None:
                 raise click.UsageError(
                     f"Puzzle type for '{puzzle_name}'"
                     f"{' (hard)' if puzzle_opts.hard else ''} is not defined."
                 )
-
-            puzzle_instance = puzzle_callable(**input_args)
+            else:
+                puzzle_instance = puzzle_callable(**input_args)
 
             kwargs["puzzle"] = puzzle_instance
             kwargs["puzzle_name"] = puzzle_name
@@ -74,6 +87,7 @@ def create_puzzle_options(
             if use_seeds_flag:
                 kwargs["seeds"] = puzzle_opts.get_seed_list()
 
+            kwargs["puzzle_opts"] = puzzle_opts
             return func(*args, **kwargs)
 
         if use_seeds_flag:
@@ -113,28 +127,113 @@ def create_puzzle_options(
 puzzle_options = create_puzzle_options(
     default_puzzle="n-puzzle", use_hard_flag=True, use_seeds_flag=True
 )
-dist_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", use_hard_flag=True)
+eval_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
+dist_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
 wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
 
 
 def search_options(func: callable) -> callable:
-    @click.option("-m", "--max_node_size", default="2e6", type=str, help="Size of the puzzle")
-    @click.option("-b", "--batch_size", default=int(1e4), type=int, help="Batch size for BGPQ")
-    @click.option("-w", "--cost_weight", default=0.9, help="Weight for the A* search")
-    @click.option("-vm", "--vmap_size", default=1, help="Size for the vmap")
-    @click.option("--debug", is_flag=True, help="Debug mode")
-    @click.option("--profile", is_flag=True, help="Profile mode")
-    @click.option("--show_compile_time", is_flag=True, help="Show compile time")
+    @click.option("-m", "--max_node_size", default=None, type=str, help="Size of the puzzle")
+    @click.option("-b", "--batch_size", default=None, type=int, help="Batch size for BGPQ")
+    @click.option("-w", "--cost_weight", default=None, type=float, help="Weight for the A* search")
+    @click.option(
+        "-pr",
+        "--pop_ratio",
+        default=None,
+        type=float,
+        help="Ratio for popping nodes from the priority queue.",
+    )
+    @click.option("-vm", "--vmap_size", default=None, type=int, help="Size for the vmap")
+    @click.option("--debug", is_flag=True, default=None, help="Debug mode")
+    @click.option("--profile", is_flag=True, default=None, help="Profile mode")
+    @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        search_opts = SearchOptions(**{k: kwargs.pop(k) for k in SearchOptions.model_fields})
+        if kwargs.get("max_node_size", None) is not None:
+            kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
+
+        puzzle_bundle = kwargs["puzzle_bundle"]
+        base_search_options = puzzle_bundle.search_options
+
+        overrides = {
+            k: v for k, v in kwargs.items() if v is not None and k in SearchOptions.model_fields
+        }
+        search_opts = base_search_options.model_copy(update=overrides)
+
         if search_opts.debug:
             print("Disabling JIT")
             jax.config.update("jax_disable_jit", True)
-            search_opts.max_node_size = "10000"
+            search_opts.max_node_size = 10000
             search_opts.batch_size = 100
 
         kwargs["search_options"] = search_opts
+
+        for k in SearchOptions.model_fields:
+            kwargs.pop(k, None)
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def eval_options(func: callable) -> callable:
+    @click.option("-b", "--batch-size", type=int, default=None, help="Batch size for search.")
+    @click.option(
+        "-m", "--max-node-size", type=str, default=None, help="Maximum number of nodes to search."
+    )
+    @click.option(
+        "-w", "--cost-weight", type=float, default=None, help="Weight for cost in search."
+    )
+    @click.option(
+        "-pr",
+        "--pop_ratio",
+        type=str,
+        default=None,
+        help="Ratio(s) for popping nodes from the priority queue. Can be a single float, "
+        "'inf', or a comma-separated list (e.g., 'inf,0.4,0.3').",
+    )
+    @click.option(
+        "-ne", "--num-eval", type=int, default=None, help="Number of puzzles to evaluate."
+    )
+    @click.option("-rn", "--run-name", type=str, default=None, help="Name of the evaluation run.")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if kwargs.get("max_node_size", None) is not None:
+            kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
+
+        puzzle_bundle = kwargs["puzzle_bundle"]
+        base_eval_options = puzzle_bundle.eval_options
+        # Collect any user-provided options to override the preset
+        overrides = {
+            k: v for k, v in kwargs.items() if v is not None and k in EvalOptions.model_fields
+        }
+
+        # Handle pop_ratio specifically to allow multiple values
+        if "pop_ratio" in kwargs and kwargs["pop_ratio"] is not None:
+            pop_ratio_str = str(kwargs["pop_ratio"])
+            if "," in pop_ratio_str:
+                pop_ratios = []
+                for pr_val in pop_ratio_str.split(","):
+                    try:
+                        pop_ratios.append(float(pr_val.strip()))
+                    except ValueError:
+                        if pr_val.strip().lower() == "inf":
+                            pop_ratios.append(float("inf"))
+                        else:
+                            raise click.BadParameter(f"Invalid pop_ratio value: {pr_val}")
+                overrides["pop_ratio"] = pop_ratios
+            else:
+                try:
+                    overrides["pop_ratio"] = float(pop_ratio_str.strip())
+                except ValueError:
+                    if pop_ratio_str.strip().lower() == "inf":
+                        overrides["pop_ratio"] = float("inf")
+                    else:
+                        raise click.BadParameter(f"Invalid pop_ratio value: {pop_ratio_str}")
+
+        eval_opts = base_eval_options.model_copy(update=overrides)
+        kwargs["eval_options"] = eval_opts
+        for k in EvalOptions.model_fields:
+            kwargs.pop(k, None)
         return func(*args, **kwargs)
 
     return wrapper
@@ -142,6 +241,12 @@ def search_options(func: callable) -> callable:
 
 def heuristic_options(func: callable) -> callable:
     @click.option("-nn", "--neural_heuristic", is_flag=True, help="Use neural heuristic")
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the heuristic parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         heuristic_opts = HeuristicOptions(
@@ -149,14 +254,28 @@ def heuristic_options(func: callable) -> callable:
         )
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
+        is_eval = kwargs.get("eval_options", None) is not None
 
-        if heuristic_opts.neural_heuristic:
-            heuristic_callable = puzzle_bundle.heuristic_nn
-            if heuristic_callable is None:
+        if heuristic_opts.neural_heuristic or is_eval:
+            heuristic_config = puzzle_bundle.heuristic_nn_config
+            if heuristic_config is None:
                 raise click.UsageError(
                     f"Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
                 )
-            heuristic: Heuristic = heuristic_callable(puzzle, False)
+
+            param_path = heuristic_opts.param_path
+            if param_path is None:
+                if "{size}" in heuristic_config.path_template:
+                    param_path = heuristic_config.path_template.format(size=puzzle.size)
+                else:
+                    param_path = heuristic_config.path_template
+
+            heuristic: Heuristic = heuristic_config.callable(
+                puzzle=puzzle,
+                path=param_path,
+                init_params=False,
+                **heuristic_config.neural_config,
+            )
         else:
             heuristic_callable = puzzle_bundle.heuristic
             if heuristic_callable is None:
@@ -174,19 +293,39 @@ def heuristic_options(func: callable) -> callable:
 
 def qfunction_options(func: callable) -> callable:
     @click.option("-nn", "--neural_qfunction", is_flag=True, help="Use neural q function")
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the Q-function parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         q_opts = QFunctionOptions(**{k: kwargs.pop(k) for k in QFunctionOptions.model_fields})
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
+        is_eval = kwargs.get("eval_options", None) is not None
 
-        if q_opts.neural_qfunction:
-            q_callable = puzzle_bundle.q_function_nn
-            if q_callable is None:
+        if q_opts.neural_qfunction or is_eval:
+            q_config = puzzle_bundle.q_function_nn_config
+            if q_config is None:
                 raise click.UsageError(
                     f"Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
                 )
-            qfunction: QFunction = q_callable(puzzle, False)
+
+            param_path = q_opts.param_path
+            if param_path is None:
+                if "{size}" in q_config.path_template:
+                    param_path = q_config.path_template.format(size=puzzle.size)
+                else:
+                    param_path = q_config.path_template
+
+            qfunction: QFunction = q_config.callable(
+                puzzle=puzzle,
+                path=param_path,
+                init_params=False,
+                **q_config.neural_config,
+            )
         else:
             q_callable = puzzle_bundle.q_function
             if q_callable is None:
@@ -239,22 +378,58 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-dmb", "--dataset_minibatch_size", type=int, default=None)
     @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
     @click.option("-k", "--key", type=int, default=None)
-    @click.option("-r", "--reset", is_flag=True, default=None)
+    @click.option("-r", "--reset", type=bool, default=None)
     @click.option("-lt", "--loss_threshold", type=float, default=None)
     @click.option("-ui", "--update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
-    @click.option("-is", "--using_importance_sampling", is_flag=True, default=None)
+    @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
+    @click.option(
+        "-tcw",
+        "--target_confidence_weighting",
+        "use_target_confidence_weighting",
+        is_flag=True,
+        default=None,
+        help="Weight loss by target confidence (inverse of move_cost).",
+    )
+    @click.option(
+        "-tp",
+        "--temperature",
+        type=float,
+        default=None,
+        help="Boltzmann temperature for action selection.",
+    )
     @click.option("-d", "--debug", is_flag=True, default=None)
-    @click.option("-md", "--multi_device", is_flag=True, default=None)
+    @click.option("-md", "--multi_device", type=bool, default=None)
     @click.option("-ri", "--reset_interval", type=int, default=None)
-    @click.option("-t", "--tau", type=float, default=None)
+    @click.option("-osr", "--opt_state_reset", type=bool, default=None)
+    @click.option("--tau", type=float, default=None)
+    @click.option(
+        "--optimizer",
+        type=click.Choice(list(OPTIMIZERS.keys())),
+        default="adam",
+        help="Optimizer to use",
+    )
+    @click.option("-lr", "--learning_rate", type=float, default=None)
+    @click.option(
+        "-wd",
+        "--weight_decay_size",
+        type=float,
+        default=None,
+        help="Weight decay size for regularization.",
+    )
     @click.option(
         "-sl",
         "--shuffle_length",
         type=int,
         default=None,
         help="Override puzzle's default shuffle length.",
+    )
+    @click.option(
+        "--logger",
+        type=click.Choice(["aim", "tensorboard", "none"]),
+        default=None,
+        help="Logger to use.",
     )
     @click.option(
         "-pre",
@@ -353,45 +528,105 @@ def wbs_dist_train_options(func: callable) -> callable:
 
 
 def dist_heuristic_options(func: callable) -> callable:
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the heuristic parameter file.",
+    )
+    @click.option(
+        "--neural_config",
+        type=str,
+        default=None,
+        help="Neural configuration. Overrides the default configuration.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        puzzle_bundle = kwargs.pop("puzzle_bundle")
+        puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
 
-        heuristic_callable = puzzle_bundle.heuristic_nn
-        if heuristic_callable is None:
+        heuristic_config = puzzle_bundle.heuristic_nn_config
+        if heuristic_config is None:
             raise click.UsageError(
                 f"Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
             )
 
-        heuristic: NeuralHeuristicBase = heuristic_callable(puzzle, reset)
+        param_path = kwargs.pop("param_path")
+        if param_path is None:
+            param_path = heuristic_config.path_template.format(size=puzzle.size)
+
+        neural_config_override = kwargs.pop("neural_config")
+        final_neural_config = heuristic_config.neural_config.copy()
+        if neural_config_override is not None:
+            final_neural_config.update(json.loads(neural_config_override))
+        heuristic_config.neural_config = final_neural_config
+
+        heuristic: NeuralHeuristicBase = heuristic_config.callable(
+            puzzle=puzzle,
+            path=param_path,
+            init_params=reset,
+            **heuristic_config.neural_config,
+        )
         kwargs["heuristic"] = heuristic
+        kwargs["heuristic_config"] = heuristic_config
         return func(*args, **kwargs)
 
     return wrapper
 
 
 def dist_qfunction_options(func: callable) -> callable:
-    @click.option("-nwp", "--not_with_policy", is_flag=True, help="Not use policy for training")
+    @click.option("--with_policy", type=bool, default=None, help="Use policy for training")
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the Q-function parameter file.",
+    )
+    @click.option(
+        "-nc",
+        "--neural_config",
+        type=str,
+        default=None,
+        help="Neural configuration. Overrides the default configuration.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        q_opts = DistQFunctionOptions(
-            **{k: kwargs.pop(k) for k in DistQFunctionOptions.model_fields}
-        )
-        puzzle_bundle = kwargs.pop("puzzle_bundle")
+        overrides = {
+            k: v
+            for k, v in kwargs.items()
+            if v is not None and k in DistQFunctionOptions.model_fields
+        }
+        q_opts = DistQFunctionOptions(**overrides)
+        puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
 
-        q_callable = puzzle_bundle.q_function_nn
-        if q_callable is None:
+        q_config = puzzle_bundle.q_function_nn_config
+        if q_config is None:
             raise click.UsageError(
                 f"Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
             )
 
-        qfunction: NeuralQFunctionBase = q_callable(puzzle, reset)
+        param_path = kwargs.pop("param_path")
+        if param_path is None:
+            param_path = q_config.path_template.format(size=puzzle.size)
+
+        neural_config_override = kwargs.pop("neural_config")
+        final_neural_config = q_config.neural_config.copy()
+        if neural_config_override is not None:
+            final_neural_config.update(json.loads(neural_config_override))
+        q_config.neural_config = final_neural_config
+
+        qfunction: NeuralQFunctionBase = q_config.callable(
+            puzzle=puzzle,
+            path=param_path,
+            init_params=reset,
+            **q_config.neural_config,
+        )
         kwargs["qfunction"] = qfunction
-        kwargs["with_policy"] = not q_opts.not_with_policy
+        kwargs["with_policy"] = q_opts.with_policy
+        kwargs["q_config"] = q_config
         return func(*args, **kwargs)
 
     return wrapper
@@ -454,6 +689,12 @@ def wm_get_world_model_options(func: callable) -> callable:
 def wm_train_options(func: callable) -> callable:
     @click.option("--train_epochs", type=int, default=2000, help="Number of training steps")
     @click.option("--mini_batch_size", type=int, default=1000, help="Batch size")
+    @click.option(
+        "--optimizer",
+        type=click.Choice(list(OPTIMIZERS.keys())),
+        default="adam",
+        help="Optimizer to use",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         wm_train_opts = WMTrainOptions(**{k: kwargs.pop(k) for k in WMTrainOptions.model_fields})
