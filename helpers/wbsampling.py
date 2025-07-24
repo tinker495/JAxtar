@@ -239,6 +239,16 @@ def get_one_solved_branch_q_samples(
     true_costs = jnp.cumsum(incr_costs, axis=1)
     # true_costs: [topk_branch_size, max_depth] , [[0, 0, 1, 2, 3, ...], [0, 0, 0, 1, 2, ...], ...]
     # This represents the cumulative cost from each state to the leaf node
+
+    # The target for Q(s, a) should be V(s'), the value of the state s' reached after action a.
+    # In our path structure, from state s_k, we take an action to reach s_{k-1}.
+    # So for the sample (s_k, a_k), the target is V(s_{k-1}).
+    # `true_costs` stores V(s_k) at index k. We need V(s_{k-1}), which is at index k-1.
+    # We can shift the `true_costs` array to align V(s_{k-1}) with index k.
+    q_targets = jnp.roll(true_costs, shift=1, axis=1)
+    # The value at q_targets[:, 0] is from the end of the array,
+    # but the sample for k=0 (the leaf node) is masked out by `~is_solved`.
+
     masks = jnp.logical_and(masks, ~is_solved)
     # masks: [topk_branch_size, max_depth] ,
     # [[False, False, True, True, True, ...], [False, False, False, True, True, ...], ...]
@@ -266,7 +276,7 @@ def get_one_solved_branch_q_samples(
         lambda x: jnp.reshape(x, (batch_size * max_depth, *x.shape[2:])), path_states
     )
     flattened_actions = jnp.reshape(path_actions, (batch_size * max_depth,))
-    flattened_true_costs = jnp.reshape(true_costs, (batch_size * max_depth,)).astype(jnp.bfloat16)
+    flattened_true_costs = jnp.reshape(q_targets, (batch_size * max_depth,)).astype(jnp.bfloat16)
     flattened_masks = jnp.reshape(masks, (batch_size * max_depth,))
     return (
         flattened_solve_configs,
