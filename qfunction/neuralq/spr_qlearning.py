@@ -73,7 +73,7 @@ def spr_qlearning_builder(
         # --- Combined Loss ---
         total_loss = q_loss + spr_loss_weight * spr_loss
 
-        return total_loss, (new_params, q_loss, spr_loss)
+        return total_loss, (new_params, q_loss, spr_loss, q_diff)
 
     def spr_qlearning(
         key: chex.PRNGKey,
@@ -117,7 +117,7 @@ def spr_qlearning_builder(
             preproc, next_preproc, target_q, actions, weights = batched_dataset
 
             grad_fn = jax.value_and_grad(spr_qlearning_loss, has_aux=True)
-            (loss, (q_params, q_loss, spr_loss)), grads = grad_fn(
+            (loss, (q_params, q_loss, spr_loss, diff)), grads = grad_fn(
                 q_params,
                 target_q_params,
                 preproc,
@@ -145,6 +145,7 @@ def spr_qlearning_builder(
                 q_loss,
                 spr_loss,
                 grad_magnitude_mean,
+                diff,
             )
 
         (q_params, target_q_params, opt_state), (
@@ -152,6 +153,7 @@ def spr_qlearning_builder(
             q_losses,
             spr_losses,
             grad_means,
+            diffs,
         ) = jax.lax.scan(
             train_loop,
             (q_params, target_q_params, opt_state),
@@ -172,6 +174,7 @@ def spr_qlearning_builder(
             lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(q_params["params"])
         )
         weights_magnitude_mean = jnp.mean(jnp.concatenate(weights_magnitude))
+        diffs = jnp.concatenate(diffs)
 
         return (
             q_params,
@@ -182,6 +185,7 @@ def spr_qlearning_builder(
             spr_loss_mean,
             grad_magnitude_mean,
             weights_magnitude_mean,
+            diffs,
         )
 
     if n_devices > 1:
@@ -197,6 +201,7 @@ def spr_qlearning_builder(
                 spr_loss,
                 grad_mag,
                 weight_mag,
+                diffs,
             ) = jax.pmap(spr_qlearning, in_axes=(0, 0, None, None, None), axis_name="devices")(
                 keys, dataset, q_params, target_q_params, opt_state
             )
@@ -204,16 +209,22 @@ def spr_qlearning_builder(
             q_params = jax.tree_util.tree_map(lambda xs: xs[0], q_params)
             target_q_params = jax.tree_util.tree_map(lambda xs: xs[0], target_q_params)
             opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
-
+            loss = jnp.mean(loss)
+            q_loss = jnp.mean(q_loss)
+            spr_loss = jnp.mean(spr_loss)
+            grad_mag = jnp.mean(grad_mag)
+            weight_mag = jnp.mean(weight_mag)
+            diffs = jnp.concatenate(diffs)
             return (
                 q_params,
                 target_q_params,
                 opt_state,
-                jnp.mean(loss),
-                jnp.mean(q_loss),
-                jnp.mean(spr_loss),
-                jnp.mean(grad_mag),
-                jnp.mean(weight_mag),
+                loss,
+                q_loss,
+                spr_loss,
+                grad_mag,
+                weight_mag,
+                diffs,
             )
 
         return pmap_spr_qlearning
@@ -336,6 +347,102 @@ def _get_datasets_with_policy(
     }
 
 
+def _get_datasets_with_trajectory(
+    puzzle: Puzzle,
+    preproc_fn: Callable,
+    q_model: SPRQModel,
+    minibatch_size: int,
+    target_q_params: Any,
+    q_params: Any,
+    shuffled_path: dict[str, chex.Array],
+    key: chex.PRNGKey,
+):
+    solve_configs = shuffled_path["solve_configs"]
+    states = shuffled_path["states"]
+    actions = shuffled_path["actions"]
+    move_costs = shuffled_path["move_costs"]
+
+    minibatched_solve_configs = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
+    )
+    minibatched_states = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), states
+    )
+    minibatched_actions = jax.tree_util.tree_map(
+        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), actions
+    )
+    minibatched_move_costs = move_costs.reshape((-1, minibatch_size, *move_costs.shape[1:]))
+
+    def get_minibatched_datasets(key, vals):
+        key, subkey = jax.random.split(key)
+        solve_configs, states, actions, move_costs = vals
+        solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
+
+        preproc = jax.vmap(preproc_fn)(solve_configs, states)
+        neighbors, cost = puzzle.batched_get_neighbours(
+            solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
+        )
+        batch_size = actions.shape[0]
+        selected_neighbors = jax.tree_util.tree_map(
+            lambda x: x[actions, jnp.arange(batch_size), :],
+            neighbors,
+        )
+        _, neighbor_cost = puzzle.batched_get_neighbours(
+            solve_configs,
+            selected_neighbors,
+            filleds=jnp.ones(minibatch_size),
+            multi_solve_config=True,
+        )
+        selected_neighbors_solved = puzzle.batched_is_solved(
+            solve_configs, selected_neighbors, multi_solve_config=True
+        )
+        next_preproc = jax.vmap(preproc_fn)(solve_configs, selected_neighbors)
+        next_q_values = q_model.apply(
+            target_q_params,
+            next_preproc,
+            training=False,
+            mutable=["batch_stats"],
+            method=q_model.get_q,
+        )[0]
+        mask_neighbor = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
+        next_q_values = jnp.where(mask_neighbor, next_q_values, jnp.inf)
+        argmin_q = jnp.argmin(next_q_values, axis=1)
+        min_q = jnp.take_along_axis(next_q_values, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
+        selected_neighbor_costs = jnp.take_along_axis(
+            neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
+        ).squeeze(0)
+        target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
+        target_q = jnp.where(selected_neighbors_solved, 0, target_q)
+        target_q = jnp.where(solved, 0.0, target_q)
+        diff = jnp.zeros_like(target_q)
+        return key, (preproc, next_preproc, target_q, actions, diff, move_costs)
+
+    _, (preproc, next_preproc, target_q, actions, diff, cost) = jax.lax.scan(
+        get_minibatched_datasets,
+        key,
+        (
+            minibatched_solve_configs,
+            minibatched_states,
+            minibatched_actions,
+            minibatched_move_costs,
+        ),
+    )
+    preproc = preproc.reshape((-1, *preproc.shape[2:]))
+    next_preproc = next_preproc.reshape((-1, *next_preproc.shape[2:]))
+    target_q = target_q.reshape((-1, *target_q.shape[2:]))
+    actions = actions.reshape((-1, *actions.shape[2:]))
+    diff = diff.reshape((-1, *diff.shape[2:]))
+    cost = cost.reshape((-1, *cost.shape[2:]))
+    return {
+        "preproc": preproc,
+        "next_preproc": next_preproc,
+        "target_q": target_q,
+        "actions": actions,
+        "diff": diff,
+        "cost": cost,
+    }
+
+
 def get_spr_qlearning_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
@@ -345,7 +452,7 @@ def get_spr_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_sampling: bool = False,
-    with_policy: bool = True,  # Q-learning usually needs a policy
+    with_policy: bool = True,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
 ):
@@ -372,6 +479,7 @@ def get_spr_qlearning_dataset_builder(
                 False,
             )
     else:
+        with_policy = True  # if not using hindsight target, must use policy for training
         shuffle_parallel = int(
             min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
         )
@@ -383,16 +491,15 @@ def get_spr_qlearning_dataset_builder(
             shuffle_parallel,
             False,
         )
-
-    # For now, we only implement the policy-based version
+    jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
     jited_get_datasets = jax.jit(
         partial(
-            _get_datasets_with_policy,
+            _get_datasets_with_policy if with_policy else _get_datasets_with_trajectory,
             puzzle,
             preproc_fn,
             q_model,
             dataset_minibatch_size,
-            temperature=temperature,
+            temperature=temperature if with_policy else None,
         )
     )
 
@@ -400,14 +507,13 @@ def get_spr_qlearning_dataset_builder(
     def get_datasets(target_q_params: Any, q_params: Any, key: chex.PRNGKey):
         def scan_fn(key, _):
             key, subkey = jax.random.split(key)
-            paths = create_shuffled_path_fn(subkey)
+            paths = jited_create_shuffled_path(subkey)
             return key, paths
 
         key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
         paths = jax.tree_util.tree_map(
             lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
         )
-
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
         return flatten_dataset
 

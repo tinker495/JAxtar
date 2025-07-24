@@ -476,9 +476,7 @@ def spr_davi(
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
 
         target_heuristic = dataset["target_heuristic"]
-        diffs = dataset["diff"]
         mean_target_heuristic = jnp.mean(target_heuristic)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         (
             heuristic_params,
@@ -489,7 +487,9 @@ def spr_davi(
             spr_loss,
             grad_magnitude,
             weight_magnitude,
+            diffs,
         ) = spr_davi_fn(key, dataset, heuristic_params, target_heuristic_params, opt_state)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(
@@ -652,9 +652,7 @@ def spr_qlearning(
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
 
         target_q = dataset["target_q"]
-        diffs = dataset["diff"]
         mean_target_q = jnp.mean(target_q)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         (
             qfunc_params,
@@ -665,7 +663,9 @@ def spr_qlearning(
             spr_loss,
             grad_magnitude,
             weight_magnitude,
+            diffs,
         ) = spr_qlearning_fn(key, dataset, qfunc_params, target_qfunc_params, opt_state)
+        mean_abs_diff = jnp.mean(jnp.abs(diffs))
 
         lr = opt_state.hyperparams["learning_rate"]
         pbar.set_description(

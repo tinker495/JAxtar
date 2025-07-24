@@ -75,7 +75,7 @@ def spr_davi_builder(
         # --- Combined Loss ---
         total_loss = davi_loss + spr_loss_weight * spr_loss
 
-        return total_loss, (new_params, davi_loss, spr_loss)
+        return total_loss, (new_params, davi_loss, spr_loss, davi_diff)
 
     def spr_davi(
         key: chex.PRNGKey,
@@ -122,7 +122,7 @@ def spr_davi_builder(
             preproc, next_preproc, target_h, actions, weights = batched_dataset
 
             grad_fn = jax.value_and_grad(spr_davi_loss, has_aux=True)
-            (loss, (new_params, davi_loss, spr_loss)), grads = grad_fn(
+            (loss, (new_params, davi_loss, spr_loss, diff)), grads = grad_fn(
                 heuristic_params,
                 target_heuristic_params,
                 preproc,
@@ -153,6 +153,7 @@ def spr_davi_builder(
                 davi_loss,
                 spr_loss,
                 grad_magnitude_mean,
+                diff,
             )
 
         (heuristic_params, target_heuristic_params, opt_state), (
@@ -160,6 +161,7 @@ def spr_davi_builder(
             davi_losses,
             spr_losses,
             grad_means,
+            diffs,
         ) = jax.lax.scan(
             train_loop,
             (heuristic_params, target_heuristic_params, opt_state),
@@ -181,6 +183,7 @@ def spr_davi_builder(
             jax.tree_util.tree_leaves(heuristic_params["params"]),
         )
         weights_magnitude_mean = jnp.mean(jnp.concatenate(weights_magnitude))
+        diffs = jnp.concatenate(diffs)
 
         return (
             heuristic_params,
@@ -191,6 +194,7 @@ def spr_davi_builder(
             spr_loss_mean,
             grad_magnitude_mean,
             weights_magnitude_mean,
+            diffs,
         )
 
     if n_devices > 1:
@@ -207,6 +211,7 @@ def spr_davi_builder(
                 spr_loss,
                 grad_mag,
                 weight_mag,
+                diffs,
             ) = jax.pmap(spr_davi, in_axes=(0, 0, None, None, None), axis_name="devices")(
                 keys, dataset, heuristic_params, target_heuristic_params, opt_state
             )
@@ -217,16 +222,22 @@ def spr_davi_builder(
                 lambda xs: xs[0], target_heuristic_params
             )
             opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
-
+            loss = jnp.mean(loss)
+            davi_loss = jnp.mean(davi_loss)
+            spr_loss = jnp.mean(spr_loss)
+            grad_mag = jnp.mean(grad_mag)
+            weight_mag = jnp.mean(weight_mag)
+            diffs = jnp.concatenate(diffs)
             return (
                 heuristic_params,
                 target_heuristic_params,
                 opt_state,
-                jnp.mean(loss),
-                jnp.mean(davi_loss),
-                jnp.mean(spr_loss),
-                jnp.mean(grad_mag),
-                jnp.mean(weight_mag),
+                loss,
+                davi_loss,
+                spr_loss,
+                grad_mag,
+                weight_mag,
+                diffs,
             )
 
         return pmap_spr_davi
