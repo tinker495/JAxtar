@@ -483,9 +483,7 @@ def wbs_dist_train_options(func: callable) -> callable:
     @click.option("-sr", "--sample_ratio", type=float, default=None)
     @click.option("-tc-w", "--cost_weight", type=float, default=None)  # train cost weight
     @click.option("-k", "--key", type=int, default=None)
-    @click.option(
-        "-r", "--reset", is_flag=True, default=None, help="Reset the target heuristic params"
-    )
+    @click.option("-r", "--reset", type=bool, default=None)
     @click.option(
         "-ob", "--use_optimal_branch", is_flag=True, default=None, help="Use optimal branch"
     )
