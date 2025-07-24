@@ -39,9 +39,7 @@ def get_k_promising_branch_paths(
     )
     leaf_mask = jnp.logical_and(closed_masks, no_parented_masks)
     masked_cost = jnp.where(leaf_mask, search_result.cost, jnp.inf)  # [size_table]
-    masked_dist = jnp.where(leaf_mask, search_result.dist, jnp.inf)  # [size_table]
-    masked_sum = masked_cost + masked_dist  # [size_table]
-    flattened_cost = jnp.reshape(masked_sum, (-1,))  # [size_table]
+    flattened_cost = jnp.reshape(masked_cost, (-1,))  # [size_table]
     flattened_idxs = jnp.stack(
         jnp.unravel_index(jnp.arange(search_result.cost.size), search_result.cost.shape), axis=1
     ).astype(jnp.uint32)
