@@ -22,10 +22,6 @@ def spr_qlearning_builder(
     minibatch_size: int,
     q_model: SPRQModel,
     optimizer: optax.GradientTransformation,
-    importance_sampling: int = True,
-    importance_sampling_alpha: float = 0.5,
-    importance_sampling_beta: float = 0.1,
-    importance_sampling_eps: float = 1.0,
     spr_loss_weight: float = 1.0,
     ema_tau: float = 0.99,
     n_devices: int = 1,
@@ -90,41 +86,22 @@ def spr_qlearning_builder(
         next_preproc = dataset["next_preproc"]
         target_q = dataset["target_q"]
         actions = dataset["actions"]
-        diff = dataset["diff"]  # This is q_diff, used for importance sampling
 
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        if importance_sampling:
-            abs_diff = jnp.abs(diff)
-            sampling_weights = jnp.power(
-                abs_diff + importance_sampling_eps, importance_sampling_alpha
-            )
-            sampling_probs = sampling_weights / jnp.sum(sampling_weights)
-            loss_weights = jnp.power(data_size * sampling_probs, -importance_sampling_beta)
-            loss_weights = loss_weights / jnp.max(loss_weights)
-            batch_indexs = jax.random.choice(
-                key,
-                jnp.arange(data_size),
-                shape=(batch_size * minibatch_size,),
-                replace=False,
-                p=sampling_probs,
-            )
-        else:
-            batch_indexs = jnp.concatenate(
-                [
-                    jax.random.permutation(key, jnp.arange(data_size)),
-                    jax.random.randint(
-                        key, (batch_size * minibatch_size - data_size,), 0, data_size
-                    ),
-                ],
-                axis=0,
-            )
-            loss_weights = jnp.ones_like(batch_indexs)
+        batch_indexs = jnp.concatenate(
+            [
+                jax.random.permutation(key, jnp.arange(data_size)),
+                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
+            ],
+            axis=0,
+        )
+        loss_weights = jnp.ones_like(batch_indexs)
 
         if use_target_confidence_weighting:
             cost = dataset["cost"]
-            cost_weights = 1.0 / jnp.maximum(cost, 1.0)
+            cost_weights = 1.0 / jnp.sqrt(jnp.maximum(cost, 1.0))
             cost_weights = cost_weights / jnp.mean(cost_weights)
             loss_weights = loss_weights * cost_weights
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
@@ -384,6 +361,7 @@ def get_spr_qlearning_dataset_builder(
                 puzzle,
                 shuffle_length,
                 shuffle_parallel,
+                False,
             )
         else:
             create_shuffled_path_fn = partial(
@@ -391,6 +369,7 @@ def get_spr_qlearning_dataset_builder(
                 puzzle,
                 shuffle_length,
                 shuffle_parallel,
+                False,
             )
     else:
         shuffle_parallel = int(
@@ -402,6 +381,7 @@ def get_spr_qlearning_dataset_builder(
             puzzle,
             shuffle_length,
             shuffle_parallel,
+            False,
         )
 
     # For now, we only implement the policy-based version

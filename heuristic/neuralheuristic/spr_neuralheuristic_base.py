@@ -14,11 +14,14 @@ class DistHead(nn.Module):
     Res_N: int = 2
     latent_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
 
     @nn.compact
     def __call__(self, x, training=False):
         for _ in range(self.Res_N):
-            x = ResBlock(self.latent_dim, norm_fn=self.norm_fn)(x, training)
+            x = ResBlock(self.latent_dim, norm_fn=self.norm_fn, activation=self.activation)(
+                x, training
+            )
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
@@ -35,25 +38,35 @@ class SPRHeuristicModel(nn.Module):
     Res_N_Dist: int = 2
     latent_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
 
     def setup(self) -> None:
         self.encoder = Encoder(
             Res_N=self.Res_N_Encoder,
             latent_dim=self.latent_dim,
             norm_fn=self.norm_fn,
+            activation=self.activation,
             name="encoder",
         )
         self.dist_head = DistHead(
             Res_N=self.Res_N_Dist,
             latent_dim=self.latent_dim,
             norm_fn=self.norm_fn,
+            activation=self.activation,
             name="dist_head",
         )
-        self.projection_head = ProjectionHead(output_dim=self.latent_dim, name="projection_head")
-        self.transition_model = TransitionModel(
-            action_size=self.action_size, latent_dim=self.latent_dim, name="transition_model"
+        self.projection_head = ProjectionHead(
+            output_dim=self.latent_dim, activation=self.activation, name="projection_head"
         )
-        self.predicton_head = ProjectionHead(output_dim=self.latent_dim, name="prediction_head")
+        self.transition_model = TransitionModel(
+            action_size=self.action_size,
+            latent_dim=self.latent_dim,
+            activation=self.activation,
+            name="transition_model",
+        )
+        self.predicton_head = ProjectionHead(
+            output_dim=self.latent_dim, activation=self.activation, name="prediction_head"
+        )
 
     @nn.compact
     def __call__(self, x, training=False):
