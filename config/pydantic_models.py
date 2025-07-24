@@ -133,7 +133,7 @@ class WBSDistTrainOptions(BaseModel):
     pop_ratio: float = 0.35
     cost_weight: float = 0.8
     key: int = 0
-    reset: bool = False
+    reset: bool = True
     use_optimal_branch: bool = False
     debug: bool = False
     multi_device: bool = False

@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from puxle import Puzzle
+from xtructure import xtructure_numpy as xnp
 
 from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
 from helpers.wbsampling import get_one_solved_branch_distance_samples
@@ -164,16 +165,12 @@ def wbsdai_dataset_builder(
             data_len = 0
             while data_len < add_batch_size:
                 key, subkey = jax.random.split(key)
-                (
-                    solve_configs,
-                    states,
-                    true_costs,
-                    masks,
-                    solved,
-                ) = jitted_get_one_solved_branch_samples(heuristic_params, subkey)
-                solve_configs = solve_configs[masks]
-                states = states[masks]
-                true_costs = true_costs[masks]
+                data = jitted_get_one_solved_branch_samples(heuristic_params, subkey)
+                masks = data["masks"]
+                solve_configs = data["solve_configs"][masks]
+                states = data["states"][masks]
+                true_costs = data["true_costs"][masks]
+                solved = data["solved"]
                 size = jnp.sum(masks)
                 solve_configs_list.append(solve_configs)
                 states_list.append(states)
@@ -181,10 +178,8 @@ def wbsdai_dataset_builder(
                 data_len += size
                 search_count += 1
                 solved_count += solved
-            solve_configs = jax.tree_util.tree_map(
-                lambda *x: jnp.concatenate(x, axis=0), *solve_configs_list
-            )
-            states = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), *states_list)
+            solve_configs = xnp.concatenate(solve_configs_list, axis=0)
+            states = xnp.concatenate(states_list, axis=0)
             true_costs = jnp.concatenate(true_costs_list, axis=0)
             split_len = data_len // add_batch_size
 

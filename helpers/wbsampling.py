@@ -159,13 +159,13 @@ def get_one_solved_branch_distance_samples(
     )
     flattened_true_costs = jnp.reshape(true_costs, (batch_size * max_depth,)).astype(jnp.bfloat16)
     flattened_masks = jnp.reshape(masks, (batch_size * max_depth,))
-    return (
-        flattened_solve_configs,
-        flattened_states,
-        flattened_true_costs,
-        flattened_masks,
-        search_result.solved,
-    )
+    return {
+        "solve_configs": flattened_solve_configs,
+        "states": flattened_states,
+        "true_costs": flattened_true_costs,
+        "masks": flattened_masks,
+        "solved": search_result.solved,
+    }
 
 
 def get_one_solved_branch_q_samples(
@@ -278,11 +278,11 @@ def get_one_solved_branch_q_samples(
     flattened_actions = jnp.reshape(path_actions, (batch_size * max_depth,))
     flattened_true_costs = jnp.reshape(q_targets, (batch_size * max_depth,)).astype(jnp.bfloat16)
     flattened_masks = jnp.reshape(masks, (batch_size * max_depth,))
-    return (
-        flattened_solve_configs,
-        flattened_states,
-        flattened_actions,
-        flattened_true_costs,
-        flattened_masks,
-        search_result.solved,
-    )
+    return {
+        "solve_configs": flattened_solve_configs,
+        "states": flattened_states,
+        "actions": flattened_actions,
+        "true_costs": flattened_true_costs,
+        "masks": flattened_masks,
+        "solved": search_result.solved,
+    }
