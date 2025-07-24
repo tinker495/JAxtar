@@ -20,6 +20,7 @@ from xtructure import (
     HashIdx,
     HashTable,
     Xtructurable,
+    base_dataclass,
     xtructure_dataclass,
 )
 from xtructure import xtructure_numpy as xnp
@@ -61,7 +62,7 @@ class Current_with_Parent:
     current: FieldDescriptor[Current]
 
 
-@partial(chex.dataclass, mappable_dataclass=False)
+@base_dataclass
 class SearchResult:
     """
     A dataclass containing the data structures used in the A*/Q* search algorithms.
