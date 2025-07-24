@@ -240,10 +240,6 @@ def get_one_solved_branch_q_samples(
 
     true_costs = jnp.cumsum(incr_costs, axis=1)
     # true_costs: [topk_branch_size, max_depth] , [[0, 0, 1, 2, 3, ...], [0, 0, 0, 1, 2, ...], ...]
-    true_costs = jnp.roll(true_costs, 1, axis=1)
-    true_costs = true_costs.at[:, 0].set(0)
-    # true_costs: [topk_branch_size, max_depth] - Array of cumulative costs from each state to leaf node
-    # Example after roll: [[0, 0, 0, 1, 2, ...], [0, 0, 0, 0, 1, ...], ...] where each row represents a branch
     # This represents the cumulative cost from each state to the leaf node
     masks = jnp.logical_and(masks, ~is_solved)
     # masks: [topk_branch_size, max_depth] ,
