@@ -183,53 +183,79 @@ def _get_datasets_with_policy(
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
         solve_configs, states, move_costs = vals
+        # Check if the current states are already in a solved configuration.
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
+        # Preprocess the states to be suitable for neural network input.
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
+        # Get the Q-values Q(s,a) for all actions 'a' in the current state 's' using the online Q-network.
         q_values, _ = q_model.apply(q_params, preproc, training=False, mutable=["batch_stats"])
+        # Get all possible neighbor states (s') and the costs c(s,a,s') to move to them.
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
         mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
 
+        # Select an action 'a' probabilistically using a Boltzmann (softmax) exploration policy.
+        # Actions with lower Q-values (lower cost-to-go) are more likely to be chosen.
+        # Epsilon-greedy exploration is also mixed in.
         probs = boltzmann_action_selection(q_values, temperature=temperature, mask=mask)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
         )
+        # Get the Q-value Q(s,a) for the action 'a' selected by the policy. This is the value we will train.
         selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
 
         batch_size = actions.shape[0]
+        # Determine the next state (s') by applying the selected action 'a'.
         selected_neighbors = jax.tree_util.tree_map(
             lambda x: x[actions, jnp.arange(batch_size), :],
             neighbors,
         )
+        # Get all possible actions (a') and their costs c(s',a',s'') from the next state (s').
         _, neighbor_cost = puzzle.batched_get_neighbours(
             solve_configs,
             selected_neighbors,
             filleds=jnp.ones(minibatch_size),
             multi_solve_config=True,
         )  # [action_size, batch_size] [action_size, batch_size]
+        # Check if the next state (s') is a solved state.
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
 
+        # Preprocess the next states (s') for neural network input.
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
+        # --- Target Q-Value Calculation (Bellman Optimality Equation) ---
+        # Use the target Q-network (with frozen parameters `target_q_params`)
+        # to get the Q-values for the next state, Q_target(s', a').
+        # Using a separate target network stabilizes training.
         q, _ = q_model.apply(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
         mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
         q = jnp.where(mask, q, jnp.inf)
+        # Find the minimum future cost from the next state: min_{a'} Q_target(s', a').
+        # This represents the optimal cost-to-go from s'.
         argmin_q = jnp.argmin(q, axis=1)
         min_q = jnp.take_along_axis(q, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
+        # Get the cost of the single step from s to s'. For sliding puzzles, this is typically 1.
+        # This is equivalent to cost(s, a, s').
         selected_neighbor_costs = jnp.take_along_axis(
             neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
         ).squeeze(0)
+        # Calculate the target Q-value using the Bellman Optimality Equation:
+        # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
         target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
+        # Base case: If the next state (s') is the solution, the future cost is 0.
         target_q = jnp.where(selected_neighbors_solved, 0, target_q)
+        # If the current state (s) was already solved, its Q-value should also be 0.
         target_q = jnp.where(solved, 0.0, target_q)
 
+        # The 'diff' is the Temporal Difference (TD) error: target_Q(s,a) - Q(s,a).
+        # This will be used to calculate the loss.
         diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
         return key, (preproc, target_q, actions, diff, move_costs)
