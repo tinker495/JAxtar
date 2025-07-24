@@ -8,7 +8,7 @@ import optax
 from puxle import Puzzle
 
 from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
-from helpers.sampling import get_one_solved_branch_distance_samples
+from helpers.wbsampling import get_one_solved_branch_distance_samples
 from heuristic.neuralheuristic.neuralheuristic_base import (
     NeuralHeuristicBase as NeuralHeuristic,
 )
