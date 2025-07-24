@@ -6,6 +6,7 @@ import click
 import jax
 import jax.numpy as jnp
 import numpy as np
+from flashbax.utils import get_timestep_count
 from puxle import Puzzle
 
 from cli.eval_commands import _run_evaluation_sweep
@@ -497,11 +498,7 @@ def wbsdai(
         ) = replay_trainer(key, buffer_state, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         mean_target_heuristic = jnp.mean(sampled_target_heuristics)
-        replay_size = (
-            train_options.replay_size
-            if buffer_state.is_full
-            else buffer_state.current_index * train_options.add_batch_size
-        )
+        replay_size = get_timestep_count(buffer_state)
         pbar.set_description(
             desc="WBSDAI Training",
             desc_dict={
@@ -660,11 +657,7 @@ def wbsdqi(
         ) = replay_trainer(key, buffer_state, qfunction_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         mean_target_q = jnp.mean(sampled_target_q)
-        replay_size = (
-            train_options.replay_size
-            if buffer_state.is_full
-            else buffer_state.current_index * train_options.add_batch_size
-        )
+        replay_size = get_timestep_count(buffer_state)
         pbar.set_description(
             desc="WBSDQI Training",
             desc_dict={
