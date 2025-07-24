@@ -432,7 +432,7 @@ def get_one_solved_branch_distance_samples(
     leaf_states = search_result.get_state(leafs)
     leaf_costs = search_result.get_cost(leafs)
     # leaf_states: [topk_branch_size, ...], leaf_costs: [topk_branch_size]
-    leaf_solve_configs = puzzle.batched_hindsight_transform(
+    leaf_solve_configs = jax.vmap(puzzle.hindsight_transform, in_axes=(None, 0))(
         solve_config, leaf_states
     )  # states -> solve_configs
     # leaf_solve_configs: [topk_branch_size, ...]

@@ -481,7 +481,7 @@ def wbs_dist_train_options(func: callable) -> callable:
     @click.option("-sb", "--search_batch_size", type=int, default=None)
     @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
     @click.option("-sr", "--sample_ratio", type=float, default=None)
-    @click.option("-w", "--cost_weight", type=float, default=None)
+    @click.option("-tc-w", "--cost_weight", type=float, default=None)  # train cost weight
     @click.option("-k", "--key", type=int, default=None)
     @click.option(
         "-r", "--reset", is_flag=True, default=None, help="Reset the target heuristic params"
@@ -490,7 +490,7 @@ def wbs_dist_train_options(func: callable) -> callable:
         "-ob", "--use_optimal_branch", is_flag=True, default=None, help="Use optimal branch"
     )
     @click.option("--debug", is_flag=True, default=None, help="Debug mode")
-    @click.option("-m", "--multi_device", is_flag=True, default=None, help="Use multi device")
+    @click.option("-md", "--multi_device", is_flag=True, default=None, help="Use multi device")
     @click.option(
         "-pre",
         "--preset",
@@ -521,7 +521,7 @@ def wbs_dist_train_options(func: callable) -> callable:
             print("Disabling JIT")
             jax.config.update("jax_disable_jit", True)
 
-        kwargs["wbs_train_options"] = wbs_train_opts
+        kwargs["train_options"] = wbs_train_opts
         return func(*args, **kwargs)
 
     return wrapper

@@ -135,6 +135,10 @@ class WBSDistTrainOptions(BaseModel):
     use_optimal_branch: bool = False
     debug: bool = False
     multi_device: bool = False
+    optimizer: str = "adam"
+    learning_rate: float = 1e-3
+    weight_decay_size: Optional[float] = 0.0
+    logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
 
 
 class WMDatasetOptions(BaseModel):

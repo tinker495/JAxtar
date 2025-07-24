@@ -389,24 +389,28 @@ def qlearning(
 
 @click.command()
 @dist_puzzle_options
-@dist_heuristic_options
 @wbs_dist_train_options
+@dist_heuristic_options
+@eval_options
 def wbsdai(
     puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
     train_options: WBSDistTrainOptions,
     heuristic_config: NeuralCallableConfig,
+    eval_options: EvalOptions,
     **kwargs,
 ):
     config = {
-        "puzzle_options": puzzle.SolveConfig.default(),
+        "puzzle_options": puzzle_opts,
         "heuristic_config": heuristic_config,
         "train_options": train_options,
+        "eval_options": eval_options,
     }
     print_config("WBSDAI Training Configuration", config)
     logger = create_logger(
-        "aim", f"{puzzle_name}-{puzzle.size}-wbsdai", config
+        train_options.logger, f"{puzzle_name}-{puzzle.size}-wbsdai", config
     )  # Assuming "aim" as logger type
 
     heuristic_model = heuristic.model
@@ -417,6 +421,7 @@ def wbsdai(
     key, subkey = jax.random.split(key)
 
     n_devices = 1
+    steps = train_options.steps
     if train_options.multi_device:
         n_devices = jax.device_count()
         steps = train_options.steps // n_devices
@@ -437,6 +442,9 @@ def wbsdai(
         n_devices,
         steps,
         train_options.search_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
     )
     replay_trainer = regression_replay_trainer_builder(
         buffer,
@@ -509,29 +517,51 @@ def wbsdai(
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
+
+    # Evaluation
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=heuristic,
+            search_model_name="heuristic",
+            search_builder_fn=astar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            logger=logger,
+            step=steps,
+            **kwargs,
+        )
+
     logger.close()
 
 
 @click.command()
 @dist_puzzle_options
-@dist_qfunction_options
 @wbs_dist_train_options
+@dist_qfunction_options
+@eval_options
 def wbsdqi(
     puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
     qfunction: NeuralQFunctionBase,
     puzzle_name: str,
     train_options: WBSDistTrainOptions,
     q_config: NeuralCallableConfig,
+    eval_options: EvalOptions,
     **kwargs,
 ):
     config = {
-        "puzzle_options": puzzle.SolveConfig.default(),
+        "puzzle_options": puzzle_opts,
         "qfunction_config": q_config,
         "train_options": train_options,
+        "eval_options": eval_options,
     }
     print_config("WBSDQI Training Configuration", config)
     logger = create_logger(
-        "aim", f"{puzzle_name}-{puzzle.size}-wbsdqi", config
+        train_options.logger, f"{puzzle_name}-{puzzle.size}-wbsdqi", config
     )  # Assuming "aim" as logger type
 
     qfunction_model = qfunction.model
@@ -542,6 +572,7 @@ def wbsdqi(
     key, subkey = jax.random.split(key)
 
     n_devices = 1
+    steps = train_options.steps
     if train_options.multi_device:
         n_devices = jax.device_count()
         steps = train_options.steps // n_devices
@@ -563,6 +594,9 @@ def wbsdqi(
         n_devices,
         steps,
         train_options.search_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
     )
     replay_trainer = regression_replay_q_trainer_builder(
         buffer,
@@ -635,4 +669,22 @@ def wbsdqi(
     qfunction.params = qfunction_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
+
+    # Evaluation
+    if eval_options.num_eval > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        _run_evaluation_sweep(
+            puzzle=puzzle,
+            puzzle_name=puzzle_name,
+            search_model=qfunction,
+            search_model_name="qfunction",
+            search_builder_fn=qstar_builder,
+            eval_options=eval_options,
+            puzzle_opts=puzzle_opts,
+            output_dir=eval_run_dir,
+            logger=logger,
+            step=steps,
+            **kwargs,
+        )
+
     logger.close()
