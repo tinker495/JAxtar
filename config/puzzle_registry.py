@@ -201,11 +201,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function=RubiksCubeQ,
         heuristic_nn_config=NeuralCallableConfig(
             callable=RubiksCubeNeuralHeuristic,
-            path_template="heuristic/neuralheuristic/model/params/rubikscube_{size}.pkl",
+            path_template="heuristic/neuralheuristic/model/params/rubikscube-random_{size}.pkl",
         ),
         q_function_nn_config=NeuralCallableConfig(
             callable=RubiksCubeNeuralQ,
-            path_template="qfunction/neuralq/model/params/rubikscube_{size}.pkl",
+            path_template="qfunction/neuralq/model/params/rubikscube-random_{size}.pkl",
         ),
         heuristic_spr_config=NeuralCallableConfig(
             callable=RubiksCubeSPRNeuralHeuristic,

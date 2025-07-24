@@ -1,5 +1,6 @@
 import json
 import time
+from collections.abc import MutableMapping
 from typing import Any
 
 import chex
@@ -28,6 +29,38 @@ def convert_to_serializable_dict(obj: Any) -> Any:
         return obj
     except Exception:
         return str(obj)
+
+
+def flatten_dict(d: MutableMapping, parent_key: str = "", sep: str = "."):
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, MutableMapping):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
+def make_hashable(val):
+    if isinstance(val, list):
+        return tuple(val)
+    if isinstance(val, dict):
+        return json.dumps(val, sort_keys=True)
+    return val
+
+
+def display_value(val):
+    # Convert tuples back to lists for display, and pretty-print JSON strings
+    if isinstance(val, tuple):
+        return str(list(val))
+    try:
+        loaded = json.loads(val)
+        if isinstance(loaded, dict) or isinstance(loaded, list):
+            return json.dumps(loaded, indent=2)
+    except Exception:
+        pass
+    return str(val)
 
 
 def flatten_array(array: chex.Array, dims: int) -> chex.Array:

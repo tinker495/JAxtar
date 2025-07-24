@@ -103,16 +103,18 @@ class DistTrainOptions(BaseModel):
     update_interval: int = 128
     use_soft_update: bool = False
     using_hindsight_target: bool = False
-    using_importance_sampling: bool = False
     using_triangular_sampling: bool = False
     use_target_confidence_weighting: bool = False
     debug: bool = False
     multi_device: bool = True
     reset_interval: int = 4000
     tau: float = 0.2
-    opt_state_reset: bool = True
+    learning_rate: float = 1e-3
+    weight_decay_size: Optional[float] = 0.0
+    opt_state_reset: bool = False
     optimizer: str = "adam"
     temperature: float = 3.0
+    logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
 
 
 class DistQFunctionOptions(BaseModel):
