@@ -130,12 +130,10 @@ def get_one_solved_branch_distance_samples(
     true_costs = jnp.cumsum(incr_costs, axis=1)
     # true_costs: [topk_branch_size, max_depth] , [[0, 0, 1, 2, 3, ...], [0, 0, 0, 1, 2, ...], ...]
     # This represents the cumulative cost from each state to the leaf node
-    shifted_is_solved = jnp.concatenate(
-        (is_solved[:, 1:], jnp.zeros((is_solved.shape[0], 1), dtype=jnp.bool_)), axis=1
+    is_solved_shifted = jnp.concatenate(
+        (is_solved[:, 1:], jnp.zeros_like(is_solved[:, :1])), axis=1
     )
-    masks = jnp.logical_and(masks, ~shifted_is_solved)
-    # masks: [topk_branch_size, max_depth] ,
-    # [[False, False, True, True, True, ...], [False, False, False, True, True, ...], ...]
+    masks = jnp.logical_and(masks, ~is_solved_shifted)
 
     # Flatten solve_configs and states for batch processing
     # First, create a tiled version of leaf_solve_configs.
