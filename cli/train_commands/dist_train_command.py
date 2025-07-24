@@ -448,7 +448,7 @@ def wbsdai(
     )
     replay_trainer = regression_replay_trainer_builder(
         buffer,
-        train_options.search_batch_size // train_options.train_minibatch_size,
+        train_options.replay_size // train_options.train_minibatch_size,
         heuristic.pre_process,
         heuristic_model,
         optimizer,
@@ -600,7 +600,7 @@ def wbsdqi(
     )
     replay_trainer = regression_replay_q_trainer_builder(
         buffer,
-        train_options.search_batch_size // train_options.train_minibatch_size,
+        train_options.replay_size // train_options.train_minibatch_size,
         qfunction.pre_process,
         qfunction_model,
         optimizer,
