@@ -480,7 +480,9 @@ def wbs_dist_train_options(func: callable) -> callable:
     @click.option("-ab", "--add_batch_size", type=int, default=None)
     @click.option("-sb", "--search_batch_size", type=int, default=None)
     @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
+    @click.option("-rr", "--replay_ratio", type=int, default=None)
     @click.option("-sr", "--sample_ratio", type=float, default=None)
+    @click.option("-t-pr", "--pop_ratio", type=float, default=None)  # train pop ratio
     @click.option("-tc-w", "--cost_weight", type=float, default=None)  # train cost weight
     @click.option("-k", "--key", type=int, default=None)
     @click.option("-r", "--reset", type=bool, default=None)

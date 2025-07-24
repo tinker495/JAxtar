@@ -126,9 +126,11 @@ class WBSDistTrainOptions(BaseModel):
     replay_size: int = int(1e8)
     max_nodes: int = int(2e7)
     add_batch_size: int = 524288  # 8192 * 64
-    search_batch_size: int = 8192  # 8192 * 64
+    search_batch_size: int = 8192  # 8192
     train_minibatch_size: int = 8192  # 128 * 16
+    replay_ratio: int = 1
     sample_ratio: float = 0.3
+    pop_ratio: float = 0.35
     cost_weight: float = 0.8
     key: int = 0
     reset: bool = False

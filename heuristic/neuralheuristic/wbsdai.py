@@ -32,7 +32,7 @@ def regression_replay_trainer_builder(
         )
         heuristic_params["batch_stats"] = variable_updates["batch_stats"]
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
-        loss = jnp.mean(jnp.square(diff))
+        loss = jnp.mean(optax.log_cosh(current_heuristic.squeeze(), target_heuristic.squeeze()))
         return loss, (heuristic_params, diff)
 
     def regression(
@@ -120,6 +120,7 @@ def wbsdai_dataset_builder(
     cost_weight: float = 1.0 - 1e-3,
     max_depth: int = 300,
     sample_ratio: float = 0.3,
+    pop_ratio: float = 0.35,
     use_optimal_branch: bool = False,
 ) -> Callable:
     """
@@ -131,6 +132,7 @@ def wbsdai_dataset_builder(
         heuristic,
         search_batch_size,
         max_nodes,
+        pop_ratio,
         cost_weight,
         use_heuristic_params=True,
         export_last_pops=True,

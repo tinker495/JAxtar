@@ -17,6 +17,7 @@ from config.pydantic_models import (
     WBSDistTrainOptions,
 )
 from helpers.config_printer import print_config
+from helpers.formatting import human_format
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from heuristic.neuralheuristic.davi import (
@@ -441,14 +442,18 @@ def wbsdai(
         heuristic_params,
         n_devices,
         steps,
-        train_options.replay_size // train_options.train_minibatch_size,
+        train_options.add_batch_size
+        // train_options.train_minibatch_size
+        * train_options.replay_ratio,
         train_options.optimizer,
         lr_init=train_options.learning_rate,
         weight_decay_size=train_options.weight_decay_size,
     )
     replay_trainer = regression_replay_trainer_builder(
         buffer,
-        train_options.replay_size // train_options.train_minibatch_size,
+        train_options.add_batch_size
+        // train_options.train_minibatch_size
+        * train_options.replay_ratio,
         heuristic.pre_process,
         heuristic_model,
         optimizer,
@@ -462,6 +467,7 @@ def wbsdai(
         search_batch_size=train_options.search_batch_size,
         sample_ratio=train_options.sample_ratio,
         cost_weight=train_options.cost_weight,
+        pop_ratio=train_options.pop_ratio,
         use_optimal_branch=train_options.use_optimal_branch,
     )
 
@@ -491,6 +497,11 @@ def wbsdai(
         ) = replay_trainer(key, buffer_state, heuristic_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         mean_target_heuristic = jnp.mean(sampled_target_heuristics)
+        replay_size = (
+            train_options.replay_size
+            if buffer_state.is_full
+            else buffer_state.current_index * train_options.add_batch_size
+        )
         pbar.set_description(
             desc="WBSDAI Training",
             desc_dict={
@@ -498,6 +509,7 @@ def wbsdai(
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_heuristic": float(mean_target_heuristic),
+                "replay_size": f"{human_format(replay_size)}/{human_format(train_options.replay_size)}",
             },
         )
         logger.log_scalar("Losses/Loss", loss, i)
@@ -593,14 +605,18 @@ def wbsdqi(
         qfunction_params,
         n_devices,
         steps,
-        train_options.replay_size // train_options.train_minibatch_size,
+        train_options.add_batch_size
+        // train_options.train_minibatch_size
+        * train_options.replay_ratio,
         train_options.optimizer,
         lr_init=train_options.learning_rate,
         weight_decay_size=train_options.weight_decay_size,
     )
     replay_trainer = regression_replay_q_trainer_builder(
         buffer,
-        train_options.replay_size // train_options.train_minibatch_size,
+        train_options.add_batch_size
+        // train_options.train_minibatch_size
+        * train_options.replay_ratio,
         qfunction.pre_process,
         qfunction_model,
         optimizer,
@@ -614,6 +630,7 @@ def wbsdqi(
         search_batch_size=train_options.search_batch_size,
         sample_ratio=train_options.sample_ratio,
         cost_weight=train_options.cost_weight,
+        pop_ratio=train_options.pop_ratio,
         use_optimal_branch=train_options.use_optimal_branch,
     )
 
@@ -643,6 +660,11 @@ def wbsdqi(
         ) = replay_trainer(key, buffer_state, qfunction_params, opt_state)
         lr = opt_state.hyperparams["learning_rate"]
         mean_target_q = jnp.mean(sampled_target_q)
+        replay_size = (
+            train_options.replay_size
+            if buffer_state.is_full
+            else buffer_state.current_index * train_options.add_batch_size
+        )
         pbar.set_description(
             desc="WBSDQI Training",
             desc_dict={
@@ -650,6 +672,7 @@ def wbsdqi(
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_q": float(mean_target_q),
+                "replay_size": f"{human_format(replay_size)}/{human_format(train_options.replay_size)}",
             },
         )
         logger.log_scalar("Losses/Loss", loss, i)
