@@ -61,7 +61,7 @@ class Current_with_Parent:
     current: FieldDescriptor[Current]
 
 
-@chex.dataclass
+@partial(chex.dataclass, mappable_dataclass=False)
 class SearchResult:
     """
     A dataclass containing the data structures used in the A*/Q* search algorithms.
