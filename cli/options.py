@@ -25,6 +25,7 @@ from helpers.formatting import human_format_to_float
 from heuristic.heuristic_base import Heuristic
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.optimizer import OPTIMIZERS
+from qfunction.neuralq.hlg_neuralq_base import HLGNeuralQFunctionBase
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.q_base import QFunction
 
@@ -565,6 +566,63 @@ def dist_qfunction_options(func: callable) -> callable:
         q_config.neural_config = final_neural_config
 
         qfunction: NeuralQFunctionBase = q_config.callable(
+            puzzle=puzzle,
+            path=param_path,
+            init_params=reset,
+            **q_config.neural_config,
+        )
+        kwargs["qfunction"] = qfunction
+        kwargs["with_policy"] = q_opts.with_policy
+        kwargs["q_config"] = q_config
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def dist_hlg_qfunction_options(func: callable) -> callable:
+    @click.option("--with_policy", type=bool, default=None, help="Use policy for training")
+    @click.option(
+        "--param-path",
+        type=str,
+        default=None,
+        help="Path to the Q-function parameter file.",
+    )
+    @click.option(
+        "-nc",
+        "--neural_config",
+        type=str,
+        default=None,
+        help="Neural configuration. Overrides the default configuration.",
+    )
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        overrides = {
+            k: v
+            for k, v in kwargs.items()
+            if v is not None and k in DistQFunctionOptions.model_fields
+        }
+        q_opts = DistQFunctionOptions(**overrides)
+        puzzle_bundle = kwargs["puzzle_bundle"]
+        puzzle = kwargs["puzzle"]
+        reset = kwargs["train_options"].reset
+
+        q_config = puzzle_bundle.q_function_nn_hlg_config
+        if q_config is None:
+            raise click.UsageError(
+                f"HLG Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
+            )
+
+        param_path = kwargs.pop("param_path")
+        if param_path is None:
+            param_path = q_config.path_template.format(size=puzzle.size)
+
+        neural_config_override = kwargs.pop("neural_config")
+        final_neural_config = q_config.neural_config.copy()
+        if neural_config_override is not None:
+            final_neural_config.update(json.loads(neural_config_override))
+        q_config.neural_config = final_neural_config
+
+        qfunction: HLGNeuralQFunctionBase = q_config.callable(
             puzzle=puzzle,
             path=param_path,
             init_params=reset,

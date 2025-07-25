@@ -1,10 +1,29 @@
+import chex
 import jax
 import jax.numpy as jnp
 import optax
 from flax import linen as nn
+from puxle import Puzzle
 
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
+from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
+
+
+class InputLayer(nn.Module):
+    input_dim: int = 5000
+    hidden_dim: int = 1000
+    norm_fn: callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        x = nn.Dense(self.input_dim, dtype=DTYPE)(x)
+        x = self.norm_fn(x, training)
+        x = self.activation(x)
+        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+        x = self.norm_fn(x, training)
+        x = self.activation(x)
+        return x
 
 
 class HLGQModelBase(nn.Module):
@@ -29,8 +48,7 @@ class HLGQModelBase(nn.Module):
         self.categorial_centers = self.categorial_centers.reshape(1, 1, -1)  # (1, 1, categorial_n)
         self.sigma = self._sigma * (self.categorial_bins[1] - self.categorial_bins[0])
 
-        self.input_layer = nn.Dense(5000, dtype=DTYPE)
-        self.hidden_layer = nn.Dense(self.hidden_dim, dtype=DTYPE)
+        self.input_layer = InputLayer()
         self.res_blocks = [
             ResBlock(
                 self.hidden_dim,
@@ -45,19 +63,12 @@ class HLGQModelBase(nn.Module):
             dtype=DTYPE,
             kernel_init=nn.initializers.normal(stddev=0.01),
         )
-        self.dummy_norm = conditional_dummy_norm(self.output_layer, self.norm_fn)
 
     def __call__(self, x, training=False):
-        x = self.input_layer(x)
-        x = self.norm_fn(x, training)
-        x = self.activation(x)
-        x = self.hidden_layer(x)
-        x = self.norm_fn(x, training)
-        x = self.activation(x)
+        x = self.input_layer(x, training)
         for res_block in self.res_blocks:
             x = res_block(x, training)
         x = self.output_layer(x)
-        _ = self.dummy_norm(x, training)
         logits = x.reshape(
             x.shape[0], self.action_size, self.categorial_n
         )  # (batch_size, action_size, categorial_n)
@@ -93,3 +104,19 @@ class HLGNeuralQFunctionBase(NeuralQFunctionBase):
         super().__init__(
             puzzle, model=model, categorial_n=categorial_n, vmin=vmin, vmax=vmax, **kwargs
         )
+
+    def batched_param_q_value(
+        self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+    ) -> chex.Array:
+        x = self.batched_pre_process(solve_config, current)
+        (_, x), _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.post_process(x)
+        return x
+
+    def param_q_value(
+        self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+    ) -> chex.Array:
+        x = self.pre_process(solve_config, current)
+        x = jnp.expand_dims(x, axis=0)
+        (_, x), _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        return self.post_process(x)

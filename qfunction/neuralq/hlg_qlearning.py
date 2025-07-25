@@ -30,7 +30,7 @@ def hlg_qlearning_builder(
         target_qs: chex.Array,
         weights: chex.Array,
     ):
-        (sce, _), variable_updates = q_fn.apply(
+        sce, variable_updates = q_fn.apply(
             q_params, preproc, actions, target_qs, mutable=["batch_stats"], method=q_fn.train
         )
         if n_devices > 1:
