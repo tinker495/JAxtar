@@ -235,19 +235,19 @@ def create_hindsight_target_shuffled_path(
 
     if include_solved_states:
         move_costs = move_costs[-1, ...] - move_costs[1:, ...]  # [shuffle_length, shuffle_parallel]
+        actions = jnp.concatenate(
+            [
+                actions[1:],
+                jax.random.randint(key, (1, shuffle_parallel), minval=0, maxval=puzzle.action_size),
+            ]
+        )  # [shuffle_length, shuffle_parallel]
+        action_costs = jnp.concatenate(
+            [action_costs[1:], jnp.zeros((1, shuffle_parallel))]
+        )  # [shuffle_length, shuffle_parallel]
     else:
         move_costs = (
             move_costs[-1, ...] - move_costs[:-1, ...]
         )  # [shuffle_length, shuffle_parallel]
-    actions = jnp.concatenate(
-        [
-            actions[1:],
-            jax.random.randint(key, (1, shuffle_parallel), minval=0, maxval=puzzle.action_size),
-        ]
-    )  # [shuffle_length, shuffle_parallel]
-    action_costs = jnp.concatenate(
-        [action_costs[1:], jnp.zeros((1, shuffle_parallel))]
-    )  # [shuffle_length, shuffle_parallel]
 
     solve_configs = flatten_tree(solve_configs, 2)
     states = flatten_tree(states, 2)
@@ -314,8 +314,16 @@ def create_hindsight_target_triangular_shuffled_path(
     target_move_costs = move_costs[target_indices, parallel_indices]
     final_move_costs = target_move_costs - start_move_costs
 
-    final_actions = actions[start_indices, parallel_indices]
-    final_action_costs = action_costs[start_indices, parallel_indices]
+    # Handle boundary condition: clamp start_indices to prevent out-of-bounds access
+    # actions array has size [L], so valid indices are [0, L-1]
+    clamped_start_indices = jnp.clip(start_indices, 0, shuffle_length - 1)
+    final_actions = actions[clamped_start_indices, parallel_indices]
+    final_action_costs = action_costs[clamped_start_indices, parallel_indices]
+
+    # For cases where start_state == target_state (k=0), set action cost to 0
+    # This represents reaching the goal state (no further action needed)
+    is_goal_state = (k == 0) & include_solved_states
+    final_action_costs = jnp.where(is_goal_state, 0.0, final_action_costs)
 
     # Apply hindsight transform
     tiled_solve_configs = jax.tree_util.tree_map(
