@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import optax
 from flax import linen as nn
 
 from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, conditional_dummy_norm
@@ -11,6 +12,7 @@ class HLGQModelBase(nn.Module):
     categorial_n: int = 100
     vmin: float = -1.0
     vmax: float = 30.0
+    _sigma: float = 0.75
     Res_N: int = 4
     hidden_N: int = 1
     hidden_dim: int = 1000
@@ -24,6 +26,8 @@ class HLGQModelBase(nn.Module):
         self.categorial_centers = (
             self.categorial_bins[:-1] + self.categorial_bins[1:]
         ) / 2  # (categorial_n,)
+        self.categorial_centers = self.categorial_centers.reshape(1, 1, -1)  # (1, 1, categorial_n)
+        self.sigma = self._sigma * (self.categorial_bins[1] - self.categorial_bins[0])
 
         self.input_layer = nn.Dense(5000, dtype=DTYPE)
         self.hidden_layer = nn.Dense(self.hidden_dim, dtype=DTYPE)
@@ -43,7 +47,6 @@ class HLGQModelBase(nn.Module):
         )
         self.dummy_norm = conditional_dummy_norm(self.output_layer, self.norm_fn)
 
-    @nn.compact
     def __call__(self, x, training=False):
         x = self.input_layer(x)
         x = self.norm_fn(x, training)
@@ -61,6 +64,26 @@ class HLGQModelBase(nn.Module):
         probs = jax.nn.softmax(logits, axis=-1)  # (batch_size, action_size, categorial_n)
         q = jnp.sum(probs * self.categorial_centers, axis=-1)  # (batch_size, action_size)
         return logits, q
+
+    def train(self, x, actions, target_q):
+        # target: [batch, 1]
+        def f(target):
+            cdf_evals = jax.scipy.special.erf(
+                (self.categorial_bins - target) / (jnp.sqrt(2) * self.sigma)
+            )
+            z = cdf_evals[-1] - cdf_evals[0]
+            bin_probs = cdf_evals[1:] - cdf_evals[:-1]
+            return bin_probs / z
+
+        target_probs = jax.vmap(f)(target_q)
+        logits_actions, _ = self(x, training=True)
+        logits = jnp.take_along_axis(
+            logits_actions, actions[:, jnp.newaxis, jnp.newaxis], axis=1
+        ).squeeze(
+            1
+        )  # (batch_size, categorial_n)
+        sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size,)
+        return sce
 
 
 class HLGNeuralQFunctionBase(NeuralQFunctionBase):
