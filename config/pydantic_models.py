@@ -113,7 +113,7 @@ class DistTrainOptions(BaseModel):
     weight_decay_size: Optional[float] = 0.0
     opt_state_reset: bool = False
     optimizer: str = "adam"
-    temperature: float = 3.0
+    temperature: float = 0.33
     logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
 
 
