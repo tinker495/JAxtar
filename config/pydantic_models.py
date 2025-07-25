@@ -93,21 +93,21 @@ class QFunctionOptions(BaseModel):
 
 
 class DistTrainOptions(BaseModel):
-    steps: int = int(2e4)
-    dataset_batch_size: int = 524288
+    steps: int = int(5e3)
+    dataset_batch_size: int = 8192 * 256
     dataset_minibatch_size: int = 8192
     train_minibatch_size: int = 8192
     key: int = 0
     reset: bool = True
     loss_threshold: float = float("inf")
-    update_interval: int = 128
+    update_interval: int = 32
     use_soft_update: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
     use_target_confidence_weighting: bool = False
     debug: bool = False
     multi_device: bool = True
-    reset_interval: int = 4000
+    reset_interval: int = 1000
     tau: float = 0.2
     learning_rate: float = 1e-3
     weight_decay_size: Optional[float] = 0.0
