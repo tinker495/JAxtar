@@ -235,19 +235,19 @@ def create_hindsight_target_shuffled_path(
 
     if include_solved_states:
         move_costs = move_costs[-1, ...] - move_costs[1:, ...]  # [shuffle_length, shuffle_parallel]
+        actions = jnp.concatenate(
+            [
+                actions[1:],
+                jax.random.randint(key, (1, shuffle_parallel), minval=0, maxval=puzzle.action_size),
+            ]
+        )  # [shuffle_length, shuffle_parallel]
+        action_costs = jnp.concatenate(
+            [action_costs[1:], jnp.zeros((1, shuffle_parallel))]
+        )  # [shuffle_length, shuffle_parallel]
     else:
         move_costs = (
             move_costs[-1, ...] - move_costs[:-1, ...]
         )  # [shuffle_length, shuffle_parallel]
-    actions = jnp.concatenate(
-        [
-            actions[1:],
-            jax.random.randint(key, (1, shuffle_parallel), minval=0, maxval=puzzle.action_size),
-        ]
-    )  # [shuffle_length, shuffle_parallel]
-    action_costs = jnp.concatenate(
-        [action_costs[1:], jnp.zeros((1, shuffle_parallel))]
-    )  # [shuffle_length, shuffle_parallel]
 
     solve_configs = flatten_tree(solve_configs, 2)
     states = flatten_tree(states, 2)
