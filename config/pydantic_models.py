@@ -71,6 +71,15 @@ class EvalOptions(BaseModel):
         3,
         description="Maximum number of individual expansion plots to generate per run. Set to 0 to disable.",
     )
+    use_early_stopping: bool = Field(
+        True, description="Enable early stopping based on success rate threshold."
+    )
+    early_stop_patience: int = Field(
+        10, description="Number of samples to check before considering early stopping."
+    )
+    early_stop_threshold: float = Field(
+        0.5, description="Minimum success rate threshold for early stopping (0.0 to 1.0)."
+    )
 
     def get_max_node_size(self, batch_size: int) -> int:
         return self.max_node_size // batch_size * batch_size
