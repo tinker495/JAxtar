@@ -149,7 +149,7 @@ $ python main.py astar -nn -h -p rubikscube -w 0.2
 │ Cost          │           22.0 │
 │ Search Time   │         0.49 s │
 │ Search States │          1.85M │
-│ States/s      │          3.73M │
+│ States/s      │          3.74M │
 └───────────────┴────────────────┘
 ```
 
@@ -166,9 +166,9 @@ $ python main.py qstar -nn -h -p rubikscube -w 0.2
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           22.0 │
-│ Search Time   │         0.18 s │
+│ Search Time   │         0.17 s │
 │ Search States │          1.79M │
-│ States/s      │            10M │
+│ States/s      │          10.7M │
 └───────────────┴────────────────┘
 ```
 
@@ -187,7 +187,7 @@ $ python main.py qstar -p rubikscube_world_model_optimized -nn -w 0.6
 │ Cost          │           22.0 │
 │ Search Time   │         0.18 s │
 │ Search States │          1.82M │
-│ States/s      │          10.1M │
+│ States/s      │          10.3M │
 └───────────────┴────────────────┘
 ```
 
