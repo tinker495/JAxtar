@@ -413,7 +413,6 @@ def get_hlg_qlearning_dataset_builder(
                 False,
             )
     else:
-        with_policy = True  # if not using hindsight target, must use policy for training
         shuffle_parallel = int(
             min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
         )
@@ -428,16 +427,27 @@ def get_hlg_qlearning_dataset_builder(
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
-    jited_get_datasets = jax.jit(
-        partial(
-            _get_datasets_with_policy if with_policy else _get_datasets_with_trajectory,
-            puzzle,
-            preproc_fn,
-            q_model,
-            dataset_minibatch_size,
-            temperature=temperature if with_policy else None,
+    if with_policy:
+        jited_get_datasets = jax.jit(
+            partial(
+                _get_datasets_with_policy,
+                puzzle,
+                preproc_fn,
+                q_model,
+                dataset_minibatch_size,
+                temperature=temperature,
+            )
         )
-    )
+    else:
+        jited_get_datasets = jax.jit(
+            partial(
+                _get_datasets_with_trajectory,
+                puzzle,
+                preproc_fn,
+                q_model,
+                dataset_minibatch_size,
+            )
+        )
 
     @jax.jit
     def get_datasets(
