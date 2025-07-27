@@ -55,6 +55,7 @@ from qfunction.neuralq import (
     PancakeNeuralQ,
     RubiksCubeHLGNeuralQ,
     RubiksCubeNeuralQ,
+    RubiksCubeRandomHLGNeuralQ,
     RubiksCubeRandomNeuralQ,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
@@ -199,7 +200,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path_template="qfunction/neuralq/model/params/rubikscube-random_{size}.pkl",
         ),
         q_function_nn_hlg_config=NeuralCallableConfig(
-            callable=RubiksCubeHLGNeuralQ,
+            callable=RubiksCubeRandomHLGNeuralQ,
             path_template="qfunction/neuralq/model/params/rubikscube-random_hlg_{size}.pkl",
         ),
     ),
