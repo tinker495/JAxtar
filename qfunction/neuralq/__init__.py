@@ -4,7 +4,10 @@ from qfunction.neuralq.model.lightsout_neuralq import (
 )
 from qfunction.neuralq.model.pancake_neuralq import PancakeNeuralQ
 from qfunction.neuralq.model.rubikscube_hlg_neuralq import RubiksCubeHLGNeuralQ
-from qfunction.neuralq.model.rubikscube_neuralq import RubiksCubeNeuralQ
+from qfunction.neuralq.model.rubikscube_neuralq import (
+    RubiksCubeNeuralQ,
+    RubiksCubeRandomNeuralQ,
+)
 from qfunction.neuralq.model.slidepuzzle_neuralq import (
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
