@@ -296,4 +296,18 @@ class EvaluationRunner:
                 )
             pbar.set_description("Evaluating", desc_dict=pbar_desc_dict)
 
+            # Early stopping logic
+            if (
+                self.eval_options.use_early_stopping
+                and (i + 1) >= self.eval_options.early_stop_patience
+            ):
+                current_success_rate = num_solved / (i + 1)
+                if current_success_rate < self.eval_options.early_stop_threshold:
+                    self.console.print(
+                        f"[bold yellow]Early stopping triggered![/bold yellow] "
+                        f"Success rate ({current_success_rate:.2%}) below threshold "
+                        f"({self.eval_options.early_stop_threshold:.2%}) after {i + 1} samples."
+                    )
+                    break
+
         return results

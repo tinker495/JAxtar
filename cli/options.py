@@ -195,6 +195,24 @@ def eval_options(func: callable) -> callable:
         "-ne", "--num-eval", type=int, default=None, help="Number of puzzles to evaluate."
     )
     @click.option("-rn", "--run-name", type=str, default=None, help="Name of the evaluation run.")
+    @click.option(
+        "--use-early-stopping",
+        type=bool,
+        default=None,
+        help="Enable early stopping based on success rate threshold.",
+    )
+    @click.option(
+        "--early-stop-patience",
+        type=int,
+        default=None,
+        help="Number of samples to check before considering early stopping.",
+    )
+    @click.option(
+        "--early-stop-threshold",
+        type=float,
+        default=None,
+        help="Minimum success rate threshold for early stopping (0.0 to 1.0).",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         if kwargs.get("max_node_size", None) is not None:
