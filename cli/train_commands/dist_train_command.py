@@ -110,6 +110,7 @@ def davi(
     pbar = trange(steps)
     updated = False
     last_reset_time = 0
+    last_update_step = -1  # Track last update step for force update
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
@@ -153,12 +154,15 @@ def davi(
             updated = True
             if i % update_interval == 0 and i != 0:
                 target_updated = True
-        elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
+        elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
+            i - last_update_step >= train_options.force_update_interval
+        ):
             target_heuristic_params = heuristic_params
             updated = True
             if train_options.opt_state_reset:
                 opt_state = optimizer.init(heuristic_params)
             target_updated = True
+            last_update_step = i
 
         if (
             target_updated
@@ -281,6 +285,7 @@ def qlearning(
     pbar = trange(steps)
     updated = False
     last_reset_time = 0
+    last_update_step = -1  # Track last update step for force update
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
@@ -325,12 +330,15 @@ def qlearning(
             updated = True
             if i % update_interval == 0 and i != 0:
                 target_updated = True
-        elif (i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold:
+        elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
+            i - last_update_step >= train_options.force_update_interval
+        ):
             target_qfunc_params = qfunc_params
             updated = True
             if train_options.opt_state_reset:
                 opt_state = optimizer.init(qfunc_params)
             target_updated = True
+            last_update_step = i
 
         if (
             target_updated

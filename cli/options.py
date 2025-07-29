@@ -398,6 +398,7 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-r", "--reset", type=bool, default=None)
     @click.option("-lt", "--loss_threshold", type=float, default=None)
     @click.option("-ui", "--update_interval", type=int, default=None)
+    @click.option("-fui", "--force_update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
