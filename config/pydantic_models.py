@@ -110,6 +110,7 @@ class DistTrainOptions(BaseModel):
     reset: bool = True
     loss_threshold: float = float("inf")
     update_interval: int = 32
+    force_update_interval: int = 2048
     use_soft_update: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
