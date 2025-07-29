@@ -33,6 +33,7 @@ from heuristic.neuralheuristic import (
     LightsOutNeuralHeuristic,
     PancakeNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
+    RubiksCubeRandomNeuralHeuristic,
     SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
     SokobanNeuralHeuristic,
@@ -59,6 +60,7 @@ from qfunction.neuralq import (
     LightsOutNeuralQ,
     PancakeNeuralQ,
     RubiksCubeNeuralQ,
+    RubiksCubeRandomNeuralQ,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
     SokobanNeuralQ,
@@ -200,11 +202,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
         heuristic_nn_config=NeuralCallableConfig(
-            callable=RubiksCubeNeuralHeuristic,
+            callable=RubiksCubeRandomNeuralHeuristic,
             path_template="heuristic/neuralheuristic/model/params/rubikscube-random_{size}.pkl",
         ),
         q_function_nn_config=NeuralCallableConfig(
-            callable=RubiksCubeNeuralQ,
+            callable=RubiksCubeRandomNeuralQ,
             path_template="qfunction/neuralq/model/params/rubikscube-random_{size}.pkl",
         ),
         heuristic_spr_config=NeuralCallableConfig(
