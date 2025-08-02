@@ -104,6 +104,7 @@ def davi(
         train_options.train_minibatch_size,
         heuristic_model,
         optimizer,
+        heuristic.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
@@ -277,6 +278,7 @@ def qlearning(
         train_options.train_minibatch_size,
         qfunc_model,
         optimizer,
+        qfunction.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
     )
