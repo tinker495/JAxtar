@@ -340,8 +340,7 @@ def qlearning(
                 target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
             )
             updated = True
-            if i % update_interval == 0 and i != 0:
-                target_updated = True
+            target_updated = True
         elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
             i - last_update_step >= train_options.force_update_interval
         ):

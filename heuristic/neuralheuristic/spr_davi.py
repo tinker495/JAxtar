@@ -8,14 +8,14 @@ import jax.numpy as jnp
 import optax
 from puxle import Puzzle
 
-from helpers.sampling import (
+from heuristic.neuralheuristic.spr_neuralheuristic_base import SPRHeuristicModel
+from neural_util.spr_modules import vector_augmentation
+from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
-from heuristic.neuralheuristic.spr_neuralheuristic_base import SPRHeuristicModel
-from neural_util.spr_modules import vector_augmentation
-from neural_util.target_update import soft_update
+from train_util.target_update import soft_update
 
 
 def spr_davi_builder(

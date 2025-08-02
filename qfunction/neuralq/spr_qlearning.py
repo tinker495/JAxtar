@@ -8,15 +8,15 @@ import jax.numpy as jnp
 import optax
 from puxle import Puzzle
 
-from helpers.sampling import (
+from neural_util.spr_modules import vector_augmentation
+from qfunction.neuralq.qlearning import boltzmann_action_selection
+from qfunction.neuralq.spr_neuralq_base import SPRQModel
+from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
-from neural_util.spr_modules import vector_augmentation
-from neural_util.target_update import soft_update
-from qfunction.neuralq.qlearning import boltzmann_action_selection
-from qfunction.neuralq.spr_neuralq_base import SPRQModel
+from train_util.target_update import soft_update
 
 
 def spr_qlearning_builder(
