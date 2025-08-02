@@ -13,6 +13,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import (
     BGPQ,
@@ -23,7 +24,6 @@ from xtructure import (
     base_dataclass,
     xtructure_dataclass,
 )
-from xtructure import xtructure_numpy as xnp
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -289,7 +289,7 @@ class SearchResult:
         search_result.priority_queue = search_result.priority_queue.insert(return_keys, min_val)
 
         # 4. Update the closed set with the nodes we are processing
-        search_result.cost = xnp.set_as_condition_on_array(
+        search_result.cost = xnp.update_on_condition(
             search_result.cost,
             min_val.current.hashidx.index,
             final_process_mask,
@@ -298,7 +298,7 @@ class SearchResult:
         search_result.parent = search_result.parent.at[
             min_val.current.hashidx.index
         ].set_as_condition(final_process_mask, min_val.parent)
-        search_result.pop_generation = xnp.set_as_condition_on_array(
+        search_result.pop_generation = xnp.update_on_condition(
             search_result.pop_generation,
             min_val.current.hashidx.index,
             final_process_mask,

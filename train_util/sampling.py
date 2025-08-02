@@ -1,8 +1,8 @@
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import xtructure_numpy as xnp
 
 from helpers.util import flatten_array, flatten_tree
 
