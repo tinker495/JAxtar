@@ -114,7 +114,7 @@ def setup_optimizer(
     # Add warmup to the learning rate schedule
     lr = lr_init * num_devices
 
-    warmup_steps = 10 * one_iter_size
+    warmup_steps = one_iter_size
 
     # Create a warmup schedule that linearly increases from 0 to init_value
     warmup_schedule = optax.linear_schedule(
