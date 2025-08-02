@@ -11,13 +11,6 @@ from .formatting import (
 from .logger import AimLogger, BaseLogger, NoOpLogger, TensorboardLogger, create_logger
 from .metrics import calculate_heuristic_metrics
 from .rich_progress import RichProgressBar, tqdm, trange
-from .sampling import (
-    create_hindsight_target_shuffled_path,
-    create_hindsight_target_triangular_shuffled_path,
-    create_target_shuffled_path,
-    get_random_inverse_trajectory,
-    get_random_trajectory,
-)
 from .util import (
     convert_to_serializable_dict,
     display_value,
@@ -51,12 +44,6 @@ __all__ = [
     "RichProgressBar",
     "tqdm",
     "trange",
-    # Sampling
-    "get_random_inverse_trajectory",
-    "get_random_trajectory",
-    "create_target_shuffled_path",
-    "create_hindsight_target_shuffled_path",
-    "create_hindsight_target_triangular_shuffled_path",
     # Util
     "convert_to_serializable_dict",
     "vmapping_search",

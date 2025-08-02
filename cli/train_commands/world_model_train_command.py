@@ -8,8 +8,8 @@ from config.pydantic_models import WMTrainOptions
 from helpers.config_printer import print_config
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
-from neural_util.optimizer import setup_optimizer
-from neural_util.util import round_through_gradient
+from train_util.optimizer import setup_optimizer
+from train_util.util import round_through_gradient
 from world_model_puzzle import WorldModelPuzzleBase
 from world_model_puzzle.world_model_train import (
     world_model_eval_builder,
