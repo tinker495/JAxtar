@@ -8,12 +8,12 @@ import jax.numpy as jnp
 import optax
 from puxle import Puzzle
 
-from helpers.sampling import (
+from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
+from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
-from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
 
 
 def davi_builder(

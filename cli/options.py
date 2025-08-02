@@ -25,10 +25,10 @@ from helpers.formatting import human_format_to_float
 from heuristic.heuristic_base import Heuristic
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from heuristic.neuralheuristic.spr_neuralheuristic_base import SPRNeuralHeuristic
-from neural_util.optimizer import OPTIMIZERS
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.spr_neuralq_base import SPRNeuralQFunction
 from qfunction.q_base import QFunction
+from train_util.optimizer import OPTIMIZERS
 
 
 def create_puzzle_options(
