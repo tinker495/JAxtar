@@ -4,8 +4,8 @@ from typing import Any, Optional
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import xtructure_numpy as xnp
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
@@ -133,7 +133,7 @@ def astar_builder(
 
             # Update the cost (g-value) for the newly found optimal paths before they are
             # masked out. This ensures the cost table is always up-to-date.
-            search_result.cost = xnp.set_as_condition_on_array(
+            search_result.cost = xnp.update_on_condition(
                 search_result.cost,
                 hash_idx.index,
                 final_process_mask,
@@ -173,7 +173,7 @@ def astar_builder(
                     solve_config, neighbour, params=heuristic_params
                 ).astype(KEY_DTYPE)
                 # cache the heuristic value
-                search_result.dist = xnp.set_as_condition_on_array(
+                search_result.dist = xnp.update_on_condition(
                     search_result.dist,
                     current.hashidx.index,
                     inserted,

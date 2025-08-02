@@ -6,6 +6,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
+import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
@@ -20,15 +21,19 @@ def regression_trainer_builder(
     minibatch_size: int,
     heuristic_model: HeuristicBase,
     optimizer: optax.GradientTransformation,
+    preproc_fn: Callable,
     n_devices: int = 1,
     use_target_confidence_weighting: bool = False,
 ):
     def davi_loss(
         heuristic_params: Any,
-        preproc: chex.Array,
+        solveconfigs: chex.Array,
+        states: chex.Array,
         target_heuristic: chex.Array,
         weights: chex.Array,
     ):
+        # Preprocess during training
+        preproc = jax.vmap(preproc_fn)(solveconfigs, states)
         current_heuristic, variable_updates = heuristic_model.apply(
             heuristic_params, preproc, training=True, mutable=["batch_stats"]
         )
@@ -52,7 +57,8 @@ def regression_trainer_builder(
         """
         DAVI is a heuristic for the sliding puzzle problem.
         """
-        preproc = dataset["preproc"]
+        solveconfigs = dataset["solveconfigs"]
+        states = dataset["states"]
         target_heuristic = dataset["target_heuristic"]
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
@@ -71,16 +77,18 @@ def regression_trainer_builder(
             loss_weights = loss_weights * cost_weights
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
-        batched_preproc = jnp.take(preproc, batch_indexs, axis=0)
+        batched_solveconfigs = xnp.take(solveconfigs, batch_indexs, axis=0)
+        batched_states = xnp.take(states, batch_indexs, axis=0)
         batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
         batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
-            preproc, target_heuristic, weights = batched_dataset
+            solveconfigs, states, target_heuristic, weights = batched_dataset
             (loss, (heuristic_params, diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
-                preproc,
+                solveconfigs,
+                states,
                 target_heuristic,
                 weights,
             )
@@ -98,7 +106,7 @@ def regression_trainer_builder(
         (heuristic_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
             train_loop,
             (heuristic_params, opt_state),
-            (batched_preproc, batched_target_heuristic, batched_weights),
+            (batched_solveconfigs, batched_states, batched_target_heuristic, batched_weights),
         )
         loss = jnp.mean(losses)
         diffs = jnp.concatenate(diffs)
@@ -152,13 +160,9 @@ def _get_datasets(
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
 
-    minibatched_solve_configs = jax.tree_util.tree_map(
-        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), solve_configs
-    )
-    minibatched_states = jax.tree_util.tree_map(
-        lambda x: x.reshape((-1, minibatch_size, *x.shape[1:])), states
-    )
-    minibatched_move_costs = move_costs.reshape((-1, minibatch_size, *move_costs.shape[1:]))
+    minibatched_solve_configs = solve_configs.reshape((-1, minibatch_size))
+    minibatched_states = states.reshape((-1, minibatch_size))
+    minibatched_move_costs = move_costs.reshape((-1, minibatch_size))
 
     def get_minibatched_datasets(_, vals):
         solve_configs, states, move_costs = vals
@@ -200,21 +204,23 @@ def _get_datasets(
             heuristic_params, preproc, training=False, mutable=["batch_stats"]
         )
         diff = target_heuristic - heur.squeeze()
-        return None, (preproc, target_heuristic, diff, move_costs)
+        return None, (solve_configs, states, target_heuristic, diff, move_costs)
 
-    _, (preproc, target_heuristic, diff, cost) = jax.lax.scan(
+    _, (solve_configs, states, target_heuristic, diff, cost) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
     )
 
-    preproc = preproc.reshape((-1, *preproc.shape[2:]))
-    target_heuristic = target_heuristic.reshape((-1, *target_heuristic.shape[2:]))
-    diff = diff.reshape((-1, *diff.shape[2:]))
-    cost = cost.reshape((-1, *cost.shape[2:]))
+    solve_configs = solve_configs.reshape((-1,))
+    states = states.reshape((-1,))
+    target_heuristic = target_heuristic.reshape((-1,))
+    diff = diff.reshape((-1,))
+    cost = cost.reshape((-1,))
 
     return {
-        "preproc": preproc,
+        "solveconfigs": solve_configs,
+        "states": states,
         "target_heuristic": target_heuristic,
         "diff": diff,
         "cost": cost,

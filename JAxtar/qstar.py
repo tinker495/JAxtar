@@ -4,8 +4,8 @@ from typing import Any, Optional
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import xtructure_numpy as xnp
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
@@ -142,7 +142,7 @@ def qstar_builder(
 
             # Update the cost (g-value) for the newly found optimal paths before they are
             # masked out. This ensures the cost table is always up-to-date.
-            search_result.cost = xnp.set_as_condition_on_array(
+            search_result.cost = xnp.update_on_condition(
                 search_result.cost,
                 hash_idx.index,
                 final_process_mask,
@@ -157,7 +157,7 @@ def qstar_builder(
 
             # 2. Update the global heuristic map (dist) based on this finding.
             #    We use the original flatten_q_vals here.
-            search_result.dist = xnp.set_as_condition_on_array(
+            search_result.dist = xnp.update_on_condition(
                 search_result.dist,
                 hash_idx.index,
                 is_more_optimistic_h,

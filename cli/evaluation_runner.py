@@ -7,9 +7,9 @@ from typing import Callable, Optional, Union
 import jax
 import numpy as np
 import pandas as pd
+import xtructure.numpy as xnp
 from puxle import Puzzle
 from rich.console import Console
-from xtructure import xtructure_numpy as xnp
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers import human_format
