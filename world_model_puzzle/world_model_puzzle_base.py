@@ -14,12 +14,11 @@ from neural_util.param_manager import (
     load_params_with_metadata,
     save_params_with_metadata,
 )
-from neural_util.util import (
-    download_model,
+from neural_util.util import download_model, is_model_downloaded
+from train_util.util import round_through_gradient
+from world_model_puzzle.util import (
     download_world_model_dataset,
-    is_model_downloaded,
     is_world_model_dataset_downloaded,
-    round_through_gradient,
 )
 
 

@@ -21,10 +21,10 @@ from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_b
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from JAxtar.astar import astar_builder
 from JAxtar.qstar import qstar_builder
-from neural_util.optimizer import setup_optimizer
-from neural_util.target_update import scaled_by_reset, soft_update
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
+from train_util.optimizer import setup_optimizer
+from train_util.target_update import scaled_by_reset, soft_update
 
 from ..options import (
     dist_heuristic_options,
