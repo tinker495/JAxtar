@@ -9,11 +9,11 @@ from puxle import Puzzle
 from xtructure import xtructure_numpy as xnp
 
 from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
-from helpers.wbsampling import get_one_solved_branch_distance_samples
 from heuristic.neuralheuristic.neuralheuristic_base import (
     NeuralHeuristicBase as NeuralHeuristic,
 )
 from JAxtar.astar import astar_builder
+from train_util.wbsampling import get_one_solved_branch_distance_samples
 
 
 def regression_replay_trainer_builder(
