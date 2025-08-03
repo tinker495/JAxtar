@@ -87,7 +87,7 @@ $ python main.py astar
 │ Cost          │           50.0 │
 │ Search Time   │         0.12 s │
 │ Search States │           738K │
-│ States/s      │          6.03M │
+│ States/s      │          6.15M │
 └───────────────┴────────────────┘
 ```
 
@@ -127,8 +127,8 @@ $ python main.py astar --vmap_size 20
 ┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Metric          ┃                  Value ┃
 ┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Search Time     │       3.23s (x26.4/20) │
-│ Search States   │ 14.8M (4.57M states/s) │
+│ Search Time     │       3.18s (x26.5/20) │
+│ Search States   │ 14.8M (4.64M states/s) │
 │ Speedup         │                   x0.8 │
 │ Solutions Found │                100.00% │
 └─────────────────┴────────────────────────┘
@@ -149,7 +149,7 @@ $ python main.py astar -nn -h -p rubikscube -w 0.2
 │ Cost          │           22.0 │
 │ Search Time   │         0.49 s │
 │ Search States │          1.85M │
-│ States/s      │          3.74M │
+│ States/s      │          3.78M │
 └───────────────┴────────────────┘
 ```
 
@@ -166,9 +166,9 @@ $ python main.py qstar -nn -h -p rubikscube -w 0.2
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           22.0 │
-│ Search Time   │         0.17 s │
+│ Search Time   │         0.16 s │
 │ Search States │          1.79M │
-│ States/s      │          10.7M │
+│ States/s      │          10.9M │
 └───────────────┴────────────────┘
 ```
 
@@ -185,9 +185,9 @@ $ python main.py qstar -p rubikscube_world_model_optimized -nn -w 0.6
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           22.0 │
-│ Search Time   │         0.18 s │
+│ Search Time   │         0.17 s │
 │ Search States │          1.82M │
-│ States/s      │          10.3M │
+│ States/s      │          10.5M │
 └───────────────┴────────────────┘
 ```
 
