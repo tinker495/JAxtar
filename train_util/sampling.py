@@ -42,9 +42,7 @@ def get_random_inverse_trajectory(
         )(
             jax.random.split(subkey, prob.shape[1]), prob
         )  # [batch]
-        next_state = jax.vmap(
-            lambda ns, i: jax.tree_util.tree_map(lambda x: x[i], ns), in_axes=(1, 0), out_axes=0
-        )(
+        next_state = jax.vmap(lambda ns, i: ns[i], in_axes=(1, 0), out_axes=0)(
             neighbor_states, inv_actions
         )  # [batch, ...]
         cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, inv_actions)  # [batch]
@@ -117,9 +115,7 @@ def get_random_trajectory(
         )(
             jax.random.split(subkey, prob.shape[1]), prob
         )  # [batch]
-        next_state = jax.vmap(
-            lambda ns, i: jax.tree_util.tree_map(lambda x: x[i], ns), in_axes=(1, 0), out_axes=0
-        )(
+        next_state = jax.vmap(lambda ns, i: ns[i], in_axes=(1, 0), out_axes=0)(
             neighbor_states, actions
         )  # [batch, ...]
         cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, actions)  # [batch]

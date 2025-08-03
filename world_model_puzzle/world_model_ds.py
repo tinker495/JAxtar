@@ -96,7 +96,7 @@ def get_sample_data_builder(
         for _ in trange(steps):
             key, subkey = jax.random.split(key)
             dataset.append(create_sample_data_fn(subkey))
-        flatten_dataset = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *dataset)
+        flatten_dataset = xnp.concatenate(dataset)
         assert (
             flatten_dataset[0].shape[0][0] == dataset_size
         ), f"{flatten_dataset[0].shape[0][0]} != {dataset_size}"
