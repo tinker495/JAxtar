@@ -471,10 +471,8 @@ def get_qlearning_dataset_builder(
             return key, paths
 
         key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
-        paths = jax.tree_util.tree_map(
-            lambda x: x.reshape((-1, *x.shape[2:]))[:dataset_size], paths
-        )
-
+        for k, v in paths.items():
+            paths[k] = v.flatten()[:dataset_size]
         flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
         return flatten_dataset
 

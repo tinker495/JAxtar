@@ -4,6 +4,7 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.rich_progress import trange
@@ -70,13 +71,10 @@ def create_shuffled_path(
     states, actions, next_states = get_trajectory_key(
         initial_states, key
     )  # [batch_size, shuffle_length][state...]
-    solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[:, jnp.newaxis, ...], (1, shuffle_length) + (x.ndim - 1) * (1,)),
-        solve_configs,
-    )
-    states = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), states)
-    actions = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), actions)
-    next_states = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[2:])), next_states)
+    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (shuffle_length, 1))
+    states = states.flatten()
+    actions = actions.flatten()
+    next_states = next_states.flatten()
     states = states[:dataset_minibatch_size]
     actions = actions[:dataset_minibatch_size]
     next_states = next_states[:dataset_minibatch_size]

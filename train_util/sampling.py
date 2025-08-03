@@ -177,11 +177,7 @@ def create_target_shuffled_path(
     inv_actions = inverse_trajectory["actions"]
     action_costs = inverse_trajectory["action_costs"]
 
-    solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
-        solve_configs,
-    )  # [shuffle_length, batch_size, ...]
-
+    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (shuffle_length, 1))
     solve_configs = solve_configs.flatten()
     states = states.flatten()
     move_costs = move_costs.flatten()
@@ -226,10 +222,7 @@ def create_hindsight_target_shuffled_path(
     solve_configs = puzzle.batched_hindsight_transform(
         original_solve_configs, targets
     )  # [shuffle_parallel, ...]
-    solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
-        solve_configs,
-    )  # [shuffle_length, shuffle_parallel, ...]
+    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (shuffle_length, 1))
 
     if include_solved_states:
         move_costs = move_costs[-1, ...] - move_costs[1:, ...]  # [shuffle_length, shuffle_parallel]
@@ -324,10 +317,7 @@ def create_hindsight_target_triangular_shuffled_path(
     final_action_costs = jnp.where(is_goal_state, 0.0, final_action_costs)
 
     # Apply hindsight transform
-    tiled_solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[None, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
-        original_solve_configs,
-    )  # [L, P, ...]
+    tiled_solve_configs = xnp.tile(original_solve_configs[None, ...], (shuffle_length, 1))
 
     flat_tiled_sc = tiled_solve_configs.flatten()
     flat_target_states = target_states.flatten()
