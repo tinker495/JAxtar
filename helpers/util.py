@@ -3,9 +3,9 @@ import time
 from collections.abc import MutableMapping
 from typing import Any
 
-import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 from pydantic import BaseModel
 
@@ -63,37 +63,20 @@ def display_value(val):
     return str(val)
 
 
-def flatten_array(array: chex.Array, dims: int) -> chex.Array:
-    """
-    Reshape the array to the given shape.
-    """
-    return jnp.reshape(array, (-1,) + array.shape[dims:])
-
-
-def flatten_tree(tree: chex.Array, dims: int) -> chex.Array:
-    """
-    Reshape the index of the tree to the given shape.
-    """
-    return jax.tree_util.tree_map(lambda t: flatten_array(t, dims), tree)
-
-
-def vmapping_init_target(puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]):
+def vmapping_init_target(
+    puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]
+) -> tuple[Puzzle.SolveConfig, Puzzle.State]:
     start_state_seed = start_state_seeds[0]
     solve_configs, states = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
-    states = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])), states[jnp.newaxis, ...]
-    )
-    solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x, (vmap_size,) + (1,) * len(x.shape[1:])),
-        solve_configs[jnp.newaxis, ...],
-    )
+    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (vmap_size, 1))
+    states = xnp.tile(states[jnp.newaxis, ...], (vmap_size, 1))
 
     if len(start_state_seeds) > 1:
         for i, start_state_seed in enumerate(start_state_seeds[1:vmap_size]):
-            new_solve_config, new_state = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
-            states = states.at[i + 1].set(new_state)
-            solve_configs = solve_configs.at[i + 1].set(new_solve_config)
-    return states, solve_configs
+            new_solve_configs, new_states = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
+            states = states.at[i + 1].set(new_states)
+            solve_configs = solve_configs.at[i + 1].set(new_solve_configs)
+    return solve_configs, states
 
 
 def vmapping_search(
