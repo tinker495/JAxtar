@@ -510,7 +510,7 @@ def vmapped_search_samples(
     has_target = puzzle.has_target
     vmap_size = search_options.vmap_size
 
-    states, solve_configs = vmapping_init_target(puzzle, vmap_size, seeds)
+    solve_configs, states = vmapping_init_target(puzzle, vmap_size, seeds)
 
     grid = Table.grid(expand=False)
     grid.add_row(Text.from_ansi(states.str(solve_config=solve_configs)))

@@ -9,7 +9,6 @@ from puxle import Puzzle
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
-from JAxtar.util import flatten_array, flatten_tree, unflatten_array, unflatten_tree
 
 
 def astar_builder(
@@ -102,12 +101,13 @@ def astar_builder(
                 jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
                 (ncost.shape[0], 1),
             )  # [n_neighbours, batch_size]
+            unflatten_shape = filleds.shape
 
-            flatten_neighbours = flatten_tree(neighbours, 2)
-            flatten_filleds = flatten_array(filleds, 2)
-            flatten_nextcosts = flatten_array(nextcosts, 2)
-            flatten_parent_index = flatten_array(parent_index, 2)
-            flatten_parent_action = flatten_array(parent_action, 2)
+            flatten_neighbours = neighbours.flatten()
+            flatten_filleds = filleds.flatten()
+            flatten_nextcosts = nextcosts.flatten()
+            flatten_parent_index = parent_index.flatten()
+            flatten_parent_action = parent_action.flatten()
             (
                 search_result.hashtable,
                 flatten_inserted,
@@ -155,14 +155,14 @@ def astar_builder(
 
             hash_idx = hash_idx[argsort_idx]
 
-            hash_idx = unflatten_tree(hash_idx, filleds.shape)
-            nextcosts = unflatten_array(flatten_nextcosts, filleds.shape)
+            hash_idx = hash_idx.reshape(unflatten_shape)
+            nextcosts = flatten_nextcosts.reshape(unflatten_shape)
             current = Current(hashidx=hash_idx, cost=nextcosts)
-            parent_indexs = unflatten_array(flatten_parent_index, filleds.shape)
-            parent_action = unflatten_array(flatten_parent_action, filleds.shape)
-            neighbours = unflatten_tree(flatten_neighbours, filleds.shape)
-            inserted = unflatten_array(flatten_inserted, filleds.shape)
-            final_process_mask = unflatten_array(flatten_final_process_mask, filleds.shape)
+            parent_indexs = flatten_parent_index.reshape(unflatten_shape)
+            parent_action = flatten_parent_action.reshape(unflatten_shape)
+            neighbours = flatten_neighbours.reshape(unflatten_shape)
+            inserted = flatten_inserted.reshape(unflatten_shape)
+            final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
             def _inserted(search_result: SearchResult, neighbour, current, inserted):
                 neighbour_heur = heuristic.batched_distance(solve_config, neighbour).astype(
