@@ -8,7 +8,6 @@ from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
-from JAxtar.util import flatten_array, flatten_tree, unflatten_array, unflatten_tree
 from qfunction.q_base import QFunction
 
 
@@ -102,6 +101,7 @@ def qstar_builder(
                 jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
                 (ncost.shape[0], 1),
             )  # [n_neighbours, batch_size]
+            unflatten_shape = filleds.shape
 
             # Compute Q-values for parent states (not neighbors)
             # This gives us Q(s, a) for all actions from parent states
@@ -109,12 +109,12 @@ def qstar_builder(
                 q_fn.batched_q_value(solve_config, states).transpose().astype(KEY_DTYPE)
             )  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
 
-            flatten_neighbours = flatten_tree(neighbours, 2)
-            flatten_filleds = flatten_array(filleds, 2)
-            flatten_nextcosts = flatten_array(nextcosts, 2)
-            flatten_parent_index = flatten_array(parent_index, 2)
-            flatten_parent_action = flatten_array(parent_action, 2)
-            flatten_q_vals = flatten_array(q_vals, 2)
+            flatten_neighbours = neighbours.flatten()
+            flatten_filleds = filleds.flatten()
+            flatten_nextcosts = nextcosts.flatten()
+            flatten_parent_index = parent_index.flatten()
+            flatten_parent_action = parent_action.flatten()
+            flatten_q_vals = q_vals.flatten()
             (
                 search_result.hashtable,
                 flatten_inserted,
@@ -182,13 +182,13 @@ def qstar_builder(
 
             hash_idx = hash_idx[argsort_idx]
 
-            hash_idx = unflatten_tree(hash_idx, filleds.shape)
-            nextcosts = unflatten_array(flatten_nextcosts, filleds.shape)
-            q_vals = unflatten_array(flatten_q_vals, filleds.shape)
+            hash_idx = hash_idx.reshape(unflatten_shape)
+            nextcosts = flatten_nextcosts.reshape(unflatten_shape)
+            q_vals = flatten_q_vals.reshape(unflatten_shape)
             current = Current(hashidx=hash_idx, cost=nextcosts)
-            parent_indexs = unflatten_array(flatten_parent_index, filleds.shape)
-            parent_action = unflatten_array(flatten_parent_action, filleds.shape)
-            final_process_mask = unflatten_array(flatten_final_process_mask, filleds.shape)
+            parent_indexs = flatten_parent_index.reshape(unflatten_shape)
+            parent_action = flatten_parent_action.reshape(unflatten_shape)
+            final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
             def _queue_insert(
                 search_result: SearchResult, current, q_vals, parent_index, parent_action
