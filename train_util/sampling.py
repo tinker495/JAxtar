@@ -4,8 +4,6 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.util import flatten_array, flatten_tree
-
 
 def get_random_inverse_trajectory(
     puzzle: Puzzle,
@@ -44,9 +42,7 @@ def get_random_inverse_trajectory(
         )(
             jax.random.split(subkey, prob.shape[1]), prob
         )  # [batch]
-        next_state = jax.vmap(
-            lambda ns, i: jax.tree_util.tree_map(lambda x: x[i], ns), in_axes=(1, 0), out_axes=0
-        )(
+        next_state = jax.vmap(lambda ns, i: ns[i], in_axes=(1, 0), out_axes=0)(
             neighbor_states, inv_actions
         )  # [batch, ...]
         cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, inv_actions)  # [batch]
@@ -119,9 +115,7 @@ def get_random_trajectory(
         )(
             jax.random.split(subkey, prob.shape[1]), prob
         )  # [batch]
-        next_state = jax.vmap(
-            lambda ns, i: jax.tree_util.tree_map(lambda x: x[i], ns), in_axes=(1, 0), out_axes=0
-        )(
+        next_state = jax.vmap(lambda ns, i: ns[i], in_axes=(1, 0), out_axes=0)(
             neighbor_states, actions
         )  # [batch, ...]
         cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, actions)  # [batch]
@@ -179,16 +173,12 @@ def create_target_shuffled_path(
     inv_actions = inverse_trajectory["actions"]
     action_costs = inverse_trajectory["action_costs"]
 
-    solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
-        solve_configs,
-    )  # [shuffle_length, batch_size, ...]
-
-    solve_configs = flatten_tree(solve_configs, 2)
-    states = flatten_tree(states, 2)
-    move_costs = flatten_array(move_costs, 2)
-    inv_actions = flatten_array(inv_actions, 2)
-    action_costs = flatten_array(action_costs, 2)
+    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (shuffle_length, 1))
+    solve_configs = solve_configs.flatten()
+    states = states.flatten()
+    move_costs = move_costs.flatten()
+    inv_actions = inv_actions.flatten()
+    action_costs = action_costs.flatten()
 
     return {
         "solve_configs": solve_configs,
@@ -228,10 +218,7 @@ def create_hindsight_target_shuffled_path(
     solve_configs = puzzle.batched_hindsight_transform(
         original_solve_configs, targets
     )  # [shuffle_parallel, ...]
-    solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[jnp.newaxis, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
-        solve_configs,
-    )  # [shuffle_length, shuffle_parallel, ...]
+    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (shuffle_length, 1))
 
     if include_solved_states:
         move_costs = move_costs[-1, ...] - move_costs[1:, ...]  # [shuffle_length, shuffle_parallel]
@@ -249,11 +236,11 @@ def create_hindsight_target_shuffled_path(
             move_costs[-1, ...] - move_costs[:-1, ...]
         )  # [shuffle_length, shuffle_parallel]
 
-    solve_configs = flatten_tree(solve_configs, 2)
-    states = flatten_tree(states, 2)
-    move_costs = flatten_array(move_costs, 2)
-    actions = flatten_array(actions, 2)
-    action_costs = flatten_array(action_costs, 2)
+    solve_configs = solve_configs.flatten()
+    states = states.flatten()
+    move_costs = move_costs.flatten()
+    actions = actions.flatten()
+    action_costs = action_costs.flatten()
 
     return {
         "solve_configs": solve_configs,
@@ -326,20 +313,17 @@ def create_hindsight_target_triangular_shuffled_path(
     final_action_costs = jnp.where(is_goal_state, 0.0, final_action_costs)
 
     # Apply hindsight transform
-    tiled_solve_configs = jax.tree_util.tree_map(
-        lambda x: jnp.tile(x[None, ...], (shuffle_length, 1) + (x.ndim - 1) * (1,)),
-        original_solve_configs,
-    )  # [L, P, ...]
+    tiled_solve_configs = xnp.tile(original_solve_configs[None, ...], (shuffle_length, 1))
 
-    flat_tiled_sc = flatten_tree(tiled_solve_configs, 2)
-    flat_target_states = flatten_tree(target_states, 2)
+    flat_tiled_sc = tiled_solve_configs.flatten()
+    flat_target_states = target_states.flatten()
     final_solve_configs = puzzle.batched_hindsight_transform(flat_tiled_sc, flat_target_states)
 
     # Flatten the rest of the data
-    final_start_states = flatten_tree(start_states, 2)
-    final_move_costs = flatten_array(final_move_costs, 2)
-    final_actions = flatten_array(final_actions, 2)
-    final_action_costs = flatten_array(final_action_costs, 2)
+    final_start_states = start_states.flatten()
+    final_move_costs = final_move_costs.flatten()
+    final_actions = final_actions.flatten()
+    final_action_costs = final_action_costs.flatten()
 
     return {
         "solve_configs": final_solve_configs,
