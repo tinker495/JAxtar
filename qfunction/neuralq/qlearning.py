@@ -230,6 +230,7 @@ def _get_datasets_with_policy(
             filleds=jnp.ones(minibatch_size),
             multi_solve_config=True,
         )  # [action_size, batch_size] [action_size, batch_size]
+        neighbor_cost = jnp.transpose(neighbor_cost, (1, 0))  # [batch_size, action_size]
         # Check if the next state (s') is a solved state.
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
@@ -245,28 +246,21 @@ def _get_datasets_with_policy(
         q, _ = q_model.apply(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
-        q = jnp.where(mask, q, jnp.inf)
-        # Find the minimum future cost from the next state: min_{a'} Q_target(s', a').
-        # This represents the optimal cost-to-go from s'.
-        argmin_q = jnp.argmin(q, axis=1)
-        min_q = jnp.take_along_axis(q, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
-        # Get the cost of the single step from s to s'. For sliding puzzles, this is typically 1.
-        # This is equivalent to cost(s, a, s').
-        selected_neighbor_costs = jnp.take_along_axis(
-            neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
-        ).squeeze(0)
         # Calculate the target Q-value using the Bellman Optimality Equation:
         # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
-        target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
+        # This represents the optimal cost-to-go from s'.
+        q_sum_cost = q + neighbor_cost  # [batch_size, action_size]
+        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+
         # Base case: If the next state (s') is the solution, the future cost is 0.
-        target_q = jnp.where(selected_neighbors_solved, 0, target_q)
+        target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
         # If the current state (s) was already solved, its Q-value should also be 0.
         target_q = jnp.where(solved, 0.0, target_q)
 
         # The 'diff' is the Temporal Difference (TD) error: target_Q(s,a) - Q(s,a).
         # This will be used to calculate the loss.
-        diff = target_q - selected_q
+        diff = min_q_sum_cost - selected_q
         # if the puzzle is already solved, the all q is 0
         return key, (solve_configs, states, target_q, actions, diff, move_costs)
 
@@ -333,6 +327,7 @@ def _get_datasets_with_trajectory(
             filleds=jnp.ones(minibatch_size),
             multi_solve_config=True,
         )  # [action_size, batch_size] [action_size, batch_size]
+        neighbor_cost = jnp.transpose(neighbor_cost, (1, 0))  # [batch_size, action_size]
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
@@ -342,15 +337,12 @@ def _get_datasets_with_trajectory(
         q, _ = q_model.apply(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        mask = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
-        q = jnp.where(mask, q, jnp.inf)
-        argmin_q = jnp.argmin(q, axis=1)
-        min_q = jnp.take_along_axis(q, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
-        selected_neighbor_costs = jnp.take_along_axis(
-            neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
-        ).squeeze(0)
-        target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
-        target_q = jnp.where(selected_neighbors_solved, 0, target_q)
+
+        q_sum_cost = q + neighbor_cost
+        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+
+        target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = jnp.zeros_like(target_q)
