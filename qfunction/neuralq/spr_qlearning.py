@@ -298,13 +298,12 @@ def _get_datasets_with_policy(
             filleds=jnp.ones(minibatch_size),
             multi_solve_config=True,
         )
+        neighbor_cost = jnp.transpose(neighbor_cost, (1, 0))  # [batch_size, action_size]
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
 
         next_preproc = jax.vmap(preproc_fn)(solve_configs, selected_neighbors)
-
-        # Use target network for next state Q-values
         next_q_values = q_model.apply(
             target_q_params,
             next_preproc,
@@ -314,22 +313,18 @@ def _get_datasets_with_policy(
         )[0]
         next_preproc = vector_augmentation(next_preproc, subkey3)
 
-        mask_neighbor = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
-        next_q_values = jnp.where(mask_neighbor, next_q_values, jnp.inf)
-        argmin_q = jnp.argmin(next_q_values, axis=1)
-        min_q = jnp.take_along_axis(next_q_values, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
-        selected_neighbor_costs = jnp.take_along_axis(
-            neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
-        ).squeeze(0)
-        target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
-        target_q = jnp.where(selected_neighbors_solved, 0, target_q)
+        q_sum_cost = next_q_values + neighbor_cost
+        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+
+        target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
         target_q = jnp.where(solved, 0.0, target_q)
 
         # --- Diff for Importance Sampling ---
         q_values_at_actions = jnp.take_along_axis(
             q_values, actions[:, jnp.newaxis], axis=1
         ).squeeze(1)
-        diff = target_q - q_values_at_actions
+        diff = min_q_sum_cost - q_values_at_actions
 
         return key, (solve_configs, states, selected_neighbors, target_q, actions, diff, move_costs)
 
@@ -397,6 +392,7 @@ def _get_datasets_with_trajectory(
             filleds=jnp.ones(minibatch_size),
             multi_solve_config=True,
         )
+        neighbor_cost = jnp.transpose(neighbor_cost, (1, 0))  # [batch_size, action_size]
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
@@ -408,15 +404,10 @@ def _get_datasets_with_trajectory(
             mutable=["batch_stats"],
             method=q_model.get_q,
         )[0]
-        mask_neighbor = jnp.isfinite(jnp.transpose(neighbor_cost, (1, 0)))
-        next_q_values = jnp.where(mask_neighbor, next_q_values, jnp.inf)
-        argmin_q = jnp.argmin(next_q_values, axis=1)
-        min_q = jnp.take_along_axis(next_q_values, argmin_q[:, jnp.newaxis], axis=1).squeeze(1)
-        selected_neighbor_costs = jnp.take_along_axis(
-            neighbor_cost, argmin_q[jnp.newaxis, :], axis=0
-        ).squeeze(0)
-        target_q = jnp.maximum(min_q, 0.0) + selected_neighbor_costs
-        target_q = jnp.where(selected_neighbors_solved, 0, target_q)
+        q_sum_cost = next_q_values + neighbor_cost
+        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+        target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
         target_q = jnp.where(solved, 0.0, target_q)
         diff = jnp.zeros_like(target_q)
         return key, (solve_configs, states, selected_neighbors, target_q, actions, diff, move_costs)
