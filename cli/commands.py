@@ -59,13 +59,10 @@ def human_play(puzzle: Puzzle, seed: int, **kwargs):
     if has_target:
         grid.add_column(justify="center")
         states_grid = Table.grid(expand=False)
-        states_grid.add_column(justify="center")
-        states_grid.add_column(justify="center", no_wrap=True)
-        states_grid.add_column(justify="center")
         states_grid.add_row(
-            "[bold blue]Start State[/bold blue]",
+            Align.center("[bold blue]Start State[/bold blue]"),
             "",
-            "[bold blue]Target State[/bold blue]",
+            Align.center("[bold blue]Target State[/bold blue]"),
         )
         states_grid.add_row(
             init_state.str(solve_config=solve_config),
@@ -233,13 +230,10 @@ def search_samples(
             if has_target:
                 grid.add_column(justify="center")
                 states_grid = Table.grid(expand=False)
-                states_grid.add_column(justify="center")
-                states_grid.add_column(justify="center", no_wrap=True)
-                states_grid.add_column(justify="center")
                 states_grid.add_row(
-                    "[bold blue]Start State[/bold blue]",
+                    Align.center("[bold blue]Start State[/bold blue]"),
                     "",
-                    "[bold blue]Target State[/bold blue]",
+                    Align.center("[bold blue]Target State[/bold blue]"),
                 )
                 states_grid.add_row(
                     Text.from_ansi(state.str(solve_config=solve_config)),
