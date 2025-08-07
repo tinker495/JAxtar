@@ -68,6 +68,17 @@ def get_norm_fn(norm_name_or_fn=None):
     raise TypeError(f"norm_fn must be a string or callable, got {type(norm_name_or_fn)}")
 
 
+def swiglu_fn(hidden_N, base_activation=nn.silu, norm_fn=None, training=False):
+    def _swiglu_fn(x):
+        x = nn.Dense(2 * hidden_N, dtype=DTYPE)(x)
+        x, gate = jnp.split(x, 2, axis=-1)
+        if norm_fn is not None:
+            x = norm_fn(x, training)
+        return x * (base_activation(gate) if base_activation is not None else nn.sigmoid(gate))
+
+    return _swiglu_fn
+
+
 ACTIVATION_FN_REGISTRY = {
     "relu": nn.relu,
     "leaky_relu": nn.leaky_relu,
@@ -116,14 +127,18 @@ class ResBlock(nn.Module):
     hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
     activation: str = nn.relu
+    use_swiglu: bool = False
 
     @nn.compact
     def __call__(self, x0, training=False):
         x = x0
         for _ in range(self.hidden_N):
-            x = nn.Dense(self.node_size, dtype=DTYPE)(x)
-            x = self.norm_fn(x, training)
-            x = self.activation(x)
+            if self.use_swiglu:
+                x = swiglu_fn(self.node_size, self.activation, self.norm_fn, training)(x)
+            else:
+                x = nn.Dense(self.node_size, dtype=DTYPE)(x)
+                x = self.norm_fn(x, training)
+                x = self.activation(x)
         x = nn.Dense(self.node_size, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         return self.activation(x + x0)
@@ -135,6 +150,7 @@ class PreActivationResBlock(nn.Module):
     hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
     activation: Callable = nn.relu
+    use_swiglu: bool = False
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -143,9 +159,14 @@ class PreActivationResBlock(nn.Module):
         residual = self.norm_fn(residual, training)
         residual = self.activation(residual)
         for _ in range(self.hidden_N):
-            residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
-            residual = self.norm_fn(residual, training)
-            residual = self.activation(residual)
+            if self.use_swiglu:
+                residual = swiglu_fn(self.node_size, self.activation, self.norm_fn, training)(
+                    residual
+                )
+            else:
+                residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
+                residual = self.norm_fn(residual, training)
+                residual = self.activation(residual)
 
         residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
 

@@ -15,6 +15,7 @@ from neural_util.modules import (
     get_activation_fn,
     get_norm_fn,
     get_resblock_fn,
+    swiglu_fn,
 )
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -32,21 +33,27 @@ class QModelBase(nn.Module):
     activation: str = nn.relu
     norm_fn: callable = DEFAULT_NORM_FN
     resblock_fn: callable = ResBlock
+    use_swiglu: bool = False
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(5000, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        x = self.activation(x)
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        x = self.activation(x)
+        if self.use_swiglu:
+            x = swiglu_fn(5000, self.activation, self.norm_fn, training)(x)
+            x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn, training)(x)
+        else:
+            x = nn.Dense(5000, dtype=DTYPE)(x)
+            x = self.norm_fn(x, training)
+            x = self.activation(x)
+            x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+            x = self.norm_fn(x, training)
+            x = self.activation(x)
         for _ in range(self.Res_N):
             x = self.resblock_fn(
                 self.hidden_dim,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
                 activation=self.activation,
+                use_swiglu=self.use_swiglu,
             )(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
@@ -70,6 +77,7 @@ class NeuralQFunctionBase(QFunction):
         kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
         kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
+        kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
         self.model = model(self.action_size, **kwargs)
         self.path = path
         self.metadata = {}
