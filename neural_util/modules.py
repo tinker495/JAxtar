@@ -68,6 +68,24 @@ def get_norm_fn(norm_name_or_fn=None):
     raise TypeError(f"norm_fn must be a string or callable, got {type(norm_name_or_fn)}")
 
 
+# Gated Feed-Forward Block using Swish-Gated Linear Unit (SwiGLU)
+class SwiGLU(nn.Module):
+    output_dim: int
+    hidden_dim_factor: int = 2  # ff_dim will be output_dim * factor
+
+    @nn.compact
+    def __call__(self, x):
+        ff_dim = self.output_dim * self.hidden_dim_factor
+        # Project to a larger dimension for gating
+        gated_x = nn.Dense(ff_dim * 2, dtype=DTYPE, use_bias=False)(x)
+
+        # Split into two halves for the gate and the value
+        x_val, gate = jnp.split(gated_x, 2, axis=-1)
+
+        # Apply Swish activation to the gate and multiply
+        return nn.silu(gate) * x_val
+
+
 ACTIVATION_FN_REGISTRY = {
     "relu": nn.relu,
     "leaky_relu": nn.leaky_relu,
@@ -75,6 +93,7 @@ ACTIVATION_FN_REGISTRY = {
     "swish": nn.swish,
     "hard_swish": nn.hard_swish,
     "silu": nn.silu,
+    "swiglu": SwiGLU,
 }
 
 
@@ -95,6 +114,21 @@ def get_activation_fn(activation_name_or_fn=None):
     )
 
 
+def get_resblock_fn(resblock_name_or_fn=None):
+    if resblock_name_or_fn is None:
+        return ResBlock
+    if callable(resblock_name_or_fn):
+        return resblock_name_or_fn
+    if isinstance(resblock_name_or_fn, str):
+        key = resblock_name_or_fn.lower()
+        if key in RESBLOCK_REGISTRY:
+            return RESBLOCK_REGISTRY[key]
+        raise ValueError(
+            f"Unknown resblock_fn: {resblock_name_or_fn}. Available: {list(RESBLOCK_REGISTRY.keys())}"
+        )
+    raise TypeError(f"resblock_fn must be a string or callable, got {type(resblock_name_or_fn)}")
+
+
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int
@@ -112,6 +146,37 @@ class ResBlock(nn.Module):
         x = nn.Dense(self.node_size, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         return self.activation(x + x0)
+
+
+# Pre-activation Residual Block (improved version)
+class PreActivationResBlock(nn.Module):
+    node_size: int
+    hidden_N: int = 1
+    norm_fn: Callable = DEFAULT_NORM_FN
+    activation: Callable = nn.relu
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        residual = x
+        # Pre-activation: Norm -> Activation -> Dense
+        residual = self.norm_fn(residual, training)
+        residual = self.activation(residual)
+        for _ in range(self.hidden_N):
+            residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
+            residual = self.norm_fn(residual, training)
+            residual = self.activation(residual)
+
+        residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
+
+        # Identity shortcut connection
+        return x + residual
+
+
+# ResBlock type registry for config-driven selection
+RESBLOCK_REGISTRY = {
+    "standard": ResBlock,
+    "preactivation": PreActivationResBlock,
+}
 
 
 # Conv Residual Block

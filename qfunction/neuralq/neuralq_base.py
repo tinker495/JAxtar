@@ -14,6 +14,7 @@ from neural_util.modules import (
     conditional_dummy_norm,
     get_activation_fn,
     get_norm_fn,
+    get_resblock_fn,
 )
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -30,6 +31,7 @@ class QModelBase(nn.Module):
     hidden_dim: int = 1000
     activation: str = nn.relu
     norm_fn: callable = DEFAULT_NORM_FN
+    resblock_fn: callable = ResBlock
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -40,7 +42,7 @@ class QModelBase(nn.Module):
         x = self.norm_fn(x, training)
         x = self.activation(x)
         for _ in range(self.Res_N):
-            x = ResBlock(
+            x = self.resblock_fn(
                 self.hidden_dim,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
@@ -67,6 +69,7 @@ class NeuralQFunctionBase(QFunction):
         self.action_size = self._get_action_size()
         kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
         kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
+        kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
         self.model = model(self.action_size, **kwargs)
         self.path = path
         self.metadata = {}

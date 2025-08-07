@@ -15,6 +15,7 @@ from neural_util.modules import (
     conditional_dummy_norm,
     get_activation_fn,
     get_norm_fn,
+    get_resblock_fn,
 )
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -30,6 +31,7 @@ class HeuristicBase(nn.Module):
     hidden_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
     activation: str = nn.relu
+    resblock_fn: callable = ResBlock
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -40,7 +42,7 @@ class HeuristicBase(nn.Module):
         x = self.norm_fn(x, training)
         x = self.activation(x)
         for _ in range(self.Res_N):
-            x = ResBlock(
+            x = self.resblock_fn(
                 self.hidden_dim,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
@@ -63,6 +65,7 @@ class NeuralHeuristicBase(Heuristic):
         self.puzzle = puzzle
         kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
         kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
+        kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
         self.model = model(**kwargs)
         self.is_fixed = puzzle.fixed_target
         self.path = path
