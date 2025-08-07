@@ -71,19 +71,12 @@ def get_norm_fn(norm_name_or_fn=None):
 # Gated Feed-Forward Block using Swish-Gated Linear Unit (SwiGLU)
 class SwiGLU(nn.Module):
     output_dim: int
-    hidden_dim_factor: int = 2  # ff_dim will be output_dim * factor
 
     @nn.compact
     def __call__(self, x):
-        ff_dim = self.output_dim * self.hidden_dim_factor
-        # Project to a larger dimension for gating
-        gated_x = nn.Dense(ff_dim * 2, dtype=DTYPE, use_bias=False)(x)
-
-        # Split into two halves for the gate and the value
-        x_val, gate = jnp.split(gated_x, 2, axis=-1)
-
-        # Apply Swish activation to the gate and multiply
-        return nn.silu(gate) * x_val
+        dim = x.shape[-1]
+        gate = nn.Dense(dim, dtype=DTYPE, use_bias=False)(x)
+        return nn.silu(gate) * x
 
 
 ACTIVATION_FN_REGISTRY = {
