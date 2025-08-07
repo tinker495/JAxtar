@@ -70,8 +70,6 @@ def get_norm_fn(norm_name_or_fn=None):
 
 # Gated Feed-Forward Block using Swish-Gated Linear Unit (SwiGLU)
 class SwiGLU(nn.Module):
-    output_dim: int
-
     @nn.compact
     def __call__(self, x):
         dim = x.shape[-1]
@@ -86,7 +84,7 @@ ACTIVATION_FN_REGISTRY = {
     "swish": nn.swish,
     "hard_swish": nn.hard_swish,
     "silu": nn.silu,
-    "swiglu": SwiGLU,
+    "swiglu": lambda x: SwiGLU()(x),
 }
 
 
