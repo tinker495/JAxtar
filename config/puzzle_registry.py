@@ -227,6 +227,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         search_options=SearchOptions(
             batch_size=100,
         ),
+        shuffle_length=500,
     ),
     "pancake": PuzzleBundle(
         puzzle=PancakeSorting,
