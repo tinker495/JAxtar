@@ -5,7 +5,7 @@ import optax
 from flax import linen as nn
 from puxle import Puzzle
 
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock
+from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, swiglu_fn
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -14,15 +14,20 @@ class InputLayer(nn.Module):
     hidden_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
     activation: str = nn.relu
+    use_swiglu: bool = False
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(self.input_dim, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        x = self.activation(x)
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        x = self.activation(x)
+        if self.use_swiglu:
+            x = swiglu_fn(self.input_dim, self.activation, self.norm_fn, training)(x)
+            x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn, training)(x)
+        else:
+            x = nn.Dense(self.input_dim, dtype=DTYPE)(x)
+            x = self.norm_fn(x, training)
+            x = self.activation(x)
+            x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+            x = self.norm_fn(x, training)
+            x = self.activation(x)
         return x
 
 
@@ -37,6 +42,8 @@ class HLGQModelBase(nn.Module):
     hidden_dim: int = 1000
     activation: str = nn.relu
     norm_fn: callable = DEFAULT_NORM_FN
+    resblock_fn: callable = ResBlock
+    use_swiglu: bool = False
 
     def setup(self):
         self.categorial_bins = jnp.linspace(
@@ -48,13 +55,14 @@ class HLGQModelBase(nn.Module):
         self.categorial_centers = self.categorial_centers.reshape(1, 1, -1)  # (1, 1, categorial_n)
         self.sigma = self._sigma * (self.categorial_bins[1] - self.categorial_bins[0])
 
-        self.input_layer = InputLayer()
+        self.input_layer = InputLayer(use_swiglu=self.use_swiglu)
         self.res_blocks = [
-            ResBlock(
+            self.resblock_fn(
                 self.hidden_dim,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
                 activation=self.activation,
+                use_swiglu=self.use_swiglu,
             )
             for _ in range(self.Res_N)
         ]
