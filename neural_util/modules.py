@@ -73,7 +73,7 @@ def swiglu_fn(hidden_N, base_activation=nn.silu, norm_fn=None, training=False):
         x = nn.Dense(2 * hidden_N, dtype=DTYPE)(x)
         x, gate = jnp.split(x, 2, axis=-1)
         if norm_fn is not None:
-            x = norm_fn(x, training)
+            gate = norm_fn(gate, training)
         return x * (base_activation(gate) if base_activation is not None else nn.sigmoid(gate))
 
     return _swiglu_fn
