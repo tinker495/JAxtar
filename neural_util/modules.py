@@ -68,15 +68,6 @@ def get_norm_fn(norm_name_or_fn=None):
     raise TypeError(f"norm_fn must be a string or callable, got {type(norm_name_or_fn)}")
 
 
-# Gated Feed-Forward Block using Swish-Gated Linear Unit (SwiGLU)
-class SwiGLU(nn.Module):
-    @nn.compact
-    def __call__(self, x):
-        dim = x.shape[-1]
-        gate = nn.Dense(dim, dtype=DTYPE, use_bias=False)(x)
-        return nn.silu(gate) * x
-
-
 ACTIVATION_FN_REGISTRY = {
     "relu": nn.relu,
     "leaky_relu": nn.leaky_relu,
@@ -84,7 +75,6 @@ ACTIVATION_FN_REGISTRY = {
     "swish": nn.swish,
     "hard_swish": nn.hard_swish,
     "silu": nn.silu,
-    "swiglu": lambda x: SwiGLU()(x),
 }
 
 
