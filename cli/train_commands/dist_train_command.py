@@ -95,6 +95,10 @@ def davi(
         heuristic.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        using_priority_sampling=train_options.using_priority_sampling,
+        per_alpha=train_options.per_alpha,
+        per_beta=train_options.per_beta,
+        per_epsilon=train_options.per_epsilon,
     )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -269,6 +273,10 @@ def qlearning(
         qfunction.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        using_priority_sampling=train_options.using_priority_sampling,
+        per_alpha=train_options.per_alpha,
+        per_beta=train_options.per_beta,
+        per_epsilon=train_options.per_epsilon,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
