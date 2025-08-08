@@ -83,9 +83,9 @@ def qlearning_builder(
                 replace=True,
             )
 
-            # Calculate importance sampling weights
-            is_weights = jnp.power(priorities, -per_beta)
-            is_weights = is_weights / jnp.max(is_weights)  # Normalize
+            # Calculate importance sampling weights to correct for biased sampling
+            is_weights = jnp.power(data_size * sampling_probs, -per_beta)
+            is_weights = is_weights / jnp.max(is_weights)  # Normalize for stability
             loss_weights = is_weights
         else:
             batch_indexs = jnp.concatenate(
@@ -104,7 +104,9 @@ def qlearning_builder(
             cost_weights = 1.0 / jnp.sqrt(jnp.maximum(cost, 1.0))
             cost_weights = cost_weights / jnp.mean(cost_weights)
             loss_weights = loss_weights * cost_weights
-        loss_weights = loss_weights / jnp.mean(loss_weights)
+
+        if not using_priority_sampling:
+            loss_weights = loss_weights / jnp.mean(loss_weights)
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_solveconfigs = xnp.take(solveconfigs, batch_indexs, axis=0)
