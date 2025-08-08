@@ -88,11 +88,12 @@ def qlearning_builder(
             is_weights = is_weights / jnp.max(is_weights)  # Normalize for stability
             loss_weights = is_weights
         else:
+            key_perm, key_fill = jax.random.split(key)
             batch_indexs = jnp.concatenate(
                 [
-                    jax.random.permutation(key, jnp.arange(data_size)),
+                    jax.random.permutation(key_perm, jnp.arange(data_size)),
                     jax.random.randint(
-                        key, (batch_size * minibatch_size - data_size,), 0, data_size
+                        key_fill, (batch_size * minibatch_size - data_size,), 0, data_size
                     ),
                 ],
                 axis=0,
@@ -189,16 +190,23 @@ def boltzmann_action_selection(
     q_values: chex.Array,
     temperature: float = 1.0 / 3.0,
     epsilon: float = 0.1,
-    mask: chex.Array = None,
 ) -> chex.Array:
-    q_values = -q_values / temperature
-    probs = jnp.exp(q_values)
-    if mask is not None:
-        probs = jnp.where(mask, probs, 0.0)
-    else:
-        mask = jnp.ones_like(probs)
+    # Scale Q-values by temperature for softmax
+    mask = jnp.isfinite(q_values)
+    scaled_q_values = -q_values / temperature
+
+    # Apply mask before softmax to avoid overflow
+    masked_q_values = jnp.where(mask, scaled_q_values, -jnp.inf)
+    probs = jax.nn.softmax(masked_q_values, axis=1)
+    # Ensure probabilities sum to 1 for each row
+    probs = jnp.where(mask, probs, 0.0)
     probs = probs / jnp.sum(probs, axis=1, keepdims=True)
-    uniform_prob = mask.astype(jnp.float32) / jnp.sum(mask, axis=1, keepdims=True)
+
+    # Calculate uniform probability over valid actions
+    valid_actions = jnp.sum(mask, axis=1, keepdims=True)
+    uniform_prob = jnp.where(mask, 1.0 / jnp.maximum(valid_actions, 1.0), 0.0)
+
+    # Mix with epsilon-greedy exploration
     probs = probs * (1 - epsilon) + uniform_prob * epsilon
     return probs
 
@@ -236,12 +244,13 @@ def _get_datasets_with_policy(
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
-        mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
+        cost = jnp.transpose(cost, (1, 0))
+        q_sum_cost = q_values + cost
 
         # Select an action 'a' probabilistically using a Boltzmann (softmax) exploration policy.
         # Actions with lower Q-values (lower cost-to-go) are more likely to be chosen.
         # Epsilon-greedy exploration is also mixed in.
-        probs = boltzmann_action_selection(q_values, temperature=temperature, mask=mask)
+        probs = boltzmann_action_selection(q_sum_cost, temperature=temperature)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
@@ -282,6 +291,7 @@ def _get_datasets_with_policy(
         # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
         # This represents the optimal cost-to-go from s'.
         q_sum_cost = q + neighbor_cost  # [batch_size, action_size]
+        # Clamp to ensure non-negative targets (costs should be non-negative)
         q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
@@ -371,6 +381,7 @@ def _get_datasets_with_trajectory(
         )  # [minibatch_size, action_shape]
 
         q_sum_cost = q + neighbor_cost
+        # Clamp to ensure non-negative targets (costs should be non-negative)
         q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
