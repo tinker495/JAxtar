@@ -89,11 +89,12 @@ def davi_builder(
             is_weights = is_weights / jnp.max(is_weights)  # Normalize for stability
             loss_weights = is_weights
         else:
+            key_perm, key_fill = jax.random.split(key)
             batch_indexs = jnp.concatenate(
                 [
-                    jax.random.permutation(key, jnp.arange(data_size)),
+                    jax.random.permutation(key_perm, jnp.arange(data_size)),
                     jax.random.randint(
-                        key, (batch_size * minibatch_size - data_size,), 0, data_size
+                        key_fill, (batch_size * minibatch_size - data_size,), 0, data_size
                     ),
                 ],
                 axis=0,
@@ -114,6 +115,10 @@ def davi_builder(
         batched_states = xnp.take(states, batch_indexs, axis=0)
         batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
         batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
+        # Normalize weights per batch to prevent scale drift
+        batched_weights = batched_weights / (
+            jnp.mean(batched_weights, axis=1, keepdims=True) + 1e-8
+        )
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
@@ -142,7 +147,7 @@ def davi_builder(
             (batched_solveconfigs, batched_states, batched_target_heuristic, batched_weights),
         )
         loss = jnp.mean(losses)
-        diffs = jnp.concatenate(diffs)
+        diffs = diffs.reshape(-1)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -171,7 +176,7 @@ def davi_builder(
             loss = jnp.mean(loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
-            diffs = jnp.concatenate(diffs)
+            diffs = diffs.reshape(-1)
             return heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs
 
         return pmap_davi

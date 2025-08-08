@@ -115,6 +115,10 @@ def qlearning_builder(
         batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
         batched_actions = jnp.take(actions, batch_indexs, axis=0)
         batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
+        # Normalize weights per batch to prevent scale drift
+        batched_weights = batched_weights / (
+            jnp.mean(batched_weights, axis=1, keepdims=True) + 1e-8
+        )
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
@@ -150,7 +154,7 @@ def qlearning_builder(
             ),
         )
         loss = jnp.mean(losses)
-        diffs = jnp.concatenate(diffs)
+        diffs = diffs.reshape(-1)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -178,7 +182,7 @@ def qlearning_builder(
             loss = jnp.mean(loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
-            diffs = jnp.concatenate(diffs)
+            diffs = diffs.reshape(-1)
             return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs
 
         return pmap_qlearning
