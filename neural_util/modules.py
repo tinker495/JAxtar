@@ -68,6 +68,17 @@ def get_norm_fn(norm_name_or_fn=None):
     raise TypeError(f"norm_fn must be a string or callable, got {type(norm_name_or_fn)}")
 
 
+def swiglu_fn(hidden_N, base_activation=nn.silu, norm_fn=None, training=False):
+    def _swiglu_fn(x):
+        x = nn.Dense(2 * hidden_N, dtype=DTYPE)(x)
+        x, gate = jnp.split(x, 2, axis=-1)
+        if norm_fn is not None:
+            gate = norm_fn(gate, training)
+        return x * (base_activation(gate) if base_activation is not None else nn.sigmoid(gate))
+
+    return _swiglu_fn
+
+
 ACTIVATION_FN_REGISTRY = {
     "relu": nn.relu,
     "leaky_relu": nn.leaky_relu,
@@ -95,23 +106,79 @@ def get_activation_fn(activation_name_or_fn=None):
     )
 
 
+def get_resblock_fn(resblock_name_or_fn=None):
+    if resblock_name_or_fn is None:
+        return ResBlock
+    if callable(resblock_name_or_fn):
+        return resblock_name_or_fn
+    if isinstance(resblock_name_or_fn, str):
+        key = resblock_name_or_fn.lower()
+        if key in RESBLOCK_REGISTRY:
+            return RESBLOCK_REGISTRY[key]
+        raise ValueError(
+            f"Unknown resblock_fn: {resblock_name_or_fn}. Available: {list(RESBLOCK_REGISTRY.keys())}"
+        )
+    raise TypeError(f"resblock_fn must be a string or callable, got {type(resblock_name_or_fn)}")
+
+
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
     activation: str = nn.relu
+    use_swiglu: bool = False
 
     @nn.compact
     def __call__(self, x0, training=False):
         x = x0
         for _ in range(self.hidden_N):
-            x = nn.Dense(self.node_size, dtype=DTYPE)(x)
-            x = self.norm_fn(x, training)
-            x = self.activation(x)
+            if self.use_swiglu:
+                x = swiglu_fn(self.node_size, self.activation, self.norm_fn, training)(x)
+            else:
+                x = nn.Dense(self.node_size, dtype=DTYPE)(x)
+                x = self.norm_fn(x, training)
+                x = self.activation(x)
         x = nn.Dense(self.node_size, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         return self.activation(x + x0)
+
+
+# Pre-activation Residual Block (improved version)
+class PreActivationResBlock(nn.Module):
+    node_size: int
+    hidden_N: int = 1
+    norm_fn: Callable = DEFAULT_NORM_FN
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        residual = x
+        # Pre-activation: Norm -> Activation -> Dense
+        residual = self.norm_fn(residual, training)
+        residual = self.activation(residual)
+        for _ in range(self.hidden_N):
+            if self.use_swiglu:
+                residual = swiglu_fn(self.node_size, self.activation, self.norm_fn, training)(
+                    residual
+                )
+            else:
+                residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
+                residual = self.norm_fn(residual, training)
+                residual = self.activation(residual)
+
+        residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
+
+        # Identity shortcut connection
+        return x + residual
+
+
+# ResBlock type registry for config-driven selection
+RESBLOCK_REGISTRY = {
+    "standard": ResBlock,
+    "preactivation": PreActivationResBlock,
+}
 
 
 # Conv Residual Block
