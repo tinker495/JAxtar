@@ -11,9 +11,10 @@ def get_random_inverse_trajectory(
     shuffle_parallel: int,
     key: chex.PRNGKey,
 ):
-    solve_configs, _ = jax.vmap(puzzle.get_inits)(jax.random.split(key, shuffle_parallel))
+    key_inits, key_targets, key_scan = jax.random.split(key, 3)
+    solve_configs, _ = jax.vmap(puzzle.get_inits)(jax.random.split(key_inits, shuffle_parallel))
     target_states = jax.vmap(puzzle.solve_config_to_state_transform, in_axes=(0, 0))(
-        solve_configs, jax.random.split(key, shuffle_parallel)
+        solve_configs, jax.random.split(key_targets, shuffle_parallel)
     )
 
     def _scan(carry, _):
@@ -23,19 +24,24 @@ def get_random_inverse_trajectory(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
-            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: jnp.all(x == y), in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             old_state, neighbor_states
         )  # [action_size, batch_size]
         is_same = jax.vmap(
-            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: jnp.all(x == y), in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             state, neighbor_states
         )  # [action_size, batch_size]
-        filled = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
-        filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
-        filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
-        prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
+        fallback = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
+        filled = (
+            fallback * (1.0 - is_past.astype(jnp.float32)) * (1.0 - is_same.astype(jnp.float32))
+        )
+        denom = jnp.sum(filled, axis=0)  # [batch]
+        no_valid = denom == 0
+        filled = jnp.where(no_valid[jnp.newaxis, :], fallback, filled)
+        denom = jnp.sum(filled, axis=0)
+        prob = filled / denom  # [action, batch]
         choices = jnp.arange(cost.shape[0])  # [action]
         inv_actions = jax.vmap(
             lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
@@ -58,7 +64,7 @@ def get_random_inverse_trajectory(
         action_costs,
     ) = jax.lax.scan(
         _scan,
-        (target_states, target_states, jnp.zeros(shuffle_parallel), key),
+        (target_states, target_states, jnp.zeros(shuffle_parallel), key_scan),
         None,
         length=shuffle_length,
     )  # [shuffle_length, batch_size, ...]
@@ -85,8 +91,9 @@ def get_random_trajectory(
     shuffle_parallel: int,
     key: chex.PRNGKey,
 ):
+    key_inits, key_scan = jax.random.split(key, 2)
     solve_configs, initial_states = jax.vmap(puzzle.get_inits)(
-        jax.random.split(key, shuffle_parallel)
+        jax.random.split(key_inits, shuffle_parallel)
     )
 
     def _scan(carry, _):
@@ -96,19 +103,24 @@ def get_random_trajectory(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
         is_past = jax.vmap(
-            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: jnp.all(x == y), in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             old_state, neighbor_states
         )  # [action_size, batch_size]
         is_same = jax.vmap(
-            jax.vmap(lambda x, y: x == y, in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
+            jax.vmap(lambda x, y: jnp.all(x == y), in_axes=(None, 0)), in_axes=(0, 1), out_axes=1
         )(
             state, neighbor_states
         )  # [action_size, batch_size]
-        filled = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
-        filled = jnp.where(is_past, 0.0, filled)  # [action, batch]
-        filled = jnp.where(is_same, 0.0, filled)  # [action, batch]
-        prob = filled / jnp.sum(filled, axis=0)  # [action, batch]
+        fallback = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
+        filled = (
+            fallback * (1.0 - is_past.astype(jnp.float32)) * (1.0 - is_same.astype(jnp.float32))
+        )
+        denom = jnp.sum(filled, axis=0)  # [batch]
+        no_valid = denom == 0
+        filled = jnp.where(no_valid[jnp.newaxis, :], fallback, filled)
+        denom = jnp.sum(filled, axis=0)
+        prob = filled / denom  # [action, batch]
         choices = jnp.arange(cost.shape[0])  # [action]
         actions = jax.vmap(
             lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
@@ -126,7 +138,7 @@ def get_random_trajectory(
 
     (_, last_state, last_move_cost, _), (states, move_costs, actions, action_costs) = jax.lax.scan(
         _scan,
-        (initial_states, initial_states, jnp.zeros(shuffle_parallel), key),
+        (initial_states, initial_states, jnp.zeros(shuffle_parallel), key_scan),
         None,
         length=shuffle_length,
     )  # [shuffle_length, shuffle_parallel, ...]
@@ -197,7 +209,8 @@ def create_hindsight_target_shuffled_path(
     key: chex.PRNGKey,
 ):
     assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
-    trajectory = get_random_trajectory(puzzle, shuffle_length, shuffle_parallel, key)
+    key_traj, key_append = jax.random.split(key, 2)
+    trajectory = get_random_trajectory(puzzle, shuffle_length, shuffle_parallel, key_traj)
 
     original_solve_configs = trajectory["solve_configs"]  # [shuffle_parallel, ...]
     states = trajectory["states"]  # [shuffle_length + 1, shuffle_parallel, ...]
@@ -225,7 +238,9 @@ def create_hindsight_target_shuffled_path(
         actions = jnp.concatenate(
             [
                 actions[1:],
-                jax.random.randint(key, (1, shuffle_parallel), minval=0, maxval=puzzle.action_size),
+                jax.random.randint(
+                    key_append, (1, shuffle_parallel), minval=0, maxval=puzzle.action_size
+                ),
             ]
         )  # [shuffle_length, shuffle_parallel]
         action_costs = jnp.concatenate(
