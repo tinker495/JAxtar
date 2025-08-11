@@ -402,6 +402,7 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-fui", "--force_update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
+    @click.option("-per", "--using_priority_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
     @click.option(
         "-tcw",
@@ -410,6 +411,27 @@ def dist_train_options(func: callable) -> callable:
         is_flag=True,
         default=None,
         help="Weight loss by target confidence (inverse of move_cost).",
+    )
+    @click.option(
+        "-pa",
+        "--per_alpha",
+        type=float,
+        default=None,
+        help="PER alpha parameter for priority exponentiation.",
+    )
+    @click.option(
+        "-pb",
+        "--per_beta",
+        type=float,
+        default=None,
+        help="PER beta parameter for importance sampling.",
+    )
+    @click.option(
+        "-pe",
+        "--per_epsilon",
+        type=float,
+        default=None,
+        help="PER epsilon parameter for numerical stability.",
     )
     @click.option(
         "-tp",

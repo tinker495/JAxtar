@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="images/JAxtar.png" alt="logo" width="200"></img>
+  <img src="images/JAxtar.svg" alt="JAxtar logo" width="400"></img>
 </div>
 
 # JA<sup>xtar</sup>: GPU-accelerated Batched parallel A\* & Q\* solver in pure JAX!

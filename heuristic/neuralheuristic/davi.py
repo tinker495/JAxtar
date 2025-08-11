@@ -24,6 +24,10 @@ def regression_trainer_builder(
     preproc_fn: Callable,
     n_devices: int = 1,
     use_target_confidence_weighting: bool = False,
+    using_priority_sampling: bool = False,
+    per_alpha: float = 0.6,
+    per_beta: float = 0.4,
+    per_epsilon: float = 1e-6,
 ):
     def davi_loss(
         heuristic_params: Any,
@@ -62,25 +66,59 @@ def regression_trainer_builder(
         target_heuristic = dataset["target_heuristic"]
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
-        batch_indexs = jnp.concatenate(
-            [
-                jax.random.permutation(key, jnp.arange(data_size)),
-                jax.random.randint(key, (batch_size * minibatch_size - data_size,), 0, data_size),
-            ],
-            axis=0,
-        )  # [batch_size * minibatch_size]
-        loss_weights = jnp.ones_like(batch_indexs)
+
+        if using_priority_sampling:
+            diff = dataset["diff"]
+            # Calculate priorities based on TD error
+            priorities = jnp.abs(diff) + per_epsilon
+            # Calculate sampling probabilities
+            sampling_probs = jnp.power(priorities, per_alpha)
+            sampling_probs = sampling_probs / jnp.sum(sampling_probs)
+
+            # Sample indices based on priorities
+            batch_indexs = jax.random.choice(
+                key,
+                jnp.arange(data_size),
+                shape=(batch_size * minibatch_size,),
+                p=sampling_probs,
+                replace=True,
+            )
+
+            # Calculate importance sampling weights to correct for biased sampling
+            is_weights = jnp.power(data_size * sampling_probs, -per_beta)
+            is_weights = is_weights / jnp.max(is_weights)  # Normalize for stability
+            loss_weights = is_weights
+        else:
+            key_perm, key_fill = jax.random.split(key)
+            batch_indexs = jnp.concatenate(
+                [
+                    jax.random.permutation(key_perm, jnp.arange(data_size)),
+                    jax.random.randint(
+                        key_fill, (batch_size * minibatch_size - data_size,), 0, data_size
+                    ),
+                ],
+                axis=0,
+            )  # [batch_size * minibatch_size]
+            loss_weights = jnp.ones(data_size)
+
         if use_target_confidence_weighting:
             cost = dataset["cost"]
             cost_weights = 1.0 / jnp.sqrt(jnp.maximum(cost, 1.0))
             cost_weights = cost_weights / jnp.mean(cost_weights)
             loss_weights = loss_weights * cost_weights
+
+        if not using_priority_sampling:
+            loss_weights = loss_weights / jnp.mean(loss_weights)
         batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
         batched_solveconfigs = xnp.take(solveconfigs, batch_indexs, axis=0)
         batched_states = xnp.take(states, batch_indexs, axis=0)
         batched_target_heuristic = jnp.take(target_heuristic, batch_indexs, axis=0)
         batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
+        # Normalize weights per batch to prevent scale drift
+        batched_weights = batched_weights / (
+            jnp.mean(batched_weights, axis=1, keepdims=True) + 1e-8
+        )
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
@@ -109,7 +147,7 @@ def regression_trainer_builder(
             (batched_solveconfigs, batched_states, batched_target_heuristic, batched_weights),
         )
         loss = jnp.mean(losses)
-        diffs = jnp.concatenate(diffs)
+        diffs = diffs.reshape(-1)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -138,7 +176,7 @@ def regression_trainer_builder(
             loss = jnp.mean(loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
-            diffs = jnp.concatenate(diffs)
+            diffs = diffs.reshape(-1)
             return heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs
 
         return pmap_davi

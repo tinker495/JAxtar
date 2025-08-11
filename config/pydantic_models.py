@@ -114,7 +114,11 @@ class DistTrainOptions(BaseModel):
     use_soft_update: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
+    using_priority_sampling: bool = False
     use_target_confidence_weighting: bool = False
+    per_alpha: float = 0.6
+    per_beta: float = 0.4
+    per_epsilon: float = 1e-6
     debug: bool = False
     multi_device: bool = True
     reset_interval: int = 1000
