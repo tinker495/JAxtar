@@ -1,6 +1,7 @@
 from typing import Dict
 
 from puxle import (
+    PDDL,
     TSP,
     DotKnot,
     LightsOut,
@@ -228,6 +229,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "hanoi": PuzzleBundle(puzzle=TowerOfHanoi),
     "topspin": PuzzleBundle(puzzle=TopSpin),
+    "pddl_blocksworld": PuzzleBundle(puzzle=lambda: PDDL.from_preset("blocksworld", "bw-S-04")),
+    "pddl_gripper": PuzzleBundle(puzzle=lambda: PDDL.from_preset("gripper", "gr-S-04")),
+    "pddl_logistics": PuzzleBundle(puzzle=lambda: PDDL.from_preset("logistics", "lg-S-04")),
+    "pddl_rovers": PuzzleBundle(puzzle=lambda: PDDL.from_preset("rovers", "rv-S-04")),
+    "pddl_satellite": PuzzleBundle(puzzle=lambda: PDDL.from_preset("satellite", "st-S-04")),
     "rubikscube_world_model": PuzzleBundle(
         puzzle=WorldModelPuzzleConfig(
             callable=RubiksCubeWorldModel,
