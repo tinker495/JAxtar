@@ -69,11 +69,18 @@ def davi_builder(
 
         if using_priority_sampling:
             diff = dataset["diff"]
-            # Calculate priorities based on TD error
+            # Sanitize TD errors to avoid NaN/Inf poisoning
+            diff = jnp.nan_to_num(diff, nan=0.0, posinf=1e6, neginf=-1e6)
+
+            # Calculate priorities based on TD error with strict positivity
             priorities = jnp.abs(diff) + per_epsilon
-            # Calculate sampling probabilities
-            sampling_probs = jnp.power(priorities, per_alpha)
-            sampling_probs = sampling_probs / jnp.sum(sampling_probs)
+            priorities = jnp.clip(priorities, a_min=1e-12)
+
+            # Stable sampling probabilities in log-space: p_i ∝ priorities^alpha
+            logp = per_alpha * jnp.log(priorities)
+            logp = logp - jnp.max(logp)
+            sampling_probs = jnp.exp(logp)
+            sampling_probs = sampling_probs / (jnp.sum(sampling_probs) + 1e-12)
 
             # Sample indices based on priorities
             batch_indexs = jax.random.choice(
@@ -84,9 +91,11 @@ def davi_builder(
                 replace=True,
             )
 
-            # Calculate importance sampling weights to correct for biased sampling
-            is_weights = jnp.power(data_size * sampling_probs, -per_beta)
-            is_weights = is_weights / jnp.max(is_weights)  # Normalize for stability
+            # Stable importance sampling weights in log-space; max-normalized to 1
+            clipped_probs = jnp.clip(sampling_probs, a_min=1e-12)
+            log_w = -per_beta * (jnp.log(data_size) + jnp.log(clipped_probs))
+            log_w = log_w - jnp.max(log_w)
+            is_weights = jnp.exp(log_w)
             loss_weights = is_weights
         else:
             key_perm, key_fill = jax.random.split(key)
