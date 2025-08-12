@@ -9,6 +9,7 @@ from heuristic.neuralheuristic import (
     SlidePuzzleNeuralHeuristic,
 )
 from heuristic.pancake_heuristic import PancakeHeuristic
+from heuristic.pddl_heuristic import PDDLHeuristic
 from heuristic.rubikscube_heuristic import RubiksCubeHeuristic
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 from heuristic.sokoban_heuristic import SokobanHeuristic
