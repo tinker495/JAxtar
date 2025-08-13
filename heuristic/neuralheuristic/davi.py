@@ -10,6 +10,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
+from train_util.losses import loss_from_diff
 from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
@@ -28,6 +29,8 @@ def davi_builder(
     per_alpha: float = 0.6,
     per_beta: float = 0.4,
     per_epsilon: float = 1e-6,
+    loss_type: str = "mse",
+    huber_delta: float = 0.1,
 ):
     def davi_loss(
         heuristic_params: Any,
@@ -48,9 +51,9 @@ def davi_builder(
             "batch_stats": variable_updates["batch_stats"],
         }
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
-        # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, (new_params, diff)
+        per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
+        loss_value = jnp.mean(per_sample * weights)
+        return loss_value, (new_params, diff)
 
     def davi(
         key: chex.PRNGKey,

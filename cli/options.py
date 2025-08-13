@@ -459,6 +459,18 @@ def dist_train_options(func: callable) -> callable:
         help="Weight decay size for regularization.",
     )
     @click.option(
+        "--loss",
+        type=click.Choice(["mse", "huber", "logcosh"]),
+        default=None,
+        help="Select training loss.",
+    )
+    @click.option(
+        "--huber_delta",
+        type=float,
+        default=None,
+        help="Delta parameter for Huber loss.",
+    )
+    @click.option(
         "-sl",
         "--shuffle_length",
         type=int,

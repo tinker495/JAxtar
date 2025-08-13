@@ -10,6 +10,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from qfunction.neuralq.neuralq_base import QModelBase
+from train_util.losses import loss_from_diff
 from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
@@ -28,6 +29,8 @@ def qlearning_builder(
     per_alpha: float = 0.6,
     per_beta: float = 0.4,
     per_epsilon: float = 1e-6,
+    loss_type: str = "mse",
+    huber_delta: float = 0.1,
 ):
     def qlearning_loss(
         q_params: Any,
@@ -47,8 +50,9 @@ def qlearning_builder(
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
-        loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, (new_params, diff)
+        per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
+        loss_value = jnp.mean(per_sample * weights)
+        return loss_value, (new_params, diff)
 
     def qlearning(
         key: chex.PRNGKey,
