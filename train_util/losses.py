@@ -1,5 +1,6 @@
 from typing import Literal
 
+import jax
 import jax.numpy as jnp
 
 
@@ -16,7 +17,7 @@ def huber_loss(diff: jnp.ndarray, delta: float = 0.1) -> jnp.ndarray:
 
 def logcosh_loss(diff: jnp.ndarray) -> jnp.ndarray:
     # Stable formulation: log(cosh(x)) = x + softplus(-2x) - log(2)
-    return diff + jnp.softplus(-2.0 * diff) - jnp.log(2.0)
+    return diff + jax.nn.softplus(-2.0 * diff) - jnp.log(2.0)
 
 
 def loss_from_diff(
