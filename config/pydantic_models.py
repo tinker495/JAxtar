@@ -129,6 +129,8 @@ class DistTrainOptions(BaseModel):
     optimizer: str = "adam"
     temperature: float = 0.33
     logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
+    loss: str = Field("mse", description="Training loss: 'mse', 'huber', or 'logcosh'.")
+    huber_delta: float = Field(0.1, description="Delta parameter for Huber loss.")
 
 
 class DistQFunctionOptions(BaseModel):

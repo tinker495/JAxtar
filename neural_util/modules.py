@@ -9,7 +9,7 @@ DTYPE = jnp.bfloat16
 
 
 def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.9, dtype=DTYPE)(x, use_running_average=not training)
+    return nn.BatchNorm(momentum=0.99, dtype=DTYPE)(x, use_running_average=not training)
 
 
 def BatchReNorm(x, training):
