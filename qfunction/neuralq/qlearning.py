@@ -10,6 +10,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from qfunction.neuralq.neuralq_base import QModelBase
+from train_util.losses import loss_from_diff
 from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
@@ -28,6 +29,8 @@ def qlearning_builder(
     per_alpha: float = 0.6,
     per_beta: float = 0.4,
     per_epsilon: float = 1e-6,
+    loss_type: str = "mse",
+    huber_delta: float = 0.1,
 ):
     def qlearning_loss(
         q_params: Any,
@@ -47,8 +50,9 @@ def qlearning_builder(
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
-        loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, (new_params, diff)
+        per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
+        loss_value = jnp.mean(per_sample * weights)
+        return loss_value, (new_params, diff)
 
     def qlearning(
         key: chex.PRNGKey,
@@ -68,11 +72,18 @@ def qlearning_builder(
 
         if using_priority_sampling:
             diff = dataset["diff"]
-            # Calculate priorities based on TD error
+            # Sanitize TD errors to avoid NaN/Inf poisoning
+            diff = jnp.nan_to_num(diff, nan=0.0, posinf=1e6, neginf=-1e6)
+
+            # Calculate priorities based on TD error with strict positivity
             priorities = jnp.abs(diff) + per_epsilon
-            # Calculate sampling probabilities
-            sampling_probs = jnp.power(priorities, per_alpha)
-            sampling_probs = sampling_probs / jnp.sum(sampling_probs)
+            priorities = jnp.clip(priorities, a_min=1e-12)
+
+            # Stable sampling probabilities in log-space: p_i ∝ priorities^alpha
+            logp = per_alpha * jnp.log(priorities)
+            logp = logp - jnp.max(logp)
+            sampling_probs = jnp.exp(logp)
+            sampling_probs = sampling_probs / (jnp.sum(sampling_probs) + 1e-12)
 
             # Sample indices based on priorities
             batch_indexs = jax.random.choice(
@@ -83,9 +94,11 @@ def qlearning_builder(
                 replace=True,
             )
 
-            # Calculate importance sampling weights to correct for biased sampling
-            is_weights = jnp.power(data_size * sampling_probs, -per_beta)
-            is_weights = is_weights / jnp.max(is_weights)  # Normalize for stability
+            # Stable importance sampling weights in log-space; max-normalized to 1
+            clipped_probs = jnp.clip(sampling_probs, a_min=1e-12)
+            log_w = -per_beta * (jnp.log(data_size) + jnp.log(clipped_probs))
+            log_w = log_w - jnp.max(log_w)
+            is_weights = jnp.exp(log_w)
             loss_weights = is_weights
         else:
             key_perm, key_fill = jax.random.split(key)
@@ -195,23 +208,36 @@ def boltzmann_action_selection(
     temperature: float = 1.0 / 3.0,
     epsilon: float = 0.1,
 ) -> chex.Array:
-    # Scale Q-values by temperature for softmax
+    # Sanitize inputs
+    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=1e6)
     mask = jnp.isfinite(q_values)
-    scaled_q_values = -q_values / temperature
+
+    # Scale Q-values by temperature for softmax
+    safe_temperature = jnp.maximum(temperature, 1e-8)
+    scaled_q_values = -q_values / safe_temperature
 
     # Apply mask before softmax to avoid overflow
     masked_q_values = jnp.where(mask, scaled_q_values, -jnp.inf)
     probs = jax.nn.softmax(masked_q_values, axis=1)
-    # Ensure probabilities sum to 1 for each row
     probs = jnp.where(mask, probs, 0.0)
-    probs = probs / jnp.sum(probs, axis=1, keepdims=True)
 
-    # Calculate uniform probability over valid actions
+    # Row-wise normalization with guard
+    row_sum = jnp.sum(probs, axis=1, keepdims=True)
+    probs = jnp.where(row_sum > 0.0, probs / row_sum, probs)
+
+    # Calculate uniform probabilities
     valid_actions = jnp.sum(mask, axis=1, keepdims=True)
-    uniform_prob = jnp.where(mask, 1.0 / jnp.maximum(valid_actions, 1.0), 0.0)
+    uniform_valid = jnp.where(mask, 1.0 / jnp.maximum(valid_actions, 1.0), 0.0)
 
-    # Mix with epsilon-greedy exploration
-    probs = probs * (1 - epsilon) + uniform_prob * epsilon
+    action_size = q_values.shape[1]
+    uniform_all = jnp.ones_like(probs) / jnp.maximum(action_size, 1)
+
+    # Fallback if no valid actions in a row
+    probs = jnp.where(valid_actions > 0, probs, uniform_all)
+
+    # ε-greedy mixing and final guard renormalization
+    probs = probs * (1.0 - epsilon) + uniform_valid * epsilon
+    probs = probs / (jnp.sum(probs, axis=1, keepdims=True) + 1e-8)
     return probs
 
 
@@ -244,6 +270,7 @@ def _get_datasets_with_policy(
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
         # Get the Q-values Q(s,a) for all actions 'a' in the current state 's' using the online Q-network.
         q_values, _ = q_model.apply(q_params, preproc, training=False, mutable=["batch_stats"])
+        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=1e6)
         # Get all possible neighbor states (s') and the costs c(s,a,s') to move to them.
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
@@ -291,6 +318,7 @@ def _get_datasets_with_policy(
         q, _ = q_model.apply(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
+        q = jnp.nan_to_num(q, posinf=1e6, neginf=1e6)
         # Calculate the target Q-value using the Bellman Optimality Equation:
         # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
         # This represents the optimal cost-to-go from s'.
@@ -304,9 +332,8 @@ def _get_datasets_with_policy(
         # If the current state (s) was already solved, its Q-value should also be 0.
         target_q = jnp.where(solved, 0.0, target_q)
 
-        # The 'diff' is the Temporal Difference (TD) error: target_Q(s,a) - Q(s,a).
-        # This will be used to calculate the loss.
-        diff = min_q_sum_cost - selected_q
+        # The 'diff' is the Temporal Difference (TD) error aligned with the training target
+        diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
         return key, (solve_configs, states, target_q, actions, diff, move_costs)
 

@@ -1,6 +1,7 @@
 from typing import Dict
 
 from puxle import (
+    PDDL,
     TSP,
     DotKnot,
     LightsOut,
@@ -23,6 +24,7 @@ from heuristic import (
     LightsOutHeuristic,
     MazeHeuristic,
     PancakeHeuristic,
+    PDDLHeuristic,
     RubiksCubeHeuristic,
     SlidePuzzleHeuristic,
     SokobanHeuristic,
@@ -40,6 +42,7 @@ from heuristic.neuralheuristic import (
     WorldModelNeuralHeuristic,
 )
 from qfunction import (
+    PDDLQ,
     TSPQ,
     DotKnotQ,
     LightsOutQ,
@@ -228,6 +231,31 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "hanoi": PuzzleBundle(puzzle=TowerOfHanoi),
     "topspin": PuzzleBundle(puzzle=TopSpin),
+    "pddl_blocksworld": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("blocksworld", "bw-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
+    "pddl_gripper": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("gripper", "gr-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
+    "pddl_logistics": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("logistics", "lg-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
+    "pddl_rovers": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("rovers", "rv-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
+    "pddl_satellite": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("satellite", "st-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
     "rubikscube_world_model": PuzzleBundle(
         puzzle=WorldModelPuzzleConfig(
             callable=RubiksCubeWorldModel,

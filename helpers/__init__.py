@@ -20,6 +20,14 @@ from .util import (
     vmapping_init_target,
     vmapping_search,
 )
+from .visualization import (
+    build_human_play_layout,
+    build_human_play_setup_panel,
+    build_seed_setup_panel,
+    build_solution_path_panel,
+    build_vmapped_setup_panel,
+    save_solution_animation_and_frames,
+)
 
 __all__ = [
     # Sub-modules
@@ -54,4 +62,11 @@ __all__ = [
     "display_value",
     # ArtifactManager
     "ArtifactManager",
+    # Visualization
+    "build_human_play_layout",
+    "build_human_play_setup_panel",
+    "build_seed_setup_panel",
+    "build_solution_path_panel",
+    "build_vmapped_setup_panel",
+    "save_solution_animation_and_frames",
 ]

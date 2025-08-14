@@ -10,6 +10,7 @@ from puxle import Puzzle
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.util import stable_partition_three
 
 
 def astar_builder(
@@ -48,7 +49,8 @@ def astar_builder(
     # which is especially important for JAX and accelerator-based computation.
     # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
     # so that each batch is filled as evenly as possible and computational resources are used efficiently.
-    min_pop = batch_size // (puzzle.action_size // 2)
+    denom = max(1, puzzle.action_size // 2)
+    min_pop = max(1, batch_size // denom)
 
     def astar(
         solve_config: Puzzle.SolveConfig,
@@ -144,20 +146,18 @@ def astar_builder(
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
             flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
-            sort_cost = (
-                flatten_inserted * 2 + final_process_mask * 1
-            )  # 2 is new, 1 is old but optimal, 0 is not optimal
+            # Stable partition to group useful entries first.
+            # Improves computational efficiency by gathering only batches with samples that need updates.
+            invperm = stable_partition_three(flatten_inserted, final_process_mask)
 
-            argsort_idx = jnp.argsort(sort_cost, axis=0)  # sort by inserted
+            flatten_inserted = flatten_inserted[invperm]
+            flatten_final_process_mask = final_process_mask[invperm]
+            flatten_neighbours = flatten_neighbours[invperm]
+            flatten_nextcosts = flatten_nextcosts[invperm]
+            flatten_parent_index = flatten_parent_index[invperm]
+            flatten_parent_action = flatten_parent_action[invperm]
 
-            flatten_inserted = flatten_inserted[argsort_idx]
-            flatten_final_process_mask = final_process_mask[argsort_idx]
-            flatten_neighbours = flatten_neighbours[argsort_idx]
-            flatten_nextcosts = flatten_nextcosts[argsort_idx]
-            flatten_parent_index = flatten_parent_index[argsort_idx]
-            flatten_parent_action = flatten_parent_action[argsort_idx]
-
-            hash_idx = hash_idx[argsort_idx]
+            hash_idx = hash_idx[invperm]
 
             hash_idx = hash_idx.reshape(unflatten_shape)
             nextcosts = flatten_nextcosts.reshape(unflatten_shape)

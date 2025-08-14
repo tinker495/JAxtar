@@ -3,7 +3,6 @@ import time
 import click
 import jax
 import jax.numpy as jnp
-import rich.box as box
 from puxle import Puzzle
 from rich.align import Align
 from rich.console import Console, Group
@@ -23,6 +22,14 @@ from helpers import (
 )
 from helpers.config_printer import print_config
 from helpers.rich_progress import tqdm
+from helpers.visualization import (
+    build_human_play_layout,
+    build_human_play_setup_panel,
+    build_seed_setup_panel,
+    build_solution_path_panel,
+    build_vmapped_setup_panel,
+    save_solution_animation_and_frames,
+)
 from heuristic.heuristic_base import Heuristic
 from JAxtar.astar import astar_builder
 from JAxtar.qstar import qstar_builder
@@ -54,28 +61,11 @@ def human_play(puzzle: Puzzle, seed: int, **kwargs):
 
     arrow_flag = any(arrow in s for s in action_strs for arrow in arrow_characters)
 
-    grid = Table.grid(expand=False)
-
-    if has_target:
-        grid.add_column(justify="center")
-        states_grid = Table.grid(expand=False)
-        states_grid.add_row(
-            Align.center("[bold blue]Start State[/bold blue]"),
-            "",
-            Align.center("[bold blue]Target State[/bold blue]"),
+    console.print(
+        build_human_play_setup_panel(
+            has_target=has_target, solve_config=solve_config, init_state=init_state
         )
-        states_grid.add_row(
-            init_state.str(solve_config=solve_config),
-            Align.center("[bold blue] → [/bold blue]", vertical="middle"),
-            str(solve_config),
-        )
-        grid.add_row(states_grid)
-    else:
-        grid.add_column()
-        grid.add_row(Align.center("[bold blue]Start State[/bold blue]"))
-        grid.add_row(init_state.str(solve_config=solve_config))
-
-    console.print(Panel(grid, title="[bold blue]Human Play Setup[/bold blue]", expand=False))
+    )
 
     console.print("Use number keys, [bold yellow]WASD[/bold yellow] or arrow keys to move.")
     console.print("Use [bold red]ESC[/bold red] to exit.")
@@ -119,59 +109,13 @@ def human_play(puzzle: Puzzle, seed: int, **kwargs):
                 continue
 
     def generate_layout() -> Group:
-        # Display the current state in a visually appealing panel
-        state_panel = Panel(
-            Align.center(current_state.str(solve_config=solve_config)),
-            title="[bold blue]Current State[/bold blue]",
-            border_style="blue",
-            expand=False,
+        return build_human_play_layout(
+            current_state=current_state,
+            solve_config=solve_config,
+            sum_cost=sum_cost,
+            action_strs=action_strs,
+            arrow_flag=arrow_flag,
         )
-        cost_text = f"Accumulated Cost: [bold green]{sum_cost}[/bold green]"
-
-        # Create a more visually appealing action table
-        action_table = Table(
-            show_edge=True,
-            title="[bold magenta]Available Actions[/bold magenta]",
-            box=box.ROUNDED,
-            border_style="magenta",
-            show_lines=True,
-            expand=False,
-        )
-
-        if arrow_flag:
-            # New arrow-key style layout
-            action_table.show_header = False
-            action_table.add_column(style="bold cyan", justify="right")
-            action_table.add_column(style="bold cyan", justify="center")
-            action_table.add_column(style="bold cyan", justify="left")
-
-            # Find action strings for each direction
-            up_action = next((s for s in action_strs if "↑" in s), None)
-            down_action = next((s for s in action_strs if "↓" in s), None)
-            left_action = next((s for s in action_strs if "←" in s), None)
-            right_action = next((s for s in action_strs if "→" in s), None)
-
-            # Create display strings for each action
-            up_display = f"[bold yellow]W[/bold yellow]\n{up_action}" if up_action else ""
-            down_display = f"[bold yellow]S[/bold yellow]\n{down_action}" if down_action else ""
-            left_display = f"[bold yellow]A[/bold yellow]\n{left_action}" if left_action else ""
-            right_display = f"[bold yellow]D[/bold yellow]\n{right_action}" if right_action else ""
-
-            # Arrange in an arrow-like grid
-            action_table.add_row("", up_display, "")
-            action_table.add_row(left_display, down_display, right_display)
-
-        else:
-            # Vertical list for numbered actions
-            action_table.show_header = True
-            action_table.header_style = "bold yellow"
-            action_table.add_column("Index", justify="center")
-            action_table.add_column("Action", justify="left")
-
-            for i, action_str in enumerate(action_strs):
-                action_table.add_row(f"{i+1}", f"[bold cyan]{action_str}[/bold cyan]")
-
-        return Group(state_panel, cost_text, action_table)
 
     with Live(generate_layout(), console=console, screen=True, auto_refresh=False) as live:
         while True:
@@ -225,31 +169,16 @@ def search_samples(
         dist_values = dist_fn(solve_config, state)
 
         if len(seeds) == 1:
-            grid = Table.grid(expand=False)
-
-            if has_target:
-                grid.add_column(justify="center")
-                states_grid = Table.grid(expand=False)
-                states_grid.add_row(
-                    Align.center("[bold blue]Start State[/bold blue]"),
-                    "",
-                    Align.center("[bold blue]Target State[/bold blue]"),
+            console.print(
+                build_seed_setup_panel(
+                    puzzle=puzzle,
+                    has_target=has_target,
+                    solve_config=solve_config,
+                    state=state,
+                    dist_text=dist_fn_format(puzzle, dist_values),
+                    seed=seed,
                 )
-                states_grid.add_row(
-                    Text.from_ansi(state.str(solve_config=solve_config)),
-                    Align.center("[bold blue] → [/bold blue]", vertical="middle"),
-                    Text.from_ansi(str(solve_config)),
-                )
-                grid.add_row(states_grid)
-            else:
-                grid.add_column()
-                grid.add_row(Align.center("[bold blue]Start State[/bold blue]"))
-                grid.add_row(Text.from_ansi(state.str(solve_config=solve_config)))
-
-            grid.add_row(
-                Text.assemble(Text("Dist: ", style="bold"), dist_fn_format(puzzle, dist_values))
             )
-            console.print(Panel(grid, title=f"[bold blue]Seed {seed}[/bold blue]", expand=False))
 
         if search_options.profile:
             console.print("[yellow]Profiling enabled, starting trace...[/yellow]")
@@ -309,142 +238,25 @@ def search_samples(
                 path = search_result.get_solved_path()
 
                 if visualize_options.visualize_terminal:
-                    solution_panels = []
-                    for p in path[:-1]:
-                        g = search_result.get_cost(p)
-                        h = search_result.get_dist(p)
-                        f = search_options.cost_weight * g + h
-                        title = (
-                            f"[bold red]g:{g:4.1f}[/bold red]|"
-                            f"[bold blue]h:{h:4.1f}[/bold blue]|"
-                            f"[bold green]f:{f:4.1f}[/bold green]"
-                        )
-                        panel_content = Table.grid(expand=False)
-                        panel_content.add_row(
-                            Align.center(
-                                Text.from_ansi(
-                                    search_result.get_state(p).str(solve_config=solve_config)
-                                )
-                            )
-                        )
-                        panel_content.add_row(
-                            Align.center(
-                                Text.from_ansi(f"Action: {puzzle.action_to_string(p.action)}")
-                            )
-                        )
-                        panel_content = Align.center(panel_content)
-                        solution_panels.append(
-                            Panel(panel_content, title=title, border_style="blue", expand=False)
-                        )
-                    g = search_result.get_cost(path[-1])
-                    h = 0.0
-                    f = search_options.cost_weight * g + h
-                    final_state_title = (
-                        f"[bold red]g:{g:4.1f}[/bold red]|"
-                        f"[bold blue]h:{h:4.1f}[/bold blue]|"
-                        f"[bold green]f:{f:4.1f}[/bold green]"
-                    )
-                    final_panel_content = Table.grid(expand=False)
-                    final_panel_content.add_row(
-                        Align.center(
-                            Text.from_ansi(
-                                search_result.get_state(path[-1]).str(solve_config=solve_config)
-                            )
-                        )
-                    )
-                    final_panel_content.add_row(Align.center("[bold green]Solved![/bold green]"))
-                    final_panel_content = Align.center(final_panel_content)
-                    solution_panels.append(
-                        Panel(
-                            final_panel_content,
-                            title=final_state_title,
-                            border_style="green",
-                            expand=False,
-                        )
-                    )
-
-                    solution_path_group = []
-                    if solution_panels:
-                        # Estimate width needed for one panel + arrow
-                        first_panel = solution_panels[0]
-                        arrow_width = 3  # For " → "
-                        panel_width = console.measure(first_panel).maximum
-
-                        # Calculate how many panels can fit in the terminal width
-                        # Formula: n * panel_width + (n - 1) * arrow_width <= console.width
-                        # n * (panel_width + arrow_width) <= console.width + arrow_width
-                        if panel_width > 0:
-                            states_per_row = (console.width + arrow_width) // (
-                                panel_width + arrow_width
-                            )
-                        else:
-                            states_per_row = 1
-                        states_per_row = max(1, states_per_row)
-                    else:
-                        states_per_row = 1  # Should not happen if path exists
-
-                    for i in range(0, len(solution_panels), states_per_row):
-                        chunk = solution_panels[i : i + states_per_row]
-                        row_grid = Table.grid(expand=False)
-                        row_widgets = []
-
-                        if i != 0:
-                            row_widgets.append(
-                                Align.center("[bold blue]→ [/bold blue]", vertical="middle")
-                            )
-                        else:
-                            row_widgets.append("  ")
-
-                        for j, panel in enumerate(chunk):
-                            row_widgets.append(panel)
-                            if j < len(chunk) - 1:
-                                row_widgets.append(
-                                    Align.center("[bold blue] → [/bold blue]", vertical="middle")
-                                )
-
-                        row_grid.add_row(*row_widgets)
-                        solution_path_group.append(row_grid)
-
                     console.print(
-                        Panel(
-                            Group(*solution_path_group),
-                            title="[bold green]Solution Path[/bold green]",
-                            expand=False,
+                        build_solution_path_panel(
+                            console=console,
+                            search_result=search_result,
+                            path=path,
+                            puzzle=puzzle,
+                            solve_config=solve_config,
+                            cost_weight=search_options.cost_weight,
                         )
                     )
 
                 if visualize_options.visualize_imgs:
-                    import os
-                    from datetime import datetime
-
-                    import cv2
-                    import imageio
-
-                    imgs = []
-                    logging_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-                    logging_name = f"{puzzle_name}_{logging_time}"
-                    os.makedirs(f"tmp/{logging_name}", exist_ok=True)
-                    path_states = [search_result.get_state(p) for p in path]
-                    for idx, p in enumerate(path):
-                        img = search_result.get_state(p).img(
-                            idx=idx, path=path_states, solve_config=solve_config
-                        )
-                        imgs.append(img)
-                        cv2.imwrite(
-                            (
-                                f"tmp/{logging_name}/img_{idx}_c"
-                                f"{search_result.get_cost(p):.1f}_d"
-                                f"{search_result.get_dist(p):.1f}.png"
-                            ),
-                            cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
-                        )
-                    gif_path = f"tmp/{logging_name}/animation.gif"
-                    num_frames = len(imgs)
-                    fps = 4
-
-                    if num_frames / fps > visualize_options.max_animation_time:
-                        fps = num_frames / visualize_options.max_animation_time
-                    imageio.mimsave(gif_path, imgs, fps=fps)
+                    gif_path = save_solution_animation_and_frames(
+                        search_result=search_result,
+                        path=path,
+                        puzzle_name=puzzle_name,
+                        solve_config=solve_config,
+                        max_animation_time=visualize_options.max_animation_time,
+                    )
                     console.print(f"Saved solution animation to [cyan]{gif_path}[/cyan]")
         else:
             total_costs.append(jnp.inf)
@@ -506,12 +318,9 @@ def vmapped_search_samples(
 
     solve_configs, states = vmapping_init_target(puzzle, vmap_size, seeds)
 
-    grid = Table.grid(expand=False)
-    grid.add_row(Text.from_ansi(states.str(solve_config=solve_configs)))
-    if has_target:
-        grid.add_row(Align.center("[bold blue]↓[/bold blue]\n", vertical="middle"))
-        grid.add_row(Text.from_ansi(str(solve_configs)))
-    console.print(Panel(grid, title="[bold blue]Vmapped Search Setup[/bold blue]", expand=False))
+    console.print(
+        build_vmapped_setup_panel(has_target=has_target, solve_configs=solve_configs, states=states)
+    )
 
     start = time.time()
     search_result = vmapped_search(solve_configs, states)

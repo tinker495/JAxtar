@@ -10,6 +10,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
+from train_util.losses import loss_from_diff
 from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
@@ -28,6 +29,8 @@ def regression_trainer_builder(
     per_alpha: float = 0.6,
     per_beta: float = 0.4,
     per_epsilon: float = 1e-6,
+    loss_type: str = "mse",
+    huber_delta: float = 0.1,
 ):
     def davi_loss(
         heuristic_params: Any,
@@ -48,9 +51,9 @@ def regression_trainer_builder(
             "batch_stats": variable_updates["batch_stats"],
         }
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
-        # loss = jnp.mean(hubberloss(diff, delta=0.1) / 0.1 * weights)
-        loss = jnp.mean(jnp.square(diff) * weights)
-        return loss, (new_params, diff)
+        per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
+        loss_value = jnp.mean(per_sample * weights)
+        return loss_value, (new_params, diff)
 
     def davi(
         key: chex.PRNGKey,
@@ -69,11 +72,18 @@ def regression_trainer_builder(
 
         if using_priority_sampling:
             diff = dataset["diff"]
-            # Calculate priorities based on TD error
+            # Sanitize TD errors to avoid NaN/Inf poisoning
+            diff = jnp.nan_to_num(diff, nan=0.0, posinf=1e6, neginf=-1e6)
+
+            # Calculate priorities based on TD error with strict positivity
             priorities = jnp.abs(diff) + per_epsilon
-            # Calculate sampling probabilities
-            sampling_probs = jnp.power(priorities, per_alpha)
-            sampling_probs = sampling_probs / jnp.sum(sampling_probs)
+            priorities = jnp.clip(priorities, a_min=1e-12)
+
+            # Stable sampling probabilities in log-space: p_i ∝ priorities^alpha
+            logp = per_alpha * jnp.log(priorities)
+            logp = logp - jnp.max(logp)
+            sampling_probs = jnp.exp(logp)
+            sampling_probs = sampling_probs / (jnp.sum(sampling_probs) + 1e-12)
 
             # Sample indices based on priorities
             batch_indexs = jax.random.choice(
@@ -84,9 +94,11 @@ def regression_trainer_builder(
                 replace=True,
             )
 
-            # Calculate importance sampling weights to correct for biased sampling
-            is_weights = jnp.power(data_size * sampling_probs, -per_beta)
-            is_weights = is_weights / jnp.max(is_weights)  # Normalize for stability
+            # Stable importance sampling weights in log-space; max-normalized to 1
+            clipped_probs = jnp.clip(sampling_probs, a_min=1e-12)
+            log_w = -per_beta * (jnp.log(data_size) + jnp.log(clipped_probs))
+            log_w = log_w - jnp.max(log_w)
+            is_weights = jnp.exp(log_w)
             loss_weights = is_weights
         else:
             key_perm, key_fill = jax.random.split(key)
