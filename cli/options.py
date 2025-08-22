@@ -479,7 +479,7 @@ def dist_train_options(func: callable) -> callable:
     )
     @click.option(
         "--logger",
-        type=click.Choice(["aim", "tensorboard", "none"]),
+        type=click.Choice(["aim", "tensorboard", "wandb", "none"]),
         default=None,
         help="Logger to use.",
     )
