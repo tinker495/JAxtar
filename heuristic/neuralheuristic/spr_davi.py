@@ -11,6 +11,7 @@ from puxle import Puzzle
 
 from heuristic.neuralheuristic.spr_neuralheuristic_base import SPRHeuristicModel
 from neural_util.spr_modules import vector_augmentation
+from train_util.losses import loss_from_diff
 from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
@@ -28,6 +29,8 @@ def spr_davi_builder(
     ema_tau: float = 0.99,
     n_devices: int = 1,
     use_target_confidence_weighting: bool = False,
+    loss_type: str = "mse",
+    huber_delta: float = 0.1,
 ):
     def cosine_similarity_loss(p, z):
         z = jax.lax.stop_gradient(z)
@@ -65,7 +68,8 @@ def spr_davi_builder(
             "batch_stats": variable_updates["batch_stats"],
         }
         davi_diff = target_heuristic.squeeze() - current_heuristic.squeeze()
-        davi_loss = jnp.mean(jnp.square(davi_diff) * weights)
+        per_sample = loss_from_diff(davi_diff, loss=loss_type, huber_delta=huber_delta)
+        davi_loss = jnp.mean(per_sample * weights)
 
         # --- SPR Loss ---
         # Target network predictions

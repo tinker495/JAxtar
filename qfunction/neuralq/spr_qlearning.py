@@ -12,6 +12,7 @@ from puxle import Puzzle
 from neural_util.spr_modules import vector_augmentation
 from qfunction.neuralq.qlearning import boltzmann_action_selection
 from qfunction.neuralq.spr_neuralq_base import SPRQModel
+from train_util.losses import loss_from_diff
 from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
@@ -29,6 +30,8 @@ def spr_qlearning_builder(
     ema_tau: float = 0.99,
     n_devices: int = 1,
     use_target_confidence_weighting: bool = False,
+    loss_type: str = "mse",
+    huber_delta: float = 0.1,
 ):
     def cosine_similarity_loss(p, z):
         z = jax.lax.stop_gradient(z)
@@ -63,7 +66,8 @@ def spr_qlearning_builder(
 
         new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
         q_diff = target_qs.squeeze() - q_values_at_actions.squeeze()
-        q_loss = jnp.mean(jnp.square(q_diff) * weights)
+        per_sample = loss_from_diff(q_diff, loss=loss_type, huber_delta=huber_delta)
+        q_loss = jnp.mean(per_sample * weights)
 
         # --- SPR Loss ---
         # Target network predictions

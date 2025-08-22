@@ -476,6 +476,8 @@ def spr_davi(
         ema_tau=(1 - 1 / update_interval),
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        loss_type=train_options.loss,
+        huber_delta=train_options.huber_delta,
     )
     get_datasets = get_spr_heuristic_dataset_builder(
         puzzle,
@@ -652,6 +654,8 @@ def spr_qlearning(
         ema_tau=(1 - 1 / update_interval),
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        loss_type=train_options.loss,
+        huber_delta=train_options.huber_delta,
     )
     get_datasets = get_spr_qlearning_dataset_builder(
         puzzle,
