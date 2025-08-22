@@ -278,12 +278,23 @@ class WandbLogger(BaseLogger):
         self.wandb_run = None
         try:
             # Initialize wandb with project name and config
-            self.wandb_run = wandb.init(
-                project=log_dir_base,
-                config=convert_to_serializable_dict(config),
-                dir=self.log_dir,
-                reinit=True,
-            )
+            # Support for run organization through config
+            init_kwargs = {
+                "project": log_dir_base,
+                "config": convert_to_serializable_dict(config),
+                "dir": self.log_dir,
+                "reinit": True,
+            }
+
+            # Optional run organization parameters
+            if "run_name" in config:
+                init_kwargs["name"] = config["run_name"]
+            if "wandb_group" in config:
+                init_kwargs["group"] = config["wandb_group"]
+            if "wandb_job_type" in config:
+                init_kwargs["job_type"] = config["wandb_job_type"]
+
+            self.wandb_run = wandb.init(**init_kwargs)
             print(f"Wandb logging enabled. Project: {log_dir_base}")
             print(f"Wandb run URL: {self.wandb_run.url}")
         except Exception as e:
@@ -296,7 +307,7 @@ class WandbLogger(BaseLogger):
         super()._log_hyperparameters()
         # Wandb automatically logs config during init, but we can also update it
         if self.wandb_run:
-            wandb.config.update(convert_to_serializable_dict(self.config))
+            wandb.config.update(convert_to_serializable_dict(self.config), allow_val_change=True)
 
     def _log_git_info(self):
         if not self.wandb_run:
@@ -305,9 +316,9 @@ class WandbLogger(BaseLogger):
             commit_hash = (
                 subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
             )
-            wandb.config.update({"git_commit": commit_hash})
+            wandb.config.update({"git_commit": commit_hash}, allow_val_change=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
-            wandb.config.update({"git_commit": "N/A"})
+            wandb.config.update({"git_commit": "N/A"}, allow_val_change=True)
 
     def log_scalar(self, tag: str, value: float, step: int):
         if self.wandb_run:
@@ -343,18 +354,33 @@ class WandbLogger(BaseLogger):
 
     def log_text(self, tag: str, text: str, step: int = 0):
         if self.wandb_run:
-            wandb.log({tag: wandb.Html(text)}, step=step)
+            # Use wandb.Text for better clarity with plain text
+            # For rich HTML content, consider using wandb.Html explicitly
+            wandb.log({tag: wandb.Text(text)}, step=step)
 
     def log_figure(self, tag: str, figure, step: int):
         if self.wandb_run:
-            wandb.log({tag: figure}, step=step)
+            # Wrap figure with wandb.Image for better portability across backends
+            wandb.log({tag: wandb.Image(figure)}, step=step)
 
     def log_artifact(
-        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+        self,
+        artifact_path: str,
+        artifact_name: str = None,
+        artifact_type: str = "model",
+        metadata: dict = None,
+        aliases: list = None,
     ):
         """
         Log artifact to Wandb using native artifact support.
         Wandb has excellent native artifact tracking capabilities.
+
+        Args:
+            artifact_path: Path to the artifact file or directory
+            artifact_name: Name for the artifact (defaults to basename of path)
+            artifact_type: Type of artifact (e.g., 'model', 'dataset', 'result')
+            metadata: Optional metadata dictionary to attach to the artifact
+            aliases: Optional list of aliases for versioning (e.g., ['latest', 'best'])
         """
         if not self.wandb_run:
             print("Warning: Wandb run not initialized, cannot log artifact")
@@ -367,13 +393,20 @@ class WandbLogger(BaseLogger):
         if artifact_name is None:
             artifact_name = os.path.basename(artifact_path)
 
+        if aliases is None:
+            aliases = ["latest"]  # Default to 'latest' alias for better versioning
+
         try:
-            # Create wandb artifact
-            artifact = wandb.Artifact(
-                name=artifact_name,
-                type=artifact_type,
-                description=f"Artifact: {artifact_name} of type {artifact_type}",
-            )
+            # Create wandb artifact with optional metadata
+            artifact_kwargs = {
+                "name": artifact_name,
+                "type": artifact_type,
+                "description": f"Artifact: {artifact_name} of type {artifact_type}",
+            }
+            if metadata:
+                artifact_kwargs["metadata"] = metadata
+
+            artifact = wandb.Artifact(**artifact_kwargs)
 
             # Add file or directory to artifact
             if os.path.isdir(artifact_path):
@@ -381,9 +414,11 @@ class WandbLogger(BaseLogger):
             else:
                 artifact.add_file(artifact_path)
 
-            # Log artifact to wandb
-            wandb.log_artifact(artifact)
-            print(f"Artifact '{artifact_name}' logged to Wandb successfully")
+            # Log artifact to wandb with explicit run context and aliases
+            self.wandb_run.log_artifact(artifact, aliases=aliases)
+            print(
+                f"Artifact '{artifact_name}' logged to Wandb successfully with aliases: {aliases}"
+            )
 
         except Exception as e:
             print(f"Error logging artifact to Wandb: {e}")
