@@ -57,6 +57,12 @@ class BaseLogger(ABC):
         pass
 
     @abstractmethod
+    def log_artifact(
+        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+    ):
+        pass
+
+    @abstractmethod
     def close(self):
         pass
 
@@ -106,6 +112,39 @@ class TensorboardLogger(BaseLogger):
 
     def log_figure(self, tag: str, figure, step: int):
         self.writer.add_figure(tag, figure, step)
+
+    def log_artifact(
+        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+    ):
+        """
+        Log artifact to tensorboard by copying to log directory.
+        TensorBoard doesn't have native artifact support, so we copy files to log directory.
+        """
+        import shutil
+
+        if not os.path.exists(artifact_path):
+            print(f"Warning: Artifact path {artifact_path} does not exist")
+            return
+
+        if artifact_name is None:
+            artifact_name = os.path.basename(artifact_path)
+
+        # Create artifacts subdirectory
+        artifacts_dir = os.path.join(self.log_dir, "artifacts", artifact_type)
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        # Copy artifact to artifacts directory
+        dest_path = os.path.join(artifacts_dir, artifact_name)
+        if os.path.isdir(artifact_path):
+            shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
+        else:
+            shutil.copy2(artifact_path, dest_path)
+
+        print(f"Artifact saved to: {dest_path}")
+
+        # Log artifact info as text
+        artifact_info = f"Artifact: {artifact_name}\nType: {artifact_type}\nPath: {dest_path}"
+        self.writer.add_text(f"Artifacts/{artifact_type}/{artifact_name}", artifact_info)
 
     def close(self):
         self.writer.close()
@@ -187,6 +226,46 @@ class AimLogger(BaseLogger):
                 ..., :3
             ]
             self.aim_run.track(aim.Image(image_from_plot), name=tag, step=step)
+
+    def log_artifact(
+        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+    ):
+        """
+        Log artifact to Aim by copying to log directory and tracking metadata.
+        Aim doesn't have native artifact support, so we copy files and log metadata.
+        """
+        import shutil
+
+        if not os.path.exists(artifact_path):
+            print(f"Warning: Artifact path {artifact_path} does not exist")
+            return
+
+        if artifact_name is None:
+            artifact_name = os.path.basename(artifact_path)
+
+        # Create artifacts subdirectory
+        artifacts_dir = os.path.join(self.log_dir, "artifacts", artifact_type)
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        # Copy artifact to artifacts directory
+        dest_path = os.path.join(artifacts_dir, artifact_name)
+        if os.path.isdir(artifact_path):
+            shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
+        else:
+            shutil.copy2(artifact_path, dest_path)
+
+        print(f"Artifact saved to: {dest_path}")
+
+        # Log artifact metadata to Aim
+        if self.aim_run:
+            artifact_info = {
+                "name": artifact_name,
+                "type": artifact_type,
+                "path": dest_path,
+                "original_path": artifact_path,
+                "size": os.path.getsize(dest_path) if os.path.isfile(dest_path) else "directory",
+            }
+            self.aim_run.track(artifact_info, name=f"artifacts/{artifact_type}/{artifact_name}")
 
     def close(self):
         if self.aim_run:
@@ -270,6 +349,56 @@ class WandbLogger(BaseLogger):
         if self.wandb_run:
             wandb.log({tag: figure}, step=step)
 
+    def log_artifact(
+        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+    ):
+        """
+        Log artifact to Wandb using native artifact support.
+        Wandb has excellent native artifact tracking capabilities.
+        """
+        if not self.wandb_run:
+            print("Warning: Wandb run not initialized, cannot log artifact")
+            return
+
+        if not os.path.exists(artifact_path):
+            print(f"Warning: Artifact path {artifact_path} does not exist")
+            return
+
+        if artifact_name is None:
+            artifact_name = os.path.basename(artifact_path)
+
+        try:
+            # Create wandb artifact
+            artifact = wandb.Artifact(
+                name=artifact_name,
+                type=artifact_type,
+                description=f"Artifact: {artifact_name} of type {artifact_type}",
+            )
+
+            # Add file or directory to artifact
+            if os.path.isdir(artifact_path):
+                artifact.add_dir(artifact_path)
+            else:
+                artifact.add_file(artifact_path)
+
+            # Log artifact to wandb
+            wandb.log_artifact(artifact)
+            print(f"Artifact '{artifact_name}' logged to Wandb successfully")
+
+        except Exception as e:
+            print(f"Error logging artifact to Wandb: {e}")
+            # Fallback: copy to local directory like other loggers
+            import shutil
+
+            artifacts_dir = os.path.join(self.log_dir, "artifacts", artifact_type)
+            os.makedirs(artifacts_dir, exist_ok=True)
+            dest_path = os.path.join(artifacts_dir, artifact_name)
+            if os.path.isdir(artifact_path):
+                shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
+            else:
+                shutil.copy2(artifact_path, dest_path)
+            print(f"Artifact saved locally to: {dest_path}")
+
     def close(self):
         if self.wandb_run:
             wandb.finish()
@@ -302,6 +431,11 @@ class NoOpLogger(BaseLogger):
         pass
 
     def log_figure(self, tag: str, figure, step: int):
+        pass
+
+    def log_artifact(
+        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+    ):
         pass
 
     def close(self):
