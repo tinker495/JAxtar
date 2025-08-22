@@ -570,9 +570,13 @@ def spr_davi(
             heuristic.params = heuristic_params
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
+            # Log model as artifact
+            logger.log_artifact(backup_path, f"spr_heuristic_step_{i}", "model")
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
+    # Log final model as artifact
+    logger.log_artifact(backup_path, "spr_heuristic_final", "model")
 
     # Evaluation
     if eval_options.num_eval > 0:
@@ -749,9 +753,13 @@ def spr_qlearning(
             qfunction.params = qfunc_params
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
+            # Log model as artifact
+            logger.log_artifact(backup_path, f"spr_qfunction_step_{i}", "model")
     qfunction.params = qfunc_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
+    # Log final model as artifact
+    logger.log_artifact(backup_path, "spr_qfunction_final", "model")
 
     # Evaluation
     if eval_options.num_eval > 0:
