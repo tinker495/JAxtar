@@ -283,7 +283,7 @@ class WandbLogger(BaseLogger):
                 "project": log_dir_base,
                 "config": convert_to_serializable_dict(config),
                 "dir": self.log_dir,
-                "reinit": True,
+                "reinit": "finish_previous",
             }
 
             # Optional run organization parameters
