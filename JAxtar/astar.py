@@ -10,7 +10,6 @@ from puxle import Puzzle
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
-from JAxtar.util import stable_partition_three
 
 
 def astar_builder(
@@ -116,22 +115,18 @@ def astar_builder(
             flatten_parent_action = parent_action.flatten()
             (
                 search_result.hashtable,
-                flatten_inserted,
                 _,
+                cheapest_uniques_mask,
                 hash_idx,
-            ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
-
-            # Filter out duplicate nodes, keeping only the one with the lowest cost
-            cheapest_uniques_mask = xnp.unique_mask(hash_idx, flatten_nextcosts)
-
-            # Nodes to process must be valid neighbors AND the cheapest unique ones
-            process_mask = jnp.logical_and(flatten_filleds, cheapest_uniques_mask)
+            ) = search_result.hashtable.parallel_insert(
+                flatten_neighbours, flatten_filleds, flatten_nextcosts
+            )
 
             # It must also be cheaper than any previously found path to this state.
             optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
 
             # Combine all conditions for the final decision.
-            final_process_mask = jnp.logical_and(process_mask, optimal_mask)
+            final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
 
             # Update the cost (g-value) for the newly found optimal paths before they are
             # masked out. This ensures the cost table is always up-to-date.
@@ -145,12 +140,10 @@ def astar_builder(
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
-            flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
             # Stable partition to group useful entries first.
             # Improves computational efficiency by gathering only batches with samples that need updates.
-            invperm = stable_partition_three(flatten_inserted, final_process_mask)
+            invperm = jnp.argsort(final_process_mask)
 
-            flatten_inserted = flatten_inserted[invperm]
             flatten_final_process_mask = final_process_mask[invperm]
             flatten_neighbours = flatten_neighbours[invperm]
             flatten_nextcosts = flatten_nextcosts[invperm]
@@ -165,10 +158,16 @@ def astar_builder(
             parent_indexs = flatten_parent_index.reshape(unflatten_shape)
             parent_action = flatten_parent_action.reshape(unflatten_shape)
             neighbours = flatten_neighbours.reshape(unflatten_shape)
-            inserted = flatten_inserted.reshape(unflatten_shape)
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
-            def _inserted(search_result: SearchResult, neighbour, current, inserted):
+            def _inserted(
+                search_result: SearchResult,
+                neighbour,
+                current,
+                inserted,
+                parent_index,
+                parent_action,
+            ):
                 neighbour_heur = heuristic.batched_distance(
                     solve_config, neighbour, params=heuristic_params
                 ).astype(KEY_DTYPE)
@@ -179,11 +178,6 @@ def astar_builder(
                     inserted,
                     neighbour_heur,
                 )
-                return search_result, neighbour_heur
-
-            def _queue_insert(
-                search_result: SearchResult, current, neighbour_heur, parent_index, parent_action
-            ):
                 neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
 
                 aranged_parent = parent[parent_index]
@@ -202,25 +196,16 @@ def astar_builder(
                 return search_result
 
             def _scan(search_result: SearchResult, val):
-                neighbour, parent_action, current, inserted, final_process_mask, parent_index = val
-
-                search_result, neighbour_heur = jax.lax.cond(
-                    jnp.any(inserted),
-                    _inserted,
-                    _not_inserted,
-                    search_result,
-                    neighbour,
-                    current,
-                    inserted,
-                )
+                neighbour, parent_action, current, final_process_mask, parent_index = val
 
                 search_result = jax.lax.cond(
                     jnp.any(final_process_mask),
-                    _queue_insert,
-                    _queue_not_insert,
+                    _inserted,
+                    lambda search_result, *args: search_result,
                     search_result,
+                    neighbour,
                     current,
-                    neighbour_heur,
+                    final_process_mask,
                     parent_index,
                     parent_action,
                 )
@@ -229,7 +214,7 @@ def astar_builder(
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbours, parent_action, current, inserted, final_process_mask, parent_indexs),
+                (neighbours, parent_action, current, final_process_mask, parent_indexs),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
@@ -269,15 +254,3 @@ def astar_builder(
         print("JIT compiled\n\n")
 
     return astar_fn
-
-
-def _not_inserted(search_result: SearchResult, neighbour, current, inserted):
-    # get cached heuristic value
-    neighbour_heur = search_result.get_dist(current)
-    return search_result, neighbour_heur
-
-
-def _queue_not_insert(
-    search_result: SearchResult, current, neighbour_heur, parent_index, parent_action
-):
-    return search_result

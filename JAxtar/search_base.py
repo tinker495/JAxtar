@@ -434,7 +434,8 @@ def unique_sort(
             - sorted_val (Current_with_Parent): Values corresponding to the sorted keys.
     """
     n = key.shape[-1]
-    mask = xnp.unique_mask(val.current.hashidx, val.current.cost)
+    filled = jnp.isfinite(key)
+    mask = xnp.unique_mask(val.current.hashidx, val.current.cost, filled)
     key = jnp.where(mask, key, jnp.inf)
     sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(n))
     sorted_val = val[sorted_idx]
