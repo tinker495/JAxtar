@@ -148,7 +148,6 @@ def qstar_builder(
             invperm = jnp.argsort(final_process_mask)
 
             flatten_final_process_mask = final_process_mask[invperm]
-            flatten_neighbours = flatten_neighbours[invperm]
             flatten_nextcosts = flatten_nextcosts[invperm]
             flatten_q_vals = flatten_q_vals[invperm]
             flatten_parent_index = flatten_parent_index[invperm]
@@ -162,7 +161,6 @@ def qstar_builder(
             current = Current(hashidx=hash_idx, cost=nextcosts)
             parent_indexs = flatten_parent_index.reshape(unflatten_shape)
             parent_action = flatten_parent_action.reshape(unflatten_shape)
-            neighbours = flatten_neighbours.reshape(unflatten_shape)
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
             def _insert(search_result: SearchResult, current, q_vals, parent_index, parent_action):
