@@ -276,10 +276,11 @@ def _get_datasets_with_policy(
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )
-        mask = jnp.isfinite(jnp.transpose(cost, (1, 0)))
+        cost = jnp.transpose(cost, (1, 0))
+        q_sum_cost = q_values + cost
 
         # Action selection
-        probs = boltzmann_action_selection(q_values, temperature=temperature, mask=mask)
+        probs = boltzmann_action_selection(q_sum_cost, temperature=temperature)
         idxs = jnp.arange(q_values.shape[1])
         actions = jax.vmap(lambda k, p: jax.random.choice(k, idxs, p=p))(
             jax.random.split(subkey2, q_values.shape[0]), probs

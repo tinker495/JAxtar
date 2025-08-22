@@ -15,13 +15,18 @@ class DistHead(nn.Module):
     latent_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
     activation: str = nn.relu
+    resblock_fn: callable = ResBlock
+    use_swiglu: bool = False
 
     @nn.compact
     def __call__(self, x, training=False):
         for _ in range(self.Res_N):
-            x = ResBlock(self.latent_dim, norm_fn=self.norm_fn, activation=self.activation)(
-                x, training
-            )
+            x = self.resblock_fn(
+                self.latent_dim,
+                norm_fn=self.norm_fn,
+                activation=self.activation,
+                use_swiglu=self.use_swiglu,
+            )(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
@@ -39,6 +44,8 @@ class SPRHeuristicModel(nn.Module):
     latent_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
     activation: str = nn.relu
+    resblock_fn: callable = ResBlock
+    use_swiglu: bool = False
 
     def setup(self) -> None:
         self.encoder = Encoder(
@@ -46,6 +53,8 @@ class SPRHeuristicModel(nn.Module):
             latent_dim=self.latent_dim,
             norm_fn=self.norm_fn,
             activation=self.activation,
+            resblock_fn=self.resblock_fn,
+            use_swiglu=self.use_swiglu,
             name="encoder",
         )
         self.dist_head = DistHead(
@@ -53,19 +62,31 @@ class SPRHeuristicModel(nn.Module):
             latent_dim=self.latent_dim,
             norm_fn=self.norm_fn,
             activation=self.activation,
+            resblock_fn=self.resblock_fn,
+            use_swiglu=self.use_swiglu,
             name="dist_head",
         )
         self.projection_head = ProjectionHead(
-            output_dim=self.latent_dim, activation=self.activation, name="projection_head"
+            output_dim=self.latent_dim,
+            activation=self.activation,
+            use_swiglu=self.use_swiglu,
+            norm_fn=self.norm_fn,
+            name="projection_head",
         )
         self.transition_model = TransitionModel(
             action_size=self.action_size,
             latent_dim=self.latent_dim,
             activation=self.activation,
+            use_swiglu=self.use_swiglu,
+            norm_fn=self.norm_fn,
             name="transition_model",
         )
         self.predicton_head = ProjectionHead(
-            output_dim=self.latent_dim, activation=self.activation, name="prediction_head"
+            output_dim=self.latent_dim,
+            activation=self.activation,
+            use_swiglu=self.use_swiglu,
+            norm_fn=self.norm_fn,
+            name="prediction_head",
         )
 
     @nn.compact
@@ -74,11 +95,11 @@ class SPRHeuristicModel(nn.Module):
         latent_z = self.encoder(x, training)
         heuristic = self.dist_head(latent_z, training)
 
-        projected_p = self.projection_head(latent_z)
-        transition = self.transition_model(latent_z)
+        projected_p = self.projection_head(latent_z, training)
+        transition = self.transition_model(latent_z, training)
         transition = transition[:, 0]
 
-        predicted_next_p = self.predicton_head(transition)
+        predicted_next_p = self.predicton_head(transition, training)
 
         return heuristic, projected_p, predicted_next_p
 
@@ -88,29 +109,29 @@ class SPRHeuristicModel(nn.Module):
 
     def get_projected_p(self, x, training=False):
         latent_z = self.encoder(x, training)
-        return self.projection_head(latent_z)
+        return self.projection_head(latent_z, training)
 
     def get_heuristic_and_predicted_next_p(self, x, actions, training=False):
         latent_z = self.encoder(x, training)
         heuristic = self.dist_head(latent_z, training)
-        transition = self.transition_model(latent_z)
+        transition = self.transition_model(latent_z, training)
         transition = jnp.take_along_axis(
             transition, actions[:, jnp.newaxis, jnp.newaxis], axis=1
         ).squeeze(1)
-        projected_p = self.projection_head(transition)
-        predicted_next_p = self.predicton_head(projected_p)
+        projected_p = self.projection_head(transition, training)
+        predicted_next_p = self.predicton_head(projected_p, training)
         return heuristic, predicted_next_p
 
 
 class SPRNeuralHeuristic(NeuralHeuristicBase):
-    def __init__(self, puzzle: Puzzle, norm_fn: callable = None, **kwargs):
+    def __init__(self, puzzle: Puzzle, **kwargs):
         action_size = self._get_action_size(puzzle)
 
         # Add action_size to kwargs for the model
         model_kwargs = kwargs.copy()
         model_kwargs["action_size"] = action_size
 
-        super().__init__(puzzle, model=SPRHeuristicModel, norm_fn=norm_fn, **model_kwargs)
+        super().__init__(puzzle, model=SPRHeuristicModel, **model_kwargs)
 
     def _get_action_size(self, puzzle: Puzzle):
         dummy_solve_config = puzzle.SolveConfig.default()
