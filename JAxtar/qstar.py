@@ -8,7 +8,6 @@ from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
-from JAxtar.util import stable_partition_three
 from qfunction.q_base import QFunction
 
 
@@ -119,22 +118,18 @@ def qstar_builder(
             flatten_q_vals = q_vals.flatten()
             (
                 search_result.hashtable,
-                flatten_inserted,
                 _,
+                cheapest_uniques_mask,
                 hash_idx,
-            ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
-
-            # Filter out duplicate nodes, keeping only the one with the lowest cost
-            cheapest_uniques_mask = xnp.unique_mask(hash_idx, flatten_nextcosts)
-
-            # Nodes to process must be valid neighbors AND the cheapest unique ones
-            process_mask = jnp.logical_and(flatten_filleds, cheapest_uniques_mask)
+            ) = search_result.hashtable.parallel_insert(
+                flatten_neighbours, flatten_filleds, flatten_nextcosts
+            )
 
             # It must also be cheaper than any previously found path to this state.
             optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
 
             # Combine all conditions for the final decision.
-            final_process_mask = jnp.logical_and(process_mask, optimal_mask)
+            final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
 
             # Update the cost (g-value) for the newly found optimal paths before they are
             # masked out. This ensures the cost table is always up-to-date.
@@ -145,36 +140,15 @@ def qstar_builder(
                 flatten_nextcosts,  # Use costs before they are set to inf
             )
 
-            # 1. Identify where we've found a better (lower) heuristic.
-            previous_dist = search_result.dist[hash_idx.index]
-            is_more_optimistic_h = jnp.logical_and(
-                flatten_filleds, jnp.less(flatten_q_vals, previous_dist)
-            )
-
-            # 2. Update the global heuristic map (dist) based on this finding.
-            #    We use the original flatten_q_vals here.
-            search_result.dist = xnp.update_on_condition(
-                search_result.dist,
-                hash_idx.index,
-                is_more_optimistic_h,
-                flatten_q_vals,
-            )
-
-            # 3. For processing in this iteration (e.g., priority queue insertion),
-            #    we should use the best heuristic known *after* the potential update.
-            optimistic_q_vals = jnp.where(is_more_optimistic_h, flatten_q_vals, previous_dist)
-
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
-            flatten_q_vals = jnp.where(final_process_mask, optimistic_q_vals, jnp.inf)
-            flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
             # Stable partition to group useful entries first.
             # Improves computational efficiency by gathering only batches with samples that need updates.
-            invperm = stable_partition_three(flatten_inserted, final_process_mask)
+            invperm = jnp.argsort(final_process_mask)
 
-            flatten_inserted = flatten_inserted[invperm]
             flatten_final_process_mask = final_process_mask[invperm]
+            flatten_neighbours = flatten_neighbours[invperm]
             flatten_nextcosts = flatten_nextcosts[invperm]
             flatten_q_vals = flatten_q_vals[invperm]
             flatten_parent_index = flatten_parent_index[invperm]
@@ -188,11 +162,10 @@ def qstar_builder(
             current = Current(hashidx=hash_idx, cost=nextcosts)
             parent_indexs = flatten_parent_index.reshape(unflatten_shape)
             parent_action = flatten_parent_action.reshape(unflatten_shape)
+            neighbours = flatten_neighbours.reshape(unflatten_shape)
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
-            def _queue_insert(
-                search_result: SearchResult, current, q_vals, parent_index, parent_action
-            ):
+            def _insert(search_result: SearchResult, current, q_vals, parent_index, parent_action):
                 neighbour_key = (cost_weight * current.cost + q_vals).astype(KEY_DTYPE)
 
                 aranged_parent = parent[parent_index]
@@ -215,8 +188,8 @@ def qstar_builder(
 
                 search_result = jax.lax.cond(
                     jnp.any(final_process_mask),
-                    _queue_insert,
-                    _queue_not_insert,
+                    _insert,
+                    lambda search_result, *args: search_result,
                     search_result,
                     current,
                     q_vals,
@@ -262,7 +235,3 @@ def qstar_builder(
         print("JIT compiled\n\n")
 
     return qstar_fn
-
-
-def _queue_not_insert(search_result: SearchResult, current, q_vals, parent_index, parent_action):
-    return search_result
