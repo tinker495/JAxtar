@@ -8,6 +8,7 @@ import imageio.v2 as imageio
 import matplotlib
 import numpy as np
 import tensorboardX
+import wandb
 
 from helpers.util import convert_to_serializable_dict
 
@@ -192,6 +193,88 @@ class AimLogger(BaseLogger):
             self.aim_run.close()
 
 
+class WandbLogger(BaseLogger):
+    def __init__(self, log_dir_base: str, config: dict):
+        super().__init__(log_dir_base, config)
+        self.wandb_run = None
+        try:
+            # Initialize wandb with project name and config
+            self.wandb_run = wandb.init(
+                project=log_dir_base,
+                config=convert_to_serializable_dict(config),
+                dir=self.log_dir,
+                reinit=True,
+            )
+            print(f"Wandb logging enabled. Project: {log_dir_base}")
+            print(f"Wandb run URL: {self.wandb_run.url}")
+        except Exception as e:
+            print(f"Could not initialize Wandb, disabling Wandb logging. Error: {e}")
+            self.wandb_run = None
+        self._log_hyperparameters()
+        self._log_git_info()
+
+    def _log_hyperparameters(self):
+        super()._log_hyperparameters()
+        # Wandb automatically logs config during init, but we can also update it
+        if self.wandb_run:
+            wandb.config.update(convert_to_serializable_dict(self.config))
+
+    def _log_git_info(self):
+        if not self.wandb_run:
+            return
+        try:
+            commit_hash = (
+                subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
+            )
+            wandb.config.update({"git_commit": commit_hash})
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            wandb.config.update({"git_commit": "N/A"})
+
+    def log_scalar(self, tag: str, value: float, step: int):
+        if self.wandb_run:
+            wandb.log({tag: float(value)}, step=step)
+
+    def log_histogram(self, tag: str, values: np.ndarray, step: int):
+        if self.wandb_run:
+            try:
+                wandb.log({tag: wandb.Histogram(values)}, step=step)
+            except ValueError as e:
+                print(
+                    f"Warning: Could not log histogram '{tag}' to Wandb at step {step}. "
+                    f"This is likely due to all values in the histogram being the same. Error: {e}"
+                )
+
+    def log_image(self, tag: str, image, step: int, dataformats="HWC"):
+        if self.wandb_run:
+            image = np.asarray(image)
+            if dataformats == "CHW":
+                # Convert CHW to HWC for wandb
+                image = np.transpose(image, (1, 2, 0))
+            wandb.log({tag: wandb.Image(image)}, step=step)
+
+        # Also save image to local directory
+        safe_tag = tag.replace("/", "_").replace(" ", "_")
+        filename = f"{safe_tag}_step{step}.png"
+        filepath = os.path.join(self.log_dir, filename)
+        if image.dtype in [np.float32, np.float64]:
+            img_to_save = np.clip(image * 255, 0, 255).astype(np.uint8)
+        else:
+            img_to_save = image
+        imageio.imwrite(filepath, img_to_save)
+
+    def log_text(self, tag: str, text: str, step: int = 0):
+        if self.wandb_run:
+            wandb.log({tag: wandb.Html(text)}, step=step)
+
+    def log_figure(self, tag: str, figure, step: int):
+        if self.wandb_run:
+            wandb.log({tag: figure}, step=step)
+
+    def close(self):
+        if self.wandb_run:
+            wandb.finish()
+
+
 class NoOpLogger(BaseLogger):
     def __init__(self):
         print("Logging is disabled.")
@@ -230,6 +313,8 @@ def create_logger(logger_type: str, log_dir_base: str, config: dict) -> BaseLogg
         return AimLogger(log_dir_base, config)
     elif logger_type == "tensorboard":
         return TensorboardLogger(log_dir_base, config)
+    elif logger_type == "wandb":
+        return WandbLogger(log_dir_base, config)
     elif logger_type == "none":
         return NoOpLogger()
     else:
