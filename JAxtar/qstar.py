@@ -140,6 +140,25 @@ def qstar_builder(
                 flatten_nextcosts,  # Use costs before they are set to inf
             )
 
+            # 1. Identify where we've found a better (lower) heuristic.
+            previous_dist = search_result.dist[hash_idx.index]
+            is_more_optimistic_h = jnp.logical_and(
+                flatten_filleds, jnp.less(flatten_q_vals, previous_dist)
+            )
+
+            # 2. Update the global heuristic map (dist) based on this finding.
+            #    We use the original flatten_q_vals here.
+            search_result.dist = xnp.update_on_condition(
+                search_result.dist,
+                hash_idx.index,
+                is_more_optimistic_h,
+                flatten_q_vals,
+            )
+
+            # 3. For processing in this iteration (e.g., priority queue insertion),
+            #    we should use the best heuristic known *after* the potential update.
+            flatten_q_vals = jnp.where(is_more_optimistic_h, flatten_q_vals, previous_dist)
+
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
