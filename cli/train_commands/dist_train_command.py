@@ -69,9 +69,9 @@ def davi(
     target_heuristic_params = heuristic.params
     heuristic_params = target_heuristic_params
 
-    steps = train_options.steps
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
+    steps = train_options.steps // train_options.replay_ratio
+    update_interval = train_options.update_interval // train_options.replay_ratio
+    reset_interval = train_options.reset_interval // train_options.replay_ratio
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
@@ -254,9 +254,9 @@ def qlearning(
     target_qfunc_params = qfunction.params
     qfunc_params = target_qfunc_params
 
-    steps = train_options.steps
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
+    steps = train_options.steps // train_options.replay_ratio
+    update_interval = train_options.update_interval // train_options.replay_ratio
+    reset_interval = train_options.reset_interval // train_options.replay_ratio
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices

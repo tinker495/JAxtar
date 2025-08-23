@@ -86,15 +86,6 @@ def qlearning_builder(
             sampling_probs = jnp.exp(logp)
             sampling_probs = sampling_probs / (jnp.sum(sampling_probs) + 1e-12)
 
-            # Sample indices based on priorities
-            batch_indexs = jax.random.choice(
-                key,
-                jnp.arange(data_size),
-                shape=(batch_size * minibatch_size,),
-                p=sampling_probs,
-                replace=True,
-            )
-
             # Stable importance sampling weights in log-space; max-normalized to 1
             clipped_probs = jnp.clip(sampling_probs, a_min=1e-12)
             log_w = -per_beta * (jnp.log(data_size) + jnp.log(clipped_probs))
@@ -102,16 +93,6 @@ def qlearning_builder(
             is_weights = jnp.exp(log_w)
             loss_weights = is_weights
         else:
-            key_perm, key_fill = jax.random.split(key)
-            batch_indexs = jnp.concatenate(
-                [
-                    jax.random.permutation(key_perm, jnp.arange(data_size)),
-                    jax.random.randint(
-                        key_fill, (batch_size * minibatch_size - data_size,), 0, data_size
-                    ),
-                ],
-                axis=0,
-            )  # [batch_size * minibatch_size]
             loss_weights = jnp.ones(data_size)
 
         if use_target_confidence_weighting:
@@ -122,17 +103,6 @@ def qlearning_builder(
 
         if not using_priority_sampling:
             loss_weights = loss_weights / jnp.mean(loss_weights)
-        batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
-
-        batched_solveconfigs = xnp.take(solveconfigs, batch_indexs, axis=0)
-        batched_states = xnp.take(states, batch_indexs, axis=0)
-        batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
-        batched_actions = jnp.take(actions, batch_indexs, axis=0)
-        batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
-        # Normalize weights per batch to prevent scale drift
-        batched_weights = batched_weights / (
-            jnp.mean(batched_weights, axis=1, keepdims=True) + 1e-8
-        )
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
@@ -156,27 +126,70 @@ def qlearning_builder(
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (q_params, opt_state), (loss, grad_magnitude_mean, diff)
 
-        # Repeat training loop for replay_ratio times
-        def replay_loop(carry, _):
+        # Repeat training loop for replay_ratio times with reshuffling
+        def replay_loop(carry, replay_key):
             q_params, opt_state = carry
+
+            # Reshuffle the batch indices for each replay iteration
+            if using_priority_sampling:
+                # For priority sampling, resample based on priorities
+                batch_indexs_replay = jax.random.choice(
+                    replay_key,
+                    jnp.arange(data_size),
+                    shape=(batch_size * minibatch_size,),
+                    p=sampling_probs,
+                    replace=True,
+                )
+                loss_weights_replay = is_weights
+            else:
+                # For uniform sampling, create new permutation
+                key_perm_replay, key_fill_replay = jax.random.split(replay_key)
+                batch_indexs_replay = jnp.concatenate(
+                    [
+                        jax.random.permutation(key_perm_replay, jnp.arange(data_size)),
+                        jax.random.randint(
+                            key_fill_replay,
+                            (batch_size * minibatch_size - data_size,),
+                            0,
+                            data_size,
+                        ),
+                    ],
+                    axis=0,
+                )
+                loss_weights_replay = loss_weights
+
+            batch_indexs_replay = jnp.reshape(batch_indexs_replay, (batch_size, minibatch_size))
+
+            # Create new batches with reshuffled indices
+            batched_solveconfigs_replay = xnp.take(solveconfigs, batch_indexs_replay, axis=0)
+            batched_states_replay = xnp.take(states, batch_indexs_replay, axis=0)
+            batched_target_q_replay = jnp.take(target_q, batch_indexs_replay, axis=0)
+            batched_actions_replay = jnp.take(actions, batch_indexs_replay, axis=0)
+            batched_weights_replay = jnp.take(loss_weights_replay, batch_indexs_replay, axis=0)
+            # Normalize weights per batch to prevent scale drift
+            batched_weights_replay = batched_weights_replay / (
+                jnp.mean(batched_weights_replay, axis=1, keepdims=True) + 1e-8
+            )
+
             (q_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
                 train_loop,
                 (q_params, opt_state),
                 (
-                    batched_solveconfigs,
-                    batched_states,
-                    batched_target_q,
-                    batched_actions,
-                    batched_weights,
+                    batched_solveconfigs_replay,
+                    batched_states_replay,
+                    batched_target_q_replay,
+                    batched_actions_replay,
+                    batched_weights_replay,
                 ),
             )
             return (q_params, opt_state), (losses, grad_magnitude_means, diffs)
 
+        # Generate separate keys for each replay iteration
+        replay_keys = jax.random.split(key, replay_ratio)
         (q_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
             replay_loop,
             (q_params, opt_state),
-            None,
-            length=replay_ratio,
+            replay_keys,
         )
         loss = jnp.mean(losses)
         diffs = diffs.reshape(-1)
