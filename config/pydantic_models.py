@@ -128,6 +128,9 @@ class DistTrainOptions(BaseModel):
     opt_state_reset: bool = False
     optimizer: str = "adam"
     temperature: float = 0.33
+    replay_ratio: int = Field(
+        1, description="Number of gradient updates per generated dataset. Default is 1."
+    )
     logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
     loss: str = Field("mse", description="Training loss: 'mse', 'huber', or 'logcosh'.")
     huber_delta: float = Field(0.1, description="Delta parameter for Huber loss.")
