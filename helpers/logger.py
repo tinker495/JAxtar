@@ -322,12 +322,12 @@ class WandbLogger(BaseLogger):
 
     def log_scalar(self, tag: str, value: float, step: int):
         if self.wandb_run:
-            wandb.log({tag: float(value)}, step=step, commit=True)
+            wandb.log({tag: float(value)}, step=step)
 
     def log_histogram(self, tag: str, values: np.ndarray, step: int):
         if self.wandb_run:
             try:
-                wandb.log({tag: wandb.Histogram(values)}, step=step, commit=True)
+                wandb.log({tag: wandb.Histogram(values)}, step=step)
             except ValueError as e:
                 print(
                     f"Warning: Could not log histogram '{tag}' to Wandb at step {step}. "
@@ -340,7 +340,7 @@ class WandbLogger(BaseLogger):
             if dataformats == "CHW":
                 # Convert CHW to HWC for wandb
                 image = np.transpose(image, (1, 2, 0))
-            wandb.log({tag: wandb.Image(image)}, step=step, commit=True)
+            wandb.log({tag: wandb.Image(image)}, step=step)
 
         # Also save image to local directory
         safe_tag = tag.replace("/", "_").replace(" ", "_")
@@ -356,12 +356,12 @@ class WandbLogger(BaseLogger):
         if self.wandb_run:
             # Use wandb.Text for better clarity with plain text
             # For rich HTML content, consider using wandb.Html explicitly
-            wandb.log({tag: wandb.Text(text)}, step=step, commit=True)
+            wandb.log({tag: wandb.Text(text)}, step=step)
 
     def log_figure(self, tag: str, figure, step: int):
         if self.wandb_run:
             # Wrap figure with wandb.Image for better portability across backends
-            wandb.log({tag: wandb.Image(figure)}, step=step, commit=True)
+            wandb.log({tag: wandb.Image(figure)}, step=step)
 
     def log_artifact(
         self,
