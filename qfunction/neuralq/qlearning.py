@@ -31,6 +31,7 @@ def qlearning_builder(
     per_epsilon: float = 1e-6,
     loss_type: str = "mse",
     huber_delta: float = 0.1,
+    replay_ratio: int = 1,
 ):
     def qlearning_loss(
         q_params: Any,
@@ -155,16 +156,27 @@ def qlearning_builder(
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (q_params, opt_state), (loss, grad_magnitude_mean, diff)
 
+        # Repeat training loop for replay_ratio times
+        def replay_loop(carry, _):
+            q_params, opt_state = carry
+            (q_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
+                train_loop,
+                (q_params, opt_state),
+                (
+                    batched_solveconfigs,
+                    batched_states,
+                    batched_target_q,
+                    batched_actions,
+                    batched_weights,
+                ),
+            )
+            return (q_params, opt_state), (losses, grad_magnitude_means, diffs)
+
         (q_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
-            train_loop,
+            replay_loop,
             (q_params, opt_state),
-            (
-                batched_solveconfigs,
-                batched_states,
-                batched_target_q,
-                batched_actions,
-                batched_weights,
-            ),
+            None,
+            length=replay_ratio,
         )
         loss = jnp.mean(losses)
         diffs = diffs.reshape(-1)

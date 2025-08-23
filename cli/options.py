@@ -439,6 +439,13 @@ def dist_train_options(func: callable) -> callable:
         default=None,
         help="Boltzmann temperature for action selection.",
     )
+    @click.option(
+        "-rr",
+        "--replay_ratio",
+        type=int,
+        default=None,
+        help="Number of gradient updates per generated dataset.",
+    )
     @click.option("-d", "--debug", is_flag=True, default=None)
     @click.option("-md", "--multi_device", type=bool, default=None)
     @click.option("-ri", "--reset_interval", type=int, default=None)

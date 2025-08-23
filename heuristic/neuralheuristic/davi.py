@@ -31,6 +31,7 @@ def davi_builder(
     per_epsilon: float = 1e-6,
     loss_type: str = "mse",
     huber_delta: float = 0.1,
+    replay_ratio: int = 1,
 ):
     def davi_loss(
         heuristic_params: Any,
@@ -153,10 +154,21 @@ def davi_builder(
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (heuristic_params, opt_state), (loss, grad_magnitude_mean, diff)
 
+        # Repeat training loop for replay_ratio times
+        def replay_loop(carry, _):
+            heuristic_params, opt_state = carry
+            (heuristic_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
+                train_loop,
+                (heuristic_params, opt_state),
+                (batched_solveconfigs, batched_states, batched_target_heuristic, batched_weights),
+            )
+            return (heuristic_params, opt_state), (losses, grad_magnitude_means, diffs)
+
         (heuristic_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
-            train_loop,
+            replay_loop,
             (heuristic_params, opt_state),
-            (batched_solveconfigs, batched_states, batched_target_heuristic, batched_weights),
+            None,
+            length=replay_ratio,
         )
         loss = jnp.mean(losses)
         diffs = diffs.reshape(-1)

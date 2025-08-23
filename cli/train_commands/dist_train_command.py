@@ -101,6 +101,7 @@ def davi(
         per_epsilon=train_options.per_epsilon,
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
+        replay_ratio=train_options.replay_ratio,
     )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -285,6 +286,7 @@ def qlearning(
         per_epsilon=train_options.per_epsilon,
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
+        replay_ratio=train_options.replay_ratio,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
