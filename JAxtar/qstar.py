@@ -173,52 +173,48 @@ def qstar_builder(
             flatten_parent_action = flatten_parent_action[invperm]
 
             hash_idx = hash_idx[invperm]
+            current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
 
-            hash_idx = hash_idx.reshape(unflatten_shape)
-            nextcosts = flatten_nextcosts.reshape(unflatten_shape)
-            q_vals = flatten_q_vals.reshape(unflatten_shape)
-            current = Current(hashidx=hash_idx, cost=nextcosts)
-            parent_indexs = flatten_parent_index.reshape(unflatten_shape)
-            parent_action = flatten_parent_action.reshape(unflatten_shape)
+            flatten_neighbour_keys = (cost_weight * current.cost + flatten_q_vals).astype(KEY_DTYPE)
+
+            flatten_aranged_parent = parent[flatten_parent_index]
+            flatten_vals = Current_with_Parent(
+                current=current,
+                parent=Parent(
+                    action=flatten_parent_action,
+                    hashidx=flatten_aranged_parent.hashidx,
+                ),
+            )
+
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
+            neighbour_keys = flatten_neighbour_keys.reshape(unflatten_shape)
+            vals = flatten_vals.reshape(unflatten_shape)
 
-            def _insert(search_result: SearchResult, current, q_vals, parent_index, parent_action):
-                neighbour_key = (cost_weight * current.cost + q_vals).astype(KEY_DTYPE)
-
-                aranged_parent = parent[parent_index]
-                vals = Current_with_Parent(
-                    current=current,
-                    parent=Parent(
-                        action=parent_action,
-                        hashidx=aranged_parent.hashidx,
-                    ),
-                )
+            def _insert(search_result: SearchResult, neighbour_keys, vals):
 
                 search_result.priority_queue = search_result.priority_queue.insert(
-                    neighbour_key,
+                    neighbour_keys,
                     vals,
                 )
                 return search_result
 
             def _scan(search_result: SearchResult, val):
-                parent_action, current, q_vals, final_process_mask, parent_index = val
+                neighbour_keys, vals, final_process_mask = val
 
                 search_result = jax.lax.cond(
                     jnp.any(final_process_mask),
                     _insert,
                     lambda search_result, *args: search_result,
                     search_result,
-                    current,
-                    q_vals,
-                    parent_index,
-                    parent_action,
+                    neighbour_keys,
+                    vals,
                 )
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (parent_action, current, q_vals, final_process_mask, parent_indexs),
+                (neighbour_keys, vals, final_process_mask),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
