@@ -85,9 +85,9 @@ def davi(
     target_heuristic_params = heuristic.params
     heuristic_params = target_heuristic_params
 
-    steps = train_options.steps
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
+    steps = train_options.steps // train_options.replay_ratio
+    update_interval = train_options.update_interval // train_options.replay_ratio
+    reset_interval = train_options.reset_interval // train_options.replay_ratio
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
@@ -117,6 +117,7 @@ def davi(
         per_epsilon=train_options.per_epsilon,
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
+        replay_ratio=train_options.replay_ratio,
     )
     get_datasets = get_davi_dataset_builder(
         puzzle,
@@ -205,9 +206,13 @@ def davi(
             heuristic.params = heuristic_params
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
+            # Log model as artifact
+            logger.log_artifact(backup_path, f"heuristic_step_{i}", "model")
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
+    # Log final model as artifact
+    logger.log_artifact(backup_path, "heuristic_final", "model")
 
     # Evaluation
     if eval_options.num_eval > 0:
@@ -264,9 +269,9 @@ def qlearning(
     target_qfunc_params = qfunction.params
     qfunc_params = target_qfunc_params
 
-    steps = train_options.steps
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
+    steps = train_options.steps // train_options.replay_ratio
+    update_interval = train_options.update_interval // train_options.replay_ratio
+    reset_interval = train_options.reset_interval // train_options.replay_ratio
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
@@ -296,6 +301,7 @@ def qlearning(
         per_epsilon=train_options.per_epsilon,
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
+        replay_ratio=train_options.replay_ratio,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
@@ -387,9 +393,13 @@ def qlearning(
             qfunction.params = qfunc_params
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
+            # Log model as artifact
+            logger.log_artifact(backup_path, f"qfunction_step_{i}", "model")
     qfunction.params = qfunc_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
+    # Log final model as artifact
+    logger.log_artifact(backup_path, "qfunction_final", "model")
 
     # Evaluation
     if eval_options.num_eval > 0:
