@@ -10,6 +10,7 @@ OPTIMIZERS = {
     "nadam": lambda **kwargs: optax.scale_by_adam(nesterov=True, **kwargs),
     "adopt": optax.contrib.scale_by_adopt,
     "nadopt": lambda **kwargs: optax.contrib.scale_by_adopt(nesterov=True, **kwargs),
+    "ano": optax.contrib.scale_by_ano,
     "rmsprop": optax.scale_by_rms,
     "lamb_adam": None,  # This is a placeholder for the lamb optimizer
     "lamb_adopt": None,  # This is a placeholder for the lamb optimizer
