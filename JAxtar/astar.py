@@ -115,7 +115,7 @@ def astar_builder(
             flatten_parent_action = parent_action.flatten()
             (
                 search_result.hashtable,
-                _,
+                flatten_new_states_mask,
                 cheapest_uniques_mask,
                 hash_idx,
             ) = search_result.hashtable.parallel_insert(
@@ -142,52 +142,55 @@ def astar_builder(
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
             # Stable partition to group useful entries first.
             # Improves computational efficiency by gathering only batches with samples that need updates.
-            invperm = jnp.argsort(final_process_mask)
+            invperm = stable_partition_three(flatten_new_states_mask, final_process_mask)
 
             flatten_final_process_mask = final_process_mask[invperm]
+            flatten_new_states_mask = flatten_new_states_mask[invperm]
             flatten_neighbours = flatten_neighbours[invperm]
             flatten_nextcosts = flatten_nextcosts[invperm]
             flatten_parent_index = flatten_parent_index[invperm]
             flatten_parent_action = flatten_parent_action[invperm]
 
             hash_idx = hash_idx[invperm]
+            current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
 
-            hash_idx = hash_idx.reshape(unflatten_shape)
-            nextcosts = flatten_nextcosts.reshape(unflatten_shape)
-            current = Current(hashidx=hash_idx, cost=nextcosts)
-            parent_indexs = flatten_parent_index.reshape(unflatten_shape)
-            parent_action = flatten_parent_action.reshape(unflatten_shape)
+            flatten_aranged_parent = parent[flatten_parent_index]
+            flatten_vals = Current_with_Parent(
+                current=current,
+                parent=Parent(
+                    action=flatten_parent_action,
+                    hashidx=flatten_aranged_parent.hashidx,
+                ),
+            )
+
+            vals = flatten_vals.reshape(unflatten_shape)
             neighbours = flatten_neighbours.reshape(unflatten_shape)
+            new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
-            def _inserted(
-                search_result: SearchResult,
-                neighbour,
-                current,
-                inserted,
-                parent_index,
-                parent_action,
-            ):
-                neighbour_heur = heuristic.batched_distance(
-                    solve_config, neighbour, params=heuristic_params
-                ).astype(KEY_DTYPE)
+            def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
+                neighbour_heur = heuristic.batched_distance(solve_config, neighbour).astype(
+                    KEY_DTYPE
+                )
                 # cache the heuristic value
                 search_result.dist = xnp.update_on_condition(
                     search_result.dist,
-                    current.hashidx.index,
-                    inserted,
+                    vals.current.hashidx.index,
+                    new_states_mask,
                     neighbour_heur,
                 )
-                neighbour_key = (cost_weight * current.cost + neighbour_heur).astype(KEY_DTYPE)
+                return search_result, neighbour_heur
 
-                aranged_parent = parent[parent_index]
-                vals = Current_with_Parent(
-                    current=current,
-                    parent=Parent(
-                        action=parent_action,
-                        hashidx=aranged_parent.hashidx,
-                    ),
-                )
+            def _old_states(search_result: SearchResult, vals, neighbour, new_states_mask):
+                neighbour_heur = search_result.dist[vals.current.hashidx.index]
+                return search_result, neighbour_heur
+
+            def _inserted(
+                search_result: SearchResult,
+                vals,
+                neighbour_heur,
+            ):
+                neighbour_key = (cost_weight * vals.current.cost + neighbour_heur).astype(KEY_DTYPE)
 
                 search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,
@@ -196,25 +199,32 @@ def astar_builder(
                 return search_result
 
             def _scan(search_result: SearchResult, val):
-                neighbour, parent_action, current, final_process_mask, parent_index = val
+                vals, neighbour, new_states_mask, final_process_mask = val
+
+                search_result, neighbour_heur = jax.lax.cond(
+                    jnp.any(new_states_mask),
+                    _new_states,
+                    _old_states,
+                    search_result,
+                    vals,
+                    neighbour,
+                    new_states_mask,
+                )
 
                 search_result = jax.lax.cond(
                     jnp.any(final_process_mask),
                     _inserted,
                     lambda search_result, *args: search_result,
                     search_result,
-                    neighbour,
-                    current,
-                    final_process_mask,
-                    parent_index,
-                    parent_action,
+                    vals,
+                    neighbour_heur,
                 )
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbours, parent_action, current, final_process_mask, parent_indexs),
+                (vals, neighbours, new_states_mask, final_process_mask),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
@@ -254,3 +264,34 @@ def astar_builder(
         print("JIT compiled\n\n")
 
     return astar_fn
+
+
+def stable_partition_three(mask2: chex.Array, mask1: chex.Array) -> chex.Array:
+    """
+    Compute a stable 3-way partition inverse permutation for flattened arrays.
+
+    - Category 2 (mask2): first block
+    - Category 1 (mask1 & ~mask2): second block
+    - Category 0 (else): last block
+
+    Returns indices suitable for gathering flattened arrays to achieve the
+    [2..., 1..., 0...] ordering while preserving relative order within each class.
+    """
+
+    # Flatten masks
+    flat2 = mask2.reshape(-1)
+    # Ensure category 1 excludes category 2
+    flat1 = jnp.logical_and(mask1.reshape(-1), jnp.logical_not(flat2))
+
+    # Compute category id per element: 2, 1, or 0
+    cat = jnp.where(flat2, 2, jnp.where(flat1, 1, 0)).astype(jnp.int32)
+
+    n = cat.shape[0]
+    indices = jnp.arange(n, dtype=jnp.int32)
+
+    # Stable sort by key = -cat so that 2-block comes first, then 1, then 0.
+    # The stable flag preserves original order within equal keys (intra-class stability).
+    _, invperm = jax.lax.sort_key_val(-cat, indices, dimension=0, is_stable=True)
+
+    # Return gather indices: arr[invperm] yields [2..., 1..., 0...] with stable intra-class order
+    return invperm
