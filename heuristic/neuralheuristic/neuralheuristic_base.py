@@ -34,6 +34,7 @@ class HeuristicBase(nn.Module):
     activation: str = nn.relu
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    use_shortcut: bool = True
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -47,6 +48,8 @@ class HeuristicBase(nn.Module):
             x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training)
             x = self.activation(x)
+        if self.use_shortcut:
+            x0 = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
         for _ in range(self.Res_N):
             x = self.resblock_fn(
                 self.hidden_dim,
@@ -55,6 +58,8 @@ class HeuristicBase(nn.Module):
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
             )(x, training)
+            if self.use_shortcut:
+                x = x + x0
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
@@ -74,6 +79,7 @@ class NeuralHeuristicBase(Heuristic):
         kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
         kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
+        kwargs["use_shortcut"] = kwargs.get("use_shortcut", True)
         self.model = model(**kwargs)
         self.is_fixed = puzzle.fixed_target
         self.path = path

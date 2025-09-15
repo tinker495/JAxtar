@@ -34,6 +34,7 @@ class QModelBase(nn.Module):
     norm_fn: callable = DEFAULT_NORM_FN
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    use_shortcut: bool = True
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -47,6 +48,8 @@ class QModelBase(nn.Module):
             x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training)
             x = self.activation(x)
+        if self.use_shortcut:
+            x0 = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
         for _ in range(self.Res_N):
             x = self.resblock_fn(
                 self.hidden_dim,
@@ -55,6 +58,8 @@ class QModelBase(nn.Module):
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
             )(x, training)
+            if self.use_shortcut:
+                x = x + x0
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
@@ -78,6 +83,7 @@ class NeuralQFunctionBase(QFunction):
         kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
         kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
+        kwargs["use_shortcut"] = kwargs.get("use_shortcut", True)
         self.model = model(self.action_size, **kwargs)
         self.path = path
         self.metadata = {}
