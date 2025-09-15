@@ -52,7 +52,7 @@ class HeuristicBase(nn.Module):
             x0 = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
             raw_alpha = self.param(
                 "shortcut_gain_raw",
-                nn.initializers.constant(1.0 / jnp.sqrt(float(max(1, self.Res_N)))), dtype=jnp.float32),
+                nn.initializers.constant(1.0 / jnp.sqrt(float(max(1, self.Res_N)))),
             )
             alpha = jax.nn.softplus(raw_alpha)
         for _ in range(self.Res_N):
