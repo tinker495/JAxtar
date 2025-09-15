@@ -35,6 +35,7 @@ class QModelBase(nn.Module):
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
     use_shortcut: bool = True
+    use_dueling: bool = False
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -60,9 +61,18 @@ class QModelBase(nn.Module):
             )(x, training)
             if self.use_shortcut:
                 x = x + x0
-        x = nn.Dense(
-            self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
-        )(x)
+        if self.use_dueling:
+            v = nn.Dense(
+                1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
+            )(x)
+            a = nn.Dense(
+                self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
+            )(x)
+            x = v + a - a.mean(1, keepdims=True)
+        else:
+            x = nn.Dense(
+                self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
+            )(x)
         _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
@@ -83,7 +93,8 @@ class NeuralQFunctionBase(QFunction):
         kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
         kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
-        kwargs["use_shortcut"] = kwargs.get("use_shortcut", True)
+        kwargs["use_shortcut"] = kwargs.get("use_shortcut", False)
+        kwargs["use_dueling"] = kwargs.get("use_dueling", False)
         self.model = model(self.action_size, **kwargs)
         self.path = path
         self.metadata = {}

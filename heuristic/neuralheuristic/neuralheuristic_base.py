@@ -79,7 +79,7 @@ class NeuralHeuristicBase(Heuristic):
         kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
         kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
         kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
-        kwargs["use_shortcut"] = kwargs.get("use_shortcut", True)
+        kwargs["use_shortcut"] = kwargs.get("use_shortcut", False)
         self.model = model(**kwargs)
         self.is_fixed = puzzle.fixed_target
         self.path = path
