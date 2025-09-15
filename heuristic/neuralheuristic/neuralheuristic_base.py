@@ -50,9 +50,10 @@ class HeuristicBase(nn.Module):
             x = self.activation(x)
         if self.use_shortcut:
             x0 = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+            init_alpha = 1.0 / jnp.sqrt(float(max(1, self.Res_N)))
             raw_alpha = self.param(
                 "shortcut_gain_raw",
-                nn.initializers.constant(1.0 / jnp.sqrt(float(max(1, self.Res_N)))),
+                lambda k: jnp.asarray(jnp.log(jnp.expm1(init_alpha)), dtype=jnp.float32),
             )
             alpha = jax.nn.softplus(raw_alpha)
         for _ in range(self.Res_N):
