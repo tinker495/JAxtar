@@ -50,6 +50,11 @@ class HeuristicBase(nn.Module):
             x = self.activation(x)
         if self.use_shortcut:
             x0 = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+            raw_alpha = self.param(
+                "shortcut_gain_raw",
+                nn.initializers.constant(1.0 / jnp.sqrt(float(max(1, self.Res_N)))), dtype=jnp.float32),
+            )
+            alpha = jax.nn.softplus(raw_alpha)
         for _ in range(self.Res_N):
             x = self.resblock_fn(
                 self.hidden_dim,
@@ -59,7 +64,7 @@ class HeuristicBase(nn.Module):
                 use_swiglu=self.use_swiglu,
             )(x, training)
             if self.use_shortcut:
-                x = x + x0
+                x = x + alpha.astype(DTYPE) * x0
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
