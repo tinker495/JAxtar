@@ -16,6 +16,7 @@ from neural_util.modules import (
     get_norm_fn,
     get_resblock_fn,
     swiglu_fn,
+    PreActivationResBlock,
 )
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -67,6 +68,8 @@ class QModelBase(nn.Module):
             )(x, training)
             if self.use_shortcut:
                 x = x + alpha.astype(DTYPE) * x0
+        if self.use_shortcut or isinstance(self.resblock_fn, PreActivationResBlock):
+            x = self.norm_fn(x, training)
         if self.use_dueling:
             v = nn.Dense(
                 1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)

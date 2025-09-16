@@ -11,6 +11,7 @@ from heuristic.heuristic_base import Heuristic
 from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
+    PreActivationResBlock,
     ResBlock,
     conditional_dummy_norm,
     get_activation_fn,
@@ -66,6 +67,8 @@ class HeuristicBase(nn.Module):
             )(x, training)
             if self.use_shortcut:
                 x = x + alpha.astype(DTYPE) * x0
+        if self.use_shortcut or isinstance(self.resblock_fn, PreActivationResBlock):
+            x = self.norm_fn(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
