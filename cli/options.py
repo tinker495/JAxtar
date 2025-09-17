@@ -412,6 +412,20 @@ def dist_train_options(func: callable) -> callable:
         help="Weight loss by target confidence (inverse of move_cost).",
     )
     @click.option(
+        "-tsw",
+        "--target_sharpness_weighting",
+        "use_target_sharpness_weighting",
+        is_flag=True,
+        default=None,
+        help="Weight loss by policy sharpness (low entropy ⇒ higher weight).",
+    )
+    @click.option(
+        "--target_sharpness_alpha",
+        type=float,
+        default=None,
+        help="Strength of sharpness-based weighting (multiplier).",
+    )
+    @click.option(
         "-pa",
         "--per_alpha",
         type=float,

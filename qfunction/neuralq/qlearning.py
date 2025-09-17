@@ -25,6 +25,8 @@ def qlearning_builder(
     preproc_fn: Callable,
     n_devices: int = 1,
     use_target_confidence_weighting: bool = False,
+    use_target_sharpness_weighting: bool = False,
+    target_sharpness_alpha: float = 1.0,
     using_priority_sampling: bool = False,
     per_alpha: float = 0.6,
     per_beta: float = 0.4,
@@ -100,6 +102,25 @@ def qlearning_builder(
             cost_weights = 1.0 / jnp.sqrt(jnp.maximum(cost, 1.0))
             cost_weights = cost_weights / jnp.mean(cost_weights)
             loss_weights = loss_weights * cost_weights
+
+        if use_target_sharpness_weighting:
+            # Prefer target entropy if available; fallback to behavior entropy
+            if "target_entropy" in dataset:
+                entropy = dataset["target_entropy"]
+                max_entropy = dataset.get("target_entropy_max", None)
+            else:
+                entropy = dataset.get("action_entropy", None)
+                max_entropy = dataset.get("action_entropy_max", None)
+            if entropy is not None:
+                if max_entropy is None:
+                    # Fallback: approximate with log(action_size) if available
+                    action_size = jnp.max(actions) + 1 if "actions" in dataset else 1
+                    max_entropy = jnp.log(jnp.maximum(action_size.astype(jnp.float32), 1.0))
+                normalized_entropy = entropy / (max_entropy + 1e-8)
+            sharpness = 1.0 - normalized_entropy
+            sharp_weights = 1.0 + target_sharpness_alpha * sharpness
+            sharp_weights = sharp_weights / (jnp.mean(sharp_weights) + 1e-8)
+            loss_weights = loss_weights * sharp_weights
 
         if not using_priority_sampling:
             loss_weights = loss_weights / jnp.mean(loss_weights)
@@ -309,6 +330,10 @@ def _get_datasets_with_policy(
         probs = boltzmann_action_selection(q_sum_cost, temperature=temperature)
         # Action entropy per state (measure of policy sharpness)
         entropy = -jnp.sum(probs * jnp.log(jnp.clip(probs, a_min=1e-12)), axis=1)
+        # Maximum entropy per state (approx by number of valid actions)
+        action_size = q_values.shape[1]
+        max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=probs.dtype), 1.0))
+        max_entropy = jnp.full((probs.shape[0],), max_ent_val)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
@@ -353,6 +378,16 @@ def _get_datasets_with_policy(
         # Clamp to ensure non-negative targets (costs should be non-negative)
         q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+        # Target entropy (confidence of the backup) over next-state distribution
+        safe_temperature = jnp.maximum(temperature, 1e-8)
+        scaled_next = -q_sum_cost / safe_temperature
+        next_probs = jax.nn.softmax(scaled_next, axis=1)
+        next_probs = next_probs / (jnp.sum(next_probs, axis=1, keepdims=True) + 1e-8)
+        target_entropy = -jnp.sum(next_probs * jnp.log(jnp.clip(next_probs, a_min=1e-12)), axis=1)
+        # For solved states, entropy should be near zero (deterministic target)
+        target_entropy = jnp.where(
+            jnp.logical_or(solved, selected_neighbors_solved), 0.0, target_entropy
+        )
 
         # Base case: If the next state (s') is the solution, the future cost is 0.
         target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
@@ -362,9 +397,31 @@ def _get_datasets_with_policy(
         # The 'diff' is the Temporal Difference (TD) error aligned with the training target
         diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
-        return key, (solve_configs, states, target_q, actions, diff, entropy, move_costs)
+        return key, (
+            solve_configs,
+            states,
+            target_q,
+            actions,
+            diff,
+            entropy,
+            max_entropy,
+            target_entropy,
+            max_entropy,
+            move_costs,
+        )
 
-    _, (solve_configs, states, target_q, actions, diff, entropy, cost) = jax.lax.scan(
+    _, (
+        solve_configs,
+        states,
+        target_q,
+        actions,
+        diff,
+        entropy,
+        max_entropy,
+        target_entropy,
+        target_max_entropy,
+        cost,
+    ) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
@@ -376,6 +433,9 @@ def _get_datasets_with_policy(
     actions = actions.reshape((-1,))
     diff = diff.reshape((-1,))
     entropy = entropy.reshape((-1,))
+    max_entropy = max_entropy.reshape((-1,))
+    target_entropy = target_entropy.reshape((-1,))
+    target_max_entropy = target_max_entropy.reshape((-1,))
     cost = cost.reshape((-1,))
 
     return {
@@ -385,6 +445,9 @@ def _get_datasets_with_policy(
         "actions": actions,
         "diff": diff,
         "action_entropy": entropy,
+        "action_entropy_max": max_entropy,
+        "target_entropy": target_entropy,
+        "target_entropy_max": target_max_entropy,
         "cost": cost,
     }
 
