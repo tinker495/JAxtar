@@ -9,11 +9,17 @@ DTYPE = jnp.bfloat16
 
 
 def BatchNorm(x, training):
-    return nn.BatchNorm(momentum=0.99, dtype=DTYPE)(x, use_running_average=not training)
+    y = nn.BatchNorm(momentum=0.99, dtype=jnp.float32, param_dtype=jnp.float32)(
+        x, use_running_average=not training
+    )
+    return y.astype(DTYPE)
 
 
 def BatchReNorm(x, training):
-    return BatchReNorm_(momentum=0.99, dtype=DTYPE)(x, use_running_average=not training)
+    y = BatchReNorm_(momentum=0.99, dtype=jnp.float32, param_dtype=jnp.float32)(
+        x, use_running_average=not training
+    )
+    return y.astype(DTYPE)
 
 
 def InstanceNorm(x, training):
