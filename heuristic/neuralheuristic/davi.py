@@ -16,6 +16,10 @@ from train_util.sampling import (
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
+from train_util.util import (
+    apply_with_conditional_batch_stats,
+    build_new_params_from_updates,
+)
 
 
 def davi_builder(
@@ -44,15 +48,10 @@ def davi_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        current_heuristic, variable_updates = heuristic_model.apply(
-            heuristic_params, preproc, training=True, mutable=["batch_stats"]
+        current_heuristic, variable_updates = apply_with_conditional_batch_stats(
+            heuristic_model.apply, heuristic_params, preproc, training=True, n_devices=n_devices
         )
-        if n_devices > 1:
-            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
-        new_params = {
-            "params": heuristic_params["params"],
-            "batch_stats": variable_updates["batch_stats"],
-        }
+        new_params = build_new_params_from_updates(heuristic_params, variable_updates)
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights)

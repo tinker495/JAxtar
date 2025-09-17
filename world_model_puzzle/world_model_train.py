@@ -6,6 +6,8 @@ import jax
 import jax.numpy as jnp
 import optax
 
+from train_util.util import build_new_params_from_updates
+
 from .world_model_puzzle_base import WorldModelPuzzleBase
 
 
@@ -36,7 +38,7 @@ def world_model_train_builder(
             next_logits_pred,
             rounded_next_latents_pred,
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
-        new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
+        new_params = build_new_params_from_updates(params, variable_updates)
         data_scaled = (data / 255.0) * 2 - 1
         next_data_scaled = (next_data / 255.0) * 2 - 1
         AE_loss = jnp.mean(

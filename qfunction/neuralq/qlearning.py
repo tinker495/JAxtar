@@ -16,6 +16,10 @@ from train_util.sampling import (
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
+from train_util.util import (
+    apply_with_conditional_batch_stats,
+    build_new_params_from_updates,
+)
 
 
 def qlearning_builder(
@@ -45,12 +49,10 @@ def qlearning_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        q_values, variable_updates = q_fn.apply(
-            q_params, preproc, training=True, mutable=["batch_stats"]
+        q_values, variable_updates = apply_with_conditional_batch_stats(
+            q_fn.apply, q_params, preproc, training=True, n_devices=n_devices
         )
-        if n_devices > 1:
-            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
-        new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
+        new_params = build_new_params_from_updates(q_params, variable_updates)
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
