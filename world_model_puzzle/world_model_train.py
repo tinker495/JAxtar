@@ -74,9 +74,7 @@ def world_model_train_builder(
         opt_state: optax.OptState,
         epoch: int,
     ):
-        """
-        Q-learning is a heuristic for the sliding puzzle problem.
-        """
+        """Perform one training epoch for the world-model using minibatched rollouts."""
         states, next_states, actions = dataset
         data_size = actions.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)

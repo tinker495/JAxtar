@@ -348,11 +348,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         ),
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,
-            path_template="heuristic/neuralheuristic/model/params/sokoban_world_model_optimized_None.pkl",
+            path_template="heuristic/neuralheuristic/model/params/sokoban_world_model_None.pkl",
         ),
         q_function_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralQ,
-            path_template="qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl",
+            path_template="qfunction/neuralq/model/params/sokoban_world_model_None.pkl",
         ),
     ),
     "sokoban_world_model_optimized": PuzzleBundle(
@@ -362,11 +362,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         ),
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,
-            path_template="heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl",
+            path_template="heuristic/neuralheuristic/model/params/sokoban_world_model_optimized_None.pkl",
         ),
         q_function_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralQ,
-            path_template="qfunction/neuralq/model/params/rubikscube_world_model_None.pkl",
+            path_template="qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl",
         ),
     ),
 }

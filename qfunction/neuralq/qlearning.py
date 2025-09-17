@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import chex
 import jax
@@ -38,6 +38,7 @@ def qlearning_builder(
     loss_type: str = "mse",
     huber_delta: float = 0.1,
     replay_ratio: int = 1,
+    td_error_clip: Optional[float] = None,
 ):
     def qlearning_loss(
         q_params: Any,
@@ -55,6 +56,9 @@ def qlearning_builder(
         new_params = build_new_params_from_updates(q_params, variable_updates)
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights)
         return loss_value, (new_params, diff)
@@ -65,9 +69,7 @@ def qlearning_builder(
         q_params: Any,
         opt_state: optax.OptState,
     ):
-        """
-        Q-learning is a heuristic for the sliding puzzle problem.
-        """
+        """Run one optimization epoch of neural Q-learning for the provided puzzle dataset."""
         solveconfigs = dataset["solveconfigs"]
         states = dataset["states"]
         target_q = dataset["target_q"]
@@ -107,18 +109,24 @@ def qlearning_builder(
 
         if use_target_sharpness_weighting:
             # Prefer target entropy if available; fallback to behavior entropy
+            entropy = None
+            max_entropy = None
             if "target_entropy" in dataset:
                 entropy = dataset["target_entropy"]
                 max_entropy = dataset.get("target_entropy_max", None)
-            else:
+            elif "action_entropy" in dataset:
                 entropy = dataset.get("action_entropy", None)
                 max_entropy = dataset.get("action_entropy_max", None)
+
             if entropy is not None:
                 if max_entropy is None:
                     # Fallback: approximate with log(action_size) if available
                     action_size = jnp.max(actions) + 1 if "actions" in dataset else 1
                     max_entropy = jnp.log(jnp.maximum(action_size.astype(jnp.float32), 1.0))
                 normalized_entropy = entropy / (max_entropy + 1e-8)
+            else:
+                normalized_entropy = jnp.zeros(data_size)
+
             sharpness = 1.0 - normalized_entropy
             sharp_weights = 1.0 + target_sharpness_alpha * sharpness
             sharp_weights = sharp_weights / (jnp.mean(sharp_weights) + 1e-8)
@@ -299,6 +307,7 @@ def _get_datasets_with_policy(
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
     temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -398,6 +407,9 @@ def _get_datasets_with_policy(
 
         # The 'diff' is the Temporal Difference (TD) error aligned with the training target
         diff = target_q - selected_q
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         # if the puzzle is already solved, the all q is 0
         return key, (
             solve_configs,
@@ -463,6 +475,7 @@ def _get_datasets_with_trajectory(
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    td_error_clip: Optional[float] = None,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -514,6 +527,9 @@ def _get_datasets_with_trajectory(
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = jnp.zeros_like(target_q)
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         # if the puzzle is already solved, the all q is 0
         return key, (solve_configs, states, target_q, actions, diff, move_costs)
 
@@ -557,6 +573,7 @@ def get_qlearning_dataset_builder(
     with_policy: bool = False,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
 ):
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
@@ -606,6 +623,7 @@ def get_qlearning_dataset_builder(
                 q_model,
                 dataset_minibatch_size,
                 temperature=temperature,
+                td_error_clip=td_error_clip,
             )
         )
     else:
@@ -616,6 +634,7 @@ def get_qlearning_dataset_builder(
                 preproc_fn,
                 q_model,
                 dataset_minibatch_size,
+                td_error_clip=td_error_clip,
             )
         )
 

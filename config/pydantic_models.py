@@ -136,6 +136,9 @@ class DistTrainOptions(BaseModel):
     logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
     loss: str = Field("mse", description="Training loss: 'mse', 'huber', or 'logcosh'.")
     huber_delta: float = Field(0.1, description="Delta parameter for Huber loss.")
+    td_error_clip: Optional[float] = Field(
+        None, description="Absolute clip value applied to TD-error."
+    )
 
 
 class DistQFunctionOptions(BaseModel):
