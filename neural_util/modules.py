@@ -9,33 +9,33 @@ DTYPE = jnp.bfloat16
 
 
 def BatchNorm(x, training):
-    y = nn.BatchNorm(momentum=0.99, dtype=jnp.float32, param_dtype=jnp.float32)(
-        x, use_running_average=not training
-    )
+    y = nn.BatchNorm(momentum=0.99, dtype=jnp.float32)(x, use_running_average=not training)
     return y.astype(DTYPE)
 
 
 def BatchReNorm(x, training):
-    y = BatchReNorm_(momentum=0.99, dtype=jnp.float32, param_dtype=jnp.float32)(
-        x, use_running_average=not training
-    )
+    y = BatchReNorm_(momentum=0.99, dtype=jnp.float32)(x, use_running_average=not training)
     return y.astype(DTYPE)
 
 
 def InstanceNorm(x, training):
-    return nn.InstanceNorm(dtype=DTYPE)(x)
+    y = nn.InstanceNorm(dtype=jnp.float32)(x)
+    return y.astype(DTYPE)
 
 
 def LayerNorm(x, training):
-    return nn.LayerNorm(dtype=DTYPE)(x)
+    y = nn.LayerNorm(dtype=jnp.float32)(x)
+    return y.astype(DTYPE)
 
 
 def GroupNorm(x, training):
-    return nn.GroupNorm(num_groups=10, dtype=DTYPE)(x)
+    y = nn.GroupNorm(num_groups=10, dtype=jnp.float32)(x)
+    return y.astype(DTYPE)
 
 
 def RMSNorm(x, training):
-    return nn.RMSNorm(dtype=DTYPE)(x)
+    y = nn.RMSNorm(dtype=jnp.float32)(x)
+    return y.astype(DTYPE)
 
 
 DEFAULT_NORM_FN = BatchNorm
