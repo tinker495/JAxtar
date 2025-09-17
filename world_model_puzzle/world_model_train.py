@@ -159,7 +159,7 @@ def world_model_eval_builder(
                 _,
                 _,
                 rounded_next_latents_pred,
-            ), _ = train_info_fn(params, states, next_states, actions, training=False)
+            ) = train_info_fn(params, states, next_states, actions, training=False)
             accuracy = accuracy_fn(rounded_next_latents, rounded_next_latents_pred)
             return None, accuracy
 

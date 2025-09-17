@@ -269,9 +269,7 @@ def _get_datasets(
         )
 
         def heur_scan(neighbors):
-            heur, _ = heuristic_model.apply(
-                target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
-            )
+            heur = heuristic_model.apply(target_heuristic_params, neighbors, training=False)
             return heur.squeeze()
 
         heur = jax.vmap(heur_scan)(flatten_neighbors)  # [action_size, batch_size]
@@ -282,9 +280,7 @@ def _get_datasets(
         )  # if the puzzle is already solved, the heuristic is 0
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        heur, _ = heuristic_model.apply(
-            heuristic_params, preproc, training=False, mutable=["batch_stats"]
-        )
+        heur = heuristic_model.apply(heuristic_params, preproc, training=False)
         diff = target_heuristic - heur.squeeze()
         return None, (solve_configs, states, target_heuristic, diff, move_costs)
 

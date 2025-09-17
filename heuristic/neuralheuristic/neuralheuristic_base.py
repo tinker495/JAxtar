@@ -136,7 +136,7 @@ class NeuralHeuristicBase(Heuristic):
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
         x = self.batched_pre_process(solve_config, current)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.model.apply(params, x, training=False)
         x = self.post_process(x)
         return x
 
@@ -156,7 +156,7 @@ class NeuralHeuristicBase(Heuristic):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.model.apply(params, x, training=False)
         return self.post_process(x)
 
     @abstractmethod

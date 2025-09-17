@@ -294,8 +294,8 @@ def _get_datasets_with_policy(
         # Preprocess the states to be suitable for neural network input.
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
         # Get the Q-values Q(s,a) for all actions 'a' in the current state 's' using the online Q-network.
-        q_values, _ = q_model.apply(q_params, preproc, training=False, mutable=["batch_stats"])
-        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=1e6)
+        q_values = q_model.apply(q_params, preproc, training=False)
+        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
         # Get all possible neighbor states (s') and the costs c(s,a,s') to move to them.
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
@@ -340,10 +340,10 @@ def _get_datasets_with_policy(
         # Use the target Q-network (with frozen parameters `target_q_params`)
         # to get the Q-values for the next state, Q_target(s', a').
         # Using a separate target network stabilizes training.
-        q, _ = q_model.apply(
-            target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+        q = q_model.apply(
+            target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
-        q = jnp.nan_to_num(q, posinf=1e6, neginf=1e6)
+        q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
         # Calculate the target Q-value using the Bellman Optimality Equation:
         # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
         # This represents the optimal cost-to-go from s'.
@@ -432,8 +432,8 @@ def _get_datasets_with_trajectory(
 
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
-        q, _ = q_model.apply(
-            target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+        q = q_model.apply(
+            target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
 
         q_sum_cost = q + neighbor_cost
