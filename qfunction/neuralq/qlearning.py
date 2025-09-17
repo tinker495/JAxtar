@@ -307,6 +307,8 @@ def _get_datasets_with_policy(
         # Actions with lower Q-values (lower cost-to-go) are more likely to be chosen.
         # Epsilon-greedy exploration is also mixed in.
         probs = boltzmann_action_selection(q_sum_cost, temperature=temperature)
+        # Action entropy per state (measure of policy sharpness)
+        entropy = -jnp.sum(probs * jnp.log(jnp.clip(probs, a_min=1e-12)), axis=1)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
@@ -360,9 +362,9 @@ def _get_datasets_with_policy(
         # The 'diff' is the Temporal Difference (TD) error aligned with the training target
         diff = target_q - selected_q
         # if the puzzle is already solved, the all q is 0
-        return key, (solve_configs, states, target_q, actions, diff, move_costs)
+        return key, (solve_configs, states, target_q, actions, diff, entropy, move_costs)
 
-    _, (solve_configs, states, target_q, actions, diff, cost) = jax.lax.scan(
+    _, (solve_configs, states, target_q, actions, diff, entropy, cost) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
@@ -373,6 +375,7 @@ def _get_datasets_with_policy(
     target_q = target_q.reshape((-1,))
     actions = actions.reshape((-1,))
     diff = diff.reshape((-1,))
+    entropy = entropy.reshape((-1,))
     cost = cost.reshape((-1,))
 
     return {
@@ -381,6 +384,7 @@ def _get_datasets_with_policy(
         "target_q": target_q,
         "actions": actions,
         "diff": diff,
+        "action_entropy": entropy,
         "cost": cost,
     }
 
