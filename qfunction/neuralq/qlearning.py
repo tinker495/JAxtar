@@ -65,9 +65,7 @@ def qlearning_builder(
         q_params: Any,
         opt_state: optax.OptState,
     ):
-        """
-        Q-learning is a heuristic for the sliding puzzle problem.
-        """
+        """Run one optimization epoch of neural Q-learning for the provided puzzle dataset."""
         solveconfigs = dataset["solveconfigs"]
         states = dataset["states"]
         target_q = dataset["target_q"]
@@ -107,18 +105,24 @@ def qlearning_builder(
 
         if use_target_sharpness_weighting:
             # Prefer target entropy if available; fallback to behavior entropy
+            entropy = None
+            max_entropy = None
             if "target_entropy" in dataset:
                 entropy = dataset["target_entropy"]
                 max_entropy = dataset.get("target_entropy_max", None)
-            else:
+            elif "action_entropy" in dataset:
                 entropy = dataset.get("action_entropy", None)
                 max_entropy = dataset.get("action_entropy_max", None)
+
             if entropy is not None:
                 if max_entropy is None:
                     # Fallback: approximate with log(action_size) if available
                     action_size = jnp.max(actions) + 1 if "actions" in dataset else 1
                     max_entropy = jnp.log(jnp.maximum(action_size.astype(jnp.float32), 1.0))
                 normalized_entropy = entropy / (max_entropy + 1e-8)
+            else:
+                normalized_entropy = jnp.zeros(data_size)
+
             sharpness = 1.0 - normalized_entropy
             sharp_weights = 1.0 + target_sharpness_alpha * sharpness
             sharp_weights = sharp_weights / (jnp.mean(sharp_weights) + 1e-8)
