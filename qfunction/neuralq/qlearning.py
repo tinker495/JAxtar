@@ -234,7 +234,7 @@ def boltzmann_action_selection(
     epsilon: float = 0.1,
 ) -> chex.Array:
     # Sanitize inputs
-    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=1e6)
+    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
     mask = jnp.isfinite(q_values)
 
     # Scale Q-values by temperature for softmax
