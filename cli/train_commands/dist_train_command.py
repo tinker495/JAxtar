@@ -356,6 +356,8 @@ def qlearning(
             logger.log_histogram("Metrics/Target", target_q, i)
             if "action_entropy" in dataset:
                 logger.log_histogram("Metrics/Action Entropy", dataset["action_entropy"], i)
+            if "target_entropy" in dataset:
+                logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
 
         target_updated = False
         if train_options.use_soft_update:
