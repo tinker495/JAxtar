@@ -315,8 +315,11 @@ def qlearning(
         mean_target_q = jnp.mean(target_q)
         # Optional: mean action entropy when using policy sampling
         mean_action_entropy = None
+        mean_target_entropy = None
         if "action_entropy" in dataset:
             mean_action_entropy = jnp.mean(dataset["action_entropy"])
+        if "target_entropy" in dataset:
+            mean_target_entropy = jnp.mean(dataset["target_entropy"])
 
         (
             qfunc_params,
@@ -351,6 +354,8 @@ def qlearning(
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if mean_action_entropy is not None:
             logger.log_scalar("Metrics/Mean Action Entropy", mean_action_entropy, i)
+        if mean_target_entropy is not None:
+            logger.log_scalar("Metrics/Mean Target Entropy", mean_target_entropy, i)
         if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
