@@ -192,7 +192,7 @@ def davi(
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
             # Log model as artifact
-            logger.log_artifact(backup_path, f"heuristic_step_{i}", "model")
+            # logger.log_artifact(backup_path, f"heuristic_step_{i}", "model")
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
@@ -280,6 +280,8 @@ def qlearning(
         qfunction.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
+        target_sharpness_alpha=train_options.target_sharpness_alpha,
         using_priority_sampling=train_options.using_priority_sampling,
         per_alpha=train_options.per_alpha,
         per_beta=train_options.per_beta,
@@ -313,8 +315,11 @@ def qlearning(
         mean_target_q = jnp.mean(target_q)
         # Optional: mean action entropy when using policy sampling
         mean_action_entropy = None
+        mean_target_entropy = None
         if "action_entropy" in dataset:
             mean_action_entropy = jnp.mean(dataset["action_entropy"])
+        if "target_entropy" in dataset:
+            mean_target_entropy = jnp.mean(dataset["target_entropy"])
 
         (
             qfunc_params,
@@ -349,11 +354,15 @@ def qlearning(
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if mean_action_entropy is not None:
             logger.log_scalar("Metrics/Mean Action Entropy", mean_action_entropy, i)
+        if mean_target_entropy is not None:
+            logger.log_scalar("Metrics/Mean Target Entropy", mean_target_entropy, i)
         if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
             if "action_entropy" in dataset:
                 logger.log_histogram("Metrics/Action Entropy", dataset["action_entropy"], i)
+            if "target_entropy" in dataset:
+                logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
 
         target_updated = False
         if train_options.use_soft_update:
@@ -393,7 +402,7 @@ def qlearning(
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
             # Log model as artifact
-            logger.log_artifact(backup_path, f"qfunction_step_{i}", "model")
+            # logger.log_artifact(backup_path, f"qfunction_step_{i}", "model")
     qfunction.params = qfunc_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
