@@ -104,6 +104,7 @@ def davi(
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
         replay_ratio=train_options.replay_ratio,
+        td_error_clip=train_options.td_error_clip,
     )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -116,6 +117,7 @@ def davi(
         train_options.using_triangular_sampling,
         n_devices=n_devices,
         temperature=train_options.temperature,
+        td_error_clip=train_options.td_error_clip,
     )
 
     pbar = trange(steps)
@@ -312,6 +314,7 @@ def qlearning(
         n_devices=n_devices,
         with_policy=with_policy,
         temperature=train_options.temperature,
+        td_error_clip=train_options.td_error_clip,
     )
 
     pbar = trange(steps)
