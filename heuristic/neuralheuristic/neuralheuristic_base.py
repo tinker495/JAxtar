@@ -12,7 +12,6 @@ from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
     ResBlock,
-    conditional_dummy_norm,
     get_activation_fn,
     get_norm_fn,
     get_resblock_fn,
@@ -56,7 +55,6 @@ class HeuristicBase(nn.Module):
                 use_swiglu=self.use_swiglu,
             )(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
-        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 

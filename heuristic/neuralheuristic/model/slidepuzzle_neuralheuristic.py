@@ -5,13 +5,7 @@ from flax import linen as nn
 from puxle import SlidePuzzle
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.modules import (
-    DEFAULT_NORM_FN,
-    DTYPE,
-    ConvResBlock,
-    ResBlock,
-    conditional_dummy_norm,
-)
+from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ConvResBlock, ResBlock
 
 
 class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
@@ -63,7 +57,6 @@ class Model(nn.Module):
         x = nn.relu(x)
         x = ResBlock(512, norm_fn=self.norm_fn)(x, training)
         x = nn.Dense(1, dtype=DTYPE)(x)
-        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 
