@@ -311,6 +311,10 @@ def qlearning(
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
         target_q = dataset["target_q"]
         mean_target_q = jnp.mean(target_q)
+        # Optional: mean action entropy when using policy sampling
+        mean_action_entropy = None
+        if "action_entropy" in dataset:
+            mean_action_entropy = jnp.mean(dataset["action_entropy"])
 
         (
             qfunc_params,
@@ -329,6 +333,11 @@ def qlearning(
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_q": float(mean_target_q),
+                **(
+                    {"entropy": float(mean_action_entropy)}
+                    if mean_action_entropy is not None
+                    else {}
+                ),
             },
         )
 
@@ -338,9 +347,13 @@ def qlearning(
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if mean_action_entropy is not None:
+            logger.log_scalar("Metrics/Mean Action Entropy", mean_action_entropy, i)
         if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
+            if "action_entropy" in dataset:
+                logger.log_histogram("Metrics/Action Entropy", dataset["action_entropy"], i)
 
         target_updated = False
         if train_options.use_soft_update:
