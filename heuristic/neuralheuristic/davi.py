@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import chex
 import jax
@@ -38,6 +38,7 @@ def davi_builder(
     loss_type: str = "mse",
     huber_delta: float = 0.1,
     replay_ratio: int = 1,
+    td_error_clip: Optional[float] = None,
 ):
     def davi_loss(
         heuristic_params: Any,
@@ -53,6 +54,9 @@ def davi_builder(
         )
         new_params = build_new_params_from_updates(heuristic_params, variable_updates)
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights)
         return loss_value, (new_params, diff)
@@ -74,6 +78,9 @@ def davi_builder(
 
         if using_priority_sampling:
             diff = dataset["diff"]
+            if td_error_clip is not None and td_error_clip > 0:
+                clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+                diff = jnp.clip(diff, -clip_val, clip_val)
             # Sanitize TD errors to avoid NaN/Inf poisoning
             diff = jnp.nan_to_num(diff, nan=0.0, posinf=1e6, neginf=-1e6)
 
@@ -249,6 +256,7 @@ def _get_datasets(
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
     temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -312,6 +320,9 @@ def _get_datasets(
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
         heur = heuristic_model.apply(heuristic_params, preproc, training=False)
         diff = target_heuristic - heur.squeeze()
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         return None, (
             solve_configs,
             states,
@@ -366,6 +377,7 @@ def get_heuristic_dataset_builder(
     using_triangular_sampling: bool = False,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
 ):
 
     if using_hindsight_target:
@@ -414,6 +426,7 @@ def get_heuristic_dataset_builder(
             heuristic_model,
             dataset_minibatch_size,
             temperature=temperature,
+            td_error_clip=td_error_clip,
         )
     )
 

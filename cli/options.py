@@ -492,6 +492,13 @@ def dist_train_options(func: callable) -> callable:
         help="Delta parameter for Huber loss.",
     )
     @click.option(
+        "--td-error-clip",
+        "td_error_clip",
+        type=float,
+        default=None,
+        help="Absolute clip value for TD-error; set <= 0 to disable.",
+    )
+    @click.option(
         "-sl",
         "--shuffle_length",
         type=int,
