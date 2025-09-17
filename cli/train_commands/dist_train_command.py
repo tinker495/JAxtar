@@ -280,6 +280,8 @@ def qlearning(
         qfunction.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
+        target_sharpness_alpha=train_options.target_sharpness_alpha,
         using_priority_sampling=train_options.using_priority_sampling,
         per_alpha=train_options.per_alpha,
         per_beta=train_options.per_beta,
