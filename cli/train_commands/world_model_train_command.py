@@ -52,15 +52,25 @@ def train(
     model: nn.Module = world_model.model
 
     def train_info_fn(params, data, next_data, action, training):
-        return model.apply(
-            params,
-            data,
-            next_data,
-            action,
-            training=training,
-            method=model.train_info,
-            mutable=["batch_stats"],
-        )
+        if training:
+            return model.apply(
+                params,
+                data,
+                next_data,
+                action,
+                training=True,
+                method=model.train_info,
+                mutable=["batch_stats"],
+            )
+        else:
+            return model.apply(
+                params,
+                data,
+                next_data,
+                action,
+                training=False,
+                method=model.train_info,
+            )
 
     params = world_model.params
 
