@@ -95,6 +95,8 @@ def davi(
         heuristic.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
+        target_sharpness_alpha=train_options.target_sharpness_alpha,
         using_priority_sampling=train_options.using_priority_sampling,
         per_alpha=train_options.per_alpha,
         per_beta=train_options.per_beta,
@@ -113,6 +115,7 @@ def davi(
         train_options.using_hindsight_target,
         train_options.using_triangular_sampling,
         n_devices=n_devices,
+        temperature=train_options.temperature,
     )
 
     pbar = trange(steps)
@@ -124,6 +127,9 @@ def davi(
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
         target_heuristic = dataset["target_heuristic"]
         mean_target_heuristic = jnp.mean(target_heuristic)
+        mean_target_entropy = None
+        if "target_entropy" in dataset:
+            mean_target_entropy = jnp.mean(dataset["target_entropy"])
 
         (
             heuristic_params,
@@ -150,9 +156,13 @@ def davi(
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if mean_target_entropy is not None:
+            logger.log_scalar("Metrics/Mean Target Entropy", mean_target_entropy, i)
         if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
+            if "target_entropy" in dataset:
+                logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
 
         target_updated = False
         if train_options.use_soft_update:
