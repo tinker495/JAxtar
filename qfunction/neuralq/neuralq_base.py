@@ -10,6 +10,7 @@ from puxle import Puzzle
 from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
+    PreActivationResBlock,
     ResBlock,
     get_activation_fn,
     get_norm_fn,
@@ -54,6 +55,8 @@ class QModelBase(nn.Module):
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
             )(x, training)
+        if self.resblock_fn == PreActivationResBlock:
+            x = self.norm_fn(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)

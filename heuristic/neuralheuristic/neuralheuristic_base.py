@@ -11,6 +11,7 @@ from heuristic.heuristic_base import Heuristic
 from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
+    PreActivationResBlock,
     ResBlock,
     get_activation_fn,
     get_norm_fn,
@@ -54,6 +55,8 @@ class HeuristicBase(nn.Module):
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
             )(x, training)
+        if self.resblock_fn == PreActivationResBlock:
+            x = self.norm_fn(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         return x
 
