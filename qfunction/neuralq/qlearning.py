@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import chex
 import jax
@@ -16,6 +16,10 @@ from train_util.sampling import (
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
+from train_util.util import (
+    apply_with_conditional_batch_stats,
+    build_new_params_from_updates,
+)
 
 
 def qlearning_builder(
@@ -25,6 +29,8 @@ def qlearning_builder(
     preproc_fn: Callable,
     n_devices: int = 1,
     use_target_confidence_weighting: bool = False,
+    use_target_sharpness_weighting: bool = False,
+    target_sharpness_alpha: float = 1.0,
     using_priority_sampling: bool = False,
     per_alpha: float = 0.6,
     per_beta: float = 0.4,
@@ -32,6 +38,7 @@ def qlearning_builder(
     loss_type: str = "mse",
     huber_delta: float = 0.1,
     replay_ratio: int = 1,
+    td_error_clip: Optional[float] = None,
 ):
     def qlearning_loss(
         q_params: Any,
@@ -43,14 +50,15 @@ def qlearning_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        q_values, variable_updates = q_fn.apply(
-            q_params, preproc, training=True, mutable=["batch_stats"]
+        q_values, variable_updates = apply_with_conditional_batch_stats(
+            q_fn.apply, q_params, preproc, training=True, n_devices=n_devices
         )
-        if n_devices > 1:
-            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
-        new_params = {"params": q_params["params"], "batch_stats": variable_updates["batch_stats"]}
+        new_params = build_new_params_from_updates(q_params, variable_updates)
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_qs.squeeze() - q_values_at_actions.squeeze()
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights)
         return loss_value, (new_params, diff)
@@ -61,9 +69,7 @@ def qlearning_builder(
         q_params: Any,
         opt_state: optax.OptState,
     ):
-        """
-        Q-learning is a heuristic for the sliding puzzle problem.
-        """
+        """Run one optimization epoch of neural Q-learning for the provided puzzle dataset."""
         solveconfigs = dataset["solveconfigs"]
         states = dataset["states"]
         target_q = dataset["target_q"]
@@ -100,6 +106,31 @@ def qlearning_builder(
             cost_weights = 1.0 / jnp.sqrt(jnp.maximum(cost, 1.0))
             cost_weights = cost_weights / jnp.mean(cost_weights)
             loss_weights = loss_weights * cost_weights
+
+        if use_target_sharpness_weighting:
+            # Prefer target entropy if available; fallback to behavior entropy
+            entropy = None
+            max_entropy = None
+            if "target_entropy" in dataset:
+                entropy = dataset["target_entropy"]
+                max_entropy = dataset.get("target_entropy_max", None)
+            elif "action_entropy" in dataset:
+                entropy = dataset.get("action_entropy", None)
+                max_entropy = dataset.get("action_entropy_max", None)
+
+            if entropy is not None:
+                if max_entropy is None:
+                    # Fallback: approximate with log(action_size) if available
+                    action_size = jnp.max(actions) + 1 if "actions" in dataset else 1
+                    max_entropy = jnp.log(jnp.maximum(action_size.astype(jnp.float32), 1.0))
+                normalized_entropy = entropy / (max_entropy + 1e-8)
+            else:
+                normalized_entropy = jnp.zeros(data_size)
+
+            sharpness = 1.0 - normalized_entropy
+            sharp_weights = 1.0 + target_sharpness_alpha * sharpness
+            sharp_weights = sharp_weights / (jnp.mean(sharp_weights) + 1e-8)
+            loss_weights = loss_weights * sharp_weights
 
         if not using_priority_sampling:
             loss_weights = loss_weights / jnp.mean(loss_weights)
@@ -234,7 +265,7 @@ def boltzmann_action_selection(
     epsilon: float = 0.1,
 ) -> chex.Array:
     # Sanitize inputs
-    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=1e6)
+    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
     mask = jnp.isfinite(q_values)
 
     # Scale Q-values by temperature for softmax
@@ -276,6 +307,7 @@ def _get_datasets_with_policy(
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
     temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -294,8 +326,8 @@ def _get_datasets_with_policy(
         # Preprocess the states to be suitable for neural network input.
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
         # Get the Q-values Q(s,a) for all actions 'a' in the current state 's' using the online Q-network.
-        q_values, _ = q_model.apply(q_params, preproc, training=False, mutable=["batch_stats"])
-        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=1e6)
+        q_values = q_model.apply(q_params, preproc, training=False)
+        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
         # Get all possible neighbor states (s') and the costs c(s,a,s') to move to them.
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
@@ -307,6 +339,12 @@ def _get_datasets_with_policy(
         # Actions with lower Q-values (lower cost-to-go) are more likely to be chosen.
         # Epsilon-greedy exploration is also mixed in.
         probs = boltzmann_action_selection(q_sum_cost, temperature=temperature)
+        # Action entropy per state (measure of policy sharpness)
+        entropy = -jnp.sum(probs * jnp.log(jnp.clip(probs, a_min=1e-12)), axis=1)
+        # Maximum entropy per state (approx by number of valid actions)
+        action_size = q_values.shape[1]
+        max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=probs.dtype), 1.0))
+        max_entropy = jnp.full((probs.shape[0],), max_ent_val)
         idxs = jnp.arange(q_values.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
             jax.random.split(subkey, q_values.shape[0]), probs
@@ -340,10 +378,10 @@ def _get_datasets_with_policy(
         # Use the target Q-network (with frozen parameters `target_q_params`)
         # to get the Q-values for the next state, Q_target(s', a').
         # Using a separate target network stabilizes training.
-        q, _ = q_model.apply(
-            target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+        q = q_model.apply(
+            target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
-        q = jnp.nan_to_num(q, posinf=1e6, neginf=1e6)
+        q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
         # Calculate the target Q-value using the Bellman Optimality Equation:
         # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
         # This represents the optimal cost-to-go from s'.
@@ -351,6 +389,16 @@ def _get_datasets_with_policy(
         # Clamp to ensure non-negative targets (costs should be non-negative)
         q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+        # Target entropy (confidence of the backup) over next-state distribution
+        safe_temperature = jnp.maximum(temperature, 1e-8)
+        scaled_next = -q_sum_cost / safe_temperature
+        next_probs = jax.nn.softmax(scaled_next, axis=1)
+        next_probs = next_probs / (jnp.sum(next_probs, axis=1, keepdims=True) + 1e-8)
+        target_entropy = -jnp.sum(next_probs * jnp.log(jnp.clip(next_probs, a_min=1e-12)), axis=1)
+        # For solved states, entropy should be near zero (deterministic target)
+        target_entropy = jnp.where(
+            jnp.logical_or(solved, selected_neighbors_solved), 0.0, target_entropy
+        )
 
         # Base case: If the next state (s') is the solution, the future cost is 0.
         target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
@@ -359,10 +407,35 @@ def _get_datasets_with_policy(
 
         # The 'diff' is the Temporal Difference (TD) error aligned with the training target
         diff = target_q - selected_q
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         # if the puzzle is already solved, the all q is 0
-        return key, (solve_configs, states, target_q, actions, diff, move_costs)
+        return key, (
+            solve_configs,
+            states,
+            target_q,
+            actions,
+            diff,
+            entropy,
+            max_entropy,
+            target_entropy,
+            max_entropy,
+            move_costs,
+        )
 
-    _, (solve_configs, states, target_q, actions, diff, cost) = jax.lax.scan(
+    _, (
+        solve_configs,
+        states,
+        target_q,
+        actions,
+        diff,
+        entropy,
+        max_entropy,
+        target_entropy,
+        target_max_entropy,
+        cost,
+    ) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
@@ -373,6 +446,10 @@ def _get_datasets_with_policy(
     target_q = target_q.reshape((-1,))
     actions = actions.reshape((-1,))
     diff = diff.reshape((-1,))
+    entropy = entropy.reshape((-1,))
+    max_entropy = max_entropy.reshape((-1,))
+    target_entropy = target_entropy.reshape((-1,))
+    target_max_entropy = target_max_entropy.reshape((-1,))
     cost = cost.reshape((-1,))
 
     return {
@@ -381,6 +458,10 @@ def _get_datasets_with_policy(
         "target_q": target_q,
         "actions": actions,
         "diff": diff,
+        "action_entropy": entropy,
+        "action_entropy_max": max_entropy,
+        "target_entropy": target_entropy,
+        "target_entropy_max": target_max_entropy,
         "cost": cost,
     }
 
@@ -394,6 +475,7 @@ def _get_datasets_with_trajectory(
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    td_error_clip: Optional[float] = None,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -432,8 +514,8 @@ def _get_datasets_with_trajectory(
 
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
-        q, _ = q_model.apply(
-            target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
+        q = q_model.apply(
+            target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
 
         q_sum_cost = q + neighbor_cost
@@ -445,6 +527,9 @@ def _get_datasets_with_trajectory(
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = jnp.zeros_like(target_q)
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         # if the puzzle is already solved, the all q is 0
         return key, (solve_configs, states, target_q, actions, diff, move_costs)
 
@@ -488,6 +573,7 @@ def get_qlearning_dataset_builder(
     with_policy: bool = False,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
 ):
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
@@ -537,6 +623,7 @@ def get_qlearning_dataset_builder(
                 q_model,
                 dataset_minibatch_size,
                 temperature=temperature,
+                td_error_clip=td_error_clip,
             )
         )
     else:
@@ -547,6 +634,7 @@ def get_qlearning_dataset_builder(
                 preproc_fn,
                 q_model,
                 dataset_minibatch_size,
+                td_error_clip=td_error_clip,
             )
         )
 

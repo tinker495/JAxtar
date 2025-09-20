@@ -37,4 +37,4 @@ class RubiksCubeRandomNeuralQ(NeuralQFunctionBase):
         target_flatten_face = solve_config.TargetState.unpacked.faces.flatten()
         target_one_hot = jax.nn.one_hot(target_flatten_face, num_classes=6).flatten()
         one_hots = jnp.concatenate([target_one_hot, current_one_hot], axis=-1)
-        return ((one_hots - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]WW
+        return ((one_hots - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]

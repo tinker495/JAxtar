@@ -3,13 +3,7 @@ import jax.numpy as jnp
 from flax import linen as nn
 from puxle import LightsOut
 
-from neural_util.modules import (
-    DEFAULT_NORM_FN,
-    DTYPE,
-    ConvResBlock,
-    ResBlock,
-    conditional_dummy_norm,
-)
+from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ConvResBlock, ResBlock
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -46,7 +40,6 @@ class Model(nn.Module):
         x = nn.relu(x)
         x = ResBlock(1024)(x, training)
         x = nn.Dense(self.action_size, dtype=DTYPE)(x)
-        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 

@@ -11,8 +11,8 @@ from puxle import Puzzle
 from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
+    PreActivationResBlock,
     ResBlock,
-    conditional_dummy_norm,
     get_activation_fn,
     get_norm_fn,
     get_resblock_fn,
@@ -56,10 +56,11 @@ class QModelBase(nn.Module):
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
             )(x, training)
+        if self.resblock_fn == PreActivationResBlock:
+            x = self.norm_fn(x, training)
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
-        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 
@@ -147,7 +148,7 @@ class NeuralQFunctionBase(QFunction):
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
         x = self.batched_pre_process(solve_config, current)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.model.apply(params, x, training=False)
         x = self.post_process(x)
         return x
 
@@ -167,7 +168,7 @@ class NeuralQFunctionBase(QFunction):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.model.apply(params, x, training=False)
         return self.post_process(x)
 
     @abstractmethod

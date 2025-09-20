@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import chex
 import jax
@@ -16,6 +16,10 @@ from train_util.sampling import (
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
+from train_util.util import (
+    apply_with_conditional_batch_stats,
+    build_new_params_from_updates,
+)
 
 
 def regression_trainer_builder(
@@ -25,6 +29,8 @@ def regression_trainer_builder(
     preproc_fn: Callable,
     n_devices: int = 1,
     use_target_confidence_weighting: bool = False,
+    use_target_sharpness_weighting: bool = False,
+    target_sharpness_alpha: float = 1.0,
     using_priority_sampling: bool = False,
     per_alpha: float = 0.6,
     per_beta: float = 0.4,
@@ -32,6 +38,7 @@ def regression_trainer_builder(
     loss_type: str = "mse",
     huber_delta: float = 0.1,
     replay_ratio: int = 1,
+    td_error_clip: Optional[float] = None,
 ):
     def davi_loss(
         heuristic_params: Any,
@@ -42,16 +49,14 @@ def regression_trainer_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        current_heuristic, variable_updates = heuristic_model.apply(
-            heuristic_params, preproc, training=True, mutable=["batch_stats"]
+        current_heuristic, variable_updates = apply_with_conditional_batch_stats(
+            heuristic_model.apply, heuristic_params, preproc, training=True, n_devices=n_devices
         )
-        if n_devices > 1:
-            variable_updates = jax.lax.pmean(variable_updates, axis_name="devices")
-        new_params = {
-            "params": heuristic_params["params"],
-            "batch_stats": variable_updates["batch_stats"],
-        }
+        new_params = build_new_params_from_updates(heuristic_params, variable_updates)
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights)
         return loss_value, (new_params, diff)
@@ -73,6 +78,9 @@ def regression_trainer_builder(
 
         if using_priority_sampling:
             diff = dataset["diff"]
+            if td_error_clip is not None and td_error_clip > 0:
+                clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+                diff = jnp.clip(diff, -clip_val, clip_val)
             # Sanitize TD errors to avoid NaN/Inf poisoning
             diff = jnp.nan_to_num(diff, nan=0.0, posinf=1e6, neginf=-1e6)
 
@@ -100,6 +108,16 @@ def regression_trainer_builder(
             cost_weights = 1.0 / jnp.sqrt(jnp.maximum(cost, 1.0))
             cost_weights = cost_weights / jnp.mean(cost_weights)
             loss_weights = loss_weights * cost_weights
+
+        if use_target_sharpness_weighting and ("target_entropy" in dataset):
+            entropy = dataset["target_entropy"]
+            max_entropy = dataset.get("target_entropy_max", None)
+            if max_entropy is not None:
+                normalized_entropy = entropy / (max_entropy + 1e-8)
+                sharpness = 1.0 - normalized_entropy
+                sharp_weights = 1.0 + target_sharpness_alpha * sharpness
+                sharp_weights = sharp_weights / (jnp.mean(sharp_weights) + 1e-8)
+                loss_weights = loss_weights * sharp_weights
 
         if not using_priority_sampling:
             loss_weights = loss_weights / jnp.mean(loss_weights)
@@ -237,6 +255,8 @@ def _get_datasets(
     heuristic_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -269,26 +289,59 @@ def _get_datasets(
         )
 
         def heur_scan(neighbors):
-            heur, _ = heuristic_model.apply(
-                target_heuristic_params, neighbors, training=False, mutable=["batch_stats"]
-            )
+            heur = heuristic_model.apply(target_heuristic_params, neighbors, training=False)
             return heur.squeeze()
 
         heur = jax.vmap(heur_scan)(flatten_neighbors)  # [action_size, batch_size]
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
-        target_heuristic = jnp.min(heur + cost, axis=0)
+        backup = heur + cost  # [action_size, batch_size]
+        target_heuristic = jnp.min(backup, axis=0)
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
 
-        preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        heur, _ = heuristic_model.apply(
-            heuristic_params, preproc, training=False, mutable=["batch_stats"]
-        )
-        diff = target_heuristic - heur.squeeze()
-        return None, (solve_configs, states, target_heuristic, diff, move_costs)
+        # Target entropy over next-state backup distribution
+        safe_temperature = jnp.maximum(temperature, 1e-8)
+        backup_bt = jnp.transpose(backup, (1, 0))  # [batch_size, action_size]
+        scaled_next = -backup_bt / safe_temperature
+        next_probs = jax.nn.softmax(scaled_next, axis=1)
+        next_probs = next_probs / (jnp.sum(next_probs, axis=1, keepdims=True) + 1e-8)
+        target_entropy = -jnp.sum(
+            next_probs * jnp.log(jnp.clip(next_probs, a_min=1e-12)), axis=1
+        )  # [batch_size]
+        # For solved states or if any neighbor is solved, entropy should be near zero
+        any_neighbor_solved = jnp.any(neighbors_solved, axis=0)
+        target_entropy = jnp.where(jnp.logical_or(solved, any_neighbor_solved), 0.0, target_entropy)
+        # Maximum entropy per state based on action size
+        action_size = backup_bt.shape[1]
+        max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=next_probs.dtype), 1.0))
+        target_entropy_max = jnp.full((next_probs.shape[0],), max_ent_val)
 
-    _, (solve_configs, states, target_heuristic, diff, cost) = jax.lax.scan(
+        preproc = jax.vmap(preproc_fn)(solve_configs, states)
+        heur = heuristic_model.apply(heuristic_params, preproc, training=False)
+        diff = target_heuristic - heur.squeeze()
+        if td_error_clip is not None and td_error_clip > 0:
+            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
+            diff = jnp.clip(diff, -clip_val, clip_val)
+        return None, (
+            solve_configs,
+            states,
+            target_heuristic,
+            diff,
+            target_entropy,
+            target_entropy_max,
+            move_costs,
+        )
+
+    _, (
+        solve_configs,
+        states,
+        target_heuristic,
+        diff,
+        target_entropy,
+        target_entropy_max,
+        cost,
+    ) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
@@ -298,6 +351,8 @@ def _get_datasets(
     states = states.reshape((-1,))
     target_heuristic = target_heuristic.reshape((-1,))
     diff = diff.reshape((-1,))
+    target_entropy = target_entropy.reshape((-1,))
+    target_entropy_max = target_entropy_max.reshape((-1,))
     cost = cost.reshape((-1,))
 
     return {
@@ -305,6 +360,8 @@ def _get_datasets(
         "states": states,
         "target_heuristic": target_heuristic,
         "diff": diff,
+        "target_entropy": target_entropy,
+        "target_entropy_max": target_entropy_max,
         "cost": cost,
     }
 
@@ -319,6 +376,8 @@ def get_davi_dataset_builder(
     using_hindsight_target: bool = True,
     using_triangular_sampling: bool = False,
     n_devices: int = 1,
+    temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
 ):
 
     if using_hindsight_target:
@@ -366,6 +425,8 @@ def get_davi_dataset_builder(
             preproc_fn,
             heuristic_model,
             dataset_minibatch_size,
+            temperature=temperature,
+            td_error_clip=td_error_clip,
         )
     )
 
