@@ -49,15 +49,20 @@ def davi_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        current_heuristic, variable_updates = apply_with_conditional_batch_stats(
+        current_reward, variable_updates = apply_with_conditional_batch_stats(
             heuristic_model.apply, heuristic_params, preproc, training=True, n_devices=n_devices
         )
         new_params = build_new_params_from_updates(heuristic_params, variable_updates)
-        diff = target_heuristic.squeeze() - current_heuristic.squeeze()
+        current_reward = jnp.squeeze(current_reward, axis=-1)
+        target_cost = target_heuristic.squeeze()
+        pred_cost = heuristic_model.reward_to_cost(current_reward)
+        diff = target_cost - pred_cost
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
-        per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
+        target_reward = heuristic_model.cost_to_reward(target_cost)
+        reward_diff = target_reward - current_reward
+        per_sample = loss_from_diff(reward_diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights)
         return loss_value, (new_params, diff)
 
@@ -289,7 +294,9 @@ def _get_datasets(
         )
 
         def heur_scan(neighbors):
-            heur = heuristic_model.apply(target_heuristic_params, neighbors, training=False)
+            heur = heuristic_model.apply(
+                target_heuristic_params, neighbors, method=heuristic_model.distance
+            )
             return heur.squeeze()
 
         heur = jax.vmap(heur_scan)(flatten_neighbors)  # [action_size, batch_size]
@@ -318,7 +325,9 @@ def _get_datasets(
         target_entropy_max = jnp.full((next_probs.shape[0],), max_ent_val)
 
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        heur = heuristic_model.apply(heuristic_params, preproc, training=False)
+        heur = heuristic_model.apply(
+            heuristic_params, preproc, method=heuristic_model.distance
+        )
         diff = target_heuristic - heur.squeeze()
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)

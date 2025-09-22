@@ -50,16 +50,24 @@ def qlearning_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        q_values, variable_updates = apply_with_conditional_batch_stats(
+        q_rewards, variable_updates = apply_with_conditional_batch_stats(
             q_fn.apply, q_params, preproc, training=True, n_devices=n_devices
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
-        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
-        diff = target_qs.squeeze() - q_values_at_actions.squeeze()
+        q_rewards_at_actions = jnp.take_along_axis(
+            q_rewards, actions[:, jnp.newaxis], axis=1
+        ).squeeze()
+
+        target_cost = target_qs.squeeze()
+        pred_cost = q_fn.reward_to_cost(q_rewards_at_actions)
+        diff = target_cost - pred_cost
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
-        per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
+
+        target_reward = q_fn.cost_to_reward(target_cost)
+        reward_diff = target_reward - q_rewards_at_actions
+        per_sample = loss_from_diff(reward_diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights)
         return loss_value, (new_params, diff)
 
@@ -325,15 +333,15 @@ def _get_datasets_with_policy(
 
         # Preprocess the states to be suitable for neural network input.
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        # Get the Q-values Q(s,a) for all actions 'a' in the current state 's' using the online Q-network.
-        q_values = q_model.apply(q_params, preproc, training=False)
-        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
+        # Get the cost-to-go estimates Q(s,a) for all actions from the online Q-network.
+        q_cost = q_model.apply(q_params, preproc, method=q_model.distance)
+        q_cost = jnp.nan_to_num(q_cost, posinf=1e6, neginf=-1e6)
         # Get all possible neighbor states (s') and the costs c(s,a,s') to move to them.
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
         cost = jnp.transpose(cost, (1, 0))
-        q_sum_cost = q_values + cost
+        q_sum_cost = q_cost + cost
 
         # Select an action 'a' probabilistically using a Boltzmann (softmax) exploration policy.
         # Actions with lower Q-values (lower cost-to-go) are more likely to be chosen.
@@ -342,15 +350,15 @@ def _get_datasets_with_policy(
         # Action entropy per state (measure of policy sharpness)
         entropy = -jnp.sum(probs * jnp.log(jnp.clip(probs, a_min=1e-12)), axis=1)
         # Maximum entropy per state (approx by number of valid actions)
-        action_size = q_values.shape[1]
+        action_size = q_cost.shape[1]
         max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=probs.dtype), 1.0))
         max_entropy = jnp.full((probs.shape[0],), max_ent_val)
-        idxs = jnp.arange(q_values.shape[1])  # action_size
+        idxs = jnp.arange(q_cost.shape[1])  # action_size
         actions = jax.vmap(lambda key, p: jax.random.choice(key, idxs, p=p), in_axes=(0, 0))(
-            jax.random.split(subkey, q_values.shape[0]), probs
+            jax.random.split(subkey, q_cost.shape[0]), probs
         )
-        # Get the Q-value Q(s,a) for the action 'a' selected by the policy. This is the value we will train.
-        selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
+        # Get the cost Q(s,a) for the action selected by the policy. This is the target for training.
+        selected_cost = jnp.take_along_axis(q_cost, actions[:, jnp.newaxis], axis=1).squeeze(1)
 
         batch_size = actions.shape[0]
         # Determine the next state (s') by applying the selected action 'a'.
@@ -378,14 +386,14 @@ def _get_datasets_with_policy(
         # Use the target Q-network (with frozen parameters `target_q_params`)
         # to get the Q-values for the next state, Q_target(s', a').
         # Using a separate target network stabilizes training.
-        q = q_model.apply(
-            target_q_params, preproc_neighbors, training=False
+        q_next_cost = q_model.apply(
+            target_q_params, preproc_neighbors, method=q_model.distance
         )  # [minibatch_size, action_shape]
-        q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
+        q_next_cost = jnp.nan_to_num(q_next_cost, posinf=1e6, neginf=-1e6)
         # Calculate the target Q-value using the Bellman Optimality Equation:
         # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
         # This represents the optimal cost-to-go from s'.
-        q_sum_cost = q + neighbor_cost  # [batch_size, action_size]
+        q_sum_cost = q_next_cost + neighbor_cost  # [batch_size, action_size]
         # Clamp to ensure non-negative targets (costs should be non-negative)
         q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
@@ -406,7 +414,7 @@ def _get_datasets_with_policy(
         target_q = jnp.where(solved, 0.0, target_q)
 
         # The 'diff' is the Temporal Difference (TD) error aligned with the training target
-        diff = target_q - selected_q
+        diff = target_q - selected_cost
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
@@ -514,11 +522,11 @@ def _get_datasets_with_trajectory(
 
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
-        q = q_model.apply(
-            target_q_params, preproc_neighbors, training=False
+        q_cost = q_model.apply(
+            target_q_params, preproc_neighbors, method=q_model.distance
         )  # [minibatch_size, action_shape]
 
-        q_sum_cost = q + neighbor_cost
+        q_sum_cost = q_cost + neighbor_cost
         # Clamp to ensure non-negative targets (costs should be non-negative)
         q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)

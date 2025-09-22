@@ -34,6 +34,7 @@ class HeuristicBase(nn.Module):
     activation: str = nn.relu
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    gamma: float = 0.99
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -59,6 +60,20 @@ class HeuristicBase(nn.Module):
             x = self.norm_fn(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
         return x
+
+    def reward_to_cost(self, reward: chex.Array) -> chex.Array:
+        """Convert discounted reward estimates back to additive costs."""
+        reward = jnp.clip(reward, a_min=1e-12, a_max=1.0)
+        log_gamma = jnp.log(self.gamma)
+        return jnp.log(reward) / log_gamma
+
+    def cost_to_reward(self, cost: chex.Array) -> chex.Array:
+        """Convert additive cost targets into discounted reward equivalents."""
+        return jnp.power(self.gamma, cost)
+
+    def distance(self, x: chex.Array, training: bool = False) -> chex.Array:
+        reward = self(x, training=training)
+        return self.reward_to_cost(reward)
 
 
 class NeuralHeuristicBase(Heuristic):
@@ -137,7 +152,7 @@ class NeuralHeuristicBase(Heuristic):
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
         x = self.batched_pre_process(solve_config, current)
-        x = self.model.apply(params, x, training=False)
+        x = self.model.apply(params, x, method=self.model.distance)
         x = self.post_process(x)
         return x
 
@@ -157,7 +172,7 @@ class NeuralHeuristicBase(Heuristic):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x = self.model.apply(params, x, training=False)
+        x = self.model.apply(params, x, method=self.model.distance)
         return self.post_process(x)
 
     @abstractmethod

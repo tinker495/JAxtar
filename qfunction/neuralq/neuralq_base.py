@@ -34,6 +34,7 @@ class QModelBase(nn.Module):
     norm_fn: callable = DEFAULT_NORM_FN
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    gamma: float = 0.99
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -62,6 +63,25 @@ class QModelBase(nn.Module):
         )(x)
         return x
 
+    def reward_to_cost(self, reward: chex.Array) -> chex.Array:
+        """Map multiplicative discounted reward estimates back to additive costs."""
+        reward = jnp.clip(reward, a_min=1e-12, a_max=1.0)
+        log_gamma = jnp.log(self.gamma)
+        return jnp.log(reward) / log_gamma
+
+    def cost_to_reward(self, cost: chex.Array) -> chex.Array:
+        """Map additive cost targets to their discounted reward representation."""
+        return jnp.power(self.gamma, cost)
+
+    def distance(self, x: chex.Array) -> chex.Array:
+        transformed_x = self(x, training=False)
+        return self.reward_to_cost(transformed_x)
+
+    def transformed_loss(self, x: chex.Array, target: chex.Array) -> chex.Array:
+        transformed_x = self(x, training=True)
+        transformed_y = self.cost_to_reward(target)
+        loss = jnp.square(transformed_x - transformed_y)
+        return loss
 
 class NeuralQFunctionBase(QFunction):
     def __init__(
@@ -145,7 +165,7 @@ class NeuralQFunctionBase(QFunction):
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
         x = self.batched_pre_process(solve_config, current)
-        x = self.model.apply(params, x, training=False)
+        x = self.model.apply(params, x, method=self.model.distance)
         x = self.post_process(x)
         return x
 
@@ -165,7 +185,7 @@ class NeuralQFunctionBase(QFunction):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x = self.model.apply(params, x, training=False)
+        x = self.model.apply(params, x, method=self.model.distance)
         return self.post_process(x)
 
     @abstractmethod
