@@ -59,7 +59,7 @@ class QModelBase(nn.Module):
         if self.resblock_fn == PreActivationResBlock:
             x = self.norm_fn(x, training)
         x = nn.Dense(
-            self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
+            self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01), bias_init=nn.initializers.ones
         )(x)
         return x
 
