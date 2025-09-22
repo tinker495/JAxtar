@@ -1,0 +1,7 @@
+name: hanoi
+size: default
+hard: false
+args:
+  num_disks: 5
+seeds: [0]
+shuffle_length: null

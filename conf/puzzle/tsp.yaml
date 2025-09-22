@@ -1,0 +1,7 @@
+name: tsp
+size: default
+hard: false
+args:
+  num_nodes: 20
+seeds: [0]
+shuffle_length: null

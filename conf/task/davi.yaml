@@ -1,0 +1,11 @@
+defaults:
+  - puzzle: rubikscube
+  - heuristic: neural
+  - train: dist/default
+  - eval: default
+  - _self_
+
+name: davi
+run_name: ${puzzle.name}-dist-train
+extra:
+  description: "DAVI distance training"

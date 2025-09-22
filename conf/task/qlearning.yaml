@@ -1,0 +1,12 @@
+defaults:
+  - puzzle: rubikscube
+  - qfunction: neural
+  - train: dist/default
+  - eval: default
+  - q_options: default
+  - _self_
+
+name: qlearning
+run_name: ${puzzle.name}-dist-q-train
+extra:
+  description: "Q-learning distance training"

@@ -1,0 +1,7 @@
+name: pddl_satellite
+size: default
+hard: false
+args:
+  preset: st-H-01
+seeds: [0]
+shuffle_length: null

@@ -34,3 +34,7 @@ These commands are used to evaluate trained models and search algorithms.
 
 -   [**`eval heuristic`**](./eval_heuristic.md): Evaluates a heuristic on a set of puzzles.
 -   [**`eval qlearning`**](./eval_qlearning.md): Evaluates a Q-function on a set of puzzles.
+
+## Hydra Configuration
+
+-   [**Hydra Workflow**](./hydra.md): Overview of the Hydra-based configuration system for DAVI & Q-learning plus the migration roadmap.

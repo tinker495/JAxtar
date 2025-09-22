@@ -1,0 +1,7 @@
+name: pancake
+size: default
+hard: false
+args:
+  num_pancakes: 20
+seeds: [0]
+shuffle_length: null

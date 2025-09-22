@@ -52,6 +52,10 @@ For detailed information on all available commands and their options, please ref
 
 [**Go to Documentation**](./docs/README.md)
 
+Hydra users can check the dedicated guide for the new configuration system introduced during the migration (covers both DAVI and Q-learning training flows):
+
+- [Hydra Workflow](./docs/hydra.md)
+
 ## Result
 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.

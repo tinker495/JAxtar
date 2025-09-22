@@ -1,0 +1,6 @@
+name: rubikscube
+size: default
+hard: true
+args: {}
+seeds: [0]
+shuffle_length: null

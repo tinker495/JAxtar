@@ -1,0 +1,11 @@
+batch_size: [2048]
+max_node_size: 200000
+cost_weight: [0.6]
+pop_ratio: [0.2]
+num_eval: 32
+run_name: fast
+scatter_max_points: 50
+max_expansion_plots: 1
+use_early_stopping: true
+early_stop_patience: 5
+early_stop_threshold: 0.5

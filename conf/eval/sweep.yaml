@@ -1,0 +1,11 @@
+batch_size: [2000, 5000, 10000]
+max_node_size: 25000000
+cost_weight: [1.0, 0.7, 0.4]
+pop_ratio: [.inf, 0.3, 0.15]
+num_eval: 300
+run_name: sweep
+scatter_max_points: 200
+max_expansion_plots: 4
+use_early_stopping: false
+early_stop_patience: 0
+early_stop_threshold: 0.0

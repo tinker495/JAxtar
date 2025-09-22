@@ -1,0 +1,7 @@
+name: pddl_rovers
+size: default
+hard: false
+args:
+  preset: rv-H-01
+seeds: [0]
+shuffle_length: null

@@ -1,0 +1,6 @@
+name: sokoban_world_model_optimized
+size: default
+hard: false
+args: {}
+seeds: [0]
+shuffle_length: null

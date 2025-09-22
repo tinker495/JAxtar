@@ -16,6 +16,7 @@ optax
 termcolor
 tensorboardX
 pydantic
+hydra-core
 xtructure @ git+https://github.com/tinker495/xtructure.git
 puxle @ git+https://github.com/tinker495/PuXle.git
 aim

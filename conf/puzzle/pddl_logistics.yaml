@@ -1,0 +1,7 @@
+name: pddl_logistics
+size: default
+hard: false
+args:
+  preset: lg-H-01
+seeds: [0]
+shuffle_length: null

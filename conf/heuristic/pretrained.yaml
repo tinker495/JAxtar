@@ -1,0 +1,2 @@
+param_path: ${hydra:runtime.cwd}/checkpoints/heuristic.pkl
+neural_config: {}

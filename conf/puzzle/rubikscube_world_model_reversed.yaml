@@ -1,0 +1,6 @@
+name: rubikscube_world_model_reversed
+size: default
+hard: false
+args: {}
+seeds: [0]
+shuffle_length: 30

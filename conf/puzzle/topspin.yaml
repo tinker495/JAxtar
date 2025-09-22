@@ -1,0 +1,8 @@
+name: topspin
+size: default
+hard: false
+args:
+  board_size: 20
+  spin_size: 4
+seeds: [0]
+shuffle_length: null

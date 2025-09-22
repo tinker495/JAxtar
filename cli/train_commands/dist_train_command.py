@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 import click
 import jax
@@ -35,12 +36,7 @@ from ..options import (
 )
 
 
-@click.command()
-@dist_puzzle_options
-@dist_train_options
-@dist_heuristic_options
-@eval_options
-def davi(
+def run_davi_training(
     puzzle: Puzzle,
     puzzle_opts: PuzzleOptions,
     heuristic: NeuralHeuristicBase,
@@ -49,8 +45,11 @@ def davi(
     shuffle_length: int,
     eval_options: EvalOptions,
     heuristic_config: NeuralCallableConfig,
+    logger_run_name: Optional[str] = None,
+    extra_config: Optional[Dict[str, Any]] = None,
     **kwargs,
 ):
+    """Execute DAVI training with the provided configuration objects."""
 
     config = {
         "puzzle_options": puzzle_opts,
@@ -58,8 +57,12 @@ def davi(
         "train_options": train_options,
         "eval_options": eval_options,
     }
+    if extra_config:
+        config.update(extra_config)
+
     print_config("DAVI Training Configuration", config)
-    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-train", config)
+    log_dir_base = logger_run_name or f"{puzzle_name}-dist-train"
+    logger = create_logger(train_options.logger, log_dir_base, config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -203,15 +206,12 @@ def davi(
             heuristic.params = heuristic_params
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
-            # Log model as artifact
-            # logger.log_artifact(backup_path, f"heuristic_step_{i}", "model")
+
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
-    # Log final model as artifact
     logger.log_artifact(backup_path, "heuristic_final", "model")
 
-    # Evaluation
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         _run_evaluation_sweep(
@@ -230,13 +230,14 @@ def davi(
 
     logger.close()
 
+    return {
+        "log_dir": logger.log_dir,
+        "final_params_path": backup_path,
+        "steps": steps,
+    }
 
-@click.command()
-@dist_puzzle_options
-@dist_train_options
-@dist_qfunction_options
-@eval_options
-def qlearning(
+
+def run_qlearning_training(
     puzzle: Puzzle,
     puzzle_opts: PuzzleOptions,
     qfunction: NeuralQFunctionBase,
@@ -246,17 +247,25 @@ def qlearning(
     with_policy: bool,
     eval_options: EvalOptions,
     q_config: NeuralCallableConfig,
+    logger_run_name: Optional[str] = None,
+    extra_config: Optional[Dict[str, Any]] = None,
     **kwargs,
 ):
+    """Execute Q-learning training with the provided configuration objects."""
 
     config = {
         "puzzle_options": puzzle_opts,
         "train_options": train_options,
         "eval_options": eval_options,
         "q_config": q_config,
+        "with_policy": with_policy,
     }
+    if extra_config:
+        config.update(extra_config)
+
     print_config("Q-Learning Training Configuration", config)
-    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-q-train", config)
+    log_dir_base = logger_run_name or f"{puzzle_name}-dist-q-train"
+    logger = create_logger(train_options.logger, log_dir_base, config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
     )
@@ -320,13 +329,12 @@ def qlearning(
     pbar = trange(steps)
     updated = False
     last_reset_time = 0
-    last_update_step = -1  # Track last update step for force update
+    last_update_step = -1
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
         target_q = dataset["target_q"]
         mean_target_q = jnp.mean(target_q)
-        # Optional: mean action entropy when using policy sampling
         mean_action_entropy = None
         mean_target_entropy = None
         if "action_entropy" in dataset:
@@ -414,15 +422,12 @@ def qlearning(
             qfunction.params = qfunc_params
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
-            # Log model as artifact
-            # logger.log_artifact(backup_path, f"qfunction_step_{i}", "model")
+
     qfunction.params = qfunc_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
-    # Log final model as artifact
     logger.log_artifact(backup_path, "qfunction_final", "model")
 
-    # Evaluation
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         _run_evaluation_sweep(
@@ -440,3 +445,69 @@ def qlearning(
         )
 
     logger.close()
+
+    return {
+        "log_dir": logger.log_dir,
+        "final_params_path": backup_path,
+        "steps": steps,
+    }
+
+
+@click.command()
+@dist_puzzle_options
+@dist_train_options
+@dist_heuristic_options
+@eval_options
+def davi(
+    puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
+    heuristic: NeuralHeuristicBase,
+    puzzle_name: str,
+    train_options: DistTrainOptions,
+    shuffle_length: int,
+    eval_options: EvalOptions,
+    heuristic_config: NeuralCallableConfig,
+    **kwargs,
+):
+    run_davi_training(
+        puzzle=puzzle,
+        puzzle_opts=puzzle_opts,
+        heuristic=heuristic,
+        puzzle_name=puzzle_name,
+        train_options=train_options,
+        shuffle_length=shuffle_length,
+        eval_options=eval_options,
+        heuristic_config=heuristic_config,
+        **kwargs,
+    )
+
+
+@click.command()
+@dist_puzzle_options
+@dist_train_options
+@dist_qfunction_options
+@eval_options
+def qlearning(
+    puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
+    qfunction: NeuralQFunctionBase,
+    puzzle_name: str,
+    train_options: DistTrainOptions,
+    shuffle_length: int,
+    with_policy: bool,
+    eval_options: EvalOptions,
+    q_config: NeuralCallableConfig,
+    **kwargs,
+):
+    run_qlearning_training(
+        puzzle=puzzle,
+        puzzle_opts=puzzle_opts,
+        qfunction=qfunction,
+        puzzle_name=puzzle_name,
+        train_options=train_options,
+        shuffle_length=shuffle_length,
+        with_policy=with_policy,
+        eval_options=eval_options,
+        q_config=q_config,
+        **kwargs,
+    )

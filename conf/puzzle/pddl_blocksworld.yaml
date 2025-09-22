@@ -1,0 +1,7 @@
+name: pddl_blocksworld
+size: default
+hard: false
+args:
+  preset: bw-H-01
+seeds: [0]
+shuffle_length: null
