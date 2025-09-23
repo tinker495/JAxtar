@@ -10,6 +10,7 @@ from puxle import Puzzle
 from heuristic.heuristic_base import Heuristic
 from neural_util.modules import (
     DEFAULT_NORM_FN,
+    HEAD_DTYPE,
     DTYPE,
     PreActivationResBlock,
     ResBlock,
@@ -59,7 +60,8 @@ class HeuristicBase(nn.Module):
             )(x, training)
         if self.resblock_fn == PreActivationResBlock:
             x = self.norm_fn(x, training)
-        x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01), bias_init=nn.initializers.constant(self.multiplier))(x)
+        x = x.astype(HEAD_DTYPE)
+        x = nn.Dense(1, dtype=HEAD_DTYPE, kernel_init=nn.initializers.normal(stddev=0.01), bias_init=nn.initializers.constant(self.multiplier))(x)
         x = jax.nn.softplus(x)
         return x
 
