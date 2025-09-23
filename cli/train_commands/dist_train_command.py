@@ -220,7 +220,24 @@ def davi(
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
             # Log model as artifact
-            # logger.log_artifact(backup_path, f"heuristic_step_{i}", "model")
+            if eval_options.num_eval > 0:
+                light_eval_options = eval_options.model_copy(
+                    update={"num_eval": min(20, eval_options.num_eval)}
+                )
+                eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
+                _run_evaluation_sweep(
+                    puzzle=puzzle,
+                    puzzle_name=puzzle_name,
+                    search_model=heuristic,
+                    search_model_name="heuristic",
+                    search_builder_fn=astar_builder,
+                    eval_options=light_eval_options,
+                    puzzle_opts=puzzle_opts,
+                    output_dir=eval_run_dir,
+                    logger=logger,
+                    step=i,
+                    **kwargs,
+                )
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
@@ -431,7 +448,24 @@ def qlearning(
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
             # Log model as artifact
-            # logger.log_artifact(backup_path, f"qfunction_step_{i}", "model")
+            if eval_options.num_eval > 0:
+                light_eval_options = eval_options.model_copy(
+                    update={"num_eval": min(20, eval_options.num_eval)}
+                )
+                eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
+                _run_evaluation_sweep(
+                    puzzle=puzzle,
+                    puzzle_name=puzzle_name,
+                    search_model=qfunction,
+                    search_model_name="qfunction",
+                    search_builder_fn=qstar_builder,
+                    eval_options=light_eval_options,
+                    puzzle_opts=puzzle_opts,
+                    output_dir=eval_run_dir,
+                    logger=logger,
+                    step=i,
+                    **kwargs,
+                )
     qfunction.params = qfunc_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)

@@ -6,6 +6,8 @@ import jax.numpy as jnp
 from .norm import BatchReNorm as BatchReNorm_
 
 DTYPE = jnp.bfloat16
+# Use float32 for numerically sensitive heads / losses.
+HEAD_DTYPE = jnp.float32
 
 
 def BatchNorm(x, training):
