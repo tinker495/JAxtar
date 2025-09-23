@@ -59,7 +59,7 @@ class HeuristicBase(nn.Module):
             )(x, training)
         if self.resblock_fn == PreActivationResBlock:
             x = self.norm_fn(x, training)
-        x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01), bias_init=nn.initializers.ones)(x)
+        x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01), bias_init=nn.initializers.constant(self.multiplier))(x)
         x = jax.nn.softplus(x)
         return x
 
