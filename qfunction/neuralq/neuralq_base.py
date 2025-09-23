@@ -35,6 +35,7 @@ class QModelBase(nn.Module):
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
     gamma: float = 0.98
+    multiplier: float = 100
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -66,12 +67,11 @@ class QModelBase(nn.Module):
 
     def reward_to_cost(self, reward: chex.Array) -> chex.Array:
         """Map multiplicative discounted reward estimates back to additive costs."""
-        reward = jnp.maximum(reward, 1e-9)
-        return jnp.log(reward) / np.log(self.gamma)
+        return jnp.log(reward / self.multiplier) / np.log(self.gamma)
 
     def cost_to_reward(self, cost: chex.Array) -> chex.Array:
         """Map additive cost targets to their discounted reward representation."""
-        return jnp.power(self.gamma, cost)
+        return jnp.power(self.gamma, cost) * self.multiplier
 
     def distance(self, x: chex.Array) -> chex.Array:
         transformed_x = self(x, training=False)
