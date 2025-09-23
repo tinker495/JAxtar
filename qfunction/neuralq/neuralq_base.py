@@ -66,6 +66,7 @@ class QModelBase(nn.Module):
 
     def reward_to_cost(self, reward: chex.Array) -> chex.Array:
         """Map multiplicative discounted reward estimates back to additive costs."""
+        reward = jnp.maximum(reward, 1e-9)
         return jnp.log(reward) / np.log(self.gamma)
 
     def cost_to_reward(self, cost: chex.Array) -> chex.Array:
