@@ -36,7 +36,7 @@ class HeuristicBase(nn.Module):
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
     gamma: float = 0.98
-    multiplier: float = 256
+    multiplier: float = 256 # for more precision
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -67,11 +67,21 @@ class HeuristicBase(nn.Module):
 
     def reward_to_cost(self, reward: chex.Array) -> chex.Array:
         """Convert discounted reward estimates back to additive costs."""
-        return jnp.log(reward / self.multiplier) / np.log(self.gamma)
+        reward = jnp.asarray(reward)
+        reward_dtype = jnp.result_type(reward.dtype, HEAD_DTYPE)
+        reward = reward.astype(reward_dtype)
+        multiplier = jnp.asarray(self.multiplier, dtype=reward_dtype)
+        gamma = jnp.asarray(self.gamma, dtype=reward_dtype)
+        return jnp.log(reward / multiplier) / jnp.log(gamma)
 
     def cost_to_reward(self, cost: chex.Array) -> chex.Array:
         """Convert additive cost targets into discounted reward equivalents."""
-        return jnp.power(self.gamma, cost) * self.multiplier
+        cost = jnp.asarray(cost)
+        cost_dtype = jnp.result_type(cost.dtype, HEAD_DTYPE)
+        cost = cost.astype(cost_dtype)
+        gamma = jnp.asarray(self.gamma, dtype=cost_dtype)
+        multiplier = jnp.asarray(self.multiplier, dtype=cost_dtype)
+        return jnp.power(gamma, cost) * multiplier
 
     def distance(self, x: chex.Array, training: bool = False) -> chex.Array:
         reward = self(x, training=training)
