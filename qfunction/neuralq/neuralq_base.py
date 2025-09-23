@@ -35,7 +35,7 @@ class QModelBase(nn.Module):
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
     gamma: float = 0.98
-    multiplier: float = 100
+    multiplier: float = 256
 
     @nn.compact
     def __call__(self, x, training=False):
