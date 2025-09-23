@@ -34,7 +34,7 @@ class HeuristicBase(nn.Module):
     activation: str = nn.relu
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
-    gamma: float = 0.99
+    gamma: float = 0.98
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -59,13 +59,12 @@ class HeuristicBase(nn.Module):
         if self.resblock_fn == PreActivationResBlock:
             x = self.norm_fn(x, training)
         x = nn.Dense(1, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01), bias_init=nn.initializers.ones)(x)
+        x = jax.nn.softplus(x)
         return x
 
     def reward_to_cost(self, reward: chex.Array) -> chex.Array:
         """Convert discounted reward estimates back to additive costs."""
-        reward = jnp.clip(reward, a_min=1e-12, a_max=1.0)
-        log_gamma = jnp.log(self.gamma)
-        return jnp.log(reward) / log_gamma
+        return jnp.log(reward) / np.log(self.gamma)
 
     def cost_to_reward(self, cost: chex.Array) -> chex.Array:
         """Convert additive cost targets into discounted reward equivalents."""

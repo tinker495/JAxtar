@@ -34,7 +34,7 @@ class QModelBase(nn.Module):
     norm_fn: callable = DEFAULT_NORM_FN
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
-    gamma: float = 0.99
+    gamma: float = 0.98
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -61,13 +61,12 @@ class QModelBase(nn.Module):
         x = nn.Dense(
             self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01), bias_init=nn.initializers.ones
         )(x)
+        x = jax.nn.softplus(x)
         return x
 
     def reward_to_cost(self, reward: chex.Array) -> chex.Array:
         """Map multiplicative discounted reward estimates back to additive costs."""
-        reward = jnp.clip(reward, a_min=1e-12, a_max=1.0)
-        log_gamma = jnp.log(self.gamma)
-        return jnp.log(reward) / log_gamma
+        return jnp.log(reward) / np.log(self.gamma)
 
     def cost_to_reward(self, cost: chex.Array) -> chex.Array:
         """Map additive cost targets to their discounted reward representation."""
