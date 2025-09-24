@@ -79,32 +79,32 @@ def create_comparison_summary_panel(combined_df: pd.DataFrame) -> Panel:
         # Heuristic metrics are stored per-run, not per-row. We need to get them from the config.
         # This requires a bit of a workaround since the config isn't directly passed here.
         # We assume the comparison report generation step will add these to the dataframe.
-        r_squared = group["heuristic_metrics.r_squared"].iloc[0]
-        ccc = group["heuristic_metrics.ccc"].iloc[0]
-        r_squared_str = f"{r_squared:.3f}"
-        ccc_str = f"{ccc:.3f}"
+        r_squared = None
+        if "heuristic_metrics.r_squared" in group.columns:
+            r_squared = group["heuristic_metrics.r_squared"].iloc[0]
+        ccc = None
+        if "heuristic_metrics.ccc" in group.columns:
+            ccc = group["heuristic_metrics.ccc"].iloc[0]
+
+        r_squared_str = f"{r_squared:.3f}" if pd.notna(r_squared) else "N/A"
+        ccc_str = f"{ccc:.3f}" if pd.notna(ccc) else "N/A"
 
         if not solved_group.empty:
-            avg_time = solved_group["search_time_s"].mean()
-            avg_nodes = solved_group["nodes_generated"].mean()
-            avg_path_cost = solved_group["path_cost"].mean()
-            summary_table.add_row(
-                label,
-                f"{success_rate:.2f}% ({num_solved}/{num_puzzles})",
-                f"{avg_time:.3f} s",
-                human_format(avg_nodes),
-                f"{avg_path_cost:.2f}",
-                r_squared_str,
-                ccc_str,
-            )
+            avg_time_str = f"{solved_group['search_time_s'].mean():.3f} s"
+            avg_nodes_str = human_format(solved_group["nodes_generated"].mean())
+            avg_path_cost_str = f"{solved_group['path_cost'].mean():.2f}"
         else:
-            summary_table.add_row(
-                label,
-                f"{success_rate:.2f}% ({num_solved}/{num_puzzles})",
-                "N/A",
-                "N/A",
-                "N/A",
-                "N/A",
-                "N/A",
-            )
+            avg_time_str = "N/A"
+            avg_nodes_str = "N/A"
+            avg_path_cost_str = "N/A"
+
+        summary_table.add_row(
+            label,
+            f"{success_rate:.2f}% ({num_solved}/{num_puzzles})",
+            avg_time_str,
+            avg_nodes_str,
+            avg_path_cost_str,
+            r_squared_str,
+            ccc_str,
+        )
     return Panel(summary_table, border_style="green", expand=False)
