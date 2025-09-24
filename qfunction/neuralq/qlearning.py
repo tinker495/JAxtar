@@ -347,6 +347,8 @@ def _get_datasets_with_policy(
         # Action entropy per state (measure of policy sharpness)
         log_pi_probs = log_pi(probs)
         entropy = -jnp.sum(probs * log_pi_probs, axis=1)
+        if use_munchausen:
+            cost = cost - 0.1 * jnp.clip(temperature * log_pi_probs, a_min=-1.0)
         # Maximum entropy per state (approx by number of valid actions)
         action_size = q_values.shape[1]
         max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=probs.dtype), 1.0))
@@ -377,9 +379,6 @@ def _get_datasets_with_policy(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
 
-        if use_munchausen:
-            neighbor_cost = neighbor_cost - 0.1 * jnp.clip(temperature * log_pi_probs, a_min=-1.0)
-
         # Preprocess the next states (s') for neural network input.
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
@@ -390,13 +389,14 @@ def _get_datasets_with_policy(
         q = q_model.apply(
             target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
+        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
         q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
         # Calculate the target Q-value using the Bellman Optimality Equation:
         # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
         # This represents the optimal cost-to-go from s'.
-        q_sum_cost = q + neighbor_cost  # [batch_size, action_size]
+        q_sum_cost = q + cost  # [batch_size, action_size]
         # Clamp to ensure non-negative targets (costs should be non-negative)
-        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        q_sum_cost = jnp.maximum(q_sum_cost, cost)
         # Target entropy (confidence of the backup) over next-state distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
         scaled_next = -q_sum_cost / safe_temperature
