@@ -348,7 +348,7 @@ def _get_datasets_with_policy(
         log_pi_probs = log_pi(probs)
         entropy = -jnp.sum(probs * log_pi_probs, axis=1)
         if use_munchausen:
-            cost = cost - 0.1 * jnp.clip(temperature * log_pi_probs, a_min=-1.0)
+            cost = cost - 0.1 * jnp.clip(temperature * log_pi_probs, a_min=-3.0)
         # Maximum entropy per state (approx by number of valid actions)
         action_size = q_values.shape[1]
         max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=probs.dtype), 1.0))
