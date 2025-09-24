@@ -378,7 +378,7 @@ def _get_datasets_with_policy(
         )
 
         if use_munchausen:
-            neighbor_cost = neighbor_cost - 0.1 * jnp.maximum(temperature * log_pi_probs, -1.0)
+            neighbor_cost = neighbor_cost - 0.1 * jnp.clip(temperature * log_pi_probs, a_min=-1.0)
 
         # Preprocess the next states (s') for neural network input.
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
@@ -408,7 +408,7 @@ def _get_datasets_with_policy(
             jnp.logical_or(solved, selected_neighbors_solved), 0.0, target_entropy
         )
         if use_munchausen:
-            target_q = jnp.sum(next_probs * (q_sum_cost + temperature * log_pi_next_probs))
+            target_q = jnp.sum(next_probs * (q_sum_cost + temperature * log_pi_next_probs), axis=1)
         else:
             target_q = jnp.min(q_sum_cost, axis=1)
 
