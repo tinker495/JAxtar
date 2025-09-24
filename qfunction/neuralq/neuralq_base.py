@@ -9,6 +9,7 @@ from puxle import Puzzle
 
 from neural_util.modules import (
     DEFAULT_NORM_FN,
+    HEAD_DTYPE,
     DTYPE,
     PreActivationResBlock,
     ResBlock,
@@ -57,8 +58,9 @@ class QModelBase(nn.Module):
             )(x, training)
         if self.resblock_fn == PreActivationResBlock:
             x = self.norm_fn(x, training)
+        x = x.astype(HEAD_DTYPE)
         x = nn.Dense(
-            self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
+            self.action_size, dtype=HEAD_DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
         return x
 
