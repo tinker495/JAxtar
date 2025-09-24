@@ -214,6 +214,7 @@ def _get_datasets_with_policy(
         )
         # Get the Q-value Q(s,a) for the action 'a' selected by the policy. This is the value we will train.
         selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
+        selected_cost = jnp.take_along_axis(cost, actions[:, jnp.newaxis], axis=1)
 
         batch_size = actions.shape[0]
         # Determine the next state (s') by applying the selected action 'a'.
@@ -245,8 +246,8 @@ def _get_datasets_with_policy(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
         q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
-        q_sum_cost = q + cost  # [batch_size, action_size]
-        q_sum_cost = jnp.maximum(q_sum_cost, cost)
+        q_sum_cost = q + selected_cost  # [batch_size, action_size]
+        q_sum_cost = jnp.maximum(q_sum_cost, selected_cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
         # Base case: If the next state (s') is the solution, the future cost is 0.
