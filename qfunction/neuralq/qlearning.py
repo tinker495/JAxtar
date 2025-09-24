@@ -378,7 +378,7 @@ def _get_datasets_with_policy(
         )
 
         if use_munchausen:
-            neighbor_cost = neighbor_cost - 0.1 * temperature * log_pi_probs
+            neighbor_cost = neighbor_cost - 0.1 * jnp.maximum(temperature * log_pi_probs, -1.0)
 
         # Preprocess the next states (s') for neural network input.
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
