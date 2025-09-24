@@ -381,13 +381,14 @@ def _get_datasets_with_policy(
         q = q_model.apply(
             target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
+        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
         q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
         # Calculate the target Q-value using the Bellman Optimality Equation:
         # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
         # This represents the optimal cost-to-go from s'.
-        q_sum_cost = q + neighbor_cost  # [batch_size, action_size]
+        q_sum_cost = q + cost  # [batch_size, action_size]
         # Clamp to ensure non-negative targets (costs should be non-negative)
-        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        q_sum_cost = jnp.maximum(q_sum_cost, cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
         # Target entropy (confidence of the backup) over next-state distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
