@@ -518,10 +518,11 @@ def _get_datasets_with_trajectory(
         q = q_model.apply(
             target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
+        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
 
-        q_sum_cost = q + neighbor_cost
+        q_sum_cost = q + cost
         # Clamp to ensure non-negative targets (costs should be non-negative)
-        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        q_sum_cost = jnp.maximum(q_sum_cost, cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
         target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
