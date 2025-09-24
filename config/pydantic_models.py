@@ -117,6 +117,7 @@ class DistTrainOptions(BaseModel):
     using_priority_sampling: bool = False
     use_target_confidence_weighting: bool = False
     use_target_sharpness_weighting: bool = False
+    use_munchausen: bool = False
     target_sharpness_alpha: float = 1.0
     per_alpha: float = 0.6
     per_beta: float = 0.4

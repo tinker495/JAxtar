@@ -297,6 +297,10 @@ def boltzmann_action_selection(
     return probs
 
 
+def log_pi(probs: chex.Array) -> chex.Array:
+    return jnp.log(jnp.clip(probs, a_min=1e-12))
+
+
 def _get_datasets_with_policy(
     puzzle: Puzzle,
     preproc_fn: Callable,
@@ -307,6 +311,7 @@ def _get_datasets_with_policy(
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
     temperature: float = 1.0 / 3.0,
+    use_munchausen: bool = False,
     td_error_clip: Optional[float] = None,
 ):
     solve_configs = shuffled_path["solve_configs"]
@@ -340,7 +345,8 @@ def _get_datasets_with_policy(
         # Epsilon-greedy exploration is also mixed in.
         probs = boltzmann_action_selection(q_sum_cost, temperature=temperature)
         # Action entropy per state (measure of policy sharpness)
-        entropy = -jnp.sum(probs * jnp.log(jnp.clip(probs, a_min=1e-12)), axis=1)
+        log_pi_probs = log_pi(probs)
+        entropy = -jnp.sum(probs * log_pi_probs, axis=1)
         # Maximum entropy per state (approx by number of valid actions)
         action_size = q_values.shape[1]
         max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=probs.dtype), 1.0))
@@ -371,6 +377,9 @@ def _get_datasets_with_policy(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
 
+        if use_munchausen:
+            neighbor_cost = neighbor_cost - 0.1 * temperature * log_pi_probs
+
         # Preprocess the next states (s') for neural network input.
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
 
@@ -388,20 +397,23 @@ def _get_datasets_with_policy(
         q_sum_cost = q + neighbor_cost  # [batch_size, action_size]
         # Clamp to ensure non-negative targets (costs should be non-negative)
         q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
-        min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
         # Target entropy (confidence of the backup) over next-state distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
         scaled_next = -q_sum_cost / safe_temperature
         next_probs = jax.nn.softmax(scaled_next, axis=1)
-        next_probs = next_probs / (jnp.sum(next_probs, axis=1, keepdims=True) + 1e-8)
-        target_entropy = -jnp.sum(next_probs * jnp.log(jnp.clip(next_probs, a_min=1e-12)), axis=1)
+        log_pi_next_probs = log_pi(next_probs)
+        target_entropy = -jnp.sum(next_probs * log_pi_next_probs, axis=1)
         # For solved states, entropy should be near zero (deterministic target)
         target_entropy = jnp.where(
             jnp.logical_or(solved, selected_neighbors_solved), 0.0, target_entropy
         )
+        if use_munchausen:
+            target_q = jnp.sum(next_probs * (q_sum_cost + temperature * log_pi_next_probs))
+        else:
+            target_q = jnp.min(q_sum_cost, axis=1)
 
         # Base case: If the next state (s') is the solution, the future cost is 0.
-        target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
+        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
         # If the current state (s) was already solved, its Q-value should also be 0.
         target_q = jnp.where(solved, 0.0, target_q)
 
@@ -573,6 +585,7 @@ def get_qlearning_dataset_builder(
     with_policy: bool = False,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
+    use_munchausen: bool = False,
     td_error_clip: Optional[float] = None,
 ):
     if using_hindsight_target:
@@ -623,6 +636,7 @@ def get_qlearning_dataset_builder(
                 q_model,
                 dataset_minibatch_size,
                 temperature=temperature,
+                use_munchausen=use_munchausen,
                 td_error_clip=td_error_clip,
             )
         )
@@ -634,6 +648,7 @@ def get_qlearning_dataset_builder(
                 preproc_fn,
                 q_model,
                 dataset_minibatch_size,
+                use_munchausen=use_munchausen,
                 td_error_clip=td_error_clip,
             )
         )
