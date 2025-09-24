@@ -116,6 +116,8 @@ class DistTrainOptions(BaseModel):
     using_triangular_sampling: bool = False
     using_priority_sampling: bool = False
     use_target_confidence_weighting: bool = False
+    use_target_sharpness_weighting: bool = False
+    target_sharpness_alpha: float = 1.0
     per_alpha: float = 0.6
     per_beta: float = 0.4
     per_epsilon: float = 1e-6
@@ -134,6 +136,9 @@ class DistTrainOptions(BaseModel):
     logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
     loss: str = Field("mse", description="Training loss: 'mse', 'huber', or 'logcosh'.")
     huber_delta: float = Field(0.1, description="Delta parameter for Huber loss.")
+    td_error_clip: Optional[float] = Field(
+        None, description="Absolute clip value applied to TD-error."
+    )
 
 
 class DistQFunctionOptions(BaseModel):

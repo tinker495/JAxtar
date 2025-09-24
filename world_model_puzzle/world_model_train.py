@@ -6,6 +6,8 @@ import jax
 import jax.numpy as jnp
 import optax
 
+from train_util.util import build_new_params_from_updates
+
 from .world_model_puzzle_base import WorldModelPuzzleBase
 
 
@@ -36,7 +38,7 @@ def world_model_train_builder(
             next_logits_pred,
             rounded_next_latents_pred,
         ), variable_updates = train_info_fn(params, data, next_data, action, training=True)
-        new_params = {"params": params["params"], "batch_stats": variable_updates["batch_stats"]}
+        new_params = build_new_params_from_updates(params, variable_updates)
         data_scaled = (data / 255.0) * 2 - 1
         next_data_scaled = (next_data / 255.0) * 2 - 1
         AE_loss = jnp.mean(
@@ -72,9 +74,7 @@ def world_model_train_builder(
         opt_state: optax.OptState,
         epoch: int,
     ):
-        """
-        Q-learning is a heuristic for the sliding puzzle problem.
-        """
+        """Perform one training epoch for the world-model using minibatched rollouts."""
         states, next_states, actions = dataset
         data_size = actions.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
@@ -159,7 +159,7 @@ def world_model_eval_builder(
                 _,
                 _,
                 rounded_next_latents_pred,
-            ), _ = train_info_fn(params, states, next_states, actions, training=False)
+            ) = train_info_fn(params, states, next_states, actions, training=False)
             accuracy = accuracy_fn(rounded_next_latents, rounded_next_latents_pred)
             return None, accuracy
 
