@@ -244,8 +244,9 @@ def _get_datasets_with_policy(
         (_, q), _ = q_model.apply(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        q_sum_cost = q + neighbor_cost  # [batch_size, action_size]
-        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
+        q_sum_cost = q + cost  # [batch_size, action_size]
+        q_sum_cost = jnp.maximum(q_sum_cost, cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
         # Base case: If the next state (s') is the solution, the future cost is 0.
@@ -332,8 +333,9 @@ def _get_datasets_with_trajectory(
         (_, q), _ = q_model.apply(
             target_q_params, preproc_neighbors, training=False, mutable=["batch_stats"]
         )  # [minibatch_size, action_shape]
-        q_sum_cost = q + neighbor_cost
-        q_sum_cost = jnp.maximum(q_sum_cost, neighbor_cost)
+        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
+        q_sum_cost = q + cost  # [batch_size, action_size]
+        q_sum_cost = jnp.maximum(q_sum_cost, cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
         target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
