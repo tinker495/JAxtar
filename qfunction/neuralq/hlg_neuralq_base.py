@@ -5,7 +5,7 @@ import optax
 from flax import linen as nn
 from puxle import Puzzle
 
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ResBlock, swiglu_fn
+from neural_util.modules import DEFAULT_NORM_FN, DTYPE, HEAD_DTYPE, ResBlock, swiglu_fn
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -68,7 +68,7 @@ class HLGQModelBase(nn.Module):
         ]
         self.output_layer = nn.Dense(
             self.action_size * self.categorial_n,
-            dtype=DTYPE,
+            dtype=HEAD_DTYPE,
             kernel_init=nn.initializers.normal(stddev=0.01),
         )
 
@@ -76,6 +76,7 @@ class HLGQModelBase(nn.Module):
         x = self.input_layer(x, training)
         for res_block in self.res_blocks:
             x = res_block(x, training)
+        x = x.astype(HEAD_DTYPE)
         x = self.output_layer(x)
         logits = x.reshape(
             x.shape[0], self.action_size, self.categorial_n
