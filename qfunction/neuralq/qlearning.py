@@ -347,8 +347,6 @@ def _get_datasets_with_policy(
         # Action entropy per state (measure of policy sharpness)
         log_pi_probs = log_pi(probs)
         entropy = -jnp.sum(probs * log_pi_probs, axis=1)
-        if use_munchausen:
-            cost = cost - 0.9 * jnp.clip(temperature * log_pi_probs, a_min=-3.0)
         # Maximum entropy per state (approx by number of valid actions)
         action_size = q_values.shape[1]
         max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=probs.dtype), 1.0))
@@ -359,8 +357,6 @@ def _get_datasets_with_policy(
         )
         # Get the Q-value Q(s,a) for the action 'a' selected by the policy. This is the value we will train.
         selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
-        selected_cost = jnp.take_along_axis(cost, actions[:, jnp.newaxis], axis=1)
-
         batch_size = actions.shape[0]
         # Determine the next state (s') by applying the selected action 'a'.
         selected_neighbors = jax.tree_util.tree_map(
@@ -390,14 +386,16 @@ def _get_datasets_with_policy(
         q = q_model.apply(
             target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
-        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
         q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
-        # Calculate the target Q-value using the Bellman Optimality Equation:
-        # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
-        # This represents the optimal cost-to-go from s'.
-        q_sum_cost = q + selected_cost  # [batch_size, action_size]
-        # Clamp to ensure non-negative targets (costs should be non-negative)
-        q_sum_cost = jnp.maximum(q_sum_cost, selected_cost)
+        # Invalidate actions that are not reachable from the next state.
+        valid_neighbor_cost = jnp.where(jnp.isfinite(neighbor_cost), neighbor_cost, jnp.inf)
+        q = jnp.where(jnp.isfinite(valid_neighbor_cost), q, jnp.inf)
+        # Calculate the target Q-value using the constrained Bellman equation:
+        # target_Q(s, a) = min_{a'} [ c(s', a') + Q_target(s', a') ].
+        # The immediate cost of (s, a) is excluded by construction (J(s, a) = J(N(s, a))).
+        q_sum_cost = valid_neighbor_cost + q  # [batch_size, action_size]
+        # Clamp to ensure non-negative targets while respecting the next-state costs.
+        q_sum_cost = jnp.maximum(q_sum_cost, valid_neighbor_cost)
         # Target entropy (confidence of the backup) over next-state distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
         scaled_next = -q_sum_cost / safe_temperature
@@ -409,7 +407,11 @@ def _get_datasets_with_policy(
             jnp.logical_or(solved, selected_neighbors_solved), 0.0, target_entropy
         )
         if use_munchausen:
+            selected_log_pi_probs = jnp.take_along_axis(
+                log_pi_probs, actions[:, jnp.newaxis], axis=1
+            ).squeeze(1)
             target_q = jnp.min(q_sum_cost + temperature * log_pi_next_probs, axis=1)
+            target_q = target_q - 0.9 * jnp.clip(temperature * selected_log_pi_probs, a_min=-3.0)
         else:
             target_q = jnp.min(q_sum_cost, axis=1)
 
@@ -530,10 +532,13 @@ def _get_datasets_with_trajectory(
         q = q_model.apply(
             target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
-        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
-        q_sum_cost = q + cost
-        # Clamp to ensure non-negative targets (costs should be non-negative)
-        q_sum_cost = jnp.maximum(q_sum_cost, cost)
+        q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
+        valid_neighbor_cost = jnp.where(jnp.isfinite(neighbor_cost), neighbor_cost, jnp.inf)
+        q = jnp.where(jnp.isfinite(valid_neighbor_cost), q, jnp.inf)
+
+        q_sum_cost = valid_neighbor_cost + q
+        # Clamp to ensure non-negative targets relative to next-state costs
+        q_sum_cost = jnp.maximum(q_sum_cost, valid_neighbor_cost)
         min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
         target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
