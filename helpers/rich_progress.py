@@ -7,6 +7,7 @@ real-time progress display with enhanced metrics visualization.
 
 import threading
 import time
+from contextlib import nullcontext
 from typing import Any, Dict, Iterable, Optional
 
 from rich.console import Console
@@ -393,6 +394,15 @@ class RichProgressBar:
                 # Force refresh by updating the display
                 if refresh:
                     self._refresh_display()
+
+    def pause(self):
+        """Temporarily pause the live display, returning a context manager."""
+        if self.disable or self.live is None:
+            return nullcontext()
+        pause_method = getattr(self.live, "pause", None)
+        if pause_method is None:
+            return nullcontext()
+        return pause_method()
 
     def close(self):
         """Clean up the progress bar."""
