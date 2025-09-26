@@ -205,9 +205,7 @@ def davi(
             heuristic.save_model(path=backup_path)
             # Log model as artifact
             if eval_options.num_eval > 0:
-                light_eval_options = eval_options.model_copy(
-                    update={"num_eval": min(20, eval_options.num_eval)}
-                )
+                light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pbar.pause():
                     _run_evaluation_sweep(
@@ -232,19 +230,20 @@ def davi(
     # Evaluation
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
-        _run_evaluation_sweep(
-            puzzle=puzzle,
-            puzzle_name=puzzle_name,
-            search_model=heuristic,
-            search_model_name="heuristic",
-            search_builder_fn=astar_builder,
-            eval_options=eval_options,
-            puzzle_opts=puzzle_opts,
-            output_dir=eval_run_dir,
-            logger=logger,
-            step=steps,
-            **kwargs,
-        )
+        with pbar.pause():
+            _run_evaluation_sweep(
+                puzzle=puzzle,
+                puzzle_name=puzzle_name,
+                search_model=heuristic,
+                search_model_name="heuristic",
+                search_builder_fn=astar_builder,
+                eval_options=eval_options,
+                puzzle_opts=puzzle_opts,
+                output_dir=eval_run_dir,
+                logger=logger,
+                step=steps,
+                **kwargs,
+            )
 
     logger.close()
 
@@ -434,9 +433,7 @@ def qlearning(
             qfunction.save_model(path=backup_path)
             # Log model as artifact
             if eval_options.num_eval > 0:
-                light_eval_options = eval_options.model_copy(
-                    update={"num_eval": min(20, eval_options.num_eval)}
-                )
+                light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pbar.pause():
                     _run_evaluation_sweep(
@@ -461,18 +458,19 @@ def qlearning(
     # Evaluation
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
-        _run_evaluation_sweep(
-            puzzle=puzzle,
-            puzzle_name=puzzle_name,
-            search_model=qfunction,
-            search_model_name="qfunction",
-            search_builder_fn=qstar_builder,
-            eval_options=eval_options,
-            puzzle_opts=puzzle_opts,
-            output_dir=eval_run_dir,
-            logger=logger,
-            step=steps,
-            **kwargs,
-        )
+        with pbar.pause():
+            _run_evaluation_sweep(
+                puzzle=puzzle,
+                puzzle_name=puzzle_name,
+                search_model=qfunction,
+                search_model_name="qfunction",
+                search_builder_fn=qstar_builder,
+                eval_options=eval_options,
+                puzzle_opts=puzzle_opts,
+                output_dir=eval_run_dir,
+                logger=logger,
+                step=steps,
+                **kwargs,
+            )
 
     logger.close()
