@@ -87,7 +87,7 @@ class EvalOptions(BaseModel):
 
     def light_eval(self, max_eval: int = 20) -> "EvalOptions":
         capped_eval = min(max_eval, self.num_eval)
-        return self.model_copy(update={"num_eval": capped_eval, "cost_weight": self.cost_weight[0], "pop_ratio": self.pop_ratio[0]})
+        return self.model_copy(update={"num_eval": capped_eval, "cost_weight": [self.cost_weight[0]], "pop_ratio": [self.pop_ratio[0]]})
 
     @property
     def light_eval_options(self) -> "EvalOptions":
