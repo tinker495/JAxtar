@@ -104,7 +104,7 @@ class EvaluationRunner:
                 run_dir = main_run_dir / run_name
                 sub_run_dirs.append(str(run_dir))
 
-            am = ArtifactManager(run_dir, self.logger, self.step)
+            am = ArtifactManager(run_dir, self.logger, self.step, log_namespace=run_name)
 
             current_eval_opts = self.eval_options.copy(
                 update={"pop_ratio": pr, "cost_weight": cw, "batch_size": bs}
