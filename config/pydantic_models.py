@@ -121,6 +121,7 @@ class DistTrainOptions(BaseModel):
     update_interval: int = 32
     force_update_interval: int = 2048
     use_soft_update: bool = False
+    use_double_dqn: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
     using_priority_sampling: bool = False

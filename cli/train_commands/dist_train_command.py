@@ -334,6 +334,7 @@ def qlearning(
         with_policy=with_policy,
         temperature=train_options.temperature,
         td_error_clip=train_options.td_error_clip,
+        use_double_dqn=train_options.use_double_dqn,
     )
 
     pbar = trange(steps)

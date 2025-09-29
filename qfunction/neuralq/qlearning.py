@@ -313,6 +313,7 @@ def _get_datasets_with_policy(
     temperature: float = 1.0 / 3.0,
     use_munchausen: bool = False,
     td_error_clip: Optional[float] = None,
+    use_double_dqn: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -396,6 +397,7 @@ def _get_datasets_with_policy(
         q_sum_cost = valid_neighbor_cost + q  # [batch_size, action_size]
         # Clamp to ensure non-negative targets while respecting the next-state costs.
         q_sum_cost = jnp.maximum(q_sum_cost, valid_neighbor_cost)
+        
         # Target entropy (confidence of the backup) over next-state distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
         scaled_next = -q_sum_cost / safe_temperature
@@ -406,14 +408,46 @@ def _get_datasets_with_policy(
         target_entropy = jnp.where(
             jnp.logical_or(solved, selected_neighbors_solved), 0.0, target_entropy
         )
-        if use_munchausen:
-            selected_log_pi_probs = jnp.take_along_axis(
-                log_pi_probs, actions[:, jnp.newaxis], axis=1
-            ).squeeze(1)
-            target_q = jnp.min(q_sum_cost + temperature * log_pi_next_probs, axis=1)
-            target_q = target_q - 0.9 * jnp.clip(temperature * selected_log_pi_probs, a_min=-3.0)
+        
+        # Integrated Double DQN + Munchausen DQN target calculation
+        if use_double_dqn:
+            # Double DQN: Use online network to select actions, target network to evaluate
+            q_online = q_model.apply(q_params, preproc_neighbors, training=False)
+            q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
+            q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
+            online_q_sum_cost = valid_neighbor_cost + q_online
+            online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
+            best_actions = jnp.argmin(online_q_sum_cost, axis=1)
+            
+            if use_munchausen:
+                # Munchausen + Double DQN: Use online network for action selection, 
+                # but apply Munchausen entropy regularization to the target calculation
+                munchausen_q_sum_cost = q_sum_cost + temperature * log_pi_next_probs
+                target_q = jnp.take_along_axis(
+                    munchausen_q_sum_cost, best_actions[:, jnp.newaxis], axis=1
+                )[:, 0]
+                # Add Munchausen regularization term
+                selected_log_pi_probs = jnp.take_along_axis(
+                    log_pi_probs, actions[:, jnp.newaxis], axis=1
+                ).squeeze(1)
+                target_q = target_q - 0.9 * jnp.clip(temperature * selected_log_pi_probs, a_min=-3.0)
+            else:
+                # Pure Double DQN: Use online network for action selection, target network for evaluation
+                target_q = jnp.take_along_axis(
+                    q_sum_cost, best_actions[:, jnp.newaxis], axis=1
+                )[:, 0]
         else:
-            target_q = jnp.min(q_sum_cost, axis=1)
+            if use_munchausen:
+                # Pure Munchausen DQN: Standard action selection with entropy regularization
+                target_q = jnp.min(q_sum_cost + temperature * log_pi_next_probs, axis=1)
+                # Add Munchausen regularization term
+                selected_log_pi_probs = jnp.take_along_axis(
+                    log_pi_probs, actions[:, jnp.newaxis], axis=1
+                ).squeeze(1)
+                target_q = target_q - 0.9 * jnp.clip(temperature * selected_log_pi_probs, a_min=-3.0)
+            else:
+                # Standard DQN: Simple min over all actions
+                target_q = jnp.min(q_sum_cost, axis=1)
 
         # Base case: If the next state (s') is the solution, the future cost is 0.
         target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
@@ -491,6 +525,7 @@ def _get_datasets_with_trajectory(
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
     td_error_clip: Optional[float] = None,
+    use_double_dqn: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -539,9 +574,23 @@ def _get_datasets_with_trajectory(
         q_sum_cost = valid_neighbor_cost + q
         # Clamp to ensure non-negative targets relative to next-state costs
         q_sum_cost = jnp.maximum(q_sum_cost, valid_neighbor_cost)
-        min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+        # Integrated Double DQN target calculation for trajectory-based learning
+        if use_double_dqn:
+            # Double DQN: Use online network to select actions, target network to evaluate
+            q_online = q_model.apply(q_params, preproc_neighbors, training=False)
+            q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
+            q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
+            online_q_sum_cost = valid_neighbor_cost + q_online
+            online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
+            best_actions = jnp.argmin(online_q_sum_cost, axis=1)
+            target_q = jnp.take_along_axis(
+                q_sum_cost, best_actions[:, jnp.newaxis], axis=1
+            )[:, 0]
+        else:
+            # Standard DQN: Simple min over all actions
+            target_q = jnp.min(q_sum_cost, axis=1)
 
-        target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
+        target_q = jnp.where(selected_neighbors_solved, 0.0, target_q)
         target_q = jnp.where(solved, 0.0, target_q)
 
         diff = jnp.zeros_like(target_q)
@@ -593,6 +642,7 @@ def get_qlearning_dataset_builder(
     temperature: float = 1.0 / 3.0,
     use_munchausen: bool = False,
     td_error_clip: Optional[float] = None,
+    use_double_dqn: bool = False,
 ):
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
@@ -644,6 +694,7 @@ def get_qlearning_dataset_builder(
                 temperature=temperature,
                 use_munchausen=use_munchausen,
                 td_error_clip=td_error_clip,
+                use_double_dqn=use_double_dqn,
             )
         )
     else:
@@ -656,6 +707,7 @@ def get_qlearning_dataset_builder(
                 dataset_minibatch_size,
                 use_munchausen=use_munchausen,
                 td_error_clip=td_error_clip,
+                use_double_dqn=use_double_dqn,
             )
         )
 
