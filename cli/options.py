@@ -400,6 +400,13 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-ui", "--update_interval", type=int, default=None)
     @click.option("-fui", "--force_update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
+    @click.option(
+        "-dd",
+        "--use_double_dqn",
+        is_flag=True,
+        default=None,
+        help="Enable Double DQN target computation.",
+    )
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
     @click.option("-per", "--using_priority_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
