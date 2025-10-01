@@ -318,6 +318,7 @@ def qlearning(
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
         replay_ratio=train_options.replay_ratio,
+        td_error_clip=train_options.td_error_clip,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
