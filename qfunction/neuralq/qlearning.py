@@ -555,7 +555,13 @@ def _get_datasets_with_trajectory(
         target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
         target_q = jnp.where(solved, 0.0, target_q)
 
-        diff = jnp.zeros_like(target_q)
+        # Calculate current Q-values to compute TD error
+        preproc = jax.vmap(preproc_fn)(solve_configs, states)
+        q_values = q_model.apply(q_params, preproc, training=False)
+        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
+        selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
+        
+        diff = target_q - selected_q
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)

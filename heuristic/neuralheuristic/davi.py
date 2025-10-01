@@ -78,9 +78,7 @@ def davi_builder(
 
         if using_priority_sampling:
             diff = dataset["diff"]
-            if td_error_clip is not None and td_error_clip > 0:
-                clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
-                diff = jnp.clip(diff, -clip_val, clip_val)
+            # diff is already clipped in _get_datasets if td_error_clip is enabled
             # Sanitize TD errors to avoid NaN/Inf poisoning
             diff = jnp.nan_to_num(diff, nan=0.0, posinf=1e6, neginf=-1e6)
 
