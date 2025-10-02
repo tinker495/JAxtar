@@ -85,6 +85,15 @@ class EvalOptions(BaseModel):
         return self.max_node_size // batch_size * batch_size
 
 
+    def light_eval(self, max_eval: int = 20) -> "EvalOptions":
+        capped_eval = min(max_eval, self.num_eval)
+        return self.model_copy(update={"num_eval": capped_eval, "cost_weight": [self.cost_weight[0]], "pop_ratio": [self.pop_ratio[0]]})
+
+    @property
+    def light_eval_options(self) -> "EvalOptions":
+        return self.light_eval()
+
+
 class VisualizeOptions(BaseModel):
     visualize_terminal: bool = Field(False, description="Visualize path in terminal.")
     visualize_imgs: bool = False
@@ -112,10 +121,13 @@ class DistTrainOptions(BaseModel):
     update_interval: int = 32
     force_update_interval: int = 2048
     use_soft_update: bool = False
+    use_double_dqn: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
     using_priority_sampling: bool = False
     use_target_confidence_weighting: bool = False
+    use_target_sharpness_weighting: bool = False
+    target_sharpness_alpha: float = 1.0
     per_alpha: float = 0.6
     per_beta: float = 0.4
     per_epsilon: float = 1e-6
@@ -134,6 +146,9 @@ class DistTrainOptions(BaseModel):
     logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
     loss: str = Field("mse", description="Training loss: 'mse', 'huber', or 'logcosh'.")
     huber_delta: float = Field(0.1, description="Delta parameter for Huber loss.")
+    td_error_clip: Optional[float] = Field(
+        None, description="Absolute clip value applied to TD-error."
+    )
 
 
 class DistQFunctionOptions(BaseModel):

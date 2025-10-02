@@ -104,7 +104,7 @@ class EvaluationRunner:
                 run_dir = main_run_dir / run_name
                 sub_run_dirs.append(str(run_dir))
 
-            am = ArtifactManager(run_dir, self.logger, self.step)
+            am = ArtifactManager(run_dir, self.logger, self.step, log_namespace=run_name)
 
             current_eval_opts = self.eval_options.copy(
                 update={"pop_ratio": pr, "cost_weight": cw, "batch_size": bs}
@@ -153,6 +153,10 @@ class EvaluationRunner:
             am.save_path_states(results)
 
             solved_df = pd.DataFrame([r for r in results if r["solved"]])
+            # Log final success rate based on results
+            total = len(results)
+            final_success_rate = (len(solved_df) / total) * 100 if total > 0 else 0.0
+            am.log_scalar("success_rate", final_success_rate)
             if not is_sweep:
                 self.console.print(create_summary_panel(results, heuristic_metrics))
 

@@ -107,6 +107,8 @@ def davi(
         heuristic.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
+        target_sharpness_alpha=train_options.target_sharpness_alpha,
         using_priority_sampling=train_options.using_priority_sampling,
         per_alpha=train_options.per_alpha,
         per_beta=train_options.per_beta,
@@ -114,6 +116,7 @@ def davi(
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
         replay_ratio=train_options.replay_ratio,
+        td_error_clip=train_options.td_error_clip,
     )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -125,6 +128,8 @@ def davi(
         train_options.using_hindsight_target,
         train_options.using_triangular_sampling,
         n_devices=n_devices,
+        temperature=train_options.temperature,
+        td_error_clip=train_options.td_error_clip,
     )
 
     pbar = trange(steps)
@@ -136,6 +141,9 @@ def davi(
         dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
         target_heuristic = dataset["target_heuristic"]
         mean_target_heuristic = jnp.mean(target_heuristic)
+        mean_target_entropy = None
+        if "target_entropy" in dataset:
+            mean_target_entropy = jnp.mean(dataset["target_entropy"])
 
         (
             heuristic_params,
@@ -162,9 +170,13 @@ def davi(
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if mean_target_entropy is not None:
+            logger.log_scalar("Metrics/Mean Target Entropy", mean_target_entropy, i)
         if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
+            if "target_entropy" in dataset:
+                logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
 
         target_updated = False
         if train_options.use_soft_update:
@@ -204,7 +216,23 @@ def davi(
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
             # Log model as artifact
-            logger.log_artifact(backup_path, f"heuristic_step_{i}", "model")
+            if eval_options.num_eval > 0:
+                light_eval_options = eval_options.light_eval_options
+                eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
+                with pbar.pause():
+                    _run_evaluation_sweep(
+                        puzzle=puzzle,
+                        puzzle_name=puzzle_name,
+                        search_model=heuristic,
+                        search_model_name="heuristic",
+                        search_builder_fn=astar_builder,
+                        eval_options=light_eval_options,
+                        puzzle_opts=puzzle_opts,
+                        output_dir=eval_run_dir,
+                        logger=logger,
+                        step=i,
+                        **kwargs,
+                    )
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
@@ -214,19 +242,20 @@ def davi(
     # Evaluation
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
-        _run_evaluation_sweep(
-            puzzle=puzzle,
-            puzzle_name=puzzle_name,
-            search_model=heuristic,
-            search_model_name="heuristic",
-            search_builder_fn=astar_builder,
-            eval_options=eval_options,
-            puzzle_opts=puzzle_opts,
-            output_dir=eval_run_dir,
-            logger=logger,
-            step=steps,
-            **kwargs,
-        )
+        with pbar.pause():
+            _run_evaluation_sweep(
+                puzzle=puzzle,
+                puzzle_name=puzzle_name,
+                search_model=heuristic,
+                search_model_name="heuristic",
+                search_builder_fn=astar_builder,
+                eval_options=eval_options,
+                puzzle_opts=puzzle_opts,
+                output_dir=eval_run_dir,
+                logger=logger,
+                step=steps,
+                **kwargs,
+            )
 
     logger.close()
 
@@ -292,6 +321,8 @@ def qlearning(
         qfunction.pre_process,
         n_devices=n_devices,
         use_target_confidence_weighting=train_options.use_target_confidence_weighting,
+        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
+        target_sharpness_alpha=train_options.target_sharpness_alpha,
         using_priority_sampling=train_options.using_priority_sampling,
         per_alpha=train_options.per_alpha,
         per_beta=train_options.per_beta,
@@ -299,6 +330,7 @@ def qlearning(
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
         replay_ratio=train_options.replay_ratio,
+        td_error_clip=train_options.td_error_clip,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
@@ -312,6 +344,8 @@ def qlearning(
         n_devices=n_devices,
         with_policy=with_policy,
         temperature=train_options.temperature,
+        td_error_clip=train_options.td_error_clip,
+        use_double_dqn=train_options.use_double_dqn,
     )
 
     pbar = trange(steps)
@@ -323,6 +357,13 @@ def qlearning(
         dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
         target_q = dataset["target_q"]
         mean_target_q = jnp.mean(target_q)
+        # Optional: mean action entropy when using policy sampling
+        mean_action_entropy = None
+        mean_target_entropy = None
+        if "action_entropy" in dataset:
+            mean_action_entropy = jnp.mean(dataset["action_entropy"])
+        if "target_entropy" in dataset:
+            mean_target_entropy = jnp.mean(dataset["target_entropy"])
 
         (
             qfunc_params,
@@ -341,6 +382,11 @@ def qlearning(
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_q": float(mean_target_q),
+                **(
+                    {"entropy": float(mean_action_entropy)}
+                    if mean_action_entropy is not None
+                    else {}
+                ),
             },
         )
 
@@ -350,9 +396,17 @@ def qlearning(
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
+        if mean_action_entropy is not None:
+            logger.log_scalar("Metrics/Mean Action Entropy", mean_action_entropy, i)
+        if mean_target_entropy is not None:
+            logger.log_scalar("Metrics/Mean Target Entropy", mean_target_entropy, i)
         if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
+            if "action_entropy" in dataset:
+                logger.log_histogram("Metrics/Action Entropy", dataset["action_entropy"], i)
+            if "target_entropy" in dataset:
+                logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
 
         target_updated = False
         if train_options.use_soft_update:
@@ -391,7 +445,23 @@ def qlearning(
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
             # Log model as artifact
-            logger.log_artifact(backup_path, f"qfunction_step_{i}", "model")
+            if eval_options.num_eval > 0:
+                light_eval_options = eval_options.light_eval_options
+                eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
+                with pbar.pause():
+                    _run_evaluation_sweep(
+                        puzzle=puzzle,
+                        puzzle_name=puzzle_name,
+                        search_model=qfunction,
+                        search_model_name="qfunction",
+                        search_builder_fn=qstar_builder,
+                        eval_options=light_eval_options,
+                        puzzle_opts=puzzle_opts,
+                        output_dir=eval_run_dir,
+                        logger=logger,
+                        step=i,
+                        **kwargs,
+                    )
     qfunction.params = qfunc_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
@@ -401,19 +471,20 @@ def qlearning(
     # Evaluation
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
-        _run_evaluation_sweep(
-            puzzle=puzzle,
-            puzzle_name=puzzle_name,
-            search_model=qfunction,
-            search_model_name="qfunction",
-            search_builder_fn=qstar_builder,
-            eval_options=eval_options,
-            puzzle_opts=puzzle_opts,
-            output_dir=eval_run_dir,
-            logger=logger,
-            step=steps,
-            **kwargs,
-        )
+        with pbar.pause():
+            _run_evaluation_sweep(
+                puzzle=puzzle,
+                puzzle_name=puzzle_name,
+                search_model=qfunction,
+                search_model_name="qfunction",
+                search_builder_fn=qstar_builder,
+                eval_options=eval_options,
+                puzzle_opts=puzzle_opts,
+                output_dir=eval_run_dir,
+                logger=logger,
+                step=steps,
+                **kwargs,
+            )
 
     logger.close()
 

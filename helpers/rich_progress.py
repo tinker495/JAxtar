@@ -7,6 +7,7 @@ real-time progress display with enhanced metrics visualization.
 
 import threading
 import time
+from contextlib import contextmanager
 from typing import Any, Dict, Iterable, Optional
 
 from rich.console import Console
@@ -127,6 +128,7 @@ class RichProgressBar:
         self.task_id: Optional[TaskID] = None
         self.live: Optional[Live] = None
         self._lock = threading.Lock()
+        self._pause_depth = 0
 
         # Handle iterable
         if iterable is not None:
@@ -393,6 +395,44 @@ class RichProgressBar:
                 # Force refresh by updating the display
                 if refresh:
                     self._refresh_display()
+
+    @contextmanager
+    def pause(self):
+        """Pause live updates, allowing other rich output to render cleanly."""
+        if self.disable or self.live is None:
+            yield
+            return
+
+        # Support nested pauses gracefully
+        self._pause_depth += 1
+        if self._pause_depth > 1:
+            try:
+                yield
+            finally:
+                self._pause_depth -= 1
+            return
+
+        # Capture current live instance and stop refreshing the progress display
+        current_live = self.live
+        current_live.stop()
+        self.live = None
+        self.console.rule()
+        try:
+            yield
+        finally:
+            try:
+                self.console.rule()
+                # Recreate live display to resume progress rendering
+                self.live = Live(
+                    self._create_display_layout(),
+                    console=self.console,
+                    refresh_per_second=10,
+                    transient=not self.leave,
+                )
+                self.live.start()
+                self._refresh_display()
+            finally:
+                self._pause_depth -= 1
 
     def close(self):
         """Clean up the progress bar."""

@@ -402,6 +402,13 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-ui", "--update_interval", type=int, default=None)
     @click.option("-fui", "--force_update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
+    @click.option(
+        "-dd",
+        "--use_double_dqn",
+        is_flag=True,
+        default=None,
+        help="Enable Double DQN target computation.",
+    )
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
     @click.option("-per", "--using_priority_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
@@ -412,6 +419,20 @@ def dist_train_options(func: callable) -> callable:
         is_flag=True,
         default=None,
         help="Weight loss by target confidence (inverse of move_cost).",
+    )
+    @click.option(
+        "-tsw",
+        "--target_sharpness_weighting",
+        "use_target_sharpness_weighting",
+        is_flag=True,
+        default=None,
+        help="Weight loss by policy sharpness (low entropy ⇒ higher weight).",
+    )
+    @click.option(
+        "--target_sharpness_alpha",
+        type=float,
+        default=None,
+        help="Strength of sharpness-based weighting (multiplier).",
     )
     @click.option(
         "-pa",
@@ -478,6 +499,13 @@ def dist_train_options(func: callable) -> callable:
         type=float,
         default=None,
         help="Delta parameter for Huber loss.",
+    )
+    @click.option(
+        "--td-error-clip",
+        "td_error_clip",
+        type=float,
+        default=None,
+        help="Absolute clip value for TD-error; set <= 0 to disable.",
     )
     @click.option(
         "-sl",
