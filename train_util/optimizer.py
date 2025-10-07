@@ -25,7 +25,7 @@ def setup_optimizer(
     optimizer_name: str,
     lr_init: float = 1e-3,
     weight_decay_size: float = 0.001,
-) -> optax.OptState:
+) -> tuple[optax.GradientTransformation, optax.OptState]:
     # Create the main decay schedule, making it conditional
     is_no_wd = weight_decay_size == 0.0
     in_prodigy = "prodigy" in optimizer_name
@@ -64,6 +64,8 @@ def setup_optimizer(
 
         return jax.tree_util.tree_map_with_path(mask_fn, params)
 
+    mask_tree = None if is_no_wd else mask_batch_stat_or_bias(params)
+
     def optimizer_fn(learning_rate):
         if optimizer_name not in OPTIMIZERS:
             raise ValueError(f"Unknown optimizer: {optimizer_name}")
@@ -73,7 +75,7 @@ def setup_optimizer(
             scaler = OPTIMIZERS[optimizer_name](
                 learning_rate=learning_rate,
                 weight_decay=weight_decay_size,
-                mask=mask_batch_stat_or_bias,
+                mask=mask_tree,
             )
         return scaler
 
