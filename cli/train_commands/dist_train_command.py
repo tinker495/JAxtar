@@ -136,6 +136,10 @@ def davi(
         td_error_clip=train_options.td_error_clip,
     )
 
+    eval_search_fn_cache = {}
+    light_eval_options = eval_options.light_eval_options if eval_options.num_eval > 0 else None
+    eval_interval = max(1, steps // 5) if steps > 0 else 1
+
     pbar = trange(steps)
     updated = False
     last_reset_time = 0
@@ -217,13 +221,12 @@ def davi(
             opt_state = optimizer.init(heuristic_params)
             updated = False
 
-        if i % (steps // 5) == 0 and i != 0:
+        if i % eval_interval == 0 and i != 0:
             heuristic.params = eval_params
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
             # Log model as artifact
             if eval_options.num_eval > 0:
-                light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pbar.pause():
                     _run_evaluation_sweep(
@@ -232,11 +235,12 @@ def davi(
                         search_model=heuristic,
                         search_model_name="heuristic",
                         search_builder_fn=astar_builder,
-                        eval_options=light_eval_options,
+                        eval_options=light_eval_options or eval_options,
                         puzzle_opts=puzzle_opts,
                         output_dir=eval_run_dir,
                         logger=logger,
                         step=i,
+                        search_fn_cache=eval_search_fn_cache,
                         **kwargs,
                     )
     heuristic.params = eval_params
@@ -260,6 +264,7 @@ def davi(
                 output_dir=eval_run_dir,
                 logger=logger,
                 step=steps,
+                search_fn_cache=eval_search_fn_cache,
                 **kwargs,
             )
 
@@ -353,6 +358,10 @@ def qlearning(
         td_error_clip=train_options.td_error_clip,
         use_double_dqn=train_options.use_double_dqn,
     )
+
+    eval_search_fn_cache = {}
+    light_eval_options = eval_options.light_eval_options if eval_options.num_eval > 0 else None
+    eval_interval = max(1, steps // 5) if steps > 0 else 1
 
     pbar = trange(steps)
     updated = False
@@ -449,13 +458,12 @@ def qlearning(
             opt_state = optimizer.init(qfunc_params)
             updated = False
 
-        if i % (steps // 5) == 0 and i != 0:
+        if i % eval_interval == 0 and i != 0:
             qfunction.params = eval_params
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
             # Log model as artifact
             if eval_options.num_eval > 0:
-                light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pbar.pause():
                     _run_evaluation_sweep(
@@ -464,11 +472,12 @@ def qlearning(
                         search_model=qfunction,
                         search_model_name="qfunction",
                         search_builder_fn=qstar_builder,
-                        eval_options=light_eval_options,
+                        eval_options=light_eval_options or eval_options,
                         puzzle_opts=puzzle_opts,
                         output_dir=eval_run_dir,
                         logger=logger,
                         step=i,
+                        search_fn_cache=eval_search_fn_cache,
                         **kwargs,
                     )
     qfunction.params = eval_params
@@ -492,6 +501,7 @@ def qlearning(
                 output_dir=eval_run_dir,
                 logger=logger,
                 step=steps,
+                search_fn_cache=eval_search_fn_cache,
                 **kwargs,
             )
 
@@ -581,6 +591,10 @@ def wbsdai(
         use_promising_branch=train_options.use_promising_branch,
     )
 
+    eval_search_fn_cache = {}
+    light_eval_options = eval_options.light_eval_options if eval_options.num_eval > 0 else None
+    eval_interval = max(1, steps // 5) if steps > 0 else 1
+
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -632,9 +646,29 @@ def wbsdai(
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
 
+        if eval_options.num_eval > 0 and i % eval_interval == 0 and i != 0:
+            heuristic.params = heuristic_params
+            eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
+            with pbar.pause():
+                _run_evaluation_sweep(
+                    puzzle=puzzle,
+                    puzzle_name=puzzle_name,
+                    search_model=heuristic,
+                    search_model_name="heuristic",
+                    search_builder_fn=astar_builder,
+                    eval_options=light_eval_options or eval_options,
+                    puzzle_opts=puzzle_opts,
+                    output_dir=eval_run_dir,
+                    logger=logger,
+                    step=i,
+                    search_fn_cache=eval_search_fn_cache,
+                    **kwargs,
+                )
+
     heuristic.params = heuristic_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
+    logger.log_artifact(backup_path, "heuristic_final", "model")
 
     # Evaluation
     if eval_options.num_eval > 0:
@@ -650,6 +684,7 @@ def wbsdai(
             output_dir=eval_run_dir,
             logger=logger,
             step=steps,
+            search_fn_cache=eval_search_fn_cache,
             **kwargs,
         )
 
@@ -740,6 +775,10 @@ def wbsdqi(
         use_promising_branch=train_options.use_promising_branch,
     )
 
+    eval_search_fn_cache = {}
+    light_eval_options = eval_options.light_eval_options if eval_options.num_eval > 0 else None
+    eval_interval = max(1, steps // 5) if steps > 0 else 1
+
     pbar = trange(steps)
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -791,9 +830,29 @@ def wbsdqi(
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
 
+        if eval_options.num_eval > 0 and i % eval_interval == 0 and i != 0:
+            qfunction.params = qfunction_params
+            eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
+            with pbar.pause():
+                _run_evaluation_sweep(
+                    puzzle=puzzle,
+                    puzzle_name=puzzle_name,
+                    search_model=qfunction,
+                    search_model_name="qfunction",
+                    search_builder_fn=qstar_builder,
+                    eval_options=light_eval_options or eval_options,
+                    puzzle_opts=puzzle_opts,
+                    output_dir=eval_run_dir,
+                    logger=logger,
+                    step=i,
+                    search_fn_cache=eval_search_fn_cache,
+                    **kwargs,
+                )
+
     qfunction.params = qfunction_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
+    logger.log_artifact(backup_path, "qfunction_final", "model")
 
     # Evaluation
     if eval_options.num_eval > 0:
@@ -809,6 +868,7 @@ def wbsdqi(
             output_dir=eval_run_dir,
             logger=logger,
             step=steps,
+            search_fn_cache=eval_search_fn_cache,
             **kwargs,
         )
 

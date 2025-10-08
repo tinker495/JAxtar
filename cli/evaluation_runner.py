@@ -45,6 +45,7 @@ class EvaluationRunner:
         output_dir: Optional[Path] = None,
         logger: Optional[BaseLogger] = None,
         step: int = 0,
+        search_fn_cache: Optional[dict[int, Callable]] = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -59,6 +60,7 @@ class EvaluationRunner:
         self.step = step
         self.console = Console()
         self.kwargs = kwargs
+        self.search_fn_cache = {} if search_fn_cache is None else search_fn_cache
 
     def run(self):
         model_metadata = getattr(self.search_model, "metadata", {})
@@ -97,7 +99,7 @@ class EvaluationRunner:
             )
 
         sub_run_dirs = []
-        search_fn_cache: dict[int, Callable] = {}
+        search_fn_cache = self.search_fn_cache
         for i, (pr, cw, bs) in enumerate(param_combinations):
             run_dir = main_run_dir
             run_name = f"pr_{pr}_cw_{cw}_bs_{bs}".replace("inf", "Infinity")
