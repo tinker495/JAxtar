@@ -10,10 +10,17 @@ from helpers.util import convert_to_serializable_dict
 
 
 class ArtifactManager:
-    def __init__(self, run_dir: Path, logger: Optional[BaseLogger] = None, step: int = 0):
+    def __init__(
+        self,
+        run_dir: Path,
+        logger: Optional[BaseLogger] = None,
+        step: int = 0,
+        log_namespace: Optional[str] = None,
+    ):
         self.run_dir = run_dir
         self.logger = logger
         self.step = step
+        self.log_namespace = log_namespace or self.run_dir.name
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
     def save_config(self, config: dict):
@@ -47,7 +54,7 @@ class ArtifactManager:
         fig.savefig(filepath)
 
         if self.logger:
-            log_tag = f"Comparison/{self.run_dir.name}/{plot_name}"
+            log_tag = f"Comparison/{self.log_namespace}/{plot_name}"
             self.logger.log_figure(log_tag, fig, self.step)
 
         plt.close(fig)
@@ -55,5 +62,5 @@ class ArtifactManager:
     def log_scalar(self, name: str, value: float):
         """Logs a scalar value to Tensorboard if a logger is available."""
         if self.logger:
-            log_tag = f"Comparison/{self.run_dir.name}/{name}"
+            log_tag = f"Comparison/{self.log_namespace}/{name}"
             self.logger.log_scalar(log_tag, value, self.step)

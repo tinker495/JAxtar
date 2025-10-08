@@ -38,7 +38,7 @@ from qfunction.neuralq.wbsdqi import (
     regression_replay_q_trainer_builder,
     wbsdqi_dataset_builder,
 )
-from train_util.optimizer import setup_optimizer
+from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer
 from train_util.target_update import scaled_by_reset, soft_update
 
 from ..options import (
@@ -140,9 +140,10 @@ def davi(
     updated = False
     last_reset_time = 0
     last_update_step = -1  # Track last update step for force update
+    eval_params = get_eval_params(opt_state, heuristic_params)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_heuristic_params, heuristic_params, subkey)
+        dataset = get_datasets(target_heuristic_params, eval_params, subkey)
         target_heuristic = dataset["target_heuristic"]
         mean_target_heuristic = jnp.mean(target_heuristic)
         mean_target_entropy = None
@@ -157,8 +158,9 @@ def davi(
             weight_magnitude,
             diffs,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
+        eval_params = get_eval_params(opt_state, heuristic_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
-        lr = opt_state.hyperparams["learning_rate"]
+        lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="DAVI Training",
             desc_dict={
@@ -185,7 +187,7 @@ def davi(
         target_updated = False
         if train_options.use_soft_update:
             target_heuristic_params = soft_update(
-                target_heuristic_params, heuristic_params, float(1 - 1.0 / update_interval)
+                target_heuristic_params, eval_params, float(1 - 1.0 / update_interval)
             )
             updated = True
             if i % update_interval == 0 and i != 0:
@@ -193,7 +195,7 @@ def davi(
         elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
             i - last_update_step >= train_options.force_update_interval
         ):
-            target_heuristic_params = heuristic_params
+            target_heuristic_params = eval_params
             updated = True
             if train_options.opt_state_reset:
                 opt_state = optimizer.init(heuristic_params)
@@ -216,29 +218,28 @@ def davi(
             updated = False
 
         if i % (steps // 5) == 0 and i != 0:
-            heuristic.params = heuristic_params
+            heuristic.params = eval_params
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
             # Log model as artifact
             if eval_options.num_eval > 0:
-                light_eval_options = eval_options.model_copy(
-                    update={"num_eval": min(20, eval_options.num_eval)}
-                )
+                light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
-                _run_evaluation_sweep(
-                    puzzle=puzzle,
-                    puzzle_name=puzzle_name,
-                    search_model=heuristic,
-                    search_model_name="heuristic",
-                    search_builder_fn=astar_builder,
-                    eval_options=light_eval_options,
-                    puzzle_opts=puzzle_opts,
-                    output_dir=eval_run_dir,
-                    logger=logger,
-                    step=i,
-                    **kwargs,
-                )
-    heuristic.params = heuristic_params
+                with pbar.pause():
+                    _run_evaluation_sweep(
+                        puzzle=puzzle,
+                        puzzle_name=puzzle_name,
+                        search_model=heuristic,
+                        search_model_name="heuristic",
+                        search_builder_fn=astar_builder,
+                        eval_options=light_eval_options,
+                        puzzle_opts=puzzle_opts,
+                        output_dir=eval_run_dir,
+                        logger=logger,
+                        step=i,
+                        **kwargs,
+                    )
+    heuristic.params = eval_params
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
     # Log final model as artifact
@@ -247,19 +248,20 @@ def davi(
     # Evaluation
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
-        _run_evaluation_sweep(
-            puzzle=puzzle,
-            puzzle_name=puzzle_name,
-            search_model=heuristic,
-            search_model_name="heuristic",
-            search_builder_fn=astar_builder,
-            eval_options=eval_options,
-            puzzle_opts=puzzle_opts,
-            output_dir=eval_run_dir,
-            logger=logger,
-            step=steps,
-            **kwargs,
-        )
+        with pbar.pause():
+            _run_evaluation_sweep(
+                puzzle=puzzle,
+                puzzle_name=puzzle_name,
+                search_model=heuristic,
+                search_model_name="heuristic",
+                search_builder_fn=astar_builder,
+                eval_options=eval_options,
+                puzzle_opts=puzzle_opts,
+                output_dir=eval_run_dir,
+                logger=logger,
+                step=steps,
+                **kwargs,
+            )
 
     logger.close()
 
@@ -334,6 +336,7 @@ def qlearning(
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
         replay_ratio=train_options.replay_ratio,
+        td_error_clip=train_options.td_error_clip,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
@@ -348,15 +351,17 @@ def qlearning(
         with_policy=with_policy,
         temperature=train_options.temperature,
         td_error_clip=train_options.td_error_clip,
+        use_double_dqn=train_options.use_double_dqn,
     )
 
     pbar = trange(steps)
     updated = False
     last_reset_time = 0
     last_update_step = -1  # Track last update step for force update
+    eval_params = get_eval_params(opt_state, qfunc_params)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_qfunc_params, qfunc_params, subkey)
+        dataset = get_datasets(target_qfunc_params, eval_params, subkey)
         target_q = dataset["target_q"]
         mean_target_q = jnp.mean(target_q)
         # Optional: mean action entropy when using policy sampling
@@ -375,8 +380,9 @@ def qlearning(
             weight_magnitude,
             diffs,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
+        eval_params = get_eval_params(opt_state, qfunc_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
-        lr = opt_state.hyperparams["learning_rate"]
+        lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="Q-Learning Training",
             desc_dict={
@@ -413,7 +419,7 @@ def qlearning(
         target_updated = False
         if train_options.use_soft_update:
             target_qfunc_params = soft_update(
-                target_qfunc_params, qfunc_params, float(1 - 1.0 / update_interval)
+                target_qfunc_params, eval_params, float(1 - 1.0 / update_interval)
             )
             updated = True
             if i % update_interval == 0 and i != 0:
@@ -421,7 +427,7 @@ def qlearning(
         elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
             i - last_update_step >= train_options.force_update_interval
         ):
-            target_qfunc_params = qfunc_params
+            target_qfunc_params = eval_params
             updated = True
             if train_options.opt_state_reset:
                 opt_state = optimizer.init(qfunc_params)
@@ -444,29 +450,28 @@ def qlearning(
             updated = False
 
         if i % (steps // 5) == 0 and i != 0:
-            qfunction.params = qfunc_params
+            qfunction.params = eval_params
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
             # Log model as artifact
             if eval_options.num_eval > 0:
-                light_eval_options = eval_options.model_copy(
-                    update={"num_eval": min(20, eval_options.num_eval)}
-                )
+                light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
-                _run_evaluation_sweep(
-                    puzzle=puzzle,
-                    puzzle_name=puzzle_name,
-                    search_model=qfunction,
-                    search_model_name="qfunction",
-                    search_builder_fn=qstar_builder,
-                    eval_options=light_eval_options,
-                    puzzle_opts=puzzle_opts,
-                    output_dir=eval_run_dir,
-                    logger=logger,
-                    step=i,
-                    **kwargs,
-                )
-    qfunction.params = qfunc_params
+                with pbar.pause():
+                    _run_evaluation_sweep(
+                        puzzle=puzzle,
+                        puzzle_name=puzzle_name,
+                        search_model=qfunction,
+                        search_model_name="qfunction",
+                        search_builder_fn=qstar_builder,
+                        eval_options=light_eval_options,
+                        puzzle_opts=puzzle_opts,
+                        output_dir=eval_run_dir,
+                        logger=logger,
+                        step=i,
+                        **kwargs,
+                    )
+    qfunction.params = eval_params
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
     # Log final model as artifact
@@ -475,19 +480,20 @@ def qlearning(
     # Evaluation
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
-        _run_evaluation_sweep(
-            puzzle=puzzle,
-            puzzle_name=puzzle_name,
-            search_model=qfunction,
-            search_model_name="qfunction",
-            search_builder_fn=qstar_builder,
-            eval_options=eval_options,
-            puzzle_opts=puzzle_opts,
-            output_dir=eval_run_dir,
-            logger=logger,
-            step=steps,
-            **kwargs,
-        )
+        with pbar.pause():
+            _run_evaluation_sweep(
+                puzzle=puzzle,
+                puzzle_name=puzzle_name,
+                search_model=qfunction,
+                search_model_name="qfunction",
+                search_builder_fn=qstar_builder,
+                eval_options=eval_options,
+                puzzle_opts=puzzle_opts,
+                output_dir=eval_run_dir,
+                logger=logger,
+                step=steps,
+                **kwargs,
+            )
 
     logger.close()
 

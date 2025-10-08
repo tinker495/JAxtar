@@ -84,6 +84,20 @@ class EvalOptions(BaseModel):
     def get_max_node_size(self, batch_size: int) -> int:
         return self.max_node_size // batch_size * batch_size
 
+    def light_eval(self, max_eval: int = 20) -> "EvalOptions":
+        capped_eval = min(max_eval, self.num_eval)
+        return self.model_copy(
+            update={
+                "num_eval": capped_eval,
+                "cost_weight": [self.cost_weight[0]],
+                "pop_ratio": [self.pop_ratio[0]],
+            }
+        )
+
+    @property
+    def light_eval_options(self) -> "EvalOptions":
+        return self.light_eval()
+
 
 class VisualizeOptions(BaseModel):
     visualize_terminal: bool = Field(False, description="Visualize path in terminal.")
@@ -112,6 +126,7 @@ class DistTrainOptions(BaseModel):
     update_interval: int = 32
     force_update_interval: int = 2048
     use_soft_update: bool = False
+    use_double_dqn: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
     using_priority_sampling: bool = False

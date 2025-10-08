@@ -308,6 +308,7 @@ def _get_datasets_with_policy(
     key: chex.PRNGKey,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
+    use_double_dqn: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -351,8 +352,6 @@ def _get_datasets_with_policy(
         )
         # Get the Q-value Q(s,a) for the action 'a' selected by the policy. This is the value we will train.
         selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
-        selected_cost = jnp.take_along_axis(cost, actions[:, jnp.newaxis], axis=1)
-
         batch_size = actions.shape[0]
         # Determine the next state (s') by applying the selected action 'a'.
         selected_neighbors = jax.tree_util.tree_map(
@@ -382,15 +381,28 @@ def _get_datasets_with_policy(
         q = q_model.apply(
             target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
-        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
         q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
-        # Calculate the target Q-value using the Bellman Optimality Equation:
-        # target_Q(s, a) = c(s, a, s') + min_{a'} Q_target(s', a')
-        # This represents the optimal cost-to-go from s'.
-        q_sum_cost = q + selected_cost  # [batch_size, action_size]
-        # Clamp to ensure non-negative targets (costs should be non-negative)
-        q_sum_cost = jnp.maximum(q_sum_cost, selected_cost)
-        min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+        # Invalidate actions that are not reachable from the next state.
+        valid_neighbor_cost = jnp.where(jnp.isfinite(neighbor_cost), neighbor_cost, jnp.inf)
+        q = jnp.where(jnp.isfinite(valid_neighbor_cost), q, jnp.inf)
+        # Calculate the target Q-value using the constrained Bellman equation:
+        # target_Q(s, a) = min_{a'} [ c(s', a') + Q_target(s', a') ].
+        # The immediate cost of (s, a) is excluded by construction (J(s, a) = J(N(s, a))).
+        q_sum_cost = valid_neighbor_cost + q  # [batch_size, action_size]
+        # Clamp to ensure non-negative targets while respecting the next-state costs.
+        q_sum_cost = jnp.maximum(q_sum_cost, valid_neighbor_cost)
+        if use_double_dqn:
+            q_online = q_model.apply(q_params, preproc_neighbors, training=False)
+            q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
+            q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
+            online_q_sum_cost = valid_neighbor_cost + q_online
+            online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
+            best_actions = jnp.argmin(online_q_sum_cost, axis=1)
+            min_q_sum_cost = jnp.take_along_axis(q_sum_cost, best_actions[:, jnp.newaxis], axis=1)[
+                :, 0
+            ]
+        else:
+            min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
         # Target entropy (confidence of the backup) over next-state distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
         scaled_next = -q_sum_cost / safe_temperature
@@ -478,6 +490,7 @@ def _get_datasets_with_trajectory(
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
     td_error_clip: Optional[float] = None,
+    use_double_dqn: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -519,17 +532,36 @@ def _get_datasets_with_trajectory(
         q = q_model.apply(
             target_q_params, preproc_neighbors, training=False
         )  # [minibatch_size, action_shape]
-        q = jnp.where(jnp.isfinite(neighbor_cost), q, jnp.inf)
+        q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
+        valid_neighbor_cost = jnp.where(jnp.isfinite(neighbor_cost), neighbor_cost, jnp.inf)
+        q = jnp.where(jnp.isfinite(valid_neighbor_cost), q, jnp.inf)
 
-        q_sum_cost = q + cost
-        # Clamp to ensure non-negative targets (costs should be non-negative)
-        q_sum_cost = jnp.maximum(q_sum_cost, cost)
-        min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+        q_sum_cost = valid_neighbor_cost + q
+        # Clamp to ensure non-negative targets relative to next-state costs
+        q_sum_cost = jnp.maximum(q_sum_cost, valid_neighbor_cost)
+        if use_double_dqn:
+            q_online = q_model.apply(q_params, preproc_neighbors, training=False)
+            q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
+            q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
+            online_q_sum_cost = valid_neighbor_cost + q_online
+            online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
+            best_actions = jnp.argmin(online_q_sum_cost, axis=1)
+            min_q_sum_cost = jnp.take_along_axis(q_sum_cost, best_actions[:, jnp.newaxis], axis=1)[
+                :, 0
+            ]
+        else:
+            min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
         target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
         target_q = jnp.where(solved, 0.0, target_q)
 
-        diff = jnp.zeros_like(target_q)
+        # Calculate current Q-values to compute TD error
+        preproc = jax.vmap(preproc_fn)(solve_configs, states)
+        q_values = q_model.apply(q_params, preproc, training=False)
+        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
+        selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
+
+        diff = target_q - selected_q
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
@@ -577,6 +609,7 @@ def get_qlearning_dataset_builder(
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
+    use_double_dqn: bool = False,
 ):
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
@@ -627,6 +660,7 @@ def get_qlearning_dataset_builder(
                 dataset_minibatch_size,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
+                use_double_dqn=use_double_dqn,
             )
         )
     else:
@@ -638,6 +672,7 @@ def get_qlearning_dataset_builder(
                 q_model,
                 dataset_minibatch_size,
                 td_error_clip=td_error_clip,
+                use_double_dqn=use_double_dqn,
             )
         )
 
