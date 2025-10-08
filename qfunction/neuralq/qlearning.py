@@ -51,16 +51,25 @@ def qlearning_builder(
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
         q_values, variable_updates = apply_with_conditional_batch_stats(
-            q_fn.apply, q_params, preproc, training=True, n_devices=n_devices
-        )
+            q_fn.apply,
+            q_params,
+            preproc,
+            training=True,
+            n_devices=n_devices,
+            method=q_fn.stack_outputs,
+        )  # [num_ensembles, batch_size, action_size]
         new_params = build_new_params_from_updates(q_params, variable_updates)
-        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
-        diff = target_qs.squeeze() - q_values_at_actions.squeeze()
+        q_values_at_actions = jnp.take_along_axis(
+            q_values, actions[jnp.newaxis, :, jnp.newaxis], axis=2
+        )  # [num_ensembles, batch_size, 1]
+        diff = (
+            target_qs[jnp.newaxis, :] - q_values_at_actions.squeeze()
+        )  # [num_ensembles, batch_size]
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
-        loss_value = jnp.mean(per_sample * weights)
+        loss_value = jnp.mean(per_sample * weights[jnp.newaxis, :])
         return loss_value, (new_params, diff)
 
     def qlearning(
@@ -398,9 +407,9 @@ def _get_datasets_with_policy(
             online_q_sum_cost = valid_neighbor_cost + q_online
             online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
             best_actions = jnp.argmin(online_q_sum_cost, axis=1)
-            min_q_sum_cost = jnp.take_along_axis(
-                q_sum_cost, best_actions[:, jnp.newaxis], axis=1
-            )[:, 0]
+            min_q_sum_cost = jnp.take_along_axis(q_sum_cost, best_actions[:, jnp.newaxis], axis=1)[
+                :, 0
+            ]
         else:
             min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
         # Target entropy (confidence of the backup) over next-state distribution
@@ -546,9 +555,9 @@ def _get_datasets_with_trajectory(
             online_q_sum_cost = valid_neighbor_cost + q_online
             online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
             best_actions = jnp.argmin(online_q_sum_cost, axis=1)
-            min_q_sum_cost = jnp.take_along_axis(
-                q_sum_cost, best_actions[:, jnp.newaxis], axis=1
-            )[:, 0]
+            min_q_sum_cost = jnp.take_along_axis(q_sum_cost, best_actions[:, jnp.newaxis], axis=1)[
+                :, 0
+            ]
         else:
             min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
@@ -560,7 +569,7 @@ def _get_datasets_with_trajectory(
         q_values = q_model.apply(q_params, preproc, training=False)
         q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
         selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
-        
+
         diff = target_q - selected_q
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)

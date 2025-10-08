@@ -26,7 +26,7 @@ from neural_util.util import download_model, is_model_downloaded
 from qfunction.q_base import QFunction
 
 
-class QModelBase(nn.Module):
+class _SingleQModel(nn.Module):
     action_size: int = 4
     Res_N: int = 4
     initial_dim: int = 5000
@@ -38,7 +38,7 @@ class QModelBase(nn.Module):
     use_swiglu: bool = False
 
     @nn.compact
-    def __call__(self, x, training=False):
+    def __call__(self, x, training: bool = False):
         if self.use_swiglu:
             x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn, training)(x)
             x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn, training)(x)
@@ -66,6 +66,52 @@ class QModelBase(nn.Module):
         return x
 
 
+class QModelBase(nn.Module):
+    action_size: int = 4
+    Res_N: int = 4
+    initial_dim: int = 5000
+    hidden_N: int = 1
+    hidden_dim: int = 1000
+    activation: str = nn.relu
+    norm_fn: callable = DEFAULT_NORM_FN
+    resblock_fn: callable = ResBlock
+    use_swiglu: bool = False
+    num_ensembles: int = 2
+
+    def setup(self):
+        if self.num_ensembles < 1:
+            raise ValueError("num_ensembles must be at least 1.")
+
+        param_mult = max(1.0, float(np.sqrt(float(self.num_ensembles))))
+        model_kwargs = dict(
+            action_size=self.action_size,
+            Res_N=self.Res_N,
+            initial_dim=max(100, int(self.initial_dim / param_mult)),
+            hidden_N=self.hidden_N,
+            hidden_dim=max(100, int(self.hidden_dim / param_mult)),
+            activation=self.activation,
+            norm_fn=self.norm_fn,
+            resblock_fn=self.resblock_fn,
+            use_swiglu=self.use_swiglu,
+        )
+        self._members = [
+            _SingleQModel(name=f"ensemble_{i}", **model_kwargs) for i in range(self.num_ensembles)
+        ]
+
+    def _forward_members(self, x, training: bool):
+        outputs = [member(x, training=training) for member in self._members]
+        return jnp.stack(outputs, axis=0)
+
+    def __call__(self, x, training: bool = False):
+        return self.max_outputs(x, training)
+
+    def stack_outputs(self, x, training: bool = False):
+        return self._forward_members(x, training)
+
+    def max_outputs(self, x, training: bool = False):
+        return jnp.max(self._forward_members(x, training), axis=0)
+
+
 class NeuralQFunctionBase(QFunction):
     def __init__(
         self,
@@ -83,6 +129,7 @@ class NeuralQFunctionBase(QFunction):
         kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
         kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
         self.model = model(self.action_size, **kwargs)
+        self.num_ensembles = getattr(self.model, "num_ensembles", 1)
         self.path = path
         self.metadata = {}
         if path is not None:
