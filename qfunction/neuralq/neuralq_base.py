@@ -9,8 +9,8 @@ from puxle import Puzzle
 
 from neural_util.modules import (
     DEFAULT_NORM_FN,
-    HEAD_DTYPE,
     DTYPE,
+    HEAD_DTYPE,
     PreActivationResBlock,
     ResBlock,
     get_activation_fn,
@@ -29,6 +29,7 @@ from qfunction.q_base import QFunction
 class QModelBase(nn.Module):
     action_size: int = 4
     Res_N: int = 4
+    initial_dim: int = 5000
     hidden_N: int = 1
     hidden_dim: int = 1000
     activation: str = nn.relu
@@ -39,10 +40,10 @@ class QModelBase(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         if self.use_swiglu:
-            x = swiglu_fn(5000, self.activation, self.norm_fn, training)(x)
+            x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn, training)(x)
             x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn, training)(x)
         else:
-            x = nn.Dense(5000, dtype=DTYPE)(x)
+            x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training)
             x = self.activation(x)
             x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
