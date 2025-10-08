@@ -9,6 +9,7 @@ Key features:
 """
 
 from functools import partial
+from typing import Union
 
 import chex
 import jax
@@ -308,7 +309,7 @@ class SearchResult:
 
         return search_result, min_val.current, final_process_mask
 
-    def get_solved_path(search_result) -> list[Parent, Current]:
+    def get_solved_path(search_result) -> list[Union[Parent, Current]]:
         """
         Get the path to the solved state.
 
