@@ -169,9 +169,11 @@ def astar_builder(
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
             def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
-                neighbour_heur = heuristic.batched_distance(solve_config, neighbour).astype(
-                    KEY_DTYPE
-                )
+                neighbour_heur = heuristic.batched_distance(
+                    solve_config,
+                    neighbour,
+                    params=heuristic_params,
+                ).astype(KEY_DTYPE)
                 # cache the heuristic value
                 search_result.dist = xnp.update_on_condition(
                     search_result.dist,
