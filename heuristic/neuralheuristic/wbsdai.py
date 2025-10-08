@@ -43,7 +43,7 @@ def regression_replay_trainer_builder(
         opt_state: optax.OptState,
     ):
         """
-        DAVI is a heuristic for the sliding puzzle problem.
+        Performs regression training on the heuristic model using experience replay buffer.
         """
 
         def train_loop(carry, _):

@@ -86,22 +86,26 @@ class EvalOptions(BaseModel):
 
     def light_eval(self, max_eval: int = 20) -> "EvalOptions":
         capped_eval = min(max_eval, self.num_eval)
+
+        # Handle cost_weight - get first element if it's a list, otherwise use the value directly
+        if isinstance(self.cost_weight, list):
+            cost_weight_value = [self.cost_weight[0]]
+        else:
+            cost_weight_value = [self.cost_weight]
+
+        # Handle pop_ratio - get first element if it's a list, otherwise use the value directly
+        if isinstance(self.pop_ratio, list):
+            pop_ratio_value = [self.pop_ratio[0]]
+        else:
+            pop_ratio_value = [self.pop_ratio]
+
         return self.model_copy(
             update={
                 "num_eval": capped_eval,
-                "cost_weight": [self.cost_weight[0]],
-                "pop_ratio": [self.pop_ratio[0]],
+                "cost_weight": cost_weight_value,
+                "pop_ratio": pop_ratio_value,
             }
         )
-
-    @property
-    def light_eval_options(self) -> "EvalOptions":
-        return self.light_eval()
-
-
-    def light_eval(self, max_eval: int = 20) -> "EvalOptions":
-        capped_eval = min(max_eval, self.num_eval)
-        return self.model_copy(update={"num_eval": capped_eval, "cost_weight": [self.cost_weight[0]], "pop_ratio": [self.pop_ratio[0]]})
 
     @property
     def light_eval_options(self) -> "EvalOptions":
