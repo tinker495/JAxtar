@@ -8,9 +8,9 @@ import optax
 from puxle import Puzzle
 from xtructure import xtructure_numpy as xnp
 
-from helpers.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
 from JAxtar.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import QModelBase as QModel
+from train_util.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
 from train_util.wbsampling import get_one_solved_branch_q_samples
 
 

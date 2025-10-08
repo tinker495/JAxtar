@@ -18,9 +18,9 @@ from config.pydantic_models import EvalOptions, PuzzleOptions, WBSDistTrainOptio
 from helpers.config_printer import print_config
 from helpers.formatting import human_format
 from helpers.logger import BaseLogger, create_logger
-from helpers.replay import init_experience_replay
 from helpers.rich_progress import trange
 from train_util.optimizer import setup_optimizer
+from train_util.replay import init_experience_replay
 
 
 @dataclass
