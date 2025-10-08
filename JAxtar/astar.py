@@ -258,7 +258,10 @@ def astar_builder(
     # compiled code without processing complex puzzle structures.
     if use_heuristic_params:
         heuristic_params = heuristic.get_params()
-        astar_fn(empty_solve_config, empty_states, heuristic_params)
+        if heuristic_params is None:
+            astar_fn(empty_solve_config, empty_states)
+        else:
+            astar_fn(empty_solve_config, empty_states, heuristic_params)
     else:
         astar_fn(empty_solve_config, empty_states)
 

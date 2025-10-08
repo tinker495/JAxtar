@@ -253,7 +253,10 @@ def qstar_builder(
     if use_q_fn_params:
         # compile with input params as params
         q_fn_params = q_fn.get_params()
-        qstar_fn(empty_solve_config, empty_states, q_fn_params)
+        if q_fn_params is None:
+            qstar_fn(empty_solve_config, empty_states)
+        else:
+            qstar_fn(empty_solve_config, empty_states, q_fn_params)
     else:
         qstar_fn(empty_solve_config, empty_states)
 
