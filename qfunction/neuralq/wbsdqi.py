@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import chex
 import jax
@@ -135,8 +135,8 @@ def wbsdqi_dataset_builder(
         qfunction,
         search_batch_size,
         max_nodes,
-        pop_ratio,
-        cost_weight,
+        initial_pop_ratio=pop_ratio,
+        initial_cost_weight=cost_weight,
         use_q_fn_params=True,
         export_last_pops=True,
     )
@@ -156,10 +156,15 @@ def wbsdqi_dataset_builder(
         qfunction_params: Any,
         buffer_state: BUFFER_STATE_TYPE,
         key: chex.PRNGKey,
+        *,
+        pop_ratio_override: Optional[float] = None,
+        cost_weight_override: Optional[float] = None,
     ):
         run = True
         search_count = 0
         solved_count = 0
+        search_pop_ratio = pop_ratio if pop_ratio_override is None else pop_ratio_override
+        search_cost_weight = cost_weight if cost_weight_override is None else cost_weight_override
         while run:
             solve_configs_list = []
             states_list = []
@@ -168,7 +173,9 @@ def wbsdqi_dataset_builder(
             data_len = 0
             while data_len < add_batch_size:
                 key, subkey = jax.random.split(key)
-                data = jitted_get_one_solved_branch_q_samples(qfunction_params, subkey)
+                data = jitted_get_one_solved_branch_q_samples(
+                    qfunction_params, subkey, search_pop_ratio, search_cost_weight
+                )
                 masks = data["masks"]
                 solve_configs = data["solve_configs"][masks]
                 states = data["states"][masks]

@@ -17,8 +17,8 @@ def qstar_builder(
     q_fn: QFunction,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
+    initial_pop_ratio: float = jnp.inf,
+    initial_cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     use_q_fn_params: bool = False,
     export_last_pops: bool = False,
@@ -55,6 +55,8 @@ def qstar_builder(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
         q_fn_params: Optional[Any] = None,
+        pop_ratio: Optional[float] = initial_pop_ratio,
+        cost_weight: Optional[float] = initial_cost_weight,
     ) -> SearchResult:
         """
         qstar is the implementation of the Q* algorithm.

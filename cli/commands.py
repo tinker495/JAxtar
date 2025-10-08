@@ -407,8 +407,8 @@ def astar(
         heuristic,
         search_options.batch_size,
         search_options.get_max_node_size(),
-        pop_ratio=search_options.pop_ratio,
-        cost_weight=search_options.cost_weight,
+        initial_pop_ratio=search_options.pop_ratio,
+        initial_cost_weight=search_options.cost_weight,
         show_compile_time=search_options.show_compile_time,
     )
     dist_fn = heuristic.distance
@@ -466,8 +466,8 @@ def qstar(
         qfunction,
         search_options.batch_size,
         search_options.get_max_node_size(),
-        pop_ratio=search_options.pop_ratio,
-        cost_weight=search_options.cost_weight,
+        initial_pop_ratio=search_options.pop_ratio,
+        initial_cost_weight=search_options.cost_weight,
         show_compile_time=search_options.show_compile_time,
     )
     dist_fn = qfunction.q_value

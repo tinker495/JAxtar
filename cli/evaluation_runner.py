@@ -97,6 +97,7 @@ class EvaluationRunner:
             )
 
         sub_run_dirs = []
+        search_fn_cache: dict[int, Callable] = {}
         for i, (pr, cw, bs) in enumerate(param_combinations):
             run_dir = main_run_dir
             run_name = f"pr_{pr}_cw_{cw}_bs_{bs}".replace("inf", "Infinity")
@@ -123,20 +124,24 @@ class EvaluationRunner:
                 )
             print_config(f"{self.search_model_name.capitalize()} Evaluation Configuration", config)
 
-            search_fn = self.search_builder_fn(
-                self.puzzle,
-                self.search_model,
-                bs,
-                self.eval_options.get_max_node_size(bs),
-                pop_ratio=pr,
-                cost_weight=cw,
-            )
+            if bs not in search_fn_cache:
+                search_fn_cache[bs] = self.search_builder_fn(
+                    self.puzzle,
+                    self.search_model,
+                    bs,
+                    self.eval_options.get_max_node_size(bs),
+                    initial_pop_ratio=pr,
+                    initial_cost_weight=cw,
+                )
+            search_fn = search_fn_cache[bs]
 
             eval_seeds = list(range(self.eval_options.num_eval))
             results = self._run_evaluation(
                 search_fn=search_fn,
                 puzzle=self.puzzle,
                 seeds=eval_seeds,
+                pop_ratio=pr,
+                cost_weight=cw,
             )
             for r in results:
                 r["pop_ratio"] = pr
@@ -213,6 +218,8 @@ class EvaluationRunner:
         search_fn,
         puzzle: Puzzle,
         seeds: list[int],
+        pop_ratio: Optional[float] = None,
+        cost_weight: Optional[float] = None,
     ) -> list[dict]:
         num_puzzles = len(seeds)
         results = []
@@ -227,7 +234,12 @@ class EvaluationRunner:
             solve_config, state = puzzle.get_inits(jax.random.PRNGKey(seed))
 
             start_time = time.time()
-            search_result = search_fn(solve_config, state)
+            search_kwargs = {}
+            if pop_ratio is not None:
+                search_kwargs["pop_ratio"] = pop_ratio
+            if cost_weight is not None:
+                search_kwargs["cost_weight"] = cost_weight
+            search_result = search_fn(solve_config, state, **search_kwargs)
             solved = bool(search_result.solved.block_until_ready())
             end_time = time.time()
 

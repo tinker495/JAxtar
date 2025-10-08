@@ -75,10 +75,18 @@ def get_one_solved_branch_distance_samples(
     use_promising_branch: bool,
     heuristic_params: PARAM_DTYPE,
     key: chex.PRNGKey,
+    pop_ratio: float,
+    cost_weight: float,
 ):
     solve_config, initial_state = puzzle.get_inits(key)
 
-    search_result, leafs, filled = astar_fn(solve_config, initial_state, heuristic_params)
+    search_result, leafs, filled = astar_fn(
+        solve_config,
+        initial_state,
+        heuristic_params,
+        pop_ratio=pop_ratio,
+        cost_weight=cost_weight,
+    )
     batch_size = filled.shape[0]
 
     if use_promising_branch:
@@ -180,10 +188,18 @@ def get_one_solved_branch_q_samples(
     use_promising_branch: bool,
     qfunction_params: PARAM_DTYPE,
     key: chex.PRNGKey,
+    pop_ratio: float,
+    cost_weight: float,
 ):
     solve_config, initial_state = puzzle.get_inits(key)
 
-    search_result, leafs, filled = qstar_fn(solve_config, initial_state, qfunction_params)
+    search_result, leafs, filled = qstar_fn(
+        solve_config,
+        initial_state,
+        qfunction_params,
+        pop_ratio=pop_ratio,
+        cost_weight=cost_weight,
+    )
     batch_size = filled.shape[0]
 
     if use_promising_branch:
