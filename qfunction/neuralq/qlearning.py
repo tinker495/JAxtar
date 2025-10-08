@@ -398,9 +398,9 @@ def _get_datasets_with_policy(
             online_q_sum_cost = valid_neighbor_cost + q_online
             online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
             best_actions = jnp.argmin(online_q_sum_cost, axis=1)
-            min_q_sum_cost = jnp.take_along_axis(q_sum_cost, best_actions[:, jnp.newaxis], axis=1)[
-                :, 0
-            ]
+            min_q_sum_cost = jnp.take_along_axis(
+                q_sum_cost, best_actions[:, jnp.newaxis], axis=1
+            )[:, 0]
         else:
             min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
         # Target entropy (confidence of the backup) over next-state distribution
@@ -546,9 +546,9 @@ def _get_datasets_with_trajectory(
             online_q_sum_cost = valid_neighbor_cost + q_online
             online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
             best_actions = jnp.argmin(online_q_sum_cost, axis=1)
-            min_q_sum_cost = jnp.take_along_axis(q_sum_cost, best_actions[:, jnp.newaxis], axis=1)[
-                :, 0
-            ]
+            min_q_sum_cost = jnp.take_along_axis(
+                q_sum_cost, best_actions[:, jnp.newaxis], axis=1
+            )[:, 0]
         else:
             min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
 
@@ -560,7 +560,7 @@ def _get_datasets_with_trajectory(
         q_values = q_model.apply(q_params, preproc, training=False)
         q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
         selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
-
+        
         diff = target_q - selected_q
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
