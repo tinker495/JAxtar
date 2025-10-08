@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from typing import Any, Optional
 
 import chex
 import jax
@@ -140,9 +141,11 @@ class NeuralQFunctionBase(QFunction):
         save_params_with_metadata(path, self.params, metadata)
 
     def batched_q_value(
-        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
     ) -> chex.Array:
-        return self.batched_param_q_value(self.params, solve_config, current)
+        if params is None:
+            params = self.params
+        return self.batched_param_q_value(params, solve_config, current)
 
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State

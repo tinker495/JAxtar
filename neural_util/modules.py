@@ -88,7 +88,7 @@ ACTIVATION_FN_REGISTRY = {
     "hard_swish": nn.hard_swish,
     "silu": nn.silu,
     "tanh": nn.tanh,
-    "relu6": nn.relu6
+    "relu6": nn.relu6,
 }
 
 

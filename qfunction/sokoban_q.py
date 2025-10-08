@@ -1,3 +1,5 @@
+from typing import Any, Optional
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -10,7 +12,12 @@ class SokobanQ(QFunction):
     def __init__(self, puzzle: Sokoban):
         super().__init__(puzzle)
 
-    def q_value(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> chex.Array:
+    def q_value(
+        self,
+        solve_config: Sokoban.SolveConfig,
+        current: Sokoban.State,
+        params: Optional[Any] = None,
+    ) -> chex.Array:
         """
         Get Q values for all possible actions from the current state.
         Computes Q values as the distances between each neighboring state (generated from current)

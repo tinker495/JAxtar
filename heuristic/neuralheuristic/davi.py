@@ -22,7 +22,7 @@ from train_util.util import (
 )
 
 
-def davi_builder(
+def regression_trainer_builder(
     minibatch_size: int,
     heuristic_model: HeuristicBase,
     optimizer: optax.GradientTransformation,
@@ -364,7 +364,7 @@ def _get_datasets(
     }
 
 
-def get_heuristic_dataset_builder(
+def get_davi_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
     heuristic_model: HeuristicBase,

@@ -1,4 +1,5 @@
 import time
+from typing import Any, Optional
 
 import chex
 import jax
@@ -16,9 +17,11 @@ def qstar_builder(
     q_fn: QFunction,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
+    initial_pop_ratio: float = jnp.inf,
+    initial_cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    use_q_fn_params: bool = False,
+    export_last_pops: bool = False,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -51,6 +54,9 @@ def qstar_builder(
     def qstar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
+        q_fn_params: Optional[Any] = None,
+        pop_ratio: Optional[float] = initial_pop_ratio,
+        cost_weight: Optional[float] = initial_cost_weight,
     ) -> SearchResult:
         """
         qstar is the implementation of the Q* algorithm.
@@ -107,7 +113,9 @@ def qstar_builder(
             # Compute Q-values for parent states (not neighbors)
             # This gives us Q(s, a) for all actions from parent states
             q_vals = (
-                q_fn.batched_q_value(solve_config, states).transpose().astype(KEY_DTYPE)
+                q_fn.batched_q_value(solve_config, states, params=q_fn_params)
+                .transpose()
+                .astype(KEY_DTYPE)
             )  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
 
             flatten_neighbours = neighbours.flatten()
@@ -226,6 +234,8 @@ def qstar_builder(
         solved = puzzle.batched_is_solved(solve_config, states)
         search_result.solved = solved.any()
         search_result.solved_idx = idxes[jnp.argmax(solved)]
+        if export_last_pops:
+            return search_result, idxes, filled
         return search_result
 
     qstar_fn = jax.jit(qstar)
@@ -240,7 +250,15 @@ def qstar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    qstar_fn(empty_solve_config, empty_states)
+    if use_q_fn_params:
+        # compile with input params as params
+        q_fn_params = q_fn.get_params()
+        if q_fn_params is None:
+            qstar_fn(empty_solve_config, empty_states)
+        else:
+            qstar_fn(empty_solve_config, empty_states, q_fn_params)
+    else:
+        qstar_fn(empty_solve_config, empty_states)
 
     if show_compile_time:
         end = time.time()

@@ -9,6 +9,7 @@ from .pydantic_models import (
     QFunctionOptions,
     SearchOptions,
     VisualizeOptions,
+    WBSDistTrainOptions,
     WMDatasetOptions,
     WMGetDSOptions,
     WMGetModelOptions,
@@ -16,13 +17,14 @@ from .pydantic_models import (
     WorldModelBundle,
     WorldModelPuzzleConfig,
 )
-from .train_presets import train_presets
+from .train_presets import train_presets, wbs_train_presets
 from .world_model_registry import world_model_bundles
 
 __all__ = [
     "puzzle_bundles",
     "world_model_bundles",
     "train_presets",
+    "wbs_train_presets",
     "PuzzleOptions",
     "SearchOptions",
     "VisualizeOptions",
@@ -30,6 +32,7 @@ __all__ = [
     "QFunctionOptions",
     "DistTrainOptions",
     "DistQFunctionOptions",
+    "WBSDistTrainOptions",
     "WMDatasetOptions",
     "WMGetDSOptions",
     "WMGetModelOptions",

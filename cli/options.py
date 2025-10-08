@@ -4,7 +4,7 @@ from functools import wraps
 import click
 import jax
 
-from config import puzzle_bundles, train_presets, world_model_bundles
+from config import puzzle_bundles, train_presets, wbs_train_presets, world_model_bundles
 from config.pydantic_models import (
     DistQFunctionOptions,
     DistTrainOptions,
@@ -15,6 +15,7 @@ from config.pydantic_models import (
     QFunctionOptions,
     SearchOptions,
     VisualizeOptions,
+    WBSDistTrainOptions,
     WMDatasetOptions,
     WMGetDSOptions,
     WMGetModelOptions,
@@ -555,6 +556,60 @@ def dist_train_options(func: callable) -> callable:
             jax.config.update("jax_disable_jit", True)
 
         kwargs["train_options"] = train_opts
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def wbs_dist_train_options(func: callable) -> callable:
+    @click.option("-s", "--steps", type=int, default=None)
+    @click.option("-rs", "--replay_size", type=int, default=None)
+    @click.option("-mn", "--max_nodes", type=int, default=None)
+    @click.option("-ab", "--add_batch_size", type=int, default=None)
+    @click.option("-sb", "--search_batch_size", type=int, default=None)
+    @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
+    @click.option("-rr", "--replay_ratio", type=int, default=None)
+    @click.option("-sr", "--sample_ratio", type=float, default=None)
+    @click.option("-t-pr", "--pop_ratio", type=float, default=None)  # train pop ratio
+    @click.option("-tc-w", "--cost_weight", type=float, default=None)  # train cost weight
+    @click.option("-k", "--key", type=int, default=None)
+    @click.option("-r", "--reset", type=bool, default=None)
+    @click.option(
+        "-pb", "--use_promising_branch", is_flag=True, default=None, help="Use promising branch"
+    )
+    @click.option("--debug", is_flag=True, default=None, help="Debug mode")
+    @click.option("-md", "--multi_device", is_flag=True, default=None, help="Use multi device")
+    @click.option(
+        "-pre",
+        "--preset",
+        type=click.Choice(list(wbs_train_presets.keys())),
+        default="default",
+        help="WBS training configuration preset.",
+    )
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        preset_name = kwargs.pop("preset")
+        preset = wbs_train_presets[preset_name]
+
+        # Collect any user-provided options to override the preset
+        overrides = {
+            k: v
+            for k, v in kwargs.items()
+            if v is not None and k in WBSDistTrainOptions.model_fields
+        }
+
+        # Create a final options object by applying overrides to the preset
+        wbs_train_opts = preset.model_copy(update=overrides)
+
+        # Clean up kwargs so they don't get passed down
+        for k in WBSDistTrainOptions.model_fields:
+            kwargs.pop(k, None)
+
+        if wbs_train_opts.debug:
+            print("Disabling JIT")
+            jax.config.update("jax_disable_jit", True)
+
+        kwargs["train_options"] = wbs_train_opts
         return func(*args, **kwargs)
 
     return wrapper

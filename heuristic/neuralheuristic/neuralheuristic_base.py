@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from typing import Any, Optional
 
 import chex
 import jax
@@ -90,12 +91,21 @@ class NeuralHeuristicBase(Heuristic):
         else:
             self.params = self.get_new_params()
 
-    def get_new_params(self):
+    def get_params(self):
+        """
+        Get the parameters of the Heuristic.
+        """
+        return self.params
+
+    def get_dummy_preprocessed_state(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
+        return self.pre_process(dummy_solve_config, dummy_current)
+
+    def get_new_params(self):
         return self.model.init(
             jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+            jnp.expand_dims(self.get_dummy_preprocessed_state(), axis=0),
         )
 
     def load_model(self):
@@ -103,22 +113,15 @@ class NeuralHeuristicBase(Heuristic):
             if not is_model_downloaded(self.path):
                 download_model(self.path)
             params, metadata = load_params_with_metadata(self.path)
-            if params is None:
-                print(
-                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
-                    "Initializing new parameters."
-                )
-                self.metadata = {}
-                return self.get_new_params()
-            self.metadata = metadata
+            if params is None:  # Handle case where loading fails or returns None
+                raise ValueError(f"Failed to load valid parameters from {self.path}")
 
-            dummy_solve_config = self.puzzle.SolveConfig.default()
-            dummy_current = self.puzzle.State.default()
             self.model.apply(
                 params,
-                jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+                jnp.expand_dims(self.get_dummy_preprocessed_state(), axis=0),
                 training=False,
             )  # check if the params are compatible with the model
+            self.metadata = metadata
             return params
         except Exception as e:
             print(f"Error loading model: {e}")
@@ -132,9 +135,11 @@ class NeuralHeuristicBase(Heuristic):
         save_params_with_metadata(path, self.params, metadata)
 
     def batched_distance(
-        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
     ) -> chex.Array:
-        return self.batched_param_distance(self.params, solve_config, current)
+        if params is None:
+            params = self.params
+        return self.batched_param_distance(params, solve_config, current)
 
     def batched_param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
@@ -149,11 +154,15 @@ class NeuralHeuristicBase(Heuristic):
     ) -> chex.Array:
         return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
 
-    def distance(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
+    def distance(
+        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
+    ) -> float:
         """
         This function should return the distance between the state and the target.
         """
-        return float(self.param_distance(self.params, solve_config, current)[0])
+        if params is None:
+            params = self.params
+        return float(self.param_distance(params, solve_config, current)[0])
 
     def param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State

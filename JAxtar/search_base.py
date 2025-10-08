@@ -9,6 +9,7 @@ Key features:
 """
 
 from functools import partial
+from typing import Union
 
 import chex
 import jax
@@ -308,9 +309,12 @@ class SearchResult:
 
         return search_result, min_val.current, final_process_mask
 
-    def get_solved_path(search_result) -> list[Parent]:
+    def get_solved_path(search_result) -> list[Union[Parent, Current]]:
         """
         Get the path to the solved state.
+
+        returns:
+            path: list[Parent, Current] - [Parent, Parent, ..., Parent, Current]
         """
         assert search_result.solved
         solved_idx = search_result.solved_idx
@@ -330,6 +334,36 @@ class SearchResult:
             parent_last = search_result.get_parent(parent_last)
         path.reverse()
         return path
+
+    @partial(jax.jit, static_argnums=(3,))
+    def _get_path(
+        search_result, solved_idx: Current, mask: chex.Array = True, max_depth: int = 100
+    ) -> tuple[Parent, chex.Array]:
+        """
+        Get the path to the solved state using jax.lax.scan for JIT compatibility.
+
+        Args:
+            search_result: The search result containing parent information
+            solved_idx: The index of the solved state
+            max_depth: Maximum depth of the path to return
+
+        Returns:
+            tuple: Contains:
+                - Array of parents with fixed length max_depth
+                - Boolean mask indicating valid entries in the path
+        """
+        parent = search_result.get_parent(solved_idx)
+
+        # Use jax.lax.scan to collect parents
+        def scan_fn(parent, _):
+            cont = jnp.logical_and(parent.hashidx.index != -1, mask)
+            next_parent = jax.lax.cond(
+                cont, lambda: search_result.get_parent(parent), lambda: parent
+            )
+            return next_parent, (parent, cont)
+
+        _, (path, path_mask) = jax.lax.scan(scan_fn, parent, length=max_depth)
+        return path, path_mask
 
     def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:
         """

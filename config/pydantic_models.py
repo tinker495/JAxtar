@@ -84,10 +84,28 @@ class EvalOptions(BaseModel):
     def get_max_node_size(self, batch_size: int) -> int:
         return self.max_node_size // batch_size * batch_size
 
-
     def light_eval(self, max_eval: int = 20) -> "EvalOptions":
         capped_eval = min(max_eval, self.num_eval)
-        return self.model_copy(update={"num_eval": capped_eval, "cost_weight": [self.cost_weight[0]], "pop_ratio": [self.pop_ratio[0]]})
+
+        # Handle cost_weight - get first element if it's a list, otherwise use the value directly
+        if isinstance(self.cost_weight, list):
+            cost_weight_value = [self.cost_weight[0]]
+        else:
+            cost_weight_value = [self.cost_weight]
+
+        # Handle pop_ratio - get first element if it's a list, otherwise use the value directly
+        if isinstance(self.pop_ratio, list):
+            pop_ratio_value = [self.pop_ratio[0]]
+        else:
+            pop_ratio_value = [self.pop_ratio]
+
+        return self.model_copy(
+            update={
+                "num_eval": capped_eval,
+                "cost_weight": cost_weight_value,
+                "pop_ratio": pop_ratio_value,
+            }
+        )
 
     @property
     def light_eval_options(self) -> "EvalOptions":
@@ -153,6 +171,28 @@ class DistTrainOptions(BaseModel):
 
 class DistQFunctionOptions(BaseModel):
     with_policy: bool = True
+
+
+class WBSDistTrainOptions(BaseModel):
+    steps: int = int(2e3)  # 50 * 2e4 = 1e6 / DeepCubeA settings
+    replay_size: int = int(1e8)
+    max_nodes: int = int(2e7)
+    add_batch_size: int = 524288  # 8192 * 64
+    search_batch_size: int = 8192  # 8192
+    train_minibatch_size: int = 8192  # 128 * 16
+    replay_ratio: int = 1
+    sample_ratio: float = 0.3
+    pop_ratio: float = 0.35
+    cost_weight: float = 0.8
+    key: int = 0
+    reset: bool = True
+    use_promising_branch: bool = False
+    debug: bool = False
+    multi_device: bool = False
+    optimizer: str = "adam"
+    learning_rate: float = 1e-3
+    weight_decay_size: Optional[float] = 0.0
+    logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
 
 
 class WMDatasetOptions(BaseModel):

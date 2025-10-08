@@ -44,6 +44,7 @@ def _run_evaluation_sweep(
     output_dir: Optional[Path] = None,
     logger: Optional[BaseLogger] = None,
     step: int = 0,
+    search_fn_cache: Optional[dict[int, Callable]] = None,
     **kwargs,
 ):
     print_config(
@@ -66,6 +67,7 @@ def _run_evaluation_sweep(
         output_dir=output_dir,
         logger=logger,
         step=step,
+        search_fn_cache=search_fn_cache,
         **kwargs,
     )
     runner.run()
