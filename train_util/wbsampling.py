@@ -113,7 +113,14 @@ def get_one_solved_branch_distance_samples(
 
     max_leaf_costs = jnp.max(leaf_costs)
     leaf_mask = leaf_costs > max_leaf_costs * (1.0 - sample_ratio)  # batch_size
-    masks = jnp.where(leaf_mask[:, jnp.newaxis], masks, False)  # [topk_branch_size, max_depth]
+    leaf_mask_per_state = jnp.concatenate(
+        (
+            leaf_mask[:, jnp.newaxis],
+            jnp.ones_like(masks[:, 1:], dtype=jnp.bool_),
+        ),
+        axis=1,
+    )
+    masks = jnp.logical_and(masks, leaf_mask_per_state)
 
     path_states = search_result.get_state(paths)
     path_states = jax.tree_util.tree_map(
@@ -226,7 +233,14 @@ def get_one_solved_branch_q_samples(
 
     max_leaf_costs = jnp.max(leaf_costs)
     leaf_mask = leaf_costs > max_leaf_costs * (1.0 - sample_ratio)  # batch_size
-    masks = jnp.where(leaf_mask[:, jnp.newaxis], masks, False)  # [topk_branch_size, max_depth]
+    leaf_mask_per_state = jnp.concatenate(
+        (
+            leaf_mask[:, jnp.newaxis],
+            jnp.ones_like(masks[:, 1:], dtype=jnp.bool_),
+        ),
+        axis=1,
+    )
+    masks = jnp.logical_and(masks, leaf_mask_per_state)
 
     path_states = search_result.get_state(paths)
     path_actions = paths.action  # [topk_branch_size, max_depth - 1]
