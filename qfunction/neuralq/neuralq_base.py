@@ -76,15 +76,20 @@ class QModelBase(nn.Module):
     norm_fn: callable = DEFAULT_NORM_FN
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    dim_mult: float = None
     num_ensembles: int = 2
 
     def setup(self):
         if self.num_ensembles < 1:
             raise ValueError("num_ensembles must be at least 1.")
 
-        param_mult = max(1.0, float(np.sqrt(float(self.num_ensembles))))
-        reduced_initial = max(100, int(self.initial_dim / param_mult))
-        reduced_hidden = max(100, int(self.hidden_dim / param_mult))
+        dim_mult = (
+            min(1.0, 1.0 / float(np.sqrt(float(self.num_ensembles))))
+            if self.dim_mult is None
+            else self.dim_mult
+        )
+        reduced_initial = max(100, int(self.initial_dim * dim_mult))
+        reduced_hidden = max(100, int(self.hidden_dim * dim_mult))
 
         model_kwargs = dict(
             action_size=self.action_size,
