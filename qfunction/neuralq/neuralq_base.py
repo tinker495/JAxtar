@@ -83,24 +83,33 @@ class QModelBase(nn.Module):
             raise ValueError("num_ensembles must be at least 1.")
 
         param_mult = max(1.0, float(np.sqrt(float(self.num_ensembles))))
+        reduced_initial = max(100, int(self.initial_dim / param_mult))
+        reduced_hidden = max(100, int(self.hidden_dim / param_mult))
+
         model_kwargs = dict(
             action_size=self.action_size,
             Res_N=self.Res_N,
-            initial_dim=max(100, int(self.initial_dim / param_mult)),
+            initial_dim=reduced_initial,
             hidden_N=self.hidden_N,
-            hidden_dim=max(100, int(self.hidden_dim / param_mult)),
+            hidden_dim=reduced_hidden,
             activation=self.activation,
             norm_fn=self.norm_fn,
             resblock_fn=self.resblock_fn,
             use_swiglu=self.use_swiglu,
         )
-        self._members = [
-            _SingleQModel(name=f"ensemble_{i}", **model_kwargs) for i in range(self.num_ensembles)
-        ]
+
+        self._ensemble_model = nn.vmap(
+            _SingleQModel,
+            variable_axes={"params": 0, "batch_stats": 0},
+            split_rngs={"params": True},
+            in_axes=None,
+            out_axes=0,
+            axis_size=self.num_ensembles,
+            axis_name="ensemble",
+        )(name="ensemble", **model_kwargs)
 
     def _forward_members(self, x, training: bool):
-        outputs = [member(x, training=training) for member in self._members]
-        return jnp.stack(outputs, axis=0)
+        return self._ensemble_model(x, training)
 
     def __call__(self, x, training: bool = False):
         return self.max_outputs(x, training)
