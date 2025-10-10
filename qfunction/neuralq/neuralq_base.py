@@ -10,9 +10,13 @@ from puxle import Puzzle
 from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
+    HEAD_DTYPE,
+    PreActivationResBlock,
     ResBlock,
-    conditional_dummy_norm,
+    get_activation_fn,
     get_norm_fn,
+    get_resblock_fn,
+    swiglu_fn,
 )
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -25,23 +29,40 @@ from qfunction.q_base import QFunction
 class QModelBase(nn.Module):
     action_size: int = 4
     Res_N: int = 4
+    initial_dim: int = 5000
+    hidden_N: int = 1
     hidden_dim: int = 1000
+    activation: str = nn.relu
     norm_fn: callable = DEFAULT_NORM_FN
+    resblock_fn: callable = ResBlock
+    use_swiglu: bool = False
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(5000, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        x = nn.relu(x)
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
-        x = nn.relu(x)
+        if self.use_swiglu:
+            x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn, training)(x)
+            x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn, training)(x)
+        else:
+            x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
+            x = self.norm_fn(x, training)
+            x = self.activation(x)
+            x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+            x = self.norm_fn(x, training)
+            x = self.activation(x)
         for _ in range(self.Res_N):
-            x = ResBlock(self.hidden_dim, norm_fn=self.norm_fn)(x, training)
+            x = self.resblock_fn(
+                self.hidden_dim,
+                norm_fn=self.norm_fn,
+                hidden_N=self.hidden_N,
+                activation=self.activation,
+                use_swiglu=self.use_swiglu,
+            )(x, training)
+        if self.resblock_fn == PreActivationResBlock:
+            x = self.norm_fn(x, training)
+        x = x.astype(HEAD_DTYPE)
         x = nn.Dense(
-            self.action_size, dtype=DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
+            self.action_size, dtype=HEAD_DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
         )(x)
-        _ = conditional_dummy_norm(x, self.norm_fn, training)
         return x
 
 
@@ -58,6 +79,9 @@ class NeuralQFunctionBase(QFunction):
         self.is_fixed = puzzle.fixed_target
         self.action_size = self._get_action_size()
         kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
+        kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
+        kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
+        kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
         self.model = model(self.action_size, **kwargs)
         self.path = path
         self.metadata = {}
@@ -123,10 +147,15 @@ class NeuralQFunctionBase(QFunction):
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = jax.vmap(self.pre_process, in_axes=(None, 0))(solve_config, current)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.batched_pre_process(solve_config, current)
+        x = self.model.apply(params, x, training=False)
         x = self.post_process(x)
         return x
+
+    def batched_pre_process(
+        self, solve_configs: Puzzle.SolveConfig, current: Puzzle.State
+    ) -> chex.Array:
+        return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
 
     def q_value(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
         """
@@ -139,7 +168,7 @@ class NeuralQFunctionBase(QFunction):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x, _ = self.model.apply(params, x, training=False, mutable=["batch_stats"])
+        x = self.model.apply(params, x, training=False)
         return self.post_process(x)
 
     @abstractmethod

@@ -71,9 +71,27 @@ class EvalOptions(BaseModel):
         3,
         description="Maximum number of individual expansion plots to generate per run. Set to 0 to disable.",
     )
+    use_early_stopping: bool = Field(
+        True, description="Enable early stopping based on success rate threshold."
+    )
+    early_stop_patience: int = Field(
+        10, description="Number of samples to check before considering early stopping."
+    )
+    early_stop_threshold: float = Field(
+        0.5, description="Minimum success rate threshold for early stopping (0.0 to 1.0)."
+    )
 
     def get_max_node_size(self, batch_size: int) -> int:
         return self.max_node_size // batch_size * batch_size
+
+
+    def light_eval(self, max_eval: int = 20) -> "EvalOptions":
+        capped_eval = min(max_eval, self.num_eval)
+        return self.model_copy(update={"num_eval": capped_eval, "cost_weight": [self.cost_weight[0]], "pop_ratio": [self.pop_ratio[0]]})
+
+    @property
+    def light_eval_options(self) -> "EvalOptions":
+        return self.light_eval()
 
 
 class VisualizeOptions(BaseModel):
@@ -93,26 +111,44 @@ class QFunctionOptions(BaseModel):
 
 
 class DistTrainOptions(BaseModel):
-    steps: int = int(2e4)
-    dataset_batch_size: int = 524288
+    steps: int = int(5e3)
+    dataset_batch_size: int = 8192 * 256
     dataset_minibatch_size: int = 8192
     train_minibatch_size: int = 8192
     key: int = 0
     reset: bool = True
     loss_threshold: float = float("inf")
-    update_interval: int = 128
+    update_interval: int = 32
+    force_update_interval: int = 2048
     use_soft_update: bool = False
+    use_double_dqn: bool = False
     using_hindsight_target: bool = False
-    using_importance_sampling: bool = False
     using_triangular_sampling: bool = False
+    using_priority_sampling: bool = False
     use_target_confidence_weighting: bool = False
+    use_target_sharpness_weighting: bool = False
+    target_sharpness_alpha: float = 1.0
+    per_alpha: float = 0.6
+    per_beta: float = 0.4
+    per_epsilon: float = 1e-6
     debug: bool = False
     multi_device: bool = True
-    reset_interval: int = 4000
+    reset_interval: int = 1000
     tau: float = 0.2
-    opt_state_reset: bool = True
+    learning_rate: float = 1e-3
+    weight_decay_size: Optional[float] = 0.0
+    opt_state_reset: bool = False
     optimizer: str = "adam"
-    temperature: float = 1.0 / 3.0
+    temperature: float = 0.33
+    replay_ratio: int = Field(
+        1, description="Number of gradient updates per generated dataset. Default is 1."
+    )
+    logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
+    loss: str = Field("mse", description="Training loss: 'mse', 'huber', or 'logcosh'.")
+    huber_delta: float = Field(0.1, description="Delta parameter for Huber loss.")
+    td_error_clip: Optional[float] = Field(
+        None, description="Absolute clip value applied to TD-error."
+    )
 
 
 class DistQFunctionOptions(BaseModel):
@@ -144,11 +180,7 @@ class WMTrainOptions(BaseModel):
 class NeuralCallableConfig(BaseModel):
     callable: Callable
     path_template: str
-    neural_config: Optional[dict] = {
-        "norm_fn": "batch",
-        "Res_N": 4,
-        "hidden_dim": 1000,
-    }
+    neural_config: Optional[dict] = {}
 
     class Config:
         arbitrary_types_allowed = True
@@ -157,7 +189,7 @@ class NeuralCallableConfig(BaseModel):
 class WorldModelPuzzleConfig(BaseModel):
     callable: Callable
     path: str
-    norm_fn: Optional[Union[str, Callable]] = "batch"
+    neural_config: Optional[dict] = {}
 
     class Config:
         arbitrary_types_allowed = True

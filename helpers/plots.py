@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import matplotlib.transforms as transforms
@@ -177,7 +177,9 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
     return fig
 
 
-def plot_heuristic_accuracy(results: list[dict]) -> plt.Figure:
+def plot_heuristic_accuracy(
+    results: list[dict], metrics: Optional[Dict[str, float]] = None
+) -> plt.Figure:
     """Plots the heuristic/q-function accuracy."""
     all_actual_dists = []
     all_estimated_dists = []
@@ -190,6 +192,13 @@ def plot_heuristic_accuracy(results: list[dict]) -> plt.Figure:
                 all_estimated_dists.extend(analysis_data["estimated"])
 
     fig, ax = plt.subplots(figsize=(12, 12))
+    title = "Heuristic/Q-function Accuracy Analysis"
+
+    if metrics:
+        r_squared = metrics.get("r_squared")
+        ccc = metrics.get("ccc")
+        if r_squared is not None and ccc is not None:
+            title += f"\n($R^2={r_squared:.3f}$, $\\rho_c={ccc:.3f}$)"
 
     if all_actual_dists:
         plot_df = pd.DataFrame(
@@ -232,8 +241,17 @@ def plot_heuristic_accuracy(results: list[dict]) -> plt.Figure:
             for i, label in enumerate(xticklabels):
                 if i % step != 0:
                     label.set_visible(False)
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "No data for heuristic accuracy plot.",
+            ha="center",
+            va="center",
+            fontsize=12,
+        )
 
-    ax.set_title("Heuristic/Q-function Accuracy Analysis")
+    ax.set_title(title)
     ax.set_xlabel("Actual Cost to Goal")
     ax.set_ylabel("Estimated Distance (Heuristic/Q-Value)")
     ax.legend()

@@ -1,6 +1,7 @@
 from typing import Dict
 
 from puxle import (
+    PDDL,
     TSP,
     DotKnot,
     LightsOut,
@@ -23,6 +24,7 @@ from heuristic import (
     LightsOutHeuristic,
     MazeHeuristic,
     PancakeHeuristic,
+    PDDLHeuristic,
     RubiksCubeHeuristic,
     SlidePuzzleHeuristic,
     SokobanHeuristic,
@@ -33,12 +35,14 @@ from heuristic.neuralheuristic import (
     LightsOutNeuralHeuristic,
     PancakeNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
+    RubiksCubeRandomNeuralHeuristic,
     SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
     SokobanNeuralHeuristic,
     WorldModelNeuralHeuristic,
 )
 from qfunction import (
+    PDDLQ,
     TSPQ,
     DotKnotQ,
     LightsOutQ,
@@ -53,6 +57,7 @@ from qfunction.neuralq import (
     LightsOutNeuralQ,
     PancakeNeuralQ,
     RubiksCubeNeuralQ,
+    RubiksCubeRandomNeuralQ,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
     SokobanNeuralQ,
@@ -70,11 +75,9 @@ from world_model_puzzle import (
 )
 
 from .pydantic_models import (
-    EvalOptions,
     NeuralCallableConfig,
     PuzzleBundle,
     PuzzleConfig,
-    SearchOptions,
     WorldModelPuzzleConfig,
 )
 
@@ -168,6 +171,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "rubikscube": PuzzleBundle(
         puzzle=RubiksCube,
         puzzle_hard=PuzzleConfig(callable=RubiksCube, initial_shuffle=50),
+        shuffle_length=30,
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
         heuristic_nn_config=NeuralCallableConfig(
@@ -181,15 +185,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "rubikscube-random": PuzzleBundle(
         puzzle=RubiksCubeRandom,
+        shuffle_length=30,
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
         heuristic_nn_config=NeuralCallableConfig(
-            callable=RubiksCubeNeuralHeuristic,
-            path_template="heuristic/neuralheuristic/model/params/rubikscube_{size}.pkl",
+            callable=RubiksCubeRandomNeuralHeuristic,
+            path_template="heuristic/neuralheuristic/model/params/rubikscube-random_{size}.pkl",
         ),
         q_function_nn_config=NeuralCallableConfig(
-            callable=RubiksCubeNeuralQ,
-            path_template="qfunction/neuralq/model/params/rubikscube_{size}.pkl",
+            callable=RubiksCubeRandomNeuralQ,
+            path_template="qfunction/neuralq/model/params/rubikscube-random_{size}.pkl",
         ),
     ),
     "maze": PuzzleBundle(puzzle=Maze, heuristic=MazeHeuristic, q_function=MazeQ),
@@ -209,12 +214,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             callable=SokobanNeuralQ,
             path_template="qfunction/neuralq/model/params/sokoban_{size}.pkl",
         ),
-        eval_options=EvalOptions(
-            batch_size=100,
-        ),
-        search_options=SearchOptions(
-            batch_size=100,
-        ),
+        shuffle_length=500,
     ),
     "pancake": PuzzleBundle(
         puzzle=PancakeSorting,
@@ -231,11 +231,37 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "hanoi": PuzzleBundle(puzzle=TowerOfHanoi),
     "topspin": PuzzleBundle(puzzle=TopSpin),
+    "pddl_blocksworld": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("blocksworld", "bw-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
+    "pddl_gripper": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("gripper", "gr-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
+    "pddl_logistics": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("logistics", "lg-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
+    "pddl_rovers": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("rovers", "rv-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
+    "pddl_satellite": PuzzleBundle(
+        puzzle=lambda: PDDL.from_preset("satellite", "st-H-01"),
+        heuristic=PDDLHeuristic,
+        q_function=PDDLQ,
+    ),
     "rubikscube_world_model": PuzzleBundle(
         puzzle=WorldModelPuzzleConfig(
             callable=RubiksCubeWorldModel,
             path="world_model_puzzle/model/params/rubikscube.pkl",
         ),
+        shuffle_length=30,
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,
             path_template="heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl",
@@ -250,6 +276,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             callable=RubiksCubeWorldModel_test,
             path="world_model_puzzle/model/params/rubikscube.pkl",
         ),
+        shuffle_length=30,
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,
             path_template="heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl",
@@ -321,11 +348,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         ),
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,
-            path_template="heuristic/neuralheuristic/model/params/sokoban_world_model_optimized_None.pkl",
+            path_template="heuristic/neuralheuristic/model/params/sokoban_world_model_None.pkl",
         ),
         q_function_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralQ,
-            path_template="qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl",
+            path_template="qfunction/neuralq/model/params/sokoban_world_model_None.pkl",
         ),
     ),
     "sokoban_world_model_optimized": PuzzleBundle(
@@ -335,17 +362,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         ),
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,
-            path_template="heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl",
+            path_template="heuristic/neuralheuristic/model/params/sokoban_world_model_optimized_None.pkl",
         ),
         q_function_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralQ,
-            path_template="qfunction/neuralq/model/params/rubikscube_world_model_None.pkl",
-        ),
-        eval_options=EvalOptions(
-            batch_size=100,
-        ),
-        search_options=SearchOptions(
-            batch_size=100,
+            path_template="qfunction/neuralq/model/params/sokoban_world_model_optimized_None.pkl",
         ),
     ),
 }

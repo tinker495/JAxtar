@@ -3,12 +3,11 @@ import time
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import xtructure_numpy as xnp
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
-from JAxtar.util import flatten_array, flatten_tree, unflatten_array, unflatten_tree
 from qfunction.q_base import QFunction
 
 
@@ -46,7 +45,8 @@ def qstar_builder(
     # which is especially important for JAX and accelerator-based computation.
     # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
     # so that each batch is filled as evenly as possible and computational resources are used efficiently.
-    min_pop = batch_size // (puzzle.action_size // 2)
+    denom = max(1, puzzle.action_size // 2)
+    min_pop = max(1, batch_size // denom)
 
     def qstar(
         solve_config: Puzzle.SolveConfig,
@@ -102,6 +102,7 @@ def qstar_builder(
                 jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
                 (ncost.shape[0], 1),
             )  # [n_neighbours, batch_size]
+            unflatten_shape = filleds.shape
 
             # Compute Q-values for parent states (not neighbors)
             # This gives us Q(s, a) for all actions from parent states
@@ -109,113 +110,111 @@ def qstar_builder(
                 q_fn.batched_q_value(solve_config, states).transpose().astype(KEY_DTYPE)
             )  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
 
-            flatten_neighbours = flatten_tree(neighbours, 2)
-            flatten_filleds = flatten_array(filleds, 2)
-            flatten_nextcosts = flatten_array(nextcosts, 2)
-            flatten_parent_index = flatten_array(parent_index, 2)
-            flatten_parent_action = flatten_array(parent_action, 2)
-            flatten_q_vals = flatten_array(q_vals, 2)
+            flatten_neighbours = neighbours.flatten()
+            flatten_filleds = filleds.flatten()
+            flatten_nextcosts = nextcosts.flatten()
+            flatten_parent_index = parent_index.flatten()
+            flatten_parent_action = parent_action.flatten()
+            flatten_q_vals = q_vals.flatten()
             (
                 search_result.hashtable,
-                flatten_inserted,
                 _,
+                cheapest_uniques_mask,
                 hash_idx,
-            ) = search_result.hashtable.parallel_insert(flatten_neighbours, flatten_filleds)
-
-            # Filter out duplicate nodes, keeping only the one with the lowest cost
-            cheapest_uniques_mask = xnp.unique_mask(hash_idx, flatten_nextcosts)
-
-            # Nodes to process must be valid neighbors AND the cheapest unique ones
-            process_mask = jnp.logical_and(flatten_filleds, cheapest_uniques_mask)
+            ) = search_result.hashtable.parallel_insert(
+                flatten_neighbours, flatten_filleds, flatten_nextcosts
+            )
 
             # It must also be cheaper than any previously found path to this state.
             optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
 
             # Combine all conditions for the final decision.
-            final_process_mask = jnp.logical_and(process_mask, optimal_mask)
+            final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
 
             # Update the cost (g-value) for the newly found optimal paths before they are
             # masked out. This ensures the cost table is always up-to-date.
-            search_result.cost = xnp.set_as_condition_on_array(
+            search_result.cost = xnp.update_on_condition(
                 search_result.cost,
                 hash_idx.index,
                 final_process_mask,
                 flatten_nextcosts,  # Use costs before they are set to inf
             )
 
-            # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
-            # and updating the insertion flag. This ensures they are ignored in subsequent steps.
-            flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
-            flatten_q_vals = jnp.where(final_process_mask, flatten_q_vals, jnp.inf)
-            flatten_inserted = jnp.logical_and(flatten_inserted, final_process_mask)
-            sort_cost = (
-                flatten_inserted * 2 + final_process_mask * 1
-            )  # 2 is new, 1 is old but optimal, 0 is not optimal
-            search_result.dist = xnp.set_as_condition_on_array(
+            # 1. Identify where we've found a better (lower) heuristic.
+            previous_dist = search_result.dist[hash_idx.index]
+            is_more_optimistic_h = jnp.logical_and(
+                flatten_filleds, jnp.less(flatten_q_vals, previous_dist)
+            )
+
+            # 2. Update the global heuristic map (dist) based on this finding.
+            #    We use the original flatten_q_vals here.
+            search_result.dist = xnp.update_on_condition(
                 search_result.dist,
                 hash_idx.index,
-                final_process_mask,
+                is_more_optimistic_h,
                 flatten_q_vals,
             )
 
-            argsort_idx = jnp.argsort(sort_cost, axis=0)  # sort by inserted
+            # 3. For processing in this iteration (e.g., priority queue insertion),
+            #    we should use the best heuristic known *after* the potential update.
+            flatten_q_vals = jnp.where(is_more_optimistic_h, flatten_q_vals, previous_dist)
 
-            flatten_inserted = flatten_inserted[argsort_idx]
-            flatten_final_process_mask = final_process_mask[argsort_idx]
-            flatten_nextcosts = flatten_nextcosts[argsort_idx]
-            flatten_q_vals = flatten_q_vals[argsort_idx]
-            flatten_parent_index = flatten_parent_index[argsort_idx]
-            flatten_parent_action = flatten_parent_action[argsort_idx]
+            # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
+            # and updating the insertion flag. This ensures they are ignored in subsequent steps.
+            flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
+            # Stable partition to group useful entries first.
+            # Improves computational efficiency by gathering only batches with samples that need updates.
+            invperm = jnp.argsort(final_process_mask)
 
-            hash_idx = hash_idx[argsort_idx]
+            flatten_final_process_mask = final_process_mask[invperm]
+            flatten_nextcosts = flatten_nextcosts[invperm]
+            flatten_q_vals = flatten_q_vals[invperm]
+            flatten_parent_index = flatten_parent_index[invperm]
+            flatten_parent_action = flatten_parent_action[invperm]
 
-            hash_idx = unflatten_tree(hash_idx, filleds.shape)
-            nextcosts = unflatten_array(flatten_nextcosts, filleds.shape)
-            q_vals = unflatten_array(flatten_q_vals, filleds.shape)
-            current = Current(hashidx=hash_idx, cost=nextcosts)
-            parent_indexs = unflatten_array(flatten_parent_index, filleds.shape)
-            parent_action = unflatten_array(flatten_parent_action, filleds.shape)
-            final_process_mask = unflatten_array(flatten_final_process_mask, filleds.shape)
+            hash_idx = hash_idx[invperm]
+            current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
 
-            def _queue_insert(
-                search_result: SearchResult, current, q_vals, parent_index, parent_action
-            ):
-                neighbour_key = (cost_weight * current.cost + q_vals).astype(KEY_DTYPE)
+            flatten_neighbour_keys = (cost_weight * current.cost + flatten_q_vals).astype(KEY_DTYPE)
 
-                aranged_parent = parent[parent_index]
-                vals = Current_with_Parent(
-                    current=current,
-                    parent=Parent(
-                        action=parent_action,
-                        hashidx=aranged_parent.hashidx,
-                    ),
-                )
+            flatten_aranged_parent = parent[flatten_parent_index]
+            flatten_vals = Current_with_Parent(
+                current=current,
+                parent=Parent(
+                    action=flatten_parent_action,
+                    hashidx=flatten_aranged_parent.hashidx,
+                ),
+            )
+
+            final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
+            neighbour_keys = flatten_neighbour_keys.reshape(unflatten_shape)
+            vals = flatten_vals.reshape(unflatten_shape)
+
+            def _insert(search_result: SearchResult, neighbour_keys, vals):
 
                 search_result.priority_queue = search_result.priority_queue.insert(
-                    neighbour_key,
+                    neighbour_keys,
                     vals,
                 )
                 return search_result
 
             def _scan(search_result: SearchResult, val):
-                parent_action, current, q_vals, final_process_mask, parent_index = val
+                neighbour_keys, vals, final_process_mask = val
 
                 search_result = jax.lax.cond(
                     jnp.any(final_process_mask),
-                    _queue_insert,
-                    _queue_not_insert,
+                    _insert,
+                    lambda search_result, *args: search_result,
                     search_result,
-                    current,
-                    q_vals,
-                    parent_index,
-                    parent_action,
+                    neighbour_keys,
+                    vals,
                 )
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (parent_action, current, q_vals, final_process_mask, parent_indexs),
+                (neighbour_keys, vals, final_process_mask),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
@@ -249,7 +248,3 @@ def qstar_builder(
         print("JIT compiled\n\n")
 
     return qstar_fn
-
-
-def _queue_not_insert(search_result: SearchResult, current, q_vals, parent_index, parent_action):
-    return search_result

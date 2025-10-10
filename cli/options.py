@@ -24,9 +24,9 @@ from config.pydantic_models import (
 from helpers.formatting import human_format_to_float
 from heuristic.heuristic_base import Heuristic
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.optimizer import OPTIMIZERS
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.q_base import QFunction
+from train_util.optimizer import OPTIMIZERS
 
 
 def create_puzzle_options(
@@ -194,6 +194,24 @@ def eval_options(func: callable) -> callable:
         "-ne", "--num-eval", type=int, default=None, help="Number of puzzles to evaluate."
     )
     @click.option("-rn", "--run-name", type=str, default=None, help="Name of the evaluation run.")
+    @click.option(
+        "--use-early-stopping",
+        type=bool,
+        default=None,
+        help="Enable early stopping based on success rate threshold.",
+    )
+    @click.option(
+        "--early-stop-patience",
+        type=int,
+        default=None,
+        help="Number of samples to check before considering early stopping.",
+    )
+    @click.option(
+        "--early-stop-threshold",
+        type=float,
+        default=None,
+        help="Minimum success rate threshold for early stopping (0.0 to 1.0).",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         if kwargs.get("max_node_size", None) is not None:
@@ -380,9 +398,17 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-r", "--reset", type=bool, default=None)
     @click.option("-lt", "--loss_threshold", type=float, default=None)
     @click.option("-ui", "--update_interval", type=int, default=None)
+    @click.option("-fui", "--force_update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
+    @click.option(
+        "-dd",
+        "--use_double_dqn",
+        is_flag=True,
+        default=None,
+        help="Enable Double DQN target computation.",
+    )
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
-    @click.option("-is", "--using_importance_sampling", is_flag=True, default=None)
+    @click.option("-per", "--using_priority_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
     @click.option(
         "-tcw",
@@ -393,11 +419,53 @@ def dist_train_options(func: callable) -> callable:
         help="Weight loss by target confidence (inverse of move_cost).",
     )
     @click.option(
+        "-tsw",
+        "--target_sharpness_weighting",
+        "use_target_sharpness_weighting",
+        is_flag=True,
+        default=None,
+        help="Weight loss by policy sharpness (low entropy ⇒ higher weight).",
+    )
+    @click.option(
+        "--target_sharpness_alpha",
+        type=float,
+        default=None,
+        help="Strength of sharpness-based weighting (multiplier).",
+    )
+    @click.option(
+        "-pa",
+        "--per_alpha",
+        type=float,
+        default=None,
+        help="PER alpha parameter for priority exponentiation.",
+    )
+    @click.option(
+        "-pb",
+        "--per_beta",
+        type=float,
+        default=None,
+        help="PER beta parameter for importance sampling.",
+    )
+    @click.option(
+        "-pe",
+        "--per_epsilon",
+        type=float,
+        default=None,
+        help="PER epsilon parameter for numerical stability.",
+    )
+    @click.option(
         "-tp",
         "--temperature",
         type=float,
         default=None,
         help="Boltzmann temperature for action selection.",
+    )
+    @click.option(
+        "-rr",
+        "--replay_ratio",
+        type=int,
+        default=None,
+        help="Number of gradient updates per generated dataset.",
     )
     @click.option("-d", "--debug", is_flag=True, default=None)
     @click.option("-md", "--multi_device", type=bool, default=None)
@@ -410,12 +478,45 @@ def dist_train_options(func: callable) -> callable:
         default="adam",
         help="Optimizer to use",
     )
+    @click.option("-lr", "--learning_rate", type=float, default=None)
+    @click.option(
+        "-wd",
+        "--weight_decay_size",
+        type=float,
+        default=None,
+        help="Weight decay size for regularization.",
+    )
+    @click.option(
+        "--loss",
+        type=click.Choice(["mse", "huber", "logcosh"]),
+        default=None,
+        help="Select training loss.",
+    )
+    @click.option(
+        "--huber_delta",
+        type=float,
+        default=None,
+        help="Delta parameter for Huber loss.",
+    )
+    @click.option(
+        "--td-error-clip",
+        "td_error_clip",
+        type=float,
+        default=None,
+        help="Absolute clip value for TD-error; set <= 0 to disable.",
+    )
     @click.option(
         "-sl",
         "--shuffle_length",
         type=int,
         default=None,
         help="Override puzzle's default shuffle length.",
+    )
+    @click.option(
+        "--logger",
+        type=click.Choice(["aim", "tensorboard", "wandb", "none"]),
+        default=None,
+        help="Logger to use.",
     )
     @click.option(
         "-pre",
@@ -467,6 +568,7 @@ def dist_heuristic_options(func: callable) -> callable:
         help="Path to the heuristic parameter file.",
     )
     @click.option(
+        "-nc",
         "--neural_config",
         type=str,
         default=None,

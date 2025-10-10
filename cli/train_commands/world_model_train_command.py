@@ -6,10 +6,10 @@ import jax.numpy as jnp
 
 from config.pydantic_models import WMTrainOptions
 from helpers.config_printer import print_config
-from helpers.logger import TensorboardLogger
+from helpers.logger import create_logger
 from helpers.rich_progress import trange
-from neural_util.optimizer import setup_optimizer
-from neural_util.util import round_through_gradient
+from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer
+from train_util.util import apply_with_conditional_batch_stats, round_through_gradient
 from world_model_puzzle import WorldModelPuzzleBase
 from world_model_puzzle.world_model_train import (
     world_model_eval_builder,
@@ -48,19 +48,29 @@ def train(
     }
     print_config("World Model Training Configuration", config)
 
-    logger = TensorboardLogger(world_model_name, config)
+    logger = create_logger("aim", world_model_name, config)
     model: nn.Module = world_model.model
 
     def train_info_fn(params, data, next_data, action, training):
-        return model.apply(
-            params,
-            data,
-            next_data,
-            action,
-            training=training,
-            method=model.train_info,
-            mutable=["batch_stats"],
-        )
+        if training:
+            return apply_with_conditional_batch_stats(
+                model.apply,
+                params,
+                data,
+                next_data,
+                action,
+                training=True,
+                method=model.train_info,
+            )
+        else:
+            return model.apply(
+                params,
+                data,
+                next_data,
+                action,
+                training=False,
+                method=model.train_info,
+            )
 
     params = world_model.params
 
@@ -104,7 +114,7 @@ def train(
         params, opt_state, loss, AE_loss, WM_loss, accuracy = train_fn(
             subkey, (datas, next_datas, actions), params, opt_state, epoch
         )
-        lr = opt_state.hyperparams["learning_rate"]
+        lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="Training",
             desc_dict={
@@ -173,10 +183,10 @@ def train(
             ).astype(jnp.uint8)
             logger.log_image("Next/Decoded Pred", next_decoded_pred[0], epoch, dataformats="HWC")
 
-            world_model.params = params
+            world_model.params = get_eval_params(opt_state, params)
             world_model.save_model()
 
     logger.close()
 
-    world_model.params = params
+    world_model.params = get_eval_params(opt_state, params)
     world_model.save_model()

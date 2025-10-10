@@ -14,12 +14,11 @@ from neural_util.param_manager import (
     load_params_with_metadata,
     save_params_with_metadata,
 )
-from neural_util.util import (
-    download_model,
+from neural_util.util import download_model, is_model_downloaded
+from train_util.util import round_through_gradient
+from world_model_puzzle.util import (
     download_world_model_dataset,
-    is_model_downloaded,
     is_world_model_dataset_downloaded,
-    round_through_gradient,
 )
 
 
@@ -140,7 +139,6 @@ class WorldModelPuzzleBase(Puzzle):
         WM=WorldModel,
         init_params: bool = False,
         path: str = None,
-        norm_fn=None,
         **kwargs,
     ):
         self.data_path = data_path
@@ -154,7 +152,7 @@ class WorldModelPuzzleBase(Puzzle):
         self.action_size = action_size
         self.path = path
         self.metadata = {}
-        resolved_norm_fn = get_norm_fn(norm_fn)
+        kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
 
         class total_model(nn.Module):
             autoencoder: AutoEncoder
@@ -213,12 +211,14 @@ class WorldModelPuzzleBase(Puzzle):
 
         self.model = total_model(
             autoencoder=AE(
-                data_shape=self.data_shape, latent_shape=self.latent_shape, norm_fn=resolved_norm_fn
+                data_shape=self.data_shape,
+                latent_shape=self.latent_shape,
+                **kwargs,
             ),
             world_model=WM(
                 latent_shape=self.latent_shape,
                 action_size=self.action_size,
-                norm_fn=resolved_norm_fn,
+                **kwargs,
             ),
         )
 
