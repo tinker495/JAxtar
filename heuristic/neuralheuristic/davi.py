@@ -430,7 +430,7 @@ def _get_datasets_with_diffusion_distance(
     solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
     target_heuristic = move_costs.reshape((-1,))
 
-    # Find unique states to avoid duplicates using enhanced unique_mask with filled optimization
+    # Find unique states and broadcast the minimal target_heuristic to all duplicates
     _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
         val=solve_configs_and_states,
         key=target_heuristic,
