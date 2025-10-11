@@ -118,6 +118,7 @@ def davi(
         n_devices=n_devices,
         temperature=train_options.temperature,
         td_error_clip=train_options.td_error_clip,
+        use_diffusion_distance=train_options.use_diffusion_distance,
     )
 
     pbar = trange(steps)
@@ -336,6 +337,7 @@ def qlearning(
         temperature=train_options.temperature,
         td_error_clip=train_options.td_error_clip,
         use_double_dqn=train_options.use_double_dqn,
+        use_diffusion_distance=train_options.use_diffusion_distance,
     )
 
     pbar = trange(steps)

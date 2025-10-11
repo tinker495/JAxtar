@@ -255,6 +255,7 @@ def _get_datasets(
     key: chex.PRNGKey,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
+    use_diffusion_distance: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -297,6 +298,10 @@ def _get_datasets(
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
+
+        if use_diffusion_distance:
+            diffusion_targets = jnp.where(solved, 0.0, move_costs)
+            target_heuristic = diffusion_targets
 
         # Target entropy over next-state backup distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
@@ -376,6 +381,7 @@ def get_heuristic_dataset_builder(
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
+    use_diffusion_distance: bool = False,
 ):
 
     if using_hindsight_target:
@@ -425,6 +431,7 @@ def get_heuristic_dataset_builder(
             dataset_minibatch_size,
             temperature=temperature,
             td_error_clip=td_error_clip,
+            use_diffusion_distance=use_diffusion_distance,
         )
     )
 

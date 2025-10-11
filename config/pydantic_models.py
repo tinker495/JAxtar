@@ -84,10 +84,15 @@ class EvalOptions(BaseModel):
     def get_max_node_size(self, batch_size: int) -> int:
         return self.max_node_size // batch_size * batch_size
 
-
     def light_eval(self, max_eval: int = 20) -> "EvalOptions":
         capped_eval = min(max_eval, self.num_eval)
-        return self.model_copy(update={"num_eval": capped_eval, "cost_weight": [self.cost_weight[0]], "pop_ratio": [self.pop_ratio[0]]})
+        return self.model_copy(
+            update={
+                "num_eval": capped_eval,
+                "cost_weight": [self.cost_weight[0]],
+                "pop_ratio": [self.pop_ratio[0]],
+            }
+        )
 
     @property
     def light_eval_options(self) -> "EvalOptions":
@@ -131,6 +136,7 @@ class DistTrainOptions(BaseModel):
     per_alpha: float = 0.6
     per_beta: float = 0.4
     per_epsilon: float = 1e-6
+    use_diffusion_distance: bool = False
     debug: bool = False
     multi_device: bool = True
     reset_interval: int = 1000

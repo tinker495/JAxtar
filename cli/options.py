@@ -433,6 +433,12 @@ def dist_train_options(func: callable) -> callable:
         help="Strength of sharpness-based weighting (multiplier).",
     )
     @click.option(
+        "--use_diffusion_distance",
+        type=bool,
+        default=None,
+        help="Enable diffusion distance features in dataset creation.",
+    )
+    @click.option(
         "-pa",
         "--per_alpha",
         type=float,
