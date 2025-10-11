@@ -142,6 +142,7 @@ def davi(
             grad_magnitude,
             weight_magnitude,
             diffs,
+            current_heuristics,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         eval_params = get_eval_params(opt_state, heuristic_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -166,6 +167,7 @@ def davi(
         if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
+            logger.log_histogram("Metrics/Current Heuristic", current_heuristics, i)
             if "target_entropy" in dataset:
                 logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
 

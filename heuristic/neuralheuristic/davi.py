@@ -59,7 +59,7 @@ def davi_builder(
             diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights)
-        return loss_value, (new_params, diff)
+        return loss_value, (new_params, diff, current_heuristic)
 
     def davi(
         key: chex.PRNGKey,
@@ -123,7 +123,9 @@ def davi_builder(
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
             solveconfigs, states, target_heuristic, weights = batched_dataset
-            (loss, (heuristic_params, diff)), grads = jax.value_and_grad(davi_loss, has_aux=True)(
+            (loss, (heuristic_params, diff, current_heuristic)), grads = jax.value_and_grad(
+                davi_loss, has_aux=True
+            )(
                 heuristic_params,
                 solveconfigs,
                 states,
@@ -139,7 +141,12 @@ def davi_builder(
                 lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (heuristic_params, opt_state), (loss, grad_magnitude_mean, diff)
+            return (heuristic_params, opt_state), (
+                loss,
+                grad_magnitude_mean,
+                diff,
+                current_heuristic,
+            )
 
         # Repeat training loop for replay_ratio times with reshuffling
         def replay_loop(carry, replay_key):
@@ -187,7 +194,12 @@ def davi_builder(
                 jnp.mean(batched_weights_replay, axis=1, keepdims=True) + 1e-8
             )
 
-            (heuristic_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
+            (heuristic_params, opt_state), (
+                losses,
+                grad_magnitude_means,
+                diffs,
+                current_heuristics,
+            ) = jax.lax.scan(
                 train_loop,
                 (heuristic_params, opt_state),
                 (
@@ -197,17 +209,28 @@ def davi_builder(
                     batched_weights_replay,
                 ),
             )
-            return (heuristic_params, opt_state), (losses, grad_magnitude_means, diffs)
+            return (heuristic_params, opt_state), (
+                losses,
+                grad_magnitude_means,
+                diffs,
+                current_heuristics,
+            )
 
         # Generate separate keys for each replay iteration
         replay_keys = jax.random.split(key, replay_ratio)
-        (heuristic_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
+        (heuristic_params, opt_state), (
+            losses,
+            grad_magnitude_means,
+            diffs,
+            current_heuristics,
+        ) = jax.lax.scan(
             replay_loop,
             (heuristic_params, opt_state),
             replay_keys,
         )
         loss = jnp.mean(losses)
         diffs = diffs.reshape(-1)
+        current_heuristics = current_heuristics.reshape(-1)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -222,22 +245,40 @@ def davi_builder(
             grad_magnitude_mean,
             weights_magnitude_mean,
             diffs,
+            current_heuristics,
         )
 
     if n_devices > 1:
 
         def pmap_davi(key, dataset, heuristic_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs) = jax.pmap(
-                davi, in_axes=(0, 0, None, None), axis_name="devices"
-            )(keys, dataset, heuristic_params, opt_state)
+            (
+                heuristic_params,
+                opt_state,
+                loss,
+                grad_magnitude,
+                weight_magnitude,
+                diffs,
+                current_heuristics,
+            ) = jax.pmap(davi, in_axes=(0, 0, None, None), axis_name="devices")(
+                keys, dataset, heuristic_params, opt_state
+            )
             heuristic_params = jax.tree_util.tree_map(lambda xs: xs[0], heuristic_params)
             opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
             loss = jnp.mean(loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
             diffs = diffs.reshape(-1)
-            return heuristic_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs
+            current_heuristics = current_heuristics.reshape(-1)
+            return (
+                heuristic_params,
+                opt_state,
+                loss,
+                grad_magnitude,
+                weight_magnitude,
+                diffs,
+                current_heuristics,
+            )
 
         return pmap_davi
     else:
@@ -255,7 +296,6 @@ def _get_datasets(
     key: chex.PRNGKey,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
-    use_diffusion_distance: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -298,10 +338,6 @@ def _get_datasets(
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
-
-        if use_diffusion_distance:
-            diffusion_targets = jnp.where(solved, 0.0, move_costs)
-            target_heuristic = diffusion_targets
 
         # Target entropy over next-state backup distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
@@ -369,6 +405,42 @@ def _get_datasets(
     }
 
 
+def _get_datasets_with_diffusion_distance(
+    puzzle: Puzzle,
+    preproc_fn: Callable,
+    heuristic_model: HeuristicBase,
+    minibatch_size: int,
+    target_heuristic_params: Any,
+    heuristic_params: Any,
+    shuffled_path: dict[str, chex.Array],
+    key: chex.PRNGKey,
+    temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
+):
+
+    solve_configs = shuffled_path["solve_configs"]
+    states = shuffled_path["states"]
+    move_costs = shuffled_path["move_costs"]
+
+    solve_configs = solve_configs.reshape((-1,))
+    states = states.reshape((-1,))
+    target_heuristic = move_costs.reshape((-1,))
+    diff = jnp.zeros_like(target_heuristic)
+    target_entropy = jnp.zeros_like(target_heuristic)
+    target_entropy_max = jnp.zeros_like(target_heuristic)
+    cost = move_costs.reshape((-1,))
+
+    return {
+        "solveconfigs": solve_configs,
+        "states": states,
+        "target_heuristic": target_heuristic,
+        "diff": diff,
+        "target_entropy": target_entropy,
+        "target_entropy_max": target_entropy_max,
+        "cost": cost,
+    }
+
+
 def get_heuristic_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
@@ -422,18 +494,30 @@ def get_heuristic_dataset_builder(
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
-    jited_get_datasets = jax.jit(
-        partial(
-            _get_datasets,
-            puzzle,
-            preproc_fn,
-            heuristic_model,
-            dataset_minibatch_size,
-            temperature=temperature,
-            td_error_clip=td_error_clip,
-            use_diffusion_distance=use_diffusion_distance,
+    if use_diffusion_distance:
+        jited_get_datasets = jax.jit(
+            partial(
+                _get_datasets_with_diffusion_distance,
+                puzzle,
+                preproc_fn,
+                heuristic_model,
+                dataset_minibatch_size,
+                temperature=temperature,
+                td_error_clip=td_error_clip,
+            )
         )
-    )
+    else:
+        jited_get_datasets = jax.jit(
+            partial(
+                _get_datasets,
+                puzzle,
+                preproc_fn,
+                heuristic_model,
+                dataset_minibatch_size,
+                temperature=temperature,
+                td_error_clip=td_error_clip,
+            )
+        )
 
     @jax.jit
     def get_datasets(
