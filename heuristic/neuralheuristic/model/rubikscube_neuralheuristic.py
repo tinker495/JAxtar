@@ -32,10 +32,10 @@ def _remove_face_centers(flatten_face: chex.Array, n: int) -> chex.Array:
 
 class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: RubiksCube, **kwargs):
-        super().__init__(puzzle, **kwargs)
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size
         self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+        super().__init__(puzzle, **kwargs)
 
     def _one_hot_faces(self, faces: chex.Array) -> chex.Array:
         return jax.nn.one_hot(faces, num_classes=self._num_tile_classes)
@@ -52,10 +52,10 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
 
 class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: RubiksCube, **kwargs):
-        super().__init__(puzzle, **kwargs)
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size
         self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+        super().__init__(puzzle, **kwargs)
 
     def _one_hot_faces(self, faces: chex.Array) -> chex.Array:
         return jax.nn.one_hot(faces, num_classes=self._num_tile_classes)
