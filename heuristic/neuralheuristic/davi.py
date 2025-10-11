@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import optax
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
 from train_util.losses import loss_from_diff
@@ -408,6 +409,7 @@ def _get_datasets(
 def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
+    SolveConfigsAndStates: Xtructurable,
     heuristic_model: HeuristicBase,
     minibatch_size: int,
     target_heuristic_params: Any,
@@ -424,7 +426,18 @@ def _get_datasets_with_diffusion_distance(
 
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
+
+    solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
     target_heuristic = move_costs.reshape((-1,))
+
+    # Find unique states to avoid duplicates using enhanced unique_mask with filled optimization
+    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
+        val=solve_configs_and_states,
+        key=target_heuristic,
+        return_index=True,
+        return_inverse=True,
+    )
+    target_heuristic = target_heuristic[unique_uint32eds_idx][inverse_indices]
     diff = jnp.zeros_like(target_heuristic)
     target_entropy = jnp.zeros_like(target_heuristic)
     target_entropy_max = jnp.zeros_like(target_heuristic)
@@ -495,11 +508,18 @@ def get_heuristic_dataset_builder(
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
     if use_diffusion_distance:
+
+        @xtructure_dataclass
+        class SolveConfigsAndStates:
+            solveconfigs: FieldDescriptor[puzzle.SolveConfig]
+            states: FieldDescriptor[puzzle.State]
+
         jited_get_datasets = jax.jit(
             partial(
                 _get_datasets_with_diffusion_distance,
                 puzzle,
                 preproc_fn,
+                SolveConfigsAndStates,
                 heuristic_model,
                 dataset_minibatch_size,
                 temperature=temperature,
