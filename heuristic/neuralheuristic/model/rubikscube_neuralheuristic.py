@@ -33,6 +33,12 @@ def _remove_face_centers(flatten_face: chex.Array, n: int) -> chex.Array:
 class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: RubiksCube, **kwargs):
         super().__init__(puzzle, **kwargs)
+        self._use_color_embedding = getattr(puzzle, "color_embedding", True)
+        tile_count = puzzle.size * puzzle.size
+        self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+
+    def _one_hot_faces(self, faces: chex.Array) -> chex.Array:
+        return jax.nn.one_hot(faces, num_classes=self._num_tile_classes)
 
     def pre_process(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
@@ -40,15 +46,19 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
         current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
         current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
         # Create a one-hot encoding of the flattened face without centre stickers
-        current_one_hot = jax.nn.one_hot(
-            current_no_centers, num_classes=6
-        ).flatten()  # 6 colors in Rubik's Cube
+        current_one_hot = self._one_hot_faces(current_no_centers).flatten()
         return ((current_one_hot - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
 
 
 class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
     def __init__(self, puzzle: RubiksCube, **kwargs):
         super().__init__(puzzle, **kwargs)
+        self._use_color_embedding = getattr(puzzle, "color_embedding", True)
+        tile_count = puzzle.size * puzzle.size
+        self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+
+    def _one_hot_faces(self, faces: chex.Array) -> chex.Array:
+        return jax.nn.one_hot(faces, num_classes=self._num_tile_classes)
 
     def pre_process(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
@@ -56,11 +66,9 @@ class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
         current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
         current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
         # Create a one-hot encoding of the flattened face without centre stickers
-        current_one_hot = jax.nn.one_hot(
-            current_no_centers, num_classes=6
-        ).flatten()  # 6 colors in Rubik's Cube
+        current_one_hot = self._one_hot_faces(current_no_centers).flatten()
         target_flatten_face = solve_config.TargetState.unpacked.faces.flatten()
         target_no_centers = _remove_face_centers(target_flatten_face, self.puzzle.size)
-        target_one_hot = jax.nn.one_hot(target_no_centers, num_classes=6).flatten()
+        target_one_hot = self._one_hot_faces(target_no_centers).flatten()
         one_hots = jnp.concatenate([target_one_hot, current_one_hot], axis=-1)
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]

@@ -68,9 +68,13 @@ def create_puzzle_options(
             if isinstance(puzzle_callable, WorldModelPuzzleConfig):
                 puzzle_instance = puzzle_callable.callable(path=puzzle_callable.path, **input_args)
             elif isinstance(puzzle_callable, PuzzleConfig):
-                puzzle_instance = puzzle_callable.callable(
-                    initial_shuffle=puzzle_callable.initial_shuffle, **input_args
-                )
+                puzzle_kwargs = {**puzzle_callable.kwargs, **input_args}
+                if (
+                    puzzle_callable.initial_shuffle is not None
+                    and "initial_shuffle" not in puzzle_kwargs
+                ):
+                    puzzle_kwargs["initial_shuffle"] = puzzle_callable.initial_shuffle
+                puzzle_instance = puzzle_callable.callable(**puzzle_kwargs)
             elif puzzle_callable is None:
                 raise click.UsageError(
                     f"Puzzle type for '{puzzle_name}'"

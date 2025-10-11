@@ -14,6 +14,8 @@ class RubiksCubeQ(QFunction):
             self.heur_modify = 0
         else:
             self.heur_modify = 1 / (puzzle.size**2)
+        self._tile_count = puzzle.size * puzzle.size
+        self._use_color_embedding = getattr(puzzle, "color_embedding", True)
 
     def q_value(self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State) -> float:
         """
@@ -29,6 +31,9 @@ class RubiksCubeQ(QFunction):
         """
         current_faces = current.unpacked.faces
         target_faces = target.unpacked.faces
+        if not self._use_color_embedding:
+            current_faces = jnp.floor_divide(current_faces, self._tile_count)
+            target_faces = jnp.floor_divide(target_faces, self._tile_count)
         equal_faces = 1 - (jnp.equal(current_faces, target_faces).mean(1) - self.heur_modify) / (
             1 - self.heur_modify
         )
