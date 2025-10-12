@@ -139,7 +139,7 @@ class DistTrainOptions(BaseModel):
     use_diffusion_distance: bool = False
     debug: bool = False
     multi_device: bool = True
-    reset_interval: int = 1000
+    reset_interval: int = int(float("inf"))
     tau: float = 0.2
     learning_rate: float = 1e-3
     weight_decay_size: Optional[float] = 0.0
