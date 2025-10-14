@@ -48,13 +48,15 @@ def qlearning_builder(
             q_fn.apply, q_params, preproc, training=True, n_devices=n_devices
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
-        q_values_at_actions = jnp.take_along_axis(q_values, actions, axis=1) # [batch_size, minibatch_size, 1 or 2]
-        diff = target_qs - q_values_at_actions # [batch_size, minibatch_size, 1 or 2]
+        q_values_at_actions = jnp.take_along_axis(
+            q_values, actions, axis=1
+        )  # [batch_size, minibatch_size, 1 or 2]
+        diff = target_qs - q_values_at_actions  # [batch_size, minibatch_size, 1 or 2]
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
-        loss_value = jnp.mean(per_sample * weights)
+        loss_value = jnp.mean(per_sample * weights[:, jnp.newaxis])
         return loss_value, (new_params, diff)
 
     def qlearning(
@@ -396,6 +398,7 @@ def _get_datasets_with_policy(
         "cost": cost,
     }
 
+
 def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
@@ -439,19 +442,20 @@ def _get_datasets_with_diffusion_distance(
         return_index=True,
         return_inverse=True,
     )
-    cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis] # [dataset_size, 1]
+    cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]  # [dataset_size, 1]
     target_q = jnp.concatenate(
         (target_q, cost),
         axis=1,
-    ) # [dataset_size, 2]
+    )  # [dataset_size, 2]
     return_dict["target_q"] = target_q
     actions = return_dict["actions"]
     actions = jnp.concatenate(
         (actions, trajectory_actions),
         axis=1,
-    ) # [dataset_size, 2]
+    )  # [dataset_size, 2]
     return_dict["actions"] = actions
     return return_dict
+
 
 def get_qlearning_dataset_builder(
     puzzle: Puzzle,
@@ -507,11 +511,12 @@ def get_qlearning_dataset_builder(
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
     if use_diffusion_distance:
+
         @xtructure_dataclass
         class SolveConfigsAndStatesAndActions:
             solveconfigs: FieldDescriptor[puzzle.SolveConfig]
             states: FieldDescriptor[puzzle.State]
-            actions: FieldDescriptor[jnp.uint8]
+            actions: FieldDescriptor[jnp.uint8, (1,)]
 
         jited_get_datasets = jax.jit(
             partial(
