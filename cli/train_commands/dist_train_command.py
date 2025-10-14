@@ -351,6 +351,7 @@ def qlearning(
             grad_magnitude,
             weight_magnitude,
             diffs,
+            current_qs,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         eval_params = get_eval_params(opt_state, qfunc_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -387,6 +388,7 @@ def qlearning(
                 logger.log_histogram("Metrics/Action Entropy", dataset["action_entropy"], i)
             if "target_entropy" in dataset:
                 logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
+            logger.log_histogram("Metrics/Current Q", current_qs, i)
 
         target_updated = False
         if train_options.use_soft_update:

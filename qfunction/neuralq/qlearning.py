@@ -57,7 +57,8 @@ def qlearning_builder(
             diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
         loss_value = jnp.mean(per_sample * weights[:, jnp.newaxis])
-        return loss_value, (new_params, diff)
+        current_q = q_values_at_actions
+        return loss_value, (new_params, diff, current_q)
 
     def qlearning(
         key: chex.PRNGKey,
@@ -79,7 +80,9 @@ def qlearning_builder(
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
             solveconfigs, states, target_q, actions, weights = batched_dataset
-            (loss, (q_params, diff)), grads = jax.value_and_grad(qlearning_loss, has_aux=True)(
+            (loss, (q_params, diff, current_q)), grads = jax.value_and_grad(
+                qlearning_loss, has_aux=True
+            )(
                 q_params,
                 solveconfigs,
                 states,
@@ -96,7 +99,7 @@ def qlearning_builder(
                 lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (q_params, opt_state), (loss, grad_magnitude_mean, diff)
+            return (q_params, opt_state), (loss, grad_magnitude_mean, diff, current_q)
 
         def replay_loop(carry, replay_key):
             q_params, opt_state = carry
@@ -125,7 +128,12 @@ def qlearning_builder(
                 jnp.mean(batched_weights, axis=1, keepdims=True) + 1e-8
             )
 
-            (q_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
+            (q_params, opt_state,), (
+                losses,
+                grad_magnitude_means,
+                diffs,
+                current_qs,
+            ) = jax.lax.scan(
                 train_loop,
                 (q_params, opt_state),
                 (
@@ -136,16 +144,17 @@ def qlearning_builder(
                     batched_weights,
                 ),
             )
-            return (q_params, opt_state), (losses, grad_magnitude_means, diffs)
+            return (q_params, opt_state), (losses, grad_magnitude_means, diffs, current_qs)
 
         replay_keys = jax.random.split(key, replay_ratio)
-        (q_params, opt_state), (losses, grad_magnitude_means, diffs) = jax.lax.scan(
+        (q_params, opt_state,), (losses, grad_magnitude_means, diffs, current_qs,) = jax.lax.scan(
             replay_loop,
             (q_params, opt_state),
             replay_keys,
         )
         loss = jnp.mean(losses)
         diffs = diffs.reshape(-1)
+        current_qs = current_qs.reshape(-1)
         # Calculate weights magnitude means
         grad_magnitude_mean = jnp.mean(grad_magnitude_means)
         weights_magnitude = jax.tree_util.tree_map(
@@ -159,22 +168,40 @@ def qlearning_builder(
             grad_magnitude_mean,
             weights_magnitude_mean,
             diffs,
+            current_qs,
         )
 
     if n_devices > 1:
 
         def pmap_qlearning(key, dataset, q_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs) = jax.pmap(
-                qlearning, in_axes=(0, 0, None, None), axis_name="devices"
-            )(keys, dataset, q_params, opt_state)
+            (
+                qfunc_params,
+                opt_state,
+                loss,
+                grad_magnitude,
+                weight_magnitude,
+                diffs,
+                current_qs,
+            ) = jax.pmap(qlearning, in_axes=(0, 0, None, None), axis_name="devices")(
+                keys, dataset, q_params, opt_state
+            )
             qfunc_params = jax.tree_util.tree_map(lambda xs: xs[0], qfunc_params)
             opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
             loss = jnp.mean(loss)
             grad_magnitude = jnp.mean(grad_magnitude)
             weight_magnitude = jnp.mean(weight_magnitude)
             diffs = diffs.reshape(-1)
-            return qfunc_params, opt_state, loss, grad_magnitude, weight_magnitude, diffs
+            current_qs = current_qs.reshape(-1)
+            return (
+                qfunc_params,
+                opt_state,
+                loss,
+                grad_magnitude,
+                weight_magnitude,
+                diffs,
+                current_qs,
+            )
 
         return pmap_qlearning
     else:
