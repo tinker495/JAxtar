@@ -443,6 +443,7 @@ def _get_datasets_with_diffusion_distance(
         return_inverse=True,
     )
     cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]  # [dataset_size, 1]
+    target_q = jnp.maximum(target_q, cost)
     target_q = jnp.concatenate(
         (target_q, cost),
         axis=1,
