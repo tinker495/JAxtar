@@ -1,6 +1,5 @@
 from .puzzle_registry import puzzle_bundles
 from .pydantic_models import (
-    DistQFunctionOptions,
     DistTrainOptions,
     HeuristicOptions,
     NeuralCallableConfig,
@@ -29,7 +28,6 @@ __all__ = [
     "HeuristicOptions",
     "QFunctionOptions",
     "DistTrainOptions",
-    "DistQFunctionOptions",
     "WMDatasetOptions",
     "WMGetDSOptions",
     "WMGetModelOptions",
