@@ -6,7 +6,6 @@ import jax
 
 from config import puzzle_bundles, train_presets, world_model_bundles
 from config.pydantic_models import (
-    DistQFunctionOptions,
     DistTrainOptions,
     EvalOptions,
     HeuristicOptions,
@@ -620,7 +619,6 @@ def dist_heuristic_options(func: callable) -> callable:
 
 
 def dist_qfunction_options(func: callable) -> callable:
-    @click.option("--with_policy", type=bool, default=None, help="Use policy for training")
     @click.option(
         "--param-path",
         type=str,
@@ -636,12 +634,6 @@ def dist_qfunction_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        overrides = {
-            k: v
-            for k, v in kwargs.items()
-            if v is not None and k in DistQFunctionOptions.model_fields
-        }
-        q_opts = DistQFunctionOptions(**overrides)
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
@@ -669,7 +661,6 @@ def dist_qfunction_options(func: callable) -> callable:
             **q_config.neural_config,
         )
         kwargs["qfunction"] = qfunction
-        kwargs["with_policy"] = q_opts.with_policy
         kwargs["q_config"] = q_config
         return func(*args, **kwargs)
 

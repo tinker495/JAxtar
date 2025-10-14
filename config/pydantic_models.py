@@ -157,10 +157,6 @@ class DistTrainOptions(BaseModel):
     )
 
 
-class DistQFunctionOptions(BaseModel):
-    with_policy: bool = True
-
-
 class WMDatasetOptions(BaseModel):
     dataset_size: int = 300000
     dataset_minibatch_size: int = 30000

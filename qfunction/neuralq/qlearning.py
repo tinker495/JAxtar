@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import optax
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from qfunction.neuralq.neuralq_base import QModelBase
 from train_util.losses import loss_from_diff
@@ -54,8 +55,8 @@ def qlearning_builder(
             q_fn.apply, q_params, preproc, training=True, n_devices=n_devices
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
-        q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
-        diff = target_qs.squeeze() - q_values_at_actions.squeeze()
+        q_values_at_actions = jnp.take_along_axis(q_values, actions, axis=1) # [batch_size, minibatch_size, 1 or 2]
+        diff = target_qs - q_values_at_actions # [batch_size, minibatch_size, 1 or 2]
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
@@ -192,11 +193,11 @@ def qlearning_builder(
             batch_indexs_replay = jnp.reshape(batch_indexs_replay, (batch_size, minibatch_size))
 
             # Create new batches with reshuffled indices
-            batched_solveconfigs_replay = xnp.take(solveconfigs, batch_indexs_replay, axis=0)
-            batched_states_replay = xnp.take(states, batch_indexs_replay, axis=0)
-            batched_target_q_replay = jnp.take(target_q, batch_indexs_replay, axis=0)
-            batched_actions_replay = jnp.take(actions, batch_indexs_replay, axis=0)
-            batched_weights_replay = jnp.take(loss_weights_replay, batch_indexs_replay, axis=0)
+            batched_solveconfigs_replay = xnp.take(solveconfigs, batch_indexs_replay, axis=0) # [batch_size, minibatch_size, ...]
+            batched_states_replay = xnp.take(states, batch_indexs_replay, axis=0) # [batch_size, minibatch_size, ...]
+            batched_target_q_replay = jnp.take(target_q, batch_indexs_replay, axis=0) # [batch_size, minibatch_size, 1 or 2]
+            batched_actions_replay = jnp.take(actions, batch_indexs_replay, axis=0) # [batch_size, minibatch_size, 1 or 2]
+            batched_weights_replay = jnp.take(loss_weights_replay, batch_indexs_replay, axis=0) # [batch_size, minibatch_size]
             # Normalize weights per batch to prevent scale drift
             batched_weights_replay = batched_weights_replay / (
                 jnp.mean(batched_weights_replay, axis=1, keepdims=True) + 1e-8
@@ -309,19 +310,17 @@ def _get_datasets_with_policy(
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
-    use_diffusion_distance: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
-    move_costs = shuffled_path["move_costs"]
+    move_costs_tm1 = shuffled_path["move_costs_tm1"]
 
     minibatched_solve_configs = solve_configs.reshape((-1, minibatch_size))
     minibatched_states = states.reshape((-1, minibatch_size))
-    minibatched_move_costs = move_costs.reshape((-1, minibatch_size))
 
     def get_minibatched_datasets(key, vals):
         key, subkey = jax.random.split(key)
-        solve_configs, states, move_costs = vals
+        solve_configs, states = vals
         # Check if the current states are already in a solved configuration.
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
 
@@ -436,7 +435,6 @@ def _get_datasets_with_policy(
             max_entropy,
             target_entropy,
             max_entropy,
-            move_costs,
         )
 
     _, (
@@ -449,23 +447,22 @@ def _get_datasets_with_policy(
         max_entropy,
         target_entropy,
         target_max_entropy,
-        cost,
     ) = jax.lax.scan(
         get_minibatched_datasets,
         key,
-        (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
+        (minibatched_solve_configs, minibatched_states),
     )
 
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
-    target_q = target_q.reshape((-1,))
-    actions = actions.reshape((-1,))
+    target_q = target_q.reshape((-1, 1))
+    actions = actions.reshape((-1, 1))
     diff = diff.reshape((-1,))
     entropy = entropy.reshape((-1,))
     max_entropy = max_entropy.reshape((-1,))
     target_entropy = target_entropy.reshape((-1,))
     target_max_entropy = target_max_entropy.reshape((-1,))
-    cost = cost.reshape((-1,))
+    cost = move_costs_tm1.reshape((-1,))
 
     return {
         "solveconfigs": solve_configs,
@@ -480,123 +477,62 @@ def _get_datasets_with_policy(
         "cost": cost,
     }
 
-
-def _get_datasets_with_trajectory(
+def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
+    SolveConfigsAndStatesAndActions: Xtructurable,
     q_model: QModelBase,
     minibatch_size: int,
     target_q_params: Any,
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
-    use_diffusion_distance: bool = False,
 ):
-    solve_configs = shuffled_path["solve_configs"]
-    states = shuffled_path["states"]
-    actions = shuffled_path["actions"]
-    move_costs = shuffled_path["move_costs"]
-
-    minibatched_solve_configs = solve_configs.reshape((-1, minibatch_size))
-    minibatched_states = states.reshape((-1, minibatch_size))
-    minibatched_actions = actions.reshape((-1, minibatch_size))
-    minibatched_move_costs = move_costs.reshape((-1, minibatch_size))
-
-    def get_minibatched_datasets(key, vals):
-        key, subkey = jax.random.split(key)
-        solve_configs, states, actions, move_costs = vals
-        solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
-
-        neighbors, cost = puzzle.batched_get_neighbours(
-            solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
-        )  # [action_size, batch_size] [action_size, batch_size]
-
-        batch_size = actions.shape[0]
-        selected_neighbors = jax.tree_util.tree_map(
-            lambda x: x[actions, jnp.arange(batch_size), :],
-            neighbors,
-        )
-        _, neighbor_cost = puzzle.batched_get_neighbours(
-            solve_configs,
-            selected_neighbors,
-            filleds=jnp.ones(minibatch_size),
-            multi_solve_config=True,
-        )  # [action_size, batch_size] [action_size, batch_size]
-        neighbor_cost = jnp.transpose(neighbor_cost, (1, 0))  # [batch_size, action_size]
-        selected_neighbors_solved = puzzle.batched_is_solved(
-            solve_configs, selected_neighbors, multi_solve_config=True
-        )
-
-        preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
-
-        q = q_model.apply(
-            target_q_params, preproc_neighbors, training=False
-        )  # [minibatch_size, action_shape]
-        q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
-        valid_neighbor_cost = jnp.where(jnp.isfinite(neighbor_cost), neighbor_cost, jnp.inf)
-        q = jnp.where(jnp.isfinite(valid_neighbor_cost), q, jnp.inf)
-
-        q_sum_cost = valid_neighbor_cost + q
-        # Clamp to ensure non-negative targets relative to next-state costs
-        q_sum_cost = jnp.maximum(q_sum_cost, valid_neighbor_cost)
-        if use_double_dqn:
-            q_online = q_model.apply(q_params, preproc_neighbors, training=False)
-            q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
-            q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
-            online_q_sum_cost = valid_neighbor_cost + q_online
-            online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
-            best_actions = jnp.argmin(online_q_sum_cost, axis=1)
-            min_q_sum_cost = jnp.take_along_axis(q_sum_cost, best_actions[:, jnp.newaxis], axis=1)[
-                :, 0
-            ]
-        else:
-            min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
-
-        target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
-        target_q = jnp.where(solved, 0.0, target_q)
-
-        # Calculate current Q-values to compute TD error
-        preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        q_values = q_model.apply(q_params, preproc, training=False)
-        q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
-        selected_q = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1).squeeze(1)
-
-        diff = target_q - selected_q
-        if td_error_clip is not None and td_error_clip > 0:
-            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
-            diff = jnp.clip(diff, -clip_val, clip_val)
-        # if the puzzle is already solved, the all q is 0
-        return key, (solve_configs, states, target_q, actions, diff, move_costs)
-
-    _, (solve_configs, states, target_q, actions, diff, cost) = jax.lax.scan(
-        get_minibatched_datasets,
+    trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
+    return_dict = _get_datasets_with_policy(
+        puzzle,
+        preproc_fn,
+        q_model,
+        minibatch_size,
+        target_q_params,
+        q_params,
+        shuffled_path,
         key,
-        (
-            minibatched_solve_configs,
-            minibatched_states,
-            minibatched_actions,
-            minibatched_move_costs,
-        ),
+        temperature,
+        td_error_clip,
+        use_double_dqn,
     )
-
-    solve_configs = solve_configs.reshape((-1,))
-    states = states.reshape((-1,))
-    target_q = target_q.reshape((-1,))
-    actions = actions.reshape((-1,))
-    diff = diff.reshape((-1,))
-    cost = cost.reshape((-1,))
-
-    return {
-        "solveconfigs": solve_configs,
-        "states": states,
-        "target_q": target_q,
-        "actions": actions,
-        "diff": diff,
-        "cost": cost,
-    }
-
+    solve_configs = return_dict["solveconfigs"]
+    states = return_dict["states"]
+    solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
+        solveconfigs=solve_configs,
+        states=states,
+        actions=trajectory_actions,
+    )
+    cost = return_dict["cost"]
+    target_q = return_dict["target_q"]
+    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
+        val=solve_configs_and_states_and_actions,
+        key=cost,
+        return_index=True,
+        return_inverse=True,
+    )
+    cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis] # [dataset_size, 1]
+    target_q = jnp.concatenate(
+        (target_q, cost),
+        axis=1,
+    ) # [dataset_size, 2]
+    return_dict["target_q"] = target_q
+    actions = return_dict["actions"]
+    actions = jnp.concatenate(
+        (actions, trajectory_actions),
+        axis=1,
+    ) # [dataset_size, 2]
+    return_dict["actions"] = actions
+    return return_dict
 
 def get_qlearning_dataset_builder(
     puzzle: Puzzle,
@@ -607,7 +543,6 @@ def get_qlearning_dataset_builder(
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_sampling: bool = False,
-    with_policy: bool = False,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
@@ -638,7 +573,6 @@ def get_qlearning_dataset_builder(
                 False,
             )
     else:
-        with_policy = True  # if not using hindsight target, must use policy for training
         shuffle_parallel = int(
             min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
         )
@@ -653,7 +587,27 @@ def get_qlearning_dataset_builder(
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
-    if with_policy:
+    if use_diffusion_distance:
+        @xtructure_dataclass
+        class SolveConfigsAndStatesAndActions:
+            solveconfigs: FieldDescriptor[puzzle.SolveConfig]
+            states: FieldDescriptor[puzzle.State]
+            actions: FieldDescriptor[jnp.uint8]
+
+        jited_get_datasets = jax.jit(
+            partial(
+                _get_datasets_with_diffusion_distance,
+                puzzle,
+                preproc_fn,
+                SolveConfigsAndStatesAndActions,
+                q_model,
+                dataset_minibatch_size,
+                temperature=temperature,
+                td_error_clip=td_error_clip,
+                use_double_dqn=use_double_dqn,
+            )
+        )
+    else:
         jited_get_datasets = jax.jit(
             partial(
                 _get_datasets_with_policy,
@@ -664,20 +618,6 @@ def get_qlearning_dataset_builder(
                 temperature=temperature,
                 td_error_clip=td_error_clip,
                 use_double_dqn=use_double_dqn,
-                use_diffusion_distance=use_diffusion_distance,
-            )
-        )
-    else:
-        jited_get_datasets = jax.jit(
-            partial(
-                _get_datasets_with_trajectory,
-                puzzle,
-                preproc_fn,
-                q_model,
-                dataset_minibatch_size,
-                td_error_clip=td_error_clip,
-                use_double_dqn=use_double_dqn,
-                use_diffusion_distance=use_diffusion_distance,
             )
         )
 
