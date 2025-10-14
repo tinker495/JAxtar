@@ -94,13 +94,6 @@ def davi(
         optimizer,
         heuristic.pre_process,
         n_devices=n_devices,
-        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
-        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
-        target_sharpness_alpha=train_options.target_sharpness_alpha,
-        using_priority_sampling=train_options.using_priority_sampling,
-        per_alpha=train_options.per_alpha,
-        per_beta=train_options.per_beta,
-        per_epsilon=train_options.per_epsilon,
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
         replay_ratio=train_options.replay_ratio,
@@ -287,9 +280,9 @@ def qlearning(
     target_qfunc_params = qfunction.params
     qfunc_params = target_qfunc_params
 
-    steps = train_options.steps // train_options.replay_ratio
-    update_interval = train_options.update_interval // train_options.replay_ratio
-    reset_interval = train_options.reset_interval // train_options.replay_ratio
+    steps = train_options.steps
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
@@ -312,13 +305,6 @@ def qlearning(
         optimizer,
         qfunction.pre_process,
         n_devices=n_devices,
-        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
-        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
-        target_sharpness_alpha=train_options.target_sharpness_alpha,
-        using_priority_sampling=train_options.using_priority_sampling,
-        per_alpha=train_options.per_alpha,
-        per_beta=train_options.per_beta,
-        per_epsilon=train_options.per_epsilon,
         loss_type=train_options.loss,
         huber_delta=train_options.huber_delta,
         replay_ratio=train_options.replay_ratio,

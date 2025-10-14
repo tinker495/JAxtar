@@ -411,30 +411,7 @@ def dist_train_options(func: callable) -> callable:
         help="Enable Double DQN target computation.",
     )
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
-    @click.option("-per", "--using_priority_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
-    @click.option(
-        "-tcw",
-        "--target_confidence_weighting",
-        "use_target_confidence_weighting",
-        is_flag=True,
-        default=None,
-        help="Weight loss by target confidence (inverse of move_cost).",
-    )
-    @click.option(
-        "-tsw",
-        "--target_sharpness_weighting",
-        "use_target_sharpness_weighting",
-        is_flag=True,
-        default=None,
-        help="Weight loss by policy sharpness (low entropy ⇒ higher weight).",
-    )
-    @click.option(
-        "--target_sharpness_alpha",
-        type=float,
-        default=None,
-        help="Strength of sharpness-based weighting (multiplier).",
-    )
     @click.option(
         "-dd",
         "--use_diffusion_distance",
@@ -443,39 +420,11 @@ def dist_train_options(func: callable) -> callable:
         help="Enable diffusion distance features in dataset creation.",
     )
     @click.option(
-        "-pa",
-        "--per_alpha",
-        type=float,
-        default=None,
-        help="PER alpha parameter for priority exponentiation.",
-    )
-    @click.option(
-        "-pb",
-        "--per_beta",
-        type=float,
-        default=None,
-        help="PER beta parameter for importance sampling.",
-    )
-    @click.option(
-        "-pe",
-        "--per_epsilon",
-        type=float,
-        default=None,
-        help="PER epsilon parameter for numerical stability.",
-    )
-    @click.option(
         "-tp",
         "--temperature",
         type=float,
         default=None,
         help="Boltzmann temperature for action selection.",
-    )
-    @click.option(
-        "-rr",
-        "--replay_ratio",
-        type=int,
-        default=None,
-        help="Number of gradient updates per generated dataset.",
     )
     @click.option("-d", "--debug", is_flag=True, default=None)
     @click.option("-md", "--multi_device", type=bool, default=None)

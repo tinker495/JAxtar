@@ -29,13 +29,6 @@ def davi_builder(
     optimizer: optax.GradientTransformation,
     preproc_fn: Callable,
     n_devices: int = 1,
-    use_target_confidence_weighting: bool = False,
-    use_target_sharpness_weighting: bool = False,
-    target_sharpness_alpha: float = 1.0,
-    using_priority_sampling: bool = False,
-    per_alpha: float = 0.6,
-    per_beta: float = 0.4,
-    per_epsilon: float = 1e-6,
     loss_type: str = "mse",
     huber_delta: float = 0.1,
     replay_ratio: int = 1,
@@ -77,49 +70,8 @@ def davi_builder(
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        if using_priority_sampling:
-            diff = dataset["diff"]
-            # diff is already clipped in _get_datasets if td_error_clip is enabled
-            # Sanitize TD errors to avoid NaN/Inf poisoning
-            diff = jnp.nan_to_num(diff, nan=0.0, posinf=1e6, neginf=-1e6)
-
-            # Calculate priorities based on TD error with strict positivity
-            priorities = jnp.abs(diff) + per_epsilon
-            priorities = jnp.clip(priorities, a_min=1e-12)
-
-            # Stable sampling probabilities in log-space: p_i ∝ priorities^alpha
-            logp = per_alpha * jnp.log(priorities)
-            logp = logp - jnp.max(logp)
-            sampling_probs = jnp.exp(logp)
-            sampling_probs = sampling_probs / (jnp.sum(sampling_probs) + 1e-12)
-
-            # Stable importance sampling weights in log-space; max-normalized to 1
-            clipped_probs = jnp.clip(sampling_probs, a_min=1e-12)
-            log_w = -per_beta * (jnp.log(data_size) + jnp.log(clipped_probs))
-            log_w = log_w - jnp.max(log_w)
-            is_weights = jnp.exp(log_w)
-            loss_weights = is_weights
-        else:
-            loss_weights = jnp.ones(data_size)
-
-        if use_target_confidence_weighting:
-            cost = dataset["cost"]
-            cost_weights = 1.0 / jnp.sqrt(jnp.maximum(cost, 1.0))
-            cost_weights = cost_weights / jnp.mean(cost_weights)
-            loss_weights = loss_weights * cost_weights
-
-        if use_target_sharpness_weighting and ("target_entropy" in dataset):
-            entropy = dataset["target_entropy"]
-            max_entropy = dataset.get("target_entropy_max", None)
-            if max_entropy is not None:
-                normalized_entropy = entropy / (max_entropy + 1e-8)
-                sharpness = 1.0 - normalized_entropy
-                sharp_weights = 1.0 + target_sharpness_alpha * sharpness
-                sharp_weights = sharp_weights / (jnp.mean(sharp_weights) + 1e-8)
-                loss_weights = loss_weights * sharp_weights
-
-        if not using_priority_sampling:
-            loss_weights = loss_weights / jnp.mean(loss_weights)
+        loss_weights = jnp.ones(data_size)
+        loss_weights = loss_weights / jnp.mean(loss_weights)
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
@@ -149,37 +101,24 @@ def davi_builder(
                 current_heuristic,
             )
 
-        # Repeat training loop for replay_ratio times with reshuffling
+        # Repeat training loop for replay_ratio iterations with reshuffling
         def replay_loop(carry, replay_key):
             heuristic_params, opt_state = carry
 
-            # Reshuffle the batch indices for each replay iteration
-            if using_priority_sampling:
-                # For priority sampling, resample based on priorities
-                batch_indexs_replay = jax.random.choice(
-                    replay_key,
-                    jnp.arange(data_size),
-                    shape=(batch_size * minibatch_size,),
-                    p=sampling_probs,
-                    replace=True,
-                )
-                loss_weights_replay = is_weights
-            else:
-                # For uniform sampling, create new permutation
-                key_perm_replay, key_fill_replay = jax.random.split(replay_key)
-                batch_indexs_replay = jnp.concatenate(
-                    [
-                        jax.random.permutation(key_perm_replay, jnp.arange(data_size)),
-                        jax.random.randint(
-                            key_fill_replay,
-                            (batch_size * minibatch_size - data_size,),
-                            0,
-                            data_size,
-                        ),
-                    ],
-                    axis=0,
-                )
-                loss_weights_replay = loss_weights
+            key_perm_replay, key_fill_replay = jax.random.split(replay_key)
+            batch_indexs_replay = jnp.concatenate(
+                [
+                    jax.random.permutation(key_perm_replay, jnp.arange(data_size)),
+                    jax.random.randint(
+                        key_fill_replay,
+                        (batch_size * minibatch_size - data_size,),
+                        0,
+                        data_size,
+                    ),
+                ],
+                axis=0,
+            )
+            loss_weights_replay = loss_weights
 
             batch_indexs_replay = jnp.reshape(batch_indexs_replay, (batch_size, minibatch_size))
 
@@ -217,7 +156,7 @@ def davi_builder(
                 current_heuristics,
             )
 
-        # Generate separate keys for each replay iteration
+        # Generate keys for replay iterations
         replay_keys = jax.random.split(key, replay_ratio)
         (heuristic_params, opt_state), (
             losses,
