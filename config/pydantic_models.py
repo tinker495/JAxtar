@@ -118,7 +118,7 @@ class QFunctionOptions(BaseModel):
 class DistTrainOptions(BaseModel):
     steps: int = int(5e3)
     dataset_batch_size: int = 8192 * 256
-    dataset_minibatch_size: int = 8192
+    dataset_minibatch_size: int = 8192 * 16
     train_minibatch_size: int = 8192
     key: int = 0
     reset: bool = True
