@@ -143,8 +143,16 @@ class DistTrainOptions(BaseModel):
         1, description="Number of gradient updates per generated dataset. Default is 1."
     )
     logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
-    loss: str = Field("mse", description="Training loss: 'mse', 'huber', or 'logcosh'.")
-    huber_delta: float = Field(0.1, description="Delta parameter for Huber loss.")
+    loss: str = Field(
+        "mse",
+        description=(
+            "Training loss: 'mse', 'huber', 'logcosh', 'asymmetric_huber', or 'asymmetric_logcosh'."
+        ),
+    )
+    loss_args: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional keyword arguments for the selected loss (JSON key/value).",
+    )
     td_error_clip: Optional[float] = Field(
         None, description="Absolute clip value applied to TD-error."
     )

@@ -95,7 +95,7 @@ def davi(
         heuristic.pre_process,
         n_devices=n_devices,
         loss_type=train_options.loss,
-        huber_delta=train_options.huber_delta,
+        loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
     )
@@ -306,7 +306,7 @@ def qlearning(
         qfunction.pre_process,
         n_devices=n_devices,
         loss_type=train_options.loss,
-        huber_delta=train_options.huber_delta,
+        loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
     )

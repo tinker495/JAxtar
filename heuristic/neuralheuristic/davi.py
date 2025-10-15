@@ -30,7 +30,7 @@ def davi_builder(
     preproc_fn: Callable,
     n_devices: int = 1,
     loss_type: str = "mse",
-    huber_delta: float = 0.1,
+    loss_args: Optional[dict[str, Any]] = None,
     replay_ratio: int = 1,
     td_error_clip: Optional[float] = None,
 ):
@@ -51,7 +51,7 @@ def davi_builder(
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
-        per_sample = loss_from_diff(diff, loss=loss_type, huber_delta=huber_delta)
+        per_sample = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
         loss_value = jnp.mean(per_sample * weights)
         return loss_value, (new_params, diff, current_heuristic)
 

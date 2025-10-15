@@ -447,15 +447,25 @@ def dist_train_options(func: callable) -> callable:
     )
     @click.option(
         "--loss",
-        type=click.Choice(["mse", "huber", "logcosh"]),
+        type=click.Choice([
+            "mse",
+            "huber",
+            "logcosh",
+            "asymmetric_huber",
+            "asymmetric_logcosh",
+        ]),
         default=None,
         help="Select training loss.",
     )
     @click.option(
-        "--huber_delta",
-        type=float,
+        "--loss-args",
+        "loss_args",
+        type=str,
         default=None,
-        help="Delta parameter for Huber loss.",
+        help=(
+            "JSON object of additional keyword arguments for the selected loss, "
+            "e.g. '{\"huber_delta\":0.2,\"asymmetric_tau\":0.1}'."
+        ),
     )
     @click.option(
         "--td-error-clip",
@@ -498,9 +508,15 @@ def dist_train_options(func: callable) -> callable:
         preset = train_presets[preset_name]
 
         # Collect any user-provided options to override the preset
-        overrides = {
-            k: v for k, v in kwargs.items() if v is not None and k in DistTrainOptions.model_fields
-        }
+        overrides = {}
+        for k in list(kwargs.keys()):
+            v = kwargs[k]
+            if v is None:
+                continue
+            if k == "loss_args":
+                overrides[k] = json.loads(v) if isinstance(v, str) else v
+            elif k in DistTrainOptions.model_fields:
+                overrides[k] = v
 
         # Create a final options object by applying overrides to the preset
         train_opts = preset.model_copy(update=overrides)
