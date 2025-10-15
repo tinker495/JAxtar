@@ -171,7 +171,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "rubikscube": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCube),
         puzzle_hard=PuzzleConfig(callable=RubiksCube, initial_shuffle=50),
-        shuffle_length=30,
+        shuffle_length=26,
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
         heuristic_nn_config=NeuralCallableConfig(
@@ -185,7 +185,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "rubikscube-random": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCubeRandom),
-        shuffle_length=30,
+        shuffle_length=26,
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
         heuristic_nn_config=NeuralCallableConfig(
