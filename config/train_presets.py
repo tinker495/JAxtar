@@ -11,4 +11,9 @@ train_presets = {
         dataset_minibatch_size=32768,
         train_minibatch_size=32768,
     ),
+    "diffusion_distance": DistTrainOptions(
+        steps=int(1e4),
+        update_interval=16,
+        use_diffusion_distance=True,
+    ),
 }
