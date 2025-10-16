@@ -1,6 +1,6 @@
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from heuristic import EmptyHeuristic
 from qfunction import EmptyQFunction
@@ -84,10 +84,15 @@ class EvalOptions(BaseModel):
     def get_max_node_size(self, batch_size: int) -> int:
         return self.max_node_size // batch_size * batch_size
 
-
     def light_eval(self, max_eval: int = 20) -> "EvalOptions":
         capped_eval = min(max_eval, self.num_eval)
-        return self.model_copy(update={"num_eval": capped_eval, "cost_weight": [self.cost_weight[0]], "pop_ratio": [self.pop_ratio[0]]})
+        return self.model_copy(
+            update={
+                "num_eval": capped_eval,
+                "cost_weight": [self.cost_weight[0]],
+                "pop_ratio": [self.pop_ratio[0]],
+            }
+        )
 
     @property
     def light_eval_options(self) -> "EvalOptions":
@@ -113,7 +118,7 @@ class QFunctionOptions(BaseModel):
 class DistTrainOptions(BaseModel):
     steps: int = int(5e3)
     dataset_batch_size: int = 8192 * 256
-    dataset_minibatch_size: int = 8192
+    dataset_minibatch_size: int = 8192 * 16
     train_minibatch_size: int = 8192
     key: int = 0
     reset: bool = True
@@ -124,16 +129,10 @@ class DistTrainOptions(BaseModel):
     use_double_dqn: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
-    using_priority_sampling: bool = False
-    use_target_confidence_weighting: bool = False
-    use_target_sharpness_weighting: bool = False
-    target_sharpness_alpha: float = 1.0
-    per_alpha: float = 0.6
-    per_beta: float = 0.4
-    per_epsilon: float = 1e-6
+    use_diffusion_distance: bool = False
     debug: bool = False
     multi_device: bool = True
-    reset_interval: int = 1000
+    reset_interval: int = int(1e6) # just large enough
     tau: float = 0.2
     learning_rate: float = 1e-3
     weight_decay_size: Optional[float] = 0.0
@@ -144,15 +143,19 @@ class DistTrainOptions(BaseModel):
         1, description="Number of gradient updates per generated dataset. Default is 1."
     )
     logger: str = Field("aim", description="Logger to use. Can be 'aim', 'tensorboard', or 'none'.")
-    loss: str = Field("mse", description="Training loss: 'mse', 'huber', or 'logcosh'.")
-    huber_delta: float = Field(0.1, description="Delta parameter for Huber loss.")
+    loss: str = Field(
+        "mse",
+        description=(
+            "Training loss: 'mse', 'huber', 'logcosh', 'asymmetric_huber', or 'asymmetric_logcosh'."
+        ),
+    )
+    loss_args: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional keyword arguments for the selected loss (JSON key/value).",
+    )
     td_error_clip: Optional[float] = Field(
         None, description="Absolute clip value applied to TD-error."
     )
-
-
-class DistQFunctionOptions(BaseModel):
-    with_policy: bool = True
 
 
 class WMDatasetOptions(BaseModel):
@@ -196,15 +199,32 @@ class WorldModelPuzzleConfig(BaseModel):
 
 
 class PuzzleConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
     callable: Callable
     initial_shuffle: Optional[int] = None
+    kwargs: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        arbitrary_types_allowed = True
+    @model_validator(mode="before")
+    @classmethod
+    def _merge_extras(cls, values):
+        if isinstance(values, cls) or not isinstance(values, dict):
+            return values
+
+        data = dict(values)
+        recognized = {"callable", "initial_shuffle", "kwargs"}
+        extra = {k: data.pop(k) for k in list(data.keys()) if k not in recognized}
+
+        if extra:
+            merged_kwargs = dict(data.get("kwargs", {}))
+            merged_kwargs.update(extra)
+            data["kwargs"] = merged_kwargs
+
+        return data
 
 
 class PuzzleBundle(BaseModel):
-    puzzle: Optional[Union[Callable, WorldModelPuzzleConfig]] = None
+    puzzle: Optional[Union[Callable, PuzzleConfig, WorldModelPuzzleConfig]] = None
     puzzle_hard: Optional[Union[Callable, PuzzleConfig]] = None
     puzzle_ds: Optional[Callable] = None
     heuristic: Callable = EmptyHeuristic

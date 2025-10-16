@@ -75,11 +75,15 @@ def get_random_inverse_trajectory(
     move_costs = jnp.concatenate(
         [move_costs, last_move_cost[jnp.newaxis, ...]], axis=0
     )  # [shuffle_length + 1, shuffle_parallel]
+    move_costs_tm1 = jnp.concatenate(
+        [jnp.zeros_like(move_costs[:1, ...]), move_costs[:-1, ...]], axis=0
+    )
 
     return {
         "solve_configs": solve_configs,
         "states": states,
         "move_costs": move_costs,
+        "move_costs_tm1": move_costs_tm1,
         "actions": inv_actions,
         "action_costs": action_costs,
     }
@@ -149,11 +153,15 @@ def get_random_trajectory(
     move_costs = jnp.concatenate(
         [move_costs, last_move_cost[jnp.newaxis, ...]], axis=0
     )  # [shuffle_length + 1, shuffle_parallel]
+    move_costs_tm1 = jnp.concatenate(
+        [jnp.zeros_like(move_costs[:1, ...]), move_costs[:-1, ...]], axis=0
+    )
 
     return {
         "solve_configs": solve_configs,  # [shuffle_parallel, ...]
         "states": states,  # [shuffle_length + 1, shuffle_parallel, ...]
         "move_costs": move_costs,  # [shuffle_length + 1, shuffle_parallel]
+        "move_costs_tm1": move_costs_tm1,  # [shuffle_length + 1, shuffle_parallel]
         "actions": actions,  # [shuffle_length, shuffle_parallel]
         "action_costs": action_costs,  # [shuffle_length, shuffle_parallel]
     }
@@ -179,9 +187,11 @@ def create_target_shuffled_path(
         move_costs = inverse_trajectory["move_costs"][
             :-1, ...
         ]  # [shuffle_length, shuffle_parallel]
+        move_costs_tm1 = inverse_trajectory["move_costs_tm1"][:-1, ...]  # [shuffle_length, shuffle_parallel]
     else:
         states = inverse_trajectory["states"][1:, ...]  # [shuffle_length, shuffle_parallel, ...]
         move_costs = inverse_trajectory["move_costs"][1:, ...]  # [shuffle_length, shuffle_parallel]
+        move_costs_tm1 = inverse_trajectory["move_costs_tm1"][1:, ...]  # [shuffle_length, shuffle_parallel]
     inv_actions = inverse_trajectory["actions"]
     action_costs = inverse_trajectory["action_costs"]
 
@@ -189,6 +199,7 @@ def create_target_shuffled_path(
     solve_configs = solve_configs.flatten()
     states = states.flatten()
     move_costs = move_costs.flatten()
+    move_costs_tm1 = move_costs_tm1.flatten()
     inv_actions = inv_actions.flatten()
     action_costs = action_costs.flatten()
 
@@ -196,6 +207,7 @@ def create_target_shuffled_path(
         "solve_configs": solve_configs,
         "states": states,
         "move_costs": move_costs,
+        "move_costs_tm1": move_costs_tm1,
         "actions": inv_actions,
         "action_costs": action_costs,
     }
@@ -215,6 +227,7 @@ def create_hindsight_target_shuffled_path(
     original_solve_configs = trajectory["solve_configs"]  # [shuffle_parallel, ...]
     states = trajectory["states"]  # [shuffle_length + 1, shuffle_parallel, ...]
     move_costs = trajectory["move_costs"]  # [shuffle_length + 1, shuffle_parallel]
+    move_costs_tm1 = trajectory["move_costs_tm1"]  # [shuffle_length + 1, shuffle_parallel]
     actions = trajectory["actions"]  # [shuffle_length, shuffle_parallel]
     action_costs = trajectory["action_costs"]  # [shuffle_length, shuffle_parallel]
 
@@ -235,6 +248,7 @@ def create_hindsight_target_shuffled_path(
 
     if include_solved_states:
         move_costs = move_costs[-1, ...] - move_costs[1:, ...]  # [shuffle_length, shuffle_parallel]
+        move_costs_tm1 = move_costs[-1, ...] - move_costs_tm1[1:, ...]  # [shuffle_length, shuffle_parallel]
         actions = jnp.concatenate(
             [
                 actions[1:],
@@ -250,10 +264,15 @@ def create_hindsight_target_shuffled_path(
         move_costs = (
             move_costs[-1, ...] - move_costs[:-1, ...]
         )  # [shuffle_length, shuffle_parallel]
+        move_costs_tm1 = (
+            move_costs[-1, ...] - move_costs_tm1[:-1, ...]
+        )  # [shuffle_length, shuffle_parallel]
+        move_costs_tm1 = move_costs_tm1.at[0, ...].set(0.0)
 
     solve_configs = solve_configs.flatten()
     states = states.flatten()
     move_costs = move_costs.flatten()
+    move_costs_tm1 = move_costs_tm1.flatten()
     actions = actions.flatten()
     action_costs = action_costs.flatten()
 
@@ -261,6 +280,7 @@ def create_hindsight_target_shuffled_path(
         "solve_configs": solve_configs,
         "states": states,
         "move_costs": move_costs,
+        "move_costs_tm1": move_costs_tm1,
         "actions": actions,
         "action_costs": action_costs,
     }
@@ -280,6 +300,7 @@ def create_hindsight_target_triangular_shuffled_path(
     original_solve_configs = trajectory["solve_configs"]  # [P, ...]
     states = trajectory["states"]  # [L+1, P, ...]
     move_costs = trajectory["move_costs"]  # [L+1, P]
+    move_costs_tm1 = trajectory["move_costs_tm1"]  # [L+1, P]
     actions = trajectory["actions"]  # [L, P]
     action_costs = trajectory["action_costs"]  # [L, P]
 
@@ -314,7 +335,10 @@ def create_hindsight_target_triangular_shuffled_path(
 
     start_move_costs = move_costs[start_indices, parallel_indices]
     target_move_costs = move_costs[target_indices, parallel_indices]
+    start_move_costs_tm1 = move_costs_tm1[start_indices, parallel_indices]
     final_move_costs = target_move_costs - start_move_costs
+    final_move_costs_tm1 = target_move_costs - start_move_costs_tm1
+    final_move_costs_tm1 = jnp.where(start_indices == 0, 0.0, final_move_costs_tm1)
 
     # Handle boundary condition: clamp start_indices to prevent out-of-bounds access
     # actions array has size [L], so valid indices are [0, L-1]
@@ -337,6 +361,7 @@ def create_hindsight_target_triangular_shuffled_path(
     # Flatten the rest of the data
     final_start_states = start_states.flatten()
     final_move_costs = final_move_costs.flatten()
+    final_move_costs_tm1 = final_move_costs_tm1.flatten()
     final_actions = final_actions.flatten()
     final_action_costs = final_action_costs.flatten()
 
@@ -344,6 +369,7 @@ def create_hindsight_target_triangular_shuffled_path(
         "solve_configs": final_solve_configs,
         "states": final_start_states,
         "move_costs": final_move_costs,
+        "move_costs_tm1": final_move_costs_tm1,
         "actions": final_actions,
         "action_costs": final_action_costs,
     }

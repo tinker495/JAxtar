@@ -94,15 +94,8 @@ def davi(
         optimizer,
         heuristic.pre_process,
         n_devices=n_devices,
-        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
-        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
-        target_sharpness_alpha=train_options.target_sharpness_alpha,
-        using_priority_sampling=train_options.using_priority_sampling,
-        per_alpha=train_options.per_alpha,
-        per_beta=train_options.per_beta,
-        per_epsilon=train_options.per_epsilon,
         loss_type=train_options.loss,
-        huber_delta=train_options.huber_delta,
+        loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
     )
@@ -118,6 +111,7 @@ def davi(
         n_devices=n_devices,
         temperature=train_options.temperature,
         td_error_clip=train_options.td_error_clip,
+        use_diffusion_distance=train_options.use_diffusion_distance,
     )
 
     pbar = trange(steps)
@@ -141,6 +135,7 @@ def davi(
             grad_magnitude,
             weight_magnitude,
             diffs,
+            current_heuristics,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         eval_params = get_eval_params(opt_state, heuristic_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -165,6 +160,7 @@ def davi(
         if i % 100 == 0:
             logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
+            logger.log_histogram("Metrics/Current Heuristic", current_heuristics, i)
             if "target_entropy" in dataset:
                 logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
 
@@ -262,7 +258,6 @@ def qlearning(
     puzzle_name: str,
     train_options: DistTrainOptions,
     shuffle_length: int,
-    with_policy: bool,
     eval_options: EvalOptions,
     q_config: NeuralCallableConfig,
     **kwargs,
@@ -285,9 +280,9 @@ def qlearning(
     target_qfunc_params = qfunction.params
     qfunc_params = target_qfunc_params
 
-    steps = train_options.steps // train_options.replay_ratio
-    update_interval = train_options.update_interval // train_options.replay_ratio
-    reset_interval = train_options.reset_interval // train_options.replay_ratio
+    steps = train_options.steps
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
@@ -310,15 +305,8 @@ def qlearning(
         optimizer,
         qfunction.pre_process,
         n_devices=n_devices,
-        use_target_confidence_weighting=train_options.use_target_confidence_weighting,
-        use_target_sharpness_weighting=train_options.use_target_sharpness_weighting,
-        target_sharpness_alpha=train_options.target_sharpness_alpha,
-        using_priority_sampling=train_options.using_priority_sampling,
-        per_alpha=train_options.per_alpha,
-        per_beta=train_options.per_beta,
-        per_epsilon=train_options.per_epsilon,
         loss_type=train_options.loss,
-        huber_delta=train_options.huber_delta,
+        loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
     )
@@ -332,10 +320,10 @@ def qlearning(
         train_options.using_hindsight_target,
         train_options.using_triangular_sampling,
         n_devices=n_devices,
-        with_policy=with_policy,
         temperature=train_options.temperature,
         td_error_clip=train_options.td_error_clip,
         use_double_dqn=train_options.use_double_dqn,
+        use_diffusion_distance=train_options.use_diffusion_distance,
     )
 
     pbar = trange(steps)
@@ -363,6 +351,7 @@ def qlearning(
             grad_magnitude,
             weight_magnitude,
             diffs,
+            current_qs,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         eval_params = get_eval_params(opt_state, qfunc_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
@@ -399,6 +388,7 @@ def qlearning(
                 logger.log_histogram("Metrics/Action Entropy", dataset["action_entropy"], i)
             if "target_entropy" in dataset:
                 logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
+            logger.log_histogram("Metrics/Current Q", current_qs, i)
 
         target_updated = False
         if train_options.use_soft_update:

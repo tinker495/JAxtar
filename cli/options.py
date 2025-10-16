@@ -6,7 +6,6 @@ import jax
 
 from config import puzzle_bundles, train_presets, world_model_bundles
 from config.pydantic_models import (
-    DistQFunctionOptions,
     DistTrainOptions,
     EvalOptions,
     HeuristicOptions,
@@ -68,9 +67,13 @@ def create_puzzle_options(
             if isinstance(puzzle_callable, WorldModelPuzzleConfig):
                 puzzle_instance = puzzle_callable.callable(path=puzzle_callable.path, **input_args)
             elif isinstance(puzzle_callable, PuzzleConfig):
-                puzzle_instance = puzzle_callable.callable(
-                    initial_shuffle=puzzle_callable.initial_shuffle, **input_args
-                )
+                puzzle_kwargs = {**puzzle_callable.kwargs, **input_args}
+                if (
+                    puzzle_callable.initial_shuffle is not None
+                    and "initial_shuffle" not in puzzle_kwargs
+                ):
+                    puzzle_kwargs["initial_shuffle"] = puzzle_callable.initial_shuffle
+                puzzle_instance = puzzle_callable.callable(**puzzle_kwargs)
             elif puzzle_callable is None:
                 raise click.UsageError(
                     f"Puzzle type for '{puzzle_name}'"
@@ -401,57 +404,20 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-fui", "--force_update_interval", type=int, default=None)
     @click.option("-su", "--use_soft_update", is_flag=True, default=None)
     @click.option(
-        "-dd",
+        "-ddn",
         "--use_double_dqn",
         is_flag=True,
         default=None,
         help="Enable Double DQN target computation.",
     )
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
-    @click.option("-per", "--using_priority_sampling", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
     @click.option(
-        "-tcw",
-        "--target_confidence_weighting",
-        "use_target_confidence_weighting",
+        "-dd",
+        "--use_diffusion_distance",
         is_flag=True,
         default=None,
-        help="Weight loss by target confidence (inverse of move_cost).",
-    )
-    @click.option(
-        "-tsw",
-        "--target_sharpness_weighting",
-        "use_target_sharpness_weighting",
-        is_flag=True,
-        default=None,
-        help="Weight loss by policy sharpness (low entropy ⇒ higher weight).",
-    )
-    @click.option(
-        "--target_sharpness_alpha",
-        type=float,
-        default=None,
-        help="Strength of sharpness-based weighting (multiplier).",
-    )
-    @click.option(
-        "-pa",
-        "--per_alpha",
-        type=float,
-        default=None,
-        help="PER alpha parameter for priority exponentiation.",
-    )
-    @click.option(
-        "-pb",
-        "--per_beta",
-        type=float,
-        default=None,
-        help="PER beta parameter for importance sampling.",
-    )
-    @click.option(
-        "-pe",
-        "--per_epsilon",
-        type=float,
-        default=None,
-        help="PER epsilon parameter for numerical stability.",
+        help="Enable diffusion distance features in dataset creation.",
     )
     @click.option(
         "-tp",
@@ -459,13 +425,6 @@ def dist_train_options(func: callable) -> callable:
         type=float,
         default=None,
         help="Boltzmann temperature for action selection.",
-    )
-    @click.option(
-        "-rr",
-        "--replay_ratio",
-        type=int,
-        default=None,
-        help="Number of gradient updates per generated dataset.",
     )
     @click.option("-d", "--debug", is_flag=True, default=None)
     @click.option("-md", "--multi_device", type=bool, default=None)
@@ -488,15 +447,25 @@ def dist_train_options(func: callable) -> callable:
     )
     @click.option(
         "--loss",
-        type=click.Choice(["mse", "huber", "logcosh"]),
+        type=click.Choice([
+            "mse",
+            "huber",
+            "logcosh",
+            "asymmetric_huber",
+            "asymmetric_logcosh",
+        ]),
         default=None,
         help="Select training loss.",
     )
     @click.option(
-        "--huber_delta",
-        type=float,
+        "--loss-args",
+        "loss_args",
+        type=str,
         default=None,
-        help="Delta parameter for Huber loss.",
+        help=(
+            "JSON object of additional keyword arguments for the selected loss, "
+            "e.g. '{\"huber_delta\":0.2,\"asymmetric_tau\":0.1}'."
+        ),
     )
     @click.option(
         "--td-error-clip",
@@ -539,9 +508,15 @@ def dist_train_options(func: callable) -> callable:
         preset = train_presets[preset_name]
 
         # Collect any user-provided options to override the preset
-        overrides = {
-            k: v for k, v in kwargs.items() if v is not None and k in DistTrainOptions.model_fields
-        }
+        overrides = {}
+        for k in list(kwargs.keys()):
+            v = kwargs[k]
+            if v is None:
+                continue
+            if k == "loss_args":
+                overrides[k] = json.loads(v) if isinstance(v, str) else v
+            elif k in DistTrainOptions.model_fields:
+                overrides[k] = v
 
         # Create a final options object by applying overrides to the preset
         train_opts = preset.model_copy(update=overrides)
@@ -610,7 +585,6 @@ def dist_heuristic_options(func: callable) -> callable:
 
 
 def dist_qfunction_options(func: callable) -> callable:
-    @click.option("--with_policy", type=bool, default=None, help="Use policy for training")
     @click.option(
         "--param-path",
         type=str,
@@ -626,12 +600,6 @@ def dist_qfunction_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        overrides = {
-            k: v
-            for k, v in kwargs.items()
-            if v is not None and k in DistQFunctionOptions.model_fields
-        }
-        q_opts = DistQFunctionOptions(**overrides)
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         reset = kwargs["train_options"].reset
@@ -659,7 +627,6 @@ def dist_qfunction_options(func: callable) -> callable:
             **q_config.neural_config,
         )
         kwargs["qfunction"] = qfunction
-        kwargs["with_policy"] = q_opts.with_policy
         kwargs["q_config"] = q_config
         return func(*args, **kwargs)
 
