@@ -85,7 +85,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "n-puzzle": PuzzleBundle(
         puzzle=SlidePuzzle,
         puzzle_hard=SlidePuzzleHard,
-        shuffle_length=500,
+        k_max=500,
         heuristic=SlidePuzzleHeuristic,
         q_function=SlidePuzzleQ,
         heuristic_nn_config=NeuralCallableConfig(
@@ -100,7 +100,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "n-puzzle-conv": PuzzleBundle(
         puzzle=SlidePuzzle,
         puzzle_hard=SlidePuzzleHard,
-        shuffle_length=500,
+        k_max=500,
         heuristic=SlidePuzzleHeuristic,
         q_function=SlidePuzzleQ,
         heuristic_nn_config=NeuralCallableConfig(
@@ -114,7 +114,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "n-puzzle-random": PuzzleBundle(
         puzzle=SlidePuzzleRandom,
-        shuffle_length=500,
+        k_max=500,
         heuristic=SlidePuzzleHeuristic,
         q_function=SlidePuzzleQ,
         heuristic_nn_config=NeuralCallableConfig(
@@ -128,7 +128,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "n-puzzle-random-conv": PuzzleBundle(
         puzzle=SlidePuzzleRandom,
-        shuffle_length=500,
+        k_max=500,
         heuristic=SlidePuzzleHeuristic,
         q_function=SlidePuzzleQ,
         heuristic_nn_config=NeuralCallableConfig(
@@ -171,7 +171,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "rubikscube": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCube),
         puzzle_hard=PuzzleConfig(callable=RubiksCube, initial_shuffle=50),
-        shuffle_length=26,
+        k_max=26,
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
         heuristic_nn_config=NeuralCallableConfig(
@@ -185,7 +185,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "rubikscube-random": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCubeRandom),
-        shuffle_length=26,
+        k_max=26,
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
         heuristic_nn_config=NeuralCallableConfig(
@@ -214,7 +214,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             callable=SokobanNeuralQ,
             path_template="qfunction/neuralq/model/params/sokoban_{size}.pkl",
         ),
-        shuffle_length=500,
+        k_max=500,
     ),
     "pancake": PuzzleBundle(
         puzzle=PancakeSorting,
@@ -261,7 +261,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             callable=RubiksCubeWorldModel,
             path="world_model_puzzle/model/params/rubikscube.pkl",
         ),
-        shuffle_length=30,
+        k_max=30,
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,
             path_template="heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl",
@@ -276,7 +276,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             callable=RubiksCubeWorldModel_test,
             path="world_model_puzzle/model/params/rubikscube.pkl",
         ),
-        shuffle_length=30,
+        k_max=30,
         heuristic_nn_config=NeuralCallableConfig(
             callable=WorldModelNeuralHeuristic,
             path_template="heuristic/neuralheuristic/model/params/rubikscube_world_model_None.pkl",
@@ -370,3 +370,78 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         ),
     ),
 }
+
+# --- Sized variants registered below for clarity and explicit selection ---
+
+def _sized_bundle(base: PuzzleBundle, *, size: int, puzzle_cls, hard_cls=None, hard_initial_shuffle=None) -> PuzzleBundle:
+    """Create a sized variant of a base PuzzleBundle by binding size into PuzzleConfig.kwargs.
+
+    This preserves other bundle fields (heuristic configs, q-function configs, etc.).
+    """
+    sized_puzzle = PuzzleConfig(callable=puzzle_cls, kwargs={"size": size})
+    if hard_cls is not None:
+        sized_puzzle_hard = PuzzleConfig(
+            callable=hard_cls,
+            kwargs={"size": size},
+            initial_shuffle=hard_initial_shuffle,
+        )
+    else:
+        sized_puzzle_hard = None
+
+    return base.model_copy(
+        update={
+            "puzzle": sized_puzzle,
+            "puzzle_hard": sized_puzzle_hard,
+        }
+    )
+
+
+# n-puzzle families (3x3, 4x4, 5x5) with size-specific k_max defaults
+_NP_KMAX = {3: 100, 4: 500, 5: 1000}
+for _s in [3, 4, 5]:
+    bundle = _sized_bundle(
+        puzzle_bundles["n-puzzle"], size=_s, puzzle_cls=SlidePuzzle, hard_cls=SlidePuzzleHard
+    )
+    bundle.k_max = _NP_KMAX[_s]
+    puzzle_bundles[f"n-puzzle-{_s}"] = bundle
+
+    bundle_c = _sized_bundle(
+        puzzle_bundles["n-puzzle-conv"], size=_s, puzzle_cls=SlidePuzzle, hard_cls=SlidePuzzleHard
+    )
+    bundle_c.k_max = _NP_KMAX[_s]
+    puzzle_bundles[f"n-puzzle-conv-{_s}"] = bundle_c
+
+    bundle_r = _sized_bundle(
+        puzzle_bundles["n-puzzle-random"], size=_s, puzzle_cls=SlidePuzzleRandom, hard_cls=None
+    )
+    bundle_r.k_max = _NP_KMAX[_s]
+    puzzle_bundles[f"n-puzzle-random-{_s}"] = bundle_r
+
+# LightsOut common sizes (5, 7) with same hard initial shuffle policy and size-specific k_max
+_LO_KMAX = {5: 50, 7: 70}
+for _s in [5, 7]:
+    bundle_l = _sized_bundle(
+        puzzle_bundles["lightsout"], size=_s, puzzle_cls=LightsOut, hard_cls=LightsOut, hard_initial_shuffle=50
+    )
+    bundle_l.k_max = _LO_KMAX[_s]
+    puzzle_bundles[f"lightsout-{_s}"] = bundle_l
+
+    bundle_lc = _sized_bundle(
+        puzzle_bundles["lightsout-conv"], size=_s, puzzle_cls=LightsOut, hard_cls=LightsOut, hard_initial_shuffle=50
+    )
+    bundle_lc.k_max = _LO_KMAX[_s]
+    puzzle_bundles[f"lightsout-conv-{_s}"] = bundle_lc
+
+# Rubik's Cube size 3 with size-specific k_max
+_RC_KMAX = {3: 26}
+bundle_rc = _sized_bundle(
+    puzzle_bundles["rubikscube"], size=3, puzzle_cls=RubiksCube, hard_cls=RubiksCube, hard_initial_shuffle=50
+)
+bundle_rc.k_max = _RC_KMAX[3]
+puzzle_bundles["rubikscube-3"] = bundle_rc
+
+bundle_rcr = _sized_bundle(
+    puzzle_bundles["rubikscube-random"], size=3, puzzle_cls=RubiksCubeRandom, hard_cls=None
+)
+bundle_rcr.k_max = _RC_KMAX[3]
+puzzle_bundles["rubikscube-random-3"] = bundle_rcr
