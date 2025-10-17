@@ -139,6 +139,7 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0, training=False):
         x = x0
+        out_dim = x0.shape[-1]
         for _ in range(self.hidden_N):
             if self.use_swiglu:
                 x = swiglu_fn(self.node_size, self.activation, self.norm_fn, training)(x)
@@ -146,7 +147,7 @@ class ResBlock(nn.Module):
                 x = nn.Dense(self.node_size, dtype=DTYPE)(x)
                 x = self.norm_fn(x, training)
                 x = self.activation(x)
-        x = nn.Dense(self.node_size, dtype=DTYPE)(x)
+        x = nn.Dense(out_dim, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
         return self.activation(x + x0)
 
@@ -163,6 +164,7 @@ class PreActivationResBlock(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         residual = x
+        out_dim = x.shape[-1]
         # Pre-activation: Norm -> Activation -> Dense
         residual = self.norm_fn(residual, training)
         residual = self.activation(residual)
@@ -177,9 +179,9 @@ class PreActivationResBlock(nn.Module):
                 residual = self.activation(residual)
 
         if self.zero_init_last:
-            residual = nn.Dense(self.node_size, dtype=DTYPE, kernel_init=nn.initializers.zeros)(residual)
+            residual = nn.Dense(out_dim, dtype=DTYPE, kernel_init=nn.initializers.zeros)(residual)
         else:
-            residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
+            residual = nn.Dense(out_dim, dtype=DTYPE)(residual)
         # Identity shortcut connection
         return x + residual
 
