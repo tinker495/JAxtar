@@ -40,8 +40,8 @@ class HeuristicBase(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         if self.use_swiglu:
-            x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn, training)(x)
-            x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn, training)(x)
+            x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn)(x, training)
+            x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn)(x, training)
         else:
             x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training)
