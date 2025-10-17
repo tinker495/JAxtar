@@ -7,7 +7,7 @@ from puxle import Puzzle
 
 def get_random_inverse_trajectory(
     puzzle: Puzzle,
-    shuffle_length: int,
+    k_max: int,
     shuffle_parallel: int,
     key: chex.PRNGKey,
 ):
@@ -66,15 +66,15 @@ def get_random_inverse_trajectory(
         _scan,
         (target_states, target_states, jnp.zeros(shuffle_parallel), key_scan),
         None,
-        length=shuffle_length,
-    )  # [shuffle_length, batch_size, ...]
+        length=k_max,
+    )  # [k_max, batch_size, ...]
 
     states = xnp.concatenate(
         [states, last_state[jnp.newaxis, ...]], axis=0
-    )  # [shuffle_length + 1, shuffle_parallel, ...]
+    )  # [k_max + 1, shuffle_parallel, ...]
     move_costs = jnp.concatenate(
         [move_costs, last_move_cost[jnp.newaxis, ...]], axis=0
-    )  # [shuffle_length + 1, shuffle_parallel]
+    )  # [k_max + 1, shuffle_parallel]
     move_costs_tm1 = jnp.concatenate(
         [jnp.zeros_like(move_costs[:1, ...]), move_costs[:-1, ...]], axis=0
     )
@@ -91,7 +91,7 @@ def get_random_inverse_trajectory(
 
 def get_random_trajectory(
     puzzle: Puzzle,
-    shuffle_length: int,
+    k_max: int,
     shuffle_parallel: int,
     key: chex.PRNGKey,
 ):
@@ -144,58 +144,58 @@ def get_random_trajectory(
         _scan,
         (initial_states, initial_states, jnp.zeros(shuffle_parallel), key_scan),
         None,
-        length=shuffle_length,
-    )  # [shuffle_length, shuffle_parallel, ...]
+        length=k_max,
+    )  # [k_max, shuffle_parallel, ...]
 
     states = xnp.concatenate(
         [states, last_state[jnp.newaxis, ...]], axis=0
-    )  # [shuffle_length + 1, shuffle_parallel, ...]
+    )  # [k_max + 1, shuffle_parallel, ...]
     move_costs = jnp.concatenate(
         [move_costs, last_move_cost[jnp.newaxis, ...]], axis=0
-    )  # [shuffle_length + 1, shuffle_parallel]
+    )  # [k_max + 1, shuffle_parallel]
     move_costs_tm1 = jnp.concatenate(
         [jnp.zeros_like(move_costs[:1, ...]), move_costs[:-1, ...]], axis=0
     )
 
     return {
         "solve_configs": solve_configs,  # [shuffle_parallel, ...]
-        "states": states,  # [shuffle_length + 1, shuffle_parallel, ...]
-        "move_costs": move_costs,  # [shuffle_length + 1, shuffle_parallel]
-        "move_costs_tm1": move_costs_tm1,  # [shuffle_length + 1, shuffle_parallel]
-        "actions": actions,  # [shuffle_length, shuffle_parallel]
-        "action_costs": action_costs,  # [shuffle_length, shuffle_parallel]
+        "states": states,  # [k_max + 1, shuffle_parallel, ...]
+        "move_costs": move_costs,  # [k_max + 1, shuffle_parallel]
+        "move_costs_tm1": move_costs_tm1,  # [k_max + 1, shuffle_parallel]
+        "actions": actions,  # [k_max, shuffle_parallel]
+        "action_costs": action_costs,  # [k_max, shuffle_parallel]
     }
 
 
 def create_target_shuffled_path(
     puzzle: Puzzle,
-    shuffle_length: int,
+    k_max: int,
     shuffle_parallel: int,
     include_solved_states: bool,
     key: chex.PRNGKey,
 ):
     inverse_trajectory = get_random_inverse_trajectory(
         puzzle,
-        shuffle_length,
+        k_max,
         shuffle_parallel,
         key,
     )
 
     solve_configs = inverse_trajectory["solve_configs"]
     if include_solved_states:
-        states = inverse_trajectory["states"][:-1, ...]  # [shuffle_length, shuffle_parallel, ...]
+        states = inverse_trajectory["states"][:-1, ...]  # [k_max, shuffle_parallel, ...]
         move_costs = inverse_trajectory["move_costs"][
             :-1, ...
-        ]  # [shuffle_length, shuffle_parallel]
-        move_costs_tm1 = inverse_trajectory["move_costs_tm1"][:-1, ...]  # [shuffle_length, shuffle_parallel]
+        ]  # [k_max, shuffle_parallel]
+        move_costs_tm1 = inverse_trajectory["move_costs_tm1"][:-1, ...]  # [k_max, shuffle_parallel]
     else:
-        states = inverse_trajectory["states"][1:, ...]  # [shuffle_length, shuffle_parallel, ...]
-        move_costs = inverse_trajectory["move_costs"][1:, ...]  # [shuffle_length, shuffle_parallel]
-        move_costs_tm1 = inverse_trajectory["move_costs_tm1"][1:, ...]  # [shuffle_length, shuffle_parallel]
+        states = inverse_trajectory["states"][1:, ...]  # [k_max, shuffle_parallel, ...]
+        move_costs = inverse_trajectory["move_costs"][1:, ...]  # [k_max, shuffle_parallel]
+        move_costs_tm1 = inverse_trajectory["move_costs_tm1"][1:, ...]  # [k_max, shuffle_parallel]
     inv_actions = inverse_trajectory["actions"]
     action_costs = inverse_trajectory["action_costs"]
 
-    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (shuffle_length, 1))
+    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (k_max, 1))
     solve_configs = solve_configs.flatten()
     states = states.flatten()
     move_costs = move_costs.flatten()
@@ -215,40 +215,40 @@ def create_target_shuffled_path(
 
 def create_hindsight_target_shuffled_path(
     puzzle: Puzzle,
-    shuffle_length: int,
+    k_max: int,
     shuffle_parallel: int,
     include_solved_states: bool,
     key: chex.PRNGKey,
 ):
     assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
     key_traj, key_append = jax.random.split(key, 2)
-    trajectory = get_random_trajectory(puzzle, shuffle_length, shuffle_parallel, key_traj)
+    trajectory = get_random_trajectory(puzzle, k_max, shuffle_parallel, key_traj)
 
     original_solve_configs = trajectory["solve_configs"]  # [shuffle_parallel, ...]
-    states = trajectory["states"]  # [shuffle_length + 1, shuffle_parallel, ...]
-    move_costs = trajectory["move_costs"]  # [shuffle_length + 1, shuffle_parallel]
-    move_costs_tm1 = trajectory["move_costs_tm1"]  # [shuffle_length + 1, shuffle_parallel]
-    actions = trajectory["actions"]  # [shuffle_length, shuffle_parallel]
-    action_costs = trajectory["action_costs"]  # [shuffle_length, shuffle_parallel]
+    states = trajectory["states"]  # [k_max + 1, shuffle_parallel, ...]
+    move_costs = trajectory["move_costs"]  # [k_max + 1, shuffle_parallel]
+    move_costs_tm1 = trajectory["move_costs_tm1"]  # [k_max + 1, shuffle_parallel]
+    actions = trajectory["actions"]  # [k_max, shuffle_parallel]
+    action_costs = trajectory["action_costs"]  # [k_max, shuffle_parallel]
 
     targets = states[-1, ...]  # [shuffle_parallel, ...]
     if include_solved_states:
         states = states[
             1:, ...
-        ]  # [shuffle_length, shuffle_parallel, ...] this is include the last state
+        ]  # [k_max, shuffle_parallel, ...] this is include the last state
     else:
         states = states[
             :-1, ...
-        ]  # [shuffle_length, shuffle_parallel, ...] this is exclude the last state
+        ]  # [k_max, shuffle_parallel, ...] this is exclude the last state
 
     solve_configs = puzzle.batched_hindsight_transform(
         original_solve_configs, targets
     )  # [shuffle_parallel, ...]
-    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (shuffle_length, 1))
+    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (k_max, 1))
 
     if include_solved_states:
-        move_costs = move_costs[-1, ...] - move_costs[1:, ...]  # [shuffle_length, shuffle_parallel]
-        move_costs_tm1 = move_costs[-1, ...] - move_costs_tm1[1:, ...]  # [shuffle_length, shuffle_parallel]
+        move_costs = move_costs[-1, ...] - move_costs[1:, ...]  # [k_max, shuffle_parallel]
+        move_costs_tm1 = move_costs[-1, ...] - move_costs_tm1[1:, ...]  # [k_max, shuffle_parallel]
         actions = jnp.concatenate(
             [
                 actions[1:],
@@ -256,17 +256,13 @@ def create_hindsight_target_shuffled_path(
                     key_append, (1, shuffle_parallel), minval=0, maxval=puzzle.action_size
                 ),
             ]
-        )  # [shuffle_length, shuffle_parallel]
+        )  # [k_max, shuffle_parallel]
         action_costs = jnp.concatenate(
             [action_costs[1:], jnp.zeros((1, shuffle_parallel))]
-        )  # [shuffle_length, shuffle_parallel]
+        )  # [k_max, shuffle_parallel]
     else:
-        move_costs = (
-            move_costs[-1, ...] - move_costs[:-1, ...]
-        )  # [shuffle_length, shuffle_parallel]
-        move_costs_tm1 = (
-            move_costs[-1, ...] - move_costs_tm1[:-1, ...]
-        )  # [shuffle_length, shuffle_parallel]
+        move_costs = (move_costs[-1, ...] - move_costs[:-1, ...])  # [k_max, shuffle_parallel]
+        move_costs_tm1 = (move_costs[-1, ...] - move_costs_tm1[:-1, ...])  # [k_max, shuffle_parallel]
         move_costs_tm1 = move_costs_tm1.at[0, ...].set(0.0)
 
     solve_configs = solve_configs.flatten()
@@ -288,14 +284,14 @@ def create_hindsight_target_shuffled_path(
 
 def create_hindsight_target_triangular_shuffled_path(
     puzzle: Puzzle,
-    shuffle_length: int,
+    k_max: int,
     shuffle_parallel: int,
     include_solved_states: bool,
     key: chex.PRNGKey,
 ):
     assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
     key, subkey = jax.random.split(key)
-    trajectory = get_random_trajectory(puzzle, shuffle_length, shuffle_parallel, subkey)
+    trajectory = get_random_trajectory(puzzle, k_max, shuffle_parallel, subkey)
 
     original_solve_configs = trajectory["solve_configs"]  # [P, ...]
     states = trajectory["states"]  # [L+1, P, ...]
@@ -312,22 +308,20 @@ def create_hindsight_target_triangular_shuffled_path(
     minval = 0 if include_solved_states else 1
     k = jax.random.randint(
         key_k,
-        shape=(shuffle_length, shuffle_parallel),
+        shape=(k_max, shuffle_parallel),
         minval=minval,
-        maxval=shuffle_length + 1,
+        maxval=k_max + 1,
     )  # [L, P]
 
     # 2. For each `k`, sample start_index `i` uniformly from [0, L-k]
-    random_floats = jax.random.uniform(key_i, shape=(shuffle_length, shuffle_parallel))  # [L, P]
-    max_start_idx = shuffle_length - k
+    random_floats = jax.random.uniform(key_i, shape=(k_max, shuffle_parallel))  # [L, P]
+    max_start_idx = k_max - k
     start_indices = (random_floats * (max_start_idx + 1)).astype(jnp.int32)  # [L, P]
 
     # 3. The target_index `j` is simply i + k
     target_indices = start_indices + k  # [L, P]
 
-    parallel_indices = jnp.tile(
-        jnp.arange(shuffle_parallel)[None, :], (shuffle_length, 1)
-    )  # [L, P]
+    parallel_indices = jnp.tile(jnp.arange(shuffle_parallel)[None, :], (k_max, 1))  # [L, P]
 
     # Gather data using the sampled indices
     start_states = states[start_indices, parallel_indices]
@@ -342,7 +336,7 @@ def create_hindsight_target_triangular_shuffled_path(
 
     # Handle boundary condition: clamp start_indices to prevent out-of-bounds access
     # actions array has size [L], so valid indices are [0, L-1]
-    clamped_start_indices = jnp.clip(start_indices, 0, shuffle_length - 1)
+    clamped_start_indices = jnp.clip(start_indices, 0, k_max - 1)
     final_actions = actions[clamped_start_indices, parallel_indices]
     final_action_costs = action_costs[clamped_start_indices, parallel_indices]
 
@@ -352,7 +346,7 @@ def create_hindsight_target_triangular_shuffled_path(
     final_action_costs = jnp.where(is_goal_state, 0.0, final_action_costs)
 
     # Apply hindsight transform
-    tiled_solve_configs = xnp.tile(original_solve_configs[None, ...], (shuffle_length, 1))
+    tiled_solve_configs = xnp.tile(original_solve_configs[None, ...], (k_max, 1))
 
     flat_tiled_sc = tiled_solve_configs.flatten()
     flat_target_states = target_states.flatten()

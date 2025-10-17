@@ -8,7 +8,6 @@ from qfunction import EmptyQFunction
 
 class PuzzleOptions(BaseModel):
     puzzle: str = "n-puzzle"
-    puzzle_size: str = "default"
     puzzle_args: str = ""
     hard: bool = False
     seeds: str = "0"
@@ -231,7 +230,7 @@ class PuzzleBundle(BaseModel):
     heuristic_nn_config: Optional[NeuralCallableConfig] = None
     q_function: Callable = EmptyQFunction
     q_function_nn_config: Optional[NeuralCallableConfig] = None
-    shuffle_length: int = 50
+    k_max: int = 50
     eval_options: EvalOptions = Field(default_factory=EvalOptions)
     search_options: SearchOptions = Field(default_factory=SearchOptions)
 

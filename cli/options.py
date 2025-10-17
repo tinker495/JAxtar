@@ -50,9 +50,6 @@ def create_puzzle_options(
             if puzzle_opts.puzzle_args:
                 input_args = json.loads(puzzle_opts.puzzle_args)
 
-            if puzzle_opts.puzzle_size != "default":
-                input_args["size"] = int(puzzle_opts.puzzle_size)
-
             puzzle_opts.hard = default_hard or puzzle_opts.hard
             if puzzle_opts.hard and puzzle_bundle.puzzle_hard is not None:
                 puzzle_callable = puzzle_bundle.puzzle_hard
@@ -99,9 +96,6 @@ def create_puzzle_options(
 
         wrapper = click.option(
             "-pargs", "--puzzle_args", default="", type=str, help="Arguments for the puzzle"
-        )(wrapper)
-        wrapper = click.option(
-            "-ps", "--puzzle_size", default="default", type=str, help="Size of the puzzle"
         )(wrapper)
 
         if use_hard_flag:
@@ -475,11 +469,11 @@ def dist_train_options(func: callable) -> callable:
         help="Absolute clip value for TD-error; set <= 0 to disable.",
     )
     @click.option(
-        "-sl",
-        "--shuffle_length",
+        "-km",
+        "--k_max",
         type=int,
         default=None,
-        help="Override puzzle's default shuffle length.",
+        help="Override puzzle's default k_max (formerly shuffle_length).",
     )
     @click.option(
         "--logger",
@@ -498,11 +492,10 @@ def dist_train_options(func: callable) -> callable:
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
 
-        user_shuffle_length = kwargs.pop("shuffle_length")
-        final_shuffle_length = (
-            user_shuffle_length if user_shuffle_length is not None else puzzle_bundle.shuffle_length
-        )
-        kwargs["shuffle_length"] = final_shuffle_length
+        user_kmax = kwargs.pop("k_max")
+        final_kmax = user_kmax if user_kmax is not None else puzzle_bundle.k_max
+        # Pass through as k_max to downstream commands
+        kwargs["k_max"] = final_kmax
 
         preset_name = kwargs.pop("preset")
         preset = train_presets[preset_name]

@@ -398,7 +398,7 @@ def get_heuristic_dataset_builder(
     preproc_fn: Callable,
     heuristic_model: HeuristicBase,
     dataset_size: int,
-    shuffle_length: int,
+    k_max: int,
     dataset_minibatch_size: int,
     using_hindsight_target: bool = True,
     using_triangular_sampling: bool = False,
@@ -411,15 +411,13 @@ def get_heuristic_dataset_builder(
     if using_hindsight_target:
         # Calculate appropriate shuffle_parallel for hindsight sampling
         # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
-        shuffle_parallel = int(
-            min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
-        )
-        steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
+        shuffle_parallel = int(min(math.ceil(dataset_size / k_max), dataset_minibatch_size))
+        steps = math.ceil(dataset_size / (shuffle_parallel * k_max))
         if using_triangular_sampling:
             create_shuffled_path_fn = partial(
                 create_hindsight_target_triangular_shuffled_path,
                 puzzle,
-                shuffle_length,
+                k_max,
                 shuffle_parallel,
                 True,
             )
@@ -427,19 +425,17 @@ def get_heuristic_dataset_builder(
             create_shuffled_path_fn = partial(
                 create_hindsight_target_shuffled_path,
                 puzzle,
-                shuffle_length,
+                k_max,
                 shuffle_parallel,
                 True,
             )
     else:
-        shuffle_parallel = int(
-            min(math.ceil(dataset_size / shuffle_length), dataset_minibatch_size)
-        )
-        steps = math.ceil(dataset_size / (shuffle_parallel * shuffle_length))
+        shuffle_parallel = int(min(math.ceil(dataset_size / k_max), dataset_minibatch_size))
+        steps = math.ceil(dataset_size / (shuffle_parallel * k_max))
         create_shuffled_path_fn = partial(
             create_target_shuffled_path,
             puzzle,
-            shuffle_length,
+            k_max,
             shuffle_parallel,
             True,
         )
