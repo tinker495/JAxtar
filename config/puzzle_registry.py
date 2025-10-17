@@ -433,15 +433,16 @@ for _s in [5, 7]:
     puzzle_bundles[f"lightsout-conv-{_s}"] = bundle_lc
 
 # Rubik's Cube size 3 with size-specific k_max
-_RC_KMAX = {3: 26}
-bundle_rc = _sized_bundle(
-    puzzle_bundles["rubikscube"], size=3, puzzle_cls=RubiksCube, hard_cls=RubiksCube, hard_initial_shuffle=50
-)
-bundle_rc.k_max = _RC_KMAX[3]
-puzzle_bundles["rubikscube-3"] = bundle_rc
+_RC_KMAX = {3: 26, 4: 45, 5: 65}
+for _s in [3, 4, 5]:
+    bundle_rc = _sized_bundle(
+        puzzle_bundles["rubikscube"], size=_s, puzzle_cls=RubiksCube, hard_cls=RubiksCube, hard_initial_shuffle=50
+    )
+    bundle_rc.k_max = _RC_KMAX[_s]
+    puzzle_bundles[f"rubikscube-{_s}"] = bundle_rc
 
-bundle_rcr = _sized_bundle(
-    puzzle_bundles["rubikscube-random"], size=3, puzzle_cls=RubiksCubeRandom, hard_cls=None
-)
-bundle_rcr.k_max = _RC_KMAX[3]
-puzzle_bundles["rubikscube-random-3"] = bundle_rcr
+    bundle_rcr = _sized_bundle(
+        puzzle_bundles["rubikscube-random"], size=_s, puzzle_cls=RubiksCubeRandom, hard_cls=None
+    )
+    bundle_rcr.k_max = _RC_KMAX[_s]
+    puzzle_bundles[f"rubikscube-random-{_s}"] = bundle_rcr
