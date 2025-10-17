@@ -69,7 +69,7 @@ def get_norm_fn(norm_name_or_fn=None):
     raise TypeError(f"norm_fn must be a string or callable, got {type(norm_name_or_fn)}")
 
 
-def swiglu_fn(hidden_N, base_activation=nn.silu, norm_fn=None, training=False, param_matching=True):
+def swiglu_fn(hidden_N, base_activation=nn.silu, norm_fn=None, training=False, param_matching=False):
     target_hidden = hidden_N
     if param_matching: # match parameter count with non-gated MLP
         target_hidden = max(1, (2 * hidden_N) // 3)
