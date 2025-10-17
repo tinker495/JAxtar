@@ -154,6 +154,7 @@ class PreActivationResBlock(nn.Module):
     norm_fn: Callable = DEFAULT_NORM_FN
     activation: Callable = nn.relu
     use_swiglu: bool = False
+    zero_init_last: bool = True
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -171,8 +172,10 @@ class PreActivationResBlock(nn.Module):
                 residual = self.norm_fn(residual, training)
                 residual = self.activation(residual)
 
-        residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
-
+        if self.zero_init_last:
+            residual = nn.Dense(self.node_size, dtype=DTYPE, kernel_init=nn.initializers.zeros)(residual)
+        else:
+            residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
         # Identity shortcut connection
         return x + residual
 

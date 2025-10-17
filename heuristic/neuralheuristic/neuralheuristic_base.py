@@ -58,6 +58,7 @@ class HeuristicBase(nn.Module):
                 use_swiglu=self.use_swiglu,
             )(x, training)
         if self.resblock_fn == PreActivationResBlock:
+            x = self.activation(x)
             x = self.norm_fn(x, training)
         x = x.astype(HEAD_DTYPE)
         x = nn.Dense(1, dtype=HEAD_DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
