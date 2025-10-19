@@ -9,7 +9,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from pydantic import BaseModel
 
-from JAxtar.search_base import Current, SearchResult
+from JAxtar.stars.search_base import Current, SearchResult
 
 
 def convert_to_serializable_dict(obj: Any) -> Any:

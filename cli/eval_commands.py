@@ -11,8 +11,8 @@ from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import BaseLogger
 from heuristic.heuristic_base import Heuristic
-from JAxtar.astar import astar_builder
-from JAxtar.qstar import qstar_builder
+from JAxtar.stars.astar import astar_builder
+from JAxtar.stars.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
