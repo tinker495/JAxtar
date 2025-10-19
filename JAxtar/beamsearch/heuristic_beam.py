@@ -85,10 +85,16 @@ def beam_builder(
             child_valid = jnp.logical_and(filled_mask[jnp.newaxis, :], jnp.isfinite(child_costs))
             child_costs = jnp.where(child_valid, child_costs, jnp.inf)
 
-            dists = jax.vmap(heuristic.batched_distance, in_axes=(None, 0), out_axes=0,)(
-                solve_config, neighbours
-            ).astype(KEY_DTYPE)
-            dists = jnp.where(child_valid, dists, jnp.inf)
+            init_dists = jnp.full(child_costs.shape, jnp.inf, dtype=KEY_DTYPE)
+
+            def _compute_dist(i, acc):
+                dist_row = heuristic.batched_distance(solve_config, neighbours[i])
+                dist_row = dist_row.astype(KEY_DTYPE)
+                dist_row = jnp.where(child_valid[i], dist_row, jnp.inf)
+                return acc.at[i].set(dist_row)
+
+            # Iterate with fori_loop to avoid materialising a large vmap result when the beam is wide.
+            dists = jax.lax.fori_loop(0, num_actions, _compute_dist, init_dists)
 
             scores = (cost_weight * child_costs + dists).astype(KEY_DTYPE)
             scores = jnp.where(child_valid, scores, jnp.inf)
