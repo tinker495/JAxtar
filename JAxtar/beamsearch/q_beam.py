@@ -2,6 +2,7 @@ import time
 
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
@@ -109,6 +110,12 @@ def qbeam_builder(
             selected_actions = flat_actions[selected_idx]
             selected_parents = flat_parent[selected_idx]
             selected_valid = jnp.logical_and(keep_mask, flat_valid[selected_idx])
+            unique_valid = xnp.unique_mask(
+                selected_states,
+                key=selected_scores,
+                filled=selected_valid,
+            )
+            selected_valid = jnp.logical_and(selected_valid, unique_valid)
 
             selected_costs = jnp.where(selected_valid, selected_costs, jnp.inf)
             selected_q = jnp.where(selected_valid, selected_q, jnp.inf)

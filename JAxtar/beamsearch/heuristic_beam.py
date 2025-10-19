@@ -2,6 +2,7 @@ import time
 
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
@@ -120,6 +121,12 @@ def beam_builder(
             selected_actions = flat_actions[selected_idx]
             selected_parents = flat_parent[selected_idx]
             selected_valid = jnp.logical_and(keep_mask, flat_valid[selected_idx])
+            unique_valid = xnp.unique_mask(
+                selected_states,
+                key=selected_scores,
+                filled=selected_valid,
+            )
+            selected_valid = jnp.logical_and(selected_valid, unique_valid)
 
             selected_costs = jnp.where(selected_valid, selected_costs, jnp.inf)
             selected_dists = jnp.where(selected_valid, selected_dists, jnp.inf)
