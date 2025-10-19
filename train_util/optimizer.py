@@ -11,9 +11,10 @@ OPTIMIZERS = {
     "nadam": lambda **kwargs: optax.adamw(nesterov=True, **kwargs),
     "adopt": optax.contrib.adopt,
     "nadopt": lambda **kwargs: optax.contrib.adopt(nesterov=True, **kwargs),
+    "muon": optax.contrib.muon,
     "rmsprop": optax.rmsprop,
     "prodigy": optax.contrib.prodigy,
-    "lamb_adam": optax.lamb,  # This is a placeholder for the lamb optimizer
+    "lamb_adam": optax.lamb,
 }
 
 
