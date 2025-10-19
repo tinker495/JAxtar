@@ -37,21 +37,20 @@ def beam_builder(
             beam_width,
             max_depth,
         )
-        default_path_states = statecls.default((beam_width, max_depth + 1))
-        default_path_costs = jnp.full((beam_width, max_depth + 1), jnp.inf, dtype=KEY_DTYPE)
-        default_path_dists = jnp.full((beam_width, max_depth + 1), jnp.inf, dtype=KEY_DTYPE)
 
         result.beam = result.beam.at[0].set(start)
         result.cost = result.cost.at[0].set(0)
-        result.path_states = result.path_states.at[0, 0].set(start)
-        result.path_costs = result.path_costs.at[0, 0].set(0)
 
         start_dist = heuristic.batched_distance(solve_config, result.beam[:1]).astype(KEY_DTYPE)[0]
         start_score = (cost_weight * result.cost[0] + start_dist).astype(KEY_DTYPE)
         result.dist = result.dist.at[0].set(start_dist)
         result.scores = result.scores.at[0].set(start_score)
-        result.path_dists = result.path_dists.at[0, 0].set(start_dist)
         result.parent_index = result.parent_index.at[0].set(-1)
+        result.active_trace = result.active_trace.at[0].set(0)
+        result.trace_cost = result.trace_cost.at[0].set(0)
+        result.trace_dist = result.trace_dist.at[0].set(start_dist)
+        result.trace_depth = result.trace_depth.at[0].set(0)
+        result.trace_action = result.trace_action.at[0].set(ACTION_PAD)
 
         def _cond(search_result: BeamSearchResult):
             filled_mask = search_result.filled_mask()
@@ -72,15 +71,6 @@ def beam_builder(
             )
 
             num_actions = transition_cost.shape[0]
-            parent_actions = jnp.tile(
-                jnp.arange(num_actions, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-                (1, beam_width),
-            )
-            parent_indices = jnp.tile(
-                jnp.arange(beam_width, dtype=jnp.int32)[jnp.newaxis, :],
-                (num_actions, 1),
-            )
-
             base_costs = search_result.cost
             child_costs = (base_costs[jnp.newaxis, :] + transition_cost).astype(KEY_DTYPE)
             child_valid = jnp.logical_and(filled_mask[jnp.newaxis, :], jnp.isfinite(child_costs))
@@ -89,9 +79,19 @@ def beam_builder(
             init_dists = jnp.full(child_costs.shape, jnp.inf, dtype=KEY_DTYPE)
 
             def _compute_dist(i, acc):
-                dist_row = heuristic.batched_distance(solve_config, neighbours[i])
-                dist_row = dist_row.astype(KEY_DTYPE)
-                dist_row = jnp.where(child_valid[i], dist_row, jnp.inf)
+                row_mask = child_valid[i]
+
+                def _calc(_):
+                    dist_row = heuristic.batched_distance(solve_config, neighbours[i])
+                    dist_row = dist_row.astype(KEY_DTYPE)
+                    return jnp.where(row_mask, dist_row, jnp.inf)
+
+                dist_row = jax.lax.cond(
+                    jnp.any(row_mask),
+                    _calc,
+                    lambda _: acc[i],
+                    None,
+                )
                 return acc.at[i].set(dist_row)
 
             # Iterate with fori_loop to avoid materialising a large vmap result when the beam is wide.
@@ -104,8 +104,6 @@ def beam_builder(
             flat_cost = child_costs.reshape(-1)
             flat_dist = dists.reshape(-1)
             flat_scores = scores.reshape(-1)
-            flat_actions = parent_actions.reshape(-1)
-            flat_parent = parent_indices.reshape(-1)
             flat_valid = child_valid.reshape(-1)
 
             selected_scores, selected_idx, keep_mask = select_beam(
@@ -118,8 +116,8 @@ def beam_builder(
             selected_states = flat_states[selected_idx]
             selected_costs = flat_cost[selected_idx]
             selected_dists = flat_dist[selected_idx]
-            selected_actions = flat_actions[selected_idx]
-            selected_parents = flat_parent[selected_idx]
+            selected_actions = (selected_idx // beam_width).astype(ACTION_DTYPE)
+            selected_parents = (selected_idx % beam_width).astype(jnp.int32)
             selected_valid = jnp.logical_and(keep_mask, flat_valid[selected_idx])
             unique_valid = xnp.unique_mask(
                 selected_states,
@@ -133,44 +131,44 @@ def beam_builder(
             selected_scores = jnp.where(selected_valid, selected_scores, jnp.inf)
             selected_actions = selected_actions.astype(ACTION_DTYPE)
 
-            safe_parents = jnp.where(selected_valid, selected_parents, 0)
-            parent_paths = search_result.path_actions[safe_parents]
-            empty_path = jnp.full((beam_width, max_depth), ACTION_PAD, dtype=ACTION_DTYPE)
-            action_indices = jnp.arange(beam_width, dtype=jnp.int32)
-            parent_paths = parent_paths.at[action_indices, search_result.depth].set(
-                selected_actions
+            parent_trace_ids = search_result.active_trace[selected_parents]
+            parent_trace_ids = jnp.where(
+                selected_valid, parent_trace_ids, -jnp.ones_like(parent_trace_ids)
             )
-            next_paths = jnp.where(selected_valid[:, jnp.newaxis], parent_paths, empty_path)
 
             next_depth_idx = jnp.minimum(search_result.depth + 1, max_depth)
-            parent_state_paths = search_result.path_states[safe_parents]
-            parent_cost_paths = search_result.path_costs[safe_parents]
-            parent_dist_paths = search_result.path_dists[safe_parents]
+            trace_offset = next_depth_idx * beam_width
+            slot_indices = jnp.arange(beam_width, dtype=jnp.int32)
+            next_trace_ids = trace_offset + slot_indices
 
-            parent_state_paths = parent_state_paths.at[action_indices, next_depth_idx].set(
-                selected_states
+            trace_actions = jnp.where(
+                selected_valid,
+                selected_actions,
+                jnp.full_like(selected_actions, ACTION_PAD),
             )
-            parent_cost_paths = parent_cost_paths.at[action_indices, next_depth_idx].set(
+            depth_fill = jnp.full((beam_width,), next_depth_idx, dtype=jnp.int32)
+            depth_default = -jnp.ones((beam_width,), dtype=jnp.int32)
+            trace_depths = jnp.where(selected_valid, depth_fill, depth_default)
+
+            search_result.trace_parent = search_result.trace_parent.at[next_trace_ids].set(
+                parent_trace_ids
+            )
+            search_result.trace_action = search_result.trace_action.at[next_trace_ids].set(
+                trace_actions
+            )
+            search_result.trace_cost = search_result.trace_cost.at[next_trace_ids].set(
                 selected_costs
             )
-            parent_dist_paths = parent_dist_paths.at[action_indices, next_depth_idx].set(
+            search_result.trace_dist = search_result.trace_dist.at[next_trace_ids].set(
                 selected_dists
             )
+            search_result.trace_depth = search_result.trace_depth.at[next_trace_ids].set(
+                trace_depths
+            )
 
-            mask = selected_valid
-
-            def _mask_tree(tree, default):
-                def _mask(field, default_field):
-                    broadcast_shape = (mask.shape[0],) + (1,) * (field.ndim - 1)
-                    mask_exp = mask.reshape(broadcast_shape)
-                    return jnp.where(mask_exp, field, default_field)
-
-                return jax.tree_util.tree_map(_mask, tree, default)
-
-            next_state_paths = _mask_tree(parent_state_paths, default_path_states)
-            mask_2d = mask[:, jnp.newaxis]
-            next_cost_paths = jnp.where(mask_2d, parent_cost_paths, default_path_costs)
-            next_dist_paths = jnp.where(mask_2d, parent_dist_paths, default_path_dists)
+            next_active_trace = jnp.where(
+                selected_valid, next_trace_ids, -jnp.ones_like(next_trace_ids)
+            )
 
             search_result.beam = selected_states
             search_result.cost = selected_costs
@@ -179,10 +177,7 @@ def beam_builder(
             search_result.parent_index = jnp.where(
                 selected_valid, selected_parents, -jnp.ones_like(selected_parents)
             )
-            search_result.path_actions = next_paths
-            search_result.path_states = next_state_paths
-            search_result.path_costs = next_cost_paths
-            search_result.path_dists = next_dist_paths
+            search_result.active_trace = next_active_trace
             selected_count = selected_valid.astype(jnp.int32).sum()
             search_result.generated_size = search_result.generated_size + selected_count
             search_result.depth = search_result.depth + 1

@@ -7,6 +7,7 @@ scores, making the module reusable by both heuristic- and Q-based beam search
 builders.
 """
 
+import math
 from functools import partial
 
 import chex
@@ -28,15 +29,17 @@ class BeamSearchResult:
     dist: chex.Array
     scores: chex.Array
     depth: chex.Array
-    path_actions: chex.Array
     parent_index: chex.Array
-    path_states: Xtructurable
-    path_costs: chex.Array
-    path_dists: chex.Array
     beam: Xtructurable
     solved: chex.Array
     solved_idx: chex.Array
     generated_size: chex.Array
+    trace_parent: chex.Array
+    trace_action: chex.Array
+    trace_cost: chex.Array
+    trace_dist: chex.Array
+    trace_depth: chex.Array
+    active_trace: chex.Array
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2))
@@ -50,30 +53,36 @@ class BeamSearchResult:
         dist = jnp.full((beam_width,), jnp.inf, dtype=KEY_DTYPE)
         scores = jnp.full((beam_width,), jnp.inf, dtype=KEY_DTYPE)
         depth = jnp.array(0, dtype=jnp.int32)
-        path_actions = jnp.full((beam_width, max_depth), ACTION_PAD, dtype=ACTION_DTYPE)
         parent_index = jnp.full((beam_width,), -1, dtype=jnp.int32)
-        path_states = statecls.default((beam_width, max_depth + 1))
-        path_costs = jnp.full((beam_width, max_depth + 1), jnp.inf, dtype=KEY_DTYPE)
-        path_dists = jnp.full((beam_width, max_depth + 1), jnp.inf, dtype=KEY_DTYPE)
         beam = statecls.default((beam_width,))
         solved = jnp.array(False)
         solved_idx = jnp.array(-1, dtype=jnp.int32)
         generated_size = jnp.array(1, dtype=jnp.int32)
+
+        trace_capacity = (max_depth + 1) * beam_width
+        trace_parent = jnp.full((trace_capacity,), -1, dtype=jnp.int32)
+        trace_action = jnp.full((trace_capacity,), ACTION_PAD, dtype=ACTION_DTYPE)
+        trace_cost = jnp.full((trace_capacity,), jnp.inf, dtype=KEY_DTYPE)
+        trace_dist = jnp.full((trace_capacity,), jnp.inf, dtype=KEY_DTYPE)
+        trace_depth = jnp.full((trace_capacity,), -1, dtype=jnp.int32)
+        active_trace = jnp.full((beam_width,), -1, dtype=jnp.int32)
 
         return BeamSearchResult(
             cost=cost,
             dist=dist,
             scores=scores,
             depth=depth,
-            path_actions=path_actions,
             parent_index=parent_index,
-            path_states=path_states,
-            path_costs=path_costs,
-            path_dists=path_dists,
             beam=beam,
             solved=solved,
             solved_idx=solved_idx,
             generated_size=generated_size,
+            trace_parent=trace_parent,
+            trace_action=trace_action,
+            trace_cost=trace_cost,
+            trace_dist=trace_dist,
+            trace_depth=trace_depth,
+            active_trace=active_trace,
         )
 
     def filled_mask(self) -> chex.Array:
@@ -81,12 +90,11 @@ class BeamSearchResult:
 
     def solution_actions(self) -> list[int]:
         """Return the action sequence that reaches the solved slot."""
-        solved_idx = int(self.solved_idx)
-        if solved_idx < 0:
+        trace = self._reconstruct_trace()
+        if trace is None:
             return []
-        actions = self.path_actions[solved_idx]
-        valid = actions != ACTION_PAD
-        return [int(a) for a in actions[valid].tolist()]
+        _, _, actions = trace
+        return actions
 
     def get_state(self, idx: int) -> Puzzle.State:
         """Return the state at `idx` in the current beam."""
@@ -102,35 +110,50 @@ class BeamSearchResult:
 
     def get_solved_path(self):
         """Return the sequence of states along the solved path."""
-        solved_idx = int(self.solved_idx)
-        if solved_idx < 0:
-            return []
-        actions = self.path_actions[solved_idx]
-        valid = actions != ACTION_PAD
-        path_len = int(jnp.sum(valid))
-        states_row = self.path_states[solved_idx]
-        return [states_row[i] for i in range(path_len + 1)]
+        return []
 
     def solution_trace(self):
         """Return (states, costs, dists, actions) describing the solved path."""
+        trace = self._reconstruct_trace()
+        if trace is None:
+            return [], [], [], []
+        costs, dists, actions = trace
+        return [], costs, dists, actions
+
+    def _reconstruct_trace(self):
         solved_idx = int(self.solved_idx)
         if solved_idx < 0:
-            return [], [], [], []
-        actions = self.path_actions[solved_idx]
-        valid = actions != ACTION_PAD
-        path_len = int(jnp.sum(valid))
-        states_row = self.path_states[solved_idx]
-        costs_row = self.path_costs[solved_idx]
-        dists_row = self.path_dists[solved_idx]
-        states = [states_row[i] for i in range(path_len + 1)]
-        costs = [float(costs_row[i]) for i in range(path_len + 1)]
-        dists = []
-        for i in range(path_len + 1):
-            val = float(dists_row[i])
-            dists.append(val if bool(jnp.isfinite(dists_row[i])) else None)
-        valid_actions = actions[valid]
-        actions_list = [int(a) for a in valid_actions.tolist()]
-        return states, costs, dists, actions_list
+            return None
+
+        active_trace = jax.device_get(self.active_trace)
+        node_idx = int(active_trace[solved_idx])
+        if node_idx < 0:
+            return None
+
+        trace_parent = jax.device_get(self.trace_parent)
+        trace_action = jax.device_get(self.trace_action)
+        trace_cost = jax.device_get(self.trace_cost)
+        trace_dist = jax.device_get(self.trace_dist)
+
+        costs_rev = []
+        dists_rev = []
+        actions_rev = []
+
+        while node_idx >= 0:
+            cost_val = float(trace_cost[node_idx])
+            dist_raw = float(trace_dist[node_idx])
+            dists_rev.append(dist_raw if math.isfinite(dist_raw) else None)
+            costs_rev.append(cost_val)
+
+            parent_idx = int(trace_parent[node_idx])
+            if parent_idx >= 0:
+                actions_rev.append(int(trace_action[node_idx]))
+            node_idx = parent_idx
+
+        costs = list(reversed(costs_rev))
+        dists = list(reversed(dists_rev))
+        actions = list(reversed(actions_rev))
+        return costs, dists, actions
 
 
 def select_beam(
@@ -162,8 +185,8 @@ def select_beam(
     """
     chex.assert_rank(scores, 1)
     safe_scores = jnp.where(jnp.isfinite(scores), scores, jnp.inf)
-    sorted_idx = jnp.argsort(safe_scores)
-    topk_idx = sorted_idx[:beam_width]
+    neg_scores = -safe_scores
+    _, topk_idx = jax.lax.top_k(neg_scores, beam_width)
     selected_scores = safe_scores[topk_idx]
     selected_valid = jnp.isfinite(selected_scores)
 
