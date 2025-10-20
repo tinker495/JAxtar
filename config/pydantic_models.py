@@ -233,6 +233,12 @@ class PuzzleBundle(BaseModel):
     k_max: int = 50
     eval_options: EvalOptions = Field(default_factory=EvalOptions)
     search_options: SearchOptions = Field(default_factory=SearchOptions)
+    beam_eval_options: EvalOptions = Field(
+        default_factory=lambda: EvalOptions(batch_size=[320000], max_node_size=int(2e8))
+    )
+    beam_search_options: SearchOptions = Field(
+        default_factory=lambda: SearchOptions(batch_size=320000, max_node_size=int(2e8))
+    )
 
     class Config:
         arbitrary_types_allowed = True

@@ -481,7 +481,7 @@ def astar(
 
 @click.command()
 @puzzle_options
-@search_options
+@search_options(variant="beam")
 @heuristic_options
 @visualize_options
 def beam(
@@ -541,7 +541,7 @@ def beam(
 
 @click.command()
 @puzzle_options
-@search_options
+@search_options(variant="beam")
 @qfunction_options
 @visualize_options
 def qbeam(
