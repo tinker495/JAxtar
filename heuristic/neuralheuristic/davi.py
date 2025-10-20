@@ -70,14 +70,6 @@ def davi_builder(
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        sample_mask = dataset.get(
-            "sample_mask", jnp.ones((data_size,), dtype=jnp.float32)
-        ).astype(jnp.float32)
-        mask_sum = jnp.sum(sample_mask)
-        safe_sample_mask = jnp.where(mask_sum > 0, sample_mask, jnp.ones_like(sample_mask))
-        mask_sum = jnp.sum(safe_sample_mask)
-        sampling_probs = safe_sample_mask / mask_sum
-
         loss_weights = jnp.ones(data_size)
         loss_weights = loss_weights / jnp.mean(loss_weights)
 
@@ -113,16 +105,22 @@ def davi_builder(
         def replay_loop(carry, replay_key):
             heuristic_params, opt_state = carry
 
-            key_perm_replay, _ = jax.random.split(replay_key)
-            flat_indices = jax.random.choice(
-                key_perm_replay,
-                data_size,
-                shape=(batch_size * minibatch_size,),
-                replace=True,
-                p=sampling_probs,
+            key_perm_replay, key_fill_replay = jax.random.split(replay_key)
+            batch_indexs_replay = jnp.concatenate(
+                [
+                    jax.random.permutation(key_perm_replay, jnp.arange(data_size)),
+                    jax.random.randint(
+                        key_fill_replay,
+                        (batch_size * minibatch_size - data_size,),
+                        0,
+                        data_size,
+                    ),
+                ],
+                axis=0,
             )
-            batch_indexs_replay = jnp.reshape(flat_indices, (batch_size, minibatch_size))
             loss_weights_replay = loss_weights
+
+            batch_indexs_replay = jnp.reshape(batch_indexs_replay, (batch_size, minibatch_size))
 
             # Create new batches with reshuffled indices
             batched_solveconfigs_replay = xnp.take(solveconfigs, batch_indexs_replay, axis=0)
@@ -232,7 +230,6 @@ def _get_datasets(
     preproc_fn: Callable,
     heuristic_model: HeuristicBase,
     minibatch_size: int,
-    SolveConfigsAndStates: Xtructurable,
     target_heuristic_params: Any,
     heuristic_params: Any,
     shuffled_path: dict[str, chex.Array],
@@ -337,16 +334,6 @@ def _get_datasets(
     target_entropy_max = target_entropy_max.reshape((-1,))
     cost = cost.reshape((-1,))
 
-    # Identify duplicate (solve_config, state) pairs so downstream training can mask them.
-    solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
-    unique_mask, _, _ = xnp.unique_mask(
-        val=solve_configs_and_states,
-        key=target_heuristic,
-        return_index=True,
-        return_inverse=True,
-    )
-    sample_mask = unique_mask.astype(jnp.float32)
-
     return {
         "solveconfigs": solve_configs,
         "states": states,
@@ -355,7 +342,6 @@ def _get_datasets(
         "target_entropy": target_entropy,
         "target_entropy_max": target_entropy_max,
         "cost": cost,
-        "sample_mask": sample_mask,
     }
 
 
@@ -379,23 +365,22 @@ def _get_datasets_with_diffusion_distance(
 
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
-    move_costs = move_costs.reshape((-1,))
 
     solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
-    target_heuristic = move_costs
+    target_heuristic = move_costs.reshape((-1,))
 
-    # Identify duplicate states and build a mask so training can ignore repeated entries
-    unique_mask, _, _ = xnp.unique_mask(
+    # Find unique states and broadcast the minimal target_heuristic to all duplicates
+    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
         val=solve_configs_and_states,
         key=target_heuristic,
         return_index=True,
         return_inverse=True,
     )
-    sample_mask = unique_mask.astype(jnp.float32)
+    target_heuristic = target_heuristic[unique_uint32eds_idx][inverse_indices]
     diff = jnp.zeros_like(target_heuristic)
     target_entropy = jnp.zeros_like(target_heuristic)
     target_entropy_max = jnp.zeros_like(target_heuristic)
-    cost = move_costs
+    cost = move_costs.reshape((-1,))
 
     return {
         "solveconfigs": solve_configs,
@@ -405,7 +390,6 @@ def _get_datasets_with_diffusion_distance(
         "target_entropy": target_entropy,
         "target_entropy_max": target_entropy_max,
         "cost": cost,
-        "sample_mask": sample_mask,
     }
 
 
@@ -423,11 +407,6 @@ def get_heuristic_dataset_builder(
     td_error_clip: Optional[float] = None,
     use_diffusion_distance: bool = False,
 ):
-
-    @xtructure_dataclass
-    class SolveConfigsAndStates:
-        solveconfigs: FieldDescriptor[puzzle.SolveConfig]
-        states: FieldDescriptor[puzzle.State]
 
     if using_hindsight_target:
         # Calculate appropriate shuffle_parallel for hindsight sampling
@@ -465,6 +444,11 @@ def get_heuristic_dataset_builder(
 
     if use_diffusion_distance:
 
+        @xtructure_dataclass
+        class SolveConfigsAndStates:
+            solveconfigs: FieldDescriptor[puzzle.SolveConfig]
+            states: FieldDescriptor[puzzle.State]
+
         jited_get_datasets = jax.jit(
             partial(
                 _get_datasets_with_diffusion_distance,
@@ -485,7 +469,6 @@ def get_heuristic_dataset_builder(
                 preproc_fn,
                 heuristic_model,
                 dataset_minibatch_size,
-                SolveConfigsAndStates,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
             )

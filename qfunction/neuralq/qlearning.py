@@ -74,14 +74,6 @@ def qlearning_builder(
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
-        sample_mask = dataset.get(
-            "sample_mask", jnp.ones((data_size,), dtype=jnp.float32)
-        ).astype(jnp.float32)
-        mask_sum = jnp.sum(sample_mask)
-        safe_sample_mask = jnp.where(mask_sum > 0, sample_mask, jnp.ones_like(sample_mask))
-        mask_sum = jnp.sum(safe_sample_mask)
-        sampling_probs = safe_sample_mask / mask_sum
-
         loss_weights = jnp.ones(data_size)
         loss_weights = loss_weights / jnp.mean(loss_weights)
 
@@ -107,25 +99,25 @@ def qlearning_builder(
                 lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
             )
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (q_params, opt_state), (
-                loss,
-                grad_magnitude_mean,
-                diff,
-                current_q,
-            )
+            return (q_params, opt_state), (loss, grad_magnitude_mean, diff, current_q)
 
         def replay_loop(carry, replay_key):
             q_params, opt_state = carry
 
-            key_perm, _ = jax.random.split(replay_key)
-            flat_indices = jax.random.choice(
-                key_perm,
-                data_size,
-                shape=(batch_size * minibatch_size,),
-                replace=True,
-                p=sampling_probs,
+            key_perm, key_fill = jax.random.split(replay_key)
+            batch_indexs = jnp.concatenate(
+                [
+                    jax.random.permutation(key_perm, jnp.arange(data_size)),
+                    jax.random.randint(
+                        key_fill,
+                        (batch_size * minibatch_size - data_size,),
+                        0,
+                        data_size,
+                    ),
+                ],
+                axis=0,
             )
-            batch_indexs = jnp.reshape(flat_indices, (batch_size, minibatch_size))
+            batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
 
             batched_solveconfigs = xnp.take(solveconfigs, batch_indexs, axis=0)
             batched_states = xnp.take(states, batch_indexs, axis=0)
@@ -259,7 +251,6 @@ def _get_datasets_with_policy(
     preproc_fn: Callable,
     q_model: QModelBase,
     minibatch_size: int,
-    SolveConfigsAndStatesAndActions: Xtructurable,
     target_q_params: Any,
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
@@ -413,27 +404,13 @@ def _get_datasets_with_policy(
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
     target_q = target_q.reshape((-1, 1))
-    actions = actions.reshape((-1, 1)).astype(jnp.int32)
+    actions = actions.reshape((-1, 1))
     diff = diff.reshape((-1,))
     entropy = entropy.reshape((-1,))
     max_entropy = max_entropy.reshape((-1,))
     target_entropy = target_entropy.reshape((-1,))
     target_max_entropy = target_max_entropy.reshape((-1,))
     cost = move_costs_tm1.reshape((-1,))
-
-    # Identify duplicate (solve_config, state, action) combinations so downstream training can mask them.
-    solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
-        solveconfigs=solve_configs,
-        states=states,
-        actions=actions,
-    )
-    unique_mask, _, _ = xnp.unique_mask(
-        val=solve_configs_and_states_and_actions,
-        key=target_q[:, 0],
-        return_index=True,
-        return_inverse=True,
-    )
-    sample_mask = unique_mask.astype(jnp.float32)
 
     return {
         "solveconfigs": solve_configs,
@@ -446,7 +423,6 @@ def _get_datasets_with_policy(
         "target_entropy": target_entropy,
         "target_entropy_max": target_max_entropy,
         "cost": cost,
-        "sample_mask": sample_mask,
     }
 
 
@@ -464,13 +440,12 @@ def _get_datasets_with_diffusion_distance(
     td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
 ):
-    trajectory_actions = shuffled_path["actions"].reshape((-1, 1)).astype(jnp.int32)
+    trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
     return_dict = _get_datasets_with_policy(
         puzzle,
         preproc_fn,
         q_model,
         minibatch_size,
-        SolveConfigsAndStatesAndActions,
         target_q_params,
         q_params,
         shuffled_path,
@@ -479,9 +454,22 @@ def _get_datasets_with_diffusion_distance(
         td_error_clip,
         use_double_dqn,
     )
+    solve_configs = return_dict["solveconfigs"]
+    states = return_dict["states"]
+    solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
+        solveconfigs=solve_configs,
+        states=states,
+        actions=trajectory_actions,
+    )
     cost = return_dict["cost"]
     target_q = return_dict["target_q"]
-    cost = cost[:, jnp.newaxis]
+    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
+        val=solve_configs_and_states_and_actions,
+        key=cost,
+        return_index=True,
+        return_inverse=True,
+    )
+    cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]  # [dataset_size, 1]
     target_q = jnp.maximum(target_q, cost)
     target_q = jnp.concatenate(
         (target_q, cost),
@@ -512,12 +500,6 @@ def get_qlearning_dataset_builder(
     use_double_dqn: bool = False,
     use_diffusion_distance: bool = False,
 ):
-    @xtructure_dataclass
-    class SolveConfigsAndStatesAndActions:
-        solveconfigs: FieldDescriptor[puzzle.SolveConfig]
-        states: FieldDescriptor[puzzle.State]
-        actions: FieldDescriptor[jnp.int32, (1,)]
-
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
         # Calculate appropriate shuffle_parallel for hindsight sampling
@@ -553,6 +535,13 @@ def get_qlearning_dataset_builder(
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
     if use_diffusion_distance:
+
+        @xtructure_dataclass
+        class SolveConfigsAndStatesAndActions:
+            solveconfigs: FieldDescriptor[puzzle.SolveConfig]
+            states: FieldDescriptor[puzzle.State]
+            actions: FieldDescriptor[jnp.uint8, (1,)]
+
         jited_get_datasets = jax.jit(
             partial(
                 _get_datasets_with_diffusion_distance,
@@ -574,7 +563,6 @@ def get_qlearning_dataset_builder(
                 preproc_fn,
                 q_model,
                 dataset_minibatch_size,
-                SolveConfigsAndStatesAndActions,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
                 use_double_dqn=use_double_dqn,
