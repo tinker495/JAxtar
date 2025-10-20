@@ -13,12 +13,16 @@ from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
+import numpy as np
 from puxle import Puzzle
 from xtructure import Xtructurable, base_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 
 ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
+TRACE_INDEX_DTYPE = jnp.uint32
+TRACE_INVALID_INT = int(jnp.iinfo(TRACE_INDEX_DTYPE).max)
+TRACE_INVALID = jnp.array(TRACE_INVALID_INT, dtype=TRACE_INDEX_DTYPE)
 
 
 @base_dataclass
@@ -60,12 +64,12 @@ class BeamSearchResult:
         generated_size = jnp.array(1, dtype=jnp.int32)
 
         trace_capacity = (max_depth + 1) * beam_width
-        trace_parent = jnp.full((trace_capacity,), -1, dtype=jnp.int32)
+        trace_parent = jnp.full((trace_capacity,), TRACE_INVALID, dtype=TRACE_INDEX_DTYPE)
         trace_action = jnp.full((trace_capacity,), ACTION_PAD, dtype=ACTION_DTYPE)
         trace_cost = jnp.full((trace_capacity,), jnp.inf, dtype=KEY_DTYPE)
         trace_dist = jnp.full((trace_capacity,), jnp.inf, dtype=KEY_DTYPE)
         trace_depth = jnp.full((trace_capacity,), -1, dtype=jnp.int32)
-        active_trace = jnp.full((beam_width,), -1, dtype=jnp.int32)
+        active_trace = jnp.full((beam_width,), TRACE_INVALID, dtype=TRACE_INDEX_DTYPE)
 
         return BeamSearchResult(
             cost=cost,
@@ -125,12 +129,12 @@ class BeamSearchResult:
         if solved_idx < 0:
             return None
 
-        active_trace = jax.device_get(self.active_trace)
+        active_trace = np.asarray(jax.device_get(self.active_trace), dtype=np.uint32)
         node_idx = int(active_trace[solved_idx])
-        if node_idx < 0:
+        if node_idx == TRACE_INVALID_INT:
             return None
 
-        trace_parent = jax.device_get(self.trace_parent)
+        trace_parent = np.asarray(jax.device_get(self.trace_parent), dtype=np.uint32)
         trace_action = jax.device_get(self.trace_action)
         trace_cost = jax.device_get(self.trace_cost)
         trace_dist = jax.device_get(self.trace_dist)
@@ -139,14 +143,16 @@ class BeamSearchResult:
         dists_rev = []
         actions_rev = []
 
-        while node_idx >= 0:
+        invalid = TRACE_INVALID_INT
+
+        while node_idx != invalid:
             cost_val = float(trace_cost[node_idx])
             dist_raw = float(trace_dist[node_idx])
             dists_rev.append(dist_raw if math.isfinite(dist_raw) else None)
             costs_rev.append(cost_val)
 
             parent_idx = int(trace_parent[node_idx])
-            if parent_idx >= 0:
+            if parent_idx != invalid:
                 actions_rev.append(int(trace_action[node_idx]))
             node_idx = parent_idx
 
@@ -204,4 +210,10 @@ def select_beam(
     return selected_scores, topk_idx, keep_mask
 
 
-__all__ = ["BeamSearchResult", "select_beam"]
+__all__ = [
+    "BeamSearchResult",
+    "select_beam",
+    "TRACE_INVALID",
+    "TRACE_INVALID_INT",
+    "TRACE_INDEX_DTYPE",
+]

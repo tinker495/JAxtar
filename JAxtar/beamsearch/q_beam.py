@@ -6,7 +6,13 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.beamsearch.search_base import ACTION_PAD, BeamSearchResult, select_beam
+from JAxtar.beamsearch.search_base import (
+    ACTION_PAD,
+    BeamSearchResult,
+    TRACE_INDEX_DTYPE,
+    TRACE_INVALID,
+    select_beam,
+)
 from qfunction.q_base import QFunction
 
 
@@ -118,13 +124,14 @@ def qbeam_builder(
             selected_actions = selected_actions.astype(ACTION_DTYPE)
 
             parent_trace_ids = search_result.active_trace[selected_parents]
-            parent_trace_ids = jnp.where(
-                selected_valid, parent_trace_ids, -jnp.ones_like(parent_trace_ids)
-            )
+            invalid_parent = jnp.full_like(parent_trace_ids, TRACE_INVALID)
+            parent_trace_ids = jnp.where(selected_valid, parent_trace_ids, invalid_parent)
 
             next_depth_idx = jnp.minimum(search_result.depth + 1, max_depth)
-            trace_offset = next_depth_idx * beam_width
-            slot_indices = jnp.arange(beam_width, dtype=jnp.int32)
+            trace_offset = next_depth_idx.astype(TRACE_INDEX_DTYPE) * jnp.asarray(
+                beam_width, dtype=TRACE_INDEX_DTYPE
+            )
+            slot_indices = jnp.arange(beam_width, dtype=TRACE_INDEX_DTYPE)
             next_trace_ids = trace_offset + slot_indices
 
             trace_actions = jnp.where(
@@ -150,9 +157,8 @@ def qbeam_builder(
                 trace_depths
             )
 
-            next_active_trace = jnp.where(
-                selected_valid, next_trace_ids, -jnp.ones_like(next_trace_ids)
-            )
+            invalid_trace = jnp.full_like(next_trace_ids, TRACE_INVALID)
+            next_active_trace = jnp.where(selected_valid, next_trace_ids, invalid_trace)
 
             search_result.beam = selected_states
             search_result.cost = selected_costs
