@@ -36,9 +36,20 @@ class QModelBase(nn.Module):
     norm_fn: callable = DEFAULT_NORM_FN
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    num_classes: int = -1 # if -1, the use raw one-hot input.
+    embed_dim: int = 128 # the dimension of the embedding.
 
     @nn.compact
     def __call__(self, x, training=False):
+        if self.num_classes > 0:
+            x = x.astype(jnp.int32)
+            x = nn.Embed(
+                num_embeddings=self.num_classes,
+                features=self.embed_dim,
+                dtype=DTYPE,
+                embedding_init=nn.initializers.normal(stddev=0.02),
+            )(x)
+            x = x.reshape((x.shape[0], -1))
         if self.use_swiglu:
             x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn)(x, training)
             x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn)(x, training)

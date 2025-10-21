@@ -1,10 +1,8 @@
 import chex
-import jax
 import jax.numpy as jnp
 from puxle import RubiksCube
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.modules import DTYPE
 
 
 def _remove_face_centers(flatten_face: chex.Array, n: int) -> chex.Array:
@@ -35,19 +33,16 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size
         self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+        kwargs.setdefault("num_classes", self._num_tile_classes)
         super().__init__(puzzle, **kwargs)
-
-    def _one_hot_faces(self, faces: chex.Array) -> chex.Array:
-        return jax.nn.one_hot(faces, num_classes=self._num_tile_classes)
 
     def pre_process(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
         current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
         current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
-        # Create a one-hot encoding of the flattened face without centre stickers
-        current_one_hot = self._one_hot_faces(current_no_centers).flatten()
-        return ((current_one_hot - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
+        current_tokens = current_no_centers.astype(jnp.int32)
+        return current_tokens
 
 
 class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
@@ -55,20 +50,16 @@ class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size
         self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+        kwargs.setdefault("num_classes", self._num_tile_classes)
         super().__init__(puzzle, **kwargs)
-
-    def _one_hot_faces(self, faces: chex.Array) -> chex.Array:
-        return jax.nn.one_hot(faces, num_classes=self._num_tile_classes)
 
     def pre_process(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
         current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
         current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
-        # Create a one-hot encoding of the flattened face without centre stickers
-        current_one_hot = self._one_hot_faces(current_no_centers).flatten()
+        current_tokens = current_no_centers.astype(jnp.int32)
         target_flatten_face = solve_config.TargetState.unpacked.faces.flatten()
         target_no_centers = _remove_face_centers(target_flatten_face, self.puzzle.size)
-        target_one_hot = self._one_hot_faces(target_no_centers).flatten()
-        one_hots = jnp.concatenate([target_one_hot, current_one_hot], axis=-1)
-        return ((one_hots - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
+        target_tokens = target_no_centers.astype(jnp.int32)
+        return jnp.concatenate([target_tokens, current_tokens], axis=-1)
