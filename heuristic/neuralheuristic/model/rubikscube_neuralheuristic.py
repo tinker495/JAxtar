@@ -75,9 +75,9 @@ class RubiksCubeTransformerModel(nn.Module):
     num_classes: int
     seq_len: int
     embed_dim: int = 128
-    num_heads: int = 4
-    num_layers: int = 4
-    mlp_dim: int = 256
+    num_heads: int = 2
+    num_layers: int = 2
+    mlp_dim: int = 512
     dropout_rate: float = 0.0
     # Compatibility placeholders for NeuralHeuristicBase kwargs.
     norm_fn: callable = _identity_norm
@@ -135,9 +135,9 @@ class _BaseRubiksCubeTransformerHeuristic(NeuralHeuristicBase):
         *,
         include_target: bool,
         embed_dim: int = 128,
-        num_heads: int = 4,
-        num_layers: int = 4,
-        mlp_dim: int = 256,
+        num_heads: int = 2,
+        num_layers: int = 2,
+        mlp_dim: int = 512,
         dropout_rate: float = 0.0,
         **kwargs,
     ):
