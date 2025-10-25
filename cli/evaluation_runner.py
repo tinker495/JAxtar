@@ -27,6 +27,10 @@ from helpers.plots import (
 )
 from helpers.rich_progress import trange
 from helpers.summaries import create_summary_panel
+from helpers.visualization import (
+    build_path_steps_from_actions,
+    build_path_steps_from_nodes,
+)
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
@@ -302,6 +306,9 @@ class EvaluationRunner:
             desc="Running Evaluations",
         )
 
+        heuristic_model = self.search_model if isinstance(self.search_model, Heuristic) else None
+        qfunction_model = self.search_model if isinstance(self.search_model, QFunction) else None
+
         for i in pbar:
             identifier = eval_inputs[i]
 
@@ -350,27 +357,63 @@ class EvaluationRunner:
                     )
 
             if solved:
-                path = search_result.get_solved_path()
-                path_cost = search_result.get_cost(path[-1])
+                if hasattr(search_result, "solution_trace"):
+                    (
+                        states_trace,
+                        costs_trace,
+                        dists_trace,
+                        actions_trace,
+                    ) = search_result.solution_trace()
+                    path_steps = build_path_steps_from_actions(
+                        puzzle=puzzle,
+                        solve_config=solve_config,
+                        initial_state=state,
+                        actions=actions_trace,
+                        heuristic=heuristic_model,
+                        q_fn=qfunction_model,
+                        states=states_trace,
+                        costs=costs_trace,
+                        dists=dists_trace,
+                    )
+                elif hasattr(search_result, "solution_actions"):
+                    actions = search_result.solution_actions()
+                    path_steps = build_path_steps_from_actions(
+                        puzzle=puzzle,
+                        solve_config=solve_config,
+                        initial_state=state,
+                        actions=actions,
+                        heuristic=heuristic_model,
+                        q_fn=qfunction_model,
+                    )
+                else:
+                    path = search_result.get_solved_path()
+                    path_steps = build_path_steps_from_nodes(
+                        search_result=search_result,
+                        path=path,
+                        puzzle=puzzle,
+                        solve_config=solve_config,
+                    )
+
+                path_cost = path_steps[-1].cost if path_steps else 0.0
                 result_item["path_cost"] = float(path_cost)
 
-                states = []
+                states = [step.state for step in path_steps]
                 actual_dists = []
                 estimated_dists = []
-                for state_in_path in path:
-                    states.append(search_result.get_state(state_in_path))
-                    actual_dist = float(path_cost - search_result.get_cost(state_in_path))
-                    estimated_dist = float(search_result.get_dist(state_in_path))
+                for step in path_steps:
+                    actual_dist = float(path_cost - step.cost)
+                    estimated_dist = float(step.dist) if step.dist is not None else np.inf
 
                     if np.isfinite(estimated_dist):
                         actual_dists.append(actual_dist)
                         estimated_dists.append(estimated_dist)
 
-                result_item["path_analysis"] = {
-                    "actual": actual_dists,
-                    "estimated": estimated_dists,
-                    "states": xnp.concatenate(states),
-                }
+                if states:
+                    result_item["path_analysis"] = {
+                        "actual": actual_dists,
+                        "estimated": estimated_dists,
+                        "states": xnp.concatenate(states),
+                    }
 
             # Extract expansion data for plotting node value distributions
             expanded_nodes_mask = search_result.pop_generation > -1

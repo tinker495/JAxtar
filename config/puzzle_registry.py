@@ -170,7 +170,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "rubikscube": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCube),
-        puzzle_hard=PuzzleConfig(callable=RubiksCube, initial_shuffle=50),
+        puzzle_hard=PuzzleConfig(callable=RubiksCube, initial_shuffle=100),
         k_max=26,
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
@@ -436,7 +436,7 @@ for _s in [5, 7]:
 _RC_KMAX = {3: 26, 4: 45, 5: 65}
 for _s in [3, 4, 5]:
     bundle_rc = _sized_bundle(
-        puzzle_bundles["rubikscube"], size=_s, puzzle_cls=RubiksCube, hard_cls=RubiksCube, hard_initial_shuffle=50
+        puzzle_bundles["rubikscube"], size=_s, puzzle_cls=RubiksCube, hard_cls=RubiksCube, hard_initial_shuffle=120
     )
     bundle_rc.k_max = _RC_KMAX[_s]
     puzzle_bundles[f"rubikscube-{_s}"] = bundle_rc

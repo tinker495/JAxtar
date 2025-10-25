@@ -19,8 +19,8 @@ from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from JAxtar.astar import astar_builder
-from JAxtar.qstar import qstar_builder
+from JAxtar.stars.astar import astar_builder
+from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer

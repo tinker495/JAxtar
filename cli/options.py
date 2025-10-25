@@ -205,129 +205,148 @@ dist_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default
 wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
 
 
-def search_options(func: callable) -> callable:
-    @click.option("-m", "--max_node_size", default=None, type=str, help="Size of the puzzle")
-    @click.option("-b", "--batch_size", default=None, type=int, help="Batch size for BGPQ")
-    @click.option("-w", "--cost_weight", default=None, type=float, help="Weight for the A* search")
-    @click.option(
-        "-pr",
-        "--pop_ratio",
-        default=None,
-        type=float,
-        help="Ratio for popping nodes from the priority queue.",
-    )
-    @click.option("-vm", "--vmap_size", default=None, type=int, help="Size for the vmap")
-    @click.option("--debug", is_flag=True, default=None, help="Debug mode")
-    @click.option("--profile", is_flag=True, default=None, help="Profile mode")
-    @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if kwargs.get("max_node_size", None) is not None:
-            kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
+def search_options(func=None, *, variant: str = "default") -> callable:
+    def decorator(func: callable) -> callable:
+        @click.option("-m", "--max_node_size", default=None, type=str, help="Size of the puzzle")
+        @click.option("-b", "--batch_size", default=None, type=int, help="Batch size for BGPQ")
+        @click.option(
+            "-w", "--cost_weight", default=None, type=float, help="Weight for the A* search"
+        )
+        @click.option(
+            "-pr",
+            "--pop_ratio",
+            default=None,
+            type=float,
+            help="Ratio for popping nodes from the priority queue.",
+        )
+        @click.option("-vm", "--vmap_size", default=None, type=int, help="Size for the vmap")
+        @click.option("--debug", is_flag=True, default=None, help="Debug mode")
+        @click.option("--profile", is_flag=True, default=None, help="Profile mode")
+        @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if kwargs.get("max_node_size", None) is not None:
+                kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
 
-        puzzle_bundle = kwargs["puzzle_bundle"]
-        base_search_options = puzzle_bundle.search_options
-
-        overrides = {
-            k: v for k, v in kwargs.items() if v is not None and k in SearchOptions.model_fields
-        }
-        search_opts = base_search_options.model_copy(update=overrides)
-
-        if search_opts.debug:
-            print("Disabling JIT")
-            jax.config.update("jax_disable_jit", True)
-            search_opts.max_node_size = 10000
-            search_opts.batch_size = 100
-
-        kwargs["search_options"] = search_opts
-
-        for k in SearchOptions.model_fields:
-            kwargs.pop(k, None)
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def eval_options(func: callable) -> callable:
-    @click.option("-b", "--batch-size", type=int, default=None, help="Batch size for search.")
-    @click.option(
-        "-m", "--max-node-size", type=str, default=None, help="Maximum number of nodes to search."
-    )
-    @click.option(
-        "-w", "--cost-weight", type=float, default=None, help="Weight for cost in search."
-    )
-    @click.option(
-        "-pr",
-        "--pop_ratio",
-        type=str,
-        default=None,
-        help="Ratio(s) for popping nodes from the priority queue. Can be a single float, "
-        "'inf', or a comma-separated list (e.g., 'inf,0.4,0.3').",
-    )
-    @click.option(
-        "-ne", "--num-eval", type=int, default=None, help="Number of puzzles to evaluate."
-    )
-    @click.option("-rn", "--run-name", type=str, default=None, help="Name of the evaluation run.")
-    @click.option(
-        "--use-early-stopping",
-        type=bool,
-        default=None,
-        help="Enable early stopping based on success rate threshold.",
-    )
-    @click.option(
-        "--early-stop-patience",
-        type=int,
-        default=None,
-        help="Number of samples to check before considering early stopping.",
-    )
-    @click.option(
-        "--early-stop-threshold",
-        type=float,
-        default=None,
-        help="Minimum success rate threshold for early stopping (0.0 to 1.0).",
-    )
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if kwargs.get("max_node_size", None) is not None:
-            kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
-
-        puzzle_bundle = kwargs["puzzle_bundle"]
-        base_eval_options = puzzle_bundle.eval_options
-        # Collect any user-provided options to override the preset
-        overrides = {
-            k: v for k, v in kwargs.items() if v is not None and k in EvalOptions.model_fields
-        }
-
-        # Handle pop_ratio specifically to allow multiple values
-        if "pop_ratio" in kwargs and kwargs["pop_ratio"] is not None:
-            pop_ratio_str = str(kwargs["pop_ratio"])
-            if "," in pop_ratio_str:
-                pop_ratios = []
-                for pr_val in pop_ratio_str.split(","):
-                    try:
-                        pop_ratios.append(float(pr_val.strip()))
-                    except ValueError:
-                        if pr_val.strip().lower() == "inf":
-                            pop_ratios.append(float("inf"))
-                        else:
-                            raise click.BadParameter(f"Invalid pop_ratio value: {pr_val}")
-                overrides["pop_ratio"] = pop_ratios
+            puzzle_bundle = kwargs["puzzle_bundle"]
+            if variant == "beam":
+                base_search_options = puzzle_bundle.beam_search_options
             else:
-                try:
-                    overrides["pop_ratio"] = float(pop_ratio_str.strip())
-                except ValueError:
-                    if pop_ratio_str.strip().lower() == "inf":
-                        overrides["pop_ratio"] = float("inf")
-                    else:
-                        raise click.BadParameter(f"Invalid pop_ratio value: {pop_ratio_str}")
+                base_search_options = puzzle_bundle.search_options
 
-        eval_opts = base_eval_options.model_copy(update=overrides)
-        kwargs["eval_options"] = eval_opts
-        for k in EvalOptions.model_fields:
-            kwargs.pop(k, None)
-        return func(*args, **kwargs)
+            overrides = {
+                k: v for k, v in kwargs.items() if v is not None and k in SearchOptions.model_fields
+            }
+            search_opts = base_search_options.model_copy(update=overrides)
 
-    return wrapper
+            if search_opts.debug:
+                print("Disabling JIT")
+                jax.config.update("jax_disable_jit", True)
+                search_opts.max_node_size = 10000
+                search_opts.batch_size = 100
+
+            kwargs["search_options"] = search_opts
+
+            for k in SearchOptions.model_fields:
+                kwargs.pop(k, None)
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    return decorator(func)
+
+
+def eval_options(func=None, *, variant: str = "default") -> callable:
+    def decorator(func: callable) -> callable:
+        @click.option("-b", "--batch-size", type=int, default=None, help="Batch size for search.")
+        @click.option(
+            "-m", "--max-node-size", type=str, default=None, help="Maximum number of nodes to search."
+        )
+        @click.option(
+            "-w", "--cost-weight", type=float, default=None, help="Weight for cost in search."
+        )
+        @click.option(
+            "-pr",
+            "--pop_ratio",
+            type=str,
+            default=None,
+            help="Ratio(s) for popping nodes from the priority queue. Can be a single float, "
+            "'inf', or a comma-separated list (e.g., 'inf,0.4,0.3').",
+        )
+        @click.option(
+            "-ne", "--num-eval", type=int, default=None, help="Number of puzzles to evaluate."
+        )
+        @click.option(
+            "-rn", "--run-name", type=str, default=None, help="Name of the evaluation run."
+        )
+        @click.option(
+            "--use-early-stopping",
+            type=bool,
+            default=None,
+            help="Enable early stopping based on success rate threshold.",
+        )
+        @click.option(
+            "--early-stop-patience",
+            type=int,
+            default=None,
+            help="Number of samples to check before considering early stopping.",
+        )
+        @click.option(
+            "--early-stop-threshold",
+            type=float,
+            default=None,
+            help="Minimum success rate threshold for early stopping (0.0 to 1.0).",
+        )
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if kwargs.get("max_node_size", None) is not None:
+                kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
+
+            puzzle_bundle = kwargs["puzzle_bundle"]
+            if variant == "beam":
+                base_eval_options = puzzle_bundle.beam_eval_options
+            else:
+                base_eval_options = puzzle_bundle.eval_options
+
+            overrides = {
+                k: v for k, v in kwargs.items() if v is not None and k in EvalOptions.model_fields
+            }
+
+            if "pop_ratio" in kwargs and kwargs["pop_ratio"] is not None:
+                pop_ratio_str = str(kwargs["pop_ratio"])
+                if "," in pop_ratio_str:
+                    pop_ratios = []
+                    for pr_val in pop_ratio_str.split(","):
+                        try:
+                            pop_ratios.append(float(pr_val.strip()))
+                        except ValueError:
+                            if pr_val.strip().lower() == "inf":
+                                pop_ratios.append(float("inf"))
+                            else:
+                                raise click.BadParameter(f"Invalid pop_ratio value: {pr_val}")
+                    overrides["pop_ratio"] = pop_ratios
+                else:
+                    try:
+                        overrides["pop_ratio"] = float(pop_ratio_str.strip())
+                    except ValueError:
+                        if pop_ratio_str.strip().lower() == "inf":
+                            overrides["pop_ratio"] = float("inf")
+                        else:
+                            raise click.BadParameter(f"Invalid pop_ratio value: {pop_ratio_str}")
+
+            eval_opts = base_eval_options.model_copy(update=overrides)
+            kwargs["eval_options"] = eval_opts
+            for k in EvalOptions.model_fields:
+                kwargs.pop(k, None)
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    return decorator(func)
 
 
 def heuristic_options(func: callable) -> callable:

@@ -25,14 +25,18 @@ from helpers.rich_progress import tqdm
 from helpers.visualization import (
     build_human_play_layout,
     build_human_play_setup_panel,
+    build_path_steps_from_actions,
+    build_path_steps_from_nodes,
     build_seed_setup_panel,
     build_solution_path_panel,
     build_vmapped_setup_panel,
     save_solution_animation_and_frames,
 )
 from heuristic.heuristic_base import Heuristic
-from JAxtar.astar import astar_builder
-from JAxtar.qstar import qstar_builder
+from JAxtar.beamsearch.heuristic_beam import beam_builder
+from JAxtar.beamsearch.q_beam import qbeam_builder
+from JAxtar.stars.astar import astar_builder
+from JAxtar.stars.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
 from .options import (
@@ -150,6 +154,8 @@ def search_samples(
     seeds: list[int],
     search_options: SearchOptions,
     visualize_options: VisualizeOptions,
+    heuristic: Heuristic | None = None,
+    qfunction: QFunction | None = None,
 ):
     console = Console()
     has_target = puzzle.has_target
@@ -235,14 +241,48 @@ def search_samples(
             total_costs.append(solved_cost)
 
             if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
-                path = search_result.get_solved_path()
+                if hasattr(search_result, "solution_trace"):
+                    (
+                        states_trace,
+                        costs_trace,
+                        dists_trace,
+                        actions_trace,
+                    ) = search_result.solution_trace()
+                    path_steps = build_path_steps_from_actions(
+                        puzzle=puzzle,
+                        solve_config=solve_config,
+                        initial_state=state,
+                        actions=actions_trace,
+                        heuristic=heuristic,
+                        q_fn=qfunction,
+                        states=states_trace,
+                        costs=costs_trace,
+                        dists=dists_trace,
+                    )
+                elif hasattr(search_result, "solution_actions"):
+                    actions = search_result.solution_actions()
+                    path_steps = build_path_steps_from_actions(
+                        puzzle=puzzle,
+                        solve_config=solve_config,
+                        initial_state=state,
+                        actions=actions,
+                        heuristic=heuristic,
+                        q_fn=qfunction,
+                    )
+                else:
+                    path = search_result.get_solved_path()
+                    path_steps = build_path_steps_from_nodes(
+                        search_result=search_result,
+                        path=path,
+                        puzzle=puzzle,
+                        solve_config=solve_config,
+                    )
 
                 if visualize_options.visualize_terminal:
                     console.print(
                         build_solution_path_panel(
                             console=console,
-                            search_result=search_result,
-                            path=path,
+                            path_steps=path_steps,
                             puzzle=puzzle,
                             solve_config=solve_config,
                             cost_weight=search_options.cost_weight,
@@ -251,8 +291,7 @@ def search_samples(
 
                 if visualize_options.visualize_imgs:
                     gif_path = save_solution_animation_and_frames(
-                        search_result=search_result,
-                        path=path,
+                        path_steps=path_steps,
                         puzzle_name=puzzle_name,
                         solve_config=solve_config,
                         max_animation_time=visualize_options.max_animation_time,
@@ -421,6 +460,7 @@ def astar(
         seeds=seeds,
         search_options=search_options,
         visualize_options=visualize_options,
+        heuristic=heuristic,
     )
 
     if search_options.vmap_size == 1:
@@ -429,6 +469,126 @@ def astar(
     vmapped_search_samples(
         vmapped_search=vmapping_search(
             puzzle, astar_fn, search_options.vmap_size, search_options.show_compile_time
+        ),
+        puzzle=puzzle,
+        seeds=seeds,
+        search_options=search_options,
+        total_search_times=total_search_times,
+        states_per_second=states_per_second,
+        single_search_time=single_search_time,
+    )
+
+
+@click.command()
+@puzzle_options
+@search_options(variant="beam")
+@heuristic_options
+@visualize_options
+def beam(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    heuristic: Heuristic,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
+    config = {
+        "puzzle_name": puzzle_name,
+        "search_options": search_options.dict(),
+        "heuristic": heuristic.__class__.__name__,
+        "heuristic_metadata": getattr(heuristic, "metadata", {}),
+        "visualize_options": visualize_options.dict(),
+    }
+    print_config("Beam Search Configuration", config)
+    beam_fn = beam_builder(
+        puzzle,
+        heuristic,
+        search_options.batch_size,
+        search_options.get_max_node_size(),
+        pop_ratio=search_options.pop_ratio,
+        cost_weight=search_options.cost_weight,
+        show_compile_time=search_options.show_compile_time,
+    )
+    dist_fn = heuristic.distance
+    total_search_times, states_per_second, single_search_time = search_samples(
+        search_fn=beam_fn,
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        dist_fn=dist_fn,
+        dist_fn_format=heuristic_dist_format,
+        seeds=seeds,
+        search_options=search_options,
+        visualize_options=visualize_options,
+        heuristic=heuristic,
+    )
+
+    if search_options.vmap_size == 1:
+        return
+
+    vmapped_search_samples(
+        vmapped_search=vmapping_search(
+            puzzle, beam_fn, search_options.vmap_size, search_options.show_compile_time
+        ),
+        puzzle=puzzle,
+        seeds=seeds,
+        search_options=search_options,
+        total_search_times=total_search_times,
+        states_per_second=states_per_second,
+        single_search_time=single_search_time,
+    )
+
+
+@click.command()
+@puzzle_options
+@search_options(variant="beam")
+@qfunction_options
+@visualize_options
+def qbeam(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    qfunction: QFunction,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
+    config = {
+        "puzzle_name": puzzle_name,
+        "search_options": search_options.dict(),
+        "qfunction": qfunction.__class__.__name__,
+        "qfunction_metadata": getattr(qfunction, "metadata", {}),
+        "visualize_options": visualize_options.dict(),
+    }
+    print_config("Q-beam Search Configuration", config)
+    qbeam_fn = qbeam_builder(
+        puzzle,
+        qfunction,
+        search_options.batch_size,
+        search_options.get_max_node_size(),
+        pop_ratio=search_options.pop_ratio,
+        cost_weight=search_options.cost_weight,
+        show_compile_time=search_options.show_compile_time,
+    )
+    dist_fn = qfunction.q_value
+    total_search_times, states_per_second, single_search_time = search_samples(
+        search_fn=qbeam_fn,
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        dist_fn=dist_fn,
+        dist_fn_format=qfunction_dist_format,
+        seeds=seeds,
+        search_options=search_options,
+        visualize_options=visualize_options,
+        qfunction=qfunction,
+    )
+
+    if search_options.vmap_size == 1:
+        return
+
+    vmapped_search_samples(
+        vmapped_search=vmapping_search(
+            puzzle, qbeam_fn, search_options.vmap_size, search_options.show_compile_time
         ),
         puzzle=puzzle,
         seeds=seeds,
@@ -480,6 +640,7 @@ def qstar(
         seeds=seeds,
         search_options=search_options,
         visualize_options=visualize_options,
+        qfunction=qfunction,
     )
 
     if search_options.vmap_size == 1:
