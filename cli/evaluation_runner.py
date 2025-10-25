@@ -2,13 +2,14 @@ import itertools
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, Iterable, List, Optional, Union
 
 import jax
 import numpy as np
 import pandas as pd
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from puxle.benchmark import Benchmark, BenchmarkSample
 from rich.console import Console
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
@@ -59,6 +60,13 @@ class EvaluationRunner:
         self.step = step
         self.console = Console()
         self.kwargs = kwargs
+        self.benchmark: Optional[Benchmark] = kwargs.get("benchmark")
+        self.benchmark_name: Optional[str] = kwargs.get("benchmark_name")
+        benchmark_cli_options = kwargs.get("benchmark_cli_options", {})
+        self.benchmark_sample_ids: Optional[Iterable] = benchmark_cli_options.get("sample_ids")
+        self.benchmark_sample_limit: Optional[int] = benchmark_cli_options.get("sample_limit")
+        self._benchmark_total_samples: Optional[int] = None
+        self._selected_benchmark_ids: Optional[list] = None
 
     def run(self):
         model_metadata = getattr(self.search_model, "metadata", {})
@@ -81,6 +89,8 @@ class EvaluationRunner:
 
         param_combinations = list(itertools.product(pop_ratios, cost_weights, batch_sizes))
         is_sweep = len(param_combinations) > 1
+
+        eval_inputs = self._prepare_eval_inputs()
 
         base_run_name = (
             self.eval_options.run_name
@@ -117,6 +127,14 @@ class EvaluationRunner:
                 "eval_options": current_eval_opts.dict(),
             }
 
+            if self.benchmark is not None:
+                config["benchmark"] = {
+                    "name": self.benchmark_name,
+                    "total_available_samples": self._benchmark_total_samples,
+                    "selected_sample_ids": list(self._selected_benchmark_ids or []),
+                    "sample_limit": self.benchmark_sample_limit,
+                }
+
             if is_sweep:
                 self.console.rule(
                     f"[bold cyan]Run {i+1}/{len(param_combinations)}: pr={pr}, cw={cw}, bs={bs}[/bold cyan]"
@@ -132,11 +150,10 @@ class EvaluationRunner:
                 cost_weight=cw,
             )
 
-            eval_seeds = list(range(self.eval_options.num_eval))
             results = self._run_evaluation(
                 search_fn=search_fn,
                 puzzle=self.puzzle,
-                seeds=eval_seeds,
+                eval_inputs=eval_inputs,
             )
             for r in results:
                 r["pop_ratio"] = pr
@@ -147,6 +164,35 @@ class EvaluationRunner:
             heuristic_metrics = calculate_heuristic_metrics(results)
             if heuristic_metrics:
                 config["heuristic_metrics"] = heuristic_metrics
+
+            if self.benchmark is not None:
+                solved_with_opt = [
+                    r
+                    for r in results
+                    if r.get("benchmark_optimal_path_cost") is not None
+                    and r.get("path_cost") is not None
+                ]
+                if solved_with_opt:
+                    avg_optimal = float(
+                        sum(r["benchmark_optimal_path_cost"] for r in solved_with_opt)
+                        / len(solved_with_opt)
+                    )
+                    path_costs = [
+                        r["path_cost"] for r in solved_with_opt if r.get("path_cost") is not None
+                    ]
+                    avg_path_cost = float(sum(path_costs) / len(path_costs)) if path_costs else None
+                    cost_gap = avg_path_cost - avg_optimal if avg_path_cost is not None else None
+                    config["benchmark_metrics"] = {
+                        "avg_optimal_cost": avg_optimal,
+                        "avg_path_cost": avg_path_cost,
+                        "avg_cost_gap": cost_gap,
+                        "solved_with_optimal": len(solved_with_opt),
+                    }
+                    am.log_scalar("benchmark/avg_optimal_cost", avg_optimal)
+                    if avg_path_cost is not None:
+                        am.log_scalar("benchmark/avg_path_cost", avg_path_cost)
+                    if cost_gap is not None:
+                        am.log_scalar("benchmark/avg_cost_gap", cost_gap)
 
             am.save_config(config)
             am.save_results(results)
@@ -208,13 +254,47 @@ class EvaluationRunner:
             comparison_generator.generate_report()
             self.console.print(f"Comparison report saved in [bold]{main_run_dir}[/bold]")
 
+    def _prepare_eval_inputs(self) -> List[int]:
+        if self.benchmark is None:
+            limit = self.eval_options.num_eval
+            if limit < 0:
+                raise ValueError("num_eval must be non-negative when no benchmark is provided")
+            return list(range(limit))
+
+        available_ids = list(self.benchmark.sample_ids())
+        if not available_ids:
+            raise ValueError(f"Benchmark '{self.benchmark_name}' provided no sample ids.")
+
+        self._benchmark_total_samples = len(available_ids)
+
+        if self.benchmark_sample_ids is not None:
+            selected = [
+                sample_id for sample_id in self.benchmark_sample_ids if sample_id in available_ids
+            ]
+            if not selected:
+                raise ValueError(
+                    "None of the provided sample IDs were found in the benchmark dataset."
+                )
+        else:
+            limit = self.benchmark_sample_limit
+            if limit is None or limit < 0:
+                limit = self.eval_options.num_eval
+
+            if limit is None or limit < 0:
+                selected = available_ids
+            else:
+                selected = available_ids[: min(limit, len(available_ids))]
+
+        self._selected_benchmark_ids = selected
+        return selected
+
     def _run_evaluation(
         self,
         search_fn,
         puzzle: Puzzle,
-        seeds: list[int],
+        eval_inputs: List[int],
     ) -> list[dict]:
-        num_puzzles = len(seeds)
+        num_puzzles = len(eval_inputs)
         results = []
 
         pbar = trange(
@@ -223,8 +303,18 @@ class EvaluationRunner:
         )
 
         for i in pbar:
-            seed = seeds[i]
-            solve_config, state = puzzle.get_inits(jax.random.PRNGKey(seed))
+            identifier = eval_inputs[i]
+
+            if self.benchmark is not None:
+                sample_id = identifier
+                benchmark_sample: BenchmarkSample = self.benchmark.get_sample(sample_id)
+                solve_config = benchmark_sample.solve_config
+                state = benchmark_sample.state
+                run_identifier = sample_id
+            else:
+                seed = int(identifier)
+                solve_config, state = puzzle.get_inits(jax.random.PRNGKey(seed))
+                run_identifier = seed
 
             start_time = time.time()
             search_result = search_fn(solve_config, state)
@@ -235,14 +325,29 @@ class EvaluationRunner:
             generated_nodes = int(search_result.generated_size)
 
             result_item = {
-                "seed": seed,
+                "seed": run_identifier,
                 "solved": solved,
                 "search_time_s": search_time,
                 "nodes_generated": generated_nodes,
-                "path_cost": 0,
+                "path_cost": None,
                 "path_analysis": None,
                 "expansion_analysis": None,
             }
+
+            if self.benchmark is not None:
+                result_item["benchmark_sample_id"] = run_identifier
+                benchmark_sample = self.benchmark.get_sample(run_identifier)
+                optimal_path_cost = getattr(benchmark_sample, "optimal_path_cost", None)
+                if optimal_path_cost is not None:
+                    result_item["benchmark_optimal_path_cost"] = float(optimal_path_cost)
+                if getattr(benchmark_sample, "optimal_path", None) is not None:
+                    result_item["benchmark_optimal_path_length"] = len(
+                        benchmark_sample.optimal_path
+                    )
+                if getattr(benchmark_sample, "optimal_action_sequence", None) is not None:
+                    result_item["benchmark_optimal_action_count"] = len(
+                        benchmark_sample.optimal_action_sequence
+                    )
 
             if solved:
                 path = search_result.get_solved_path()
@@ -292,12 +397,31 @@ class EvaluationRunner:
             if num_solved > 0:
                 avg_time = sum(r["search_time_s"] for r in solved_results) / num_solved
                 avg_nodes = sum(r["nodes_generated"] for r in solved_results) / num_solved
+                path_costs = [
+                    r["path_cost"] for r in solved_results if r.get("path_cost") is not None
+                ]
+                avg_path_cost = None
+                if path_costs:
+                    avg_path_cost = sum(path_costs) / len(path_costs)
                 pbar_desc_dict.update(
                     {
                         "Avg Time (Solved)": f"{avg_time:.2f}s",
                         "Avg Nodes (Solved)": f"{human_format(avg_nodes)}",
                     }
                 )
+                if avg_path_cost is not None:
+                    pbar_desc_dict["Avg Cost"] = f"{avg_path_cost:.2f}"
+                if self.benchmark is not None:
+                    optimal_costs = [
+                        r["benchmark_optimal_path_cost"]
+                        for r in solved_results
+                        if r.get("benchmark_optimal_path_cost") is not None
+                    ]
+                    if optimal_costs:
+                        avg_optimal_cost = sum(optimal_costs) / len(optimal_costs)
+                        pbar_desc_dict["Avg Opt"] = f"{avg_optimal_cost:.2f}"
+                        if avg_path_cost is not None:
+                            pbar_desc_dict["Δ"] = f"{avg_path_cost - avg_optimal_cost:+.2f}"
             pbar.set_description("Evaluating", desc_dict=pbar_desc_dict)
 
             # Early stopping logic

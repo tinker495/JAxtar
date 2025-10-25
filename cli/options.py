@@ -4,7 +4,7 @@ from functools import wraps
 import click
 import jax
 
-from config import puzzle_bundles, train_presets, world_model_bundles
+from config import benchmark_bundles, puzzle_bundles, train_presets, world_model_bundles
 from config.pydantic_models import (
     DistTrainOptions,
     EvalOptions,
@@ -118,6 +118,83 @@ def create_puzzle_options(
         return wrapper
 
     return decorator
+
+
+def benchmark_options(func: callable) -> callable:
+    if not benchmark_bundles:
+        raise RuntimeError("No benchmark bundles registered.")
+
+    default_benchmark = next(iter(benchmark_bundles))
+
+    @click.option(
+        "--benchmark",
+        "benchmark_key",
+        default=default_benchmark,
+        type=click.Choice(list(benchmark_bundles.keys())),
+        help="Benchmark dataset to evaluate.",
+    )
+    @click.option(
+        "--benchmark-args",
+        default="",
+        type=str,
+        help="JSON string with keyword arguments for the benchmark constructor.",
+    )
+    @click.option(
+        "--sample-limit",
+        type=int,
+        default=None,
+        help="Maximum number of samples to evaluate from the benchmark dataset.",
+    )
+    @click.option(
+        "--sample-ids",
+        default="",
+        type=str,
+        help="Comma-separated list of sample IDs to evaluate. Overrides sample-limit when provided.",
+    )
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        benchmark_key = kwargs.pop("benchmark_key")
+        benchmark_bundle = benchmark_bundles[benchmark_key]
+
+        benchmark_args = dict(benchmark_bundle.benchmark_args or {})
+        benchmark_args_override = kwargs.pop("benchmark_args")
+        if benchmark_args_override:
+            try:
+                benchmark_args.update(json.loads(benchmark_args_override))
+            except json.JSONDecodeError as exc:
+                raise click.BadParameter(
+                    f"Invalid JSON provided to --benchmark-args: {exc}"
+                ) from exc
+
+        benchmark_instance = benchmark_bundle.benchmark(**benchmark_args)
+
+        sample_ids_raw = kwargs.pop("sample_ids")
+        sample_ids = None
+        if sample_ids_raw:
+            try:
+                sample_ids = [
+                    int(part.strip()) for part in sample_ids_raw.split(",") if part.strip() != ""
+                ]
+            except ValueError as exc:
+                raise click.BadParameter(
+                    "Invalid value in --sample-ids. Expected comma-separated integers."
+                ) from exc
+
+        sample_limit = kwargs.pop("sample_limit")
+
+        kwargs["benchmark"] = benchmark_instance
+        kwargs["benchmark_name"] = benchmark_key
+        kwargs["benchmark_bundle"] = benchmark_bundle
+        kwargs["benchmark_cli_options"] = {
+            "sample_limit": sample_limit,
+            "sample_ids": sample_ids,
+        }
+        kwargs["puzzle"] = benchmark_instance.puzzle
+        if "puzzle_bundle" not in kwargs:
+            kwargs["puzzle_bundle"] = benchmark_bundle
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 puzzle_options = create_puzzle_options(
@@ -441,13 +518,15 @@ def dist_train_options(func: callable) -> callable:
     )
     @click.option(
         "--loss",
-        type=click.Choice([
-            "mse",
-            "huber",
-            "logcosh",
-            "asymmetric_huber",
-            "asymmetric_logcosh",
-        ]),
+        type=click.Choice(
+            [
+                "mse",
+                "huber",
+                "logcosh",
+                "asymmetric_huber",
+                "asymmetric_logcosh",
+            ]
+        ),
         default=None,
         help="Select training loss.",
     )
@@ -458,7 +537,7 @@ def dist_train_options(func: callable) -> callable:
         default=None,
         help=(
             "JSON object of additional keyword arguments for the selected loss, "
-            "e.g. '{\"huber_delta\":0.2,\"asymmetric_tau\":0.1}'."
+            'e.g. \'{"huber_delta":0.2,"asymmetric_tau":0.1}\'.'
         ),
     )
     @click.option(

@@ -131,7 +131,7 @@ class DistTrainOptions(BaseModel):
     use_diffusion_distance: bool = False
     debug: bool = False
     multi_device: bool = True
-    reset_interval: int = int(1e6) # just large enough
+    reset_interval: int = int(1e6)  # just large enough
     tau: float = 0.2
     learning_rate: float = 1e-3
     weight_decay_size: Optional[float] = 0.0
@@ -233,6 +233,17 @@ class PuzzleBundle(BaseModel):
     k_max: int = 50
     eval_options: EvalOptions = Field(default_factory=EvalOptions)
     search_options: SearchOptions = Field(default_factory=SearchOptions)
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class BenchmarkBundle(BaseModel):
+    benchmark: Callable
+    benchmark_args: Dict[str, Any] = Field(default_factory=dict)
+    heuristic_nn_config: Optional[NeuralCallableConfig] = None
+    q_function_nn_config: Optional[NeuralCallableConfig] = None
+    eval_options: EvalOptions = Field(default_factory=EvalOptions)
 
     class Config:
         arbitrary_types_allowed = True
