@@ -18,7 +18,6 @@ from qfunction.q_base import QFunction
 from .comparison_generator import ComparisonGenerator
 from .evaluation_runner import EvaluationRunner
 from .options import (
-    benchmark_options,
     eval_options,
     eval_puzzle_options,
     heuristic_options,
@@ -118,122 +117,6 @@ def eval_qlearning(
         search_builder_fn=qstar_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
-        **kwargs,
-    )
-
-
-@evaluation.command(name="benchmark-heuristic")
-@benchmark_options
-@eval_options
-@click.option(
-    "--param-path",
-    type=str,
-    default=None,
-    help="Optional override for the heuristic parameter file.",
-)
-def eval_benchmark_heuristic(
-    puzzle: Puzzle,
-    eval_options: EvalOptions,
-    benchmark,
-    benchmark_name: str,
-    benchmark_bundle,
-    benchmark_cli_options,
-    param_path: Optional[str],
-    **kwargs,
-):
-    """Evaluate a benchmark using its registered heuristic configuration."""
-
-    heuristic_config = benchmark_bundle.heuristic_nn_config
-    if heuristic_config is None:
-        raise click.UsageError(
-            f"Benchmark '{benchmark_name}' does not define a heuristic configuration."
-        )
-
-    resolved_param_path = param_path or heuristic_config.path_template
-    neural_config = heuristic_config.neural_config or {}
-
-    solver = heuristic_config.callable(
-        puzzle=puzzle,
-        path=resolved_param_path,
-        init_params=False,
-        **neural_config,
-    )
-
-    builder = astar_builder
-    search_model_name = "heuristic"
-
-    puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
-
-    _run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=benchmark_name,
-        search_model=solver,
-        search_model_name=search_model_name,
-        search_builder_fn=builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        benchmark=benchmark,
-        benchmark_name=benchmark_name,
-        benchmark_bundle=benchmark_bundle,
-        benchmark_cli_options=benchmark_cli_options,
-        **kwargs,
-    )
-
-
-@evaluation.command(name="benchmark-qlearning")
-@benchmark_options
-@eval_options
-@click.option(
-    "--param-path",
-    type=str,
-    default=None,
-    help="Optional override for the Q-function parameter file.",
-)
-def eval_benchmark_qlearning(
-    puzzle: Puzzle,
-    eval_options: EvalOptions,
-    benchmark,
-    benchmark_name: str,
-    benchmark_bundle,
-    benchmark_cli_options,
-    param_path: Optional[str],
-    **kwargs,
-):
-    """Evaluate a benchmark using its registered Q-function configuration."""
-
-    q_config = benchmark_bundle.q_function_nn_config
-    if q_config is None:
-        raise click.UsageError(
-            f"Benchmark '{benchmark_name}' does not define a Q-function configuration."
-        )
-
-    resolved_param_path = param_path or q_config.path_template
-    neural_config = q_config.neural_config or {}
-
-    solver = q_config.callable(
-        puzzle=puzzle,
-        path=resolved_param_path,
-        init_params=False,
-        **neural_config,
-    )
-
-    builder = qstar_builder
-    search_model_name = "qfunction"
-
-    puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
-
-    _run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=benchmark_name,
-        search_model=solver,
-        search_model_name=search_model_name,
-        search_builder_fn=builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        benchmark=benchmark,
-        benchmark_name=benchmark_name,
-        benchmark_bundle=benchmark_bundle,
-        benchmark_cli_options=benchmark_cli_options,
         **kwargs,
     )
 
