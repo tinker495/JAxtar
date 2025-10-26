@@ -131,7 +131,7 @@ class DistTrainOptions(BaseModel):
     use_diffusion_distance: bool = False
     debug: bool = False
     multi_device: bool = True
-    reset_interval: int = int(1e6) # just large enough
+    reset_interval: int = int(1e6)  # just large enough
     tau: float = 0.2
     learning_rate: float = 1e-3
     weight_decay_size: Optional[float] = 0.0
@@ -234,10 +234,20 @@ class PuzzleBundle(BaseModel):
     eval_options: EvalOptions = Field(default_factory=EvalOptions)
     search_options: SearchOptions = Field(default_factory=SearchOptions)
     beam_eval_options: EvalOptions = Field(
-        default_factory=lambda: EvalOptions(batch_size=[320000], max_node_size=int(2e8))
+        default_factory=lambda: EvalOptions(
+            batch_size=[320000],
+            max_node_size=int(2e8),
+            cost_weight=[1.0],
+            pop_ratio=[0.0],
+        )
     )
     beam_search_options: SearchOptions = Field(
-        default_factory=lambda: SearchOptions(batch_size=320000, max_node_size=int(2e8))
+        default_factory=lambda: SearchOptions(
+            batch_size=320000,
+            max_node_size=int(2e8),
+            cost_weight=1.0,
+            pop_ratio=0.0,
+        )
     )
 
     class Config:
