@@ -117,7 +117,7 @@ def _run_benchmark(
     )
 
 
-@benchmark.command(name="a")
+@benchmark.command(name="astar")
 @benchmark_options
 @eval_options
 @click.option(
@@ -160,7 +160,7 @@ def benchmark_astar(
     )
 
 
-@benchmark.command(name="q")
+@benchmark.command(name="qstar")
 @benchmark_options
 @eval_options
 @click.option(
