@@ -141,6 +141,7 @@ def benchmark_astar(
     benchmark_cli_options,
     param_path: Optional[str],
     output_dir: Optional[Path],
+    **kwargs,
 ):
     solver = _load_benchmark_heuristic(puzzle, benchmark_name, benchmark_bundle, param_path)
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
@@ -184,6 +185,7 @@ def benchmark_qstar(
     benchmark_cli_options,
     param_path: Optional[str],
     output_dir: Optional[Path],
+    **kwargs,
 ):
     solver = _load_benchmark_qfunction(puzzle, benchmark_name, benchmark_bundle, param_path)
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
@@ -227,6 +229,7 @@ def benchmark_beam(
     benchmark_cli_options,
     param_path: Optional[str],
     output_dir: Optional[Path],
+    **kwargs,
 ):
     solver = _load_benchmark_heuristic(puzzle, benchmark_name, benchmark_bundle, param_path)
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
@@ -270,6 +273,7 @@ def benchmark_qbeam(
     benchmark_cli_options,
     param_path: Optional[str],
     output_dir: Optional[Path],
+    **kwargs,
 ):
     solver = _load_benchmark_qfunction(puzzle, benchmark_name, benchmark_bundle, param_path)
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
