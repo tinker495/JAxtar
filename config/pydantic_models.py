@@ -260,6 +260,14 @@ class BenchmarkBundle(BaseModel):
     heuristic_nn_config: Optional[NeuralCallableConfig] = None
     q_function_nn_config: Optional[NeuralCallableConfig] = None
     eval_options: EvalOptions = Field(default_factory=EvalOptions)
+    beam_eval_options: EvalOptions = Field(
+        default_factory=lambda: EvalOptions(
+            batch_size=[320000],
+            max_node_size=int(2e8),
+            cost_weight=[1.0],
+            pop_ratio=[0.0],
+        )
+    )
 
     class Config:
         arbitrary_types_allowed = True

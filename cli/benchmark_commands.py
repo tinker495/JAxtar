@@ -139,7 +139,6 @@ def benchmark_astar(
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    puzzle_bundle,
     param_path: Optional[str],
     output_dir: Optional[Path],
 ):
@@ -183,7 +182,6 @@ def benchmark_qstar(
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    puzzle_bundle,
     param_path: Optional[str],
     output_dir: Optional[Path],
 ):
@@ -227,7 +225,6 @@ def benchmark_beam(
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    puzzle_bundle,
     param_path: Optional[str],
     output_dir: Optional[Path],
 ):
@@ -271,7 +268,6 @@ def benchmark_qbeam(
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    puzzle_bundle,
     param_path: Optional[str],
     output_dir: Optional[Path],
 ):
