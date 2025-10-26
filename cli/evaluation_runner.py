@@ -50,6 +50,7 @@ class EvaluationRunner:
         output_dir: Optional[Path] = None,
         logger: Optional[BaseLogger] = None,
         step: int = 0,
+        node_metric_label: Optional[str] = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -63,6 +64,7 @@ class EvaluationRunner:
         self.logger = logger
         self.step = step
         self.console = Console()
+        self.node_metric_label = node_metric_label or "Nodes Generated"
         self.kwargs = kwargs
         self.benchmark: Optional[Benchmark] = kwargs.get("benchmark")
         self.benchmark_name: Optional[str] = kwargs.get("benchmark_name")
@@ -129,6 +131,7 @@ class EvaluationRunner:
                 self.search_model_name: self.search_model.__class__.__name__,
                 f"{self.search_model_name}_metadata": model_metadata,
                 "eval_options": current_eval_opts.dict(),
+                "node_metric_label": self.node_metric_label,
             }
 
             if self.benchmark is not None:
@@ -336,7 +339,8 @@ class EvaluationRunner:
                 "solved": solved,
                 "search_time_s": search_time,
                 "nodes_generated": generated_nodes,
-                "path_cost": None,
+                "node_metric_label": self.node_metric_label,
+                "path_cost": 0,
                 "path_analysis": None,
                 "expansion_analysis": None,
             }
@@ -416,19 +420,20 @@ class EvaluationRunner:
                     }
 
             # Extract expansion data for plotting node value distributions
-            expanded_nodes_mask = search_result.pop_generation > -1
-            # Use np.asarray to handle potential JAX arrays on different devices
-            if np.any(np.asarray(expanded_nodes_mask)):
-                pop_generations = np.asarray(search_result.pop_generation[expanded_nodes_mask])
-                costs = np.asarray(search_result.cost[expanded_nodes_mask])
-                dists = np.asarray(search_result.dist[expanded_nodes_mask])
+            if hasattr(search_result, "pop_generation"):
+                expanded_nodes_mask = search_result.pop_generation > -1
+                # Use np.asarray to handle potential JAX arrays on different devices
+                if np.any(np.asarray(expanded_nodes_mask)):
+                    pop_generations = np.asarray(search_result.pop_generation[expanded_nodes_mask])
+                    costs = np.asarray(search_result.cost[expanded_nodes_mask])
+                    dists = np.asarray(search_result.dist[expanded_nodes_mask])
 
-                if pop_generations.size > 0:
-                    result_item["expansion_analysis"] = {
-                        "pop_generation": pop_generations,
-                        "cost": costs,
-                        "dist": dists,
-                    }
+                    if pop_generations.size > 0:
+                        result_item["expansion_analysis"] = {
+                            "pop_generation": pop_generations,
+                            "cost": costs,
+                            "dist": dists,
+                        }
 
             results.append(result_item)
 
@@ -449,7 +454,7 @@ class EvaluationRunner:
                 pbar_desc_dict.update(
                     {
                         "Avg Time (Solved)": f"{avg_time:.2f}s",
-                        "Avg Nodes (Solved)": f"{human_format(avg_nodes)}",
+                        f"Avg {self.node_metric_label} (Solved)": f"{human_format(avg_nodes)}",
                     }
                 )
                 if avg_path_cost is not None:
