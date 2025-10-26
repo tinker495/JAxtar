@@ -9,9 +9,9 @@ from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.beamsearch.search_base import (
     ACTION_PAD,
-    BeamSearchResult,
     TRACE_INDEX_DTYPE,
     TRACE_INVALID,
+    BeamSearchResult,
     select_beam,
 )
 
@@ -80,6 +80,19 @@ def beam_builder(
             base_costs = search_result.cost
             child_costs = (base_costs[jnp.newaxis, :] + transition_cost).astype(KEY_DTYPE)
             child_valid = jnp.logical_and(filled_mask[jnp.newaxis, :], jnp.isfinite(child_costs))
+            child_costs = jnp.where(child_valid, child_costs, jnp.inf)
+
+            flat_states = neighbours.flatten()
+            flat_cost = child_costs.reshape(-1)
+            flat_valid = child_valid.reshape(-1)
+
+            unique_flat_mask = xnp.unique_mask(
+                flat_states,
+                key=flat_cost,
+                filled=flat_valid,
+            )
+            unique_mask = unique_flat_mask.reshape(child_valid.shape)
+            child_valid = jnp.logical_and(child_valid, unique_mask)
             child_costs = jnp.where(child_valid, child_costs, jnp.inf)
 
             init_dists = jnp.full(child_costs.shape, jnp.inf, dtype=KEY_DTYPE)

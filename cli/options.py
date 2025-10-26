@@ -262,7 +262,11 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
     def decorator(func: callable) -> callable:
         @click.option("-b", "--batch-size", type=int, default=None, help="Batch size for search.")
         @click.option(
-            "-m", "--max-node-size", type=str, default=None, help="Maximum number of nodes to search."
+            "-m",
+            "--max-node-size",
+            type=str,
+            default=None,
+            help="Maximum number of nodes to search.",
         )
         @click.option(
             "-w", "--cost-weight", type=float, default=None, help="Weight for cost in search."
@@ -306,7 +310,9 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
 
             puzzle_bundle = kwargs["puzzle_bundle"]
             if variant == "beam":
-                base_eval_options = puzzle_bundle.beam_eval_options
+                base_eval_options = getattr(puzzle_bundle, "beam_eval_options", None)
+                if base_eval_options is None:
+                    base_eval_options = puzzle_bundle.eval_options
             else:
                 base_eval_options = puzzle_bundle.eval_options
 
