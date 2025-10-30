@@ -42,7 +42,7 @@ def setup_optimizer(
         init_value=1e-6, end_value=lr, transition_steps=warmup_steps
     )
 
-    if in_schedule_free:
+    if not in_schedule_free:
         decay_schedule = optax.schedules.exponential_decay(
             lr,
             5000,
