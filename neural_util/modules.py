@@ -133,7 +133,7 @@ class ResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
-    activation: str = nn.relu
+    activation: Callable = nn.relu
     use_swiglu: bool = False
     residual_scale: float = 0.1
     learnable_residual_scale: bool = True
@@ -225,7 +225,7 @@ class ConvResBlock(nn.Module):
     strides: int
     hidden_N: int = 1
     norm_fn: Callable = DEFAULT_NORM_FN
-    activation: str = nn.relu
+    activation: Callable = nn.relu
 
     @nn.compact
     def __call__(self, x0, training=False):
