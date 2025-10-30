@@ -2,7 +2,7 @@ from typing import Callable
 
 import flax.linen as nn
 import jax.numpy as jnp
-from flax.linen.module import promote_dtype
+from flax.linen.dtypes import promote_dtype
 
 from .norm import BatchReNorm as BatchReNorm_
 
