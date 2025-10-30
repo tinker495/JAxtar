@@ -30,6 +30,7 @@ def setup_optimizer(
     # Create the main decay schedule, making it conditional
     is_no_wd = weight_decay_size == 0.0
     in_prodigy = "prodigy" in optimizer_name
+    in_schedule_free = "schedule_free" in optimizer_name
 
     # Add warmup to the learning rate schedule
     lr = lr_init * num_devices if not in_prodigy else 1.0
@@ -41,15 +42,21 @@ def setup_optimizer(
         init_value=1e-6, end_value=lr, transition_steps=warmup_steps
     )
 
-    decay_schedule = optax.schedules.exponential_decay(
-        lr,
-        5000,
-        0.995,
-    )
-    # Combine the schedules
-    lr_schedule = optax.join_schedules(
-        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
-    )
+    if in_schedule_free:
+        decay_schedule = optax.schedules.exponential_decay(
+            lr,
+            5000,
+            0.995,
+        )
+        # Combine the schedules
+        lr_schedule = optax.join_schedules(
+            schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
+        )
+    else:
+        constant_schedule = optax.constant_schedule(lr)
+        lr_schedule = optax.join_schedules(
+            schedules=[warmup_schedule, constant_schedule], boundaries=[warmup_steps]
+        )
 
     def mask_batch_stat_or_bias(params):
         def mask_fn(path, value):
