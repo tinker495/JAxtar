@@ -2,7 +2,6 @@ from typing import Callable
 
 import flax.linen as nn
 import jax.numpy as jnp
-from flax.linen.dtypes import promote_dtype
 
 from .norm import BatchReNorm as BatchReNorm_
 
@@ -159,8 +158,10 @@ class ResBlock(nn.Module):
             )
         else:
             residual_scale = jnp.asarray(self.residual_scale, dtype=jnp.float32)
-        casted_residual_scale = promote_dtype(residual_scale, dtype=DTYPE)
-        x = casted_residual_scale * x
+        residual_scale = jnp.asarray(residual_scale)
+        if residual_scale.dtype != DTYPE:
+            residual_scale = residual_scale.astype(DTYPE)
+        x = residual_scale * x
         return self.activation(x + x0)
 
 
@@ -204,8 +205,10 @@ class PreActivationResBlock(nn.Module):
             )
         else:
             residual_scale = jnp.asarray(self.residual_scale, dtype=jnp.float32)
-        casted_residual_scale = promote_dtype(residual_scale, dtype=DTYPE)
-        return x + casted_residual_scale * residual
+        residual_scale = jnp.asarray(residual_scale)
+        if residual_scale.dtype != DTYPE:
+            residual_scale = residual_scale.astype(DTYPE)
+        return x + residual_scale * residual
 
 
 # ResBlock type registry for config-driven selection
