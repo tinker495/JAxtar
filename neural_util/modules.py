@@ -2,6 +2,7 @@ from typing import Callable
 
 import flax.linen as nn
 import jax.numpy as jnp
+from flax.linen.module import promote_dtype
 
 from .norm import BatchReNorm as BatchReNorm_
 
@@ -71,7 +72,7 @@ def get_norm_fn(norm_name_or_fn=None):
 
 def swiglu_fn(hidden_N, base_activation=nn.silu, norm_fn=None, param_matching=False):
     target_hidden = hidden_N
-    if param_matching: # match parameter count with non-gated MLP
+    if param_matching:  # match parameter count with non-gated MLP
         target_hidden = max(1, (2 * hidden_N) // 3)
 
     def _swiglu_fn(x, training=False):
@@ -92,7 +93,7 @@ ACTIVATION_FN_REGISTRY = {
     "hard_swish": nn.hard_swish,
     "silu": nn.silu,
     "tanh": nn.tanh,
-    "relu6": nn.relu6
+    "relu6": nn.relu6,
 }
 
 
@@ -135,6 +136,8 @@ class ResBlock(nn.Module):
     norm_fn: Callable = DEFAULT_NORM_FN
     activation: str = nn.relu
     use_swiglu: bool = False
+    residual_scale: float = 0.1
+    learnable_residual_scale: bool = True
 
     @nn.compact
     def __call__(self, x0, training=False):
@@ -149,6 +152,15 @@ class ResBlock(nn.Module):
                 x = self.activation(x)
         x = nn.Dense(out_dim, dtype=DTYPE)(x)
         x = self.norm_fn(x, training)
+        if self.learnable_residual_scale:
+            residual_scale = self.param(
+                "residual_scale",
+                lambda key: jnp.asarray(self.residual_scale, dtype=jnp.float32),
+            )
+        else:
+            residual_scale = jnp.asarray(self.residual_scale, dtype=jnp.float32)
+        casted_residual_scale = promote_dtype(residual_scale, dtype=DTYPE)
+        x = casted_residual_scale * x
         return self.activation(x + x0)
 
 
@@ -160,6 +172,8 @@ class PreActivationResBlock(nn.Module):
     activation: Callable = nn.relu
     use_swiglu: bool = False
     zero_init_last: bool = True
+    residual_scale: float = 0.1
+    learnable_residual_scale: bool = True
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -183,7 +197,15 @@ class PreActivationResBlock(nn.Module):
         else:
             residual = nn.Dense(out_dim, dtype=DTYPE)(residual)
         # Identity shortcut connection
-        return x + residual
+        if self.learnable_residual_scale:
+            residual_scale = self.param(
+                "residual_scale",
+                lambda key: jnp.asarray(self.residual_scale, dtype=jnp.float32),
+            )
+        else:
+            residual_scale = jnp.asarray(self.residual_scale, dtype=jnp.float32)
+        casted_residual_scale = promote_dtype(residual_scale, dtype=DTYPE)
+        return x + casted_residual_scale * residual
 
 
 # ResBlock type registry for config-driven selection
