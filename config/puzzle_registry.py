@@ -197,6 +197,40 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             path_template="qfunction/neuralq/model/params/rubikscube-random_{size}.pkl",
         ),
     ),
+    "rubikscube-uqtm": PuzzleBundle(
+        puzzle=PuzzleConfig(callable=RubiksCube, kwargs={"metric": "UQTM"}),
+        puzzle_hard=PuzzleConfig(
+            callable=RubiksCube, kwargs={"metric": "UQTM"}, initial_shuffle=100
+        ),
+        k_max=26,
+        heuristic=RubiksCubeHeuristic,
+        q_function=RubiksCubeQ,
+        heuristic_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralHeuristic,
+            path_template="heuristic/neuralheuristic/model/params/rubikscube-uqtm_{size}.pkl",
+        ),
+        q_function_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralQ,
+            path_template="qfunction/neuralq/model/params/rubikscube-uqtm_{size}.pkl",
+        ),
+    ),
+    "rubikscube-uqtm-random": PuzzleBundle(
+        puzzle=PuzzleConfig(callable=RubiksCubeRandom, kwargs={"metric": "UQTM"}),
+        puzzle_hard=PuzzleConfig(
+            callable=RubiksCubeRandom, kwargs={"metric": "UQTM"}, initial_shuffle=100
+        ),
+        k_max=26,
+        heuristic=RubiksCubeHeuristic,
+        q_function=RubiksCubeQ,
+        heuristic_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeRandomNeuralHeuristic,
+            path_template="heuristic/neuralheuristic/model/params/rubikscube-uqtm-random_{size}.pkl",
+        ),
+        q_function_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeRandomNeuralQ,
+            path_template="qfunction/neuralq/model/params/rubikscube-uqtm-random_{size}.pkl",
+        ),
+    ),
     "maze": PuzzleBundle(puzzle=Maze, heuristic=MazeHeuristic, q_function=MazeQ),
     "room": PuzzleBundle(puzzle=Room, heuristic=MazeHeuristic, q_function=MazeQ),
     "dotknot": PuzzleBundle(puzzle=DotKnot, heuristic=DotKnotHeuristic, q_function=DotKnotQ),
@@ -373,16 +407,25 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
 
 # --- Sized variants registered below for clarity and explicit selection ---
 
-def _sized_bundle(base: PuzzleBundle, *, size: int, puzzle_cls, hard_cls=None, hard_initial_shuffle=None) -> PuzzleBundle:
+
+def _sized_bundle(
+    base: PuzzleBundle,
+    *,
+    size: int,
+    puzzle_cls,
+    kwargs=dict(),
+    hard_cls=None,
+    hard_initial_shuffle=None,
+) -> PuzzleBundle:
     """Create a sized variant of a base PuzzleBundle by binding size into PuzzleConfig.kwargs.
 
     This preserves other bundle fields (heuristic configs, q-function configs, etc.).
     """
-    sized_puzzle = PuzzleConfig(callable=puzzle_cls, kwargs={"size": size})
+    sized_puzzle = PuzzleConfig(callable=puzzle_cls, kwargs={"size": size, **kwargs})
     if hard_cls is not None:
         sized_puzzle_hard = PuzzleConfig(
             callable=hard_cls,
-            kwargs={"size": size},
+            kwargs={"size": size, **kwargs},
             initial_shuffle=hard_initial_shuffle,
         )
     else:
@@ -421,13 +464,21 @@ for _s in [3, 4, 5]:
 _LO_KMAX = {5: 50, 7: 70}
 for _s in [5, 7]:
     bundle_l = _sized_bundle(
-        puzzle_bundles["lightsout"], size=_s, puzzle_cls=LightsOut, hard_cls=LightsOut, hard_initial_shuffle=50
+        puzzle_bundles["lightsout"],
+        size=_s,
+        puzzle_cls=LightsOut,
+        hard_cls=LightsOut,
+        hard_initial_shuffle=50,
     )
     bundle_l.k_max = _LO_KMAX[_s]
     puzzle_bundles[f"lightsout-{_s}"] = bundle_l
 
     bundle_lc = _sized_bundle(
-        puzzle_bundles["lightsout-conv"], size=_s, puzzle_cls=LightsOut, hard_cls=LightsOut, hard_initial_shuffle=50
+        puzzle_bundles["lightsout-conv"],
+        size=_s,
+        puzzle_cls=LightsOut,
+        hard_cls=LightsOut,
+        hard_initial_shuffle=50,
     )
     bundle_lc.k_max = _LO_KMAX[_s]
     puzzle_bundles[f"lightsout-conv-{_s}"] = bundle_lc
@@ -436,7 +487,11 @@ for _s in [5, 7]:
 _RC_KMAX = {3: 26, 4: 45, 5: 65}
 for _s in [3, 4, 5]:
     bundle_rc = _sized_bundle(
-        puzzle_bundles["rubikscube"], size=_s, puzzle_cls=RubiksCube, hard_cls=RubiksCube, hard_initial_shuffle=120
+        puzzle_bundles["rubikscube"],
+        size=_s,
+        puzzle_cls=RubiksCube,
+        hard_cls=RubiksCube,
+        hard_initial_shuffle=120,
     )
     bundle_rc.k_max = _RC_KMAX[_s]
     puzzle_bundles[f"rubikscube-{_s}"] = bundle_rc
@@ -446,3 +501,24 @@ for _s in [3, 4, 5]:
     )
     bundle_rcr.k_max = _RC_KMAX[_s]
     puzzle_bundles[f"rubikscube-random-{_s}"] = bundle_rcr
+
+    bundle_rcu = _sized_bundle(
+        puzzle_bundles["rubikscube-uqtm"],
+        size=_s,
+        puzzle_cls=RubiksCube,
+        kwargs={"metric": "UQTM"},
+        hard_cls=RubiksCube,
+        hard_initial_shuffle=120,
+    )
+    bundle_rcu.k_max = _RC_KMAX[_s]
+    puzzle_bundles[f"rubikscube-uqtm-{_s}"] = bundle_rcu
+
+    bundle_rcur = _sized_bundle(
+        puzzle_bundles["rubikscube-uqtm-random"],
+        size=_s,
+        puzzle_cls=RubiksCubeRandom,
+        kwargs={"metric": "UQTM"},
+        hard_cls=None,
+    )
+    bundle_rcur.k_max = _RC_KMAX[_s]
+    puzzle_bundles[f"rubikscube-uqtm-random-{_s}"] = bundle_rcur
