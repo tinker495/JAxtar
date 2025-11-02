@@ -47,6 +47,53 @@ def create_summary_panel(results: list[dict], metrics: Optional[Dict[str, float]
             human_format(jnp.mean(jnp.array(solved_nodes))),
         )
         summary_table.add_row("Avg. Path Cost", f"{jnp.mean(jnp.array(solved_paths)):.2f}")
+
+        optimal_costs = [r.get("benchmark_optimal_path_cost") for r in solved_results]
+        optimal_costs = [c for c in optimal_costs if c is not None]
+        if optimal_costs:
+            mean_opt_cost = jnp.mean(jnp.array(optimal_costs))
+            summary_table.add_row("Avg. Optimal Cost", f"{float(mean_opt_cost):.2f}")
+            cost_gaps = [
+                r["path_cost"] - r["benchmark_optimal_path_cost"]
+                for r in solved_results
+                if r.get("benchmark_optimal_path_cost") is not None
+            ]
+            if cost_gaps:
+                mean_gap = jnp.mean(jnp.array(cost_gaps))
+                summary_table.add_row("Avg. Cost Gap", f"{float(mean_gap):+.2f}")
+
+        path_action_counts = [r.get("path_action_count") for r in solved_results]
+        path_action_counts = [c for c in path_action_counts if c is not None]
+        optimal_action_counts = [r.get("benchmark_optimal_action_count") for r in solved_results]
+        optimal_action_counts = [c for c in optimal_action_counts if c is not None]
+        if path_action_counts:
+            mean_actions = jnp.mean(jnp.array(path_action_counts))
+            summary_table.add_row("Avg. Solution Length (actions)", f"{float(mean_actions):.2f}")
+        if optimal_action_counts:
+            mean_opt_actions = jnp.mean(jnp.array(optimal_action_counts))
+            summary_table.add_row("Avg. Optimal Length (actions)", f"{float(mean_opt_actions):.2f}")
+            if path_action_counts:
+                length_pairs = [
+                    (r.get("path_action_count"), r.get("benchmark_optimal_action_count"))
+                    for r in solved_results
+                    if r.get("path_action_count") is not None
+                    and r.get("benchmark_optimal_action_count") is not None
+                ]
+                if length_pairs:
+                    gaps = [actual - optimal for actual, optimal in length_pairs]
+                    mean_length_gap = jnp.mean(jnp.array(gaps))
+                    summary_table.add_row(
+                        "Avg. Length Gap (actions)", f"{float(mean_length_gap):+.2f}"
+                    )
+
+        match_flags = [r.get("matches_optimal_path") for r in solved_results]
+        match_flags = [m for m in match_flags if m is not None]
+        if match_flags:
+            exact_match_rate = sum(1 for m in match_flags if m) / len(match_flags)
+            summary_table.add_row(
+                "Exact Optimal Paths",
+                f"{exact_match_rate * 100:.1f}% ({sum(1 for m in match_flags if m)}/{len(match_flags)})",
+            )
     else:
         summary_table.add_row("Avg. Search Time (Solved)", "N/A")
         summary_table.add_row("Avg. Generated Nodes (Solved)", "N/A")

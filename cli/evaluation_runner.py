@@ -19,6 +19,7 @@ from helpers.config_printer import print_config
 from helpers.logger import BaseLogger
 from helpers.metrics import calculate_heuristic_metrics
 from helpers.plots import (
+    plot_benchmark_path_comparison,
     plot_expansion_distribution,
     plot_heuristic_accuracy,
     plot_nodes_generated_by_path_cost,
@@ -173,33 +174,84 @@ class EvaluationRunner:
                 config["heuristic_metrics"] = heuristic_metrics
 
             if self.benchmark is not None:
-                solved_with_opt = [
+                benchmark_metrics = {}
+
+                solved_with_opt_cost = [
                     r
                     for r in results
-                    if r.get("benchmark_optimal_path_cost") is not None
+                    if r.get("solved")
+                    and r.get("benchmark_optimal_path_cost") is not None
                     and r.get("path_cost") is not None
                 ]
-                if solved_with_opt:
+                if solved_with_opt_cost:
                     avg_optimal = float(
-                        sum(r["benchmark_optimal_path_cost"] for r in solved_with_opt)
-                        / len(solved_with_opt)
+                        sum(r["benchmark_optimal_path_cost"] for r in solved_with_opt_cost)
+                        / len(solved_with_opt_cost)
                     )
-                    path_costs = [
-                        r["path_cost"] for r in solved_with_opt if r.get("path_cost") is not None
-                    ]
+                    path_costs = [r["path_cost"] for r in solved_with_opt_cost]
                     avg_path_cost = float(sum(path_costs) / len(path_costs)) if path_costs else None
                     cost_gap = avg_path_cost - avg_optimal if avg_path_cost is not None else None
-                    config["benchmark_metrics"] = {
-                        "avg_optimal_cost": avg_optimal,
-                        "avg_path_cost": avg_path_cost,
-                        "avg_cost_gap": cost_gap,
-                        "solved_with_optimal": len(solved_with_opt),
-                    }
+                    benchmark_metrics.update(
+                        {
+                            "avg_optimal_cost": avg_optimal,
+                            "avg_path_cost": avg_path_cost,
+                            "avg_cost_gap": cost_gap,
+                            "solved_with_optimal_cost": len(solved_with_opt_cost),
+                        }
+                    )
                     am.log_scalar("benchmark/avg_optimal_cost", avg_optimal)
                     if avg_path_cost is not None:
                         am.log_scalar("benchmark/avg_path_cost", avg_path_cost)
                     if cost_gap is not None:
                         am.log_scalar("benchmark/avg_cost_gap", cost_gap)
+
+                solved_with_opt_length = [
+                    r
+                    for r in results
+                    if r.get("solved")
+                    and r.get("benchmark_optimal_action_count") is not None
+                    and r.get("path_action_count") is not None
+                ]
+                if solved_with_opt_length:
+                    avg_opt_actions = float(
+                        sum(r["benchmark_optimal_action_count"] for r in solved_with_opt_length)
+                        / len(solved_with_opt_length)
+                    )
+                    avg_path_actions = float(
+                        sum(r["path_action_count"] for r in solved_with_opt_length)
+                        / len(solved_with_opt_length)
+                    )
+                    action_gap = avg_path_actions - avg_opt_actions
+                    benchmark_metrics.update(
+                        {
+                            "avg_optimal_actions": avg_opt_actions,
+                            "avg_path_actions": avg_path_actions,
+                            "avg_action_gap": action_gap,
+                            "solved_with_optimal_length": len(solved_with_opt_length),
+                        }
+                    )
+                    am.log_scalar("benchmark/avg_optimal_actions", avg_opt_actions)
+                    am.log_scalar("benchmark/avg_path_actions", avg_path_actions)
+                    am.log_scalar("benchmark/avg_action_gap", action_gap)
+
+                    matches = [
+                        r["matches_optimal_path"]
+                        for r in solved_with_opt_length
+                        if r.get("matches_optimal_path") is not None
+                    ]
+                    if matches:
+                        exact_matches = sum(1 for m in matches if m)
+                        match_rate = exact_matches / len(matches)
+                        benchmark_metrics.update(
+                            {
+                                "exact_optimal_path_rate": match_rate,
+                                "exact_optimal_path_count": exact_matches,
+                            }
+                        )
+                        am.log_scalar("benchmark/exact_optimal_path_rate", match_rate)
+
+                if benchmark_metrics:
+                    config["benchmark_metrics"] = benchmark_metrics
 
             am.save_config(config)
             am.save_results(results)
@@ -226,6 +278,18 @@ class EvaluationRunner:
                 am.log_scalar("time_to_solve", solved_df["search_time_s"].mean())
                 am.log_scalar("nodes_generated", solved_df["nodes_generated"].mean())
                 am.log_scalar("path_cost", solved_df["path_cost"].mean())
+
+                has_benchmark_cost = (
+                    "benchmark_optimal_path_cost" in solved_df
+                    and solved_df["benchmark_optimal_path_cost"].notna().any()
+                )
+                has_benchmark_length = (
+                    "benchmark_optimal_action_count" in solved_df
+                    and solved_df["benchmark_optimal_action_count"].notna().any()
+                )
+                if self.benchmark is not None and (has_benchmark_cost or has_benchmark_length):
+                    fig = plot_benchmark_path_comparison(solved_df)
+                    am.save_and_log_plot("benchmark_path_comparison", fig)
 
             if heuristic_metrics:
                 am.log_scalar("heuristic_r_squared", heuristic_metrics["r_squared"])
@@ -343,22 +407,43 @@ class EvaluationRunner:
                 "path_cost": 0,
                 "path_analysis": None,
                 "expansion_analysis": None,
+                "path_state_count": None,
+                "path_action_count": None,
+                "matches_optimal_path": None,
+                "path_actions": None,
+                "path_action_strings": None,
             }
 
             if self.benchmark is not None:
                 result_item["benchmark_sample_id"] = run_identifier
                 benchmark_sample = self.benchmark.get_sample(run_identifier)
                 optimal_path_cost = getattr(benchmark_sample, "optimal_path_cost", None)
+                if optimal_path_cost is None:
+                    optimal_path_cost = getattr(benchmark_sample, "optimal_path_costs", None)
                 if optimal_path_cost is not None:
                     result_item["benchmark_optimal_path_cost"] = float(optimal_path_cost)
-                if getattr(benchmark_sample, "optimal_path", None) is not None:
-                    result_item["benchmark_optimal_path_length"] = len(
-                        benchmark_sample.optimal_path
-                    )
-                if getattr(benchmark_sample, "optimal_action_sequence", None) is not None:
-                    result_item["benchmark_optimal_action_count"] = len(
-                        benchmark_sample.optimal_action_sequence
-                    )
+                optimal_path = getattr(benchmark_sample, "optimal_path", None)
+                if optimal_path is not None:
+                    optimal_state_count = len(optimal_path)
+                    result_item["benchmark_optimal_path_state_count"] = optimal_state_count
+                    if optimal_state_count > 0:
+                        result_item["benchmark_optimal_path_length"] = max(
+                            0, optimal_state_count - 1
+                        )
+                optimal_action_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
+                if optimal_action_sequence is not None:
+                    if not isinstance(optimal_action_sequence, (list, tuple)):
+                        optimal_action_sequence = list(optimal_action_sequence)
+                    optimal_actions: list[int | str] = []
+                    for action_val in optimal_action_sequence:
+                        if isinstance(action_val, str):
+                            optimal_actions.append(action_val)
+                        else:
+                            optimal_actions.append(int(action_val))
+                    result_item["benchmark_optimal_action_sequence"] = optimal_actions
+                    result_item["benchmark_optimal_action_count"] = len(optimal_actions)
+                elif optimal_path is not None:
+                    result_item["benchmark_optimal_action_count"] = max(0, len(optimal_path) - 1)
 
             if solved:
                 if hasattr(search_result, "solution_trace"):
@@ -400,6 +485,13 @@ class EvaluationRunner:
 
                 path_cost = path_steps[-1].cost if path_steps else 0.0
                 result_item["path_cost"] = float(path_cost)
+                path_state_count = len(path_steps)
+                result_item["path_state_count"] = path_state_count
+                result_item["path_action_count"] = max(0, path_state_count - 1)
+                actual_actions = [
+                    int(step.action) for step in path_steps[:-1] if step.action is not None
+                ]
+                result_item["path_actions"] = actual_actions
 
                 states = [step.state for step in path_steps]
                 actual_dists = []
@@ -417,7 +509,48 @@ class EvaluationRunner:
                         "actual": actual_dists,
                         "estimated": estimated_dists,
                         "states": xnp.concatenate(states),
+                        "actions": actual_actions,
                     }
+
+                if (
+                    self.benchmark is not None
+                    and result_item.get("benchmark_optimal_action_count") is not None
+                ):
+                    optimal_actions = getattr(benchmark_sample, "optimal_action_sequence", None)
+                    optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
+                    if optimal_actions is not None and optimal_sequence is None:
+                        if not isinstance(optimal_actions, (list, tuple)):
+                            optimal_actions = list(optimal_actions)
+                        optimal_sequence = []
+                        for action_val in optimal_actions:
+                            if isinstance(action_val, str):
+                                optimal_sequence.append(action_val)
+                            else:
+                                optimal_sequence.append(int(action_val))
+                        result_item["benchmark_optimal_action_sequence"] = optimal_sequence
+
+                    if optimal_sequence:
+                        first_opt = optimal_sequence[0]
+                        if isinstance(first_opt, str):
+                            actual_action_labels = []
+                            for action_id in actual_actions:
+                                try:
+                                    label = puzzle.action_to_string(action_id)
+                                except (AttributeError, ValueError, IndexError):
+                                    label = str(action_id)
+                                actual_action_labels.append(label)
+                            result_item["path_action_strings"] = actual_action_labels
+                            result_item["matches_optimal_path"] = actual_action_labels == list(
+                                optimal_sequence
+                            )
+                        else:
+                            optimal_ints = [int(a) for a in optimal_sequence]
+                            result_item["matches_optimal_path"] = actual_actions == optimal_ints
+                    elif result_item["path_action_count"] is not None:
+                        expected_count = result_item["benchmark_optimal_action_count"]
+                        result_item["matches_optimal_path"] = (
+                            result_item["path_action_count"] == expected_count
+                        )
 
             # Extract expansion data for plotting node value distributions
             if hasattr(search_result, "pop_generation"):
@@ -439,9 +572,35 @@ class EvaluationRunner:
 
             solved_results = [r for r in results if r["solved"]]
             num_solved = len(solved_results)
-            success_rate = (num_solved / (i + 1)) * 100
+            total_completed = i + 1
+            success_rate = (num_solved / total_completed) * 100
 
-            pbar_desc_dict = {"Success Rate": f"{success_rate:.2f}%"}
+            solved_with_opt_reference = [
+                r
+                for r in solved_results
+                if r.get("benchmark_optimal_path_cost") is not None
+                and r.get("path_cost") is not None
+            ]
+            optimal_costs = [r["benchmark_optimal_path_cost"] for r in solved_with_opt_reference]
+            optimal_hits = [
+                r
+                for r in solved_with_opt_reference
+                if abs(r["path_cost"] - r["benchmark_optimal_path_cost"]) < 1e-6
+            ]
+            has_optimal_reference = bool(optimal_costs)
+            optimal_rate = (
+                (len(optimal_hits) / len(solved_with_opt_reference)) * 100
+                if has_optimal_reference
+                else None
+            )
+
+            success_key = "Success Rate/Optimal Rate" if has_optimal_reference else "Success Rate"
+            if has_optimal_reference and optimal_rate is not None:
+                rate_label = f"{success_rate:.2f}%/{optimal_rate:.2f}%"
+            else:
+                rate_label = f"{success_rate:.2f}%"
+
+            pbar_desc_dict = {success_key: rate_label}
             if num_solved > 0:
                 avg_time = sum(r["search_time_s"] for r in solved_results) / num_solved
                 avg_nodes = sum(r["nodes_generated"] for r in solved_results) / num_solved
@@ -457,19 +616,15 @@ class EvaluationRunner:
                         f"Avg {self.node_metric_label} (Solved)": f"{human_format(avg_nodes)}",
                     }
                 )
+                has_optimal_cost_info = bool(optimal_costs)
+                cost_key = "Avg Cost/Optimal Cost" if has_optimal_cost_info else "Avg Cost"
                 if avg_path_cost is not None:
-                    pbar_desc_dict["Avg Cost"] = f"{avg_path_cost:.2f}"
-                if self.benchmark is not None:
-                    optimal_costs = [
-                        r["benchmark_optimal_path_cost"]
-                        for r in solved_results
-                        if r.get("benchmark_optimal_path_cost") is not None
-                    ]
-                    if optimal_costs:
+                    cost_label = f"{avg_path_cost:.2f}"
+                    if has_optimal_cost_info:
                         avg_optimal_cost = sum(optimal_costs) / len(optimal_costs)
-                        pbar_desc_dict["Avg Opt"] = f"{avg_optimal_cost:.2f}"
-                        if avg_path_cost is not None:
-                            pbar_desc_dict["Δ"] = f"{avg_path_cost - avg_optimal_cost:+.2f}"
+                        delta = avg_path_cost - avg_optimal_cost
+                        cost_label = f"{avg_path_cost:.2f}/{avg_optimal_cost:.2f} ({delta:+.2f})"
+                    pbar_desc_dict[cost_key] = cost_label
             pbar.set_description("Evaluating", desc_dict=pbar_desc_dict)
 
             # Early stopping logic
