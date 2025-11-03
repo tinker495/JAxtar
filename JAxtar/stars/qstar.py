@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import Current, Current_with_Parent, Parent, SearchResult
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
@@ -46,15 +46,14 @@ def qstar_builder(
     # which is especially important for JAX and accelerator-based computation.
     # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
     # so that each batch is filled as evenly as possible and computational resources are used efficiently.
-    min_batch_size = 128
     variable_q_batch_switcher = variable_batch_switcher_builder(
         lambda solve_config, current: q_fn.batched_q_value(solve_config, current),
         max_batch_size=batch_size,
-        min_batch_size=min_batch_size,
+        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
     denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, min_batch_size // denom)
+    min_pop = max(1, MIN_BATCH_SIZE // denom)
 
     def qstar(
         solve_config: Puzzle.SolveConfig,

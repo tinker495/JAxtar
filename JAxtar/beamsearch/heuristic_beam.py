@@ -6,12 +6,12 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.beamsearch.search_base import (
     ACTION_PAD,
-    BeamSearchResult,
     TRACE_INDEX_DTYPE,
     TRACE_INVALID,
+    BeamSearchResult,
     select_beam,
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -34,11 +34,10 @@ def beam_builder(
     min_keep = max(1, beam_width // denom)
     pop_ratio = float(pop_ratio)
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
-    min_batch_size = 128
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         lambda solve_config, current: heuristic.batched_distance(solve_config, current),
         max_batch_size=beam_width,
-        min_batch_size=min_batch_size,
+        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
