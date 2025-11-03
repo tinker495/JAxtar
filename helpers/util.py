@@ -281,32 +281,68 @@ class _LogSanitizer:
                 self._write_char(char)
             idx += 1
 
-    def finalize(self) -> str:
+    def render(self, *, final: bool = False) -> str:
         # Trim trailing empty lines for cleanliness but preserve intentional blank lines.
         lines = self._lines.copy()
         # Remove extra empty lines at the end that result from clears.
         while len(lines) > 1 and lines[-1] == "":
             lines.pop()
         result = "\n".join(line.rstrip() for line in lines)
-        if self._line_terminated:
+        if final:
+            if self._line_terminated or result:
+                result = result + "\n"
+        elif self._line_terminated:
             result = result + "\n"
         return result
+
+
+class _LogCapture:
+    """Incrementally mirror sanitized output into the log file."""
+
+    def __init__(self, log_file, offset: int):
+        self._file = log_file
+        self._offset = offset
+        self._sanitizer = _LogSanitizer()
+
+    def write(self, data: str):
+        if not data:
+            return
+        self._sanitizer.process(data)
+        self._flush(final=False)
+
+    def flush(self):
+        self._flush(final=False)
+
+    def finalize(self):
+        self._flush(final=True)
+
+    def _flush(self, *, final: bool):
+        content = self._sanitizer.render(final=final)
+        self._file.seek(self._offset)
+        if content:
+            self._file.write(content)
+        else:
+            # Ensure the body is cleared if nothing remains
+            pass
+        self._file.truncate()
+        self._file.flush()
 
 
 class _TeeStream(TextIOBase):
     """Mirror writes to the primary stream and capture sanitized output."""
 
-    def __init__(self, primary: TextIOBase, sanitizer: _LogSanitizer):
+    def __init__(self, primary: TextIOBase, capture: _LogCapture):
         self._primary = primary
-        self._sanitizer = sanitizer
+        self._capture = capture
 
     def write(self, data):
         self._primary.write(data)
-        self._sanitizer.process(data)
+        self._capture.write(data)
         return len(data)
 
     def flush(self):
         self._primary.flush()
+        self._capture.flush()
 
     @property
     def encoding(self):
@@ -326,22 +362,21 @@ def tee_console(log_path: Path):
     original_stdout = sys.stdout
     original_stderr = sys.stderr
 
-    with log_path.open("a", encoding="utf-8") as log_file:
+    with log_path.open("w+", encoding="utf-8") as log_file:
         header = f"\n===== Run started {datetime.now().isoformat()} =====\n"
         log_file.write(header)
         log_file.flush()
+        body_offset = log_file.tell()
 
-        sanitizer = _LogSanitizer()
-        tee_out = _TeeStream(original_stdout, sanitizer)
-        tee_err = _TeeStream(original_stderr, sanitizer)
+        capture = _LogCapture(log_file, body_offset)
+        tee_out = _TeeStream(original_stdout, capture)
+        tee_err = _TeeStream(original_stderr, capture)
 
         try:
             with redirect_stdout(tee_out), redirect_stderr(tee_err):
                 yield
         finally:
-            final_output = sanitizer.finalize()
-            if final_output:
-                log_file.write(final_output)
+            capture.finalize()
             footer = f"\n===== Run ended {datetime.now().isoformat()} =====\n"
             log_file.write(footer)
             log_file.flush()
