@@ -75,6 +75,17 @@ class EvaluationRunner:
         self._benchmark_total_samples: Optional[int] = None
         self._selected_benchmark_ids: Optional[list] = None
 
+        self.base_run_name = (
+            self.eval_options.run_name
+            if self.eval_options.run_name
+            else f"{self.puzzle_name}_{self.search_model_name}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        )
+        self.main_run_dir = (
+            self.output_dir if self.output_dir else Path("runs") / self.base_run_name
+        )
+        self.main_run_dir.mkdir(parents=True, exist_ok=True)
+        self.log_path = self.main_run_dir / "console.log"
+
     def run(self):
         model_metadata = getattr(self.search_model, "metadata", {})
 
@@ -99,12 +110,7 @@ class EvaluationRunner:
 
         eval_inputs = self._prepare_eval_inputs()
 
-        base_run_name = (
-            self.eval_options.run_name
-            if self.eval_options.run_name
-            else f"{self.puzzle_name}_{self.search_model_name}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-        )
-        main_run_dir = self.output_dir if self.output_dir else Path("runs") / base_run_name
+        main_run_dir = self.main_run_dir
         main_run_dir.mkdir(parents=True, exist_ok=True)
 
         if is_sweep:

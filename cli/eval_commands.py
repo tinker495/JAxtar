@@ -10,6 +10,7 @@ from rich.console import Console
 from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import BaseLogger
+from helpers.util import tee_console
 from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
@@ -48,15 +49,6 @@ def _run_evaluation_sweep(
     step: int = 0,
     **kwargs,
 ):
-    print_config(
-        "Evaluation Configuration",
-        {
-            "puzzle_options": puzzle_opts.dict(),
-            search_model_name: search_model.__class__.__name__,
-            f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
-            "eval_options": eval_options.dict(),
-        },
-    )
     runner = EvaluationRunner(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
@@ -70,7 +62,18 @@ def _run_evaluation_sweep(
         step=step,
         **kwargs,
     )
-    runner.run()
+
+    with tee_console(runner.log_path):
+        print_config(
+            "Evaluation Configuration",
+            {
+                "puzzle_options": puzzle_opts.dict(),
+                search_model_name: search_model.__class__.__name__,
+                f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
+                "eval_options": eval_options.dict(),
+            },
+        )
+        runner.run()
 
 
 @evaluation.command(name="astar")
