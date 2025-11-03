@@ -14,6 +14,7 @@ from JAxtar.beamsearch.search_base import (
     TRACE_INVALID,
     select_beam,
 )
+from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
 def beam_builder(
@@ -33,6 +34,13 @@ def beam_builder(
     min_keep = max(1, beam_width // denom)
     pop_ratio = float(pop_ratio)
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
+    min_batch_size = 128
+    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+        lambda solve_config, current: heuristic.batched_distance(solve_config, current),
+        max_batch_size=beam_width,
+        min_batch_size=min_batch_size,
+        pad_value=jnp.inf,
+    )
 
     def beam(
         solve_config: Puzzle.SolveConfig,
@@ -47,7 +55,10 @@ def beam_builder(
         result.beam = result.beam.at[0].set(start)
         result.cost = result.cost.at[0].set(0)
 
-        start_dist = heuristic.batched_distance(solve_config, result.beam[:1]).astype(KEY_DTYPE)[0]
+        init_filled = jnp.zeros(beam_width, dtype=jnp.bool_).at[0].set(True)
+        start_dist = variable_heuristic_batch_switcher(
+            solve_config, result.beam, init_filled
+        ).astype(KEY_DTYPE)[0]
         start_score = (cost_weight * result.cost[0] + start_dist).astype(KEY_DTYPE)
         result.dist = result.dist.at[0].set(start_dist)
         result.scores = result.scores.at[0].set(start_score)
@@ -88,8 +99,11 @@ def beam_builder(
                 row_mask = child_valid[i]
 
                 def _calc(_):
-                    dist_row = heuristic.batched_distance(solve_config, neighbours[i])
-                    dist_row = dist_row.astype(KEY_DTYPE)
+                    dist_row = variable_heuristic_batch_switcher(
+                        solve_config,
+                        neighbours[i],
+                        row_mask,
+                    ).astype(KEY_DTYPE)
                     return jnp.where(row_mask, dist_row, jnp.inf)
 
                 dist_row = jax.lax.cond(
