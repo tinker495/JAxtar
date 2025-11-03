@@ -13,6 +13,7 @@ from JAxtar.beamsearch.search_base import (
     TRACE_INVALID,
     select_beam,
 )
+from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
 
@@ -33,6 +34,13 @@ def qbeam_builder(
     min_keep = max(1, beam_width // denom)
     pop_ratio = float(pop_ratio)
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
+    min_batch_size = 128
+    variable_q_batch_switcher = variable_batch_switcher_builder(
+        lambda solve_config, current: q_fn.batched_q_value(solve_config, current),
+        max_batch_size=beam_width,
+        min_batch_size=min_batch_size,
+        pad_value=jnp.inf,
+    )
 
     def qbeam(
         solve_config: Puzzle.SolveConfig,
@@ -79,7 +87,8 @@ def qbeam_builder(
             child_costs = jnp.where(child_valid, child_costs, jnp.inf)
 
             def _compute_q(_):
-                vals = q_fn.batched_q_value(solve_config, beam_states).transpose().astype(KEY_DTYPE)
+                vals = variable_q_batch_switcher(solve_config, beam_states, filled_mask)
+                vals = vals.transpose().astype(KEY_DTYPE)
                 return jnp.where(child_valid, vals, jnp.inf)
 
             q_vals = jax.lax.cond(
