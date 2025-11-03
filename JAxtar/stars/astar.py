@@ -27,6 +27,7 @@ def variable_heuristic_batch_switcher_builder(
         pad_value=jnp.inf,
     )
 
+
 def astar_builder(
     puzzle: Puzzle,
     heuristic: Heuristic,
@@ -187,9 +188,9 @@ def astar_builder(
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
             def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
-                neighbour_heur = variable_heuristic_batch_switcher(solve_config, neighbour, filled).astype(
-                    KEY_DTYPE
-                )
+                neighbour_heur = variable_heuristic_batch_switcher(
+                    solve_config, neighbour, new_states_mask
+                ).astype(KEY_DTYPE)
                 # cache the heuristic value
                 search_result.dist = xnp.update_on_condition(
                     search_result.dist,
