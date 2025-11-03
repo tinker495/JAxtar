@@ -6,14 +6,14 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
+from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.search_base import Current, Current_with_Parent, Parent, SearchResult
-from qfunction.q_base import QFunction
+from JAxtar.stars.search_base import Current, Current_with_Parent, Parent, SearchResult
 
 
-def qstar_builder(
+def astar_builder(
     puzzle: Puzzle,
-    q_fn: QFunction,
+    heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
     pop_ratio: float = jnp.inf,
@@ -21,19 +21,19 @@ def qstar_builder(
     show_compile_time: bool = False,
 ):
     """
-    Builds and returns a JAX-accelerated Q* search function.
+    Builds and returns a JAX-accelerated A* search function.
 
     Args:
         puzzle: Puzzle instance that defines the problem space and operations.
-        q_fn: QFunction instance that provides state-action value estimation.
+        heuristic: Heuristic instance that provides state evaluation.
         batch_size: Number of states to process in parallel (default: 1024).
         max_nodes: Maximum number of nodes to explore before terminating (default: 1e6).
-        cost_weight: Weight applied to the path cost in the Q* algorithm (default: 1.0-1e-6).
+        cost_weight: Weight applied to the path cost in f(n) = g(n) + w*h(n) (default: 1.0-1e-6).
                     Values closer to 1.0 make the search more greedy/depth-first.
         show_compile_time: If True, displays the time taken to compile the search function (default: False).
 
     Returns:
-        A function that performs Q* search given a start state and solve configuration.
+        A function that performs A* search given a start state and solve configuration.
     """
 
     statecls = puzzle.State
@@ -48,12 +48,12 @@ def qstar_builder(
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, batch_size // denom)
 
-    def qstar(
+    def astar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
     ) -> SearchResult:
         """
-        qstar is the implementation of the Q* algorithm.
+        astar is the implementation of the A* algorithm.
         """
         search_result: SearchResult = SearchResult.build(
             statecls, batch_size, max_nodes, pop_ratio=pop_ratio, min_pop=min_pop
@@ -104,21 +104,14 @@ def qstar_builder(
             )  # [n_neighbours, batch_size]
             unflatten_shape = filleds.shape
 
-            # Compute Q-values for parent states (not neighbors)
-            # This gives us Q(s, a) for all actions from parent states
-            q_vals = (
-                q_fn.batched_q_value(solve_config, states).transpose().astype(KEY_DTYPE)
-            )  # [batch_size, n_neighbours] -> [n_neighbours, batch_size]
-
             flatten_neighbours = neighbours.flatten()
             flatten_filleds = filleds.flatten()
             flatten_nextcosts = nextcosts.flatten()
             flatten_parent_index = parent_index.flatten()
             flatten_parent_action = parent_action.flatten()
-            flatten_q_vals = q_vals.flatten()
             (
                 search_result.hashtable,
-                _,
+                flatten_new_states_mask,
                 cheapest_uniques_mask,
                 hash_idx,
             ) = search_result.hashtable.parallel_insert(
@@ -140,42 +133,22 @@ def qstar_builder(
                 flatten_nextcosts,  # Use costs before they are set to inf
             )
 
-            # 1. Identify where we've found a better (lower) heuristic.
-            previous_dist = search_result.dist[hash_idx.index]
-            is_more_optimistic_h = jnp.logical_and(
-                flatten_filleds, jnp.less(flatten_q_vals, previous_dist)
-            )
-
-            # 2. Update the global heuristic map (dist) based on this finding.
-            #    We use the original flatten_q_vals here.
-            search_result.dist = xnp.update_on_condition(
-                search_result.dist,
-                hash_idx.index,
-                is_more_optimistic_h,
-                flatten_q_vals,
-            )
-
-            # 3. For processing in this iteration (e.g., priority queue insertion),
-            #    we should use the best heuristic known *after* the potential update.
-            flatten_q_vals = jnp.where(is_more_optimistic_h, flatten_q_vals, previous_dist)
-
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
             flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
             # Stable partition to group useful entries first.
             # Improves computational efficiency by gathering only batches with samples that need updates.
-            invperm = jnp.argsort(final_process_mask)
+            invperm = stable_partition_three(flatten_new_states_mask, final_process_mask)
 
             flatten_final_process_mask = final_process_mask[invperm]
+            flatten_new_states_mask = flatten_new_states_mask[invperm]
+            flatten_neighbours = flatten_neighbours[invperm]
             flatten_nextcosts = flatten_nextcosts[invperm]
-            flatten_q_vals = flatten_q_vals[invperm]
             flatten_parent_index = flatten_parent_index[invperm]
             flatten_parent_action = flatten_parent_action[invperm]
 
             hash_idx = hash_idx[invperm]
             current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
-
-            flatten_neighbour_keys = (cost_weight * current.cost + flatten_q_vals).astype(KEY_DTYPE)
 
             flatten_aranged_parent = parent[flatten_parent_index]
             flatten_vals = Current_with_Parent(
@@ -186,35 +159,68 @@ def qstar_builder(
                 ),
             )
 
-            final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
-            neighbour_keys = flatten_neighbour_keys.reshape(unflatten_shape)
             vals = flatten_vals.reshape(unflatten_shape)
+            neighbours = flatten_neighbours.reshape(unflatten_shape)
+            new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
+            final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
-            def _insert(search_result: SearchResult, neighbour_keys, vals):
+            def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
+                neighbour_heur = heuristic.batched_distance(solve_config, neighbour).astype(
+                    KEY_DTYPE
+                )
+                # cache the heuristic value
+                search_result.dist = xnp.update_on_condition(
+                    search_result.dist,
+                    vals.current.hashidx.index,
+                    new_states_mask,
+                    neighbour_heur,
+                )
+                return search_result, neighbour_heur
+
+            def _old_states(search_result: SearchResult, vals, neighbour, new_states_mask):
+                neighbour_heur = search_result.dist[vals.current.hashidx.index]
+                return search_result, neighbour_heur
+
+            def _inserted(
+                search_result: SearchResult,
+                vals,
+                neighbour_heur,
+            ):
+                neighbour_key = (cost_weight * vals.current.cost + neighbour_heur).astype(KEY_DTYPE)
 
                 search_result.priority_queue = search_result.priority_queue.insert(
-                    neighbour_keys,
+                    neighbour_key,
                     vals,
                 )
                 return search_result
 
             def _scan(search_result: SearchResult, val):
-                neighbour_keys, vals, final_process_mask = val
+                vals, neighbour, new_states_mask, final_process_mask = val
+
+                search_result, neighbour_heur = jax.lax.cond(
+                    jnp.any(new_states_mask),
+                    _new_states,
+                    _old_states,
+                    search_result,
+                    vals,
+                    neighbour,
+                    new_states_mask,
+                )
 
                 search_result = jax.lax.cond(
                     jnp.any(final_process_mask),
-                    _insert,
+                    _inserted,
                     lambda search_result, *args: search_result,
                     search_result,
-                    neighbour_keys,
                     vals,
+                    neighbour_heur,
                 )
                 return search_result, None
 
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbour_keys, vals, final_process_mask),
+                (vals, neighbours, new_states_mask, final_process_mask),
             )
             search_result, parent, filled = search_result.pop_full()
             return search_result, parent, filled
@@ -228,7 +234,7 @@ def qstar_builder(
         search_result.solved_idx = idxes[jnp.argmax(solved)]
         return search_result
 
-    qstar_fn = jax.jit(qstar)
+    astar_fn = jax.jit(astar)
     empty_solve_config = puzzle.SolveConfig.default()
     empty_states = puzzle.State.default()
 
@@ -240,11 +246,42 @@ def qstar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    qstar_fn(empty_solve_config, empty_states)
+    astar_fn(empty_solve_config, empty_states)
 
     if show_compile_time:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")
         print("JIT compiled\n\n")
 
-    return qstar_fn
+    return astar_fn
+
+
+def stable_partition_three(mask2: chex.Array, mask1: chex.Array) -> chex.Array:
+    """
+    Compute a stable 3-way partition inverse permutation for flattened arrays.
+
+    - Category 2 (mask2): first block
+    - Category 1 (mask1 & ~mask2): second block
+    - Category 0 (else): last block
+
+    Returns indices suitable for gathering flattened arrays to achieve the
+    [2..., 1..., 0...] ordering while preserving relative order within each class.
+    """
+
+    # Flatten masks
+    flat2 = mask2.reshape(-1)
+    # Ensure category 1 excludes category 2
+    flat1 = jnp.logical_and(mask1.reshape(-1), jnp.logical_not(flat2))
+
+    # Compute category id per element: 2, 1, or 0
+    cat = jnp.where(flat2, 2, jnp.where(flat1, 1, 0)).astype(jnp.int32)
+
+    n = cat.shape[0]
+    indices = jnp.arange(n, dtype=jnp.int32)
+
+    # Stable sort by key = -cat so that 2-block comes first, then 1, then 0.
+    # The stable flag preserves original order within equal keys (intra-class stability).
+    _, invperm = jax.lax.sort_key_val(-cat, indices, dimension=0, is_stable=True)
+
+    # Return gather indices: arr[invperm] yields [2..., 1..., 0...] with stable intra-class order
+    return invperm

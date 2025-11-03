@@ -1,6 +1,6 @@
 import click
 
-from .commands import astar, human_play, qstar
+from .commands import astar, beam, human_play, qbeam, qstar
 from .eval_commands import evaluation
 from .train_commands import distance_train, world_model_train
 
@@ -12,6 +12,8 @@ def cli():
 
 
 cli.add_command(astar)
+cli.add_command(beam)
+cli.add_command(qbeam)
 cli.add_command(qstar)
 cli.add_command(human_play)
 cli.add_command(distance_train)
