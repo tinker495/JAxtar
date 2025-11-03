@@ -7,8 +7,9 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
 def astar_builder(
@@ -45,8 +46,14 @@ def astar_builder(
     # which is especially important for JAX and accelerator-based computation.
     # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
     # so that each batch is filled as evenly as possible and computational resources are used efficiently.
+    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+        lambda solve_config, current: heuristic.batched_distance(solve_config, current),
+        max_batch_size=batch_size,
+        min_batch_size=MIN_BATCH_SIZE,
+        pad_value=jnp.inf,
+    )
     denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, batch_size // denom)
+    min_pop = max(1, MIN_BATCH_SIZE // denom)
 
     def astar(
         solve_config: Puzzle.SolveConfig,
@@ -165,9 +172,9 @@ def astar_builder(
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
             def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
-                neighbour_heur = heuristic.batched_distance(solve_config, neighbour).astype(
-                    KEY_DTYPE
-                )
+                neighbour_heur = variable_heuristic_batch_switcher(
+                    solve_config, neighbour, new_states_mask
+                ).astype(KEY_DTYPE)
                 # cache the heuristic value
                 search_result.dist = xnp.update_on_condition(
                     search_result.dist,
