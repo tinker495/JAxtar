@@ -40,31 +40,59 @@ class QModelBase(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         if self.use_swiglu:
-            x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn)(x, training)
-            x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn)(x, training)
+            hidden = swiglu_fn(self.initial_dim, self.activation, self.norm_fn)(x, training)
+            hidden = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn)(hidden, training)
         else:
-            x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
-            x = self.norm_fn(x, training)
-            x = self.activation(x)
-            x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-            x = self.norm_fn(x, training)
-            x = self.activation(x)
-        for _ in range(self.Res_N):
-            x = self.resblock_fn(
-                self.hidden_dim,
-                norm_fn=self.norm_fn,
-                hidden_N=self.hidden_N,
-                activation=self.activation,
-                use_swiglu=self.use_swiglu,
-            )(x, training)
+            hidden = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
+            hidden = self.norm_fn(hidden, training)
+            hidden = self.activation(hidden)
+            hidden = nn.Dense(self.hidden_dim, dtype=DTYPE)(hidden)
+            hidden = self.norm_fn(hidden, training)
+            hidden = self.activation(hidden)
+
+        head_features = hidden
         if self.resblock_fn == PreActivationResBlock:
-            x = self.norm_fn(x, training)
-            x = self.activation(x)
-        x = x.astype(HEAD_DTYPE)
-        x = nn.Dense(
-            self.action_size, dtype=HEAD_DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
-        )(x)
-        return x
+            head_features = self.activation(head_features)
+            head_features = self.norm_fn(head_features, training)
+        head_features = head_features.astype(HEAD_DTYPE)
+
+        q_init = nn.Dense(
+            self.action_size,
+            dtype=HEAD_DTYPE,
+            kernel_init=nn.initializers.normal(stddev=0.01),
+            name="q_init",
+        )
+        q_state = q_init(head_features)
+
+        resblock = self.resblock_fn(
+            self.hidden_dim,
+            norm_fn=self.norm_fn,
+            hidden_N=self.hidden_N,
+            activation=self.activation,
+            use_swiglu=self.use_swiglu,
+        )
+
+        q_update = nn.Dense(
+            self.action_size,
+            dtype=HEAD_DTYPE,
+            kernel_init=nn.initializers.normal(stddev=0.01),
+            name="q_update",
+        )
+
+        hidden_state = hidden
+        q_state_current = q_state
+        for _ in range(self.Res_N):
+            q_for_concat = q_state_current.astype(hidden_state.dtype)
+            concat = jnp.concatenate([hidden_state, q_for_concat], axis=-1)
+            updated = resblock(concat, training)
+            if self.resblock_fn == PreActivationResBlock:
+                updated = self.activation(updated)
+                updated = self.norm_fn(updated, training)
+            update_features = updated.astype(HEAD_DTYPE)
+            q_state_current = q_state_current + q_update(update_features)
+            hidden_state = updated[..., : self.hidden_dim]
+
+        return q_state_current
 
 
 class NeuralQFunctionBase(QFunction):
