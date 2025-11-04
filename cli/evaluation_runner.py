@@ -52,6 +52,7 @@ class EvaluationRunner:
         logger: Optional[BaseLogger] = None,
         step: int = 0,
         node_metric_label: Optional[str] = None,
+        run_label: Optional[str] = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -67,6 +68,7 @@ class EvaluationRunner:
         self.console = Console()
         self.node_metric_label = node_metric_label or "Nodes Generated"
         self.kwargs = kwargs
+        self.run_label = run_label or search_model_name
         self.benchmark: Optional[Benchmark] = kwargs.get("benchmark")
         self.benchmark_name: Optional[str] = kwargs.get("benchmark_name")
         benchmark_cli_options = kwargs.get("benchmark_cli_options", {})
@@ -78,7 +80,7 @@ class EvaluationRunner:
         self.base_run_name = (
             self.eval_options.run_name
             if self.eval_options.run_name
-            else f"{self.puzzle_name}_{self.search_model_name}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+            else f"{self.puzzle_name}_{self.run_label}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         )
         self.main_run_dir = (
             self.output_dir if self.output_dir else Path("runs") / self.base_run_name
