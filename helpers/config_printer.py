@@ -1,4 +1,5 @@
 import json
+from numbers import Number
 
 from rich.columns import Columns
 from rich.console import Console
@@ -8,6 +9,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
+from helpers.formatting import human_format
 from helpers.util import convert_to_serializable_dict
 
 
@@ -20,12 +22,31 @@ def _is_single_level(config: dict) -> bool:
     return not any(isinstance(v, dict) for v in config.values())
 
 
+def _format_value(value):
+    """Recursively apply human-friendly formatting to numeric values."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, Number):
+        return human_format(value)
+    if isinstance(value, dict):
+        return {k: _format_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        formatted = [_format_value(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(formatted)
+        if isinstance(value, set):
+            return set(formatted)
+        return formatted
+    return value
+
+
 def print_config(title: str, config: dict):
     """
     Prints a configuration in a hierarchical tree layout, wrapped in a panel.
     Uses a two-column layout for a larger number of top-level items.
     """
     config = convert_to_serializable_dict(config)
+    config = _format_value(config)
     console = Console()
     TRUNCATE_LENGTH = 80  # Character length threshold for truncation
     TRUNCATE_SEQ_LENGTH = 10  # Number of items to show for long tuples/lists/sets
@@ -57,6 +78,7 @@ def print_config(title: str, config: dict):
 
     def add_node(parent: Tree, key: str, value):
         """Recursively adds config items to the tree."""
+        value = _format_value(value)
         if isinstance(value, dict):
             # Create a new branch for a dictionary
             style = "bold magenta"
@@ -70,7 +92,15 @@ def print_config(title: str, config: dict):
             item_grid = Table.grid(padding=(0, 1))
             item_grid.add_column(no_wrap=True)
             item_grid.add_column()
-            item_grid.add_row(Text(f"{key}:", style="bold magenta"), Pretty(display_value))
+
+            if isinstance(display_value, Text):
+                value_renderable = display_value
+            elif isinstance(display_value, str):
+                value_renderable = Text(display_value)
+            else:
+                value_renderable = Pretty(display_value)
+
+            item_grid.add_row(Text(f"{key}:", style="bold magenta"), value_renderable)
             parent.add(item_grid)
 
     if not config:

@@ -254,6 +254,18 @@ class PuzzleBundle(BaseModel):
         arbitrary_types_allowed = True
 
 
+class BenchmarkBundle(BaseModel):
+    benchmark: Callable
+    benchmark_args: Dict[str, Any] = Field(default_factory=dict)
+    heuristic_nn_config: Optional[NeuralCallableConfig] = None
+    q_function_nn_config: Optional[NeuralCallableConfig] = None
+    eval_options: EvalOptions = Field(default_factory=EvalOptions)
+    beam_eval_options: Optional[EvalOptions] = None
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
 class WorldModelBundle(BaseModel):
     world_model: Callable
     dataset_path: str

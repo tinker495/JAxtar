@@ -10,6 +10,7 @@ from rich.console import Console
 from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import BaseLogger
+from helpers.util import tee_console
 from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
@@ -43,25 +44,18 @@ def _run_evaluation_sweep(
     search_builder_fn: Callable,
     eval_options: EvalOptions,
     puzzle_opts: PuzzleOptions,
+    run_label: Optional[str] = None,
     output_dir: Optional[Path] = None,
     logger: Optional[BaseLogger] = None,
     step: int = 0,
     **kwargs,
 ):
-    print_config(
-        "Evaluation Configuration",
-        {
-            "puzzle_options": puzzle_opts.dict(),
-            search_model_name: search_model.__class__.__name__,
-            f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
-            "eval_options": eval_options.dict(),
-        },
-    )
     runner = EvaluationRunner(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
         search_model=search_model,
         search_model_name=search_model_name,
+        run_label=run_label,
         search_builder_fn=search_builder_fn,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
@@ -70,7 +64,18 @@ def _run_evaluation_sweep(
         step=step,
         **kwargs,
     )
-    runner.run()
+
+    with tee_console(runner.log_path):
+        print_config(
+            "Evaluation Configuration",
+            {
+                "puzzle_options": puzzle_opts.dict(),
+                search_model_name: search_model.__class__.__name__,
+                f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
+                "eval_options": eval_options.dict(),
+            },
+        )
+        runner.run()
 
 
 @evaluation.command(name="astar")
@@ -91,6 +96,7 @@ def eval_astar(
         puzzle_name=puzzle_name,
         search_model=heuristic,
         search_model_name="heuristic",
+        run_label="astar",
         search_builder_fn=astar_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
@@ -116,6 +122,7 @@ def eval_beam(
         puzzle_name=puzzle_name,
         search_model=heuristic,
         search_model_name="heuristic",
+        run_label="beam",
         search_builder_fn=beam_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
@@ -142,6 +149,7 @@ def eval_qstar(
         puzzle_name=puzzle_name,
         search_model=qfunction,
         search_model_name="qfunction",
+        run_label="qstar",
         search_builder_fn=qstar_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
@@ -167,6 +175,7 @@ def eval_qbeam(
         puzzle_name=puzzle_name,
         search_model=qfunction,
         search_model_name="qfunction",
+        run_label="qbeam",
         search_builder_fn=qbeam_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,

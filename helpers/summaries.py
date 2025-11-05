@@ -26,6 +26,24 @@ def create_summary_panel(results: list[dict], metrics: Optional[Dict[str, float]
     summary_table.add_row("Puzzles Attempted", str(num_puzzles))
     summary_table.add_row("Success Rate", f"{success_rate:.2f}% ({num_solved}/{num_puzzles})")
 
+    solved_with_opt_ref = [
+        r
+        for r in solved_results
+        if r.get("benchmark_optimal_path_cost") is not None and r.get("path_cost") is not None
+    ]
+    optimal_matches = [
+        r
+        for r in solved_with_opt_ref
+        if abs(r["path_cost"] - r["benchmark_optimal_path_cost"]) < 1e-6
+    ]
+    if solved_with_opt_ref:
+        denom = len(solved_with_opt_ref)
+        optimal_rate = (len(optimal_matches) / denom) * 100 if denom > 0 else 0.0
+        summary_table.add_row(
+            "Optimal Rate",
+            f"{optimal_rate:.2f}% ({len(optimal_matches)}/{denom})",
+        )
+
     if metrics:
         r_squared = metrics.get("r_squared")
         ccc = metrics.get("ccc")
@@ -47,6 +65,21 @@ def create_summary_panel(results: list[dict], metrics: Optional[Dict[str, float]
             human_format(jnp.mean(jnp.array(solved_nodes))),
         )
         summary_table.add_row("Avg. Path Cost", f"{jnp.mean(jnp.array(solved_paths)):.2f}")
+
+        optimal_costs = [r.get("benchmark_optimal_path_cost") for r in solved_with_opt_ref]
+        optimal_costs = [c for c in optimal_costs if c is not None]
+        if optimal_costs:
+            mean_opt_cost = jnp.mean(jnp.array(optimal_costs))
+            summary_table.add_row("Avg. Optimal Cost", f"{float(mean_opt_cost):.2f}")
+            cost_gaps = [
+                r["path_cost"] - r["benchmark_optimal_path_cost"] for r in solved_with_opt_ref
+            ]
+            if cost_gaps:
+                mean_gap = jnp.mean(jnp.array(cost_gaps))
+                summary_table.add_row("Avg. Cost Gap", f"{float(mean_gap):+.2f}")
+
+        # Length statistics are redundant with cost metrics for unit-cost puzzles,
+        # so they are omitted from the summary table.
     else:
         summary_table.add_row("Avg. Search Time (Solved)", "N/A")
         summary_table.add_row("Avg. Generated Nodes (Solved)", "N/A")
