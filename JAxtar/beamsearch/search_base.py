@@ -222,7 +222,7 @@ def _leafwise_all_equal(lhs: chex.Array, rhs: chex.Array) -> chex.Array:
 
 
 def _batched_state_equal(lhs: Xtructurable, rhs: Xtructurable) -> chex.Array:
-    equality_tree = jax.tree_util.tree_map(_leafwise_all_equal, lhs, rhs)
+    equality_tree = lhs == rhs
     leaves, _ = jax.tree_util.tree_flatten(equality_tree)
     if not leaves:
         raise ValueError("State comparison received an empty tree")

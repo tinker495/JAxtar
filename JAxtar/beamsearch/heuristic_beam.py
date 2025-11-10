@@ -134,52 +134,22 @@ def beam_builder(
             perm_keys = jnp.where(child_valid, 0, 1).astype(jnp.int32)
             perm = jnp.argsort(perm_keys, axis=1)
 
-            def _reorder_leaf(leaf):
-                expanded = perm
-                for _ in range(leaf.ndim - perm.ndim):
-                    expanded = expanded[..., None]
-                expanded_perm = jnp.broadcast_to(expanded, leaf.shape)
-                return jnp.take_along_axis(leaf, expanded_perm, axis=1)
-
-            neighbours = jax.tree_util.tree_map(_reorder_leaf, neighbours)
+            neighbours = xnp.take_along_axis(neighbours, perm, axis=1)
             child_costs = jnp.take_along_axis(child_costs, perm, axis=1)
             child_valid = jnp.take_along_axis(child_valid, perm, axis=1)
             parent_matrix = jnp.take_along_axis(parent_matrix, perm, axis=1)
 
-            def _pad_tree_leading_axis(tree, pad_len: int):
-                if pad_len <= 0:
-                    return tree
-
-                def _pad(arr):
-                    pad_spec = [(0, pad_len)] + [(0, 0)] * (arr.ndim - 1)
-                    return jnp.pad(arr, pad_spec, constant_values=0)
-
-                return jax.tree_util.tree_map(_pad, tree)
-
             child_count = num_actions * beam_width
-            flat_states_tree = jax.tree_util.tree_map(
-                lambda x: x.reshape((child_count,) + x.shape[2:]),
-                neighbours,
-            )
+            flat_states_tree = neighbours.reshape((child_count,))
             flat_valid = child_valid.reshape(child_count)
             global_perm_keys = jnp.where(flat_valid, 0, 1).astype(jnp.int32)
             global_perm = jnp.argsort(global_perm_keys, axis=0)
-            ordered_states_tree = jax.tree_util.tree_map(
-                lambda x: jnp.take(x, global_perm, axis=0),
-                flat_states_tree,
-            )
+            ordered_states_tree = xnp.take(flat_states_tree, global_perm, axis=0)
             ordered_valid = jnp.take(flat_valid, global_perm, axis=0)
 
-            pad_len = (-child_count) % beam_width
-            padded_states_tree = _pad_tree_leading_axis(ordered_states_tree, pad_len)
-            padded_valid = jnp.pad(ordered_valid, (0, pad_len), constant_values=False)
-
-            num_chunks = (child_count + pad_len) // beam_width
-            chunk_states_tree = jax.tree_util.tree_map(
-                lambda x: x.reshape((num_chunks, beam_width) + x.shape[1:]),
-                padded_states_tree,
-            )
-            chunk_valid = padded_valid.reshape((num_chunks, beam_width))
+            num_chunks = (child_count) // beam_width
+            chunk_states_tree = ordered_states_tree.reshape((num_chunks, beam_width))
+            chunk_valid = ordered_valid.reshape((num_chunks, beam_width))
 
             chunk_dists = jnp.full((num_chunks, beam_width), jnp.inf, dtype=KEY_DTYPE)
 
@@ -187,7 +157,7 @@ def beam_builder(
                 row_mask = chunk_valid[i]
 
                 def _calc(_):
-                    chunk_states = jax.tree_util.tree_map(lambda x: x[i], chunk_states_tree)
+                    chunk_states = chunk_states_tree[i]
                     dist_row = variable_heuristic_batch_switcher(
                         solve_config,
                         chunk_states,
