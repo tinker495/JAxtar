@@ -110,7 +110,41 @@ def beam_builder(
             )
             unique_mask = unique_flat_mask.reshape(child_valid.shape)
             child_valid = jnp.logical_and(child_valid, unique_mask)
+
+            if non_backtracking_steps:
+                parent_trace_matrix = jnp.broadcast_to(
+                    search_result.active_trace[jnp.newaxis, :], child_valid.shape
+                )
+                flat_parent_trace = parent_trace_matrix.reshape(-1)
+                allowed_mask = non_backtracking_mask(
+                    flat_states,
+                    flat_parent_trace,
+                    search_result.trace_state,
+                    search_result.trace_parent,
+                    non_backtracking_steps,
+                ).reshape(child_valid.shape)
+                child_valid = jnp.logical_and(child_valid, allowed_mask)
+
             child_costs = jnp.where(child_valid, child_costs, jnp.inf)
+
+            parent_matrix = jnp.broadcast_to(
+                jnp.arange(beam_width, dtype=jnp.int32), (num_actions, beam_width)
+            )
+
+            perm_keys = jnp.where(child_valid, 0, 1).astype(jnp.int32)
+            perm = jnp.argsort(perm_keys, axis=1)
+
+            def _reorder_leaf(leaf):
+                expanded = perm
+                for _ in range(leaf.ndim - perm.ndim):
+                    expanded = expanded[..., None]
+                expanded_perm = jnp.broadcast_to(expanded, leaf.shape)
+                return jnp.take_along_axis(leaf, expanded_perm, axis=1)
+
+            neighbours = jax.tree_util.tree_map(_reorder_leaf, neighbours)
+            child_costs = jnp.take_along_axis(child_costs, perm, axis=1)
+            child_valid = jnp.take_along_axis(child_valid, perm, axis=1)
+            parent_matrix = jnp.take_along_axis(parent_matrix, perm, axis=1)
 
             init_dists = jnp.full(child_costs.shape, jnp.inf, dtype=KEY_DTYPE)
 
@@ -144,6 +178,7 @@ def beam_builder(
             flat_dist = dists.reshape(-1)
             flat_scores = scores.reshape(-1)
             flat_valid = child_valid.reshape(-1)
+            flat_parents = parent_matrix.reshape(-1)
 
             selected_scores, selected_idx, keep_mask = select_beam(
                 flat_scores,
@@ -156,7 +191,7 @@ def beam_builder(
             selected_costs = flat_cost[selected_idx]
             selected_dists = flat_dist[selected_idx]
             selected_actions = (selected_idx // beam_width).astype(ACTION_DTYPE)
-            selected_parents = (selected_idx % beam_width).astype(jnp.int32)
+            selected_parents = flat_parents[selected_idx]
             selected_valid = jnp.logical_and(keep_mask, flat_valid[selected_idx])
             unique_valid = xnp.unique_mask(
                 selected_states,
@@ -166,15 +201,6 @@ def beam_builder(
             selected_valid = jnp.logical_and(selected_valid, unique_valid)
 
             parent_trace_ids = search_result.active_trace[selected_parents]
-            if non_backtracking_steps:
-                allowed_mask = non_backtracking_mask(
-                    selected_states,
-                    parent_trace_ids,
-                    search_result.trace_state,
-                    search_result.trace_parent,
-                    non_backtracking_steps,
-                )
-                selected_valid = jnp.logical_and(selected_valid, allowed_mask)
 
             selected_costs = jnp.where(selected_valid, selected_costs, jnp.inf)
             selected_dists = jnp.where(selected_valid, selected_dists, jnp.inf)
