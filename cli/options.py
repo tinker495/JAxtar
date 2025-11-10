@@ -492,6 +492,12 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-s", "--steps", type=int, default=None)
     @click.option("-db", "--dataset_batch_size", type=int, default=None)
     @click.option("-dmb", "--dataset_minibatch_size", type=int, default=None)
+    @click.option(
+        "--sampling-non-backtracking-steps",
+        type=int,
+        default=None,
+        help="Number of previous states to avoid revisiting during dataset sampling.",
+    )
     @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
     @click.option("-k", "--key", type=int, default=None)
     @click.option("-r", "--reset", type=bool, default=None)

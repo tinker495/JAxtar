@@ -499,7 +499,12 @@ def get_qlearning_dataset_builder(
     td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
     use_diffusion_distance: bool = False,
+    non_backtracking_steps: int = 3,
 ):
+    if non_backtracking_steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    non_backtracking_steps = int(non_backtracking_steps)
+
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
         # Calculate appropriate shuffle_parallel for hindsight sampling
@@ -512,6 +517,7 @@ def get_qlearning_dataset_builder(
                 k_max,
                 shuffle_parallel,
                 False,
+                non_backtracking_steps=non_backtracking_steps,
             )
         else:
             create_shuffled_path_fn = partial(
@@ -520,6 +526,7 @@ def get_qlearning_dataset_builder(
                 k_max,
                 shuffle_parallel,
                 False,
+                non_backtracking_steps=non_backtracking_steps,
             )
     else:
         shuffle_parallel = int(min(math.ceil(dataset_size / k_max), dataset_minibatch_size))
@@ -530,6 +537,7 @@ def get_qlearning_dataset_builder(
             k_max,
             shuffle_parallel,
             False,
+            non_backtracking_steps=non_backtracking_steps,
         )
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
