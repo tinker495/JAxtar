@@ -12,6 +12,7 @@ from JAxtar.beamsearch.search_base import (
     TRACE_INDEX_DTYPE,
     TRACE_INVALID,
     BeamSearchResult,
+    non_backtracking_mask,
     select_beam,
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -25,6 +26,7 @@ def beam_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    non_backtracking_steps: int = 3,
 ):
     """Construct a batched heuristic beam-search solver."""
 
@@ -40,6 +42,10 @@ def beam_builder(
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
+
+    if non_backtracking_steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    non_backtracking_steps = int(non_backtracking_steps)
 
     def beam(
         solve_config: Puzzle.SolveConfig,
@@ -67,6 +73,7 @@ def beam_builder(
         result.trace_dist = result.trace_dist.at[0].set(start_dist)
         result.trace_depth = result.trace_depth.at[0].set(0)
         result.trace_action = result.trace_action.at[0].set(ACTION_PAD)
+        result.trace_state = result.trace_state.at[0].set(start)
 
         def _cond(search_result: BeamSearchResult):
             filled_mask = search_result.filled_mask()
@@ -158,12 +165,22 @@ def beam_builder(
             )
             selected_valid = jnp.logical_and(selected_valid, unique_valid)
 
+            parent_trace_ids = search_result.active_trace[selected_parents]
+            if non_backtracking_steps:
+                allowed_mask = non_backtracking_mask(
+                    selected_states,
+                    parent_trace_ids,
+                    search_result.trace_state,
+                    search_result.trace_parent,
+                    non_backtracking_steps,
+                )
+                selected_valid = jnp.logical_and(selected_valid, allowed_mask)
+
             selected_costs = jnp.where(selected_valid, selected_costs, jnp.inf)
             selected_dists = jnp.where(selected_valid, selected_dists, jnp.inf)
             selected_scores = jnp.where(selected_valid, selected_scores, jnp.inf)
             selected_actions = selected_actions.astype(ACTION_DTYPE)
 
-            parent_trace_ids = search_result.active_trace[selected_parents]
             invalid_parent = jnp.full_like(parent_trace_ids, TRACE_INVALID)
             parent_trace_ids = jnp.where(selected_valid, parent_trace_ids, invalid_parent)
 
@@ -197,6 +214,9 @@ def beam_builder(
             )
             search_result.trace_depth = search_result.trace_depth.at[next_trace_ids].set(
                 trace_depths
+            )
+            search_result.trace_state = search_result.trace_state.at[next_trace_ids].set(
+                selected_states
             )
 
             invalid_trace = jnp.full_like(next_trace_ids, TRACE_INVALID)

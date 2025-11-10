@@ -43,6 +43,7 @@ class BeamSearchResult:
     trace_cost: chex.Array
     trace_dist: chex.Array
     trace_depth: chex.Array
+    trace_state: Xtructurable
     active_trace: chex.Array
 
     @staticmethod
@@ -70,6 +71,7 @@ class BeamSearchResult:
         trace_dist = jnp.full((trace_capacity,), jnp.inf, dtype=KEY_DTYPE)
         trace_depth = jnp.full((trace_capacity,), -1, dtype=jnp.int32)
         active_trace = jnp.full((beam_width,), TRACE_INVALID, dtype=TRACE_INDEX_DTYPE)
+        trace_state = statecls.default((trace_capacity,))
 
         return BeamSearchResult(
             cost=cost,
@@ -86,6 +88,7 @@ class BeamSearchResult:
             trace_cost=trace_cost,
             trace_dist=trace_dist,
             trace_depth=trace_depth,
+            trace_state=trace_state,
             active_trace=active_trace,
         )
 
@@ -210,10 +213,65 @@ def select_beam(
     return selected_scores, topk_idx, keep_mask
 
 
+def _leafwise_all_equal(lhs: chex.Array, rhs: chex.Array) -> chex.Array:
+    eq = jnp.equal(lhs, rhs)
+    if eq.ndim <= 1:
+        return eq
+    axes = tuple(range(1, eq.ndim))
+    return jnp.all(eq, axis=axes)
+
+
+def _batched_state_equal(lhs: Xtructurable, rhs: Xtructurable) -> chex.Array:
+    equality_tree = jax.tree_util.tree_map(_leafwise_all_equal, lhs, rhs)
+    leaves, _ = jax.tree_util.tree_flatten(equality_tree)
+    if not leaves:
+        raise ValueError("State comparison received an empty tree")
+    result = leaves[0]
+    for leaf in leaves[1:]:
+        result = jnp.logical_and(result, leaf)
+    return result
+
+
+def non_backtracking_mask(
+    candidate_states: Xtructurable,
+    parent_trace_ids: chex.Array,
+    trace_state: Xtructurable,
+    trace_parent: chex.Array,
+    lookback: int,
+) -> chex.Array:
+    if lookback <= 0:
+        return jnp.ones(parent_trace_ids.shape, dtype=jnp.bool_)
+
+    def _scan_fn(carry, _):
+        trace_ids, blocked = carry
+        valid = trace_ids != TRACE_INVALID
+        safe_ids = jnp.where(valid, trace_ids, jnp.zeros_like(trace_ids))
+        safe_ids_int = safe_ids.astype(jnp.int32)
+
+        ancestor_states = trace_state[safe_ids_int]
+        matches = _batched_state_equal(candidate_states, ancestor_states)
+        matches = jnp.logical_and(matches, valid)
+        blocked = jnp.logical_or(blocked, matches)
+
+        parent_ids = trace_parent[safe_ids_int]
+        parent_ids = jnp.where(valid, parent_ids, TRACE_INVALID)
+        return (parent_ids, blocked), None
+
+    init_blocked = jnp.zeros(parent_trace_ids.shape, dtype=jnp.bool_)
+    (_, blocked), _ = jax.lax.scan(
+        _scan_fn,
+        (parent_trace_ids, init_blocked),
+        xs=None,
+        length=lookback,
+    )
+    return jnp.logical_not(blocked)
+
+
 __all__ = [
     "BeamSearchResult",
     "select_beam",
     "TRACE_INVALID",
     "TRACE_INVALID_INT",
     "TRACE_INDEX_DTYPE",
+    "non_backtracking_mask",
 ]
