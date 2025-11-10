@@ -12,6 +12,7 @@ from JAxtar.beamsearch.search_base import (
     TRACE_INDEX_DTYPE,
     TRACE_INVALID,
     BeamSearchResult,
+    non_backtracking_mask,
     select_beam,
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -25,6 +26,7 @@ def beam_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    non_backtracking_steps: int = 3,
 ):
     """Construct a batched heuristic beam-search solver."""
 
@@ -40,6 +42,10 @@ def beam_builder(
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
+
+    if non_backtracking_steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    non_backtracking_steps = int(non_backtracking_steps)
 
     def beam(
         solve_config: Puzzle.SolveConfig,
@@ -67,6 +73,7 @@ def beam_builder(
         result.trace_dist = result.trace_dist.at[0].set(start_dist)
         result.trace_depth = result.trace_depth.at[0].set(0)
         result.trace_action = result.trace_action.at[0].set(ACTION_PAD)
+        result.trace_state = result.trace_state.at[0].set(start)
 
         def _cond(search_result: BeamSearchResult):
             filled_mask = search_result.filled_mask()
@@ -103,17 +110,57 @@ def beam_builder(
             )
             unique_mask = unique_flat_mask.reshape(child_valid.shape)
             child_valid = jnp.logical_and(child_valid, unique_mask)
+
+            if non_backtracking_steps:
+                parent_trace_matrix = jnp.broadcast_to(
+                    search_result.active_trace[jnp.newaxis, :], child_valid.shape
+                )
+                flat_parent_trace = parent_trace_matrix.reshape(-1)
+                allowed_mask = non_backtracking_mask(
+                    flat_states,
+                    flat_parent_trace,
+                    search_result.trace_state,
+                    search_result.trace_parent,
+                    non_backtracking_steps,
+                ).reshape(child_valid.shape)
+                child_valid = jnp.logical_and(child_valid, allowed_mask)
+
             child_costs = jnp.where(child_valid, child_costs, jnp.inf)
 
-            init_dists = jnp.full(child_costs.shape, jnp.inf, dtype=KEY_DTYPE)
+            parent_matrix = jnp.broadcast_to(
+                jnp.arange(beam_width, dtype=jnp.int32), (num_actions, beam_width)
+            )
 
-            def _compute_dist(i, acc):
-                row_mask = child_valid[i]
+            perm_keys = jnp.where(child_valid, 0, 1).astype(jnp.int32)
+            perm = jnp.argsort(perm_keys, axis=1)
+
+            neighbours = xnp.take_along_axis(neighbours, perm, axis=1)
+            child_costs = jnp.take_along_axis(child_costs, perm, axis=1)
+            child_valid = jnp.take_along_axis(child_valid, perm, axis=1)
+            parent_matrix = jnp.take_along_axis(parent_matrix, perm, axis=1)
+
+            child_count = num_actions * beam_width
+            flat_states_tree = neighbours.reshape((child_count,))
+            flat_valid = child_valid.reshape(child_count)
+            global_perm_keys = jnp.where(flat_valid, 0, 1).astype(jnp.int32)
+            global_perm = jnp.argsort(global_perm_keys, axis=0)
+            ordered_states_tree = xnp.take(flat_states_tree, global_perm, axis=0)
+            ordered_valid = jnp.take(flat_valid, global_perm, axis=0)
+
+            num_chunks = (child_count) // beam_width
+            chunk_states_tree = ordered_states_tree.reshape((num_chunks, beam_width))
+            chunk_valid = ordered_valid.reshape((num_chunks, beam_width))
+
+            chunk_dists = jnp.full((num_chunks, beam_width), jnp.inf, dtype=KEY_DTYPE)
+
+            def _compute_chunk(i, acc):
+                row_mask = chunk_valid[i]
 
                 def _calc(_):
+                    chunk_states = chunk_states_tree[i]
                     dist_row = variable_heuristic_batch_switcher(
                         solve_config,
-                        neighbours[i],
+                        chunk_states,
                         row_mask,
                     ).astype(KEY_DTYPE)
                     return jnp.where(row_mask, dist_row, jnp.inf)
@@ -126,8 +173,11 @@ def beam_builder(
                 )
                 return acc.at[i].set(dist_row)
 
-            # Iterate with fori_loop to avoid materialising a large vmap result when the beam is wide.
-            dists = jax.lax.fori_loop(0, num_actions, _compute_dist, init_dists)
+            dists_compacted = jax.lax.fori_loop(0, num_chunks, _compute_chunk, chunk_dists)
+            ordered_dists = dists_compacted.reshape(-1)[:child_count]
+            flat_dists = jnp.full(child_count, jnp.inf, dtype=KEY_DTYPE)
+            flat_dists = flat_dists.at[global_perm].set(ordered_dists)
+            dists = flat_dists.reshape(child_valid.shape)
 
             scores = (cost_weight * child_costs + dists).astype(KEY_DTYPE)
             scores = jnp.where(child_valid, scores, jnp.inf)
@@ -137,6 +187,7 @@ def beam_builder(
             flat_dist = dists.reshape(-1)
             flat_scores = scores.reshape(-1)
             flat_valid = child_valid.reshape(-1)
+            flat_parents = parent_matrix.reshape(-1)
 
             selected_scores, selected_idx, keep_mask = select_beam(
                 flat_scores,
@@ -149,7 +200,7 @@ def beam_builder(
             selected_costs = flat_cost[selected_idx]
             selected_dists = flat_dist[selected_idx]
             selected_actions = (selected_idx // beam_width).astype(ACTION_DTYPE)
-            selected_parents = (selected_idx % beam_width).astype(jnp.int32)
+            selected_parents = flat_parents[selected_idx]
             selected_valid = jnp.logical_and(keep_mask, flat_valid[selected_idx])
             unique_valid = xnp.unique_mask(
                 selected_states,
@@ -158,12 +209,13 @@ def beam_builder(
             )
             selected_valid = jnp.logical_and(selected_valid, unique_valid)
 
+            parent_trace_ids = search_result.active_trace[selected_parents]
+
             selected_costs = jnp.where(selected_valid, selected_costs, jnp.inf)
             selected_dists = jnp.where(selected_valid, selected_dists, jnp.inf)
             selected_scores = jnp.where(selected_valid, selected_scores, jnp.inf)
             selected_actions = selected_actions.astype(ACTION_DTYPE)
 
-            parent_trace_ids = search_result.active_trace[selected_parents]
             invalid_parent = jnp.full_like(parent_trace_ids, TRACE_INVALID)
             parent_trace_ids = jnp.where(selected_valid, parent_trace_ids, invalid_parent)
 
@@ -197,6 +249,9 @@ def beam_builder(
             )
             search_result.trace_depth = search_result.trace_depth.at[next_trace_ids].set(
                 trace_depths
+            )
+            search_result.trace_state = search_result.trace_state.at[next_trace_ids].set(
+                selected_states
             )
 
             invalid_trace = jnp.full_like(next_trace_ids, TRACE_INVALID)

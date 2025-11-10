@@ -8,15 +8,6 @@ import jax
 import jax.numpy as jnp
 
 
-def _slice_batch(current: Any, batch_size: int):
-    """Safely slice the leading batch dimension of a puzzle state."""
-
-    try:
-        return current[:batch_size]
-    except (TypeError, AttributeError, IndexError):
-        return jax.tree_util.tree_map(lambda x: x[:batch_size], current)
-
-
 def _pad_leading_axis(values: chex.Array, pad_width: int, pad_value) -> chex.Array:
     if pad_width <= 0:
         return values
@@ -64,7 +55,7 @@ def variable_batch_switcher_builder(
 
         def make_branch(batch_size: int, pad_width: int):
             def branch(solve_config, current):
-                sliced_current = _slice_batch(current, batch_size)
+                sliced_current = current[:batch_size]
                 values = eval_fn(solve_config, sliced_current)
                 return _pad_leading_axis(values, pad_width, pad_value)
 
@@ -105,4 +96,3 @@ def variable_batch_switcher_builder(
 
 
 __all__ = ["variable_batch_switcher_builder"]
-
