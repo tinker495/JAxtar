@@ -35,6 +35,7 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size
         self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+        self.metric = puzzle.metric
         super().__init__(puzzle, **kwargs)
 
     def _one_hot_faces(self, faces: chex.Array) -> chex.Array:
@@ -44,9 +45,13 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
         current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
-        current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
-        # Create a one-hot encoding of the flattened face without centre stickers
-        current_one_hot = self._one_hot_faces(current_no_centers).flatten()
+        if self.metric == "UQTM":
+            # UQTM need to use all the stickers
+            current_one_hot = self._one_hot_faces(current_flatten_face).flatten()
+        else:
+            current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
+            # Create a one-hot encoding of the flattened face without centre stickers
+            current_one_hot = self._one_hot_faces(current_no_centers).flatten()
         return ((current_one_hot - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
 
 
@@ -55,6 +60,7 @@ class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size
         self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+        self.metric = puzzle.metric
         super().__init__(puzzle, **kwargs)
 
     def _one_hot_faces(self, faces: chex.Array) -> chex.Array:
@@ -64,11 +70,20 @@ class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
         current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
-        current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
-        # Create a one-hot encoding of the flattened face without centre stickers
-        current_one_hot = self._one_hot_faces(current_no_centers).flatten()
+        if self.metric == "UQTM":
+            # UQTM need to use all the stickers
+            current_one_hot = self._one_hot_faces(current_flatten_face).flatten()
+        else:
+            current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
+            # Create a one-hot encoding of the flattened face without centre stickers
+            current_one_hot = self._one_hot_faces(current_no_centers).flatten()
         target_flatten_face = solve_config.TargetState.unpacked.faces.flatten()
-        target_no_centers = _remove_face_centers(target_flatten_face, self.puzzle.size)
-        target_one_hot = self._one_hot_faces(target_no_centers).flatten()
+        if self.metric == "UQTM":
+            # UQTM need to use all the stickers
+            target_one_hot = self._one_hot_faces(target_flatten_face).flatten()
+        else:
+            target_no_centers = _remove_face_centers(target_flatten_face, self.puzzle.size)
+            # Create a one-hot encoding of the flattened face without centre stickers
+            target_one_hot = self._one_hot_faces(target_no_centers).flatten()
         one_hots = jnp.concatenate([target_one_hot, current_one_hot], axis=-1)
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
