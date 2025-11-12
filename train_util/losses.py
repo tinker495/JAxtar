@@ -32,13 +32,13 @@ def asymmetric_huber_loss(
     tau: float = 0.25,
 ) -> jnp.ndarray:
     base_loss = huber_loss(diff, delta=delta)
-    weights = _quantile_weight(diff, tau=tau) * 2.0 # double the weight of the loss
+    weights = _quantile_weight(diff, tau=tau) * 2.0  # double the weight of the loss
     return weights * base_loss
 
 
 def asymmetric_logcosh_loss(diff: jnp.ndarray, tau: float = 0.25) -> jnp.ndarray:
     base_loss = logcosh_loss(diff)
-    weights = _quantile_weight(diff, tau=tau)
+    weights = _quantile_weight(diff, tau=tau) * 2.0  # double the weight of the loss
     return weights * base_loss
 
 
