@@ -13,11 +13,9 @@ from neural_util.modules import (
     HEAD_DTYPE,
     PreActivationResBlock,
     ResBlock,
-    get_activation_fn,
-    get_norm_fn,
-    get_resblock_fn,
     swiglu_fn,
 )
+from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     load_params_with_metadata,
     save_params_with_metadata,
@@ -79,13 +77,20 @@ class NeuralQFunctionBase(QFunction):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
         self.action_size = self._get_action_size()
-        kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
-        kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
-        kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
-        kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
-        self.model = model(self.action_size, **kwargs)
-        self.path = path
         self.metadata = {}
+        self.nn_args_metadata = {}
+        self._preloaded_params = None
+        self.path = path
+
+        saved_metadata = {}
+        if path is not None and not init_params:
+            saved_metadata = self._preload_metadata()
+
+        resolved_kwargs, nn_args = resolve_model_kwargs(kwargs, saved_metadata.get("nn_args"))
+        self.nn_args_metadata = nn_args
+        self.model = model(self.action_size, **resolved_kwargs)
+        self.metadata = saved_metadata or {}
+        self.metadata["nn_args"] = self.nn_args_metadata
         if path is not None:
             if init_params:
                 self.params = self.get_new_params()
@@ -109,17 +114,22 @@ class NeuralQFunctionBase(QFunction):
 
     def load_model(self):
         try:
-            if not is_model_downloaded(self.path):
-                download_model(self.path)
-            params, metadata = load_params_with_metadata(self.path)
+            params = self._preloaded_params
+            metadata = self.metadata
+            if params is None:
+                if not is_model_downloaded(self.path):
+                    download_model(self.path)
+                params, metadata = load_params_with_metadata(self.path)
             if params is None:
                 print(
                     f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
                     "Initializing new parameters."
                 )
                 self.metadata = {}
+                self.nn_args_metadata = {}
                 return self.get_new_params()
-            self.metadata = metadata
+            self.metadata = metadata or {}
+            self.metadata["nn_args"] = self.nn_args_metadata
 
             dummy_solve_config = self.puzzle.SolveConfig.default()
             dummy_current = self.puzzle.State.default()
@@ -128,6 +138,7 @@ class NeuralQFunctionBase(QFunction):
                 jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
                 training=False,
             )  # check if the params are compatible with the model
+            self._preloaded_params = None
             return params
         except Exception as e:
             print(f"Error loading model: {e}")
@@ -137,8 +148,11 @@ class NeuralQFunctionBase(QFunction):
         path = path or self.path
         if metadata is None:
             metadata = {}
-        metadata["puzzle_type"] = str(type(self.puzzle))
-        save_params_with_metadata(path, self.params, metadata)
+        combined_metadata = {**self.metadata, **metadata}
+        combined_metadata["puzzle_type"] = str(type(self.puzzle))
+        combined_metadata["nn_args"] = self.nn_args_metadata
+        save_params_with_metadata(path, self.params, combined_metadata)
+        self.metadata = combined_metadata
 
     def batched_q_value(
         self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
@@ -184,3 +198,15 @@ class NeuralQFunctionBase(QFunction):
         This function should return the post-processed distance.
         """
         return x
+
+    def _preload_metadata(self):
+        try:
+            if not is_model_downloaded(self.path):
+                download_model(self.path)
+            params, metadata = load_params_with_metadata(self.path)
+            if params is not None:
+                self._preloaded_params = params
+            return metadata or {}
+        except Exception as e:
+            print(f"Error loading metadata from {self.path}: {e}")
+            return {}
