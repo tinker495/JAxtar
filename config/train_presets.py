@@ -14,6 +14,7 @@ train_presets = {
     "diffusion_distance": DistTrainOptions(
         steps=int(1e4),
         update_interval=16,
+        use_soft_update=True,
         use_diffusion_distance=True,
     ),
 }
