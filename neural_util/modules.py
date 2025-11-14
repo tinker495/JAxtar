@@ -14,11 +14,17 @@ def BatchNorm(x, training):
     y = nn.BatchNorm(momentum=0.99, dtype=jnp.float32)(x, use_running_average=not training)
     return y.astype(DTYPE)
 
+def BatchNorm0999(x, training):
+    y = nn.BatchNorm(momentum=0.999, dtype=jnp.float32)(x, use_running_average=not training)
+    return y.astype(DTYPE)
 
 def BatchReNorm(x, training):
     y = BatchReNorm_(momentum=0.99, dtype=jnp.float32)(x, use_running_average=not training)
     return y.astype(DTYPE)
 
+def BatchReNorm0999(x, training):
+    y = BatchReNorm_(momentum=0.999, dtype=jnp.float32)(x, use_running_average=not training)
+    return y.astype(DTYPE)
 
 def InstanceNorm(x, training):
     y = nn.InstanceNorm(dtype=jnp.float32)(x)
@@ -46,7 +52,9 @@ DEFAULT_NORM_FN = BatchNorm
 # Norm function registry for config-driven selection
 NORM_FN_REGISTRY = {
     "batch": BatchNorm,
+    "batch0999": BatchNorm0999,
     "batchrenorm": BatchReNorm,
+    "batchrenorm0999": BatchReNorm0999,
     "instance": InstanceNorm,
     "layer": LayerNorm,
     "group": GroupNorm,
