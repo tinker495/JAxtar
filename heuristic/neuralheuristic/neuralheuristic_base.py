@@ -16,6 +16,7 @@ from neural_util.modules import (
     ResBlock,
     swiglu_fn,
 )
+from neural_util.norm import RSNorm
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -34,9 +35,12 @@ class HeuristicBase(nn.Module):
     activation: str = nn.relu
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    use_rsnorm: bool = False
 
     @nn.compact
     def __call__(self, x, training=False):
+        if self.use_rsnorm:
+            x = RSNorm()(x, training)
         if self.use_swiglu:
             x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn)(x, training)
             x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn)(x, training)

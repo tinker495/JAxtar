@@ -39,6 +39,7 @@ def prepare_model_kwargs(raw_kwargs: Dict[str, Any]) -> Dict[str, Any]:
     kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
     kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
     kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
+    kwargs["use_rsnorm"] = kwargs.get("use_rsnorm", False)
     return kwargs
 
 
