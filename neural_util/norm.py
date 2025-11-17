@@ -26,23 +26,38 @@ class RSNorm(nn.Module):
             feature_shape,
         )
         ra_var = self.variable(
-            "batch_stats", "var", lambda s: jnp.ones(s, jnp.float32), feature_shape
+            "batch_stats", "var", lambda s: jnp.zeros(s, jnp.float32), feature_shape
         )
         time_step = self.variable(
             "batch_stats", "time_step", lambda: jnp.array(0.0, jnp.float32)
         )
 
         if is_training:
-            d = x - jnp.expand_dims(ra_mean.value, axis=0) # batch_size, feature_shape...
-            time_step.value = time_step.value + jnp.float32(x.shape[0]) # +batch_size
-            time_step_float = time_step.value
+            batch_count = jnp.float32(x.shape[0])
+            prev_count = time_step.value
+            new_count = prev_count + batch_count
 
-            t_div = 1.0 / time_step_float
-            ra_mean.value = ra_mean.value + jnp.sum(d, axis=0) * t_div
-            ra_var.value = (time_step_float / (time_step_float + 1.0)) * (ra_var.value + jnp.sum(d * d, axis=0) * t_div)
+            batch_mean = jnp.mean(x, axis=0)
+            centered_batch = x - jnp.expand_dims(batch_mean, axis=0)
+            batch_m2 = jnp.sum(centered_batch * centered_batch, axis=0)
+
+            safe_new_count = jnp.where(new_count > 0.0, new_count, 1.0)
+            inv_new_count = 1.0 / safe_new_count
+            delta = batch_mean - ra_mean.value
+            mean_update = delta * batch_count * inv_new_count
+
+            prev_m2 = ra_var.value * prev_count
+            correction = (delta * delta) * (prev_count * batch_count) * inv_new_count
+            m2_new = prev_m2 + batch_m2 + correction
+            var_new = m2_new * inv_new_count
+
+            ra_mean.value = jnp.where(new_count > 0.0, ra_mean.value + mean_update, ra_mean.value)
+            ra_var.value = jnp.maximum(jnp.where(new_count > 0.0, var_new, ra_var.value), 0.0)
+            time_step.value = new_count
 
         ra_mean_nograd = lax.stop_gradient(ra_mean.value)
-        inv_std = lax.rsqrt(jnp.expand_dims(ra_var.value, axis=0) + self.epsilon)
+        var_nograd = lax.stop_gradient(jnp.maximum(ra_var.value, 0.0))
+        inv_std = lax.rsqrt(jnp.expand_dims(var_nograd, axis=0) + self.epsilon)
         inv_std_nograd = lax.stop_gradient(inv_std)
         return (x - jnp.expand_dims(ra_mean_nograd, axis=0)) * inv_std_nograd
 
