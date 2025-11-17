@@ -29,20 +29,22 @@ class RSNorm(nn.Module):
             "batch_stats", "var", lambda s: jnp.ones(s, jnp.float32), feature_shape
         )
         time_step = self.variable(
-            "batch_stats", "time_step", lambda: jnp.int32(0)
+            "batch_stats", "time_step", lambda: jnp.array(0.0, jnp.float32)
         )
 
         if is_training:
             d = x - jnp.expand_dims(ra_mean.value, axis=0) # batch_size, feature_shape...
-            time_step.value = time_step.value + x.shape[0] # +batch_size
-            time_step_float = jnp.float32(time_step.value) 
+            time_step.value = time_step.value + jnp.float32(x.shape[0]) # +batch_size
+            time_step_float = time_step.value
 
             t_div = 1.0 / time_step_float
             ra_mean.value = ra_mean.value + jnp.sum(d, axis=0) * t_div
             ra_var.value = (time_step_float / (time_step_float + 1.0)) * (ra_var.value + jnp.sum(d * d, axis=0) * t_div)
 
+        ra_mean_nograd = lax.stop_gradient(ra_mean.value)
         inv_std = lax.rsqrt(jnp.expand_dims(ra_var.value, axis=0) + self.epsilon)
-        return (x - jnp.expand_dims(ra_mean.value, axis=0)) * inv_std
+        inv_std_nograd = lax.stop_gradient(inv_std)
+        return (x - jnp.expand_dims(ra_mean_nograd, axis=0)) * inv_std_nograd
 
 
 class BatchReNorm(nn.Module):
