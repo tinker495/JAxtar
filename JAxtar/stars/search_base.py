@@ -36,15 +36,15 @@ from JAxtar.annotate import (
 @xtructure_dataclass
 class Parent:
 
-    hashidx: FieldDescriptor[HashIdx]
-    action: FieldDescriptor[ACTION_DTYPE]
+    hashidx: FieldDescriptor.scalar(dtype=HashIdx)
+    action: FieldDescriptor.scalar(dtype=ACTION_DTYPE)
 
 
 @xtructure_dataclass
 class Current:
 
-    hashidx: FieldDescriptor[HashIdx]
-    cost: FieldDescriptor[KEY_DTYPE]
+    hashidx: FieldDescriptor.scalar(dtype=HashIdx)
+    cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
 
 
 @xtructure_dataclass
@@ -58,8 +58,8 @@ class Current_with_Parent:
         current (Current): The current state in the search tree
     """
 
-    parent: FieldDescriptor[Parent]
-    current: FieldDescriptor[Current]
+    parent: FieldDescriptor.scalar(dtype=Parent)
+    current: FieldDescriptor.scalar(dtype=Current)
 
 
 @base_dataclass

@@ -453,8 +453,8 @@ def get_heuristic_dataset_builder(
 
         @xtructure_dataclass
         class SolveConfigsAndStates:
-            solveconfigs: FieldDescriptor[puzzle.SolveConfig]
-            states: FieldDescriptor[puzzle.State]
+            solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
+            states: FieldDescriptor.scalar(dtype=puzzle.State)
 
         jited_get_datasets = jax.jit(
             partial(

@@ -112,7 +112,9 @@ class WorldModelPuzzleBase(Puzzle):
 
         @state_dataclass
         class State:
-            latent: FieldDescriptor[jnp.uint8, latent_uint8.shape, latent_uint8]
+            latent: FieldDescriptor.tensor(
+                dtype=jnp.uint8, shape=latent_uint8.shape, default=latent_uint8
+            )
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)

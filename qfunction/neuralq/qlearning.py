@@ -546,9 +546,9 @@ def get_qlearning_dataset_builder(
 
         @xtructure_dataclass
         class SolveConfigsAndStatesAndActions:
-            solveconfigs: FieldDescriptor[puzzle.SolveConfig]
-            states: FieldDescriptor[puzzle.State]
-            actions: FieldDescriptor[jnp.uint8, (1,)]
+            solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
+            states: FieldDescriptor.scalar(dtype=puzzle.State)
+            actions: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))
 
         jited_get_datasets = jax.jit(
             partial(
