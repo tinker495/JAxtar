@@ -48,8 +48,14 @@ def _load_benchmark_heuristic(
             f"Benchmark '{benchmark_name}' does not define a heuristic configuration."
         )
 
-    resolved_param_path = _resolve_param_path(heuristic_config.path_template, puzzle, param_path)
-    neural_config = heuristic_config.neural_config or {}
+    path_template = heuristic_config.param_paths.get("default")
+    if path_template is None:
+        raise click.UsageError(
+            f"Benchmark '{benchmark_name}' heuristic config has no default param path."
+        )
+
+    resolved_param_path = _resolve_param_path(path_template, puzzle, param_path)
+    neural_config = {}
 
     return heuristic_config.callable(
         puzzle=puzzle,
@@ -71,8 +77,14 @@ def _load_benchmark_qfunction(
             f"Benchmark '{benchmark_name}' does not define a Q-function configuration."
         )
 
-    resolved_param_path = _resolve_param_path(q_config.path_template, puzzle, param_path)
-    neural_config = q_config.neural_config or {}
+    path_template = q_config.param_paths.get("default")
+    if path_template is None:
+        raise click.UsageError(
+            f"Benchmark '{benchmark_name}' Q-function config has no default param path."
+        )
+
+    resolved_param_path = _resolve_param_path(path_template, puzzle, param_path)
+    neural_config = {}
 
     return q_config.callable(
         puzzle=puzzle,

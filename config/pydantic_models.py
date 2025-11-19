@@ -107,11 +107,13 @@ class VisualizeOptions(BaseModel):
 class HeuristicOptions(BaseModel):
     neural_heuristic: bool = False
     param_path: Optional[str] = None
+    param_type: Optional[str] = "default"
 
 
 class QFunctionOptions(BaseModel):
     neural_qfunction: bool = False
     param_path: Optional[str] = None
+    param_type: Optional[str] = "default"
 
 
 class DistTrainOptions(BaseModel):
@@ -182,8 +184,7 @@ class WMTrainOptions(BaseModel):
 
 class NeuralCallableConfig(BaseModel):
     callable: Callable
-    path_template: str
-    neural_config: Optional[dict] = {}
+    param_paths: Dict[str, str] = {}
 
     class Config:
         arbitrary_types_allowed = True

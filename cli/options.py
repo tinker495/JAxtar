@@ -51,12 +51,17 @@ def _setup_neural_component(
         raise click.UsageError(f"{err_msg} not available for puzzle '{puzzle_name}'.")
 
     if param_path is None:
-        param_path = nn_config.path_template.format(size=puzzle.size)
+        path_template = nn_config.param_paths.get("default")
+        if path_template is None:
+            raise click.UsageError(f"Default parameter path not found for puzzle '{puzzle_name}'.")
+        if "{size}" in path_template:
+            param_path = path_template.format(size=puzzle.size)
+        else:
+            param_path = path_template
 
-    final_neural_config = nn_config.neural_config.copy()
+    final_neural_config = {}
     if neural_config_override is not None:
         final_neural_config.update(json.loads(neural_config_override))
-    nn_config.neural_config = final_neural_config
 
     component = nn_config.callable(
         puzzle=puzzle,
@@ -64,7 +69,7 @@ def _setup_neural_component(
         init_params=reset_params,
         **final_neural_config,
     )
-    return {comp_key: component, config_key: nn_config}
+    return {comp_key: component, config_key: final_neural_config}
 
 
 def create_puzzle_options(
@@ -415,16 +420,20 @@ def heuristic_options(func: callable) -> callable:
 
             param_path = heuristic_opts.param_path
             if param_path is None:
-                if "{size}" in heuristic_config.path_template:
-                    param_path = heuristic_config.path_template.format(size=puzzle.size)
+                param_type = heuristic_opts.param_type or "default"
+                path_template = heuristic_config.param_paths.get(param_type)
+                if path_template is None:
+                    raise click.UsageError(f"Parameter path for type '{param_type}' not found.")
+
+                if "{size}" in path_template:
+                    param_path = path_template.format(size=puzzle.size)
                 else:
-                    param_path = heuristic_config.path_template
+                    param_path = path_template
 
             heuristic: Heuristic = heuristic_config.callable(
                 puzzle=puzzle,
                 path=param_path,
                 init_params=False,
-                **heuristic_config.neural_config,
             )
         else:
             heuristic_callable = puzzle_bundle.heuristic
@@ -467,16 +476,20 @@ def qfunction_options(func: callable) -> callable:
 
             param_path = q_opts.param_path
             if param_path is None:
-                if "{size}" in q_config.path_template:
-                    param_path = q_config.path_template.format(size=puzzle.size)
+                param_type = q_opts.param_type or "default"
+                path_template = q_config.param_paths.get(param_type)
+                if path_template is None:
+                    raise click.UsageError(f"Parameter path for type '{param_type}' not found.")
+
+                if "{size}" in path_template:
+                    param_path = path_template.format(size=puzzle.size)
                 else:
-                    param_path = q_config.path_template
+                    param_path = path_template
 
             qfunction: QFunction = q_config.callable(
                 puzzle=puzzle,
                 path=param_path,
                 init_params=False,
-                **q_config.neural_config,
             )
         else:
             q_callable = puzzle_bundle.q_function

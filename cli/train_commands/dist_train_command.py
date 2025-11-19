@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any, Dict
 
 import click
 import jax
@@ -8,12 +9,7 @@ import numpy as np
 from puxle import Puzzle
 
 from cli.evaluation_runner import run_evaluation_sweep
-from config.pydantic_models import (
-    DistTrainOptions,
-    EvalOptions,
-    NeuralCallableConfig,
-    PuzzleOptions,
-)
+from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
@@ -48,7 +44,7 @@ def davi(
     train_options: DistTrainOptions,
     k_max: int,
     eval_options: EvalOptions,
-    heuristic_config: NeuralCallableConfig,
+    heuristic_config: Dict[str, Any],
     **kwargs,
 ):
 
@@ -262,7 +258,7 @@ def qlearning(
     train_options: DistTrainOptions,
     k_max: int,
     eval_options: EvalOptions,
-    q_config: NeuralCallableConfig,
+    q_config: Dict[str, Any],
     **kwargs,
 ):
 

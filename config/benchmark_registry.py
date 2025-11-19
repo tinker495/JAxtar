@@ -10,11 +10,11 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
         benchmark=RubiksCubeDeepCubeABenchmark,
         heuristic_nn_config=NeuralCallableConfig(
             callable=RubiksCubeNeuralHeuristic,
-            path_template="heuristic/neuralheuristic/model/params/rubikscube_3.pkl",
+            param_paths={"default": "heuristic/neuralheuristic/model/params/rubikscube_3.pkl"},
         ),
         q_function_nn_config=NeuralCallableConfig(
             callable=RubiksCubeNeuralQ,
-            path_template="qfunction/neuralq/model/params/rubikscube_3.pkl",
+            param_paths={"default": "qfunction/neuralq/model/params/rubikscube_3.pkl"},
         ),
         eval_options=EvalOptions(
             batch_size=10000,
