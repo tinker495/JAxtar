@@ -640,43 +640,82 @@ def get_qlearning_dataset_builder(
     )
 
     @jax.jit
-    def get_datasets(
-        target_q_params: Any,
-        q_params: Any,
-        key: chex.PRNGKey,
-        step: int = 0,
-    ):
+    def generate_paths(key):
         def scan_fn(key, _):
             key, subkey = jax.random.split(key)
             paths = jited_create_shuffled_path(subkey)
             return key, paths
 
         key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
+        flattened_paths = {}
         for k, v in paths.items():
-            paths[k] = v.flatten()[:dataset_size]
+            flattened_paths[k] = v.flatten()[:dataset_size]
+        return key, flattened_paths
 
-        if use_diffusion_distance_warmup:
-            flatten_dataset = jax.lax.cond(
-                step < diffusion_distance_warmup_steps,
-                lambda x: jited_get_datasets_diffusion(*x),
-                lambda x: jited_get_datasets_normal(*x),
-                (target_q_params, q_params, paths, key),
-            )
-        elif use_diffusion_distance:
-            flatten_dataset = jited_get_datasets_mixture(target_q_params, q_params, paths, key)
-        else:
-            flatten_dataset = jited_get_datasets_normal(target_q_params, q_params, paths, key)
-        return flatten_dataset
+    jited_pipeline_diffusion = None
+    jited_pipeline_mixture = None
+    jited_pipeline_normal = None
 
-    if n_devices > 1:
+    pmap_pipeline_diffusion = None
+    pmap_pipeline_mixture = None
+    pmap_pipeline_normal = None
 
-        def pmap_get_datasets(target_q_params, q_params, key, step=0):
+    if use_diffusion_distance_warmup:
+
+        def pipeline_diffusion(target_q_params, q_params, key):
+            key, paths = generate_paths(key)
+            return jited_get_datasets_diffusion(target_q_params, q_params, paths, key)
+
+        jited_pipeline_diffusion = jax.jit(pipeline_diffusion)
+        if n_devices > 1:
+            pmap_pipeline_diffusion = jax.pmap(pipeline_diffusion, in_axes=(None, None, 0))
+
+    if use_diffusion_distance:
+
+        def pipeline_mixture(target_q_params, q_params, key):
+            key, paths = generate_paths(key)
+            return jited_get_datasets_mixture(target_q_params, q_params, paths, key)
+
+        jited_pipeline_mixture = jax.jit(pipeline_mixture)
+        if n_devices > 1:
+            pmap_pipeline_mixture = jax.pmap(pipeline_mixture, in_axes=(None, None, 0))
+
+    if (not use_diffusion_distance) or use_diffusion_distance_warmup:
+
+        def pipeline_normal(target_q_params, q_params, key):
+            key, paths = generate_paths(key)
+            return jited_get_datasets_normal(target_q_params, q_params, paths, key)
+
+        jited_pipeline_normal = jax.jit(pipeline_normal)
+        if n_devices > 1:
+            pmap_pipeline_normal = jax.pmap(pipeline_normal, in_axes=(None, None, 0))
+
+    def get_datasets(
+        target_q_params: Any,
+        q_params: Any,
+        key: chex.PRNGKey,
+        step: int = 0,
+    ):
+        if n_devices > 1:
             keys = jax.random.split(key, n_devices)
-            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0, None))(
-                target_q_params, q_params, keys, step
-            )
-            return datasets
+            if use_diffusion_distance_warmup:
+                if step < diffusion_distance_warmup_steps:
+                    return pmap_pipeline_diffusion(target_q_params, q_params, keys)
+                else:
+                    return pmap_pipeline_normal(target_q_params, q_params, keys)
+            elif use_diffusion_distance:
+                return pmap_pipeline_mixture(target_q_params, q_params, keys)
+            else:
+                return pmap_pipeline_normal(target_q_params, q_params, keys)
+        else:
+            if use_diffusion_distance_warmup:
+                if step < diffusion_distance_warmup_steps:
+                    return jited_pipeline_diffusion(target_q_params, q_params, key)
+                else:
+                    return jited_pipeline_normal(target_q_params, q_params, key)
+            elif use_diffusion_distance:
+                return jited_pipeline_mixture(target_q_params, q_params, key)
+            else:
+                return jited_pipeline_normal(target_q_params, q_params, key)
 
-        return pmap_get_datasets
-    else:
-        return get_datasets
+    return get_datasets
