@@ -21,11 +21,50 @@ from config.pydantic_models import (
     WorldModelPuzzleConfig,
 )
 from helpers.formatting import human_format_to_float
+from helpers.util import map_kwargs_to_pydantic
 from heuristic.heuristic_base import Heuristic
-from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.q_base import QFunction
 from train_util.optimizer import OPTIMIZERS
+
+
+def _setup_neural_component(
+    puzzle_bundle,
+    puzzle,
+    puzzle_name,
+    component_type,
+    param_path,
+    neural_config_override,
+    reset_params,
+):
+    if component_type == "heuristic":
+        nn_config = puzzle_bundle.heuristic_nn_config
+        config_key = "heuristic_config"
+        comp_key = "heuristic"
+        err_msg = "Neural heuristic"
+    else:
+        nn_config = puzzle_bundle.q_function_nn_config
+        config_key = "q_config"
+        comp_key = "qfunction"
+        err_msg = "Neural Q-function"
+
+    if nn_config is None:
+        raise click.UsageError(f"{err_msg} not available for puzzle '{puzzle_name}'.")
+
+    if param_path is None:
+        param_path = nn_config.path_template.format(size=puzzle.size)
+
+    final_neural_config = nn_config.neural_config.copy()
+    if neural_config_override is not None:
+        final_neural_config.update(json.loads(neural_config_override))
+    nn_config.neural_config = final_neural_config
+
+    component = nn_config.callable(
+        puzzle=puzzle,
+        path=param_path,
+        init_params=reset_params,
+        **final_neural_config,
+    )
+    return {comp_key: component, config_key: nn_config}
 
 
 def create_puzzle_options(
@@ -38,9 +77,7 @@ def create_puzzle_options(
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            puzzle_opt_keys = set(PuzzleOptions.model_fields.keys())
-            present_keys = puzzle_opt_keys.intersection(kwargs.keys())
-            puzzle_kwargs = {k: kwargs.pop(k) for k in present_keys}
+            puzzle_kwargs = map_kwargs_to_pydantic(PuzzleOptions, kwargs)
             puzzle_opts = PuzzleOptions(**puzzle_kwargs)
 
             puzzle_name = puzzle_opts.puzzle
@@ -54,9 +91,6 @@ def create_puzzle_options(
             if puzzle_opts.hard and puzzle_bundle.puzzle_hard is not None:
                 puzzle_callable = puzzle_bundle.puzzle_hard
             elif puzzle_ds_flag:
-                # This part is tricky. world_model_bundles has the specific puzzle_for_ds_gen
-                # For now, let's assume the puzzle name exists in puzzle_bundles for ds-gen.
-                # This will be handled more robustly in the world model options.
                 puzzle_callable = puzzle_bundle.puzzle
             else:
                 puzzle_callable = puzzle_bundle.puzzle
@@ -228,15 +262,14 @@ def search_options(func=None, *, variant: str = "default") -> callable:
             if kwargs.get("max_node_size", None) is not None:
                 kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
 
+            overrides = map_kwargs_to_pydantic(SearchOptions, kwargs)
+
             puzzle_bundle = kwargs["puzzle_bundle"]
             if variant == "beam":
                 base_search_options = puzzle_bundle.beam_search_options
             else:
                 base_search_options = puzzle_bundle.search_options
 
-            overrides = {
-                k: v for k, v in kwargs.items() if v is not None and k in SearchOptions.model_fields
-            }
             search_opts = base_search_options.model_copy(update=overrides)
 
             if search_opts.debug:
@@ -247,8 +280,6 @@ def search_options(func=None, *, variant: str = "default") -> callable:
 
             kwargs["search_options"] = search_opts
 
-            for k in SearchOptions.model_fields:
-                kwargs.pop(k, None)
             return func(*args, **kwargs)
 
         return wrapper
@@ -308,6 +339,8 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
             if kwargs.get("max_node_size", None) is not None:
                 kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
 
+            overrides = map_kwargs_to_pydantic(EvalOptions, kwargs)
+
             puzzle_bundle = kwargs["puzzle_bundle"]
             if variant == "beam":
                 base_eval_options = getattr(puzzle_bundle, "beam_eval_options", None)
@@ -316,12 +349,15 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
             else:
                 base_eval_options = puzzle_bundle.eval_options
 
-            overrides = {
-                k: v for k, v in kwargs.items() if v is not None and k in EvalOptions.model_fields
-            }
+            # pop_ratio special handling was done before map_kwargs_to_pydantic?
+            # No, pop_ratio is in EvalOptions fields, so it's in 'overrides' now.
+            # We need to process it from 'overrides' instead of kwargs if it exists.
 
-            if "pop_ratio" in kwargs and kwargs["pop_ratio"] is not None:
-                pop_ratio_str = str(kwargs["pop_ratio"])
+            if "pop_ratio" in overrides and overrides["pop_ratio"] is not None:
+                pop_ratio_val = overrides["pop_ratio"]
+                # It might be string from click or float if default?
+                # Click option type is str.
+                pop_ratio_str = str(pop_ratio_val)
                 if "," in pop_ratio_str:
                     pop_ratios = []
                     for pr_val in pop_ratio_str.split(","):
@@ -344,8 +380,6 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
 
             eval_opts = base_eval_options.model_copy(update=overrides)
             kwargs["eval_options"] = eval_opts
-            for k in EvalOptions.model_fields:
-                kwargs.pop(k, None)
             return func(*args, **kwargs)
 
         return wrapper
@@ -365,9 +399,9 @@ def heuristic_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        heuristic_opts = HeuristicOptions(
-            **{k: kwargs.pop(k) for k in HeuristicOptions.model_fields}
-        )
+        heuristic_kwargs = map_kwargs_to_pydantic(HeuristicOptions, kwargs)
+        heuristic_opts = HeuristicOptions(**heuristic_kwargs)
+
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
         is_eval = kwargs.get("eval_options", None) is not None
@@ -417,7 +451,9 @@ def qfunction_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        q_opts = QFunctionOptions(**{k: kwargs.pop(k) for k in QFunctionOptions.model_fields})
+        q_kwargs = map_kwargs_to_pydantic(QFunctionOptions, kwargs)
+        q_opts = QFunctionOptions(**q_kwargs)
+
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
         is_eval = kwargs.get("eval_options", None) is not None
@@ -467,7 +503,8 @@ def visualize_options(func: callable) -> callable:
     @click.option("-mt", "--max_animation_time", default=10, type=int, help="Max animation time")
     @wraps(func)
     def wrapper(*args, **kwargs):
-        vis_opts = VisualizeOptions(**{k: kwargs.pop(k) for k in VisualizeOptions.model_fields})
+        vis_kwargs = map_kwargs_to_pydantic(VisualizeOptions, kwargs)
+        vis_opts = VisualizeOptions(**vis_kwargs)
         kwargs["visualize_options"] = vis_opts
         return func(*args, **kwargs)
 
@@ -611,22 +648,15 @@ def dist_train_options(func: callable) -> callable:
         preset = train_presets[preset_name]
 
         # Collect any user-provided options to override the preset
-        overrides = {}
-        for k in list(kwargs.keys()):
-            v = kwargs[k]
-            if v is None:
-                continue
-            if k == "loss_args":
-                overrides[k] = json.loads(v) if isinstance(v, str) else v
-            elif k in DistTrainOptions.model_fields:
-                overrides[k] = v
+        # map_kwargs_to_pydantic handles popping
+        overrides = map_kwargs_to_pydantic(DistTrainOptions, kwargs)
+
+        # Handle special case for loss_args if it's a string in overrides
+        if "loss_args" in overrides and isinstance(overrides["loss_args"], str):
+            overrides["loss_args"] = json.loads(overrides["loss_args"])
 
         # Create a final options object by applying overrides to the preset
         train_opts = preset.model_copy(update=overrides)
-
-        # Clean up kwargs so they don't get passed down
-        for k in DistTrainOptions.model_fields:
-            kwargs.pop(k, None)
 
         if train_opts.debug:
             print("Disabling JIT")
@@ -656,32 +686,19 @@ def dist_heuristic_options(func: callable) -> callable:
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
+        puzzle_name = kwargs["puzzle_name"]
         reset = kwargs["train_options"].reset
 
-        heuristic_config = puzzle_bundle.heuristic_nn_config
-        if heuristic_config is None:
-            raise click.UsageError(
-                f"Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
-            )
-
-        param_path = kwargs.pop("param_path")
-        if param_path is None:
-            param_path = heuristic_config.path_template.format(size=puzzle.size)
-
-        neural_config_override = kwargs.pop("neural_config")
-        final_neural_config = heuristic_config.neural_config.copy()
-        if neural_config_override is not None:
-            final_neural_config.update(json.loads(neural_config_override))
-        heuristic_config.neural_config = final_neural_config
-
-        heuristic: NeuralHeuristicBase = heuristic_config.callable(
-            puzzle=puzzle,
-            path=param_path,
-            init_params=reset,
-            **heuristic_config.neural_config,
+        result = _setup_neural_component(
+            puzzle_bundle,
+            puzzle,
+            puzzle_name,
+            "heuristic",
+            kwargs.pop("param_path"),
+            kwargs.pop("neural_config"),
+            reset,
         )
-        kwargs["heuristic"] = heuristic
-        kwargs["heuristic_config"] = heuristic_config
+        kwargs.update(result)
         return func(*args, **kwargs)
 
     return wrapper
@@ -705,32 +722,19 @@ def dist_qfunction_options(func: callable) -> callable:
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
+        puzzle_name = kwargs["puzzle_name"]
         reset = kwargs["train_options"].reset
 
-        q_config = puzzle_bundle.q_function_nn_config
-        if q_config is None:
-            raise click.UsageError(
-                f"Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
-            )
-
-        param_path = kwargs.pop("param_path")
-        if param_path is None:
-            param_path = q_config.path_template.format(size=puzzle.size)
-
-        neural_config_override = kwargs.pop("neural_config")
-        final_neural_config = q_config.neural_config.copy()
-        if neural_config_override is not None:
-            final_neural_config.update(json.loads(neural_config_override))
-        q_config.neural_config = final_neural_config
-
-        qfunction: NeuralQFunctionBase = q_config.callable(
-            puzzle=puzzle,
-            path=param_path,
-            init_params=reset,
-            **q_config.neural_config,
+        result = _setup_neural_component(
+            puzzle_bundle,
+            puzzle,
+            puzzle_name,
+            "q_function",
+            kwargs.pop("param_path"),
+            kwargs.pop("neural_config"),
+            reset,
         )
-        kwargs["qfunction"] = qfunction
-        kwargs["q_config"] = q_config
+        kwargs.update(result)
         return func(*args, **kwargs)
 
     return wrapper
@@ -746,7 +750,8 @@ def wm_get_ds_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        get_ds_opts = WMGetDSOptions(**{k: kwargs.pop(k) for k in WMGetDSOptions.model_fields})
+        get_ds_kwargs = map_kwargs_to_pydantic(WMGetDSOptions, kwargs)
+        get_ds_opts = WMGetDSOptions(**get_ds_kwargs)
         dataset_name = get_ds_opts.dataset
         wm_bundle = world_model_bundles[dataset_name]
         dataset_path = wm_bundle.dataset_path
@@ -776,9 +781,8 @@ def wm_get_world_model_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        wm_model_opts = WMGetModelOptions(
-            **{k: kwargs.pop(k) for k in WMGetModelOptions.model_fields}
-        )
+        wm_model_kwargs = map_kwargs_to_pydantic(WMGetModelOptions, kwargs)
+        wm_model_opts = WMGetModelOptions(**wm_model_kwargs)
         world_model_name = wm_model_opts.world_model
         wm_bundle = world_model_bundles[world_model_name]
         world_model = wm_bundle.world_model(reset=True)
@@ -801,7 +805,8 @@ def wm_train_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        wm_train_opts = WMTrainOptions(**{k: kwargs.pop(k) for k in WMTrainOptions.model_fields})
+        wm_train_kwargs = map_kwargs_to_pydantic(WMTrainOptions, kwargs)
+        wm_train_opts = WMTrainOptions(**wm_train_kwargs)
         kwargs["wm_train_options"] = wm_train_opts
         return func(*args, **kwargs)
 
@@ -829,9 +834,8 @@ def wm_dataset_options(func: callable) -> callable:
         puzzle_callable = wm_bundle.puzzle_for_ds_gen
         kwargs["puzzle"] = puzzle_callable()
 
-        wm_dataset_opts = WMDatasetOptions(
-            **{k: kwargs.pop(k) for k in WMDatasetOptions.model_fields}
-        )
+        wm_dataset_kwargs = map_kwargs_to_pydantic(WMDatasetOptions, kwargs)
+        wm_dataset_opts = WMDatasetOptions(**wm_dataset_kwargs)
         kwargs["wm_dataset_options"] = wm_dataset_opts
         return func(*args, **kwargs)
 

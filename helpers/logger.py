@@ -1,7 +1,9 @@
 import os
+import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Optional
 
 import aim
 import imageio.v2 as imageio
@@ -31,6 +33,47 @@ class BaseLogger(ABC):
         config_str = "\n".join([f"{key}: {value}" for key, value in self.config.items()])
         with open(os.path.join(self.log_dir, "config.txt"), "w") as f:
             f.write(config_str)
+
+    def _get_git_commit_hash(self) -> str:
+        try:
+            return subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return "N/A"
+
+    def _save_image_local(self, tag: str, image: np.ndarray, step: int):
+        safe_tag = tag.replace("/", "_").replace(" ", "_")
+        filename = f"{safe_tag}_step{step}.png"
+        filepath = os.path.join(self.log_dir, filename)
+
+        if image.dtype in [np.float32, np.float64]:
+            img_to_save = np.clip(image * 255, 0, 255).astype(np.uint8)
+        else:
+            img_to_save = image
+        imageio.imwrite(filepath, img_to_save)
+
+    def _save_artifact_local(
+        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+    ) -> Optional[str]:
+        if not os.path.exists(artifact_path):
+            print(f"Warning: Artifact path {artifact_path} does not exist")
+            return None
+
+        if artifact_name is None:
+            artifact_name = os.path.basename(artifact_path)
+
+        # Create artifacts subdirectory
+        artifacts_dir = os.path.join(self.log_dir, "artifacts", artifact_type)
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        # Copy artifact to artifacts directory
+        dest_path = os.path.join(artifacts_dir, artifact_name)
+        if os.path.isdir(artifact_path):
+            shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
+        else:
+            shutil.copy2(artifact_path, dest_path)
+
+        print(f"Artifact saved to: {dest_path}")
+        return dest_path
 
     @abstractmethod
     def _log_git_info(self):
@@ -81,13 +124,7 @@ class TensorboardLogger(BaseLogger):
         self.writer.add_text("Configuration", config_str)
 
     def _log_git_info(self):
-        try:
-            commit_hash = (
-                subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
-            )
-            self.writer.add_text("Git Commit", commit_hash)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            self.writer.add_text("Git Commit", "N/A")
+        self.writer.add_text("Git Commit", self._get_git_commit_hash())
 
     def log_scalar(self, tag: str, value: float, step: int):
         self.writer.add_scalar(tag, value, step)
@@ -98,14 +135,7 @@ class TensorboardLogger(BaseLogger):
     def log_image(self, tag: str, image, step: int, dataformats="HWC"):
         image = np.asarray(image)
         self.writer.add_image(tag, image, step, dataformats=dataformats)
-        safe_tag = tag.replace("/", "_").replace(" ", "_")
-        filename = f"{safe_tag}_step{step}.png"
-        filepath = os.path.join(self.log_dir, filename)
-        if image.dtype in [np.float32, np.float64]:
-            img_to_save = np.clip(image * 255, 0, 255).astype(np.uint8)
-        else:
-            img_to_save = image
-        imageio.imwrite(filepath, img_to_save)
+        self._save_image_local(tag, image, step)
 
     def log_text(self, tag: str, text: str, step: int = 0):
         self.writer.add_text(tag, text, step)
@@ -116,35 +146,11 @@ class TensorboardLogger(BaseLogger):
     def log_artifact(
         self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
     ):
-        """
-        Log artifact to tensorboard by copying to log directory.
-        TensorBoard doesn't have native artifact support, so we copy files to log directory.
-        """
-        import shutil
-
-        if not os.path.exists(artifact_path):
-            print(f"Warning: Artifact path {artifact_path} does not exist")
-            return
-
-        if artifact_name is None:
-            artifact_name = os.path.basename(artifact_path)
-
-        # Create artifacts subdirectory
-        artifacts_dir = os.path.join(self.log_dir, "artifacts", artifact_type)
-        os.makedirs(artifacts_dir, exist_ok=True)
-
-        # Copy artifact to artifacts directory
-        dest_path = os.path.join(artifacts_dir, artifact_name)
-        if os.path.isdir(artifact_path):
-            shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
-        else:
-            shutil.copy2(artifact_path, dest_path)
-
-        print(f"Artifact saved to: {dest_path}")
-
-        # Log artifact info as text
-        artifact_info = f"Artifact: {artifact_name}\nType: {artifact_type}\nPath: {dest_path}"
-        self.writer.add_text(f"Artifacts/{artifact_type}/{artifact_name}", artifact_info)
+        dest_path = self._save_artifact_local(artifact_path, artifact_name, artifact_type)
+        if dest_path:
+            artifact_name = artifact_name or os.path.basename(artifact_path)
+            artifact_info = f"Artifact: {artifact_name}\nType: {artifact_type}\nPath: {dest_path}"
+            self.writer.add_text(f"Artifacts/{artifact_type}/{artifact_name}", artifact_info)
 
     def close(self):
         self.writer.close()
@@ -171,15 +177,8 @@ class AimLogger(BaseLogger):
             self.aim_run["hparams"] = hparams
 
     def _log_git_info(self):
-        if not self.aim_run:
-            return
-        try:
-            commit_hash = (
-                subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
-            )
-            self.aim_run["git_commit"] = commit_hash
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            self.aim_run["git_commit"] = "N/A"
+        if self.aim_run:
+            self.aim_run["git_commit"] = self._get_git_commit_hash()
 
     def log_scalar(self, tag: str, value: float, step: int):
         if self.aim_run:
@@ -196,22 +195,15 @@ class AimLogger(BaseLogger):
                 )
 
     def log_image(self, tag: str, image, step: int, dataformats="HWC"):
+        image = np.asarray(image)
         if self.aim_run:
-            image = np.asarray(image)
             if dataformats == "HWC":
                 aim_image = image
             else:  # CHW
                 aim_image = np.transpose(image, (1, 2, 0))
             self.aim_run.track(aim.Image(aim_image), name=tag, step=step)
 
-        safe_tag = tag.replace("/", "_").replace(" ", "_")
-        filename = f"{safe_tag}_step{step}.png"
-        filepath = os.path.join(self.log_dir, filename)
-        if image.dtype in [np.float32, np.float64]:
-            img_to_save = np.clip(image * 255, 0, 255).astype(np.uint8)
-        else:
-            img_to_save = image
-        imageio.imwrite(filepath, img_to_save)
+        self._save_image_local(tag, image, step)
 
     def log_text(self, tag: str, text: str, step: int = 0):
         if self.aim_run:
@@ -230,34 +222,10 @@ class AimLogger(BaseLogger):
     def log_artifact(
         self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
     ):
-        """
-        Log artifact to Aim by copying to log directory and tracking metadata.
-        Aim doesn't have native artifact support, so we copy files and log metadata.
-        """
-        import shutil
+        dest_path = self._save_artifact_local(artifact_path, artifact_name, artifact_type)
 
-        if not os.path.exists(artifact_path):
-            print(f"Warning: Artifact path {artifact_path} does not exist")
-            return
-
-        if artifact_name is None:
-            artifact_name = os.path.basename(artifact_path)
-
-        # Create artifacts subdirectory
-        artifacts_dir = os.path.join(self.log_dir, "artifacts", artifact_type)
-        os.makedirs(artifacts_dir, exist_ok=True)
-
-        # Copy artifact to artifacts directory
-        dest_path = os.path.join(artifacts_dir, artifact_name)
-        if os.path.isdir(artifact_path):
-            shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
-        else:
-            shutil.copy2(artifact_path, dest_path)
-
-        print(f"Artifact saved to: {dest_path}")
-
-        # Log artifact metadata to Aim
-        if self.aim_run:
+        if self.aim_run and dest_path:
+            artifact_name = artifact_name or os.path.basename(artifact_path)
             artifact_info = {
                 "name": artifact_name,
                 "type": artifact_type,
@@ -310,15 +278,8 @@ class WandbLogger(BaseLogger):
             wandb.config.update(convert_to_serializable_dict(self.config), allow_val_change=True)
 
     def _log_git_info(self):
-        if not self.wandb_run:
-            return
-        try:
-            commit_hash = (
-                subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
-            )
-            wandb.config.update({"git_commit": commit_hash}, allow_val_change=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            wandb.config.update({"git_commit": "N/A"}, allow_val_change=True)
+        if self.wandb_run:
+            wandb.config.update({"git_commit": self._get_git_commit_hash()}, allow_val_change=True)
 
     def log_scalar(self, tag: str, value: float, step: int):
         if self.wandb_run:
@@ -335,22 +296,14 @@ class WandbLogger(BaseLogger):
                 )
 
     def log_image(self, tag: str, image, step: int, dataformats="HWC"):
+        image = np.asarray(image)
         if self.wandb_run:
-            image = np.asarray(image)
             if dataformats == "CHW":
                 # Convert CHW to HWC for wandb
                 image = np.transpose(image, (1, 2, 0))
             wandb.log({tag: wandb.Image(image)}, step=step)
 
-        # Also save image to local directory
-        safe_tag = tag.replace("/", "_").replace(" ", "_")
-        filename = f"{safe_tag}_step{step}.png"
-        filepath = os.path.join(self.log_dir, filename)
-        if image.dtype in [np.float32, np.float64]:
-            img_to_save = np.clip(image * 255, 0, 255).astype(np.uint8)
-        else:
-            img_to_save = image
-        imageio.imwrite(filepath, img_to_save)
+        self._save_image_local(tag, image, step)
 
     def log_text(self, tag: str, text: str, step: int = 0):
         if self.wandb_run:
@@ -374,13 +327,6 @@ class WandbLogger(BaseLogger):
         """
         Log artifact to Wandb using native artifact support.
         Wandb has excellent native artifact tracking capabilities.
-
-        Args:
-            artifact_path: Path to the artifact file or directory
-            artifact_name: Name for the artifact (defaults to basename of path)
-            artifact_type: Type of artifact (e.g., 'model', 'dataset', 'result')
-            metadata: Optional metadata dictionary to attach to the artifact
-            aliases: Optional list of aliases for versioning (e.g., ['latest', 'best'])
         """
         if not self.wandb_run:
             print("Warning: Wandb run not initialized, cannot log artifact")
@@ -394,7 +340,7 @@ class WandbLogger(BaseLogger):
             artifact_name = os.path.basename(artifact_path)
 
         if aliases is None:
-            aliases = ["latest"]  # Default to 'latest' alias for better versioning
+            aliases = ["latest"]
 
         try:
             # Create wandb artifact with optional metadata
@@ -423,16 +369,7 @@ class WandbLogger(BaseLogger):
         except Exception as e:
             print(f"Error logging artifact to Wandb: {e}")
             # Fallback: copy to local directory like other loggers
-            import shutil
-
-            artifacts_dir = os.path.join(self.log_dir, "artifacts", artifact_type)
-            os.makedirs(artifacts_dir, exist_ok=True)
-            dest_path = os.path.join(artifacts_dir, artifact_name)
-            if os.path.isdir(artifact_path):
-                shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
-            else:
-                shutil.copy2(artifact_path, dest_path)
-            print(f"Artifact saved locally to: {dest_path}")
+            self._save_artifact_local(artifact_path, artifact_name, artifact_type)
 
     def close(self):
         if self.wandb_run:

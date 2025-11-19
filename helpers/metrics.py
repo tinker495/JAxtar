@@ -59,3 +59,80 @@ def calculate_heuristic_metrics(results: List[Dict]) -> Optional[Dict[str, float
         ccc = 1.0
 
     return {"r_squared": r_squared, "ccc": ccc}
+
+
+def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
+    """Calculates benchmark-specific metrics (cost gap, action gap, optimal path matching)."""
+    metrics = {}
+
+    # --- Cost Metrics ---
+    solved_with_opt_cost = [
+        r
+        for r in results
+        if r.get("solved")
+        and r.get("benchmark_optimal_path_cost") is not None
+        and r.get("path_cost") is not None
+    ]
+
+    if solved_with_opt_cost:
+        avg_optimal = float(
+            sum(r["benchmark_optimal_path_cost"] for r in solved_with_opt_cost)
+            / len(solved_with_opt_cost)
+        )
+        path_costs = [r["path_cost"] for r in solved_with_opt_cost]
+        avg_path_cost = float(sum(path_costs) / len(path_costs)) if path_costs else None
+        cost_gap = avg_path_cost - avg_optimal if avg_path_cost is not None else None
+        metrics.update(
+            {
+                "avg_optimal_cost": avg_optimal,
+                "avg_path_cost": avg_path_cost,
+                "avg_cost_gap": cost_gap,
+                "solved_with_optimal_cost": len(solved_with_opt_cost),
+            }
+        )
+
+    # --- Length/Action Metrics ---
+    solved_with_opt_length = [
+        r
+        for r in results
+        if r.get("solved")
+        and r.get("benchmark_optimal_action_count") is not None
+        and r.get("path_action_count") is not None
+    ]
+
+    if solved_with_opt_length:
+        avg_opt_actions = float(
+            sum(r["benchmark_optimal_action_count"] for r in solved_with_opt_length)
+            / len(solved_with_opt_length)
+        )
+        avg_path_actions = float(
+            sum(r["path_action_count"] for r in solved_with_opt_length)
+            / len(solved_with_opt_length)
+        )
+        action_gap = avg_path_actions - avg_opt_actions
+        metrics.update(
+            {
+                "avg_optimal_actions": avg_opt_actions,
+                "avg_path_actions": avg_path_actions,
+                "avg_action_gap": action_gap,
+                "solved_with_optimal_length": len(solved_with_opt_length),
+            }
+        )
+
+        # --- Optimal Path Matching ---
+        matches = [
+            r["matches_optimal_path"]
+            for r in solved_with_opt_length
+            if r.get("matches_optimal_path") is not None
+        ]
+        if matches:
+            exact_matches = sum(1 for m in matches if m)
+            match_rate = exact_matches / len(matches)
+            metrics.update(
+                {
+                    "exact_optimal_path_rate": match_rate,
+                    "exact_optimal_path_count": exact_matches,
+                }
+            )
+
+    return metrics

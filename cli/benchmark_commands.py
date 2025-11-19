@@ -14,7 +14,7 @@ from JAxtar.stars.astar import astar_builder
 from JAxtar.stars.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
-from .eval_commands import _run_evaluation_sweep
+from .evaluation_runner import run_evaluation_sweep
 from .options import benchmark_options, eval_options
 
 
@@ -100,7 +100,7 @@ def _run_benchmark(
     logger=None,
     step: int = 0,
 ) -> None:
-    _run_evaluation_sweep(
+    run_evaluation_sweep(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
         search_model=search_model,

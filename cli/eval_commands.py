@@ -1,6 +1,5 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, Union
 
 import click
 import matplotlib
@@ -8,9 +7,6 @@ from puxle import Puzzle
 from rich.console import Console
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
-from helpers.config_printer import print_config
-from helpers.logger import BaseLogger
-from helpers.util import tee_console
 from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
@@ -19,7 +15,7 @@ from JAxtar.stars.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
-from .evaluation_runner import EvaluationRunner
+from .evaluation_runner import run_evaluation_sweep
 from .options import (
     eval_options,
     eval_puzzle_options,
@@ -36,48 +32,6 @@ def evaluation():
     pass
 
 
-def _run_evaluation_sweep(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    search_model: Union[Heuristic, QFunction],
-    search_model_name: str,
-    search_builder_fn: Callable,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    run_label: Optional[str] = None,
-    output_dir: Optional[Path] = None,
-    logger: Optional[BaseLogger] = None,
-    step: int = 0,
-    **kwargs,
-):
-    runner = EvaluationRunner(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=search_model,
-        search_model_name=search_model_name,
-        run_label=run_label,
-        search_builder_fn=search_builder_fn,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        output_dir=output_dir,
-        logger=logger,
-        step=step,
-        **kwargs,
-    )
-
-    with tee_console(runner.log_path):
-        print_config(
-            "Evaluation Configuration",
-            {
-                "puzzle_options": puzzle_opts.dict(),
-                search_model_name: search_model.__class__.__name__,
-                f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
-                "eval_options": eval_options.dict(),
-            },
-        )
-        runner.run()
-
-
 @evaluation.command(name="astar")
 @eval_puzzle_options
 @eval_options
@@ -91,7 +45,7 @@ def eval_astar(
     **kwargs,
 ):
     """Evaluate a heuristic-driven A* search with optional parameter sweeps."""
-    _run_evaluation_sweep(
+    run_evaluation_sweep(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
         search_model=heuristic,
@@ -117,7 +71,7 @@ def eval_beam(
     **kwargs,
 ):
     """Evaluate a heuristic-driven beam search with optional parameter sweeps."""
-    _run_evaluation_sweep(
+    run_evaluation_sweep(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
         search_model=heuristic,
@@ -144,7 +98,7 @@ def eval_qstar(
     **kwargs,
 ):
     """Evaluate a Q*-style search with optional parameter sweeps."""
-    _run_evaluation_sweep(
+    run_evaluation_sweep(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
         search_model=qfunction,
@@ -170,7 +124,7 @@ def eval_qbeam(
     **kwargs,
 ):
     """Evaluate a Q-beam search with optional parameter sweeps."""
-    _run_evaluation_sweep(
+    run_evaluation_sweep(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
         search_model=qfunction,

@@ -1,5 +1,6 @@
 from . import plots, summaries
 from .artifact_manager import ArtifactManager
+from .capture import tee_console
 from .config_printer import print_config
 from .formatting import (
     heuristic_dist_format,
@@ -11,14 +12,12 @@ from .formatting import (
 from .logger import AimLogger, BaseLogger, NoOpLogger, TensorboardLogger, create_logger
 from .metrics import calculate_heuristic_metrics
 from .rich_progress import RichProgressBar, tqdm, trange
+from .search_utils import vmapping_get_state, vmapping_init_target, vmapping_search
 from .util import (
     convert_to_serializable_dict,
     display_value,
     flatten_dict,
     make_hashable,
-    vmapping_get_state,
-    vmapping_init_target,
-    vmapping_search,
 )
 from .visualization import (
     build_human_play_layout,
@@ -54,12 +53,15 @@ __all__ = [
     "trange",
     # Util
     "convert_to_serializable_dict",
-    "vmapping_search",
-    "vmapping_init_target",
-    "vmapping_get_state",
     "flatten_dict",
     "make_hashable",
     "display_value",
+    # Search Util
+    "vmapping_search",
+    "vmapping_init_target",
+    "vmapping_get_state",
+    # Capture
+    "tee_console",
     # ArtifactManager
     "ArtifactManager",
     # Visualization

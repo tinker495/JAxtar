@@ -1,8 +1,9 @@
 import click
 
 from .benchmark_commands import benchmark
-from .commands import astar, beam, human_play, qbeam, qstar
+from .commands import astar, beam, qbeam, qstar
 from .eval_commands import evaluation
+from .human_play import human_play
 from .train_commands import distance_train, world_model_train
 
 

@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from helpers.formatting import human_format
 from JAxtar.annotate import ACTION_DTYPE
 
 ACTION_PAD_INT = int(np.iinfo(np.dtype(ACTION_DTYPE)).max)
@@ -133,8 +134,13 @@ def build_result_table(
     generated_size: int,
     states_per_second: float,
     solved_cost: float | None,
+    seed: int | None = None,
 ) -> Table:
-    result_table = Table(title="[bold]Search Result[/bold]")
+    title = "[bold]Search Result[/bold]"
+    if seed is not None:
+        title = f"[bold]Search Result for Seed {seed}[/bold]"
+
+    result_table = Table(title=title)
     result_table.add_column("Metric", style="cyan")
     result_table.add_column("Value", justify="right")
     if solved:
@@ -145,9 +151,60 @@ def build_result_table(
         result_table.add_row("Status", "[bold red]No Solution Found[/bold red]")
 
     result_table.add_row("Search Time", f"{single_search_time:.2f} s")
-    result_table.add_row("Search States", f"{generated_size}")
-    result_table.add_row("States/s", f"{states_per_second:.2f}")
+    result_table.add_row(
+        "Search States",
+        f"{human_format(generated_size)}",
+    )
+    result_table.add_row("States/s", f"{human_format(states_per_second)}")
     return result_table
+
+
+def build_summary_table(
+    puzzle_name: str,
+    seeds: List[int],
+    total_solved: List[bool],
+    total_search_times: List[float],
+    total_states: List[int],
+    states_per_sec_list: List[float],
+    total_costs: List[float],
+) -> Table:
+    summary_table = Table(title=f"[bold]Summary for {puzzle_name} ({len(seeds)} seeds)[/bold]")
+    summary_table.add_column("Seed", justify="right", style="cyan")
+    summary_table.add_column("Solved", justify="center")
+    summary_table.add_column("Search Time (s)", justify="right")
+    summary_table.add_column("Num States", justify="right")
+    summary_table.add_column("States/s", justify="right")
+    summary_table.add_column("Cost", justify="right")
+
+    for i, seed in enumerate(seeds):
+        summary_table.add_row(
+            str(seed),
+            "[green]Yes[/green]" if total_solved[i] else "[red]No[/red]",
+            f"{total_search_times[i]:.2f}",
+            human_format(total_states[i]),
+            human_format(states_per_sec_list[i]),
+            f"{total_costs[i]:.1f}" if total_solved[i] else "N/A",
+        )
+
+    summary_table.add_section()
+
+    avg_solved = jnp.mean(jnp.array(total_solved)) * 100
+    avg_time = jnp.mean(jnp.array(total_search_times))
+    avg_states = jnp.mean(jnp.array(total_states))
+    avg_sps = jnp.mean(jnp.array(states_per_sec_list))
+
+    valid_costs = [c for c in total_costs if c != jnp.inf]
+    avg_cost = jnp.mean(jnp.array(valid_costs)) if valid_costs else 0.0
+
+    summary_table.add_row(
+        "[bold]Average[/bold]",
+        f"{avg_solved:.1f}%",
+        f"{avg_time:.2f}",
+        human_format(avg_states),
+        human_format(avg_sps),
+        f"{avg_cost:.1f}",
+    )
+    return summary_table
 
 
 @dataclass
@@ -435,6 +492,7 @@ def build_vmapped_results_table_single(
     vmap_size: int,
     search_states: int,
     vmapped_states_per_second: float,
+    states_per_second: float,
     solved_mean: float,
 ) -> Table:
     table = Table(title="[bold]Vmapped Search Result[/bold]")
@@ -446,8 +504,8 @@ def build_vmapped_results_table_single(
     )
     table.add_row(
         "Search States",
-        f"{int(search_states)} ({vmapped_states_per_second:.2f} states/s)",
+        f"{human_format(int(search_states))} ({human_format(vmapped_states_per_second)} states/s)",
     )
-    table.add_row("Speedup", f"x{vmapped_states_per_second:.1f}")
+    table.add_row("Speedup", f"x{vmapped_states_per_second/states_per_second:.1f}")
     table.add_row("Solutions Found", f"{solved_mean*100:.2f}%")
     return table

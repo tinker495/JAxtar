@@ -9,15 +9,16 @@ import numpy as np
 import pandas as pd
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from puxle.benchmark import Benchmark, BenchmarkSample
+from puxle.benchmark import Benchmark
 from rich.console import Console
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers import human_format
 from helpers.artifact_manager import ArtifactManager
+from helpers.capture import tee_console
 from helpers.config_printer import print_config
 from helpers.logger import BaseLogger
-from helpers.metrics import calculate_heuristic_metrics
+from helpers.metrics import calculate_benchmark_metrics, calculate_heuristic_metrics
 from helpers.plots import (
     plot_benchmark_path_comparison,
     plot_expansion_distribution,
@@ -182,84 +183,37 @@ class EvaluationRunner:
                 config["heuristic_metrics"] = heuristic_metrics
 
             if self.benchmark is not None:
-                benchmark_metrics = {}
-
-                solved_with_opt_cost = [
-                    r
-                    for r in results
-                    if r.get("solved")
-                    and r.get("benchmark_optimal_path_cost") is not None
-                    and r.get("path_cost") is not None
-                ]
-                if solved_with_opt_cost:
-                    avg_optimal = float(
-                        sum(r["benchmark_optimal_path_cost"] for r in solved_with_opt_cost)
-                        / len(solved_with_opt_cost)
-                    )
-                    path_costs = [r["path_cost"] for r in solved_with_opt_cost]
-                    avg_path_cost = float(sum(path_costs) / len(path_costs)) if path_costs else None
-                    cost_gap = avg_path_cost - avg_optimal if avg_path_cost is not None else None
-                    benchmark_metrics.update(
-                        {
-                            "avg_optimal_cost": avg_optimal,
-                            "avg_path_cost": avg_path_cost,
-                            "avg_cost_gap": cost_gap,
-                            "solved_with_optimal_cost": len(solved_with_opt_cost),
-                        }
-                    )
-                    am.log_scalar("benchmark/avg_optimal_cost", avg_optimal)
-                    if avg_path_cost is not None:
-                        am.log_scalar("benchmark/avg_path_cost", avg_path_cost)
-                    if cost_gap is not None:
-                        am.log_scalar("benchmark/avg_cost_gap", cost_gap)
-
-                solved_with_opt_length = [
-                    r
-                    for r in results
-                    if r.get("solved")
-                    and r.get("benchmark_optimal_action_count") is not None
-                    and r.get("path_action_count") is not None
-                ]
-                if solved_with_opt_length:
-                    avg_opt_actions = float(
-                        sum(r["benchmark_optimal_action_count"] for r in solved_with_opt_length)
-                        / len(solved_with_opt_length)
-                    )
-                    avg_path_actions = float(
-                        sum(r["path_action_count"] for r in solved_with_opt_length)
-                        / len(solved_with_opt_length)
-                    )
-                    action_gap = avg_path_actions - avg_opt_actions
-                    benchmark_metrics.update(
-                        {
-                            "avg_optimal_actions": avg_opt_actions,
-                            "avg_path_actions": avg_path_actions,
-                            "avg_action_gap": action_gap,
-                            "solved_with_optimal_length": len(solved_with_opt_length),
-                        }
-                    )
-                    am.log_scalar("benchmark/avg_optimal_actions", avg_opt_actions)
-                    am.log_scalar("benchmark/avg_path_actions", avg_path_actions)
-                    am.log_scalar("benchmark/avg_action_gap", action_gap)
-
-                    matches = [
-                        r["matches_optimal_path"]
-                        for r in solved_with_opt_length
-                        if r.get("matches_optimal_path") is not None
-                    ]
-                    if matches:
-                        exact_matches = sum(1 for m in matches if m)
-                        match_rate = exact_matches / len(matches)
-                        benchmark_metrics.update(
-                            {
-                                "exact_optimal_path_rate": match_rate,
-                                "exact_optimal_path_count": exact_matches,
-                            }
-                        )
-                        am.log_scalar("benchmark/exact_optimal_path_rate", match_rate)
-
+                benchmark_metrics = calculate_benchmark_metrics(results)
                 if benchmark_metrics:
                     config["benchmark_metrics"] = benchmark_metrics
+
+                    # Log metrics to artifact manager
+                    if "avg_optimal_cost" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/avg_optimal_cost", benchmark_metrics["avg_optimal_cost"]
+                        )
+                    if "avg_path_cost" in benchmark_metrics:
+                        am.log_scalar("benchmark/avg_path_cost", benchmark_metrics["avg_path_cost"])
+                    if "avg_cost_gap" in benchmark_metrics:
+                        am.log_scalar("benchmark/avg_cost_gap", benchmark_metrics["avg_cost_gap"])
+                    if "avg_optimal_actions" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/avg_optimal_actions",
+                            benchmark_metrics["avg_optimal_actions"],
+                        )
+                    if "avg_path_actions" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/avg_path_actions", benchmark_metrics["avg_path_actions"]
+                        )
+                    if "avg_action_gap" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/avg_action_gap", benchmark_metrics["avg_action_gap"]
+                        )
+                    if "exact_optimal_path_rate" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/exact_optimal_path_rate",
+                            benchmark_metrics["exact_optimal_path_rate"],
+                        )
 
             am.save_config(config)
             am.save_results(results)
@@ -367,6 +321,201 @@ class EvaluationRunner:
         self._selected_benchmark_ids = selected
         return selected
 
+    def _evaluate_single_sample(
+        self,
+        identifier: int,
+        search_fn,
+        heuristic_model,
+        qfunction_model,
+    ) -> dict:
+        if self.benchmark is not None:
+            sample_id = identifier
+            benchmark_sample = self.benchmark.get_sample(sample_id)
+            solve_config = benchmark_sample.solve_config
+            state = benchmark_sample.state
+            run_identifier = sample_id
+        else:
+            seed = int(identifier)
+            solve_config, state = self.puzzle.get_inits(jax.random.PRNGKey(seed))
+            run_identifier = seed
+
+        start_time = time.time()
+        search_result = search_fn(solve_config, state)
+        solved = bool(search_result.solved.block_until_ready())
+        end_time = time.time()
+
+        search_time = end_time - start_time
+        generated_nodes = int(search_result.generated_size)
+
+        result_item = {
+            "seed": run_identifier,
+            "solved": solved,
+            "search_time_s": search_time,
+            "nodes_generated": generated_nodes,
+            "node_metric_label": self.node_metric_label,
+            "path_cost": 0,
+            "path_analysis": None,
+            "expansion_analysis": None,
+            "path_state_count": None,
+            "path_action_count": None,
+            "matches_optimal_path": None,
+            "path_actions": None,
+            "path_action_strings": None,
+        }
+
+        if self.benchmark is not None:
+            result_item["benchmark_sample_id"] = run_identifier
+            benchmark_sample = self.benchmark.get_sample(run_identifier)
+            optimal_path_cost = getattr(benchmark_sample, "optimal_path_cost", None)
+            if optimal_path_cost is None:
+                optimal_path_cost = getattr(benchmark_sample, "optimal_path_costs", None)
+            if optimal_path_cost is not None:
+                result_item["benchmark_optimal_path_cost"] = float(optimal_path_cost)
+            optimal_path = getattr(benchmark_sample, "optimal_path", None)
+            if optimal_path is not None:
+                optimal_state_count = len(optimal_path)
+                result_item["benchmark_optimal_path_state_count"] = optimal_state_count
+                if optimal_state_count > 0:
+                    result_item["benchmark_optimal_path_length"] = max(0, optimal_state_count - 1)
+            optimal_action_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
+            if optimal_action_sequence is not None:
+                if not isinstance(optimal_action_sequence, (list, tuple)):
+                    optimal_action_sequence = list(optimal_action_sequence)
+                optimal_actions: list[int | str] = []
+                for action_val in optimal_action_sequence:
+                    if isinstance(action_val, str):
+                        optimal_actions.append(action_val)
+                    else:
+                        optimal_actions.append(int(action_val))
+                result_item["benchmark_optimal_action_sequence"] = optimal_actions
+                result_item["benchmark_optimal_action_count"] = len(optimal_actions)
+            elif optimal_path is not None:
+                result_item["benchmark_optimal_action_count"] = max(0, len(optimal_path) - 1)
+
+        if solved:
+            if hasattr(search_result, "solution_trace"):
+                (
+                    states_trace,
+                    costs_trace,
+                    dists_trace,
+                    actions_trace,
+                ) = search_result.solution_trace()
+                path_steps = build_path_steps_from_actions(
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    actions=actions_trace,
+                    heuristic=heuristic_model,
+                    q_fn=qfunction_model,
+                    states=states_trace,
+                    costs=costs_trace,
+                    dists=dists_trace,
+                )
+            elif hasattr(search_result, "solution_actions"):
+                actions = search_result.solution_actions()
+                path_steps = build_path_steps_from_actions(
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    actions=actions,
+                    heuristic=heuristic_model,
+                    q_fn=qfunction_model,
+                )
+            else:
+                path = search_result.get_solved_path()
+                path_steps = build_path_steps_from_nodes(
+                    search_result=search_result,
+                    path=path,
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                )
+
+            path_cost = path_steps[-1].cost if path_steps else 0.0
+            result_item["path_cost"] = float(path_cost)
+            path_state_count = len(path_steps)
+            result_item["path_state_count"] = path_state_count
+            result_item["path_action_count"] = max(0, path_state_count - 1)
+            actual_actions = [
+                int(step.action) for step in path_steps[:-1] if step.action is not None
+            ]
+            result_item["path_actions"] = actual_actions
+
+            states = [step.state for step in path_steps]
+            actual_dists = []
+            estimated_dists = []
+            for step in path_steps:
+                actual_dist = float(path_cost - step.cost)
+                estimated_dist = float(step.dist) if step.dist is not None else np.inf
+
+                if np.isfinite(estimated_dist):
+                    actual_dists.append(actual_dist)
+                    estimated_dists.append(estimated_dist)
+
+            if states:
+                result_item["path_analysis"] = {
+                    "actual": actual_dists,
+                    "estimated": estimated_dists,
+                    "states": xnp.concatenate(states),
+                    "actions": actual_actions,
+                }
+
+            if (
+                self.benchmark is not None
+                and result_item.get("benchmark_optimal_action_count") is not None
+            ):
+                optimal_actions = getattr(benchmark_sample, "optimal_action_sequence", None)
+                optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
+                if optimal_actions is not None and optimal_sequence is None:
+                    if not isinstance(optimal_actions, (list, tuple)):
+                        optimal_actions = list(optimal_actions)
+                    optimal_sequence = []
+                    for action_val in optimal_actions:
+                        if isinstance(action_val, str):
+                            optimal_sequence.append(action_val)
+                        else:
+                            optimal_sequence.append(int(action_val))
+                    result_item["benchmark_optimal_action_sequence"] = optimal_sequence
+
+                if optimal_sequence:
+                    first_opt = optimal_sequence[0]
+                    if isinstance(first_opt, str):
+                        actual_action_labels = []
+                        for action_id in actual_actions:
+                            try:
+                                label = self.puzzle.action_to_string(action_id)
+                            except (AttributeError, ValueError, IndexError):
+                                label = str(action_id)
+                            actual_action_labels.append(label)
+                        result_item["path_action_strings"] = actual_action_labels
+                        result_item["matches_optimal_path"] = actual_action_labels == list(
+                            optimal_sequence
+                        )
+                    else:
+                        optimal_ints = [int(a) for a in optimal_sequence]
+                        result_item["matches_optimal_path"] = actual_actions == optimal_ints
+                elif result_item["path_action_count"] is not None:
+                    expected_count = result_item["benchmark_optimal_action_count"]
+                    result_item["matches_optimal_path"] = (
+                        result_item["path_action_count"] == expected_count
+                    )
+
+        # Extract expansion data for plotting node value distributions
+        if hasattr(search_result, "pop_generation"):
+            expanded_nodes_mask = search_result.pop_generation > -1
+            # Use np.asarray to handle potential JAX arrays on different devices
+            if np.any(np.asarray(expanded_nodes_mask)):
+                pop_generations = np.asarray(search_result.pop_generation[expanded_nodes_mask])
+                costs = np.asarray(search_result.cost[expanded_nodes_mask])
+                dists = np.asarray(search_result.dist[expanded_nodes_mask])
+
+                if pop_generations.size > 0:
+                    result_item["expansion_analysis"] = {
+                        "pop_generation": pop_generations,
+                        "cost": costs,
+                        "dist": dists,
+                    }
+        return result_item
+
     def _run_evaluation(
         self,
         search_fn,
@@ -387,194 +536,12 @@ class EvaluationRunner:
         for i in pbar:
             identifier = eval_inputs[i]
 
-            if self.benchmark is not None:
-                sample_id = identifier
-                benchmark_sample: BenchmarkSample = self.benchmark.get_sample(sample_id)
-                solve_config = benchmark_sample.solve_config
-                state = benchmark_sample.state
-                run_identifier = sample_id
-            else:
-                seed = int(identifier)
-                solve_config, state = puzzle.get_inits(jax.random.PRNGKey(seed))
-                run_identifier = seed
-
-            start_time = time.time()
-            search_result = search_fn(solve_config, state)
-            solved = bool(search_result.solved.block_until_ready())
-            end_time = time.time()
-
-            search_time = end_time - start_time
-            generated_nodes = int(search_result.generated_size)
-
-            result_item = {
-                "seed": run_identifier,
-                "solved": solved,
-                "search_time_s": search_time,
-                "nodes_generated": generated_nodes,
-                "node_metric_label": self.node_metric_label,
-                "path_cost": 0,
-                "path_analysis": None,
-                "expansion_analysis": None,
-                "path_state_count": None,
-                "path_action_count": None,
-                "matches_optimal_path": None,
-                "path_actions": None,
-                "path_action_strings": None,
-            }
-
-            if self.benchmark is not None:
-                result_item["benchmark_sample_id"] = run_identifier
-                benchmark_sample = self.benchmark.get_sample(run_identifier)
-                optimal_path_cost = getattr(benchmark_sample, "optimal_path_cost", None)
-                if optimal_path_cost is None:
-                    optimal_path_cost = getattr(benchmark_sample, "optimal_path_costs", None)
-                if optimal_path_cost is not None:
-                    result_item["benchmark_optimal_path_cost"] = float(optimal_path_cost)
-                optimal_path = getattr(benchmark_sample, "optimal_path", None)
-                if optimal_path is not None:
-                    optimal_state_count = len(optimal_path)
-                    result_item["benchmark_optimal_path_state_count"] = optimal_state_count
-                    if optimal_state_count > 0:
-                        result_item["benchmark_optimal_path_length"] = max(
-                            0, optimal_state_count - 1
-                        )
-                optimal_action_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
-                if optimal_action_sequence is not None:
-                    if not isinstance(optimal_action_sequence, (list, tuple)):
-                        optimal_action_sequence = list(optimal_action_sequence)
-                    optimal_actions: list[int | str] = []
-                    for action_val in optimal_action_sequence:
-                        if isinstance(action_val, str):
-                            optimal_actions.append(action_val)
-                        else:
-                            optimal_actions.append(int(action_val))
-                    result_item["benchmark_optimal_action_sequence"] = optimal_actions
-                    result_item["benchmark_optimal_action_count"] = len(optimal_actions)
-                elif optimal_path is not None:
-                    result_item["benchmark_optimal_action_count"] = max(0, len(optimal_path) - 1)
-
-            if solved:
-                if hasattr(search_result, "solution_trace"):
-                    (
-                        states_trace,
-                        costs_trace,
-                        dists_trace,
-                        actions_trace,
-                    ) = search_result.solution_trace()
-                    path_steps = build_path_steps_from_actions(
-                        puzzle=puzzle,
-                        solve_config=solve_config,
-                        initial_state=state,
-                        actions=actions_trace,
-                        heuristic=heuristic_model,
-                        q_fn=qfunction_model,
-                        states=states_trace,
-                        costs=costs_trace,
-                        dists=dists_trace,
-                    )
-                elif hasattr(search_result, "solution_actions"):
-                    actions = search_result.solution_actions()
-                    path_steps = build_path_steps_from_actions(
-                        puzzle=puzzle,
-                        solve_config=solve_config,
-                        initial_state=state,
-                        actions=actions,
-                        heuristic=heuristic_model,
-                        q_fn=qfunction_model,
-                    )
-                else:
-                    path = search_result.get_solved_path()
-                    path_steps = build_path_steps_from_nodes(
-                        search_result=search_result,
-                        path=path,
-                        puzzle=puzzle,
-                        solve_config=solve_config,
-                    )
-
-                path_cost = path_steps[-1].cost if path_steps else 0.0
-                result_item["path_cost"] = float(path_cost)
-                path_state_count = len(path_steps)
-                result_item["path_state_count"] = path_state_count
-                result_item["path_action_count"] = max(0, path_state_count - 1)
-                actual_actions = [
-                    int(step.action) for step in path_steps[:-1] if step.action is not None
-                ]
-                result_item["path_actions"] = actual_actions
-
-                states = [step.state for step in path_steps]
-                actual_dists = []
-                estimated_dists = []
-                for step in path_steps:
-                    actual_dist = float(path_cost - step.cost)
-                    estimated_dist = float(step.dist) if step.dist is not None else np.inf
-
-                    if np.isfinite(estimated_dist):
-                        actual_dists.append(actual_dist)
-                        estimated_dists.append(estimated_dist)
-
-                if states:
-                    result_item["path_analysis"] = {
-                        "actual": actual_dists,
-                        "estimated": estimated_dists,
-                        "states": xnp.concatenate(states),
-                        "actions": actual_actions,
-                    }
-
-                if (
-                    self.benchmark is not None
-                    and result_item.get("benchmark_optimal_action_count") is not None
-                ):
-                    optimal_actions = getattr(benchmark_sample, "optimal_action_sequence", None)
-                    optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
-                    if optimal_actions is not None and optimal_sequence is None:
-                        if not isinstance(optimal_actions, (list, tuple)):
-                            optimal_actions = list(optimal_actions)
-                        optimal_sequence = []
-                        for action_val in optimal_actions:
-                            if isinstance(action_val, str):
-                                optimal_sequence.append(action_val)
-                            else:
-                                optimal_sequence.append(int(action_val))
-                        result_item["benchmark_optimal_action_sequence"] = optimal_sequence
-
-                    if optimal_sequence:
-                        first_opt = optimal_sequence[0]
-                        if isinstance(first_opt, str):
-                            actual_action_labels = []
-                            for action_id in actual_actions:
-                                try:
-                                    label = puzzle.action_to_string(action_id)
-                                except (AttributeError, ValueError, IndexError):
-                                    label = str(action_id)
-                                actual_action_labels.append(label)
-                            result_item["path_action_strings"] = actual_action_labels
-                            result_item["matches_optimal_path"] = actual_action_labels == list(
-                                optimal_sequence
-                            )
-                        else:
-                            optimal_ints = [int(a) for a in optimal_sequence]
-                            result_item["matches_optimal_path"] = actual_actions == optimal_ints
-                    elif result_item["path_action_count"] is not None:
-                        expected_count = result_item["benchmark_optimal_action_count"]
-                        result_item["matches_optimal_path"] = (
-                            result_item["path_action_count"] == expected_count
-                        )
-
-            # Extract expansion data for plotting node value distributions
-            if hasattr(search_result, "pop_generation"):
-                expanded_nodes_mask = search_result.pop_generation > -1
-                # Use np.asarray to handle potential JAX arrays on different devices
-                if np.any(np.asarray(expanded_nodes_mask)):
-                    pop_generations = np.asarray(search_result.pop_generation[expanded_nodes_mask])
-                    costs = np.asarray(search_result.cost[expanded_nodes_mask])
-                    dists = np.asarray(search_result.dist[expanded_nodes_mask])
-
-                    if pop_generations.size > 0:
-                        result_item["expansion_analysis"] = {
-                            "pop_generation": pop_generations,
-                            "cost": costs,
-                            "dist": dists,
-                        }
+            result_item = self._evaluate_single_sample(
+                identifier=identifier,
+                search_fn=search_fn,
+                heuristic_model=heuristic_model,
+                qfunction_model=qfunction_model,
+            )
 
             results.append(result_item)
 
@@ -650,3 +617,45 @@ class EvaluationRunner:
                     break
 
         return results
+
+
+def run_evaluation_sweep(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    search_model: Union[Heuristic, QFunction],
+    search_model_name: str,
+    search_builder_fn: Callable,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    run_label: Optional[str] = None,
+    output_dir: Optional[Path] = None,
+    logger: Optional[BaseLogger] = None,
+    step: int = 0,
+    **kwargs,
+):
+    runner = EvaluationRunner(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=search_model,
+        search_model_name=search_model_name,
+        run_label=run_label,
+        search_builder_fn=search_builder_fn,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        output_dir=output_dir,
+        logger=logger,
+        step=step,
+        **kwargs,
+    )
+
+    with tee_console(runner.log_path):
+        print_config(
+            "Evaluation Configuration",
+            {
+                "puzzle_options": puzzle_opts.dict(),
+                search_model_name: search_model.__class__.__name__,
+                f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
+                "eval_options": eval_options.dict(),
+            },
+        )
+        runner.run()

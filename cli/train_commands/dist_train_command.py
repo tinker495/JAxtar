@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from puxle import Puzzle
 
-from cli.eval_commands import _run_evaluation_sweep
+from cli.evaluation_runner import run_evaluation_sweep
 from config.pydantic_models import (
     DistTrainOptions,
     EvalOptions,
@@ -207,7 +207,7 @@ def davi(
                 light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pbar.pause():
-                    _run_evaluation_sweep(
+                    run_evaluation_sweep(
                         puzzle=puzzle,
                         puzzle_name=puzzle_name,
                         search_model=heuristic,
@@ -231,7 +231,7 @@ def davi(
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         with pbar.pause():
-            _run_evaluation_sweep(
+            run_evaluation_sweep(
                 puzzle=puzzle,
                 puzzle_name=puzzle_name,
                 search_model=heuristic,
@@ -436,7 +436,7 @@ def qlearning(
                 light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pbar.pause():
-                    _run_evaluation_sweep(
+                    run_evaluation_sweep(
                         puzzle=puzzle,
                         puzzle_name=puzzle_name,
                         search_model=qfunction,
@@ -460,7 +460,7 @@ def qlearning(
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         with pbar.pause():
-            _run_evaluation_sweep(
+            run_evaluation_sweep(
                 puzzle=puzzle,
                 puzzle_name=puzzle_name,
                 search_model=qfunction,
