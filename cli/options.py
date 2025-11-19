@@ -572,6 +572,19 @@ def dist_train_options(func: callable) -> callable:
         help="Enable diffusion distance features in dataset creation.",
     )
     @click.option(
+        "-ddw",
+        "--use_diffusion_distance_warmup",
+        is_flag=True,
+        default=None,
+        help="Enable diffusion distance features in dataset creation during warmup.",
+    )
+    @click.option(
+        "--diffusion_distance_warmup_steps",
+        type=int,
+        default=None,
+        help="Number of steps for diffusion distance warmup.",
+    )
+    @click.option(
         "-tp",
         "--temperature",
         type=float,

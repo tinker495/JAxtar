@@ -441,6 +441,52 @@ def _get_datasets_with_diffusion_distance(
     use_double_dqn: bool = False,
 ):
     trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
+    solve_configs = shuffled_path["solve_configs"]
+    states = shuffled_path["states"]
+    solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
+        solveconfigs=solve_configs,
+        states=states,
+        actions=trajectory_actions,
+    )
+    cost = shuffled_path["move_costs_tm1"]
+    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
+        val=solve_configs_and_states_and_actions,
+        key=cost,
+        return_index=True,
+        return_inverse=True,
+    )
+    cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]  # [dataset_size, 1]
+    dataset_size = solve_configs.shape[0]
+    zeros = jnp.zeros(dataset_size)
+    return {
+        "solveconfigs": solve_configs,
+        "states": states,
+        "target_q": cost,
+        "actions": trajectory_actions,
+        "diff": zeros,
+        "action_entropy": zeros,
+        "action_entropy_max": zeros,
+        "target_entropy": zeros,
+        "target_entropy_max": zeros,
+        "cost": cost.reshape((-1,)),
+    }
+
+
+def _get_datasets_with_diffusion_distance_mixture(
+    puzzle: Puzzle,
+    preproc_fn: Callable,
+    SolveConfigsAndStatesAndActions: Xtructurable,
+    q_model: QModelBase,
+    minibatch_size: int,
+    target_q_params: Any,
+    q_params: Any,
+    shuffled_path: dict[str, chex.Array],
+    key: chex.PRNGKey,
+    temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
+    use_double_dqn: bool = False,
+):
+    trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
     return_dict = _get_datasets_with_policy(
         puzzle,
         preproc_fn,
@@ -499,6 +545,8 @@ def get_qlearning_dataset_builder(
     td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
     use_diffusion_distance: bool = False,
+    use_diffusion_distance_warmup: bool = False,
+    diffusion_distance_warmup_steps: int = 1000,
     non_backtracking_steps: int = 3,
 ):
     if non_backtracking_steps < 0:
@@ -542,15 +590,14 @@ def get_qlearning_dataset_builder(
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
-    if use_diffusion_distance:
+    @xtructure_dataclass
+    class SolveConfigsAndStatesAndActions:
+        solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
+        states: FieldDescriptor.scalar(dtype=puzzle.State)
+        actions: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))
 
-        @xtructure_dataclass
-        class SolveConfigsAndStatesAndActions:
-            solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-            states: FieldDescriptor.scalar(dtype=puzzle.State)
-            actions: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))
-
-        jited_get_datasets = jax.jit(
+    if use_diffusion_distance_warmup or use_diffusion_distance:
+        jited_get_datasets_diffusion = jax.jit(
             partial(
                 _get_datasets_with_diffusion_distance,
                 puzzle,
@@ -563,12 +610,14 @@ def get_qlearning_dataset_builder(
                 use_double_dqn=use_double_dqn,
             )
         )
-    else:
-        jited_get_datasets = jax.jit(
+
+    if use_diffusion_distance:
+        jited_get_datasets_mixture = jax.jit(
             partial(
-                _get_datasets_with_policy,
+                _get_datasets_with_diffusion_distance_mixture,
                 puzzle,
                 preproc_fn,
+                SolveConfigsAndStatesAndActions,
                 q_model,
                 dataset_minibatch_size,
                 temperature=temperature,
@@ -577,11 +626,25 @@ def get_qlearning_dataset_builder(
             )
         )
 
+    jited_get_datasets_normal = jax.jit(
+        partial(
+            _get_datasets_with_policy,
+            puzzle,
+            preproc_fn,
+            q_model,
+            dataset_minibatch_size,
+            temperature=temperature,
+            td_error_clip=td_error_clip,
+            use_double_dqn=use_double_dqn,
+        )
+    )
+
     @jax.jit
     def get_datasets(
         target_q_params: Any,
         q_params: Any,
         key: chex.PRNGKey,
+        step: int = 0,
     ):
         def scan_fn(key, _):
             key, subkey = jax.random.split(key)
@@ -591,15 +654,26 @@ def get_qlearning_dataset_builder(
         key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
         for k, v in paths.items():
             paths[k] = v.flatten()[:dataset_size]
-        flatten_dataset = jited_get_datasets(target_q_params, q_params, paths, key)
+
+        if use_diffusion_distance_warmup:
+            flatten_dataset = jax.lax.cond(
+                step < diffusion_distance_warmup_steps,
+                lambda x: jited_get_datasets_diffusion(*x),
+                lambda x: jited_get_datasets_normal(*x),
+                (target_q_params, q_params, paths, key),
+            )
+        elif use_diffusion_distance:
+            flatten_dataset = jited_get_datasets_mixture(target_q_params, q_params, paths, key)
+        else:
+            flatten_dataset = jited_get_datasets_normal(target_q_params, q_params, paths, key)
         return flatten_dataset
 
     if n_devices > 1:
 
-        def pmap_get_datasets(target_q_params, q_params, key):
+        def pmap_get_datasets(target_q_params, q_params, key, step=0):
             keys = jax.random.split(key, n_devices)
-            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(
-                target_q_params, q_params, keys
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0, None))(
+                target_q_params, q_params, keys, step
             )
             return datasets
 

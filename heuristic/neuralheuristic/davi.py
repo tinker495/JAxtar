@@ -275,6 +275,7 @@ def _get_datasets(
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
         backup = heur + cost  # [action_size, batch_size]
         target_heuristic = jnp.min(backup, axis=0)
+        target_heuristic = jnp.minimum(target_heuristic, move_costs)
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
@@ -406,6 +407,8 @@ def get_heuristic_dataset_builder(
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
     use_diffusion_distance: bool = False,
+    use_diffusion_distance_warmup: bool = False,
+    warmup_steps: int = 1000,
     non_backtracking_steps: int = 3,
 ):
     if non_backtracking_steps < 0:
@@ -449,14 +452,14 @@ def get_heuristic_dataset_builder(
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
-    if use_diffusion_distance:
+    if use_diffusion_distance or use_diffusion_distance_warmup:
 
         @xtructure_dataclass
         class SolveConfigsAndStates:
             solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
             states: FieldDescriptor.scalar(dtype=puzzle.State)
 
-        jited_get_datasets = jax.jit(
+        jited_get_datasets_diffusion = jax.jit(
             partial(
                 _get_datasets_with_diffusion_distance,
                 puzzle,
@@ -468,8 +471,9 @@ def get_heuristic_dataset_builder(
                 td_error_clip=td_error_clip,
             )
         )
-    else:
-        jited_get_datasets = jax.jit(
+
+    if (not use_diffusion_distance) or use_diffusion_distance_warmup:
+        jited_get_datasets_normal = jax.jit(
             partial(
                 _get_datasets,
                 puzzle,
@@ -486,6 +490,7 @@ def get_heuristic_dataset_builder(
         target_heuristic_params: Any,
         heuristic_params: Any,
         key: chex.PRNGKey,
+        step: int = 0,
     ):
         def scan_fn(key, _):
             key, subkey = jax.random.split(key)
@@ -496,15 +501,29 @@ def get_heuristic_dataset_builder(
         for k, v in paths.items():
             paths[k] = v.flatten()[:dataset_size]
 
-        flatten_dataset = jited_get_datasets(target_heuristic_params, heuristic_params, paths, key)
+        if use_diffusion_distance_warmup:
+            flatten_dataset = jax.lax.cond(
+                step < warmup_steps,
+                lambda x: jited_get_datasets_diffusion(*x),
+                lambda x: jited_get_datasets_normal(*x),
+                (target_heuristic_params, heuristic_params, paths, key),
+            )
+        elif use_diffusion_distance:
+            flatten_dataset = jited_get_datasets_diffusion(
+                target_heuristic_params, heuristic_params, paths, key
+            )
+        else:
+            flatten_dataset = jited_get_datasets_normal(
+                target_heuristic_params, heuristic_params, paths, key
+            )
         return flatten_dataset
 
     if n_devices > 1:
 
-        def pmap_get_datasets(target_heuristic_params, heuristic_params, key):
+        def pmap_get_datasets(target_heuristic_params, heuristic_params, key, step=0):
             keys = jax.random.split(key, n_devices)
-            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(
-                target_heuristic_params, heuristic_params, keys
+            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0, None))(
+                target_heuristic_params, heuristic_params, keys, step
             )
             return datasets
 
