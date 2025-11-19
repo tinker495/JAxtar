@@ -267,11 +267,11 @@ def _get_datasets(
             preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
         )
 
-        def heur_scan(neighbors):
+        def heur_scan(_, neighbors):
             heur = heuristic_model.apply(target_heuristic_params, neighbors, training=False)
-            return heur.squeeze()
+            return None, heur.squeeze()
 
-        heur = jax.vmap(heur_scan)(flatten_neighbors)  # [action_size, batch_size]
+        _, heur = jax.lax.scan(heur_scan, None, flatten_neighbors)  # [action_size, batch_size]
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
         backup = heur + cost  # [action_size, batch_size]
         target_heuristic = jnp.min(backup, axis=0)
