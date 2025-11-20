@@ -20,6 +20,7 @@ def qstar_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    is_pessimistic: bool = True,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -29,9 +30,12 @@ def qstar_builder(
         q_fn: QFunction instance that provides state-action value estimation.
         batch_size: Number of states to process in parallel (default: 1024).
         max_nodes: Maximum number of nodes to explore before terminating (default: 1e6).
+        pop_ratio: Ratio of states to pop from the priority queue.
         cost_weight: Weight applied to the path cost in the Q* algorithm (default: 1.0-1e-6).
                     Values closer to 1.0 make the search more greedy/depth-first.
         show_compile_time: If True, displays the time taken to compile the search function (default: False).
+        is_pessimistic: If True, updates the heuristic value when the new estimate is larger (Pessimistic/Max).
+                       If False, updates when smaller (Optimistic/Min). Default is True.
 
     Returns:
         A function that performs Q* search given a start state and solve configuration.
@@ -147,24 +151,37 @@ def qstar_builder(
                 flatten_nextcosts,  # Use costs before they are set to inf
             )
 
-            # 1. Identify where we've found a better (lower) heuristic.
+            # 1. Identify where we've found a better heuristic update.
+            #    If pessimistic (True): Update if new value is greater (Pathmax / Tighter bound).
+            #    If optimistic (False): Update if new value is smaller (Maintains admissibility).
             previous_dist = search_result.dist[hash_idx.index]
-            is_more_optimistic_h = jnp.logical_and(
-                flatten_filleds, jnp.less(flatten_q_vals, previous_dist)
-            )
+
+            if is_pessimistic:
+                # If pessimistic, we want to update if the new value is greater than the old one.
+                # However, if the old value is infinite (initial state), we MUST update it 
+                # regardless of comparison, because any finite value is better information than inf.
+                # So we update if:
+                # 1. The previous value is NOT finite (it's inf), OR
+                # 2. The new value is greater than the previous value.
+                previous_is_inf = jnp.isinf(previous_dist)
+                condition = jnp.logical_or(previous_is_inf, jnp.greater(flatten_q_vals, previous_dist))
+            else:
+                condition = jnp.less(flatten_q_vals, previous_dist)
+
+            should_update_dist = jnp.logical_and(flatten_filleds, condition)
 
             # 2. Update the global heuristic map (dist) based on this finding.
             #    We use the original flatten_q_vals here.
             search_result.dist = xnp.update_on_condition(
                 search_result.dist,
                 hash_idx.index,
-                is_more_optimistic_h,
+                should_update_dist,
                 flatten_q_vals,
             )
 
             # 3. For processing in this iteration (e.g., priority queue insertion),
             #    we should use the best heuristic known *after* the potential update.
-            flatten_q_vals = jnp.where(is_more_optimistic_h, flatten_q_vals, previous_dist)
+            flatten_q_vals = jnp.where(should_update_dist, flatten_q_vals, previous_dist)
 
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
