@@ -62,6 +62,18 @@ class Current_with_Parent:
     current: FieldDescriptor.scalar(dtype=Current)
 
 
+@xtructure_dataclass
+class Current_with_Action:
+    """
+    A dataclass representing a hash table heap value for the priority queue.
+    This class maintains the mapping between states in the hash table and their positions.
+    """
+
+    current: FieldDescriptor.scalar(dtype=Current)
+    action: FieldDescriptor.scalar(dtype=ACTION_DTYPE)
+    dist: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+
+
 @base_dataclass
 class SearchResult:
     """
@@ -102,7 +114,7 @@ class SearchResult:
     pop_count: chex.Array  # counter for pop_full calls
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2))
+    @partial(jax.jit, static_argnums=(0, 1, 2), static_argnames=("current_with_actions",))
     def build(
         statecls: Puzzle.State,
         batch_size: int,
@@ -110,6 +122,7 @@ class SearchResult:
         pop_ratio: float = jnp.inf,
         min_pop: int = 1,
         seed=42,
+        current_with_actions: bool = False,
     ):
         """
         Creates a new instance of SearchResult with initialized data structures.
@@ -137,8 +150,11 @@ class SearchResult:
             statecls, seed, max_nodes, CUCKOO_TABLE_N, HASH_SIZE_MULTIPLIER
         )
 
-        # Initialize priority queue for state expansion
-        priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent, KEY_DTYPE)
+        if current_with_actions:
+            # Initialize priority queue for state expansion
+            priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Action, KEY_DTYPE)
+        else:
+            priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent, KEY_DTYPE)
 
         # Initialize arrays for tracking costs and state relationships
         # +1 for -1 index as a dummy node
@@ -228,7 +244,7 @@ class SearchResult:
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
         min_key = search_result.mask_unoptimal(min_key, min_val)
         buffer = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
-        buffer_val = Current_with_Parent.default(min_key.shape)
+        buffer_val = search_result.priority_queue.val_store.default(min_key.shape)
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
@@ -295,9 +311,6 @@ class SearchResult:
             final_process_mask,
             min_val.current.cost,
         )
-        search_result.parent = search_result.parent.at[
-            min_val.current.hashidx.index
-        ].set_as_condition(final_process_mask, min_val.parent)
         search_result.pop_generation = xnp.update_on_condition(
             search_result.pop_generation,
             min_val.current.hashidx.index,
@@ -306,7 +319,7 @@ class SearchResult:
         )
         search_result.pop_count += 1
 
-        return search_result, min_val.current, final_process_mask
+        return search_result, min_val, final_process_mask
 
     def get_solved_path(search_result) -> list[Parent]:
         """
@@ -331,44 +344,60 @@ class SearchResult:
         path.reverse()
         return path
 
-    def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:
+    def get_state(
+        search_result, idx: HashIdx | Current | Parent | Current_with_Parent | Current_with_Action
+    ) -> Puzzle.State:
         """
         Get the state from the hash table.
         """
-        if isinstance(idx, Current) or isinstance(idx, Parent):
+        if isinstance(idx, (Current_with_Parent, Current_with_Action)):
+            return search_result.hashtable[idx.current.hashidx]
+        elif isinstance(idx, Current) or isinstance(idx, Parent):
             return search_result.hashtable[idx.hashidx]
         elif isinstance(idx, HashIdx):
             return search_result.hashtable[idx]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_cost(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
+    def get_cost(
+        search_result, idx: HashIdx | Current | Parent | Current_with_Parent | Current_with_Action
+    ) -> chex.Array:
         """
         Get the cost of the state from the cost array.
         """
-        if isinstance(idx, Current) or isinstance(idx, Parent):
+        if isinstance(idx, (Current_with_Parent, Current_with_Action)):
+            return search_result.cost[idx.current.hashidx.index]
+        elif isinstance(idx, Current) or isinstance(idx, Parent):
             return search_result.cost[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
             return search_result.cost[idx.index]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_dist(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
+    def get_dist(
+        search_result, idx: HashIdx | Current | Parent | Current_with_Parent | Current_with_Action
+    ) -> chex.Array:
         """
         Get the distance of the state from the distance array.
         """
-        if isinstance(idx, Current) or isinstance(idx, Parent):
+        if isinstance(idx, (Current_with_Parent, Current_with_Action)):
+            return search_result.dist[idx.current.hashidx.index]
+        elif isinstance(idx, Current) or isinstance(idx, Parent):
             return search_result.dist[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
             return search_result.dist[idx.index]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_parent(search_result, idx: HashIdx | Current | Parent) -> Parent:
+    def get_parent(
+        search_result, idx: HashIdx | Current | Parent | Current_with_Parent | Current_with_Action
+    ) -> Parent:
         """
         Get the parent action from the parent action array.
         """
-        if isinstance(idx, Current) or isinstance(idx, Parent):
+        if isinstance(idx, (Current_with_Parent, Current_with_Action)):
+            return search_result.parent[idx.current.hashidx.index]
+        elif isinstance(idx, Current) or isinstance(idx, Parent):
             return search_result.parent[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
             return search_result.parent[idx.index]

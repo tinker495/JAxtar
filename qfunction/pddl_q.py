@@ -14,8 +14,9 @@ class PDDLQ(QFunction):
         Q-values for PDDL are computed as the heuristic value of each neighbor:
         number of unsatisfied goal atoms in the neighbor state.
         """
-        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
-        return jax.vmap(self._distance, in_axes=(None, 0))(solve_config, neighbors)
+        neighbors, costs = self.puzzle.get_neighbours(solve_config, current)
+        dists = jax.vmap(self._distance, in_axes=(None, 0))(solve_config, neighbors)
+        return dists + costs
 
     def _distance(self, solve_config: PDDL.SolveConfig, state: PDDL.State) -> float:
         atoms = state.unpacked_atoms
