@@ -7,6 +7,7 @@ from puxle import Puzzle
 from puxle.core.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 from puxle.utils import from_uint8, to_uint8
 from puxle.utils.annotate import IMG_SIZE
+from xtructure import numpy as xnp
 
 from helpers.formatting import img_to_colored_str
 from neural_util.modules import DTYPE, BatchNorm, get_norm_fn
@@ -388,6 +389,43 @@ class WorldModelPuzzleBase(Puzzle):
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
         return self.State(latent=latent).packed
+
+    def batched_get_actions(
+        self,
+        solve_configs: Puzzle.SolveConfig,
+        states: Puzzle.State,
+        actions: chex.Array,
+        filleds: bool = True,
+        multi_solve_config: bool = False,
+    ) -> tuple[Puzzle.State, chex.Array]:
+        batched_neighbours, costs = self.batched_get_neighbours(
+            solve_configs, states, filleds, multi_solve_config
+        )  # [action_size, batch_size, ...] [action_size, batch_size]
+
+        actions_indices = jnp.expand_dims(actions, axis=0)
+
+        batched_next_states = xnp.take_along_axis(batched_neighbours, actions_indices, axis=0)
+        batched_costs = jnp.take_along_axis(costs, actions_indices, axis=0)
+
+        batched_next_states = xnp.squeeze(batched_next_states, axis=0)
+        batched_costs = jnp.squeeze(batched_costs, axis=0)
+
+        return batched_next_states, batched_costs
+
+    def get_actions(
+        self,
+        solve_config: Puzzle.SolveConfig,
+        state: Puzzle.State,
+        actions: chex.Array,
+        filled: bool = True,
+    ) -> tuple[Puzzle.State, chex.Array]:
+        """
+        This function should return a state and the cost of the move.
+        """
+        neighbours, costs = self.get_neighbours(solve_config, state, filled)
+        next_state = xnp.take(neighbours, actions, axis=0)
+        cost = jnp.take(costs, actions, axis=0)
+        return next_state, cost
 
     def batched_get_neighbours(
         self,
