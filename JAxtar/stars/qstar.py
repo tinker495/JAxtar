@@ -26,7 +26,6 @@ def qstar_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
-    is_pessimistic: bool = True,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -40,8 +39,6 @@ def qstar_builder(
         cost_weight: Weight applied to the path cost in the Q* algorithm (default: 1.0-1e-6).
                     Values closer to 1.0 make the search more greedy/depth-first.
         show_compile_time: If True, displays the time taken to compile the search function (default: False).
-        is_pessimistic: If True, updates the heuristic value when the new estimate is larger (Pessimistic/Max).
-                       If False, updates when smaller (Optimistic/Min). Default is True.
 
     Returns:
         A function that performs Q* search given a start state and solve configuration.
