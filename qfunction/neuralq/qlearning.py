@@ -261,7 +261,7 @@ def _get_datasets_with_policy(
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
-    move_costs_tm1 = shuffled_path["move_costs_tm1"]
+    move_costs = shuffled_path["move_costs"]
 
     minibatched_solve_configs = solve_configs.reshape((-1, minibatch_size))
     minibatched_states = states.reshape((-1, minibatch_size))
@@ -282,7 +282,8 @@ def _get_datasets_with_policy(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
         cost = jnp.transpose(cost, (1, 0))
-        q_sum_cost = q_values + cost
+        # q_sum_cost = q_values + cost
+        q_sum_cost = jnp.where(jnp.isfinite(cost), q_values, jnp.inf)
 
         # Select an action 'a' probabilistically using a Boltzmann (softmax) exploration policy.
         # Actions with lower Q-values (lower cost-to-go) are more likely to be chosen.
@@ -332,28 +333,25 @@ def _get_datasets_with_policy(
         q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
         # Invalidate actions that are not reachable from the next state.
         valid_neighbor_cost = jnp.where(jnp.isfinite(neighbor_cost), neighbor_cost, jnp.inf)
-        q = jnp.where(jnp.isfinite(valid_neighbor_cost), q, jnp.inf)
-        # Calculate the target Q-value using the constrained Bellman equation:
-        # target_Q(s, a) = min_{a'} [ c(s', a') + Q_target(s', a') ].
-        # The immediate cost of (s, a) is excluded by construction (J(s, a) = J(N(s, a))).
-        q_sum_cost = valid_neighbor_cost + q  # [batch_size, action_size]
-        # Clamp to ensure non-negative targets while respecting the next-state costs.
-        q_sum_cost = jnp.maximum(q_sum_cost, valid_neighbor_cost)
+        
+        # Modified for Q(s,a) = c(s,a) + min_a'(Q(s',a'))
+        q_next = jnp.where(jnp.isfinite(valid_neighbor_cost), q, jnp.inf)
+
         if use_double_dqn:
             q_online = q_model.apply(q_params, preproc_neighbors, training=False)
             q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
             q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
-            online_q_sum_cost = valid_neighbor_cost + q_online
-            online_q_sum_cost = jnp.maximum(online_q_sum_cost, valid_neighbor_cost)
-            best_actions = jnp.argmin(online_q_sum_cost, axis=1)
-            min_q_sum_cost = jnp.take_along_axis(q_sum_cost, best_actions[:, jnp.newaxis], axis=1)[
-                :, 0
-            ]
+            best_actions = jnp.argmin(q_online, axis=1)
+            min_next_q = jnp.take_along_axis(q_next, best_actions[:, jnp.newaxis], axis=1).squeeze(1)
         else:
-            min_q_sum_cost = jnp.min(q_sum_cost, axis=1)
+            min_next_q = jnp.min(q_next, axis=1)
+        
+        # Ensure non-negative future cost
+        min_next_q = jnp.maximum(min_next_q, 0.0)
+
         # Target entropy (confidence of the backup) over next-state distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
-        scaled_next = -q_sum_cost / safe_temperature
+        scaled_next = -q_next / safe_temperature
         next_probs = jax.nn.softmax(scaled_next, axis=1)
         next_probs = next_probs / (jnp.sum(next_probs, axis=1, keepdims=True) + 1e-8)
         target_entropy = -jnp.sum(next_probs * jnp.log(jnp.clip(next_probs, a_min=1e-12)), axis=1)
@@ -363,7 +361,9 @@ def _get_datasets_with_policy(
         )
 
         # Base case: If the next state (s') is the solution, the future cost is 0.
-        target_q = jnp.where(selected_neighbors_solved, 0.0, min_q_sum_cost)
+        # Q(s,a) = c(s,a) + (0 if solved else min Q(s',a'))
+        selected_cost = jnp.take_along_axis(cost, actions[:, jnp.newaxis], axis=1).squeeze(1)
+        target_q = selected_cost + jnp.where(selected_neighbors_solved, 0.0, min_next_q)
         # If the current state (s) was already solved, its Q-value should also be 0.
         target_q = jnp.where(solved, 0.0, target_q)
 
@@ -410,7 +410,7 @@ def _get_datasets_with_policy(
     max_entropy = max_entropy.reshape((-1,))
     target_entropy = target_entropy.reshape((-1,))
     target_max_entropy = target_max_entropy.reshape((-1,))
-    cost = move_costs_tm1.reshape((-1,))
+    cost = move_costs.reshape((-1,))
 
     return {
         "solveconfigs": solve_configs,
