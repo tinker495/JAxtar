@@ -9,7 +9,7 @@ from puxle import Puzzle
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
     Current,
-    Current_with_Action,
+    Parant_with_Costs,
     HashIdx,
     Parent,
     SearchResult,
@@ -78,7 +78,7 @@ def qstar_builder(
             max_nodes,
             pop_ratio=pop_ratio,
             min_pop=min_pop,
-            current_with_actions=True,
+            parant_with_costs=True,
         )
 
         (
@@ -129,9 +129,9 @@ def qstar_builder(
 
             neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
 
-            vals = Current_with_Action(
-                current=Current(hashidx=idx_tiles, cost=costs),
-                action=action,
+            vals = Parant_with_Costs(
+                parent=Parent(hashidx=idx_tiles, action=action),
+                cost=costs,
                 dist=q_vals,
             )
 
@@ -149,58 +149,11 @@ def qstar_builder(
                 search_result,
                 (neighbour_keys, vals),
             )
-            search_result.priority_queue, key, val = search_result.priority_queue.delete_mins()
-            filled = jnp.isfinite(key)
-            parent = val.current
-            parent_states = search_result.get_state(parent)
-            costs = parent.cost
-            actions = val.action
-            next_states, ncosts = puzzle.batched_get_actions(
-                solve_config, parent_states, actions, filled
-            )
-            dist = val.dist - ncosts
-            next_costs = costs + ncosts
-
-            (
-                search_result.hashtable,
-                _,
-                _,
-                hash_idx,
-            ) = search_result.hashtable.parallel_insert(next_states, filled, next_costs)
-
-            # Calculate the mask for states that have found a better path
-            # We only update if the new cost is strictly lower than the existing cost
-            current_g = search_result.get_cost(hash_idx)
-            update_mask = jnp.logical_and(filled, next_costs < current_g)
-
-            # Update the cost array with the new better costs
-            search_result.cost = xnp.update_on_condition(
-                search_result.cost,
-                hash_idx.index,
-                update_mask,
-                next_costs,
+            search_result, min_val, next_states, filled = search_result.pop_full_with_actions(
+                puzzle, solve_config
             )
 
-            # Update the distance array with the new better distances
-            search_result.dist = xnp.update_on_condition(
-                search_result.dist,
-                hash_idx.index,
-                update_mask,
-                dist,
-            )
-
-            # Update the parent array to point to the current parent
-            # This is crucial for path reconstruction
-            new_parents = Parent(hashidx=parent.hashidx, action=actions)
-            search_result.parent = xnp.update_on_condition(
-                search_result.parent,
-                hash_idx.index,
-                update_mask,
-                new_parents,
-            )
-            filled = filled & update_mask
-
-            return search_result, next_costs, next_states, hash_idx, filled
+            return search_result, min_val.cost, next_states, min_val.hashidx, filled
 
         (search_result, costs, states, hash_idxs, filled) = jax.lax.while_loop(
             _cond, _body, (search_result, costs, states, hash_idxs, filled)
