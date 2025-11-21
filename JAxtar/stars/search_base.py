@@ -337,31 +337,51 @@ class SearchResult:
                 - A boolean mask indicating which entries in the batch are valid
         """
         
+        def _expand_and_filter(search_result, key, val):
+            """Helper to expand nodes, lookup in hashtable, and filter unoptimal ones."""
+            filled = jnp.isfinite(key)
+            parent_states = search_result.get_state(val.parent)
+            parent_actions = val.parent.action
+            parent_costs = search_result.get_cost(val.parent)
+            
+            current_states, ncosts = puzzle.batched_get_actions(solve_config, parent_states, parent_actions, filled)
+            current_costs = parent_costs + ncosts
+            current_dists = val.dist - ncosts 
+            
+            # Optimization: deduplicate before lookup could save compute, 
+            # but here we stick to logic that filters after lookup to check against global best.
+            current_hash_idxs, _ = search_result.hashtable.lookup_parallel(current_states)
+            
+            old_costs = search_result.get_cost(current_hash_idxs)
+            optimal_mask = jnp.less(current_costs, old_costs) & filled
+            
+            current = Current(hashidx=current_hash_idxs, cost=current_costs)
+            # Mask unoptimal keys with infinity
+            filtered_key = jnp.where(optimal_mask, key, jnp.inf)
+            
+            return current_states, current, current_dists, filtered_key, val
+
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
-        buffer = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
-        buffer_val = Parant_with_Costs.default(min_key.shape)
         batch_size = min_key.shape[-1]
 
+        # Initial expansion and filtering
+        (
+            current_states, 
+            current, 
+            current_dists, 
+            min_key, 
+            min_val
+        ) = _expand_and_filter(search_result, min_key, min_val)
+        
+        # Apply unique mask to initial batch to maintain invariant
         filled = jnp.isfinite(min_key)
-        parent_states = search_result.get_state(min_val.parent)
-        parent_actions = min_val.parent.action
-        parent_costs = search_result.get_cost(min_val.parent)
-        current_states, ncosts = puzzle.batched_get_actions(solve_config, parent_states, parent_actions, filled)
-        current_costs = parent_costs + ncosts
-        current_dists = min_val.dist - ncosts # Q = c(s, a) + h(s'), current_dists = Q - c(s, a) = h(s')
-        filled = xnp.unique_mask(current_states, current_costs, filled)
+        unique_mask = xnp.unique_mask(current_states, current.cost, filled)
+        min_key = jnp.where(unique_mask, min_key, jnp.inf)
 
-        current_hash_idxs, _ = search_result.hashtable.lookup_parallel(current_states) # [batch_size, action_size]
-
-        old_costs = search_result.get_cost(current_hash_idxs)
-        # optimal_mask = (jnp.less(current_costs, old_costs) | ~found) & filled
-        # if state is not found, is new state, so we need to insert it. 
-        # but initially, all costs are infinity, so we don't need to check if it is found.
-        # so we can just check if the cost is less than the old cost.
-        optimal_mask = jnp.less(current_costs, old_costs) & filled
-        current = Current(hashidx=current_hash_idxs, cost=current_costs)
-        min_key = jnp.where(optimal_mask, min_key, jnp.inf)
+        # Initialize buffer for overflow (inf)
+        buffer_key = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
+        buffer_val = Parant_with_Costs.default(min_key.shape)
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
@@ -369,75 +389,65 @@ class SearchResult:
             pq_not_empty = search_result.priority_queue.size > 0
             
             # Optimization: Stop if batch is mostly full (e.g. 90%)
-            # This prevents excessive sorting/merging for diminishing returns
             fill_ratio = jnp.mean(jnp.isfinite(key))
             not_full_enough = fill_ratio < POP_BATCH_FILLED_RATIO
             
-            # For pop_ratio = inf, we don't check threshold and fill the batch completely.
-            # For other cases, we can stop early, but the final filtering is done later.
-            # This loop is mainly for ensuring we have enough candidates to select from.
             return jnp.logical_and(pq_not_empty, not_full_enough)
 
         def _body(state):
             search_result, current_states, current, dists, key, val, _, _ = state
+            
             # Pop new nodes from PQ
             (
                 search_result.priority_queue,
                 new_key,
                 new_val,
             ) = search_result.priority_queue.delete_mins()
-            new_filled = jnp.isfinite(new_key)
-            new_parent_states = search_result.get_state(new_val.parent)
-            new_parent_actions = new_val.parent.action
-            new_parent_costs = search_result.get_cost(new_val.parent)
-            new_current_states, ncosts = puzzle.batched_get_actions(solve_config, new_parent_states, new_parent_actions, new_filled)
-            new_current_costs = new_parent_costs + ncosts
-            new_current_dists = new_val.dist - ncosts # Q = c(s, a) + h(s'), current_dists = Q - c(s, a) = h(s')
 
-            new_current_hash_idxs, _ = search_result.hashtable.lookup_parallel(new_current_states) # [batch_size, action_size]
+            # Expand and filter new nodes
+            (
+                new_states, 
+                new_current, 
+                new_dists, 
+                new_key, 
+                new_val
+            ) = _expand_and_filter(search_result, new_key, new_val)
 
-            old_costs = search_result.get_cost(new_current_hash_idxs)
-            # optimal_mask = (jnp.less(current_costs, old_costs) | ~found) & filled
-            # if state is not found, is new state, so we need to insert it. 
-            # but initially, all costs are infinity, so we don't need to check if it is found.
-            # so we can just check if the cost is less than the old cost.
-            optimal_mask = jnp.less(new_current_costs, old_costs) & new_filled
-            new_current = Current(hashidx=new_current_hash_idxs, cost=new_current_costs)
-            new_key = jnp.where(optimal_mask, new_key, jnp.inf)
-
-            stack_current_states = xnp.concatenate((current_states, new_current_states))
+            # Merge with existing batch
+            stack_states = xnp.concatenate((current_states, new_states))
             stack_currents = xnp.concatenate((current, new_current))
-            stack_current_dists = jnp.concatenate((dists, new_current_dists))
+            stack_dists = jnp.concatenate((dists, new_dists))
             stack_key = jnp.concatenate((key, new_key))
             stack_val = xnp.concatenate((val, new_val))
 
-            unique_mask = xnp.unique_mask(stack_current_states, stack_currents.cost)
+            # Deduplicate across the entire stack (old + new)
+            unique_mask = xnp.unique_mask(stack_states, stack_currents.cost)
             stack_key = jnp.where(unique_mask, stack_key, jnp.inf)
+            
+            # Sort to keep best candidates
             sorted_key, sorted_idx = jax.lax.sort_key_val(stack_key, jnp.arange(stack_key.shape[-1]))
             sorted_val = stack_val[sorted_idx]
-            sorted_current_states = stack_current_states[sorted_idx]
+            sorted_states = stack_states[sorted_idx]
             sorted_currents = stack_currents[sorted_idx]
-            sorted_current_dists = stack_current_dists[sorted_idx]
+            sorted_dists = stack_dists[sorted_idx]
 
-            current_states = sorted_current_states[:batch_size]
-            current = sorted_currents[:batch_size]
-            current_dists = sorted_current_dists[:batch_size]
-            key, buffer = sorted_key[:batch_size], sorted_key[batch_size:]
-            val, buffer_val = sorted_val[:batch_size], sorted_val[batch_size:]
-            return search_result, current_states, current, current_dists, key, val, buffer, buffer_val
-
-        # current_states
-        # current
-        # dists
-        # key
-        # val
-        # buffer
-        # buffer_val
+            # Split back into current batch and overflow buffer
+            return (
+                search_result,
+                sorted_states[:batch_size],
+                sorted_currents[:batch_size],
+                sorted_dists[:batch_size],
+                sorted_key[:batch_size],
+                sorted_val[:batch_size],
+                sorted_key[batch_size:], # New buffer (overflow)
+                sorted_val[batch_size:]  # New buffer val
+            )
 
         # Run the loop until we have a full batch of the best available nodes
         search_result, final_states, final_currents, final_dists, final_key, final_val, overflow_keys, overflow_vals = jax.lax.while_loop(
-            _cond, _body, (search_result, current_states, current, current_dists, min_key, min_val, buffer, buffer_val)
+            _cond, _body, (search_result, current_states, current, current_dists, min_key, min_val, buffer_key, buffer_val)
         )
+        
         final_costs = final_currents.cost
         final_parents = final_val.parent
 
