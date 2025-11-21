@@ -32,6 +32,7 @@ from JAxtar.annotate import (
     KEY_DTYPE,
 )
 
+POP_BATCH_FILLED_RATIO = 0.99 # ratio of batch to be filled before popping
 
 @xtructure_dataclass
 class Parent:
@@ -238,7 +239,7 @@ class SearchResult:
             # Optimization: Stop if batch is mostly full (e.g. 90%)
             # This prevents excessive sorting/merging for diminishing returns
             fill_ratio = jnp.mean(jnp.isfinite(key))
-            not_full_enough = fill_ratio < 0.9
+            not_full_enough = fill_ratio < POP_BATCH_FILLED_RATIO
             
             # For pop_ratio = inf, we don't check threshold and fill the batch completely.
             # For other cases, we can stop early, but the final filtering is done later.
@@ -312,131 +313,234 @@ class SearchResult:
 
         return search_result, min_val.current, final_process_mask
 
-    def pop_full_with_actions(search_result, puzzle: Puzzle, solve_config: Puzzle.SolveConfig) -> tuple["SearchResult", Current, chex.Array]:
+    def pop_full_with_actions(search_result, puzzle: Puzzle, solve_config: Puzzle.SolveConfig) -> tuple["SearchResult", Current, chex.Array, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
         respecting the pop_ratio to control search width without losing nodes.
 
+        This version performs EAGER EXPANSION and S' DEDUPLICATION.
+        It expands (S, A) -> S' immediately inside the loop to ensure that the
+        returned batch contains only unique S' states, preventing batch starvation
+        in highly reversible environments.
+
         Args:
             search_result (SearchResult): The current search state
             puzzle (Puzzle): The puzzle instance
+            solve_config (Puzzle.SolveConfig): Configuration for the puzzle
 
         Returns:
             tuple: Contains:
                 - Updated SearchResult
-                - A batch of the best values to be processed
+                - A batch of the best values to be processed (Current)
+                - Next states (S')
                 - A boolean mask indicating which entries in the batch are valid
         """
         
         def _mask_unoptimal(search_result, key, val):
              idx = val.parent.hashidx.index
-             # Ensure we are comparing against a valid parent cost
-             # If parent is not in closed set (inf cost), it might be a bug or initial state
              current_cost = search_result.cost[idx]
-             
-             # Key logic: We ONLY want to expand if the path through this parent 
-             # is potentially optimal. 
-             # However, 'val.cost' here is the cost to reach the CHILD (parent_cost + action_cost)? 
-             # No, wait. 'Parant_with_Costs' stores 'cost' which is usually g-value.
-             # Let's check how it's constructed in qstar.py:
-             # costs = jnp.tile(cost[jnp.newaxis, :], ...) -> Parent's accumulated cost (g-value)
-             #
-             # So val.cost is the PARENT's g-value.
-             # We should compare val.cost with the current best known cost for the PARENT.
-             # If we found a cheaper path to the parent later, the old queue entry with higher cost is stale.
-             
              is_optimal_path_to_parent = jnp.less_equal(val.cost, current_cost + 1e-6)
-             
              return jnp.where(is_optimal_path_to_parent, key, jnp.inf)
-             
-        # 1. Get an initial batch from the Priority Queue (PQ)
-        search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
-        min_key = _mask_unoptimal(search_result, min_key, min_val)
-        
-        buffer = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
-        buffer_val = Parant_with_Costs.default(min_key.shape)
 
-        # 2. Loop to fill the batch if it's not full of valid nodes
+        # Helper to sort and deduplicate EXPANDED nodes (based on S')
+        def _unique_sort_expanded(key, states, parents, parent_costs, q_dists, ncosts):
+            n = key.shape[-1]
+            filled = jnp.isfinite(key)
+            
+            # Deduplicate based on STATE (S')
+            # We keep the one with the lowest key (best f-value)
+            mask = xnp.unique_mask(states, key, filled)
+            
+            key = jnp.where(mask, key, jnp.inf)
+            sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(n))
+            
+            return (
+                sorted_key,
+                states[sorted_idx],
+                parents[sorted_idx],
+                parent_costs[sorted_idx],
+                q_dists[sorted_idx],
+                ncosts[sorted_idx]
+            )
+
+        # Helper to merge, sort, and split expanded batches
+        def _merge_and_split_expanded(k1, s1, p1, pc1, qd1, nc1, k2, s2, p2, pc2, qd2, nc2):
+            # Use the outer batch_size which should be static/concrete if passed correctly
+            # Or derive from k1 if k1 has static shape
+            # batch_size is available from outer scope
+            
+            mk = jnp.concatenate([k1, k2])
+            ms = xnp.concatenate([s1, s2])
+            mp = xnp.concatenate([p1, p2])
+            mpc = jnp.concatenate([pc1, pc2])
+            mqd = jnp.concatenate([qd1, qd2])
+            mnc = jnp.concatenate([nc1, nc2])
+            
+            sk, ss, sp, spc, sqd, snc = _unique_sort_expanded(mk, ms, mp, mpc, mqd, mnc)
+            
+            # Split main (keep) and overflow (return to PQ)
+            return (
+                sk[:batch_size], ss[:batch_size], sp[:batch_size], spc[:batch_size], sqd[:batch_size], snc[:batch_size],
+                sk[batch_size:], sp[batch_size:], spc[batch_size:], sqd[batch_size:] # Overflow doesn't need states or ncosts
+            )
+
+        # 1. First Pop & Expand (Outside Loop)
+        # This allows us to determine shapes and initialize buffers without explicit batch_size
+        
+        (
+            search_result.priority_queue,
+            first_key,
+            first_val,
+        ) = search_result.priority_queue.delete_mins()
+        
+        # Determine batch_size from the first pop
+        batch_size = first_key.shape[0]
+        
+        # Filter stale paths
+        first_key = _mask_unoptimal(search_result, first_key, first_val)
+        
+        # EAGER EXPANSION
+        first_parents = first_val.parent
+        first_parent_states = search_result.get_state(first_parents)
+        first_actions = first_parents.action
+        first_filled = jnp.isfinite(first_key)
+        
+        first_next_states, first_ncosts = puzzle.batched_get_actions(
+            solve_config, first_parent_states, first_actions, first_filled
+        )
+        
+        # Deduplicate the first batch
+        (
+            unique_k, unique_s, unique_p, unique_pc, unique_qd, unique_nc
+        ) = _unique_sort_expanded(
+            first_key, first_next_states, first_parents, first_val.cost, first_val.dist, first_ncosts
+        )
+        
+        # 2. Initialize Accumulators using the shape of the first batch
+        # We use the first unique batch to initialize, but since it might not be full,
+        # we need to be careful. Actually, we can just use full_like on the popped key
+        # to get the right size buffers.
+        
+        # Initialize empty buffers with correct size (batch_size)
+        acc_keys = jnp.full_like(first_key, jnp.inf)
+        
+        # For structured types (State, Parent), we use tree_map to create empty arrays of same structure
+        # We can use unique_s as a template since it has the right structure, but we need to ensure size is batch_size
+        # unique_s already has size batch_size (from _unique_sort_expanded implementation which returns same size)
+        # Wait, _unique_sort_expanded returns size N (same as input).
+        # Yes, input to _unique_sort_expanded is size batch_size. Output is also size batch_size.
+        
+        # So we can just use the first unique batch as the starting point for the accumulator!
+        # But we need to handle the "merge" logic.
+        # Actually, we can treat the "accumulator" as empty initially, and merge the first batch into it.
+        # Or simpler: Initialize accumulator with the first unique batch results.
+        
+        # However, we need to handle overflow if we were merging. But here we just have one batch.
+        # So unique_k, unique_s etc. ARE the initial state of the accumulator.
+        # But wait, _unique_sort_expanded just sorts. It doesn't "fill" up to batch_size if we had more.
+        # It just processes the batch.
+        
+        # So:
+        acc_keys = unique_k
+        acc_states = unique_s
+        acc_parents = unique_p
+        acc_parent_costs = unique_pc
+        acc_q_dists = unique_qd
+        acc_ncosts = unique_nc
+        
+        # We don't have overflow from the first batch because we didn't merge with anything.
+        # We just sorted/deduplicated it.
+        
+        # 3. Loop to fill the batch
         def _cond(state):
-            search_result, key, _, _, _ = state
+            search_result, key, _, _, _, _, _, _ = state
             pq_not_empty = search_result.priority_queue.size > 0
             
-            # Optimization: Stop if batch is mostly full (e.g. 90%)
-            # This prevents excessive sorting/merging for diminishing returns
+            # Check if we have enough valid unique S'
             fill_ratio = jnp.mean(jnp.isfinite(key))
-            not_full_enough = fill_ratio < 0.9
-
+            not_full_enough = fill_ratio < 0.99 # Try to fill as much as possible
+            
             return jnp.logical_and(pq_not_empty, not_full_enough)
 
         def _body(state):
-            search_result, key, val, _, _ = state
+            search_result, ak, ast, ap, apc, aqd, anc, _ = state
+            
+            # Pop from PQ
             (
                 search_result.priority_queue,
                 new_key,
                 new_val,
             ) = search_result.priority_queue.delete_mins()
+            
+            # Filter stale paths
             new_key = _mask_unoptimal(search_result, new_key, new_val)
             
-            # Merge current batch with new nodes, splitting into main and overflow
-            main_keys, main_vals, overflow_keys, overflow_vals = _unique_sort_merge_and_split_parents(
-                key, val, new_key, new_val
+            # EAGER EXPANSION
+            parents = new_val.parent
+            parent_states = search_result.get_state(parents)
+            actions = parents.action
+            filled = jnp.isfinite(new_key)
+            
+            next_states, ncosts = puzzle.batched_get_actions(
+                solve_config, parent_states, actions, filled
             )
-            return search_result, main_keys, main_vals, overflow_keys, overflow_vals
+            
+            # Merge with accumulated batch
+            (
+                main_k, main_s, main_p, main_pc, main_qd, main_nc,
+                over_k, over_p, over_pc, over_qd
+            ) = _merge_and_split_expanded(
+                ak, ast, ap, apc, aqd, anc,
+                new_key, next_states, parents, new_val.cost, new_val.dist, ncosts
+            )
+            
+            # Push overflow back to PQ
+            over_val = Parant_with_Costs(parent=over_p, cost=over_pc, dist=over_qd)
+            
+            search_result.priority_queue = jax.lax.cond(
+                jnp.any(jnp.isfinite(over_k)),
+                lambda: search_result.priority_queue.insert(over_k, over_val),
+                lambda: search_result.priority_queue,
+            )
+            
+            return search_result, main_k, main_s, main_p, main_pc, main_qd, main_nc, jnp.array(0) # dummy
 
-        # Run the loop until we have a full batch of the best available nodes
-        search_result, min_key, min_val, overflow_keys, overflow_vals = jax.lax.while_loop(
-            _cond, _body, (search_result, min_key, min_val, buffer, buffer_val)
+        # Run the loop
+        (
+            search_result, 
+            final_keys, final_states, final_parents, final_parent_costs, final_q_dists, final_ncosts, _
+        ) = jax.lax.while_loop(
+            _cond, _body, 
+            (search_result, acc_keys, acc_states, acc_parents, acc_parent_costs, acc_q_dists, acc_ncosts, jnp.array(0))
         )
 
-        # Put overflow nodes back into the PQ so they are never lost
-        search_result.priority_queue = jax.lax.cond(
-            jnp.any(jnp.isfinite(overflow_keys)),
-            lambda: search_result.priority_queue.insert(overflow_keys, overflow_vals),
-            lambda: search_result.priority_queue,
-        )
-
-        # 3. Apply pop_ratio to the full batch
-        filled = jnp.isfinite(min_key)
-        threshold = min_key[0] * search_result.pop_ratio + 1e-6
+        # 4. Apply pop_ratio to the full batch of UNIQUE S'
+        filled = jnp.isfinite(final_keys)
+        threshold = final_keys[0] * search_result.pop_ratio + 1e-6
         
-        process_mask = jnp.less_equal(min_key, threshold)
+        process_mask = jnp.less_equal(final_keys, threshold)
         base_process_mask = jnp.logical_and(filled, process_mask)
         min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= search_result.min_pop, filled)
         final_process_mask = jnp.logical_or(base_process_mask, min_pop_mask)
         
-        return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
-        search_result.priority_queue = search_result.priority_queue.insert(return_keys, min_val)
+        # Return unselected nodes to PQ
+        return_keys = jnp.where(final_process_mask, jnp.inf, final_keys)
+        return_vals = Parant_with_Costs(parent=final_parents, cost=final_parent_costs, dist=final_q_dists)
+        search_result.priority_queue = search_result.priority_queue.insert(return_keys, return_vals)
 
-        # Processing with filtered batch
-        parents = min_val.parent
-        parent_costs = min_val.cost
-        q_dists = min_val.dist
-        # We only process what is in final_process_mask
-        # But batched_get_actions expects full arrays, it uses filled/mask?
-        # It takes 'filled'. We should pass 'final_process_mask' as filled?
-        # Yes, because 'return_keys' are set to inf for processed nodes, but min_val still holds them.
-        # We use final_process_mask to dictate what is valid.
+        # 5. Insert selected UNIQUE S' into Hashtable
+        # OPTIMIZATION: Use cached final_ncosts
         
-        parent_states = search_result.get_state(parents)
-        actions = parents.action
+        next_costs = final_parent_costs + final_ncosts
+        next_dists = final_q_dists - final_ncosts # Assuming Q(s,a) = h(s') + c(s,a) => h(s') = Q - c
         
-        # Update filled mask to match what we effectively popped
-        filled = final_process_mask
-        
-        next_states, ncosts = puzzle.batched_get_actions(
-            solve_config, parent_states, actions, filled
-        )
-
-        next_costs = parent_costs + ncosts
-        next_dists = q_dists - ncosts
-
         (
             search_result.hashtable,
             new_states_mask,
             cheapest_uniques_mask,
             hash_idx,
-        ) = search_result.hashtable.parallel_insert(next_states, filled, next_costs)
+        ) = search_result.hashtable.parallel_insert(final_states, final_process_mask, next_costs)
 
         search_result.cost = xnp.update_on_condition(
             search_result.cost,
@@ -452,17 +556,11 @@ class SearchResult:
         )
         search_result.parent = search_result.parent.at[
             hash_idx.index
-        ].set_as_condition(cheapest_uniques_mask, parents)
+        ].set_as_condition(cheapest_uniques_mask, final_parents)
 
         min_val = Current(hashidx=hash_idx, cost=next_costs)
-        # We return final_process_mask merged with cheapest_uniques_mask logic?
-        # The caller expects mask of valid children?
-        # original 'final_process_mask' was about what was popped.
-        # Now 'cheapest_uniques_mask' tells what was successfully inserted/updated.
-        # We should return mask of generated children.
-        # 'cheapest_uniques_mask' is true where we updated/inserted.
         
-        return search_result, min_val, next_states, cheapest_uniques_mask
+        return search_result, min_val, final_states, cheapest_uniques_mask
 
     def get_solved_path(search_result) -> list[Parent]:
         """
