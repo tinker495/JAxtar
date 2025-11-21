@@ -13,12 +13,12 @@ class MazeQ(QFunction):
         """
         Get q values for all possible actions from current state.
         """
-        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
-        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, solve_config.TargetState)
-        return dists
+        neighbors, costs = self.puzzle.get_neighbours(solve_config, current)
+        dists = jax.vmap(self._distance, in_axes=(None, 0))(solve_config, neighbors)
+        return dists + costs
 
-    def _distance(self, current: Maze.State, target: Maze.State) -> float:
+    def _distance(self, solve_config: Maze.SolveConfig, current: Maze.State) -> float:
         """
         Get distance between current state and target state.
         """
-        return jnp.sum(jnp.abs(current.pos.astype(int) - target.pos.astype(int)))
+        return jnp.sum(jnp.abs(current.pos.astype(int) - solve_config.TargetState.pos.astype(int)))

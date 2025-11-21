@@ -229,8 +229,8 @@ def astar_builder(
                 search_result,
                 (vals, neighbours, new_states_mask, final_process_mask),
             )
-            search_result, parent, filled = search_result.pop_full()
-            return search_result, parent, filled
+            search_result, current, filled = search_result.pop_full()
+            return search_result, current, filled
 
         (search_result, idxes, filled) = jax.lax.while_loop(
             _cond, _body, (search_result, hash_idxs, filled)

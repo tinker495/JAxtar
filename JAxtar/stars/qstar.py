@@ -7,7 +7,13 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.stars.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.stars.search_base import (
+    Current,
+    Parant_with_Costs,
+    HashIdx,
+    Parent,
+    SearchResult,
+)
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
@@ -20,7 +26,6 @@ def qstar_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
-    is_pessimistic: bool = True,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -34,8 +39,6 @@ def qstar_builder(
         cost_weight: Weight applied to the path cost in the Q* algorithm (default: 1.0-1e-6).
                     Values closer to 1.0 make the search more greedy/depth-first.
         show_compile_time: If True, displays the time taken to compile the search function (default: False).
-        is_pessimistic: If True, updates the heuristic value when the new estimate is larger (Pessimistic/Max).
-                       If False, updates when smaller (Optimistic/Min). Default is True.
 
     Returns:
         A function that performs Q* search given a start state and solve configuration.
@@ -67,7 +70,12 @@ def qstar_builder(
         qstar is the implementation of the Q* algorithm.
         """
         search_result: SearchResult = SearchResult.build(
-            statecls, batch_size, max_nodes, pop_ratio=pop_ratio, min_pop=min_pop
+            statecls,
+            batch_size,
+            max_nodes,
+            pop_ratio=pop_ratio,
+            min_pop=min_pop,
+            parant_with_costs=True,
         )
 
         (
@@ -77,159 +85,57 @@ def qstar_builder(
         ) = search_result.hashtable.insert(start)
 
         search_result.cost = search_result.cost.at[hash_idx.index].set(0)
-        hash_idxs = Current(hashidx=hash_idx, cost=jnp.zeros((), dtype=KEY_DTYPE),)[
-            jnp.newaxis
-        ].padding_as_batch((batch_size,))
+        costs = jnp.zeros((batch_size,), dtype=KEY_DTYPE)
+        states = xnp.pad(start, (0, batch_size - 1))
+        hash_idxs = xnp.pad(hash_idx, (0, batch_size - 1))
         filled = jnp.zeros(batch_size, dtype=jnp.bool_).at[0].set(True)
 
-        def _cond(input: tuple[SearchResult, Current, chex.Array]):
-            search_result, parent, filled = input
+        def _cond(input: tuple[SearchResult, jnp.ndarray, Puzzle.State, HashIdx, chex.Array]):
+            search_result, _, states, _, filled = input
             hash_size = search_result.generated_size
             size_cond1 = filled.any()  # queue is not empty
             size_cond2 = hash_size < max_nodes  # hash table is not full
             size_cond = jnp.logical_and(size_cond1, size_cond2)
 
-            states = search_result.get_state(parent)
             solved = puzzle.batched_is_solved(solve_config, states)
             solved = jnp.logical_and(solved, filled)
             return jnp.logical_and(size_cond, ~solved.any())
 
-        def _body(input: tuple[SearchResult, Current, chex.Array]):
-            search_result, parent, filled = input
+        def _body(input: tuple[SearchResult, jnp.ndarray, Puzzle.State, HashIdx, chex.Array]):
+            search_result, cost, states, hash_idx, filled = input
 
-            cost = search_result.get_cost(parent)
-            states = search_result.get_state(parent)
-
-            neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
-            parent_action = jnp.tile(
-                jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[:, jnp.newaxis],
-                (1, ncost.shape[1]),
+            idx_tiles = xnp.tile(
+                hash_idx, (puzzle.action_size, 1)
+            )  # [action_size, batch_size, ...]
+            action = jnp.tile(
+                jnp.arange(puzzle.action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
+                (1, cost.shape[0]),
             )  # [n_neighbours, batch_size]
-            nextcosts = (cost[jnp.newaxis, :] + ncost).astype(
-                KEY_DTYPE
-            )  # [n_neighbours, batch_size]
-            filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
-            parent_index = jnp.tile(
-                jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
-                (ncost.shape[0], 1),
-            )  # [n_neighbours, batch_size]
-            unflatten_shape = filleds.shape
+            costs = jnp.tile(
+                cost[jnp.newaxis, :], (puzzle.action_size, 1)
+            )  # [action_size, batch_size]
+            filled_tiles = jnp.tile(
+                filled[jnp.newaxis, :], (puzzle.action_size, 1)
+            )  # [action_size, batch_size]
 
             # Compute Q-values for parent states (not neighbors)
             # This gives us Q(s, a) for all actions from parent states
             q_vals = variable_q_batch_switcher(solve_config, states, filled)
             q_vals = q_vals.transpose().astype(KEY_DTYPE)
-            q_vals = jnp.where(filleds, q_vals, jnp.inf)
+            q_vals = jnp.where(filled_tiles, q_vals, jnp.inf)  # [action_size, batch_size]
 
-            flatten_neighbours = neighbours.flatten()
-            flatten_filleds = filleds.flatten()
-            flatten_nextcosts = nextcosts.flatten()
-            flatten_parent_index = parent_index.flatten()
-            flatten_parent_action = parent_action.flatten()
-            flatten_q_vals = q_vals.flatten()
-            (
-                search_result.hashtable,
-                _,
-                cheapest_uniques_mask,
-                hash_idx,
-            ) = search_result.hashtable.parallel_insert(
-                flatten_neighbours, flatten_filleds, flatten_nextcosts
+            neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
+
+            vals = Parant_with_Costs(
+                parent=Parent(hashidx=idx_tiles, action=action),
+                cost=costs,
+                dist=q_vals,
             )
-
-            # It must also be cheaper than any previously found path to this state.
-            optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
-
-            # Combine all conditions for the final decision.
-            final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
-
-            # Update the cost (g-value) for the newly found optimal paths before they are
-            # masked out. This ensures the cost table is always up-to-date.
-            search_result.cost = xnp.update_on_condition(
-                search_result.cost,
-                hash_idx.index,
-                final_process_mask,
-                flatten_nextcosts,  # Use costs before they are set to inf
-            )
-
-            # 1. Identify where we've found a better heuristic update.
-            #    If pessimistic (True): Update if new value is greater (Pathmax / Tighter bound).
-            #    If optimistic (False): Update if new value is smaller (Maintains admissibility).
-            previous_dist = search_result.dist[hash_idx.index]
-
-            if is_pessimistic:
-                # If pessimistic, we want to update if the new value is greater than the old one.
-                # However, if the old value is infinite (initial state), we MUST update it 
-                # regardless of comparison, because any finite value is better information than inf.
-                # So we update if:
-                # 1. The previous value is NOT finite (it's inf), OR
-                # 2. The new value is greater than the previous value.
-                previous_is_inf = jnp.isinf(previous_dist)
-                condition = jnp.logical_or(previous_is_inf, jnp.greater(flatten_q_vals, previous_dist))
-            else:
-                condition = jnp.less(flatten_q_vals, previous_dist)
-
-            should_update_dist = jnp.logical_and(flatten_filleds, condition)
-
-            # 2. Update the global heuristic map (dist) based on this finding.
-            #    We use the original flatten_q_vals here.
-            search_result.dist = xnp.update_on_condition(
-                search_result.dist,
-                hash_idx.index,
-                should_update_dist,
-                flatten_q_vals,
-            )
-
-            # 3. For processing in this iteration (e.g., priority queue insertion),
-            #    we should use the best heuristic known *after* the potential update.
-            flatten_q_vals = jnp.where(should_update_dist, flatten_q_vals, previous_dist)
-
-            # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
-            # and updating the insertion flag. This ensures they are ignored in subsequent steps.
-            flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
-            # Stable partition to group useful entries first.
-            # Improves computational efficiency by gathering only batches with samples that need updates.
-            invperm = jnp.argsort(final_process_mask)
-
-            flatten_final_process_mask = final_process_mask[invperm]
-            flatten_nextcosts = flatten_nextcosts[invperm]
-            flatten_q_vals = flatten_q_vals[invperm]
-            flatten_parent_index = flatten_parent_index[invperm]
-            flatten_parent_action = flatten_parent_action[invperm]
-
-            hash_idx = hash_idx[invperm]
-            current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
-
-            flatten_neighbour_keys = (cost_weight * current.cost + flatten_q_vals).astype(KEY_DTYPE)
-
-            flatten_aranged_parent = parent[flatten_parent_index]
-            flatten_vals = Current_with_Parent(
-                current=current,
-                parent=Parent(
-                    action=flatten_parent_action,
-                    hashidx=flatten_aranged_parent.hashidx,
-                ),
-            )
-
-            final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
-            neighbour_keys = flatten_neighbour_keys.reshape(unflatten_shape)
-            vals = flatten_vals.reshape(unflatten_shape)
-
-            def _insert(search_result: SearchResult, neighbour_keys, vals):
-
-                search_result.priority_queue = search_result.priority_queue.insert(
-                    neighbour_keys,
-                    vals,
-                )
-                return search_result
 
             def _scan(search_result: SearchResult, val):
-                neighbour_keys, vals, final_process_mask = val
+                neighbour_keys, vals = val
 
-                search_result = jax.lax.cond(
-                    jnp.any(final_process_mask),
-                    _insert,
-                    lambda search_result, *args: search_result,
-                    search_result,
+                search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_keys,
                     vals,
                 )
@@ -238,18 +144,20 @@ def qstar_builder(
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbour_keys, vals, final_process_mask),
+                (neighbour_keys, vals),
             )
-            search_result, parent, filled = search_result.pop_full()
-            return search_result, parent, filled
+            search_result, min_val, next_states, filled = search_result.pop_full_with_actions(
+                puzzle, solve_config
+            )
 
-        (search_result, idxes, filled) = jax.lax.while_loop(
-            _cond, _body, (search_result, hash_idxs, filled)
+            return search_result, min_val.cost, next_states, min_val.hashidx, filled
+
+        (search_result, costs, states, hash_idxs, filled) = jax.lax.while_loop(
+            _cond, _body, (search_result, costs, states, hash_idxs, filled)
         )
-        states = search_result.get_state(idxes)
         solved = puzzle.batched_is_solved(solve_config, states)
         search_result.solved = solved.any()
-        search_result.solved_idx = idxes[jnp.argmax(solved)]
+        search_result.solved_idx = hash_idxs[jnp.argmax(solved)]
         return search_result
 
     qstar_fn = jax.jit(qstar)
