@@ -35,6 +35,19 @@ from JAxtar.annotate import (
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
 
+def print_states(states: Xtructurable, costs: chex.Array, dists: chex.Array, key: chex.Array):
+    print(states)
+    print(f"costs: {costs}")
+    print(f"dists: {dists}")
+    print(f"key: {key}")
+
+
+def print_states_w_actions(states: Xtructurable, costs: chex.Array, actions: chex.Array):
+    print(states)
+    print(f"costs: {costs}")
+    print(f"actions: {actions}")
+
+
 @xtructure_dataclass
 class Parent:
 
@@ -344,12 +357,26 @@ class SearchResult:
             """Helper to expand nodes, lookup in hashtable, and filter unoptimal ones."""
             filled = jnp.isfinite(key)
             parent_states = search_result.get_state(val.parent)
-            parent_actions = val.parent.action
+            parent_actions = val.parent.action  # [batch_size]
             parent_costs = search_result.get_cost(val.parent)
 
-            current_states, ncosts = puzzle.batched_get_actions(
-                solve_config, parent_states, parent_actions, filled
-            )
+            # TODO: This should theoretically be equivalent to sampling actions from get_neighbours,
+            # but it doesn't work as expected. Temporarily using get_neighbours for now.
+            # Need to investigate and fix later.
+            # current_states, ncosts = puzzle.batched_get_neighbours(
+            #     solve_config, parent_states, parent_actions, filled
+            # ) # [action_size, batch_size] [action_size, batch_size]
+
+            current_states, ncosts = puzzle.batched_get_neighbours(
+                solve_config, parent_states, filled
+            )  # [action_size, batch_size] [action_size, batch_size]
+            # Select the states and costs corresponding to the parent actions
+            # parent_actions: [batch_size], current_states: [action_size, batch_size]
+            # We need to select current_states[parent_actions[i], i] for each i
+            batch_indices = jnp.arange(parent_actions.shape[0])
+            current_states = current_states[parent_actions, batch_indices]  # [batch_size]
+            ncosts = ncosts[parent_actions, batch_indices]  # [batch_size]
+
             current_costs = parent_costs + ncosts
             current_dists = val.dist - ncosts
 
