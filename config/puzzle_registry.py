@@ -485,9 +485,9 @@ def _sized_bundle(
     )
 
 
-# n-puzzle families (3x3, 4x4, 5x5) with size-specific k_max defaults
-_NP_KMAX = {3: 100, 4: 500, 5: 1000}
-for _s in [3, 4, 5]:
+# n-puzzle families (3x3, 4x4, 5x5, 6x6, 7x7) with size-specific k_max defaults
+_NP_KMAX = {3: 100, 4: 500, 5: 500, 6: 500, 7: 500}
+for _s in [3, 4, 5, 6, 7]:
     bundle = _sized_bundle(
         puzzle_bundles["n-puzzle"], size=_s, puzzle_cls=SlidePuzzle, hard_cls=SlidePuzzleHard
     )
