@@ -489,13 +489,13 @@ def _sized_bundle(
 _NP_KMAX = {3: 100, 4: 500, 5: 500, 6: 500, 7: 500}
 for _s in [3, 4, 5, 6, 7]:
     bundle = _sized_bundle(
-        puzzle_bundles["n-puzzle"], size=_s, puzzle_cls=SlidePuzzle, hard_cls=SlidePuzzleHard
+        puzzle_bundles["n-puzzle"], size=_s, puzzle_cls=SlidePuzzle, hard_cls=None
     )
     bundle.k_max = _NP_KMAX[_s]
     puzzle_bundles[f"n-puzzle-{_s}"] = bundle
 
     bundle_c = _sized_bundle(
-        puzzle_bundles["n-puzzle-conv"], size=_s, puzzle_cls=SlidePuzzle, hard_cls=SlidePuzzleHard
+        puzzle_bundles["n-puzzle-conv"], size=_s, puzzle_cls=SlidePuzzle, hard_cls=None
     )
     bundle_c.k_max = _NP_KMAX[_s]
     puzzle_bundles[f"n-puzzle-conv-{_s}"] = bundle_c
