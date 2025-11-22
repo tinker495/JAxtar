@@ -6,15 +6,15 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
+from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import HashIdx, Parant_with_Costs, Parent, SearchResult
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
-from qfunction.q_base import QFunction
 
 
-def qstar_builder(
+def astar_d_builder(
     puzzle: Puzzle,
-    q_fn: QFunction,
+    heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
     pop_ratio: float = jnp.inf,
@@ -22,20 +22,34 @@ def qstar_builder(
     show_compile_time: bool = False,
 ):
     """
-    Builds and returns a JAX-accelerated Q* search function.
+    Builds and returns a JAX-accelerated A* with deferred node evaluation (A* deferred).
+
+    In standard A*, when a node is expanded, all its children are generated and their heuristics
+    are evaluated immediately to calculate f(n) = g(n) + h(n) for insertion into the open list.
+
+    In A* deferred, we delay the generation and heuristic evaluation of children. Instead,
+    when a node is expanded, we insert its potential *actions* (edges) into the priority queue,
+    using the *parent's* f-value (or similar) as the priority.
+    Only when an action is popped from the queue do we actually generate the child state
+    and evaluate its heuristic (if it becomes a parent for the next step).
+
+    This approach is beneficial when:
+    1. The heuristic calculation is expensive.
+    2. The branching factor is large (avoids evaluating children that are never explored).
+    3. We want to maximize batch efficiency in JAX by keeping the pipeline uniform.
 
     Args:
         puzzle: Puzzle instance that defines the problem space and operations.
-        q_fn: QFunction instance that provides state-action value estimation.
+        heuristic: Heuristic instance that provides state evaluation.
         batch_size: Number of states to process in parallel (default: 1024).
         max_nodes: Maximum number of nodes to explore before terminating (default: 1e6).
         pop_ratio: Ratio of states to pop from the priority queue.
-        cost_weight: Weight applied to the path cost in the Q* algorithm (default: 1.0-1e-6).
+        cost_weight: Weight applied to the path cost in the A* with deferred search algorithm (default: 1.0-1e-6).
                     Values closer to 1.0 make the search more greedy/depth-first.
         show_compile_time: If True, displays the time taken to compile the search function (default: False).
 
     Returns:
-        A function that performs Q* search given a start state and solve configuration.
+        A function that performs A* with deferred search given a start state and solve configuration.
     """
 
     statecls = puzzle.State
@@ -47,8 +61,8 @@ def qstar_builder(
     # which is especially important for JAX and accelerator-based computation.
     # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
     # so that each batch is filled as evenly as possible and computational resources are used efficiently.
-    variable_q_batch_switcher = variable_batch_switcher_builder(
-        lambda solve_config, current: q_fn.batched_q_value(solve_config, current),
+    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+        lambda solve_config, current: heuristic.batched_distance(solve_config, current),
         max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
@@ -56,12 +70,12 @@ def qstar_builder(
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_SIZE // denom)
 
-    def qstar(
+    def astar_d(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
     ) -> SearchResult:
         """
-        qstar is the implementation of the Q* algorithm.
+        astar_d is the implementation of the A* with deferred search algorithm.
         """
         search_result: SearchResult = SearchResult.build(
             statecls,
@@ -108,22 +122,27 @@ def qstar_builder(
             costs = jnp.tile(
                 cost[jnp.newaxis, :], (puzzle.action_size, 1)
             )  # [action_size, batch_size]
-            filled_tiles = jnp.tile(
-                filled[jnp.newaxis, :], (puzzle.action_size, 1)
-            )  # [action_size, batch_size]
 
-            # Compute Q-values for parent states (not neighbors)
-            # This gives us Q(s, a) for all actions from parent states
-            q_vals = variable_q_batch_switcher(solve_config, states, filled)
-            q_vals = q_vals.transpose().astype(KEY_DTYPE)
-            q_vals = jnp.where(filled_tiles, q_vals, jnp.inf)  # [action_size, batch_size]
+            # Compute heuristic values for the states currently being expanded (parents).
+            # Unlike standard A*, we calculate h(parent) here and use it to prioritize
+            # the *actions* leading to its children. The children themselves are not
+            # generated or evaluated yet.
+            heuristic_vals = variable_heuristic_batch_switcher(
+                solve_config, states, filled
+            )  # [batch_size]
+            heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)  # [batch_size]
+            tiled_heuristic_vals = jnp.tile(
+                heuristic_vals[jnp.newaxis, :], (puzzle.action_size, 1)
+            ).astype(KEY_DTYPE)
 
-            neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
+            # The priority for the actions is based on the parent's cost and heuristic.
+            # f_action = g(parent) + h(parent) (approximately, modified by cost_weight)
+            neighbour_keys = (cost_weight * costs + tiled_heuristic_vals).astype(KEY_DTYPE)
 
             vals = Parant_with_Costs(
                 parent=Parent(hashidx=idx_tiles, action=action),
                 cost=costs,
-                dist=q_vals,
+                dist=tiled_heuristic_vals,
             )
 
             def _scan(search_result: SearchResult, val):
@@ -154,7 +173,7 @@ def qstar_builder(
         search_result.solved_idx = hash_idxs[jnp.argmax(solved)]
         return search_result
 
-    qstar_fn = jax.jit(qstar)
+    astar_d_fn = jax.jit(astar_d)
     empty_solve_config = puzzle.SolveConfig.default()
     empty_states = puzzle.State.default()
 
@@ -166,11 +185,11 @@ def qstar_builder(
     # Using actual puzzles would cause extremely long compilation times due to
     # tracing all possible functions. Empty inputs allow JAX to specialize the
     # compiled code without processing complex puzzle structures.
-    qstar_fn(empty_solve_config, empty_states)
+    astar_d_fn(empty_solve_config, empty_states)
 
     if show_compile_time:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")
         print("JIT compiled\n\n")
 
-    return qstar_fn
+    return astar_d_fn
