@@ -363,7 +363,7 @@ class SearchResult:
             # TODO: This should theoretically be equivalent to sampling actions from get_neighbours,
             # but it doesn't work as expected. Temporarily using get_neighbours for now.
             # Need to investigate and fix later.
-            # current_states, ncosts = puzzle.batched_get_neighbours(
+            # current_states, ncosts = puzzle.batched_get_actions(
             #     solve_config, parent_states, parent_actions, filled
             # ) # [action_size, batch_size] [action_size, batch_size]
 
