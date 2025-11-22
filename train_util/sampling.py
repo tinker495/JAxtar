@@ -76,19 +76,20 @@ def get_random_inverse_trajectory(
         neighbor_states, cost = puzzle.batched_get_inverse_neighbours(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
-        fallback = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
+        action_mask = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
         history_block = (
             _match_history(neighbor_states, history).astype(jnp.float32)
             if use_history
-            else jnp.zeros_like(fallback)
+            else jnp.zeros_like(action_mask)
         )
         same_block = _states_equal(neighbor_states, state).astype(jnp.float32)
-        filled = fallback * (1.0 - history_block) * (1.0 - same_block)
-        denom = jnp.sum(filled, axis=0)  # [batch]
-        no_valid = denom == 0
-        filled = jnp.where(no_valid[jnp.newaxis, :], fallback, filled)
-        denom = jnp.sum(filled, axis=0)
-        prob = filled / denom  # [action, batch]
+        backtracking_mask = (1.0 - history_block) * (1.0 - same_block)
+        masked = action_mask * backtracking_mask
+        denom = jnp.sum(masked, axis=0)  # [batch]
+        no_valid_backtracking = denom == 0
+        final_mask = jnp.where(no_valid_backtracking[jnp.newaxis, :], action_mask, masked)
+        denom = jnp.sum(final_mask, axis=0)
+        prob = final_mask / denom  # [action, batch]
         choices = jnp.arange(cost.shape[0])  # [action]
         inv_actions = jax.vmap(
             lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
@@ -160,19 +161,20 @@ def get_random_trajectory(
         neighbor_states, cost = puzzle.batched_get_neighbours(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
-        fallback = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
+        action_mask = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
         history_block = (
             _match_history(neighbor_states, history).astype(jnp.float32)
             if use_history
-            else jnp.zeros_like(fallback)
+            else jnp.zeros_like(action_mask)
         )
         same_block = _states_equal(neighbor_states, state).astype(jnp.float32)
-        filled = fallback * (1.0 - history_block) * (1.0 - same_block)
-        denom = jnp.sum(filled, axis=0)  # [batch]
-        no_valid = denom == 0
-        filled = jnp.where(no_valid[jnp.newaxis, :], fallback, filled)
-        denom = jnp.sum(filled, axis=0)
-        prob = filled / denom  # [action, batch]
+        backtracking_mask = (1.0 - history_block) * (1.0 - same_block)
+        masked = action_mask * backtracking_mask
+        denom = jnp.sum(masked, axis=0)  # [batch]
+        no_valid_backtracking = denom == 0
+        final_mask = jnp.where(no_valid_backtracking[jnp.newaxis, :], action_mask, masked)
+        denom = jnp.sum(final_mask, axis=0)
+        prob = final_mask / denom  # [action, batch]
         choices = jnp.arange(cost.shape[0])  # [action]
         actions = jax.vmap(
             lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
@@ -235,9 +237,7 @@ def create_target_shuffled_path(
     solve_configs = inverse_trajectory["solve_configs"]
     if include_solved_states:
         states = inverse_trajectory["states"][:-1, ...]  # [k_max, shuffle_parallel, ...]
-        move_costs = inverse_trajectory["move_costs"][
-            :-1, ...
-        ]  # [k_max, shuffle_parallel]
+        move_costs = inverse_trajectory["move_costs"][:-1, ...]  # [k_max, shuffle_parallel]
         move_costs_tm1 = inverse_trajectory["move_costs_tm1"][:-1, ...]  # [k_max, shuffle_parallel]
     else:
         states = inverse_trajectory["states"][1:, ...]  # [k_max, shuffle_parallel, ...]
@@ -291,13 +291,9 @@ def create_hindsight_target_shuffled_path(
 
     targets = states[-1, ...]  # [shuffle_parallel, ...]
     if include_solved_states:
-        states = states[
-            1:, ...
-        ]  # [k_max, shuffle_parallel, ...] this is include the last state
+        states = states[1:, ...]  # [k_max, shuffle_parallel, ...] this is include the last state
     else:
-        states = states[
-            :-1, ...
-        ]  # [k_max, shuffle_parallel, ...] this is exclude the last state
+        states = states[:-1, ...]  # [k_max, shuffle_parallel, ...] this is exclude the last state
 
     solve_configs = puzzle.batched_hindsight_transform(
         original_solve_configs, targets
@@ -319,8 +315,8 @@ def create_hindsight_target_shuffled_path(
             [action_costs[1:], jnp.zeros((1, shuffle_parallel))]
         )  # [k_max, shuffle_parallel]
     else:
-        move_costs = (move_costs[-1, ...] - move_costs[:-1, ...])  # [k_max, shuffle_parallel]
-        move_costs_tm1 = (move_costs[-1, ...] - move_costs_tm1[:-1, ...])  # [k_max, shuffle_parallel]
+        move_costs = move_costs[-1, ...] - move_costs[:-1, ...]  # [k_max, shuffle_parallel]
+        move_costs_tm1 = move_costs[-1, ...] - move_costs_tm1[:-1, ...]  # [k_max, shuffle_parallel]
         move_costs_tm1 = move_costs_tm1.at[0, ...].set(0.0)
 
     solve_configs = solve_configs.flatten()

@@ -213,9 +213,9 @@ def boltzmann_action_selection(
     temperature: float = 1.0 / 3.0,
     epsilon: float = 0.1,
 ) -> chex.Array:
-    # Sanitize inputs
-    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
+    # Determine valid entries before sanitizing infinities
     mask = jnp.isfinite(q_values)
+    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
 
     # Scale Q-values by temperature for softmax
     safe_temperature = jnp.maximum(temperature, 1e-8)
@@ -282,6 +282,8 @@ def _get_datasets_with_policy(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
         cost = jnp.transpose(cost, (1, 0))
+        valid_action_mask = jnp.isfinite(cost)
+        has_valid_action = jnp.any(valid_action_mask, axis=1)
         # q_sum_cost = q_values + cost
         q_sum_cost = jnp.where(jnp.isfinite(cost), q_values, jnp.inf)
 
@@ -289,6 +291,11 @@ def _get_datasets_with_policy(
         # Actions with lower Q-values (lower cost-to-go) are more likely to be chosen.
         # Epsilon-greedy exploration is also mixed in.
         probs = boltzmann_action_selection(q_sum_cost, temperature=temperature)
+        probs = jnp.where(valid_action_mask, probs, 0.0)
+        probs_sum = jnp.sum(probs, axis=1, keepdims=True)
+        probs = jnp.where(probs_sum > 0.0, probs / (probs_sum + 1e-8), probs)
+        uniform_all = jnp.ones_like(probs) / jnp.maximum(probs.shape[1], 1)
+        probs = jnp.where(has_valid_action[:, jnp.newaxis], probs, uniform_all)
         # Action entropy per state (measure of policy sharpness)
         entropy = -jnp.sum(probs * jnp.log(jnp.clip(probs, a_min=1e-12)), axis=1)
         # Maximum entropy per state (approx by number of valid actions)
@@ -315,9 +322,14 @@ def _get_datasets_with_policy(
             multi_solve_config=True,
         )  # [action_size, batch_size] [action_size, batch_size]
         neighbor_cost = jnp.transpose(neighbor_cost, (1, 0))  # [batch_size, action_size]
+        neighbor_valid_mask = jnp.isfinite(neighbor_cost)
+        has_valid_neighbor = jnp.any(neighbor_valid_mask, axis=1)
         # Check if the next state (s') is a solved state.
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
+        )
+        selected_neighbors_solved = jnp.logical_or(
+            selected_neighbors_solved, jnp.logical_not(has_valid_action)
         )
 
         # Preprocess the next states (s') for neural network input.
@@ -332,29 +344,35 @@ def _get_datasets_with_policy(
         )  # [minibatch_size, action_shape]
         q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
         # Invalidate actions that are not reachable from the next state.
-        valid_neighbor_cost = jnp.where(jnp.isfinite(neighbor_cost), neighbor_cost, jnp.inf)
-        
+        valid_neighbor_cost = jnp.where(neighbor_valid_mask, neighbor_cost, jnp.inf)
+
         # Modified for Q(s,a) = c(s,a) + min_a'(Q(s',a'))
-        q_next = jnp.where(jnp.isfinite(valid_neighbor_cost), q, jnp.inf)
+        q_next = jnp.where(neighbor_valid_mask, q, jnp.inf)
 
         if use_double_dqn:
             q_online = q_model.apply(q_params, preproc_neighbors, training=False)
             q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
             q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
             best_actions = jnp.argmin(q_online, axis=1)
-            min_next_q = jnp.take_along_axis(q_next, best_actions[:, jnp.newaxis], axis=1).squeeze(1)
+            min_next_q = jnp.take_along_axis(q_next, best_actions[:, jnp.newaxis], axis=1).squeeze(
+                1
+            )
         else:
             min_next_q = jnp.min(q_next, axis=1)
-        
+
         # Ensure non-negative future cost
         min_next_q = jnp.maximum(min_next_q, 0.0)
+        min_next_q = jnp.where(has_valid_neighbor, min_next_q, 0.0)
 
         # Target entropy (confidence of the backup) over next-state distribution
         safe_temperature = jnp.maximum(temperature, 1e-8)
         scaled_next = -q_next / safe_temperature
         next_probs = jax.nn.softmax(scaled_next, axis=1)
+        next_probs = jnp.where(neighbor_valid_mask, next_probs, 0.0)
         next_probs = next_probs / (jnp.sum(next_probs, axis=1, keepdims=True) + 1e-8)
+        next_probs = jnp.where(has_valid_neighbor[:, jnp.newaxis], next_probs, 0.0)
         target_entropy = -jnp.sum(next_probs * jnp.log(jnp.clip(next_probs, a_min=1e-12)), axis=1)
+        target_entropy = jnp.where(has_valid_neighbor, target_entropy, 0.0)
         # For solved states, entropy should be near zero (deterministic target)
         target_entropy = jnp.where(
             jnp.logical_or(solved, selected_neighbors_solved), 0.0, target_entropy
@@ -363,15 +381,18 @@ def _get_datasets_with_policy(
         # Base case: If the next state (s') is the solution, the future cost is 0.
         # Q(s,a) = c(s,a) + (0 if solved else min Q(s',a'))
         selected_cost = jnp.take_along_axis(cost, actions[:, jnp.newaxis], axis=1).squeeze(1)
+        selected_cost = jnp.where(has_valid_action, selected_cost, 0.0)
         target_q = selected_cost + jnp.where(selected_neighbors_solved, 0.0, min_next_q)
         # If the current state (s) was already solved, its Q-value should also be 0.
         target_q = jnp.where(solved, 0.0, target_q)
+        target_q = jnp.where(has_valid_action, target_q, 0.0)
 
         # The 'diff' is the Temporal Difference (TD) error aligned with the training target
         diff = target_q - selected_q
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
+        diff = jnp.where(has_valid_action, diff, 0.0)
         # if the puzzle is already solved, the all q is 0
         return key, (
             solve_configs,
