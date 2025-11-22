@@ -360,28 +360,23 @@ class SearchResult:
             old_costs = search_result.get_cost(current_hash_idxs)
             optimal_mask = jnp.less(current_costs, old_costs) & filled
 
-            # Strict filtering: mask costs and dists for unoptimal states
-            current_costs = jnp.where(optimal_mask, current_costs, jnp.inf)
-            current_dists = jnp.where(optimal_mask, current_dists, jnp.inf)
-
-            current = Current(hashidx=current_hash_idxs, cost=current_costs)
             # Mask unoptimal keys with infinity
             filtered_key = jnp.where(optimal_mask, key, jnp.inf)
 
-            return current_states, current, current_dists, filtered_key, val
+            return current_states, current_costs, current_dists, filtered_key
 
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
         batch_size = min_key.shape[-1]
 
         # Initial expansion and filtering
-        (current_states, current, current_dists, min_key, min_val) = _expand_and_filter(
+        (current_states, current_costs, current_dists, min_key) = _expand_and_filter(
             search_result, min_key, min_val
         )
 
         # Apply unique mask to initial batch to maintain invariant
         filled = jnp.isfinite(min_key)
-        unique_mask = xnp.unique_mask(current_states, current.cost, filled)
+        unique_mask = xnp.unique_mask(current_states, current_costs, filled)
         min_key = jnp.where(unique_mask, min_key, jnp.inf)
 
         # Initialize buffer for overflow (inf)
@@ -400,7 +395,7 @@ class SearchResult:
             return jnp.logical_and(pq_not_empty, not_full_enough)
 
         def _body(state):
-            search_result, current_states, current, dists, key, val, _, _ = state
+            search_result, current_states, costs, dists, key, val, _, _ = state
 
             # Pop new nodes from PQ
             (
@@ -410,20 +405,20 @@ class SearchResult:
             ) = search_result.priority_queue.delete_mins()
 
             # Expand and filter new nodes
-            (new_states, new_current, new_dists, new_key, new_val) = _expand_and_filter(
+            (new_states, new_costs, new_dists, new_key) = _expand_and_filter(
                 search_result, new_key, new_val
             )
 
             # Merge with existing batch
             stack_states = xnp.concatenate((current_states, new_states))
-            stack_currents = xnp.concatenate((current, new_current))
+            stack_costs = jnp.concatenate((costs, new_costs))
             stack_dists = jnp.concatenate((dists, new_dists))
             stack_key = jnp.concatenate((key, new_key))
             stack_val = xnp.concatenate((val, new_val))
 
             # Deduplicate across the entire stack (old + new)
             stack_filled = jnp.isfinite(stack_key)
-            unique_mask = xnp.unique_mask(stack_states, stack_currents.cost, stack_filled)
+            unique_mask = xnp.unique_mask(stack_states, stack_costs, stack_filled)
             stack_key = jnp.where(unique_mask, stack_key, jnp.inf)
 
             # Sort to keep best candidates
@@ -432,14 +427,14 @@ class SearchResult:
             )
             sorted_val = stack_val[sorted_idx]
             sorted_states = stack_states[sorted_idx]
-            sorted_currents = stack_currents[sorted_idx]
+            sorted_costs = stack_costs[sorted_idx]
             sorted_dists = stack_dists[sorted_idx]
 
             # Split back into current batch and overflow buffer
             return (
                 search_result,
                 sorted_states[:batch_size],
-                sorted_currents[:batch_size],
+                sorted_costs[:batch_size],
                 sorted_dists[:batch_size],
                 sorted_key[:batch_size],
                 sorted_val[:batch_size],
@@ -451,7 +446,7 @@ class SearchResult:
         (
             search_result,
             final_states,
-            final_currents,
+            final_costs,
             final_dists,
             final_key,
             final_val,
@@ -463,7 +458,7 @@ class SearchResult:
             (
                 search_result,
                 current_states,
-                current,
+                current_costs,
                 current_dists,
                 min_key,
                 min_val,
@@ -472,7 +467,6 @@ class SearchResult:
             ),
         )
 
-        final_costs = final_currents.cost
         final_parents = final_val.parent
 
         # Put overflow nodes back into the PQ so they are never lost

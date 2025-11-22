@@ -115,10 +115,10 @@ def qstar_builder(
             # Compute Q-values for parent states (not neighbors)
             # This gives us Q(s, a) for all actions from parent states
             q_vals = variable_q_batch_switcher(solve_config, states, filled)
-            q_vals = q_vals.transpose().astype(KEY_DTYPE)
-            q_vals = jnp.where(filled_tiles, q_vals, jnp.inf)  # [action_size, batch_size]
+            q_vals = q_vals.transpose().astype(KEY_DTYPE)  # [action_size, batch_size]
 
             neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
+            neighbour_keys = jnp.where(filled_tiles, neighbour_keys, jnp.inf)
 
             vals = Parant_with_Costs(
                 parent=Parent(hashidx=idx_tiles, action=action),
