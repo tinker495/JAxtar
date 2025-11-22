@@ -1,7 +1,7 @@
 import click
 
 from .benchmark_commands import benchmark
-from .commands import astar, beam, qbeam, qstar
+from .commands import astar, astar_d, beam, qbeam, qstar
 from .eval_commands import evaluation
 from .human_play import human_play
 from .train_commands import distance_train, world_model_train
@@ -14,6 +14,7 @@ def cli():
 
 
 cli.add_command(astar)
+cli.add_command(astar_d)
 cli.add_command(beam)
 cli.add_command(qbeam)
 cli.add_command(qstar)
