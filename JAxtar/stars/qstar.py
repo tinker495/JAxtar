@@ -136,13 +136,16 @@ def qstar_builder(
             flattened_filled_tiles = filled_tiles.flatten()
             flattened_vals = vals.flatten()
             flattened_keys = neighbour_keys.flatten()
-
-            current_hash_idxs, _ = search_result.hashtable.lookup_parallel(
+            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
                 flattened_neighbour_look_head
             )
 
             old_costs = search_result.get_cost(current_hash_idxs)
-            optimal_mask = jnp.less(flattened_look_a_head_costs, old_costs) & flattened_filled_tiles
+            # Only consider nodes that are either:
+            # 1. Not found in the hash table (new nodes), or
+            # 2. Found but have better cost than existing
+            better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
+            optimal_mask = (jnp.logical_or(~found, better_cost_mask)) & flattened_filled_tiles
             optimal_unique_mask = (
                 xnp.unique_mask(
                     flattened_neighbour_look_head, flattened_look_a_head_costs, optimal_mask

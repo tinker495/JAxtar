@@ -355,10 +355,14 @@ class SearchResult:
 
             # Optimization: deduplicate before lookup could save compute,
             # but here we stick to logic that filters after lookup to check against global best.
-            current_hash_idxs, _ = search_result.hashtable.lookup_parallel(current_states)
+            current_hash_idxs, found = search_result.hashtable.lookup_parallel(current_states)
 
             old_costs = search_result.get_cost(current_hash_idxs)
-            optimal_mask = jnp.less(current_costs, old_costs) & filled
+            # Only consider nodes that are either:
+            # 1. Not found in the hash table (new nodes), or
+            # 2. Found but have better cost than existing
+            better_cost_mask = jnp.less(current_costs, old_costs)
+            optimal_mask = (jnp.logical_or(~found, better_cost_mask)) & filled
 
             # Mask unoptimal keys with infinity
             filtered_key = jnp.where(optimal_mask, key, jnp.inf)
