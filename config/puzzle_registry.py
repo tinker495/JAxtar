@@ -75,9 +75,11 @@ from world_model_puzzle import (
 )
 
 from .pydantic_models import (
+    EvalOptions,
     NeuralCallableConfig,
     PuzzleBundle,
     PuzzleConfig,
+    SearchOptions,
     WorldModelPuzzleConfig,
 )
 
@@ -159,6 +161,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             callable=LightsOutNeuralQ,
             param_paths={"default": "qfunction/neuralq/model/params/lightsout_{size}.pkl"},
         ),
+        eval_options=EvalOptions(
+            batch_size=1000,
+            cost_weight=0.2,
+            pop_ratio=float("inf"),
+        ),
+        search_options=SearchOptions(
+            cost_weight=0.2,
+            batch_size=1000,
+            pop_ratio=float("inf"),
+        ),
     ),
     "lightsout-conv": PuzzleBundle(
         puzzle=LightsOut,
@@ -174,6 +186,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function_nn_config=NeuralCallableConfig(
             callable=LightsOutConvNeuralQ,
             param_paths={"default": "qfunction/neuralq/model/params/lightsout-conv_{size}.pkl"},
+        ),
+        eval_options=EvalOptions(
+            batch_size=1000,
+            cost_weight=0.2,
+            pop_ratio=float("inf"),
+        ),
+        search_options=SearchOptions(
+            cost_weight=0.2,
+            batch_size=1000,
+            pop_ratio=float("inf"),
         ),
     ),
     "rubikscube": PuzzleBundle(

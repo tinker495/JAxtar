@@ -70,6 +70,7 @@ def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
         r
         for r in results
         if r.get("solved")
+        and r.get("benchmark_has_optimal_action_sequence")
         and r.get("benchmark_optimal_path_cost") is not None
         and r.get("path_cost") is not None
     ]
@@ -119,20 +120,13 @@ def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
             }
         )
 
-        # --- Optimal Path Matching ---
-        matches = [
-            r["matches_optimal_path"]
-            for r in solved_with_opt_length
-            if r.get("matches_optimal_path") is not None
-        ]
-        if matches:
-            exact_matches = sum(1 for m in matches if m)
-            match_rate = exact_matches / len(matches)
-            metrics.update(
-                {
-                    "exact_optimal_path_rate": match_rate,
-                    "exact_optimal_path_count": exact_matches,
-                }
-            )
+    # --- Verification-based optimality (regardless of action sequence availability) ---
+    verification_matches = [
+        r["matches_optimal_path"] for r in results if r.get("matches_optimal_path") is not None
+    ]
+    if verification_matches:
+        verified_exact_matches = sum(1 for m in verification_matches if m)
+        metrics["exact_optimal_path_rate"] = verified_exact_matches / len(verification_matches)
+        metrics["exact_optimal_path_count"] = verified_exact_matches
 
     return metrics

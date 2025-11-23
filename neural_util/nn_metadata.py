@@ -35,10 +35,14 @@ def prepare_model_kwargs(raw_kwargs: Dict[str, Any]) -> Dict[str, Any]:
     string/callable aliases into concrete functions.
     """
     kwargs = deepcopy(raw_kwargs)
-    kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
-    kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
-    kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
-    kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
+    if "norm_fn" in kwargs:
+        kwargs["norm_fn"] = get_norm_fn(kwargs["norm_fn"])
+    if "activation" in kwargs:
+        kwargs["activation"] = get_activation_fn(kwargs["activation"])
+    if "resblock_fn" in kwargs:
+        kwargs["resblock_fn"] = get_resblock_fn(kwargs["resblock_fn"])
+    if "use_swiglu" in kwargs:
+        kwargs["use_swiglu"] = bool(kwargs["use_swiglu"])
     return kwargs
 
 

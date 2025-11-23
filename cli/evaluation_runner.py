@@ -328,6 +328,7 @@ class EvaluationRunner:
         heuristic_model,
         qfunction_model,
     ) -> dict:
+        benchmark_sample = None
         if self.benchmark is not None:
             sample_id = identifier
             benchmark_sample = self.benchmark.get_sample(sample_id)
@@ -361,11 +362,12 @@ class EvaluationRunner:
             "matches_optimal_path": None,
             "path_actions": None,
             "path_action_strings": None,
+            "benchmark_verification_error": None,
+            "benchmark_has_optimal_action_sequence": False,
         }
 
         if self.benchmark is not None:
             result_item["benchmark_sample_id"] = run_identifier
-            benchmark_sample = self.benchmark.get_sample(run_identifier)
             optimal_path_cost = getattr(benchmark_sample, "optimal_path_cost", None)
             if optimal_path_cost is None:
                 optimal_path_cost = getattr(benchmark_sample, "optimal_path_costs", None)
@@ -379,6 +381,7 @@ class EvaluationRunner:
                     result_item["benchmark_optimal_path_length"] = max(0, optimal_state_count - 1)
             optimal_action_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
             if optimal_action_sequence is not None:
+                result_item["benchmark_has_optimal_action_sequence"] = True
                 if not isinstance(optimal_action_sequence, (list, tuple)):
                     optimal_action_sequence = list(optimal_action_sequence)
                 optimal_actions: list[int | str] = []
@@ -441,6 +444,21 @@ class EvaluationRunner:
             result_item["path_actions"] = actual_actions
 
             states = [step.state for step in path_steps]
+
+            if actual_actions:
+                action_to_string_fn = getattr(self.puzzle, "action_to_string", None)
+                actual_action_labels = []
+                for action_id in actual_actions:
+                    if action_to_string_fn is None:
+                        label = str(action_id)
+                    else:
+                        try:
+                            label = action_to_string_fn(action_id)
+                        except (ValueError, IndexError):
+                            label = str(action_id)
+                    actual_action_labels.append(label)
+                result_item["path_action_strings"] = actual_action_labels
+
             actual_dists = []
             estimated_dists = []
             for step in path_steps:
@@ -459,10 +477,7 @@ class EvaluationRunner:
                     "actions": actual_actions,
                 }
 
-            if (
-                self.benchmark is not None
-                and result_item.get("benchmark_optimal_action_count") is not None
-            ):
+            if self.benchmark is not None:
                 optimal_actions = getattr(benchmark_sample, "optimal_action_sequence", None)
                 optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
                 if optimal_actions is not None and optimal_sequence is None:
@@ -476,28 +491,19 @@ class EvaluationRunner:
                             optimal_sequence.append(int(action_val))
                     result_item["benchmark_optimal_action_sequence"] = optimal_sequence
 
-                if optimal_sequence:
-                    first_opt = optimal_sequence[0]
-                    if isinstance(first_opt, str):
-                        actual_action_labels = []
-                        for action_id in actual_actions:
-                            try:
-                                label = self.puzzle.action_to_string(action_id)
-                            except (AttributeError, ValueError, IndexError):
-                                label = str(action_id)
-                            actual_action_labels.append(label)
-                        result_item["path_action_strings"] = actual_action_labels
-                        result_item["matches_optimal_path"] = actual_action_labels == list(
-                            optimal_sequence
+                verification_result = None
+                if hasattr(self.benchmark, "verify_solution") and states:
+                    try:
+                        verification_result = self.benchmark.verify_solution(
+                            benchmark_sample,
+                            states=states,
+                            action_sequence=result_item.get("path_action_strings"),
                         )
-                    else:
-                        optimal_ints = [int(a) for a in optimal_sequence]
-                        result_item["matches_optimal_path"] = actual_actions == optimal_ints
-                elif result_item["path_action_count"] is not None:
-                    expected_count = result_item["benchmark_optimal_action_count"]
-                    result_item["matches_optimal_path"] = (
-                        result_item["path_action_count"] == expected_count
-                    )
+                    except Exception as exc:  # noqa: BLE001
+                        verification_result = None
+                        result_item["benchmark_verification_error"] = str(exc)
+
+                result_item["matches_optimal_path"] = verification_result
 
         # Extract expansion data for plotting node value distributions
         if hasattr(search_result, "pop_generation"):
@@ -550,27 +556,20 @@ class EvaluationRunner:
             total_completed = i + 1
             success_rate = (num_solved / total_completed) * 100
 
-            solved_with_opt_reference = [
-                r
-                for r in solved_results
-                if r.get("benchmark_optimal_path_cost") is not None
-                and r.get("path_cost") is not None
+            optimal_reference_results = [
+                r for r in solved_results if r.get("matches_optimal_path") is not None
             ]
-            optimal_costs = [r["benchmark_optimal_path_cost"] for r in solved_with_opt_reference]
-            optimal_hits = [
-                r
-                for r in solved_with_opt_reference
-                if abs(r["path_cost"] - r["benchmark_optimal_path_cost"]) < 1e-6
-            ]
-            has_optimal_reference = bool(optimal_costs)
+            optimal_hits = [r for r in optimal_reference_results if r["matches_optimal_path"]]
             optimal_rate = (
-                (len(optimal_hits) / len(solved_with_opt_reference)) * 100
-                if has_optimal_reference
+                (len(optimal_hits) / len(optimal_reference_results)) * 100
+                if optimal_reference_results
                 else None
             )
 
-            success_key = "Success Rate/Optimal Rate" if has_optimal_reference else "Success Rate"
-            if has_optimal_reference and optimal_rate is not None:
+            success_key = (
+                "Success Rate/Optimal Rate" if optimal_rate is not None else "Success Rate"
+            )
+            if optimal_rate is not None:
                 rate_label = f"{success_rate:.2f}%/{optimal_rate:.2f}%"
             else:
                 rate_label = f"{success_rate:.2f}%"
@@ -591,7 +590,15 @@ class EvaluationRunner:
                         f"Avg {self.node_metric_label} (Solved)": f"{human_format(avg_nodes)}",
                     }
                 )
-                has_optimal_cost_info = bool(optimal_costs)
+                solved_with_optimal_cost = [
+                    r
+                    for r in solved_results
+                    if r.get("benchmark_has_optimal_action_sequence")
+                    and r.get("benchmark_optimal_path_cost") is not None
+                    and r.get("path_cost") is not None
+                ]
+                optimal_costs = [r["benchmark_optimal_path_cost"] for r in solved_with_optimal_cost]
+                has_optimal_cost_info = bool(solved_with_optimal_cost)
                 cost_key = "Avg Cost/Optimal Cost" if has_optimal_cost_info else "Avg Cost"
                 if avg_path_cost is not None:
                     cost_label = f"{avg_path_cost:.2f}"
