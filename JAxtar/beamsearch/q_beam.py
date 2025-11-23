@@ -97,14 +97,17 @@ def qbeam_builder(
                 vals = vals.transpose().astype(KEY_DTYPE)
                 return jnp.where(child_valid, vals, jnp.inf)
 
-            q_vals = jax.lax.cond(
-                jnp.any(child_valid),
-                _compute_q,
-                lambda _: jnp.full(child_valid.shape, jnp.inf, dtype=KEY_DTYPE),
-                None,
-            )
+            q_vals = (
+                jax.lax.cond(
+                    jnp.any(child_valid),
+                    _compute_q,
+                    lambda _: jnp.full(child_valid.shape, jnp.inf, dtype=KEY_DTYPE),
+                    None,
+                )
+                - transition_cost
+            )  # Q(s,a) = h(s') + c(s,a) / h(s') = Q(s,a) - c(s,a)
 
-            scores = (cost_weight * child_costs + (q_vals - transition_cost)).astype(KEY_DTYPE)
+            scores = (cost_weight * child_costs + q_vals).astype(KEY_DTYPE)
             scores = jnp.where(child_valid, scores, jnp.inf)
 
             flat_states = neighbours.flatten()
