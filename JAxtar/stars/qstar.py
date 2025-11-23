@@ -133,6 +133,17 @@ def qstar_builder(
             flattened_keys = neighbour_keys.flatten()
 
             if look_ahead_pruning:
+                # NOTE: Q* in its canonical form only evaluates parent states and relies on the
+                # priority queue ordering to discover optimal frontiers. This look-ahead step
+                # peeks at neighbour states before inserting them into the queue, effectively
+                # performing an inexpensive expansion filter. That means this path is no longer
+                # a textbook Q* implementation, but it becomes extremely cost-effective whenever
+                # puzzle dynamics (the environment step) are far cheaper than pushing extra items
+                # through the batched priority queue / hash-table machinery. When the simulator
+                # dominates runtime, disable this block to remain faithful to vanilla Q*. The gain
+                # is even larger in highly reversible environments (common in puzzles) where many
+                # neighbour evaluations collapse to repeated configurations, so aggressive pruning
+                # saves substantial queue churn.
                 # Look-a-head pruning can be disabled to explore more neighbours.
                 # Even without pruning, we still sort keys to minimize data-structure I/O.
                 neighbour_look_a_head, ncosts = puzzle.batched_get_neighbours(

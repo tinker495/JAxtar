@@ -20,6 +20,7 @@ def astar_d_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    look_ahead_pruning: bool = True,
 ):
     """
     Builds and returns a JAX-accelerated A* with deferred node evaluation (A* deferred).
@@ -47,6 +48,9 @@ def astar_d_builder(
         cost_weight: Weight applied to the path cost in the A* with deferred search algorithm (default: 1.0-1e-6).
                     Values closer to 1.0 make the search more greedy/depth-first.
         show_compile_time: If True, displays the time taken to compile the search function (default: False).
+        look_ahead_pruning: Enables neighbour look-ahead pruning (default: True). Disable
+            to recover canonical A* deferred behaviour when simulator cost outweighs queue
+            pressure.
 
     Returns:
         A function that performs A* with deferred search given a start state and solve configuration.
@@ -148,41 +152,49 @@ def astar_d_builder(
                 dist=tiled_heuristic_vals,
             )
 
-            # Look-a-head pruning
-            neighbour_look_a_head, ncosts = puzzle.batched_get_neighbours(
-                solve_config, states, filled
-            )  # [action_size, batch_size]
-            look_a_head_costs = costs + ncosts  # [action_size, batch_size]
-            flattened_neighbour_look_head = neighbour_look_a_head.flatten()
-            flattened_look_a_head_costs = look_a_head_costs.flatten()
             flattened_filled_tiles = filled_tiles.flatten()
             flattened_vals = vals.flatten()
             flattened_keys = neighbour_keys.flatten()
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head
-            )
 
-            old_costs = search_result.get_cost(current_hash_idxs)
-            # Only consider nodes that are either:
-            # 1. Not found in the hash table (new nodes), or
-            # 2. Found but have better cost than existing
-            better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
-            optimal_mask = (jnp.logical_or(~found, better_cost_mask)) & flattened_filled_tiles
-            optimal_unique_mask = (
-                xnp.unique_mask(
-                    flattened_neighbour_look_head, flattened_look_a_head_costs, optimal_mask
+            if look_ahead_pruning:
+                # NOTE: Standard A* deferred evaluates children only when popped.
+                # This optional look-ahead peeks at concrete neighbours to cull
+                # duplicates and dominated costs ahead of time, which means it is
+                # no longer a textbook implementation. It pays off when state
+                # transitions are cheap relative to priority-queue traffic and in
+                # highly reversible puzzles that re-visit the same states often.
+                neighbour_look_a_head, ncosts = puzzle.batched_get_neighbours(
+                    solve_config, states, filled
+                )  # [action_size, batch_size]
+                look_a_head_costs = costs + ncosts  # [action_size, batch_size]
+                flattened_neighbour_look_head = neighbour_look_a_head.flatten()
+                flattened_look_a_head_costs = look_a_head_costs.flatten()
+                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head
                 )
-                & optimal_mask
-            )
 
-            flattened_neighbour_keys = jnp.where(optimal_unique_mask, flattened_keys, jnp.inf)
+                old_costs = search_result.get_cost(current_hash_idxs)
+                candidate_mask = jnp.logical_or(
+                    ~found, jnp.less(flattened_look_a_head_costs, old_costs)
+                )
+                candidate_mask = candidate_mask & flattened_filled_tiles
+                optimal_mask = (
+                    xnp.unique_mask(
+                        flattened_neighbour_look_head, flattened_look_a_head_costs, candidate_mask
+                    )
+                    & candidate_mask
+                )
+            else:
+                optimal_mask = flattened_filled_tiles
+
+            flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)
 
             # Sort to keep best candidates
             sorted_key, sorted_idx = jax.lax.sort_key_val(
                 flattened_neighbour_keys, jnp.arange(flattened_neighbour_keys.shape[-1])
             )
             sorted_vals = flattened_vals[sorted_idx]
-            sorted_optimal_unique_mask = optimal_unique_mask[sorted_idx]
+            sorted_optimal_unique_mask = optimal_mask[sorted_idx]
 
             neighbour_keys = sorted_key.reshape(puzzle.action_size, batch_size)
             vals = sorted_vals.reshape((puzzle.action_size, batch_size))
