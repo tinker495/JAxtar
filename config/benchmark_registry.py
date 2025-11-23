@@ -1,4 +1,5 @@
 from puxle.benchmark import (
+    LightsOutDeepCubeABenchmark,
     RubiksCubeDeepCubeABenchmark,
     SlidePuzzleDeepCubeA24Benchmark,
     SlidePuzzleDeepCubeA35Benchmark,
@@ -7,10 +8,11 @@ from puxle.benchmark import (
 )
 
 from heuristic.neuralheuristic import (
+    LightsOutNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
 )
-from qfunction.neuralq import RubiksCubeNeuralQ, SlidePuzzleNeuralQ
+from qfunction.neuralq import LightsOutNeuralQ, RubiksCubeNeuralQ, SlidePuzzleNeuralQ
 
 from .pydantic_models import BenchmarkBundle, EvalOptions, NeuralCallableConfig
 
@@ -100,6 +102,25 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
         q_function_nn_config=NeuralCallableConfig(
             callable=SlidePuzzleNeuralQ,
             param_paths={"default": "qfunction/neuralq/model/params/n-puzzle_7.pkl"},
+        ),
+        eval_options=EvalOptions(
+            batch_size=10000,
+            cost_weight=0.6,
+            pop_ratio=float("inf"),
+            num_eval=-1,
+            early_stop_patience=10,
+            early_stop_threshold=0.1,
+        ),
+    ),
+    "lightsout-deepcubea": BenchmarkBundle(
+        benchmark=LightsOutDeepCubeABenchmark,
+        heuristic_nn_config=NeuralCallableConfig(
+            callable=LightsOutNeuralHeuristic,
+            param_paths={"default": "heuristic/neuralheuristic/model/params/lightsout_7.pkl"},
+        ),
+        q_function_nn_config=NeuralCallableConfig(
+            callable=LightsOutNeuralQ,
+            param_paths={"default": "qfunction/neuralq/model/params/lightsout_7.pkl"},
         ),
         eval_options=EvalOptions(
             batch_size=10000,

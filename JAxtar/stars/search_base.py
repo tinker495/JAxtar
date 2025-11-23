@@ -360,22 +360,9 @@ class SearchResult:
             parent_actions = val.parent.action  # [batch_size]
             parent_costs = search_result.get_cost(val.parent)
 
-            # TODO: This should theoretically be equivalent to sampling actions from get_neighbours,
-            # but it doesn't work as expected. Temporarily using get_neighbours for now.
-            # Need to investigate and fix later.
-            # current_states, ncosts = puzzle.batched_get_actions(
-            #     solve_config, parent_states, parent_actions, filled
-            # ) # [action_size, batch_size] [action_size, batch_size]
-
-            current_states, ncosts = puzzle.batched_get_neighbours(
-                solve_config, parent_states, filled
-            )  # [action_size, batch_size] [action_size, batch_size]
-            # Select the states and costs corresponding to the parent actions
-            # parent_actions: [batch_size], current_states: [action_size, batch_size]
-            # We need to select current_states[parent_actions[i], i] for each i
-            batch_indices = jnp.arange(parent_actions.shape[0])
-            current_states = current_states[parent_actions, batch_indices]  # [batch_size]
-            ncosts = ncosts[parent_actions, batch_indices]  # [batch_size]
+            current_states, ncosts = puzzle.batched_get_actions(
+                solve_config, parent_states, parent_actions, filled
+            )  # [batch_size] [action_size, batch_size]
 
             current_costs = parent_costs + ncosts
             current_dists = val.dist - ncosts
