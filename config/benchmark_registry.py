@@ -120,7 +120,7 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
         ),
         q_function_nn_config=NeuralCallableConfig(
             callable=LightsOutNeuralQ,
-            param_paths={"default": "qfunction/neuralq/model/params/lightsout-conv_7.pkl"},
+            param_paths={"default": "qfunction/neuralq/model/params/lightsout_7.pkl"},
         ),
         eval_options=EvalOptions(
             batch_size=1000,
