@@ -20,6 +20,7 @@ def qstar_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    look_ahead_pruning: bool = True,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -33,6 +34,7 @@ def qstar_builder(
         cost_weight: Weight applied to the path cost in the Q* algorithm (default: 1.0-1e-6).
                     Values closer to 1.0 make the search more greedy/depth-first.
         show_compile_time: If True, displays the time taken to compile the search function (default: False).
+        look_ahead_pruning: If True, enables neighbour look-ahead pruning for duplicate and cost-based filtering.
 
     Returns:
         A function that performs Q* search given a start state and solve configuration.
@@ -126,45 +128,50 @@ def qstar_builder(
                 dist=q_vals,
             )
 
-            # Look-a-head pruning
-            neighbour_look_a_head, ncosts = puzzle.batched_get_neighbours(
-                solve_config, states, filled
-            )  # [action_size, batch_size]
-            look_a_head_costs = costs + ncosts  # [action_size, batch_size]
-            flattened_neighbour_look_head = neighbour_look_a_head.flatten()
-            flattened_look_a_head_costs = look_a_head_costs.flatten()
             flattened_filled_tiles = filled_tiles.flatten()
             flattened_vals = vals.flatten()
             flattened_keys = neighbour_keys.flatten()
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head
-            )
 
-            old_costs = search_result.get_cost(current_hash_idxs)
-            # Only consider nodes that are either:
-            # 1. Not found in the hash table (new nodes), or
-            # 2. Found but have better cost than existing
-            better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
-            optimal_mask = (jnp.logical_or(~found, better_cost_mask)) & flattened_filled_tiles
-            optimal_unique_mask = (
-                xnp.unique_mask(
-                    flattened_neighbour_look_head, flattened_look_a_head_costs, optimal_mask
+            if look_ahead_pruning:
+                # Look-a-head pruning can be disabled to explore more neighbours.
+                # Even without pruning, we still sort keys to minimize data-structure I/O.
+                neighbour_look_a_head, ncosts = puzzle.batched_get_neighbours(
+                    solve_config, states, filled
+                )  # [action_size, batch_size]
+                look_a_head_costs = costs + ncosts  # [action_size, batch_size]
+                flattened_neighbour_look_head = neighbour_look_a_head.flatten()
+                flattened_look_a_head_costs = look_a_head_costs.flatten()
+
+                unique_mask = xnp.unique_mask(
+                    flattened_neighbour_look_head,
+                    flattened_look_a_head_costs,
+                    flattened_filled_tiles,
                 )
-                & optimal_mask
-            )
+                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head, unique_mask
+                )
+                old_costs = search_result.get_cost(current_hash_idxs)
+                # Only consider nodes that are either:
+                # 1. Not found in the hash table (new nodes), or
+                # 2. Found but have better cost than existing
+                # Note: If unique_mask is False, found is also False, so we can optimize by checking unique_mask first
+                better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
+                optimal_mask = unique_mask & (jnp.logical_or(~found, better_cost_mask))
+            else:
+                optimal_mask = flattened_filled_tiles
 
-            flattened_neighbour_keys = jnp.where(optimal_unique_mask, flattened_keys, jnp.inf)
+            flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)
 
             # Sort to keep best candidates
             sorted_key, sorted_idx = jax.lax.sort_key_val(
                 flattened_neighbour_keys, jnp.arange(flattened_neighbour_keys.shape[-1])
             )
             sorted_vals = flattened_vals[sorted_idx]
-            sorted_optimal_unique_mask = optimal_unique_mask[sorted_idx]
+            optimal_mask = optimal_mask[sorted_idx]
 
             neighbour_keys = sorted_key.reshape(puzzle.action_size, batch_size)
             vals = sorted_vals.reshape((puzzle.action_size, batch_size))
-            optimal_unique_mask = sorted_optimal_unique_mask.reshape(puzzle.action_size, batch_size)
+            optimal_mask = optimal_mask.reshape(puzzle.action_size, batch_size)
 
             def _insert(search_result: SearchResult, neighbour_keys, vals):
 
@@ -190,7 +197,7 @@ def qstar_builder(
             search_result, _ = jax.lax.scan(
                 _scan,
                 search_result,
-                (neighbour_keys, vals, optimal_unique_mask),
+                (neighbour_keys, vals, optimal_mask),
             )
             search_result, min_val, next_states, filled = search_result.pop_full_with_actions(
                 puzzle, solve_config
