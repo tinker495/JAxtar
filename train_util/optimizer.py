@@ -85,7 +85,7 @@ def setup_optimizer(
                 weight_decay=weight_decay_size,
                 mask=mask_tree,
             )
-        return scaler
+        return optax.chain(optax.clip_by_global_norm(1.0), scaler)
 
     optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
     opt_state = optimizer.init(params)
