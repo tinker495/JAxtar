@@ -2,6 +2,10 @@ from puxle.benchmark import (
     LightsOutDeepCubeABenchmark,
     RubiksCubeDeepCubeABenchmark,
     RubiksCubeDeepCubeAHardBenchmark,
+    RubiksCubeSanta333Benchmark,
+    RubiksCubeSanta444Benchmark,
+    RubiksCubeSanta555Benchmark,
+    RubiksCubeSanta666Benchmark,
     SlidePuzzleDeepCubeA15HardBenchmark,
     SlidePuzzleDeepCubeA24Benchmark,
     SlidePuzzleDeepCubeA35Benchmark,
@@ -47,6 +51,82 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
         q_function_nn_config=NeuralCallableConfig(
             callable=RubiksCubeNeuralQ,
             param_paths={"default": "qfunction/neuralq/model/params/rubikscube_3.pkl"},
+        ),
+        eval_options=EvalOptions(
+            batch_size=10000,
+            cost_weight=0.6,
+            pop_ratio=float("inf"),
+            num_eval=-1,
+            early_stop_patience=10,
+            early_stop_threshold=0.1,
+        ),
+    ),
+    "rubikscube-santa333": BenchmarkBundle(
+        benchmark=RubiksCubeSanta333Benchmark,
+        heuristic_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralHeuristic,
+            param_paths={"default": "heuristic/neuralheuristic/model/params/rubikscube-uqtm_3.pkl"},
+        ),
+        q_function_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralQ,
+            param_paths={"default": "qfunction/neuralq/model/params/rubikscube-uqtm_3.pkl"},
+        ),
+        eval_options=EvalOptions(
+            batch_size=10000,
+            cost_weight=0.6,
+            pop_ratio=float("inf"),
+            num_eval=-1,
+            early_stop_patience=10,
+            early_stop_threshold=0.1,
+        ),
+    ),
+    "rubikscube-santa444": BenchmarkBundle(
+        benchmark=RubiksCubeSanta444Benchmark,
+        heuristic_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralHeuristic,
+            param_paths={"default": "heuristic/neuralheuristic/model/params/rubikscube-uqtm_4.pkl"},
+        ),
+        q_function_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralQ,
+            param_paths={"default": "qfunction/neuralq/model/params/rubikscube-uqtm_4.pkl"},
+        ),
+        eval_options=EvalOptions(
+            batch_size=10000,
+            cost_weight=0.6,
+            pop_ratio=float("inf"),
+            num_eval=-1,
+            early_stop_patience=10,
+            early_stop_threshold=0.1,
+        ),
+    ),
+    "rubikscube-santa555": BenchmarkBundle(
+        benchmark=RubiksCubeSanta555Benchmark,
+        heuristic_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralHeuristic,
+            param_paths={"default": "heuristic/neuralheuristic/model/params/rubikscube-uqtm_5.pkl"},
+        ),
+        q_function_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralQ,
+            param_paths={"default": "qfunction/neuralq/model/params/rubikscube-uqtm_5.pkl"},
+        ),
+        eval_options=EvalOptions(
+            batch_size=10000,
+            cost_weight=0.6,
+            pop_ratio=float("inf"),
+            num_eval=-1,
+            early_stop_patience=10,
+            early_stop_threshold=0.1,
+        ),
+    ),
+    "rubikscube-santa666": BenchmarkBundle(
+        benchmark=RubiksCubeSanta666Benchmark,
+        heuristic_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralHeuristic,
+            param_paths={"default": "heuristic/neuralheuristic/model/params/rubikscube-uqtm_6.pkl"},
+        ),
+        q_function_nn_config=NeuralCallableConfig(
+            callable=RubiksCubeNeuralQ,
+            param_paths={"default": "qfunction/neuralq/model/params/rubikscube-uqtm_6.pkl"},
         ),
         eval_options=EvalOptions(
             batch_size=10000,

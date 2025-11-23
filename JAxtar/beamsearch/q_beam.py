@@ -104,7 +104,7 @@ def qbeam_builder(
                 None,
             )
 
-            scores = (cost_weight * child_costs + q_vals).astype(KEY_DTYPE)
+            scores = (cost_weight * child_costs + (q_vals - transition_cost)).astype(KEY_DTYPE)
             scores = jnp.where(child_valid, scores, jnp.inf)
 
             flat_states = neighbours.flatten()
