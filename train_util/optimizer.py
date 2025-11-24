@@ -1,16 +1,30 @@
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 import jax
 import optax
 
 PyTree = Any
 
+def adoptw(
+    learning_rate: float,
+    weight_decay: float,
+    mask: Optional[PyTree] = None,
+    **adopt_kwargs: Any,
+) -> optax.GradientTransformation:
+    return optax.chain(
+        optax.contrib.scale_by_adopt(
+            **adopt_kwargs,
+        ),
+        optax.add_decayed_weights(weight_decay, mask=mask),
+        optax.scale_by_learning_rate(learning_rate),
+    )
+
 OPTIMIZERS = {
     "adam": optax.adamw,
     "schedule_free_adamw": optax.contrib.schedule_free_adamw,
     "nadam": lambda **kwargs: optax.adamw(nesterov=True, **kwargs),
-    "adopt": optax.contrib.adopt,
-    "nadopt": lambda **kwargs: optax.contrib.adopt(nesterov=True, **kwargs),
+    "adopt": adoptw,
+    "nadopt": lambda **kwargs: adoptw(nesterov=True, **kwargs),
     "muon": optax.contrib.muon,
     "rmsprop": optax.rmsprop,
     "prodigy": optax.contrib.prodigy,
