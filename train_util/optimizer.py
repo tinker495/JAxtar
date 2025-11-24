@@ -5,19 +5,29 @@ import optax
 
 PyTree = Any
 
+
 def adoptw(
     learning_rate: float,
-    weight_decay: float,
+    weight_decay: float = None,
     mask: Optional[PyTree] = None,
     **adopt_kwargs: Any,
 ) -> optax.GradientTransformation:
-    return optax.chain(
-        optax.contrib.scale_by_adopt(
-            **adopt_kwargs,
-        ),
-        optax.add_decayed_weights(weight_decay, mask=mask),
-        optax.scale_by_learning_rate(learning_rate),
-    )
+    if weight_decay is not None:
+        return optax.chain(
+            optax.contrib.scale_by_adopt(
+                **adopt_kwargs,
+            ),
+            optax.add_decayed_weights(weight_decay, mask=mask),
+            optax.scale_by_learning_rate(learning_rate),
+        )
+    else:
+        return optax.chain(
+            optax.contrib.scale_by_adopt(
+                **adopt_kwargs,
+            ),
+            optax.scale_by_learning_rate(learning_rate),
+        )
+
 
 OPTIMIZERS = {
     "adam": optax.adamw,
