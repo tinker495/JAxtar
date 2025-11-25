@@ -14,17 +14,21 @@ def BatchNorm(x, training):
     y = nn.BatchNorm(momentum=0.99, dtype=jnp.float32)(x, use_running_average=not training)
     return y.astype(DTYPE)
 
+
 def BatchNorm0999(x, training):
     y = nn.BatchNorm(momentum=0.999, dtype=jnp.float32)(x, use_running_average=not training)
     return y.astype(DTYPE)
+
 
 def BatchReNorm(x, training):
     y = BatchReNorm_(momentum=0.99, dtype=jnp.float32)(x, use_running_average=not training)
     return y.astype(DTYPE)
 
+
 def BatchReNorm0999(x, training):
     y = BatchReNorm_(momentum=0.999, dtype=jnp.float32)(x, use_running_average=not training)
     return y.astype(DTYPE)
+
 
 def InstanceNorm(x, training):
     y = nn.InstanceNorm(dtype=jnp.float32)(x)
@@ -79,7 +83,7 @@ def get_norm_fn(norm_name_or_fn=None):
 
 def swiglu_fn(hidden_N, base_activation=nn.silu, norm_fn=None, param_matching=False):
     target_hidden = hidden_N
-    if param_matching: # match parameter count with non-gated MLP
+    if param_matching:  # match parameter count with non-gated MLP
         target_hidden = max(1, (2 * hidden_N) // 3)
 
     def _swiglu_fn(x, training=False):
@@ -100,7 +104,7 @@ ACTIVATION_FN_REGISTRY = {
     "hard_swish": nn.hard_swish,
     "silu": nn.silu,
     "tanh": nn.tanh,
-    "relu6": nn.relu6
+    "relu6": nn.relu6,
 }
 
 
@@ -167,7 +171,8 @@ class PreActivationResBlock(nn.Module):
     norm_fn: Callable = DEFAULT_NORM_FN
     activation: Callable = nn.relu
     use_swiglu: bool = False
-    zero_init_last: bool = True
+    zero_init_last: bool = False
+    hidden_node_multiplier: int = 1
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -182,8 +187,9 @@ class PreActivationResBlock(nn.Module):
                     residual, training
                 )
             else:
-                residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
-                residual = self.norm_fn(residual, training)
+                residual = nn.Dense(self.node_size * self.hidden_node_multiplier, dtype=DTYPE)(
+                    residual
+                )
                 residual = self.activation(residual)
 
         if self.zero_init_last:
