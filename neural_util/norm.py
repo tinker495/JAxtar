@@ -11,6 +11,37 @@ Shape = Tuple[int, ...]
 Axes = Union[int, Sequence[int]]
 
 
+class DyTan(nn.Module):
+    use_bias: bool = True
+    use_scale: bool = True
+    dtype: Optional[Any] = None
+    param_dtype: Any = jnp.float32
+    bias_init: Callable[[PRNGKey, Shape, Any], Array] = nn.initializers.zeros
+    scale_init: Callable[[PRNGKey, Shape, Any], Array] = nn.initializers.ones
+    alpha_init: Callable[[PRNGKey, Shape, Any], Array] = nn.initializers.ones
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        feature_shape = (x.shape[-1],)
+        alpha = self.param("alpha", self.alpha_init, feature_shape, self.param_dtype)
+
+        inputs = x
+        if self.dtype is not None:
+            inputs = inputs.astype(self.dtype)
+
+        y = jnp.tanh(inputs * alpha)
+
+        if self.use_scale:
+            scale = self.param("scale", self.scale_init, feature_shape, self.param_dtype)
+            y = y * scale
+
+        if self.use_bias:
+            bias = self.param("bias", self.bias_init, feature_shape, self.param_dtype)
+            y = y + bias
+
+        return y
+
+
 class BatchReNorm(nn.Module):
     use_running_average: Optional[bool] = None
     axis: int = -1

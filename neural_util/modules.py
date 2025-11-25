@@ -4,6 +4,7 @@ import flax.linen as nn
 import jax.numpy as jnp
 
 from .norm import BatchReNorm as BatchReNorm_
+from .norm import DyTan as DyTan_
 
 DTYPE = jnp.bfloat16
 # Use float32 for numerically sensitive heads / losses.
@@ -50,6 +51,11 @@ def RMSNorm(x, training):
     return y.astype(DTYPE)
 
 
+def DyTan(x, training):
+    y = DyTan_(dtype=jnp.float32)(x)
+    return y.astype(DTYPE)
+
+
 DEFAULT_NORM_FN = BatchNorm
 
 
@@ -63,6 +69,7 @@ NORM_FN_REGISTRY = {
     "layer": LayerNorm,
     "group": GroupNorm,
     "rms": RMSNorm,
+    "dytan": DyTan,
 }
 
 
