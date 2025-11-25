@@ -45,8 +45,9 @@ class QModelBase(nn.Module):
             x = self.norm_fn(x, training)
             x = self.activation(x)
             x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-            x = self.norm_fn(x, training)
-            x = self.activation(x)
+            if self.resblock_fn != PreActivationResBlock:
+                x = self.norm_fn(x, training)
+                x = self.activation(x)
         for _ in range(self.Res_N):
             x = self.resblock_fn(
                 self.hidden_dim,
