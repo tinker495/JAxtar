@@ -108,6 +108,9 @@ def davi(
         temperature=train_options.temperature,
         td_error_clip=train_options.td_error_clip,
         use_diffusion_distance=train_options.use_diffusion_distance,
+        use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
+        use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
+        diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
         non_backtracking_steps=train_options.sampling_non_backtracking_steps,
     )
 
@@ -118,7 +121,7 @@ def davi(
     eval_params = get_eval_params(opt_state, heuristic_params)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_heuristic_params, eval_params, subkey)
+        dataset = get_datasets(target_heuristic_params, eval_params, subkey, i)
         target_heuristic = dataset["target_heuristic"]
         mean_target_heuristic = jnp.mean(target_heuristic)
         mean_target_entropy = None
@@ -323,6 +326,9 @@ def qlearning(
         td_error_clip=train_options.td_error_clip,
         use_double_dqn=train_options.use_double_dqn,
         use_diffusion_distance=train_options.use_diffusion_distance,
+        use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
+        use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
+        diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
         non_backtracking_steps=train_options.sampling_non_backtracking_steps,
     )
 
@@ -333,7 +339,7 @@ def qlearning(
     eval_params = get_eval_params(opt_state, qfunc_params)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_qfunc_params, eval_params, subkey)
+        dataset = get_datasets(target_qfunc_params, eval_params, subkey, i)
         target_q = dataset["target_q"]
         mean_target_q = jnp.mean(target_q)
         # Optional: mean action entropy when using policy sampling
