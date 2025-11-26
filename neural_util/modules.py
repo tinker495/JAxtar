@@ -179,7 +179,6 @@ class PreActivationResBlock(nn.Module):
     activation: Callable = nn.relu
     use_swiglu: bool = False
     zero_init_last: bool = False
-    hidden_node_multiplier: int = 1
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -194,7 +193,7 @@ class PreActivationResBlock(nn.Module):
                     residual, training
                 )
             else:
-                residual = nn.Dense(self.node_size * self.hidden_node_multiplier, dtype=DTYPE)(
+                residual = nn.Dense(self.node_size, dtype=DTYPE)(
                     residual
                 )
                 residual = self.activation(residual)

@@ -34,6 +34,7 @@ class HeuristicBase(nn.Module):
     activation: str = nn.relu
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    hidden_node_multiplier: int = 1
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -50,7 +51,7 @@ class HeuristicBase(nn.Module):
                 x = self.activation(x)
         for _ in range(self.Res_N):
             x = self.resblock_fn(
-                self.hidden_dim,
+                self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
                 activation=self.activation,
