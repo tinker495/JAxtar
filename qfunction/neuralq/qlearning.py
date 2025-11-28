@@ -451,6 +451,7 @@ def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
     SolveConfigsAndStatesAndActions: Xtructurable,
+    SolveConfigsAndStates: Xtructurable,
     q_model: QModelBase,
     minibatch_size: int,
     target_q_params: Any,
@@ -485,12 +486,32 @@ def _get_datasets_with_diffusion_distance(
         :, jnp.newaxis
     ]  # [dataset_size, 1]
 
+    # 1. Find state-wise minimal cost (Global Best Value Table)
+
+    solve_configs_and_states = SolveConfigsAndStates(
+        solveconfigs=solve_configs,
+        states=states,
+    )
+
+    _, unique_state_idx, inverse_state_indices = xnp.unique_mask(
+        val=solve_configs_and_states,
+        key=move_costs, # move_costs is used as initial cost estimate
+        return_index=True,
+        return_inverse=True,
+    )
+    # state_min_cost: best cost found for each state across all actions and trajectories
+    state_min_cost = move_costs[unique_state_idx][inverse_state_indices][:, jnp.newaxis]
+
     # Propagate the improved Q values backwards along the trajectory
     dataset_size = target_q.shape[0]
 
     # Pad dataset with infinity to handle invalid parent pointers
     padded_q = jnp.pad(
         target_q, ((0, 1), (0, 0)), constant_values=jnp.inf
+    )
+    # Pad state_min_cost as well for lookup
+    padded_state_min_cost = jnp.pad(
+        state_min_cost, ((0, 1), (0, 0)), constant_values=jnp.inf
     )
     
     # Map -1 or out-of-bounds indices to the padded infinity value
@@ -505,7 +526,11 @@ def _get_datasets_with_diffusion_distance(
         current_q = q[:dataset_size]
         
         # Gather Q from parents (neighbors closer to goal)
-        q_parents = q[safe_parent_indices] # [N, 1]
+        # Combine global optimal info (s' best) and trajectory info
+        q_parents_optimal = padded_state_min_cost[safe_parent_indices] # [N, 1]
+        q_parents_prop = q[safe_parent_indices] # [N, 1]
+        
+        q_parents = jnp.minimum(q_parents_optimal, q_parents_prop)
         
         # Bellman update: Q(s, a) <= c(s, a, s') + Q(s', a')
         # where (s', a') is the next state-action pair in the trajectory
@@ -538,6 +563,7 @@ def _get_datasets_with_diffusion_distance_mixture(
     puzzle: Puzzle,
     preproc_fn: Callable,
     SolveConfigsAndStatesAndActions: Xtructurable,
+    SolveConfigsAndStates: Xtructurable,
     q_model: QModelBase,
     minibatch_size: int,
     target_q_params: Any,
@@ -588,10 +614,39 @@ def _get_datasets_with_diffusion_distance_mixture(
     )
     cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]  # [dataset_size, 1]
 
+    # 1. Find state-wise minimal cost (Global Best Value Table)
+    # This helps sharing optimal cost across different actions for the same state
+    # Note: In Q-learning, Q(s,a) depends on 'a', but for distance-to-go metric, 
+    # V(s) is a strong lower bound and good estimator.
+    # We use this to enhance the back-propagation.
+    
+    # SolveConfigsAndStates structure needs to be defined/imported or created dynamically.
+    # Since it is passed as an argument to other functions but not here, we might need to use the one from outer scope or create one.
+    # However, we can reuse SolveConfigsAndStatesAndActions but ignore actions for grouping.
+    # Or better, just create a temporary structure for state grouping.
+
+    solve_configs_and_states = SolveConfigsAndStates(
+        solveconfigs=solve_configs,
+        states=states,
+    )
+
+    _, unique_state_idx, inverse_state_indices = xnp.unique_mask(
+        val=solve_configs_and_states,
+        key=cost,
+        return_index=True,
+        return_inverse=True,
+    )
+    # state_min_cost: best cost found for each state across all actions and trajectories
+    state_min_cost = cost[unique_state_idx][inverse_state_indices][:, jnp.newaxis]
+
     # Propagate the improved cost values backwards along the trajectory
     # Pad dataset with infinity to handle invalid parent pointers
     padded_cost = jnp.pad(
         cost, ((0, 1), (0, 0)), constant_values=jnp.inf
+    )
+    # Pad state_min_cost as well for lookup
+    padded_state_min_cost = jnp.pad(
+        state_min_cost, ((0, 1), (0, 0)), constant_values=jnp.inf
     )
     
     # Map -1 or out-of-bounds indices to the padded infinity value
@@ -605,8 +660,15 @@ def _get_datasets_with_diffusion_distance_mixture(
         # c is padded [N+1, 1]
         current_c = c[:dataset_size]
         
-        # Gather cost from parents (neighbors closer to goal)
-        c_parents = c[safe_parent_indices] # [N, 1]
+        # Gather optimal cost of the next state (s') from the global best table
+        # This brings information from other trajectories
+        c_parents_optimal = padded_state_min_cost[safe_parent_indices] # [N, 1]
+        
+        # Also consider the propagated cost within the current trajectory
+        # This ensures consistency if trajectory update is faster/better
+        c_parents_prop = c[safe_parent_indices]
+        
+        c_parents = jnp.minimum(c_parents_optimal, c_parents_prop)
         
         # Bellman update: C(s, a) <= step_cost + C(s', a')
         new_c = action_costs + c_parents
@@ -715,12 +777,18 @@ def get_qlearning_dataset_builder(
             states: FieldDescriptor.scalar(dtype=puzzle.State)
             actions: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))
 
+        @xtructure_dataclass
+        class SolveConfigsAndStates:
+            solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
+            states: FieldDescriptor.scalar(dtype=puzzle.State)
+
         if use_diffusion_distance_mixture:
             diffusion_get_datasets = partial(
                 _get_datasets_with_diffusion_distance_mixture,
                 puzzle,
                 preproc_fn,
                 SolveConfigsAndStatesAndActions,
+                SolveConfigsAndStates,
                 q_model,
                 dataset_minibatch_size,
                 k_max=k_max,
@@ -735,6 +803,7 @@ def get_qlearning_dataset_builder(
                 puzzle,
                 preproc_fn,
                 SolveConfigsAndStatesAndActions,
+                SolveConfigsAndStates,
                 q_model,
                 dataset_minibatch_size,
                 k_max=k_max,
