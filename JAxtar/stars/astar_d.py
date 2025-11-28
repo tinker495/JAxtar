@@ -145,10 +145,19 @@ def astar_d_builder(
                 look_a_head_costs = costs + ncosts  # [action_size, batch_size]
 
                 # Calculate heuristics for look-ahead neighbours immediately
-                heuristic_vals = variable_heuristic_batch_switcher(
-                    solve_config, neighbour_look_a_head, filled_tiles
+                # Use scan to process each action's batch separately to avoid shape mismatch
+                def _calc_heuristic(carry, input_slice):
+                    states_slice, filled_slice = input_slice
+                    h_val = variable_heuristic_batch_switcher(
+                        solve_config, states_slice, filled_slice
+                    )
+                    return carry, h_val
+
+                _, heuristic_vals = jax.lax.scan(
+                    _calc_heuristic, None, (neighbour_look_a_head, filled_tiles)
                 )  # [action_size, batch_size]
-                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
+
+                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
 
                 flattened_neighbour_look_head = neighbour_look_a_head.flatten()
                 flattened_look_a_head_costs = look_a_head_costs.flatten()
