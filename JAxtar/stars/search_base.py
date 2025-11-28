@@ -540,6 +540,13 @@ class SearchResult:
         search_result.parent = search_result.parent.at[hash_idx.index].set_as_condition(
             final_process_mask, final_parents
         )
+        search_result.pop_generation = xnp.update_on_condition(
+            search_result.pop_generation,
+            hash_idx.index,
+            final_process_mask,
+            search_result.pop_count,
+        )
+        search_result.pop_count += 1
 
         return search_result, final_currents, final_states, final_process_mask
 
