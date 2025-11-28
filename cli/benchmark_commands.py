@@ -42,17 +42,24 @@ def _load_benchmark_heuristic(
     benchmark_name: str,
     benchmark_bundle,
     param_path: Optional[str],
+    model_type: str = "default",
 ) -> Heuristic:
-    heuristic_config = benchmark_bundle.heuristic_nn_config
-    if heuristic_config is None:
+    heuristic_configs = benchmark_bundle.heuristic_nn_configs
+    if heuristic_configs is None:
         raise click.UsageError(
             f"Benchmark '{benchmark_name}' does not define a heuristic configuration."
         )
 
-    path_template = heuristic_config.param_paths.get("default")
+    heuristic_config = heuristic_configs.get(model_type)
+    if heuristic_config is None:
+        raise click.UsageError(
+            f"Benchmark '{benchmark_name}' heuristic config type '{model_type}' not available."
+        )
+
+    path_template = heuristic_config.param_path
     if path_template is None:
         raise click.UsageError(
-            f"Benchmark '{benchmark_name}' heuristic config has no default param path."
+            f"Benchmark '{benchmark_name}' heuristic config '{model_type}' has no param path."
         )
 
     resolved_param_path = _resolve_param_path(path_template, puzzle, param_path)
@@ -71,17 +78,24 @@ def _load_benchmark_qfunction(
     benchmark_name: str,
     benchmark_bundle,
     param_path: Optional[str],
+    model_type: str = "default",
 ) -> QFunction:
-    q_config = benchmark_bundle.q_function_nn_config
-    if q_config is None:
+    q_configs = benchmark_bundle.q_function_nn_configs
+    if q_configs is None:
         raise click.UsageError(
             f"Benchmark '{benchmark_name}' does not define a Q-function configuration."
         )
 
-    path_template = q_config.param_paths.get("default")
+    q_config = q_configs.get(model_type)
+    if q_config is None:
+        raise click.UsageError(
+            f"Benchmark '{benchmark_name}' Q-function config type '{model_type}' not available."
+        )
+
+    path_template = q_config.param_path
     if path_template is None:
         raise click.UsageError(
-            f"Benchmark '{benchmark_name}' Q-function config has no default param path."
+            f"Benchmark '{benchmark_name}' Q-function config '{model_type}' has no param path."
         )
 
     resolved_param_path = _resolve_param_path(path_template, puzzle, param_path)
@@ -142,6 +156,12 @@ def _run_benchmark(
     help="Optional override for the heuristic parameter file.",
 )
 @click.option(
+    "--model-type",
+    type=str,
+    default="default",
+    help="Type of the heuristic model (default: 'default').",
+)
+@click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
     default=None,
@@ -155,10 +175,13 @@ def benchmark_astar(
     benchmark_bundle,
     benchmark_cli_options,
     param_path: Optional[str],
+    model_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    solver = _load_benchmark_heuristic(puzzle, benchmark_name, benchmark_bundle, param_path)
+    solver = _load_benchmark_heuristic(
+        puzzle, benchmark_name, benchmark_bundle, param_path, model_type
+    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
@@ -187,6 +210,12 @@ def benchmark_astar(
     help="Optional override for the heuristic parameter file.",
 )
 @click.option(
+    "--model-type",
+    type=str,
+    default="default",
+    help="Type of the heuristic model (default: 'default').",
+)
+@click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
     default=None,
@@ -200,10 +229,13 @@ def benchmark_astar_d(
     benchmark_bundle,
     benchmark_cli_options,
     param_path: Optional[str],
+    model_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    solver = _load_benchmark_heuristic(puzzle, benchmark_name, benchmark_bundle, param_path)
+    solver = _load_benchmark_heuristic(
+        puzzle, benchmark_name, benchmark_bundle, param_path, model_type
+    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
@@ -232,6 +264,12 @@ def benchmark_astar_d(
     help="Optional override for the Q-function parameter file.",
 )
 @click.option(
+    "--model-type",
+    type=str,
+    default="default",
+    help="Type of the Q-function model (default: 'default').",
+)
+@click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
     default=None,
@@ -245,10 +283,13 @@ def benchmark_qstar(
     benchmark_bundle,
     benchmark_cli_options,
     param_path: Optional[str],
+    model_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    solver = _load_benchmark_qfunction(puzzle, benchmark_name, benchmark_bundle, param_path)
+    solver = _load_benchmark_qfunction(
+        puzzle, benchmark_name, benchmark_bundle, param_path, model_type
+    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
@@ -277,6 +318,12 @@ def benchmark_qstar(
     help="Optional override for the heuristic parameter file.",
 )
 @click.option(
+    "--model-type",
+    type=str,
+    default="default",
+    help="Type of the heuristic model (default: 'default').",
+)
+@click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
     default=None,
@@ -290,10 +337,13 @@ def benchmark_beam(
     benchmark_bundle,
     benchmark_cli_options,
     param_path: Optional[str],
+    model_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    solver = _load_benchmark_heuristic(puzzle, benchmark_name, benchmark_bundle, param_path)
+    solver = _load_benchmark_heuristic(
+        puzzle, benchmark_name, benchmark_bundle, param_path, model_type
+    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
@@ -322,6 +372,12 @@ def benchmark_beam(
     help="Optional override for the Q-function parameter file.",
 )
 @click.option(
+    "--model-type",
+    type=str,
+    default="default",
+    help="Type of the Q-function model (default: 'default').",
+)
+@click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
     default=None,
@@ -335,10 +391,13 @@ def benchmark_qbeam(
     benchmark_bundle,
     benchmark_cli_options,
     param_path: Optional[str],
+    model_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    solver = _load_benchmark_qfunction(puzzle, benchmark_name, benchmark_bundle, param_path)
+    solver = _load_benchmark_qfunction(
+        puzzle, benchmark_name, benchmark_bundle, param_path, model_type
+    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,

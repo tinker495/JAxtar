@@ -107,13 +107,13 @@ class VisualizeOptions(BaseModel):
 class HeuristicOptions(BaseModel):
     neural_heuristic: bool = False
     param_path: Optional[str] = None
-    param_type: Optional[str] = "default"
+    model_type: Optional[str] = "default"
 
 
 class QFunctionOptions(BaseModel):
     neural_qfunction: bool = False
     param_path: Optional[str] = None
-    param_type: Optional[str] = "default"
+    model_type: Optional[str] = "default"
 
 
 class DistTrainOptions(BaseModel):
@@ -187,7 +187,7 @@ class WMTrainOptions(BaseModel):
 
 class NeuralCallableConfig(BaseModel):
     callable: Callable
-    param_paths: Dict[str, str] = {}
+    param_path: Optional[str] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -232,9 +232,9 @@ class PuzzleBundle(BaseModel):
     puzzle_hard: Optional[Union[Callable, PuzzleConfig]] = None
     puzzle_ds: Optional[Callable] = None
     heuristic: Callable = EmptyHeuristic
-    heuristic_nn_config: Optional[NeuralCallableConfig] = None
+    heuristic_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
     q_function: Callable = EmptyQFunction
-    q_function_nn_config: Optional[NeuralCallableConfig] = None
+    q_function_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
     k_max: int = 50
     eval_options: EvalOptions = Field(default_factory=EvalOptions)
     search_options: SearchOptions = Field(default_factory=SearchOptions)
@@ -262,8 +262,8 @@ class PuzzleBundle(BaseModel):
 class BenchmarkBundle(BaseModel):
     benchmark: Callable
     benchmark_args: Dict[str, Any] = Field(default_factory=dict)
-    heuristic_nn_config: Optional[NeuralCallableConfig] = None
-    q_function_nn_config: Optional[NeuralCallableConfig] = None
+    heuristic_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
+    q_function_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
     eval_options: EvalOptions = Field(default_factory=EvalOptions)
     beam_eval_options: Optional[EvalOptions] = None
 

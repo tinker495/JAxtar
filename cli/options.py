@@ -35,23 +35,30 @@ def _setup_neural_component(
     param_path,
     neural_config_override,
     reset_params,
+    model_type="default",
 ):
     if component_type == "heuristic":
-        nn_config = puzzle_bundle.heuristic_nn_config
+        nn_configs = puzzle_bundle.heuristic_nn_configs
         config_key = "heuristic_config"
         comp_key = "heuristic"
         err_msg = "Neural heuristic"
     else:
-        nn_config = puzzle_bundle.q_function_nn_config
+        nn_configs = puzzle_bundle.q_function_nn_configs
         config_key = "q_config"
         comp_key = "qfunction"
         err_msg = "Neural Q-function"
 
-    if nn_config is None:
+    if nn_configs is None:
         raise click.UsageError(f"{err_msg} not available for puzzle '{puzzle_name}'.")
 
+    nn_config = nn_configs.get(model_type)
+    if nn_config is None:
+        raise click.UsageError(
+            f"{err_msg} config type '{model_type}' not available for puzzle '{puzzle_name}'."
+        )
+
     if param_path is None:
-        path_template = nn_config.param_paths.get("default")
+        path_template = nn_config.param_path
         if path_template is None:
             raise click.UsageError(f"Default parameter path not found for puzzle '{puzzle_name}'.")
         if "{size}" in path_template:
@@ -403,10 +410,10 @@ def heuristic_options(func: callable) -> callable:
         help="Path to the heuristic parameter file.",
     )
     @click.option(
-        "--param-type",
+        "--model-type",
         type=str,
         default=None,
-        help="Type of the heuristic parameter file.",
+        help="Type of the heuristic model.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -418,18 +425,22 @@ def heuristic_options(func: callable) -> callable:
         is_eval = kwargs.get("eval_options", None) is not None
 
         if heuristic_opts.neural_heuristic or is_eval:
-            heuristic_config = puzzle_bundle.heuristic_nn_config
-            if heuristic_config is None:
+            heuristic_configs = puzzle_bundle.heuristic_nn_configs
+            if heuristic_configs is None:
                 raise click.UsageError(
                     f"Neural heuristic not available for puzzle '{kwargs['puzzle_name']}'."
                 )
 
+            model_type = heuristic_opts.model_type or "default"
+            heuristic_config = heuristic_configs.get(model_type)
+            if heuristic_config is None:
+                raise click.UsageError(f"Neural heuristic config '{model_type}' not available.")
+
             param_path = heuristic_opts.param_path
             if param_path is None:
-                param_type = heuristic_opts.param_type or "default"
-                path_template = heuristic_config.param_paths.get(param_type)
+                path_template = heuristic_config.param_path
                 if path_template is None:
-                    raise click.UsageError(f"Parameter path for type '{param_type}' not found.")
+                    raise click.UsageError(f"Parameter path for type '{model_type}' not found.")
 
                 if "{size}" in path_template:
                     param_path = path_template.format(size=puzzle.size)
@@ -465,10 +476,10 @@ def qfunction_options(func: callable) -> callable:
         help="Path to the Q-function parameter file.",
     )
     @click.option(
-        "--param-type",
+        "--model-type",
         type=str,
         default=None,
-        help="Type of the Q-function parameter file.",
+        help="Type of the Q-function model.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -480,18 +491,22 @@ def qfunction_options(func: callable) -> callable:
         is_eval = kwargs.get("eval_options", None) is not None
 
         if q_opts.neural_qfunction or is_eval:
-            q_config = puzzle_bundle.q_function_nn_config
-            if q_config is None:
+            q_configs = puzzle_bundle.q_function_nn_configs
+            if q_configs is None:
                 raise click.UsageError(
                     f"Neural Q-function not available for puzzle '{kwargs['puzzle_name']}'."
                 )
 
+            model_type = q_opts.model_type or "default"
+            q_config = q_configs.get(model_type)
+            if q_config is None:
+                raise click.UsageError(f"Neural Q-function config '{model_type}' not available.")
+
             param_path = q_opts.param_path
             if param_path is None:
-                param_type = q_opts.param_type or "default"
-                path_template = q_config.param_paths.get(param_type)
+                path_template = q_config.param_path
                 if path_template is None:
-                    raise click.UsageError(f"Parameter path for type '{param_type}' not found.")
+                    raise click.UsageError(f"Parameter path for type '{model_type}' not found.")
 
                 if "{size}" in path_template:
                     param_path = path_template.format(size=puzzle.size)
