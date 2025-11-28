@@ -247,12 +247,22 @@ def create_target_shuffled_path(
     action_costs = inverse_trajectory["action_costs"]
 
     solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (k_max, 1))
+    
+    # Create parent indices
+    # shape (k_max, shuffle_parallel)
+    # parent is (i-1, j) which is index - shuffle_parallel
+    indices = jnp.arange(k_max * shuffle_parallel, dtype=jnp.int32).reshape(k_max, shuffle_parallel)
+    parent_indices = indices - shuffle_parallel
+    # First row has no parent in batch, mark as -1
+    parent_indices = parent_indices.at[0].set(-1)
+    
     solve_configs = solve_configs.flatten()
     states = states.flatten()
     move_costs = move_costs.flatten()
     move_costs_tm1 = move_costs_tm1.flatten()
     inv_actions = inv_actions.flatten()
     action_costs = action_costs.flatten()
+    parent_indices = parent_indices.flatten()
 
     return {
         "solve_configs": solve_configs,
@@ -261,6 +271,7 @@ def create_target_shuffled_path(
         "move_costs_tm1": move_costs_tm1,
         "actions": inv_actions,
         "action_costs": action_costs,
+        "parent_indices": parent_indices,
     }
 
 
@@ -319,12 +330,21 @@ def create_hindsight_target_shuffled_path(
         move_costs_tm1 = move_costs[-1, ...] - move_costs_tm1[:-1, ...]  # [k_max, shuffle_parallel]
         move_costs_tm1 = move_costs_tm1.at[0, ...].set(0.0)
 
+    # Create parent indices
+    # shape (k_max, shuffle_parallel)
+    # parent is (i+1, j) which is index + shuffle_parallel
+    indices = jnp.arange(k_max * shuffle_parallel, dtype=jnp.int32).reshape(k_max, shuffle_parallel)
+    parent_indices = indices + shuffle_parallel
+    # Last row has no parent in batch, mark as -1
+    parent_indices = parent_indices.at[-1].set(-1)
+
     solve_configs = solve_configs.flatten()
     states = states.flatten()
     move_costs = move_costs.flatten()
     move_costs_tm1 = move_costs_tm1.flatten()
     actions = actions.flatten()
     action_costs = action_costs.flatten()
+    parent_indices = parent_indices.flatten()
 
     return {
         "solve_configs": solve_configs,
@@ -333,6 +353,7 @@ def create_hindsight_target_shuffled_path(
         "move_costs_tm1": move_costs_tm1,
         "actions": actions,
         "action_costs": action_costs,
+        "parent_indices": parent_indices,
     }
 
 
@@ -419,6 +440,9 @@ def create_hindsight_target_triangular_shuffled_path(
     final_move_costs_tm1 = final_move_costs_tm1.flatten()
     final_actions = final_actions.flatten()
     final_action_costs = final_action_costs.flatten()
+    
+    # Triangular sampling produces independent samples, no valid parent structure
+    parent_indices = jnp.full_like(final_action_costs, -1, dtype=jnp.int32)
 
     return {
         "solve_configs": final_solve_configs,
@@ -427,4 +451,5 @@ def create_hindsight_target_triangular_shuffled_path(
         "move_costs_tm1": final_move_costs_tm1,
         "actions": final_actions,
         "action_costs": final_action_costs,
+        "parent_indices": parent_indices,
     }

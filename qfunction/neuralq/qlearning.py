@@ -457,6 +457,8 @@ def _get_datasets_with_diffusion_distance(
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    k_max: int,
+    shuffle_parallel: int,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
@@ -465,6 +467,9 @@ def _get_datasets_with_diffusion_distance(
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
+    action_costs = shuffled_path["action_costs"].reshape((-1, 1))
+    parent_indices = shuffled_path["parent_indices"]
+
     solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
         solveconfigs=solve_configs,
         states=states,
@@ -479,6 +484,41 @@ def _get_datasets_with_diffusion_distance(
     target_q = move_costs[unique_uint32eds_idx][inverse_indices][
         :, jnp.newaxis
     ]  # [dataset_size, 1]
+
+    # Propagate the improved Q values backwards along the trajectory
+    dataset_size = target_q.shape[0]
+
+    # Pad dataset with infinity to handle invalid parent pointers
+    padded_q = jnp.pad(
+        target_q, ((0, 1), (0, 0)), constant_values=jnp.inf
+    )
+    
+    # Map -1 or out-of-bounds indices to the padded infinity value
+    safe_parent_indices = jnp.where(
+        (parent_indices < 0) | (parent_indices >= dataset_size), 
+        dataset_size, 
+        parent_indices
+    )
+
+    def body_fun(i, q):
+        # q is padded [N+1, 1]
+        current_q = q[:dataset_size]
+        
+        # Gather Q from parents (neighbors closer to goal)
+        q_parents = q[safe_parent_indices] # [N, 1]
+        
+        # Bellman update: Q(s, a) <= c(s, a, s') + Q(s', a')
+        # where (s', a') is the next state-action pair in the trajectory
+        new_q = action_costs + q_parents
+        
+        improved_q = jnp.minimum(current_q, new_q)
+        return q.at[:dataset_size].set(improved_q)
+
+    # Iterate k_max times to propagate along the longest possible path
+    final_padded_q = jax.lax.fori_loop(0, k_max, body_fun, padded_q)
+    
+    target_q = final_padded_q[:dataset_size]
+
     zeros = jnp.zeros_like(target_q)
     return {
         "solveconfigs": solve_configs,
@@ -654,6 +694,8 @@ def get_qlearning_dataset_builder(
                 SolveConfigsAndStatesAndActions,
                 q_model,
                 dataset_minibatch_size,
+                k_max=k_max,
+                shuffle_parallel=shuffle_parallel,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
                 use_double_dqn=use_double_dqn,

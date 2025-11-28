@@ -355,6 +355,8 @@ def _get_datasets_with_diffusion_distance(
     heuristic_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    k_max: int,
+    shuffle_parallel: int,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
 ):
@@ -362,9 +364,11 @@ def _get_datasets_with_diffusion_distance(
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
+    action_costs = shuffled_path["action_costs"]
 
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
+    action_costs = action_costs.reshape((-1,))
 
     solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
     target_heuristic = move_costs.reshape((-1,))
@@ -377,6 +381,42 @@ def _get_datasets_with_diffusion_distance(
         return_inverse=True,
     )
     target_heuristic = target_heuristic[unique_uint32eds_idx][inverse_indices]
+
+    # Propagate the improved heuristic values backwards along the trajectory
+    dataset_size = target_heuristic.shape[0]
+    parent_indices = shuffled_path["parent_indices"]
+
+    # Pad dataset with infinity to handle invalid parent pointers
+    padded_heuristic = jnp.pad(
+        target_heuristic, (0, 1), constant_values=jnp.inf
+    )
+    
+    # Map -1 or out-of-bounds indices to the padded infinity value
+    safe_parent_indices = jnp.where(
+        (parent_indices < 0) | (parent_indices >= dataset_size), 
+        dataset_size, 
+        parent_indices
+    )
+
+    def body_fun(i, h):
+        # h is padded [N+1]
+        current_h = h[:dataset_size]
+        
+        # Gather heuristic from parents (neighbors closer to goal)
+        h_parents = h[safe_parent_indices] # [N]
+        
+        # Bellman update: h(s) <= c(s, s') + h(s')
+        # action_costs is c(s, s') where s' is the parent/next state in path
+        new_h = action_costs + h_parents
+        
+        improved_h = jnp.minimum(current_h, new_h)
+        return h.at[:dataset_size].set(improved_h)
+
+    # Iterate k_max times to propagate along the longest possible path
+    final_padded_h = jax.lax.fori_loop(0, k_max, body_fun, padded_heuristic)
+    
+    target_heuristic = final_padded_h[:dataset_size]
+
     diff = jnp.zeros_like(target_heuristic)
     target_entropy = jnp.zeros_like(target_heuristic)
     target_entropy_max = jnp.zeros_like(target_heuristic)
@@ -506,6 +546,8 @@ def get_heuristic_dataset_builder(
                 SolveConfigsAndStates,
                 heuristic_model,
                 dataset_minibatch_size,
+                k_max=k_max,
+                shuffle_parallel=shuffle_parallel,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
             )
