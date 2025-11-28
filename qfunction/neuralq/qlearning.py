@@ -544,6 +544,8 @@ def _get_datasets_with_diffusion_distance_mixture(
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    k_max: int,
+    shuffle_parallel: int,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
@@ -571,6 +573,13 @@ def _get_datasets_with_diffusion_distance_mixture(
     )
     cost = return_dict["cost"]
     target_q = return_dict["target_q"]
+    
+    # Prepare for propagation
+    action_costs = shuffled_path["action_costs"].reshape((-1, 1))
+    parent_indices = shuffled_path["parent_indices"]
+    dataset_size = cost.shape[0]
+
+    # Find unique states and broadcast the minimal cost to all duplicates
     _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
         val=solve_configs_and_states_and_actions,
         key=cost,
@@ -578,6 +587,38 @@ def _get_datasets_with_diffusion_distance_mixture(
         return_inverse=True,
     )
     cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]  # [dataset_size, 1]
+
+    # Propagate the improved cost values backwards along the trajectory
+    # Pad dataset with infinity to handle invalid parent pointers
+    padded_cost = jnp.pad(
+        cost, ((0, 1), (0, 0)), constant_values=jnp.inf
+    )
+    
+    # Map -1 or out-of-bounds indices to the padded infinity value
+    safe_parent_indices = jnp.where(
+        (parent_indices < 0) | (parent_indices >= dataset_size), 
+        dataset_size, 
+        parent_indices
+    )
+
+    def body_fun(i, c):
+        # c is padded [N+1, 1]
+        current_c = c[:dataset_size]
+        
+        # Gather cost from parents (neighbors closer to goal)
+        c_parents = c[safe_parent_indices] # [N, 1]
+        
+        # Bellman update: C(s, a) <= step_cost + C(s', a')
+        new_c = action_costs + c_parents
+        
+        improved_c = jnp.minimum(current_c, new_c)
+        return c.at[:dataset_size].set(improved_c)
+
+    # Iterate k_max times to propagate along the longest possible path
+    final_padded_c = jax.lax.fori_loop(0, k_max, body_fun, padded_cost)
+    
+    cost = final_padded_c[:dataset_size]
+
     target_q = jnp.maximum(target_q, cost * 0.8 - 2.0)
     target_q = jnp.concatenate(
         (target_q, cost),
@@ -682,6 +723,8 @@ def get_qlearning_dataset_builder(
                 SolveConfigsAndStatesAndActions,
                 q_model,
                 dataset_minibatch_size,
+                k_max=k_max,
+                shuffle_parallel=shuffle_parallel,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
                 use_double_dqn=use_double_dqn,
