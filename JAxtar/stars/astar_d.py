@@ -130,31 +130,7 @@ def astar_d_builder(
                 filled[jnp.newaxis, :], (puzzle.action_size, 1)
             )  # [action_size, batch_size]
 
-            # Compute heuristic values for the states currently being expanded (parents).
-            # Unlike standard A*, we calculate h(parent) here and use it to prioritize
-            # the *actions* leading to its children. The children themselves are not
-            # generated or evaluated yet.
-            heuristic_vals = variable_heuristic_batch_switcher(
-                solve_config, states, filled
-            )  # [batch_size]
-            heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)  # [batch_size]
-            tiled_heuristic_vals = jnp.tile(
-                heuristic_vals[jnp.newaxis, :], (puzzle.action_size, 1)
-            ).astype(KEY_DTYPE)
-
-            # The priority for the actions is based on the parent's cost and heuristic.
-            # f_action = g(parent) + h(parent) (approximately, modified by cost_weight)
-            neighbour_keys = (cost_weight * costs + tiled_heuristic_vals).astype(KEY_DTYPE)
-
-            vals = Parant_with_Costs(
-                parent=Parent(hashidx=idx_tiles, action=action),
-                cost=costs,
-                dist=tiled_heuristic_vals,
-            )
-
             flattened_filled_tiles = filled_tiles.flatten()
-            flattened_vals = vals.flatten()
-            flattened_keys = neighbour_keys.flatten()
 
             if look_ahead_pruning:
                 # NOTE: Standard A* deferred evaluates children only when popped.
@@ -167,25 +143,132 @@ def astar_d_builder(
                     solve_config, states, filled
                 )  # [action_size, batch_size]
                 look_a_head_costs = costs + ncosts  # [action_size, batch_size]
+
                 flattened_neighbour_look_head = neighbour_look_a_head.flatten()
                 flattened_look_a_head_costs = look_a_head_costs.flatten()
+
+                # 1. Lookup first to find existing states
                 current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                    flattened_neighbour_look_head
+                    flattened_neighbour_look_head, flattened_filled_tiles
                 )
 
                 old_costs = search_result.get_cost(current_hash_idxs)
+
+                # 2. Calculate optimal_mask (Pruning & Deduplication)
+                # Only consider nodes that are either:
+                # - Not found in the hash table (new nodes)
+                # - Found but have better cost than existing
                 candidate_mask = jnp.logical_or(
                     ~found, jnp.less(flattened_look_a_head_costs, old_costs)
                 )
                 candidate_mask = candidate_mask & flattened_filled_tiles
+
+                # Deduplicate within the batch
                 optimal_mask = (
                     xnp.unique_mask(
                         flattened_neighbour_look_head, flattened_look_a_head_costs, candidate_mask
                     )
                     & candidate_mask
                 )
+
+                # 3. Identify states that need heuristic computation
+                # We only compute heuristics for states that:
+                # - Are in the optimal_mask (will be inserted into queue)
+                # - AND are NOT found in hash table (don't have cached heuristic)
+                # - OR are found but we want to re-evaluate (usually we reuse)
+
+                # Reshape masks to [action_size, batch_size] for batch switcher
+                found_reshaped = found.reshape(puzzle.action_size, batch_size)
+                optimal_mask_reshaped = optimal_mask.reshape(puzzle.action_size, batch_size)
+
+                # Reuse existing heuristics for found states
+                old_dists = search_result.get_dist(current_hash_idxs)  # flattened
+                old_dists = old_dists.reshape(puzzle.action_size, batch_size)
+
+                # Compute mask: optimal candidates that are NOT found
+                need_compute = optimal_mask_reshaped & ~found_reshaped
+
+                # Calculate heuristics for look-ahead neighbours immediately
+                # Use scan to process each action's batch separately to avoid shape mismatch
+                def _calc_heuristic(carry, input_slice):
+                    states_slice, compute_mask = input_slice
+
+                    # 1. Gather: Sort by compute_mask (True first) to pack valid items
+                    # We want True (needs compute) at the beginning.
+                    # Sort key: False (0) > True (1) if ascending? No.
+                    # compute_mask is boolean. ~compute_mask: True(1) for skip, False(0) for keep.
+                    # If we sort by ~compute_mask ascending, 0 (keep) comes first.
+                    sort_key = ~compute_mask
+                    sorted_indices = jnp.argsort(sort_key)
+
+                    sorted_states = states_slice[sorted_indices]
+                    sorted_mask = compute_mask[sorted_indices]
+
+                    # 2. Compute: Run batch switcher on packed data
+                    # variable_heuristic_batch_switcher handles skipping based on filled count
+                    h_val_sorted = variable_heuristic_batch_switcher(
+                        solve_config, sorted_states, sorted_mask
+                    )
+
+                    # 3. Scatter: Restore original order
+                    # Invert the permutation.
+                    # If y = x[p], then x[p] = y.
+                    # To get x back: x = zeros; x = x.at[p].set(y)
+                    h_val = jnp.empty_like(h_val_sorted).at[sorted_indices].set(h_val_sorted)
+
+                    return carry, h_val
+
+                _, computed_heuristic_vals = jax.lax.scan(
+                    _calc_heuristic,
+                    None,
+                    (neighbour_look_a_head, need_compute),
+                )  # [action_size, batch_size]
+
+                # 4. Merge reused and computed heuristics
+                # - If found: reuse old_dists
+                # - If computed (optimal & ~found): use computed_heuristic_vals
+                # - Otherwise: doesn't matter (masked out), but for safety use inf
+                heuristic_vals = jnp.where(
+                    found_reshaped,
+                    old_dists,
+                    computed_heuristic_vals,
+                )
+                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
+
+                # f(n) = g(n) + h(n) using actual child costs and heuristics
+                neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(
+                    KEY_DTYPE
+                )
+
             else:
+
+                # Compute heuristic values for the states currently being expanded (parents).
+                # Unlike standard A*, we calculate h(parent) here and use it to prioritize
+                # the *actions* leading to its children. The children themselves are not
+                # generated or evaluated yet.
+                heuristic_vals = variable_heuristic_batch_switcher(
+                    solve_config, states, filled
+                )  # [batch_size]
+                heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)  # [batch_size]
+                heuristic_vals = jnp.tile(
+                    heuristic_vals[jnp.newaxis, :], (puzzle.action_size, 1)
+                ).astype(
+                    KEY_DTYPE
+                )  # [action_size, batch_size]
+
                 optimal_mask = flattened_filled_tiles
+
+                # The priority for the actions is based on the parent's cost and heuristic.
+                # f_action = g(parent) + h(parent) (approximately, modified by cost_weight)
+                neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
+
+            vals = Parant_with_Costs(
+                parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
+                cost=costs.flatten(),
+                dist=heuristic_vals.flatten(),
+            )
+            flattened_vals = vals.flatten()
+            flattened_keys = neighbour_keys.flatten()
 
             flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)
 

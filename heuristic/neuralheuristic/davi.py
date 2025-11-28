@@ -355,6 +355,8 @@ def _get_datasets_with_diffusion_distance(
     heuristic_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    k_max: int,
+    shuffle_parallel: int,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
 ):
@@ -362,9 +364,11 @@ def _get_datasets_with_diffusion_distance(
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
+    action_costs = shuffled_path["action_costs"]
 
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
+    action_costs = action_costs.reshape((-1,))
 
     solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
     target_heuristic = move_costs.reshape((-1,))
@@ -377,6 +381,38 @@ def _get_datasets_with_diffusion_distance(
         return_inverse=True,
     )
     target_heuristic = target_heuristic[unique_uint32eds_idx][inverse_indices]
+
+    # Propagate the improved heuristic values backwards along the trajectory
+    dataset_size = target_heuristic.shape[0]
+    parent_indices = shuffled_path["parent_indices"]
+
+    # Pad dataset with infinity to handle invalid parent pointers
+    padded_heuristic = jnp.pad(target_heuristic, (0, 1), constant_values=jnp.inf)
+
+    # Map -1 or out-of-bounds indices to the padded infinity value
+    safe_parent_indices = jnp.where(
+        (parent_indices < 0) | (parent_indices >= dataset_size), dataset_size, parent_indices
+    )
+
+    def body_fun(i, h):
+        # h is padded [N+1]
+        current_h = h[:dataset_size]
+
+        # Gather heuristic from parents (neighbors closer to goal)
+        h_parents = h[safe_parent_indices]  # [N]
+
+        # Bellman update: h(s) <= c(s, s') + h(s')
+        # action_costs is c(s, s') where s' is the parent/next state in path
+        new_h = action_costs + h_parents
+
+        improved_h = jnp.minimum(current_h, new_h)
+        return h.at[:dataset_size].set(improved_h)
+
+    # Iterate k_max times to propagate along the longest possible path
+    final_padded_h = jax.lax.fori_loop(0, k_max, body_fun, padded_heuristic)
+
+    target_heuristic = final_padded_h[:dataset_size]
+
     diff = jnp.zeros_like(target_heuristic)
     target_entropy = jnp.zeros_like(target_heuristic)
     target_entropy_max = jnp.zeros_like(target_heuristic)
@@ -393,6 +429,22 @@ def _get_datasets_with_diffusion_distance(
     }
 
 
+def _get_datasets_with_diffusion_distance_mixture(
+    puzzle: Puzzle,
+    preproc_fn: Callable,
+    SolveConfigsAndStates: Xtructurable,
+    heuristic_model: HeuristicBase,
+    minibatch_size: int,
+    target_heuristic_params: Any,
+    heuristic_params: Any,
+    shuffled_path: dict[str, chex.Array],
+    key: chex.PRNGKey,
+    temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
+):
+    pass
+
+
 def get_heuristic_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
@@ -406,6 +458,9 @@ def get_heuristic_dataset_builder(
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
     use_diffusion_distance: bool = False,
+    use_diffusion_distance_mixture: bool = False,
+    use_diffusion_distance_warmup: bool = False,
+    diffusion_distance_warmup_steps: int = 0,
     non_backtracking_steps: int = 3,
 ):
     if non_backtracking_steps < 0:
@@ -449,16 +504,28 @@ def get_heuristic_dataset_builder(
 
     jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
-    if use_diffusion_distance:
+    base_get_datasets = partial(
+        _get_datasets,
+        puzzle,
+        preproc_fn,
+        heuristic_model,
+        dataset_minibatch_size,
+        temperature=temperature,
+        td_error_clip=td_error_clip,
+    )
+
+    use_diffusion_features = use_diffusion_distance or use_diffusion_distance_mixture
+
+    if use_diffusion_features:
 
         @xtructure_dataclass
         class SolveConfigsAndStates:
             solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
             states: FieldDescriptor.scalar(dtype=puzzle.State)
 
-        jited_get_datasets = jax.jit(
-            partial(
-                _get_datasets_with_diffusion_distance,
+        if use_diffusion_distance_mixture:
+            diffusion_get_datasets = partial(
+                _get_datasets_with_diffusion_distance_mixture,
                 puzzle,
                 preproc_fn,
                 SolveConfigsAndStates,
@@ -467,47 +534,73 @@ def get_heuristic_dataset_builder(
                 temperature=temperature,
                 td_error_clip=td_error_clip,
             )
-        )
-    else:
-        jited_get_datasets = jax.jit(
-            partial(
-                _get_datasets,
+        else:
+            diffusion_get_datasets = partial(
+                _get_datasets_with_diffusion_distance,
                 puzzle,
                 preproc_fn,
+                SolveConfigsAndStates,
                 heuristic_model,
                 dataset_minibatch_size,
+                k_max=k_max,
+                shuffle_parallel=shuffle_parallel,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
             )
-        )
+    else:
+        diffusion_get_datasets = base_get_datasets
 
-    @jax.jit
-    def get_datasets(
-        target_heuristic_params: Any,
-        heuristic_params: Any,
-        key: chex.PRNGKey,
-    ):
-        def scan_fn(key, _):
-            key, subkey = jax.random.split(key)
-            paths = jited_create_shuffled_path(subkey)
-            return key, paths
+    warmup_steps = max(int(diffusion_distance_warmup_steps), 0)
+    warmup_enabled = use_diffusion_features and use_diffusion_distance_warmup and warmup_steps > 0
 
-        key, paths = jax.lax.scan(scan_fn, key, None, length=steps)
-        for k, v in paths.items():
-            paths[k] = v.flatten()[:dataset_size]
+    def should_use_diffusion(step: int) -> bool:
+        if not use_diffusion_features:
+            return False
+        if warmup_enabled:
+            return step < warmup_steps
+        return True
 
-        flatten_dataset = jited_get_datasets(target_heuristic_params, heuristic_params, paths, key)
-        return flatten_dataset
+    def build_runner(dataset_extractor: Callable):
+        @jax.jit
+        def runner(
+            target_heuristic_params: Any,
+            heuristic_params: Any,
+            key: chex.PRNGKey,
+        ):
+            def scan_fn(scan_key, _):
+                scan_key, subkey = jax.random.split(scan_key)
+                paths = jited_create_shuffled_path(subkey)
+                return scan_key, paths
+
+            key_inner, paths = jax.lax.scan(scan_fn, key, None, length=steps)
+            for k, v in paths.items():
+                paths[k] = v.flatten()[:dataset_size]
+            flatten_dataset = dataset_extractor(
+                target_heuristic_params,
+                heuristic_params,
+                paths,
+                key_inner,
+            )
+            return flatten_dataset
+
+        return runner
+
+    default_runner = build_runner(base_get_datasets)
+    diffusion_runner = build_runner(diffusion_get_datasets)
 
     if n_devices > 1:
+        pmap_default_runner = jax.pmap(default_runner, in_axes=(None, None, 0))
+        pmap_diffusion_runner = jax.pmap(diffusion_runner, in_axes=(None, None, 0))
 
-        def pmap_get_datasets(target_heuristic_params, heuristic_params, key):
+        def get_datasets(target_heuristic_params, heuristic_params, key, step: int):
             keys = jax.random.split(key, n_devices)
-            datasets = jax.pmap(get_datasets, in_axes=(None, None, 0))(
-                target_heuristic_params, heuristic_params, keys
-            )
-            return datasets
+            runner = pmap_diffusion_runner if should_use_diffusion(step) else pmap_default_runner
+            return runner(target_heuristic_params, heuristic_params, keys)
 
-        return pmap_get_datasets
-    else:
         return get_datasets
+
+    def single_device_get_datasets(target_heuristic_params, heuristic_params, key, step: int):
+        runner = diffusion_runner if should_use_diffusion(step) else default_runner
+        return runner(target_heuristic_params, heuristic_params, key)
+
+    return single_device_get_datasets

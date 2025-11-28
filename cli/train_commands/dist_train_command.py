@@ -108,6 +108,9 @@ def davi(
         temperature=train_options.temperature,
         td_error_clip=train_options.td_error_clip,
         use_diffusion_distance=train_options.use_diffusion_distance,
+        use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
+        use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
+        diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
         non_backtracking_steps=train_options.sampling_non_backtracking_steps,
     )
 
@@ -118,7 +121,7 @@ def davi(
     eval_params = get_eval_params(opt_state, heuristic_params)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_heuristic_params, eval_params, subkey)
+        dataset = get_datasets(target_heuristic_params, eval_params, subkey, i)
         target_heuristic = dataset["target_heuristic"]
         mean_target_heuristic = jnp.mean(target_heuristic)
         mean_target_entropy = None
@@ -136,6 +139,7 @@ def davi(
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         eval_params = get_eval_params(opt_state, heuristic_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
+        mean_heuristic_value = jnp.mean(current_heuristics)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="DAVI Training",
@@ -144,12 +148,14 @@ def davi(
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_heuristic": float(mean_target_heuristic),
+                "heuristic_value": float(mean_heuristic_value),
             },
         )
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+        logger.log_scalar("Metrics/Mean Heuristic Value", mean_heuristic_value, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if mean_target_entropy is not None:
@@ -323,6 +329,9 @@ def qlearning(
         td_error_clip=train_options.td_error_clip,
         use_double_dqn=train_options.use_double_dqn,
         use_diffusion_distance=train_options.use_diffusion_distance,
+        use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
+        use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
+        diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
         non_backtracking_steps=train_options.sampling_non_backtracking_steps,
     )
 
@@ -333,7 +342,7 @@ def qlearning(
     eval_params = get_eval_params(opt_state, qfunc_params)
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_qfunc_params, eval_params, subkey)
+        dataset = get_datasets(target_qfunc_params, eval_params, subkey, i)
         target_q = dataset["target_q"]
         mean_target_q = jnp.mean(target_q)
         # Optional: mean action entropy when using policy sampling
@@ -355,6 +364,7 @@ def qlearning(
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         eval_params = get_eval_params(opt_state, qfunc_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
+        mean_q_value = jnp.mean(current_qs)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="Q-Learning Training",
@@ -363,6 +373,7 @@ def qlearning(
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_q": float(mean_target_q),
+                "q_value": float(mean_q_value),
                 **(
                     {"entropy": float(mean_action_entropy)}
                     if mean_action_entropy is not None
@@ -375,6 +386,7 @@ def qlearning(
         logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
+        logger.log_scalar("Metrics/Mean Q Value", mean_q_value, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if mean_action_entropy is not None:

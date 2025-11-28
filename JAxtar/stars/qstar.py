@@ -21,6 +21,7 @@ def qstar_builder(
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
+    pessimistic_update: bool = True,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -35,6 +36,8 @@ def qstar_builder(
                     Values closer to 1.0 make the search more greedy/depth-first.
         show_compile_time: If True, displays the time taken to compile the search function (default: False).
         look_ahead_pruning: If True, enables neighbour look-ahead pruning for duplicate and cost-based filtering.
+        pessimistic_update: If True, maintains the maximum (pessimistic) Q-value when a duplicate state is found.
+                           If False, uses the minimum (optimistic) Q-value. Default is True.
 
     Returns:
         A function that performs Q* search given a start state and solve configuration.
@@ -57,6 +60,7 @@ def qstar_builder(
     )
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_SIZE // denom)
+    dist_sign = -1.0 if pessimistic_update else 1.0
 
     def qstar(
         solve_config: Puzzle.SolveConfig,
@@ -122,15 +126,9 @@ def qstar_builder(
             neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
             neighbour_keys = jnp.where(filled_tiles, neighbour_keys, jnp.inf)
 
-            vals = Parant_with_Costs(
-                parent=Parent(hashidx=idx_tiles, action=action),
-                cost=costs,
-                dist=q_vals,
-            )
-
             flattened_filled_tiles = filled_tiles.flatten()
-            flattened_vals = vals.flatten()
             flattened_keys = neighbour_keys.flatten()
+            dists = q_vals.flatten()
 
             if look_ahead_pruning:
                 # NOTE: Q* in its canonical form only evaluates parent states and relies on the
@@ -153,15 +151,30 @@ def qstar_builder(
                 flattened_neighbour_look_head = neighbour_look_a_head.flatten()
                 flattened_look_a_head_costs = look_a_head_costs.flatten()
 
+                # Prioritize min cost, then check pessimistic/optimistic Q
+                # If pessimistic: we want larger dist (score = cost - eps * dist)
+                # If optimistic: we want smaller dist (score = cost + eps * dist)
+                distinct_score = flattened_look_a_head_costs + dist_sign * 1e-5 * dists
+
                 unique_mask = xnp.unique_mask(
                     flattened_neighbour_look_head,
-                    flattened_look_a_head_costs,
+                    distinct_score,
                     flattened_filled_tiles,
                 )
                 current_hash_idxs, found = search_result.hashtable.lookup_parallel(
                     flattened_neighbour_look_head, unique_mask
                 )
                 old_costs = search_result.get_cost(current_hash_idxs)
+                old_dists = search_result.get_dist(current_hash_idxs)
+
+                # Update Q-values: use max (pessimistic) or min (optimistic) of new and existing
+                if pessimistic_update:
+                    safe_old_dists = jnp.where(found, old_dists, -jnp.inf)
+                    dists = jnp.maximum(dists, safe_old_dists)
+                else:
+                    safe_old_dists = jnp.where(found, old_dists, jnp.inf)
+                    dists = jnp.minimum(dists, safe_old_dists)
+
                 # Only consider nodes that are either:
                 # 1. Not found in the hash table (new nodes), or
                 # 2. Found but have better cost than existing
@@ -170,6 +183,12 @@ def qstar_builder(
                 optimal_mask = unique_mask & (jnp.logical_or(~found, better_cost_mask))
             else:
                 optimal_mask = flattened_filled_tiles
+
+            flattened_vals = Parant_with_Costs(
+                parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
+                cost=costs.flatten(),
+                dist=dists,
+            )
 
             flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)
 

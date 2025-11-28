@@ -11,6 +11,7 @@ from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
 from JAxtar.stars.astar import astar_builder
+from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
@@ -176,6 +177,51 @@ def benchmark_astar(
     )
 
 
+@benchmark.command(name="astar_d")
+@benchmark_options
+@eval_options
+@click.option(
+    "--param-path",
+    type=str,
+    default=None,
+    help="Optional override for the heuristic parameter file.",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Directory to store run artifacts (defaults to runs/<timestamp>).",
+)
+def benchmark_astar_d(
+    puzzle: Puzzle,
+    eval_options: EvalOptions,
+    benchmark,
+    benchmark_name: str,
+    benchmark_bundle,
+    benchmark_cli_options,
+    param_path: Optional[str],
+    output_dir: Optional[Path],
+    **kwargs,
+):
+    solver = _load_benchmark_heuristic(puzzle, benchmark_name, benchmark_bundle, param_path)
+    puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
+    _run_benchmark(
+        puzzle=puzzle,
+        puzzle_name=benchmark_name,
+        search_model=solver,
+        search_model_name="heuristic",
+        run_label="astar_d",
+        search_builder_fn=astar_d_builder,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        benchmark=benchmark,
+        benchmark_name=benchmark_name,
+        benchmark_bundle=benchmark_bundle,
+        benchmark_cli_options=benchmark_cli_options,
+        output_dir=output_dir,
+    )
+
+
 @benchmark.command(name="qstar")
 @benchmark_options
 @eval_options
@@ -314,6 +360,7 @@ def benchmark_qbeam(
 __all__ = [
     "benchmark",
     "benchmark_astar",
+    "benchmark_astar_d",
     "benchmark_qstar",
     "benchmark_beam",
     "benchmark_qbeam",

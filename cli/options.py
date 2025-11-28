@@ -402,6 +402,12 @@ def heuristic_options(func: callable) -> callable:
         default=None,
         help="Path to the heuristic parameter file.",
     )
+    @click.option(
+        "--param-type",
+        type=str,
+        default=None,
+        help="Type of the heuristic parameter file.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         heuristic_kwargs = map_kwargs_to_pydantic(HeuristicOptions, kwargs)
@@ -457,6 +463,12 @@ def qfunction_options(func: callable) -> callable:
         type=str,
         default=None,
         help="Path to the Q-function parameter file.",
+    )
+    @click.option(
+        "--param-type",
+        type=str,
+        default=None,
+        help="Type of the Q-function parameter file.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -570,6 +582,25 @@ def dist_train_options(func: callable) -> callable:
         is_flag=True,
         default=None,
         help="Enable diffusion distance features in dataset creation.",
+    )
+    @click.option(
+        "-ddm",
+        "--use_diffusion_distance_mixture",
+        is_flag=True,
+        default=None,
+        help="Enable diffusion distance mixture features in dataset creation.",
+    )
+    @click.option(
+        "--use_diffusion_distance_warmup",
+        is_flag=True,
+        default=None,
+        help="Enable warmup schedule when using diffusion distance features.",
+    )
+    @click.option(
+        "--diffusion_distance_warmup_steps",
+        type=int,
+        default=None,
+        help="Number of iterations to run before enabling diffusion distance features.",
     )
     @click.option(
         "-tp",
