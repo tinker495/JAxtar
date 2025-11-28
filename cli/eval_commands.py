@@ -11,6 +11,7 @@ from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
 from JAxtar.stars.astar import astar_builder
+from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
@@ -52,6 +53,32 @@ def eval_astar(
         search_model_name="heuristic",
         run_label="astar",
         search_builder_fn=astar_builder,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        **kwargs,
+    )
+
+
+@evaluation.command(name="astar_d")
+@eval_puzzle_options
+@eval_options
+@heuristic_options
+def eval_astar_d(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    heuristic: Heuristic,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    **kwargs,
+):
+    """Evaluate a heuristic-driven A* Deferred search with optional parameter sweeps."""
+    run_evaluation_sweep(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=heuristic,
+        search_model_name="heuristic",
+        run_label="astar_d",
+        search_builder_fn=astar_d_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
         **kwargs,
