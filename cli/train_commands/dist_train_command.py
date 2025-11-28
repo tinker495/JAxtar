@@ -139,6 +139,7 @@ def davi(
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         eval_params = get_eval_params(opt_state, heuristic_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
+        mean_heuristic_value = jnp.mean(current_heuristics)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="DAVI Training",
@@ -147,12 +148,14 @@ def davi(
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_heuristic": float(mean_target_heuristic),
+                "heuristic_value": float(mean_heuristic_value),
             },
         )
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
+        logger.log_scalar("Metrics/Mean Heuristic Value", mean_heuristic_value, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if mean_target_entropy is not None:
@@ -361,6 +364,7 @@ def qlearning(
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         eval_params = get_eval_params(opt_state, qfunc_params)
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
+        mean_q_value = jnp.mean(current_qs)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="Q-Learning Training",
@@ -369,6 +373,7 @@ def qlearning(
                 "loss": float(loss),
                 "abs_diff": float(mean_abs_diff),
                 "target_q": float(mean_target_q),
+                "q_value": float(mean_q_value),
                 **(
                     {"entropy": float(mean_action_entropy)}
                     if mean_action_entropy is not None
@@ -381,6 +386,7 @@ def qlearning(
         logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
+        logger.log_scalar("Metrics/Mean Q Value", mean_q_value, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
         logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
         if mean_action_entropy is not None:
