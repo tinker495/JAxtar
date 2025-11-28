@@ -586,9 +586,9 @@ def dist_train_options(func: callable) -> callable:
     @click.option(
         "-ddm",
         "--use_diffusion_distance_mixture",
-        type=float,
+        is_flag=True,
         default=None,
-        help="Mix diffusion distance with standard target.",
+        help="Enable diffusion distance mixture features in dataset creation.",
     )
     @click.option(
         "--use_diffusion_distance_warmup",

@@ -132,7 +132,7 @@ class DistTrainOptions(BaseModel):
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
     use_diffusion_distance: bool = False
-    use_diffusion_distance_mixture: Optional[float] = None
+    use_diffusion_distance_mixture: bool = False
     use_diffusion_distance_warmup: bool = False
     diffusion_distance_warmup_steps: int = 0
     debug: bool = False

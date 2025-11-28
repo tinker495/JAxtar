@@ -387,34 +387,30 @@ def _get_datasets_with_diffusion_distance(
     parent_indices = shuffled_path["parent_indices"]
 
     # Pad dataset with infinity to handle invalid parent pointers
-    padded_heuristic = jnp.pad(
-        target_heuristic, (0, 1), constant_values=jnp.inf
-    )
-    
+    padded_heuristic = jnp.pad(target_heuristic, (0, 1), constant_values=jnp.inf)
+
     # Map -1 or out-of-bounds indices to the padded infinity value
     safe_parent_indices = jnp.where(
-        (parent_indices < 0) | (parent_indices >= dataset_size), 
-        dataset_size, 
-        parent_indices
+        (parent_indices < 0) | (parent_indices >= dataset_size), dataset_size, parent_indices
     )
 
     def body_fun(i, h):
         # h is padded [N+1]
         current_h = h[:dataset_size]
-        
+
         # Gather heuristic from parents (neighbors closer to goal)
-        h_parents = h[safe_parent_indices] # [N]
-        
+        h_parents = h[safe_parent_indices]  # [N]
+
         # Bellman update: h(s) <= c(s, s') + h(s')
         # action_costs is c(s, s') where s' is the parent/next state in path
         new_h = action_costs + h_parents
-        
+
         improved_h = jnp.minimum(current_h, new_h)
         return h.at[:dataset_size].set(improved_h)
 
     # Iterate k_max times to propagate along the longest possible path
     final_padded_h = jax.lax.fori_loop(0, k_max, body_fun, padded_heuristic)
-    
+
     target_heuristic = final_padded_h[:dataset_size]
 
     diff = jnp.zeros_like(target_heuristic)
@@ -462,7 +458,7 @@ def get_heuristic_dataset_builder(
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
     use_diffusion_distance: bool = False,
-    use_diffusion_distance_mixture: Optional[float] = None,
+    use_diffusion_distance_mixture: bool = False,
     use_diffusion_distance_warmup: bool = False,
     diffusion_distance_warmup_steps: int = 0,
     non_backtracking_steps: int = 3,
