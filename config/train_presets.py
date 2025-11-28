@@ -17,6 +17,11 @@ train_presets = {
         use_soft_update=True,
         use_diffusion_distance=True,
     ),
+    "diffusion_distance_mixture": DistTrainOptions(
+        steps=int(1e4),
+        update_interval=128,
+        use_diffusion_distance_mixture=True,
+    ),
     "diffusion_distance_warmup": DistTrainOptions(
         steps=int(1e4),
         update_interval=128,
