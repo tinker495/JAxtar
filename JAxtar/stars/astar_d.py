@@ -130,31 +130,7 @@ def astar_d_builder(
                 filled[jnp.newaxis, :], (puzzle.action_size, 1)
             )  # [action_size, batch_size]
 
-            # Compute heuristic values for the states currently being expanded (parents).
-            # Unlike standard A*, we calculate h(parent) here and use it to prioritize
-            # the *actions* leading to its children. The children themselves are not
-            # generated or evaluated yet.
-            heuristic_vals = variable_heuristic_batch_switcher(
-                solve_config, states, filled
-            )  # [batch_size]
-            heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)  # [batch_size]
-            tiled_heuristic_vals = jnp.tile(
-                heuristic_vals[jnp.newaxis, :], (puzzle.action_size, 1)
-            ).astype(KEY_DTYPE)
-
-            # The priority for the actions is based on the parent's cost and heuristic.
-            # f_action = g(parent) + h(parent) (approximately, modified by cost_weight)
-            neighbour_keys = (cost_weight * costs + tiled_heuristic_vals).astype(KEY_DTYPE)
-
-            vals = Parant_with_Costs(
-                parent=Parent(hashidx=idx_tiles, action=action),
-                cost=costs,
-                dist=tiled_heuristic_vals,
-            )
-
             flattened_filled_tiles = filled_tiles.flatten()
-            flattened_vals = vals.flatten()
-            flattened_keys = neighbour_keys.flatten()
 
             if look_ahead_pruning:
                 # NOTE: Standard A* deferred evaluates children only when popped.
@@ -167,25 +143,72 @@ def astar_d_builder(
                     solve_config, states, filled
                 )  # [action_size, batch_size]
                 look_a_head_costs = costs + ncosts  # [action_size, batch_size]
+
+                # Calculate heuristics for look-ahead neighbours immediately
+                heuristic_vals = variable_heuristic_batch_switcher(
+                    solve_config, neighbour_look_a_head, filled_tiles
+                )  # [action_size, batch_size]
+                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
+
                 flattened_neighbour_look_head = neighbour_look_a_head.flatten()
                 flattened_look_a_head_costs = look_a_head_costs.flatten()
+
                 current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                    flattened_neighbour_look_head
+                    flattened_neighbour_look_head, flattened_filled_tiles
                 )
 
                 old_costs = search_result.get_cost(current_hash_idxs)
+
+                # Only consider nodes that are either:
+                # 1. Not found in the hash table (new nodes), or
+                # 2. Found but have better cost than existing
                 candidate_mask = jnp.logical_or(
                     ~found, jnp.less(flattened_look_a_head_costs, old_costs)
                 )
                 candidate_mask = candidate_mask & flattened_filled_tiles
+
+                # Deduplicate within the batch
                 optimal_mask = (
                     xnp.unique_mask(
                         flattened_neighbour_look_head, flattened_look_a_head_costs, candidate_mask
                     )
                     & candidate_mask
                 )
+
+                # f(n) = g(n) + h(n) using actual child costs and heuristics
+                neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(
+                    KEY_DTYPE
+                )
+
             else:
+
+                # Compute heuristic values for the states currently being expanded (parents).
+                # Unlike standard A*, we calculate h(parent) here and use it to prioritize
+                # the *actions* leading to its children. The children themselves are not
+                # generated or evaluated yet.
+                heuristic_vals = variable_heuristic_batch_switcher(
+                    solve_config, states, filled
+                )  # [batch_size]
+                heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)  # [batch_size]
+                heuristic_vals = jnp.tile(
+                    heuristic_vals[jnp.newaxis, :], (puzzle.action_size, 1)
+                ).astype(
+                    KEY_DTYPE
+                )  # [action_size, batch_size]
+
                 optimal_mask = flattened_filled_tiles
+
+                # The priority for the actions is based on the parent's cost and heuristic.
+                # f_action = g(parent) + h(parent) (approximately, modified by cost_weight)
+                neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
+
+            vals = Parant_with_Costs(
+                parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
+                cost=costs.flatten(),
+                dist=heuristic_vals.flatten(),
+            )
+            flattened_vals = vals.flatten()
+            flattened_keys = neighbour_keys.flatten()
 
             flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)
 
