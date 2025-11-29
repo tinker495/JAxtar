@@ -19,6 +19,7 @@ from helpers.capture import tee_console
 from helpers.config_printer import print_config
 from helpers.logger import BaseLogger
 from helpers.metrics import calculate_benchmark_metrics, calculate_heuristic_metrics
+from helpers.path_analysis import extract_heuristic_accuracy_data
 from helpers.plots import (
     plot_benchmark_path_comparison,
     plot_expansion_distribution,
@@ -257,8 +258,9 @@ class EvaluationRunner:
                 am.log_scalar("heuristic_r_squared", heuristic_metrics["r_squared"])
                 am.log_scalar("heuristic_ccc", heuristic_metrics["ccc"])
 
+            file_suffix = "_optimal_path" if heuristic_metrics.get("has_optimal_path_used") else ""
             fig = plot_heuristic_accuracy(results, metrics=heuristic_metrics)
-            am.save_and_log_plot("heuristic_accuracy", fig)
+            am.save_and_log_plot(f"heuristic_accuracy{file_suffix}", fig)
 
             plots_generated = 0
             for r in results:
@@ -504,6 +506,32 @@ class EvaluationRunner:
                         result_item["benchmark_verification_error"] = str(exc)
 
                 result_item["matches_optimal_path"] = verification_result
+
+        # Overwrite path analysis with optimal path if available
+        if self.benchmark is not None:
+            # 1. Try to get optimal sequence from result_item (populated earlier)
+            optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
+
+            # 2. If not found, check benchmark_sample for 'optimal_action_sequence' (standard name)
+            if optimal_sequence is None and benchmark_sample is not None:
+                optimal_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
+
+            # 3. Also check optimal_path (state sequence)
+            optimal_path = getattr(benchmark_sample, "optimal_path", None)
+
+            if optimal_sequence or optimal_path:
+                optimal_analysis = extract_heuristic_accuracy_data(
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    action_sequence=optimal_sequence,
+                    path_states=optimal_path,
+                    heuristic_model=heuristic_model,
+                    qfunction_model=qfunction_model,
+                )
+                if optimal_analysis:
+                    result_item["path_analysis"] = optimal_analysis
+                    result_item["used_optimal_path_for_analysis"] = True
 
         # Extract expansion data for plotting node value distributions
         if hasattr(search_result, "pop_generation"):

@@ -272,8 +272,16 @@ def plot_heuristic_accuracy(
     """Plots the heuristic/q-function accuracy."""
     all_actual_dists = []
     all_estimated_dists = []
-    solved_results = [r for r in results if r["solved"]]
-    for r in solved_results:
+
+    # Check if we're plotting data derived from optimal paths
+    has_optimal_path_used = metrics.get("has_optimal_path_used", False) if metrics else False
+
+    # Include results with path analysis.
+    # If metrics says we have optimal path used, we generally assume most/all valid points come from it,
+    # or at least we want to label it as such.
+    results_with_analysis = [r for r in results if r.get("path_analysis")]
+
+    for r in results_with_analysis:
         if r.get("path_analysis"):
             analysis_data = r["path_analysis"]
             if analysis_data.get("actual") and analysis_data.get("estimated"):
@@ -281,7 +289,10 @@ def plot_heuristic_accuracy(
                 all_estimated_dists.extend(analysis_data["estimated"])
 
     fig, ax = plt.subplots(figsize=(12, 12))
-    title = "Heuristic/Q-function Accuracy Analysis"
+
+    # Adjust title based on data source
+    source_label = "Optimal Path" if has_optimal_path_used else "Search Path"
+    title = f"Heuristic/Q-function Accuracy Analysis ({source_label})"
 
     if metrics:
         r_squared = metrics.get("r_squared")

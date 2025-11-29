@@ -7,8 +7,27 @@ def calculate_heuristic_metrics(results: List[Dict]) -> Optional[Dict[str, float
     """Calculates R-squared and CCC for heuristic accuracy from evaluation results."""
     all_actual_dists = []
     all_estimated_dists = []
-    solved_results = [r for r in results if r.get("solved")]
-    for r in solved_results:
+    has_optimal_path_used = False
+
+    # Include all results that have path analysis data, regardless of whether search solved it
+    # (e.g. if we used optimal path from benchmark for analysis)
+    results_with_analysis = [r for r in results if r.get("path_analysis")]
+
+    # If at least one result used optimal path, we prefer to use ONLY those for metric calculation
+    # to be consistent (or we can mix, but usually we want one consistent source).
+    # Let's check if any result used optimal path.
+    optimal_path_results = [
+        r for r in results_with_analysis if r.get("used_optimal_path_for_analysis")
+    ]
+
+    if optimal_path_results:
+        # If available, use ONLY optimal path results for accuracy metrics
+        target_results = optimal_path_results
+        has_optimal_path_used = True
+    else:
+        target_results = results_with_analysis
+
+    for r in target_results:
         if r.get("path_analysis"):
             analysis_data = r["path_analysis"]
             if analysis_data.get("actual") and analysis_data.get("estimated"):
@@ -58,7 +77,7 @@ def calculate_heuristic_metrics(results: List[Dict]) -> Optional[Dict[str, float
         # which implies perfect concordance.
         ccc = 1.0
 
-    return {"r_squared": r_squared, "ccc": ccc}
+    return {"r_squared": r_squared, "ccc": ccc, "has_optimal_path_used": has_optimal_path_used}
 
 
 def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
