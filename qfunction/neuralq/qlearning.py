@@ -627,12 +627,12 @@ def _get_datasets_with_diffusion_distance_mixture(
 
     _, unique_state_idx, inverse_state_indices = xnp.unique_mask(
         val=solve_configs_and_states,
-        key=cost,
+        key=cost.reshape(-1),
         return_index=True,
         return_inverse=True,
     )
     # state_min_cost: best cost found for each state across all actions and trajectories
-    state_min_cost = cost[unique_state_idx][inverse_state_indices][:, jnp.newaxis]
+    state_min_cost = cost[unique_state_idx][inverse_state_indices]
 
     # Propagate the improved cost values backwards along the trajectory
     # Pad dataset with infinity to handle invalid parent pointers
