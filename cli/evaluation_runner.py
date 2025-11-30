@@ -258,7 +258,11 @@ class EvaluationRunner:
                 am.log_scalar("heuristic_r_squared", heuristic_metrics["r_squared"])
                 am.log_scalar("heuristic_ccc", heuristic_metrics["ccc"])
 
-            file_suffix = "_optimal_path" if heuristic_metrics.get("has_optimal_path_used") else ""
+            file_suffix = (
+                "_optimal_path"
+                if heuristic_metrics and heuristic_metrics.get("has_optimal_path_used")
+                else ""
+            )
             fig = plot_heuristic_accuracy(results, metrics=heuristic_metrics)
             am.save_and_log_plot(f"heuristic_accuracy{file_suffix}", fig)
 
