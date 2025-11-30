@@ -37,13 +37,21 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_3.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube_3_4M.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube_3.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube_3_4M.pkl",
+            ),
         },
         eval_options=EvalOptions(
             batch_size=10000,
@@ -60,13 +68,21 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_3.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube_3_4M.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube_3.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube_3_4M.pkl",
+            ),
         },
         eval_options=EvalOptions(
             batch_size=10000,
@@ -83,13 +99,21 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_3.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_3_4M.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_3.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm_3_4M.pkl",
+            ),
         },
         eval_options=EvalOptions(
             batch_size=10000,
@@ -106,13 +130,21 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_4.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_4_4M.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_4.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm_4_4M.pkl",
+            ),
         },
         eval_options=EvalOptions(
             batch_size=10000,
@@ -129,13 +161,21 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_5.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_5_4M.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_5.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm_5_4M.pkl",
+            ),
         },
         eval_options=EvalOptions(
             batch_size=10000,
@@ -152,13 +192,21 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_6.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_6_4M.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_6.pkl",
-            )
+            ),
+            "4M": NeuralCallableConfig(
+                callable=RubiksCubeNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm_6_4M.pkl",
+            ),
         },
         eval_options=EvalOptions(
             batch_size=10000,

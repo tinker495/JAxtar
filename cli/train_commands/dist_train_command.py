@@ -15,7 +15,7 @@ from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from JAxtar.stars.astar import astar_builder
+from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
@@ -215,7 +215,7 @@ def davi(
                         search_model=heuristic,
                         search_model_name="heuristic",
                         run_label="astar",
-                        search_builder_fn=astar_builder,
+                        search_builder_fn=astar_d_builder,
                         eval_options=light_eval_options,
                         puzzle_opts=puzzle_opts,
                         output_dir=eval_run_dir,
@@ -239,7 +239,7 @@ def davi(
                 search_model=heuristic,
                 search_model_name="heuristic",
                 run_label="astar",
-                search_builder_fn=astar_builder,
+                search_builder_fn=astar_d_builder,
                 eval_options=eval_options,
                 puzzle_opts=puzzle_opts,
                 output_dir=eval_run_dir,
