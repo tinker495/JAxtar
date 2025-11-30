@@ -1,75 +1,77 @@
-# Q-Function Evaluation Command (`eval qlearning`)
+# Q-Function Evaluation Commands (`eval qstar`, `eval qbeam`)
 
-The `eval qlearning` command is used to systematically evaluate the performance of a trained neural network Q-function. It runs the Q* search algorithm over a large number of puzzle instances, collecting statistics on success rate, search time, path length, and the number of nodes expanded. This is the primary method for assessing the effectiveness of a trained Q-function model.
+These commands are used to systematically evaluate the performance of trained neural network Q-functions using different search algorithms. They run the specified search algorithm over a large number of puzzle instances, collecting statistics on success rate, search time, path length, and nodes expanded.
+
+## Commands
+
+-   **`eval qstar`**: Evaluates using Q* Search.
+-   **`eval qbeam`**: Evaluates using Q-Beam Search (Beam Search with Q-values).
 
 ## Usage
 
-The basic syntax for the `eval qlearning` command is:
+The basic syntax follows the pattern:
 
 ```bash
-python main.py eval qlearning -p <puzzle_name> [OPTIONS]
+python main.py eval <algorithm> -p <puzzle_name> [OPTIONS]
 ```
 
-Example: Evaluate the `rubikscube` Q-function on 200 puzzles starting from seed 1000.
+Examples:
 
 ```bash
-python main.py eval qlearning -p rubikscube --num-eval 200 -s 1000
+# Evaluate Q*
+python main.py eval qstar -p rubikscube --num-eval 200
+
+# Evaluate Q-Beam
+python main.py eval qbeam -p rubikscube --num-eval 200 --batch-size 5000
 ```
-
-## How It Works
-
-This command always uses the pre-configured **neural network Q-function** for the specified puzzle. It pairs the neural Q-function with the **Q\* search algorithm** to solve the puzzles. The `-nn` flag from other commands is not needed here as its usage is implied.
-
-The evaluation can be run in two ways depending on the `-s, --seeds` option:
-1.  **Single Seed**: If one seed is provided (e.g., `-s 1000`), it serves as the starting point. The command will evaluate on a sequence of puzzles with seeds from `1000` to `1000 + num_eval - 1`.
-2.  **Multiple Seeds**: If a comma-separated list of seeds is provided (e.g., `-s 1,5,10,42`), the command will evaluate only on the puzzles corresponding to those specific seeds.
-
-By default, this command attempts to use the "hard" version of puzzles if one is defined in the puzzle's configuration.
 
 ## Options
 
-The `eval qlearning` command combines options for evaluation, puzzle selection, and the underlying Q-function.
+These commands share common evaluation and puzzle options, tailored to the specific search algorithm.
 
 ### Evaluation Options (`@eval_options`)
 
-These options control the evaluation process itself. They override the default evaluation settings.
-
--   `--num-eval`: The number of puzzles to evaluate when a single starting seed is provided.
+-   `-ne, --num-eval`: The number of puzzles to evaluate.
     -   Type: `Integer`
     -   Default: `200`
--   `--batch-size`: The batch size for the Q* search algorithm.
+-   `-b, --batch-size`: Batch size for the search. For **Q-Beam**, this determines the **beam width**.
     -   Type: `Integer`
     -   Default: `10000`
--   `--max-node-size`: The maximum number of nodes to explore during search.
-    -   Type: `Integer`
+-   `-m, --max-node-size`: The maximum number of nodes to explore.
+    -   Type: `String`
     -   Default: `20,000,000`
--   `--cost-weight`: The weight `w` for the path cost in the Q* search priority calculation.
+-   `-w, --cost-weight`: Weight for cost in search (w * g + Q).
     -   Type: `Float`
     -   Default: `0.6`
--   `--pop-ratio`: Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` percent of the best node's cost (e.g., 0.1 allows a 10% margin). A value of `inf` corresponds to a fixed-width beam search determined by the batch size.
-    -   Type: `Float`
+-   `-pr, --pop_ratio`: Ratio(s) for popping nodes from the priority queue.
+    -   Type: `String`
     -   Default: `inf`
+-   `-rn, --run-name`: Name of the evaluation run.
+    -   Type: `String`
+-   `--use-early-stopping`: Enable early stopping based on success rate.
+    -   Type: `Boolean`
+-   `--early-stop-patience`: Number of samples to check for early stopping.
+    -   Type: `Integer`
+-   `--early-stop-threshold`: Minimum success rate threshold.
+    -   Type: `Float`
 
-### Puzzle Options (`@puzzle_options`)
+### Puzzle Options (`@eval_puzzle_options`)
 
-These options define the puzzle environment for the evaluation.
-
--   `-p, --puzzle`: **(Required)** Specifies the puzzle whose Q-function is to be evaluated.
+-   `-p, --puzzle`: **(Required)** Specifies the puzzle.
     -   Type: `Choice`
-    -   Choices: `n-puzzle`, `rubikscube`, etc.
--   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
+-   `-pargs, --puzzle_args`: JSON string for puzzle arguments.
     -   Type: `String`
--   `-ps, --puzzle_size`: Sets the size for puzzles that support it (e.g., `3` for a 3x3x3 Rubik's Cube).
-    -   Type: `String`
-    -   Default: `default`
--   `-h, --hard`: Use a "hard" version of the puzzle if available. For evaluation commands, this is often the default behavior if a hard version is defined.
+-   `-h, --hard`: Use "hard" version of the puzzle.
     -   Type: `Flag`
--   `-s, --seeds`: A single seed (to use with `--num-eval`) or a comma-separated list of seeds.
+-   `-s, --seeds`: Single seed or comma-separated list of seeds.
     -   Type: `String`
     -   Default: `"0"`
 
 ### Q-Function Options (`@qfunction_options`)
 
-For the `eval qlearning` command, these options are mostly implicit.
+These commands automatically use the neural Q-function defined in the puzzle configuration.
 
--   `-nn, --neural_qfunction`: This flag is **not required**. The command is specifically designed to evaluate the neural Q-function defined in the puzzle's configuration.
+-   `--param-path`: Path to override the Q-function parameter file.
+    -   Type: `String`
+-   `--model-type`: Type of the Q-function model.
+    -   Type: `String`

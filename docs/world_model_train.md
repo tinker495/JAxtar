@@ -26,24 +26,9 @@ The `world_model_train train` command uses several option groups to configure th
 
 These options specify the dataset of state transitions used for training.
 
--   `--dataset`: The name of the dataset to use. This typically corresponds to a puzzle environment.
+-   `-ds, --dataset`: The name of the dataset to use. This typically corresponds to a puzzle environment.
     -   Type: `Choice`
     -   Default: `rubikscube`
--   `--dataset_size`: The total number of state transitions to generate for the dataset.
-    -   Type: `Integer`
-    -   Default: `300000`
--   `--dataset_minibatch_size`: The size of mini-batches for processing the dataset generation.
-    -   Type: `Integer`
-    -   Default: `30000`
--   `--shuffle_length`: The number of random moves to apply to the solved state to generate initial states for the dataset.
-    -   Type: `Integer`
-    -   Default: `30`
--   `--img_size`: The height and width of the images to be generated for the dataset.
-    -   Type: `Tuple (int, int)`
-    -   Default: `(32, 32)`
--   `--key`: The random seed for dataset generation.
-    -   Type: `Integer`
-    -   Default: `0`
 
 ### World Model Options (`@wm_get_world_model_options`)
 

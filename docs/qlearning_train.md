@@ -31,13 +31,11 @@ These options define the puzzle environment for which the Q-function is being tr
     -   Default: `rubikscube`
 -   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
     -   Type: `String`
--   `-ps, --puzzle_size`: A simpler way to set the size for puzzles that support it.
-    -   Type: `String`
-    -   Default: `default`
--   `-h, --hard`: If available, use a "hard" version of the puzzle for generating training data.
+-   `-h, --hard`: If available, use a "hard" version of the puzzle for generating training data. (Default: True for distance training)
     -   Type: `Flag`
--   `-sl, --shuffle_length`: Overrides the default shuffle length when generating puzzle states for the dataset.
-    -   Type: `Integer`
+-   `-s, --seeds`: Seed for the random puzzle (if supported).
+    -   Type: `String`
+    -   Default: `0`
 
 ### Training Options (`@dist_train_options`)
 
@@ -57,31 +55,91 @@ These are the core options that control the training loop and hyperparameters.
 -   `-k, --key`: Seed for the random number generator used in training.
     -   Type: `Integer`
 -   `-r, --reset`: If flagged, resets the model weights before starting training.
-    -   Type: `Flag`
+    -   Type: `Boolean`
 -   `-lt, --loss_threshold`: A loss value threshold that can trigger updates or other events during training.
     -   Type: `Float`
--   `-ri, --reset_interval`: The interval (in steps) at which to reset the model's weights to a previous state, a technique to escape local minima.
-    -   Type: `Integer`
 -   `-ui, --update_interval`: The interval (in steps) for updating the target network.
+    -   Type: `Integer`
+-   `-fui, --force_update_interval`: The interval (in steps) to force update the target network.
     -   Type: `Integer`
 -   `-su, --use_soft_update`: Use soft updates (Polyak averaging) for the target network instead of hard updates.
     -   Type: `Flag`
+-   `-ddn, --use_double_dqn`: Enable Double DQN target computation.
+    -   Type: `Flag`
 -   `-her, --using_hindsight_target`: Use Hindsight Experience Replay (HER) for generating target values.
     -   Type: `Flag`
--   `-tcw, --target_confidence_weighting`: Use target confidence weighting to weigh losses during training.
+-   `-ts, --using_triangular_sampling`: Use triangular sampling for generating states.
     -   Type: `Flag`
--   `--optimizer`: The optimization algorithm to use.
-    -   Type: `Choice`
-    -   Choices: `adam`, `adopt`, `rmsprop`, `lamb_adam`, `lamb_adopt`, etc.
-    -   Default: `adam`
+-   `-dd, --use_diffusion_distance`: Enable diffusion distance features in dataset creation.
+    -   Type: `Flag`
+-   `-ddm, --use_diffusion_distance_mixture`: Enable diffusion distance mixture features in dataset creation.
+    -   Type: `Flag`
+-   `--use_diffusion_distance_warmup`: Enable warmup schedule when using diffusion distance features.
+    -   Type: `Flag`
+-   `--diffusion_distance_warmup_steps`: Number of iterations to run before enabling diffusion distance features.
+    -   Type: `Integer`
+-   `--sampling-non-backtracking-steps`: Number of previous states to avoid revisiting during dataset sampling.
+    -   Type: `Integer`
+-   `-tp, --temperature`: Boltzmann temperature for action selection.
+    -   Type: `Float`
 -   `-d, --debug`: Disables JIT compilation for easier debugging.
     -   Type: `Flag`
 -   `-md, --multi_device`: Enables training across multiple JAX devices (e.g., multiple GPUs).
-    -   Type: `Flag`
+    -   Type: `Boolean`
+-   `-ri, --reset_interval`: The interval (in steps) at which to reset the model's weights to a previous state.
+    -   Type: `Integer`
+-   `-osr, --opt_state_reset`: Reset optimizer state when target network is updated.
+    -   Type: `Boolean`
+-   `--tau`: Tau parameter for soft updates or scaled reset.
+    -   Type: `Float`
+-   `--optimizer`: The optimization algorithm to use.
+    -   Type: `Choice`
+    -   Default: `adam`
+-   `-lr, --learning_rate`: Learning rate.
+    -   Type: `Float`
+-   `-wd, --weight_decay_size`: Weight decay size for regularization.
+    -   Type: `Float`
+-   `--loss`: Select training loss function.
+    -   Type: `Choice`
+    -   Choices: `mse`, `huber`, `logcosh`, `asymmetric_huber`, `asymmetric_logcosh`
+-   `--loss-args`: JSON object of additional keyword arguments for the selected loss.
+    -   Type: `String`
+-   `--td-error-clip`: Absolute clip value for TD-error; set <= 0 to disable.
+    -   Type: `Float`
+-   `-km, --k_max`: Override puzzle's default k_max (formerly shuffle_length).
+    -   Type: `Integer`
+-   `--logger`: Logger to use.
+    -   Type: `Choice`
+    -   Choices: `aim`, `tensorboard`, `wandb`, `none`
 
 ### Q-Function Model Options (`@dist_qfunction_options`)
 
 This group contains options specific to the Q-function model being trained.
 
--   `-nwp, --not_with_policy`: If flagged, does not use the policy for training. The specifics of this depend on the `NeuralQFunctionBase` implementation.
-    -   Type: `Flag`
+-   `--param-path`: Path to the Q-function parameter file.
+    -   Type: `String`
+-   `-nc, --neural_config`: Neural configuration JSON string. Overrides the default configuration.
+    -   Type: `String`
+
+### Evaluation Options (`@eval_options`)
+
+These options control the evaluation performed during/after training.
+
+-   `-b, --batch-size`: Batch size for search during evaluation.
+    -   Type: `Integer`
+-   `-m, --max-node-size`: Maximum number of nodes to search during evaluation.
+    -   Type: `String`
+-   `-w, --cost-weight`: Weight for cost in search.
+    -   Type: `Float`
+-   `-pr, --pop_ratio`: Ratio(s) for popping nodes from the priority queue.
+    -   Type: `String`
+-   `-ne, --num-eval`: Number of puzzles to evaluate.
+    -   Type: `Integer`
+-   `-rn, --run-name`: Name of the evaluation run.
+    -   Type: `String`
+-   `--use-early-stopping`: Enable early stopping based on success rate threshold.
+    -   Type: `Boolean`
+-   `--early-stop-patience`: Number of samples to check before considering early stopping.
+    -   Type: `Integer`
+-   `--early-stop-threshold`: Minimum success rate threshold for early stopping (0.0 to 1.0).
+    -   Type: `Float`

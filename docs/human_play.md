@@ -31,9 +31,6 @@ These options define the puzzle environment to be solved.
     -   Choices: `n-puzzle`, `rubikscube`, `slidepuzzle`, etc.
 -   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
     -   Type: `String`
--   `-ps, --puzzle_size`: A simpler way to set the size for puzzles that support it.
-    -   Type: `String`
-    -   Default: `default`
 -   `-h, --hard`: If available, use a "hard" version of the puzzle.
     -   Type: `Flag`
 -   `-s, --seeds`: A single seed for generating the initial puzzle state. Note: Unlike other commands, `human_play` only accepts a single seed.

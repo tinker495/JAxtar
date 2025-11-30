@@ -25,11 +25,11 @@ All commands in this group share the following option sets, which are used to co
     -   Default: `rubikscube`
 -   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
     -   Type: `String`
--   `-ps, --puzzle_size`: A simpler way to set the size for puzzles that support it.
-    -   Type: `String`
-    -   Default: `default`
 -   `-h, --hard`: If available, use a "hard" version of the puzzle.
     -   Type: `Flag`
+-   `-s, --seeds`: Seed for the random puzzle (if supported).
+    -   Type: `String`
+    -   Default: `0`
 
 ### Dataset Generation Options (`@wm_dataset_options`)
 
