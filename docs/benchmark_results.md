@@ -17,9 +17,11 @@ This document serves as a record of experimental results obtained from running b
 | A* Deferred | Diffusion Distance - 14.7M params | 100% / 51.30% | 1.466s | 188K | 21.7 | 0.88 | 0.948 | DeepCubeA Param size|
 | A* Deferred | Diffusion Distance - 4M params | 100% / 45.70% | 0.937s | 189K | 21.84 | 0.883 | 0.948 | CayleyPy Param size|
 | Q* | Diffusion Distance warmup - 14.7M params | 100% / 49.50% | 0.589s | 188K | 21.72 | 0.87 | 0.945 | DeepCubeA Param size|
+| Q* | Diffusion Distance warmup - 4M params | 100% / 36.50% | 0.571s | 192K | 22.1 | 0.929 | 0.963 | DeepCubeA Param size|
 | Beam Search | Diffusion Distance - 14.7M params | 100% / 50.10% | 1.058s | 188K | 21.72 | 0.88 | 0.948 | DeepCubeA Param size|
 | Beam Search | Diffusion Distance - 4M params | 100% / 44% | 0.595s | 190K | 21.89 | 0.883 | 0.948 | CayleyPy Param size|
-| Q-Beam | Diffusion Distance warmup - 14.7M params | 100% / 46.30% | 0.278s | 137K | 21.8 | 0.87 | 0.945 | DeepCubeA Param size|
+| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% / 46.30% | 0.278s | 137K | 21.8 | 0.87 | 0.945 | DeepCubeA Param size|
+| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% / 33.90% | 0.234s | 134K | 22.21 | 0.929 | 0.963 | CayleyPy Param size|
 
 **Configuration**:
 - Batch Size: 2^18 / Max Node Size: 20M / Cost Weight: 0.9 / Pop Ratio: inf
