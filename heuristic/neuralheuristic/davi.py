@@ -296,9 +296,8 @@ def _get_datasets(
         target_entropy = -jnp.sum(
             next_probs * jnp.log(jnp.clip(next_probs, a_min=1e-12)), axis=1
         )  # [batch_size]
-        # For solved states or if any neighbor is solved, entropy should be near zero
-        any_neighbor_solved = jnp.any(neighbors_solved, axis=0)
-        target_entropy = jnp.where(jnp.logical_or(solved, any_neighbor_solved), 0.0, target_entropy)
+        # For solved states, entropy should be near zero
+        target_entropy = jnp.where(solved, 0.0, target_entropy)
         # Maximum entropy per state based on action size
         action_size = backup_bt.shape[1]
         max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=next_probs.dtype), 1.0))
