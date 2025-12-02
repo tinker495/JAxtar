@@ -253,34 +253,21 @@ def _get_datasets(
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
-        neighbors_solved = jax.vmap(
-            lambda x, y: puzzle.batched_is_solved(x, y, multi_solve_config=True),
-            in_axes=(None, 0),
-        )(
-            solve_configs, neighbors
-        )  # [action_size, batch_size]
         preproc_neighbors = jax.vmap(jax.vmap(preproc_fn, in_axes=(0, 0)), in_axes=(None, 0))(
             solve_configs, neighbors
         )
         # preproc_neighbors: [action_size, batch_size, ...]
-        flatten_neighbors = jnp.reshape(
-            preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
-        )
-        # Use scan to compute heuristics on flattened neighbors to reduce VRAM usage
-        # by processing one action at a time instead of vmap over all actions
 
-        def compute_heur_for_action(carry, action_idx):
-            action_neighbors = flatten_neighbors[action_idx]  # [batch_size, ...]
-            heur = heuristic_model.apply(target_heuristic_params, action_neighbors, training=False)
+        def compute_heur_for_action(carry, preproc_neighbor):
+            heur = heuristic_model.apply(target_heuristic_params, preproc_neighbor, training=False)
             return None, heur.squeeze()
 
         _, heur = jax.lax.scan(
             compute_heur_for_action,
             None,
-            jnp.arange(flatten_neighbors.shape[0]),
-            length=flatten_neighbors.shape[0],
+            preproc_neighbors,
         )  # [action_size, batch_size]
-        heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
+        heur = jnp.maximum(heur, 0.0)
         backup = heur + cost  # [action_size, batch_size]
         target_heuristic = jnp.min(backup, axis=0)
         target_heuristic = jnp.where(
