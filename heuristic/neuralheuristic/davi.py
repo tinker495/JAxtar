@@ -266,12 +266,20 @@ def _get_datasets(
         flatten_neighbors = jnp.reshape(
             preproc_neighbors, (-1, minibatch_size, *preproc_neighbors.shape[2:])
         )
+        # Use scan to compute heuristics on flattened neighbors to reduce VRAM usage
+        # by processing one action at a time instead of vmap over all actions
 
-        def heur_scan(neighbors):
-            heur = heuristic_model.apply(target_heuristic_params, neighbors, training=False)
-            return heur.squeeze()
+        def compute_heur_for_action(carry, action_idx):
+            action_neighbors = flatten_neighbors[action_idx]  # [batch_size, ...]
+            heur = heuristic_model.apply(target_heuristic_params, action_neighbors, training=False)
+            return None, heur.squeeze()
 
-        heur = jax.vmap(heur_scan)(flatten_neighbors)  # [action_size, batch_size]
+        _, heur = jax.lax.scan(
+            compute_heur_for_action,
+            None,
+            jnp.arange(flatten_neighbors.shape[0]),
+            length=flatten_neighbors.shape[0],
+        )  # [action_size, batch_size]
         heur = jnp.maximum(jnp.where(neighbors_solved, 0.0, heur), 0.0)
         backup = heur + cost  # [action_size, batch_size]
         target_heuristic = jnp.min(backup, axis=0)
