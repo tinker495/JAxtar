@@ -28,10 +28,10 @@
 | A* | - | Mostly OOM | - | - | - | - | - | - |
 | A* | - | Mostly OOM | - | - | - | - | - | - |
 | A* Deferred | Diffusion Distance - 14.7M params | 100% / 84.9% | 9.143s | 4.28M | 20.94 | 0.88 | 0.948 | DeepCubeA Param size|
-| A* Deferred | Diffusion Distance - 4M params | - | - | - | - | - | - | CayleyPy Param size|
+| A* Deferred | Diffusion Distance - 4M params | 100% / 80.7% | 4.383s | 4.3M | 21.02 | 0.882 | 0.948 | CayleyPy Param size|
 | Q* | Diffusion Distance warmup - 14.7M params | 100% / 81.50% | 1.278s | 4.29M | 21.01 | 0.87 | 0.945 | DeepCubeA Param size|
-| Q* | Diffusion Distance warmup - 4M params | - | - | - | - | - | - | CayleyPy Param size|
+| Q* | Diffusion Distance warmup - 4M params | 100% / 73.7.% | 0.895s | 4.34M | 21.17 | 0.929 | 0.963 | CayleyPy Param size|
 | Beam Search | Diffusion Distance - 14.7M params | 100% / 84.50% | 7.937s | 4.29M | 20.95 | 0.88 | 0.948 | DeepCubeA Param size|
-| Beam Search | Diffusion Distance - 4M params | - | - | - | - | - | - | CayleyPy Param size|
+| Beam Search | Diffusion Distance - 4M params | 100% / 80.3% | 3.669s | 4.31M | 21.03 | 0.882 | 0.948 | CayleyPy Param size|
 | Q-Beam | Diffusion Distance warmup - 14.7M params | 100% / 79.80% | 0.846s | 3.14M | 21.04 | 0.87 | 0.945 | DeepCubeA Param size|
-| Q-Beam | Diffusion Distance warmup - 4M params | - | - | - | - | - | - | CayleyPy Param size|
+| Q-Beam | Diffusion Distance warmup - 4M params | 100% / 70.60% | 0.453s | 3.06M | 21.24 | 0.929 | 0.963 | CayleyPy Param size|

@@ -27,11 +27,11 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A* | - | Mostly OOM | - | - | - | - | - | - |
 | A* | - | Mostly OOM | - | - | - | - | - | - |
-| A* Deferred | Diffusion Distance - 14.7M params | - | - | - | - | - | - | - |
-| A* Deferred | Diffusion Distance - 4M params | - | - | - | - | - | - | - |
-| Q* | Diffusion Distance warmup - 14.7M params | - | - | - | - | - | - | - |
-| Q* | Diffusion Distance warmup - 4M params | - | - | - | - | - | - | - |
-| Beam Search | Diffusion Distance - 14.7M params | - | - | - | - | - | - | - |
-| Beam Search | Diffusion Distance - 4M params | - | - | - | - | - | - | - |
-| Q-Beam | Diffusion Distance warmup - 14.7M params | - | - | - | - | - | - | - |
-| Q-Beam | Diffusion Distance warmup - 4M params | - | - | - | - | - | - | - |
+| A* Deferred | Diffusion Distance - 14.7M params | 100% | 13.979s | 4.16M | 19.68 | 0.913 | 0.965 | - |
+| A* Deferred | Diffusion Distance - 4M params | 100% | 6.566s | 4.2M | 19.83 | 0.92 | 0.967 | - |
+| Q* | Diffusion Distance warmup - 14.7M params | 100% | 1.658s | 4.21M | 19.88 | 0.822 | 0.932 | - |
+| Q* | Diffusion Distance warmup - 4M params | 100% | 1.261s | 4.22M | 19.90 | 0.963 | 0.981 | - |
+| Beam Search | Diffusion Distance - 14.7M params | 100% | 12.263s | 4.17M | 19.68 | 0.879 | 0.951 | - |
+| Beam Search | Diffusion Distance - 4M params | 100% | 5.592s | 4.21M | 19.83 | 0.901 | 0.958 | - |
+| Q-Beam | Diffusion Distance warmup - 14.7M params | 100% | 0.916s | 3.1M | 19.95 | 0.348 | 0.734 | - |
+| Q-Beam | Diffusion Distance warmup - 4M params | 100% | 0.496s | 3M | 19.93 | 0.451 | 0.718 | - |
