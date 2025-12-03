@@ -47,6 +47,8 @@ def qlearning_builder(
     replay_ratio: int = 1,
     td_error_clip: Optional[float] = None,
     priority_sampling: bool = False,
+    priority_exponent: float = 0.6,
+    importance_sampling_exponent: float = 0.4,
 ):
     def qlearning_loss(
         q_params: Any,
@@ -106,7 +108,8 @@ def qlearning_builder(
                 raise ValueError("Priority sampling requires 'diff' in the dataset.")
             diff = jnp.asarray(dataset["diff"])
             diff = jnp.reshape(diff, (data_size, -1))
-            priorities = jnp.mean(jnp.abs(diff), axis=1) + 1e-6
+            raw_priorities = jnp.mean(jnp.abs(diff), axis=1) + 1e-6
+            priorities = jnp.power(raw_priorities, priority_exponent)
             priorities = jnp.where(jnp.isfinite(priorities), priorities, 0.0)
             priority_sum = jnp.sum(priorities)
             priority_sum = jnp.where(jnp.isfinite(priority_sum), priority_sum, 0.0)
@@ -154,7 +157,8 @@ def qlearning_builder(
                     p=priority_probs,
                 )
                 batch_weights = priority_probs[flat_indices]
-                batch_weights = 1.0 / jnp.maximum(batch_weights * data_size, 1e-8)
+                prob_n = jnp.maximum(batch_weights * data_size, 1e-8)
+                batch_weights = jnp.power(1.0 / prob_n, importance_sampling_exponent)
                 batch_weights = batch_weights / (jnp.mean(batch_weights) + 1e-8)
                 batch_indexs = jnp.reshape(flat_indices, (batch_size, minibatch_size))
                 batch_weights = jnp.reshape(batch_weights, (batch_size, minibatch_size))

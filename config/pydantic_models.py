@@ -134,6 +134,10 @@ class DistTrainOptions(BaseModel):
     priority_sampling: bool = Field(
         False, description="Use priority experience replay based on dataset diffs."
     )
+    priority_exponent: float = Field(0.6, description="Exponent (alpha) for priority sampling.")
+    importance_sampling_exponent: float = Field(
+        0.4, description="Exponent (beta) for importance sampling weights."
+    )
     use_diffusion_distance: bool = False
     use_diffusion_distance_mixture: bool = False
     use_diffusion_distance_warmup: bool = False

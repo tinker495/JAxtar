@@ -107,6 +107,8 @@ def davi(
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
         priority_sampling=train_options.priority_sampling,
+        priority_exponent=train_options.priority_exponent,
+        importance_sampling_exponent=train_options.importance_sampling_exponent,
     )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -341,6 +343,8 @@ def qlearning(
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
         priority_sampling=train_options.priority_sampling,
+        priority_exponent=train_options.priority_exponent,
+        importance_sampling_exponent=train_options.importance_sampling_exponent,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,

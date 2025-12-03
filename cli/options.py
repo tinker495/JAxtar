@@ -598,6 +598,20 @@ def dist_train_options(func: callable) -> callable:
         help="Enable priority experience replay using dataset diffs.",
     )
     @click.option(
+        "-pe",
+        "--priority_exponent",
+        type=float,
+        default=None,
+        help="Exponent (alpha) for priority sampling.",
+    )
+    @click.option(
+        "-ise",
+        "--importance_sampling_exponent",
+        type=float,
+        default=None,
+        help="Exponent (beta) for importance sampling weights.",
+    )
+    @click.option(
         "-dd",
         "--use_diffusion_distance",
         is_flag=True,
