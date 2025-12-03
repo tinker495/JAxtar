@@ -710,6 +710,11 @@ def dist_train_options(func: callable) -> callable:
         # map_kwargs_to_pydantic handles popping
         overrides = map_kwargs_to_pydantic(DistTrainOptions, kwargs)
 
+        # Cleanup None values remaining in kwargs that correspond to DistTrainOptions fields
+        for key in list(kwargs.keys()):
+            if key in DistTrainOptions.model_fields and kwargs[key] is None:
+                kwargs.pop(key)
+
         # Handle special case for loss_args if it's a string in overrides
         if "loss_args" in overrides and isinstance(overrides["loss_args"], str):
             overrides["loss_args"] = json.loads(overrides["loss_args"])
