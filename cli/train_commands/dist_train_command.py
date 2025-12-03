@@ -13,12 +13,20 @@ from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
-from heuristic.neuralheuristic.davi import davi_builder, get_heuristic_dataset_builder
+from heuristic.neuralheuristic.davi import (
+    compute_davi_diff_metrics,
+    davi_builder,
+    get_heuristic_dataset_builder,
+)
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
-from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
+from qfunction.neuralq.qlearning import (
+    compute_qlearning_diff_metrics,
+    get_qlearning_dataset_builder,
+    qlearning_builder,
+)
 from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer
 from train_util.target_update import scaled_by_reset, soft_update
 
@@ -128,6 +136,9 @@ def davi(
         mean_target_entropy = None
         if "target_entropy" in dataset:
             mean_target_entropy = jnp.mean(dataset["target_entropy"])
+        pre_mean_loss, pre_mean_abs_diff = compute_davi_diff_metrics(
+            dataset["diff"], loss_type=train_options.loss, loss_args=train_options.loss_args
+        )
 
         (
             heuristic_params,
@@ -142,6 +153,10 @@ def davi(
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         mean_heuristic_value = jnp.mean(current_heuristics)
         lr = get_learning_rate(opt_state)
+        logger.log_scalar("Validation/Pre Mean Loss", pre_mean_loss, i)
+        logger.log_scalar("Validation/Pre Mean Abs Diff", pre_mean_abs_diff, i)
+        logger.log_scalar("Validation/Post Mean Loss", loss, i)
+        logger.log_scalar("Validation/Post Mean Abs Diff", mean_abs_diff, i)
         pbar.set_description(
             desc="DAVI Training",
             desc_dict={
@@ -354,6 +369,9 @@ def qlearning(
             mean_action_entropy = jnp.mean(dataset["action_entropy"])
         if "target_entropy" in dataset:
             mean_target_entropy = jnp.mean(dataset["target_entropy"])
+        pre_mean_loss, pre_mean_abs_diff = compute_qlearning_diff_metrics(
+            dataset["diff"], loss_type=train_options.loss, loss_args=train_options.loss_args
+        )
 
         (
             qfunc_params,
@@ -368,6 +386,10 @@ def qlearning(
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         mean_q_value = jnp.mean(current_qs)
         lr = get_learning_rate(opt_state)
+        logger.log_scalar("Validation/Pre Mean Loss", pre_mean_loss, i)
+        logger.log_scalar("Validation/Pre Mean Abs Diff", pre_mean_abs_diff, i)
+        logger.log_scalar("Validation/Post Mean Loss", loss, i)
+        logger.log_scalar("Validation/Post Mean Abs Diff", mean_abs_diff, i)
         pbar.set_description(
             desc="Q-Learning Training",
             desc_dict={

@@ -23,6 +23,16 @@ from train_util.util import (
 )
 
 
+def compute_davi_diff_metrics(
+    diff: chex.Array, loss_type: str = "mse", loss_args: Optional[dict[str, Any]] = None
+) -> tuple[chex.Array, chex.Array]:
+    """Return mean loss and mean absolute diff for a precomputed diff tensor."""
+    per_sample = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
+    mean_loss = jnp.mean(per_sample)
+    mean_abs_diff = jnp.mean(jnp.abs(diff))
+    return mean_loss, mean_abs_diff
+
+
 def davi_builder(
     minibatch_size: int,
     heuristic_model: HeuristicBase,
