@@ -268,7 +268,7 @@ def _get_datasets(
             preproc_neighbors,
         )  # [action_size, batch_size]
         backup = heur + cost  # [action_size, batch_size]
-        target_heuristic = jnp.min(jnp.maximum(heur, cost), axis=0)
+        target_heuristic = jnp.min(jnp.maximum(backup, cost), axis=0)
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
