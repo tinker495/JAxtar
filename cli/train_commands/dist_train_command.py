@@ -73,6 +73,10 @@ def davi(
     target_heuristic_params = heuristic.params
     heuristic_params = target_heuristic_params
 
+    loss_args = train_options.loss_args
+    if isinstance(loss_args, dict):
+        loss_args = tuple(sorted(loss_args.items()))
+
     steps = train_options.steps // train_options.replay_ratio
     update_interval = train_options.update_interval // train_options.replay_ratio
     reset_interval = train_options.reset_interval // train_options.replay_ratio
@@ -99,7 +103,7 @@ def davi(
         heuristic.pre_process,
         n_devices=n_devices,
         loss_type=train_options.loss,
-        loss_args=train_options.loss_args,
+        loss_args=loss_args,
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
         priority_sampling=train_options.priority_sampling,
@@ -136,9 +140,12 @@ def davi(
         mean_target_entropy = None
         if "target_entropy" in dataset:
             mean_target_entropy = jnp.mean(dataset["target_entropy"])
-        pre_mean_loss, pre_mean_abs_diff = compute_davi_diff_metrics(
-            dataset["diff"], loss_type=train_options.loss, loss_args=train_options.loss_args
-        )
+        validation_mean_loss, validation_mean_abs_diff = compute_davi_diff_metrics(
+            dataset["diff"], loss_type=train_options.loss, loss_args=loss_args
+        )  # validation mean loss and mean absolute diff
+        # Note: When measuring this value after training, the loss performance must be measured on 'Unseen' states.
+        # Definition of Unseen: If encountering a state with a similar distribution is considered 'seen',
+        # then 'Unseen' refers to states where not even a similar distribution has been encountered.
 
         (
             heuristic_params,
@@ -153,10 +160,6 @@ def davi(
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         mean_heuristic_value = jnp.mean(current_heuristics)
         lr = get_learning_rate(opt_state)
-        logger.log_scalar("Validation/Pre Mean Loss", pre_mean_loss, i)
-        logger.log_scalar("Validation/Pre Mean Abs Diff", pre_mean_abs_diff, i)
-        logger.log_scalar("Validation/Post Mean Loss", loss, i)
-        logger.log_scalar("Validation/Post Mean Abs Diff", mean_abs_diff, i)
         pbar.set_description(
             desc="DAVI Training",
             desc_dict={
@@ -170,6 +173,8 @@ def davi(
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Losses/Validation Mean Loss", validation_mean_loss, i)
+        logger.log_scalar("Losses/Validation Mean Abs Diff", validation_mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
         logger.log_scalar("Metrics/Mean Heuristic Value", mean_heuristic_value, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
@@ -191,9 +196,10 @@ def davi(
             updated = True
             if i % update_interval == 0 and i != 0:
                 target_updated = True
-        elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
-            i - last_update_step >= train_options.force_update_interval
-        ):
+        elif (
+            (i % update_interval == 0 and i != 0)
+            and validation_mean_loss <= train_options.loss_threshold
+        ) or (i - last_update_step >= train_options.force_update_interval):
             target_heuristic_params = eval_params
             updated = True
             if train_options.opt_state_reset:
@@ -301,6 +307,10 @@ def qlearning(
     target_qfunc_params = qfunction.params
     qfunc_params = target_qfunc_params
 
+    loss_args = train_options.loss_args
+    if isinstance(loss_args, dict):
+        loss_args = tuple(sorted(loss_args.items()))
+
     steps = train_options.steps
     update_interval = train_options.update_interval
     reset_interval = train_options.reset_interval
@@ -327,7 +337,7 @@ def qlearning(
         qfunction.pre_process,
         n_devices=n_devices,
         loss_type=train_options.loss,
-        loss_args=train_options.loss_args,
+        loss_args=loss_args,
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
         priority_sampling=train_options.priority_sampling,
@@ -369,9 +379,12 @@ def qlearning(
             mean_action_entropy = jnp.mean(dataset["action_entropy"])
         if "target_entropy" in dataset:
             mean_target_entropy = jnp.mean(dataset["target_entropy"])
-        pre_mean_loss, pre_mean_abs_diff = compute_qlearning_diff_metrics(
-            dataset["diff"], loss_type=train_options.loss, loss_args=train_options.loss_args
-        )
+        validation_mean_loss, validation_mean_abs_diff = compute_qlearning_diff_metrics(
+            dataset["diff"], loss_type=train_options.loss, loss_args=loss_args
+        )  # validation mean loss and mean absolute diff
+        # Note: When measuring this value after training, the loss performance must be measured on 'Unseen' states.
+        # Definition of Unseen: If encountering a state with a similar distribution is considered 'seen',
+        # then 'Unseen' refers to states where not even a similar distribution has been encountered.
 
         (
             qfunc_params,
@@ -386,10 +399,6 @@ def qlearning(
         mean_abs_diff = jnp.mean(jnp.abs(diffs))
         mean_q_value = jnp.mean(current_qs)
         lr = get_learning_rate(opt_state)
-        logger.log_scalar("Validation/Pre Mean Loss", pre_mean_loss, i)
-        logger.log_scalar("Validation/Pre Mean Abs Diff", pre_mean_abs_diff, i)
-        logger.log_scalar("Validation/Post Mean Loss", loss, i)
-        logger.log_scalar("Validation/Post Mean Abs Diff", mean_abs_diff, i)
         pbar.set_description(
             desc="Q-Learning Training",
             desc_dict={
@@ -409,6 +418,8 @@ def qlearning(
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
+        logger.log_scalar("Losses/Validation Mean Loss", validation_mean_loss, i)
+        logger.log_scalar("Losses/Validation Mean Abs Diff", validation_mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
         logger.log_scalar("Metrics/Mean Q Value", mean_q_value, i)
         logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
@@ -434,9 +445,10 @@ def qlearning(
             updated = True
             if i % update_interval == 0 and i != 0:
                 target_updated = True
-        elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
-            i - last_update_step >= train_options.force_update_interval
-        ):
+        elif (
+            (i % update_interval == 0 and i != 0)
+            and validation_mean_loss <= train_options.loss_threshold
+        ) or (i - last_update_step >= train_options.force_update_interval):
             target_qfunc_params = eval_params
             updated = True
             if train_options.opt_state_reset:

@@ -23,10 +23,13 @@ from train_util.util import (
 )
 
 
+@partial(jax.jit, static_argnums=(1, 2))
 def compute_davi_diff_metrics(
-    diff: chex.Array, loss_type: str = "mse", loss_args: Optional[dict[str, Any]] = None
+    diff: chex.Array, loss_type: str = "mse", loss_args: Optional[Any] = None
 ) -> tuple[chex.Array, chex.Array]:
     """Return mean loss and mean absolute diff for a precomputed diff tensor."""
+    if loss_args is not None and not isinstance(loss_args, dict):
+        loss_args = dict(loss_args)
     per_sample = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
     mean_loss = jnp.mean(per_sample)
     mean_abs_diff = jnp.mean(jnp.abs(diff))
@@ -40,7 +43,7 @@ def davi_builder(
     preproc_fn: Callable,
     n_devices: int = 1,
     loss_type: str = "mse",
-    loss_args: Optional[dict[str, Any]] = None,
+    loss_args: Optional[Any] = None,
     replay_ratio: int = 1,
     td_error_clip: Optional[float] = None,
     priority_sampling: bool = False,
@@ -62,7 +65,13 @@ def davi_builder(
         if td_error_clip is not None and td_error_clip > 0:
             clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
             diff = jnp.clip(diff, -clip_val, clip_val)
-        per_sample = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
+
+        current_loss_args = (
+            dict(loss_args)
+            if loss_args is not None and not isinstance(loss_args, dict)
+            else loss_args
+        )
+        per_sample = loss_from_diff(diff, loss=loss_type, loss_args=current_loss_args)
         loss_value = jnp.mean(per_sample * weights)
         return loss_value, (new_params, diff, current_heuristic)
 
