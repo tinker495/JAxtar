@@ -592,6 +592,12 @@ def dist_train_options(func: callable) -> callable:
     @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
     @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
     @click.option(
+        "--priority-sampling",
+        is_flag=True,
+        default=None,
+        help="Enable priority experience replay using dataset diffs.",
+    )
+    @click.option(
         "-dd",
         "--use_diffusion_distance",
         is_flag=True,

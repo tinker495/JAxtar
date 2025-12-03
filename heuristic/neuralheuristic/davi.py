@@ -33,6 +33,7 @@ def davi_builder(
     loss_args: Optional[dict[str, Any]] = None,
     replay_ratio: int = 1,
     td_error_clip: Optional[float] = None,
+    priority_sampling: bool = False,
 ):
     def davi_loss(
         heuristic_params: Any,
@@ -64,6 +65,9 @@ def davi_builder(
         """
         DAVI is a heuristic for the sliding puzzle problem.
         """
+        if priority_sampling and "batch_stats" in heuristic_params:
+            raise ValueError("Priority sampling is incompatible with batch normalization stats.")
+
         solveconfigs = dataset["solveconfigs"]
         states = dataset["states"]
         target_heuristic = dataset["target_heuristic"]
@@ -72,6 +76,26 @@ def davi_builder(
 
         loss_weights = jnp.ones(data_size)
         loss_weights = loss_weights / jnp.mean(loss_weights)
+
+        priority_probs = None
+        if priority_sampling:
+            if "diff" not in dataset:
+                raise ValueError("Priority sampling requires 'diff' in the dataset.")
+            diff = jnp.asarray(dataset["diff"])
+            diff = jnp.reshape(diff, (data_size, -1))
+            priorities = jnp.mean(jnp.abs(diff), axis=1) + 1e-6
+            priorities = jnp.where(jnp.isfinite(priorities), priorities, 0.0)
+            priority_sum = jnp.sum(priorities)
+            priority_sum = jnp.where(jnp.isfinite(priority_sum), priority_sum, 0.0)
+            safe_data_size = jnp.maximum(
+                jnp.array(data_size, dtype=priorities.dtype), jnp.array(1, dtype=priorities.dtype)
+            )
+            uniform_prob = jnp.full_like(priorities, 1.0 / safe_data_size)
+            priority_probs = jnp.where(
+                priority_sum > 0,
+                priorities / (priority_sum + 1e-8),
+                uniform_prob,
+            )
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
@@ -101,12 +125,24 @@ def davi_builder(
                 current_heuristic,
             )
 
-        # Repeat training loop for replay_ratio iterations with reshuffling
-        def replay_loop(carry, replay_key):
-            heuristic_params, opt_state = carry
+        def sample_batches(replay_key):
+            if priority_sampling:
+                flat_indices = jax.random.choice(
+                    replay_key,
+                    data_size,
+                    shape=(batch_size * minibatch_size,),
+                    replace=True,
+                    p=priority_probs,
+                )
+                batch_weights = priority_probs[flat_indices]
+                batch_weights = 1.0 / jnp.maximum(batch_weights * data_size, 1e-8)
+                batch_weights = batch_weights / (jnp.mean(batch_weights) + 1e-8)
+                batch_indices = jnp.reshape(flat_indices, (batch_size, minibatch_size))
+                batch_weights = jnp.reshape(batch_weights, (batch_size, minibatch_size))
+                return batch_indices, batch_weights
 
             key_perm_replay, key_fill_replay = jax.random.split(replay_key)
-            batch_indexs_replay = jnp.concatenate(
+            batch_indices = jnp.concatenate(
                 [
                     jax.random.permutation(key_perm_replay, jnp.arange(data_size)),
                     jax.random.randint(
@@ -118,20 +154,22 @@ def davi_builder(
                 ],
                 axis=0,
             )
-            loss_weights_replay = loss_weights
+            batch_indices = jnp.reshape(batch_indices, (batch_size, minibatch_size))
+            batch_weights = jnp.take(loss_weights, batch_indices, axis=0)
+            batch_weights = batch_weights / (jnp.mean(batch_weights, axis=1, keepdims=True) + 1e-8)
+            return batch_indices, batch_weights
 
-            batch_indexs_replay = jnp.reshape(batch_indexs_replay, (batch_size, minibatch_size))
+        # Repeat training loop for replay_ratio iterations with reshuffling
+        def replay_loop(carry, replay_key):
+            heuristic_params, opt_state = carry
+
+            batch_indexs_replay, batched_weights_replay = sample_batches(replay_key)
 
             # Create new batches with reshuffled indices
             batched_solveconfigs_replay = xnp.take(solveconfigs, batch_indexs_replay, axis=0)
             batched_states_replay = xnp.take(states, batch_indexs_replay, axis=0)
             batched_target_heuristic_replay = jnp.take(
                 target_heuristic, batch_indexs_replay, axis=0
-            )
-            batched_weights_replay = jnp.take(loss_weights_replay, batch_indexs_replay, axis=0)
-            # Normalize weights per batch to prevent scale drift
-            batched_weights_replay = batched_weights_replay / (
-                jnp.mean(batched_weights_replay, axis=1, keepdims=True) + 1e-8
             )
 
             (heuristic_params, opt_state), (

@@ -131,6 +131,9 @@ class DistTrainOptions(BaseModel):
     use_double_dqn: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
+    priority_sampling: bool = Field(
+        False, description="Use priority experience replay based on dataset diffs."
+    )
     use_diffusion_distance: bool = False
     use_diffusion_distance_mixture: bool = False
     use_diffusion_distance_warmup: bool = False

@@ -33,6 +33,7 @@ def qlearning_builder(
     loss_args: Optional[dict[str, Any]] = None,
     replay_ratio: int = 1,
     td_error_clip: Optional[float] = None,
+    priority_sampling: bool = False,
 ):
     def qlearning_loss(
         q_params: Any,
@@ -67,6 +68,9 @@ def qlearning_builder(
         opt_state: optax.OptState,
     ):
         """Run one optimization epoch of neural Q-learning for the provided puzzle dataset."""
+        if priority_sampling and "batch_stats" in q_params:
+            raise ValueError("Priority sampling is incompatible with batch normalization stats.")
+
         solveconfigs = dataset["solveconfigs"]
         states = dataset["states"]
         target_q = dataset["target_q"]
@@ -76,6 +80,26 @@ def qlearning_builder(
 
         loss_weights = jnp.ones(data_size)
         loss_weights = loss_weights / jnp.mean(loss_weights)
+
+        priority_probs = None
+        if priority_sampling:
+            if "diff" not in dataset:
+                raise ValueError("Priority sampling requires 'diff' in the dataset.")
+            diff = jnp.asarray(dataset["diff"])
+            diff = jnp.reshape(diff, (data_size, -1))
+            priorities = jnp.mean(jnp.abs(diff), axis=1) + 1e-6
+            priorities = jnp.where(jnp.isfinite(priorities), priorities, 0.0)
+            priority_sum = jnp.sum(priorities)
+            priority_sum = jnp.where(jnp.isfinite(priority_sum), priority_sum, 0.0)
+            safe_data_size = jnp.maximum(
+                jnp.array(data_size, dtype=priorities.dtype), jnp.array(1, dtype=priorities.dtype)
+            )
+            uniform_prob = jnp.full_like(priorities, 1.0 / safe_data_size)
+            priority_probs = jnp.where(
+                priority_sum > 0,
+                priorities / (priority_sum + 1e-8),
+                uniform_prob,
+            )
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
@@ -101,8 +125,21 @@ def qlearning_builder(
             grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
             return (q_params, opt_state), (loss, grad_magnitude_mean, diff, current_q)
 
-        def replay_loop(carry, replay_key):
-            q_params, opt_state = carry
+        def sample_batches(replay_key):
+            if priority_sampling:
+                flat_indices = jax.random.choice(
+                    replay_key,
+                    data_size,
+                    shape=(batch_size * minibatch_size,),
+                    replace=True,
+                    p=priority_probs,
+                )
+                batch_weights = priority_probs[flat_indices]
+                batch_weights = 1.0 / jnp.maximum(batch_weights * data_size, 1e-8)
+                batch_weights = batch_weights / (jnp.mean(batch_weights) + 1e-8)
+                batch_indexs = jnp.reshape(flat_indices, (batch_size, minibatch_size))
+                batch_weights = jnp.reshape(batch_weights, (batch_size, minibatch_size))
+                return batch_indexs, batch_weights
 
             key_perm, key_fill = jax.random.split(replay_key)
             batch_indexs = jnp.concatenate(
@@ -118,15 +155,19 @@ def qlearning_builder(
                 axis=0,
             )
             batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
+            batch_weights = jnp.take(loss_weights, batch_indexs, axis=0)
+            batch_weights = batch_weights / (jnp.mean(batch_weights, axis=1, keepdims=True) + 1e-8)
+            return batch_indexs, batch_weights
+
+        def replay_loop(carry, replay_key):
+            q_params, opt_state = carry
+
+            batch_indexs, batched_weights = sample_batches(replay_key)
 
             batched_solveconfigs = xnp.take(solveconfigs, batch_indexs, axis=0)
             batched_states = xnp.take(states, batch_indexs, axis=0)
             batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
             batched_actions = jnp.take(actions, batch_indexs, axis=0)
-            batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
-            batched_weights = batched_weights / (
-                jnp.mean(batched_weights, axis=1, keepdims=True) + 1e-8
-            )
 
             (q_params, opt_state,), (
                 losses,

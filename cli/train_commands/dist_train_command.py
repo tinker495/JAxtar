@@ -94,6 +94,7 @@ def davi(
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
+        priority_sampling=train_options.priority_sampling,
     )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -314,6 +315,7 @@ def qlearning(
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
+        priority_sampling=train_options.priority_sampling,
     )
     get_datasets = get_qlearning_dataset_builder(
         puzzle,
