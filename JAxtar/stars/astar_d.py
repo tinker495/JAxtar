@@ -310,7 +310,7 @@ def astar_d_builder(
                 (neighbour_keys, vals, optimal_unique_mask),
             )
             search_result, min_val, next_states, filled = search_result.pop_full_with_actions(
-                puzzle, solve_config
+                puzzle, solve_config, use_heuristic=True
             )
 
             return search_result, min_val.cost, next_states, min_val.hashidx, filled

@@ -328,7 +328,10 @@ class SearchResult:
         return search_result, min_val.current, final_process_mask
 
     def pop_full_with_actions(
-        search_result, puzzle: Puzzle, solve_config: Puzzle.SolveConfig
+        search_result,
+        puzzle: Puzzle,
+        solve_config: Puzzle.SolveConfig,
+        use_heuristic: bool = False,
     ) -> tuple["SearchResult", Current, chex.Array, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
@@ -365,7 +368,7 @@ class SearchResult:
             )  # [batch_size] [action_size, batch_size]
 
             current_costs = parent_costs + ncosts
-            current_dists = val.dist - ncosts
+            current_dists = val.dist if use_heuristic else (val.dist - ncosts)
 
             # Optimization: deduplicate before lookup to avoid redundant hash lookups.
             unique_mask = xnp.unique_mask(current_states, current_costs, filled)
