@@ -11,6 +11,7 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
+from train_util.annotate import MAX_GEN_DS_BATCH_SIZE
 from train_util.losses import loss_from_diff
 from train_util.sampling import (
     create_hindsight_target_shuffled_path,
@@ -53,7 +54,7 @@ def davi_builder(
             diff = jnp.clip(diff, -clip_val, clip_val)
         per_sample = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
         loss_value = jnp.mean(per_sample * weights)
-        return loss_value, (new_params, diff, current_heuristic)
+        return loss_value, new_params
 
     def davi(
         key: chex.PRNGKey,
@@ -76,9 +77,7 @@ def davi_builder(
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
             solveconfigs, states, target_heuristic, weights = batched_dataset
-            (loss, (heuristic_params, diff, current_heuristic)), grads = jax.value_and_grad(
-                davi_loss, has_aux=True
-            )(
+            (loss, heuristic_params), grads = jax.value_and_grad(davi_loss, has_aux=True)(
                 heuristic_params,
                 solveconfigs,
                 states,
@@ -89,17 +88,7 @@ def davi_builder(
                 grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
-            # Calculate gradient magnitude mean
-            grad_magnitude = jax.tree_util.tree_map(
-                lambda x: jnp.abs(jnp.reshape(x, (-1,))), jax.tree_util.tree_leaves(grads["params"])
-            )
-            grad_magnitude_mean = jnp.mean(jnp.concatenate(grad_magnitude))
-            return (heuristic_params, opt_state), (
-                loss,
-                grad_magnitude_mean,
-                diff,
-                current_heuristic,
-            )
+            return (heuristic_params, opt_state), loss
 
         # Repeat training loop for replay_ratio iterations with reshuffling
         def replay_loop(carry, replay_key):
@@ -134,12 +123,7 @@ def davi_builder(
                 jnp.mean(batched_weights_replay, axis=1, keepdims=True) + 1e-8
             )
 
-            (heuristic_params, opt_state), (
-                losses,
-                grad_magnitude_means,
-                diffs,
-                current_heuristics,
-            ) = jax.lax.scan(
+            (heuristic_params, opt_state), losses = jax.lax.scan(
                 train_loop,
                 (heuristic_params, opt_state),
                 (
@@ -149,75 +133,36 @@ def davi_builder(
                     batched_weights_replay,
                 ),
             )
-            return (heuristic_params, opt_state), (
-                losses,
-                grad_magnitude_means,
-                diffs,
-                current_heuristics,
-            )
+            return (heuristic_params, opt_state), losses
 
         # Generate keys for replay iterations
         replay_keys = jax.random.split(key, replay_ratio)
-        (heuristic_params, opt_state), (
-            losses,
-            grad_magnitude_means,
-            diffs,
-            current_heuristics,
-        ) = jax.lax.scan(
+        (heuristic_params, opt_state), losses = jax.lax.scan(
             replay_loop,
             (heuristic_params, opt_state),
             replay_keys,
         )
         loss = jnp.mean(losses)
-        diffs = diffs.reshape(-1)
-        current_heuristics = current_heuristics.reshape(-1)
-        # Calculate weights magnitude means
-        grad_magnitude_mean = jnp.mean(grad_magnitude_means)
-        weights_magnitude = jax.tree_util.tree_map(
-            lambda x: jnp.abs(jnp.reshape(x, (-1,))),
-            jax.tree_util.tree_leaves(heuristic_params["params"]),
-        )
-        weights_magnitude_mean = jnp.mean(jnp.concatenate(weights_magnitude))
         return (
             heuristic_params,
             opt_state,
             loss,
-            grad_magnitude_mean,
-            weights_magnitude_mean,
-            diffs,
-            current_heuristics,
         )
 
     if n_devices > 1:
 
         def pmap_davi(key, dataset, heuristic_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (
-                heuristic_params,
-                opt_state,
-                loss,
-                grad_magnitude,
-                weight_magnitude,
-                diffs,
-                current_heuristics,
-            ) = jax.pmap(davi, in_axes=(0, 0, None, None), axis_name="devices")(
-                keys, dataset, heuristic_params, opt_state
-            )
+            (heuristic_params, opt_state, loss,) = jax.pmap(
+                davi, in_axes=(0, 0, None, None), axis_name="devices"
+            )(keys, dataset, heuristic_params, opt_state)
             heuristic_params = jax.tree_util.tree_map(lambda xs: xs[0], heuristic_params)
             opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
             loss = jnp.mean(loss)
-            grad_magnitude = jnp.mean(grad_magnitude)
-            weight_magnitude = jnp.mean(weight_magnitude)
-            diffs = diffs.reshape(-1)
-            current_heuristics = current_heuristics.reshape(-1)
             return (
                 heuristic_params,
                 opt_state,
                 loss,
-                grad_magnitude,
-                weight_magnitude,
-                diffs,
-                current_heuristics,
             )
 
         return pmap_davi
@@ -273,47 +218,14 @@ def _get_datasets(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
 
-        # Target entropy over next-state backup distribution
-        safe_temperature = jnp.maximum(temperature, 1e-8)
-        backup_bt = jnp.transpose(backup, (1, 0))  # [batch_size, action_size]
-        scaled_next = -backup_bt / safe_temperature
-        next_probs = jax.nn.softmax(scaled_next, axis=1)
-        next_probs = next_probs / (jnp.sum(next_probs, axis=1, keepdims=True) + 1e-8)
-        target_entropy = -jnp.sum(
-            next_probs * jnp.log(jnp.clip(next_probs, a_min=1e-12)), axis=1
-        )  # [batch_size]
-        # For solved states, entropy should be near zero
-        target_entropy = jnp.where(solved, 0.0, target_entropy)
-        # Maximum entropy per state based on action size
-        action_size = backup_bt.shape[1]
-        max_ent_val = jnp.log(jnp.maximum(jnp.array(action_size, dtype=next_probs.dtype), 1.0))
-        target_entropy_max = jnp.full((next_probs.shape[0],), max_ent_val)
-
-        preproc = jax.vmap(preproc_fn)(solve_configs, states)
-        heur = heuristic_model.apply(heuristic_params, preproc, training=False)
-        diff = target_heuristic - heur.squeeze()
-        if td_error_clip is not None and td_error_clip > 0:
-            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
-            diff = jnp.clip(diff, -clip_val, clip_val)
         return None, (
             solve_configs,
             states,
             target_heuristic,
-            diff,
-            target_entropy,
-            target_entropy_max,
             move_costs,
         )
 
-    _, (
-        solve_configs,
-        states,
-        target_heuristic,
-        diff,
-        target_entropy,
-        target_entropy_max,
-        cost,
-    ) = jax.lax.scan(
+    _, (solve_configs, states, target_heuristic, cost,) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
@@ -322,18 +234,12 @@ def _get_datasets(
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
     target_heuristic = target_heuristic.reshape((-1,))
-    diff = diff.reshape((-1,))
-    target_entropy = target_entropy.reshape((-1,))
-    target_entropy_max = target_entropy_max.reshape((-1,))
     cost = cost.reshape((-1,))
 
     return {
         "solveconfigs": solve_configs,
         "states": states,
         "target_heuristic": target_heuristic,
-        "diff": diff,
-        "target_entropy": target_entropy,
-        "target_entropy_max": target_entropy_max,
         "cost": cost,
     }
 
@@ -406,18 +312,12 @@ def _get_datasets_with_diffusion_distance(
 
     target_heuristic = final_padded_h[:dataset_size]
 
-    diff = jnp.zeros_like(target_heuristic)
-    target_entropy = jnp.zeros_like(target_heuristic)
-    target_entropy_max = jnp.zeros_like(target_heuristic)
     cost = move_costs.reshape((-1,))
 
     return {
         "solveconfigs": solve_configs,
         "states": states,
         "target_heuristic": target_heuristic,
-        "diff": diff,
-        "target_entropy": target_entropy,
-        "target_entropy_max": target_entropy_max,
         "cost": cost,
     }
 
@@ -460,11 +360,20 @@ def get_heuristic_dataset_builder(
         raise ValueError("non_backtracking_steps must be non-negative")
     non_backtracking_steps = int(non_backtracking_steps)
 
+    # Calculate optimal nn_minibatch_size
+    # It must be <= MAX_GEN_DS_BATCH_SIZE and divide dataset_size
+    n_batches = math.ceil(dataset_size / MAX_GEN_DS_BATCH_SIZE)
+    while dataset_size % n_batches != 0:
+        n_batches += 1
+    nn_minibatch_size = dataset_size // n_batches
+
+    # Calculate optimal shuffle_parallel and steps to respect MAX_GEN_DS_BATCH_SIZE
+    max_shuffle_parallel = max(1, int(MAX_GEN_DS_BATCH_SIZE / k_max))
+    needed_trajectories = math.ceil(dataset_size / k_max)
+    shuffle_parallel = min(needed_trajectories, max_shuffle_parallel)
+    steps = math.ceil(needed_trajectories / shuffle_parallel)
+
     if using_hindsight_target:
-        # Calculate appropriate shuffle_parallel for hindsight sampling
-        # For hindsight, we're sampling from lower triangle with (L*(L+1))/2 elements
-        shuffle_parallel = int(min(math.ceil(dataset_size / k_max), dataset_minibatch_size))
-        steps = math.ceil(dataset_size / (shuffle_parallel * k_max))
         if using_triangular_sampling:
             create_shuffled_path_fn = partial(
                 create_hindsight_target_triangular_shuffled_path,
@@ -484,8 +393,6 @@ def get_heuristic_dataset_builder(
                 non_backtracking_steps=non_backtracking_steps,
             )
     else:
-        shuffle_parallel = int(min(math.ceil(dataset_size / k_max), dataset_minibatch_size))
-        steps = math.ceil(dataset_size / (shuffle_parallel * k_max))
         create_shuffled_path_fn = partial(
             create_target_shuffled_path,
             puzzle,
@@ -502,7 +409,7 @@ def get_heuristic_dataset_builder(
         puzzle,
         preproc_fn,
         heuristic_model,
-        dataset_minibatch_size,
+        nn_minibatch_size,
         temperature=temperature,
         td_error_clip=td_error_clip,
     )
@@ -523,7 +430,7 @@ def get_heuristic_dataset_builder(
                 preproc_fn,
                 SolveConfigsAndStates,
                 heuristic_model,
-                dataset_minibatch_size,
+                nn_minibatch_size,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
             )
@@ -534,7 +441,7 @@ def get_heuristic_dataset_builder(
                 preproc_fn,
                 SolveConfigsAndStates,
                 heuristic_model,
-                dataset_minibatch_size,
+                nn_minibatch_size,
                 k_max=k_max,
                 shuffle_parallel=shuffle_parallel,
                 temperature=temperature,

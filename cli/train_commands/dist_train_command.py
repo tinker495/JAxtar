@@ -124,48 +124,27 @@ def davi(
         dataset = get_datasets(target_heuristic_params, eval_params, subkey, i)
         target_heuristic = dataset["target_heuristic"]
         mean_target_heuristic = jnp.mean(target_heuristic)
-        mean_target_entropy = None
-        if "target_entropy" in dataset:
-            mean_target_entropy = jnp.mean(dataset["target_entropy"])
 
         (
             heuristic_params,
             opt_state,
             loss,
-            grad_magnitude,
-            weight_magnitude,
-            diffs,
-            current_heuristics,
         ) = davi_fn(key, dataset, heuristic_params, opt_state)
         eval_params = get_eval_params(opt_state, heuristic_params)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
-        mean_heuristic_value = jnp.mean(current_heuristics)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="DAVI Training",
             desc_dict={
                 "lr": lr,
                 "loss": float(loss),
-                "abs_diff": float(mean_abs_diff),
                 "target_heuristic": float(mean_target_heuristic),
-                "heuristic_value": float(mean_heuristic_value),
             },
         )
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Loss", loss, i)
-        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-        logger.log_scalar("Metrics/Mean Heuristic Value", mean_heuristic_value, i)
-        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if mean_target_entropy is not None:
-            logger.log_scalar("Metrics/Mean Target Entropy", mean_target_entropy, i)
         if i % 100 == 0:
-            logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_heuristic, i)
-            logger.log_histogram("Metrics/Current Heuristic", current_heuristics, i)
-            if "target_entropy" in dataset:
-                logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
 
         target_updated = False
         if train_options.use_soft_update:
@@ -345,62 +324,28 @@ def qlearning(
         dataset = get_datasets(target_qfunc_params, eval_params, subkey, i)
         target_q = dataset["target_q"]
         mean_target_q = jnp.mean(target_q)
-        # Optional: mean action entropy when using policy sampling
-        mean_action_entropy = None
-        mean_target_entropy = None
-        if "action_entropy" in dataset:
-            mean_action_entropy = jnp.mean(dataset["action_entropy"])
-        if "target_entropy" in dataset:
-            mean_target_entropy = jnp.mean(dataset["target_entropy"])
 
         (
             qfunc_params,
             opt_state,
             loss,
-            grad_magnitude,
-            weight_magnitude,
-            diffs,
-            current_qs,
         ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
         eval_params = get_eval_params(opt_state, qfunc_params)
-        mean_abs_diff = jnp.mean(jnp.abs(diffs))
-        mean_q_value = jnp.mean(current_qs)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
             desc="Q-Learning Training",
             desc_dict={
                 "lr": lr,
                 "loss": float(loss),
-                "abs_diff": float(mean_abs_diff),
                 "target_q": float(mean_target_q),
-                "q_value": float(mean_q_value),
-                **(
-                    {"entropy": float(mean_action_entropy)}
-                    if mean_action_entropy is not None
-                    else {}
-                ),
             },
         )
 
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Loss", loss, i)
-        logger.log_scalar("Losses/Mean Abs Diff", mean_abs_diff, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
-        logger.log_scalar("Metrics/Mean Q Value", mean_q_value, i)
-        logger.log_scalar("Metrics/Magnitude Gradient", grad_magnitude, i)
-        logger.log_scalar("Metrics/Magnitude Weight", weight_magnitude, i)
-        if mean_action_entropy is not None:
-            logger.log_scalar("Metrics/Mean Action Entropy", mean_action_entropy, i)
-        if mean_target_entropy is not None:
-            logger.log_scalar("Metrics/Mean Target Entropy", mean_target_entropy, i)
         if i % 100 == 0:
-            logger.log_histogram("Losses/Diff", diffs, i)
             logger.log_histogram("Metrics/Target", target_q, i)
-            if "action_entropy" in dataset:
-                logger.log_histogram("Metrics/Action Entropy", dataset["action_entropy"], i)
-            if "target_entropy" in dataset:
-                logger.log_histogram("Metrics/Target Entropy", dataset["target_entropy"], i)
-            logger.log_histogram("Metrics/Current Q", current_qs, i)
 
         target_updated = False
         if train_options.use_soft_update:
