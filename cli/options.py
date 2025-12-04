@@ -746,6 +746,12 @@ def dist_heuristic_options(func: callable) -> callable:
         default=None,
         help="Neural configuration. Overrides the default configuration.",
     )
+    @click.option(
+        "--model-type",
+        type=str,
+        default=None,
+        help="Type of the heuristic model.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
@@ -761,6 +767,7 @@ def dist_heuristic_options(func: callable) -> callable:
             kwargs.pop("param_path"),
             kwargs.pop("neural_config"),
             reset,
+            kwargs.pop("model_type") or "default",
         )
         kwargs.update(result)
         return func(*args, **kwargs)
@@ -782,6 +789,12 @@ def dist_qfunction_options(func: callable) -> callable:
         default=None,
         help="Neural configuration. Overrides the default configuration.",
     )
+    @click.option(
+        "--model-type",
+        type=str,
+        default=None,
+        help="Type of the Q-function model.",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
@@ -797,6 +810,7 @@ def dist_qfunction_options(func: callable) -> callable:
             kwargs.pop("param_path"),
             kwargs.pop("neural_config"),
             reset,
+            kwargs.pop("model_type") or "default",
         )
         kwargs.update(result)
         return func(*args, **kwargs)

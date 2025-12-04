@@ -87,3 +87,87 @@ class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
             target_one_hot = self._one_hot_faces(target_no_centers).flatten()
         one_hots = jnp.concatenate([target_one_hot, current_one_hot], axis=-1)
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
+
+
+class RubiksCubeNeuralHeuristicVectorizedObservation(NeuralHeuristicBase):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        self._use_color_embedding = getattr(puzzle, "color_embedding", True)
+        self._tile_count = puzzle.size * puzzle.size
+        self._num_tile_classes = 6 if self._use_color_embedding else 6 * self._tile_count
+        self.metric = puzzle.metric
+        super().__init__(puzzle, **kwargs)
+
+    def _get_face_vectors(self, faces: chex.Array) -> chex.Array:
+        vectors = jnp.array(
+            [
+                [0, 1, 0],  # UP
+                [0, 0, 1],  # FRONT
+                [1, 0, 0],  # RIGHT
+                [0, 0, -1],  # BACK
+                [-1, 0, 0],  # LEFT
+                [0, -1, 0],  # DOWN
+            ],
+            dtype=DTYPE,
+        )
+        if not self._use_color_embedding:
+            faces = faces // self._tile_count
+        return jnp.take(vectors, faces, axis=0)
+
+    def pre_process(
+        self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
+    ) -> chex.Array:
+        current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
+        if self.metric == "UQTM":
+            # UQTM need to use all the stickers
+            current_vectors = self._get_face_vectors(current_flatten_face).flatten()
+        else:
+            current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
+            # Create a vector encoding of the flattened face without centre stickers
+            current_vectors = self._get_face_vectors(current_no_centers).flatten()
+        return current_vectors
+
+
+class RubiksCubeRandomNeuralHeuristicVectorizedObservation(NeuralHeuristicBase):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        self._use_color_embedding = getattr(puzzle, "color_embedding", True)
+        self._tile_count = puzzle.size * puzzle.size
+        self._num_tile_classes = 6 if self._use_color_embedding else 6 * self._tile_count
+        self.metric = puzzle.metric
+        super().__init__(puzzle, **kwargs)
+
+    def _get_face_vectors(self, faces: chex.Array) -> chex.Array:
+        vectors = jnp.array(
+            [
+                [0, 1, 0],  # UP
+                [0, 0, 1],  # FRONT
+                [1, 0, 0],  # RIGHT
+                [0, 0, -1],  # BACK
+                [-1, 0, 0],  # LEFT
+                [0, -1, 0],  # DOWN
+            ],
+            dtype=DTYPE,
+        )
+        if not self._use_color_embedding:
+            faces = faces // self._tile_count
+        return jnp.take(vectors, faces, axis=0)
+
+    def pre_process(
+        self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
+    ) -> chex.Array:
+        current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
+        if self.metric == "UQTM":
+            # UQTM need to use all the stickers
+            current_vectors = self._get_face_vectors(current_flatten_face).flatten()
+        else:
+            current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
+            # Create a vector encoding of the flattened face without centre stickers
+            current_vectors = self._get_face_vectors(current_no_centers).flatten()
+
+        target_flatten_face = solve_config.TargetState.unpacked.faces.flatten()
+        if self.metric == "UQTM":
+            target_vectors = self._get_face_vectors(target_flatten_face).flatten()
+        else:
+            target_no_centers = _remove_face_centers(target_flatten_face, self.puzzle.size)
+            target_vectors = self._get_face_vectors(target_no_centers).flatten()
+
+        return jnp.concatenate([target_vectors, current_vectors], axis=-1)
