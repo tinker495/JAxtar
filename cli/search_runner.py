@@ -33,6 +33,8 @@ from helpers.visualization import (
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
+from .config_utils import enrich_config
+
 
 def search_samples(
     search_fn,
@@ -288,7 +290,7 @@ def run_search_command(
         f"{component_name}_metadata": getattr(component, "metadata", {}),
         "visualize_options": visualize_options.dict(),
     }
-    print_config(config_title, config)
+    print_config(config_title, enrich_config(config))
 
     search_fn = builder_fn(
         puzzle,

@@ -38,6 +38,7 @@ from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
+from .config_utils import enrich_config
 
 
 class EvaluationRunner:
@@ -157,7 +158,9 @@ class EvaluationRunner:
                 self.console.rule(
                     f"[bold cyan]Run {i+1}/{len(param_combinations)}: pr={pr}, cw={cw}, bs={bs}[/bold cyan]"
                 )
-            print_config(f"{self.search_model_name.capitalize()} Evaluation Configuration", config)
+
+            config_title = f"{self.run_label.replace('_', ' ').title()} Evaluation Configuration"
+            print_config(config_title, enrich_config(config))
 
             search_fn = self.search_builder_fn(
                 self.puzzle,
@@ -688,13 +691,17 @@ def run_evaluation_sweep(
     )
 
     with tee_console(runner.log_path):
+        config_title_label = run_label if run_label else search_model_name
+        config_title = f"{config_title_label.replace('_', ' ').title()} Evaluation Configuration"
         print_config(
-            "Evaluation Configuration",
-            {
-                "puzzle_options": puzzle_opts.dict(),
-                search_model_name: search_model.__class__.__name__,
-                f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
-                "eval_options": eval_options.dict(),
-            },
+            config_title,
+            enrich_config(
+                {
+                    "puzzle_options": puzzle_opts.dict(),
+                    search_model_name: search_model.__class__.__name__,
+                    f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
+                    "eval_options": eval_options.dict(),
+                }
+            ),
         )
         runner.run()

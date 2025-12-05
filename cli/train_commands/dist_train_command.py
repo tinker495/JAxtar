@@ -22,6 +22,7 @@ from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning
 from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer
 from train_util.target_update import scaled_by_reset, soft_update
 
+from ..config_utils import enrich_config
 from ..options import (
     dist_heuristic_options,
     dist_puzzle_options,
@@ -47,14 +48,31 @@ def davi(
     heuristic_config: Dict[str, Any],
     **kwargs,
 ):
+    # Calculate derived parameters first for logging
+    steps = train_options.steps // train_options.replay_ratio
+    update_interval = train_options.update_interval // train_options.replay_ratio
+    reset_interval = train_options.reset_interval // train_options.replay_ratio
+    n_devices = jax.device_count()
+
+    if train_options.multi_device and n_devices > 1:
+        steps = steps // n_devices
+        update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
 
     config = {
         "puzzle_options": puzzle_opts,
         "heuristic_config": heuristic_config,
         "train_options": train_options,
         "eval_options": eval_options,
+        "derived_parameters": {
+            "effective_steps": steps,
+            "effective_update_interval": update_interval,
+            "effective_reset_interval": reset_interval,
+            "n_devices": n_devices,
+            "replay_ratio": train_options.replay_ratio,
+        },
     }
-    print_config("DAVI Training Configuration", config)
+    print_config("DAVI Training Configuration", enrich_config(config))
     logger = create_logger(train_options.logger, f"{puzzle_name}-dist-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
@@ -65,14 +83,7 @@ def davi(
     target_heuristic_params = heuristic.params
     heuristic_params = target_heuristic_params
 
-    steps = train_options.steps // train_options.replay_ratio
-    update_interval = train_options.update_interval // train_options.replay_ratio
-    reset_interval = train_options.reset_interval // train_options.replay_ratio
-    n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
-        steps = steps // n_devices
-        update_interval = update_interval // n_devices
-        reset_interval = reset_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(
@@ -246,14 +257,30 @@ def qlearning(
     q_config: Dict[str, Any],
     **kwargs,
 ):
+    # Calculate derived parameters first for logging
+    steps = train_options.steps
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
+    n_devices = jax.device_count()
+
+    if train_options.multi_device and n_devices > 1:
+        steps = steps // n_devices
+        update_interval = update_interval // n_devices
+        reset_interval = reset_interval // n_devices
 
     config = {
         "puzzle_options": puzzle_opts,
         "train_options": train_options,
         "eval_options": eval_options,
         "q_config": q_config,
+        "derived_parameters": {
+            "effective_steps": steps,
+            "effective_update_interval": update_interval,
+            "effective_reset_interval": reset_interval,
+            "n_devices": n_devices,
+        },
     }
-    print_config("Q-Learning Training Configuration", config)
+    print_config("Q-Learning Training Configuration", enrich_config(config))
     logger = create_logger(train_options.logger, f"{puzzle_name}-dist-q-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
@@ -264,14 +291,7 @@ def qlearning(
     target_qfunc_params = qfunction.params
     qfunc_params = target_qfunc_params
 
-    steps = train_options.steps
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
-    n_devices = jax.device_count()
     if train_options.multi_device and n_devices > 1:
-        steps = steps // n_devices
-        update_interval = update_interval // n_devices
-        reset_interval = reset_interval // n_devices
         print(f"Training with {n_devices} devices")
 
     optimizer, opt_state = setup_optimizer(

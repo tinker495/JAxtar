@@ -35,9 +35,7 @@ from heuristic.neuralheuristic import (
     LightsOutNeuralHeuristic,
     PancakeNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
-    RubiksCubeNeuralHeuristicVectorizedObservation,
     RubiksCubeRandomNeuralHeuristic,
-    RubiksCubeRandomNeuralHeuristicVectorizedObservation,
     SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
     SokobanNeuralHeuristic,
@@ -59,9 +57,7 @@ from qfunction.neuralq import (
     LightsOutNeuralQ,
     PancakeNeuralQ,
     RubiksCubeNeuralQ,
-    RubiksCubeNeuralQVectorizedObservation,
     RubiksCubeRandomNeuralQ,
-    RubiksCubeRandomNeuralQVectorizedObservation,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
     SokobanNeuralQ,
@@ -188,19 +184,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_{size}.pkl",
             ),
-            "vectorized": NeuralCallableConfig(
-                callable=RubiksCubeNeuralHeuristicVectorizedObservation,
-                param_path="heuristic/neuralheuristic/model/params/rubikscube-vectorized_{size}.pkl",
-            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube_{size}.pkl",
-            ),
-            "vectorized": NeuralCallableConfig(
-                callable=RubiksCubeNeuralQVectorizedObservation,
-                param_path="qfunction/neuralq/model/params/rubikscube-vectorized_{size}.pkl",
             ),
         },
     ),
@@ -214,19 +202,11 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 callable=RubiksCubeRandomNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-random_{size}.pkl",
             ),
-            "vectorized": NeuralCallableConfig(
-                callable=RubiksCubeRandomNeuralHeuristicVectorizedObservation,
-                param_path="heuristic/neuralheuristic/model/params/rubikscube-random-vectorized_{size}.pkl",
-            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeRandomNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-random_{size}.pkl",
-            ),
-            "vectorized": NeuralCallableConfig(
-                callable=RubiksCubeRandomNeuralQVectorizedObservation,
-                param_path="qfunction/neuralq/model/params/rubikscube-random-vectorized_{size}.pkl",
             ),
         },
     ),

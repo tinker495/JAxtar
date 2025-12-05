@@ -16,6 +16,7 @@ from world_model_puzzle.world_model_train import (
     world_model_train_builder,
 )
 
+from ..config_utils import enrich_config
 from ..options import wm_get_ds_options, wm_get_world_model_options, wm_train_options
 
 
@@ -46,7 +47,7 @@ def train(
         },
         **kwargs,
     }
-    print_config("World Model Training Configuration", config)
+    print_config("World Model Training Configuration", enrich_config(config))
 
     logger = create_logger("aim", world_model_name, config)
     model: nn.Module = world_model.model
