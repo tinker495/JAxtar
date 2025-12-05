@@ -244,31 +244,15 @@ def _get_datasets(
     }
 
 
-def _get_datasets_with_diffusion_distance(
-    puzzle: Puzzle,
-    preproc_fn: Callable,
+def _compute_diffusion_distance(
+    solve_configs: chex.Array,
+    states: chex.Array,
+    move_costs: chex.Array,
+    action_costs: chex.Array,
+    parent_indices: chex.Array,
     SolveConfigsAndStates: Xtructurable,
-    heuristic_model: HeuristicBase,
-    minibatch_size: int,
-    target_heuristic_params: Any,
-    heuristic_params: Any,
-    shuffled_path: dict[str, chex.Array],
-    key: chex.PRNGKey,
     k_max: int,
-    shuffle_parallel: int,
-    temperature: float = 1.0 / 3.0,
-    td_error_clip: Optional[float] = None,
 ):
-
-    solve_configs = shuffled_path["solve_configs"]
-    states = shuffled_path["states"]
-    move_costs = shuffled_path["move_costs"]
-    action_costs = shuffled_path["action_costs"]
-
-    solve_configs = solve_configs.reshape((-1,))
-    states = states.reshape((-1,))
-    action_costs = action_costs.reshape((-1,))
-
     solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
     target_heuristic = move_costs.reshape((-1,))
 
@@ -283,7 +267,6 @@ def _get_datasets_with_diffusion_distance(
 
     # Propagate the improved heuristic values backwards along the trajectory
     dataset_size = target_heuristic.shape[0]
-    parent_indices = shuffled_path["parent_indices"]
 
     # Pad dataset with infinity to handle invalid parent pointers
     padded_heuristic = jnp.pad(target_heuristic, (0, 1), constant_values=jnp.inf)
@@ -311,6 +294,44 @@ def _get_datasets_with_diffusion_distance(
     final_padded_h = jax.lax.fori_loop(0, k_max, body_fun, padded_heuristic)
 
     target_heuristic = final_padded_h[:dataset_size]
+    return target_heuristic
+
+
+def _get_datasets_with_diffusion_distance(
+    puzzle: Puzzle,
+    preproc_fn: Callable,
+    SolveConfigsAndStates: Xtructurable,
+    heuristic_model: HeuristicBase,
+    minibatch_size: int,
+    target_heuristic_params: Any,
+    heuristic_params: Any,
+    shuffled_path: dict[str, chex.Array],
+    key: chex.PRNGKey,
+    k_max: int,
+    shuffle_parallel: int,
+    temperature: float = 1.0 / 3.0,
+    td_error_clip: Optional[float] = None,
+):
+
+    solve_configs = shuffled_path["solve_configs"]
+    states = shuffled_path["states"]
+    move_costs = shuffled_path["move_costs"]
+    action_costs = shuffled_path["action_costs"]
+
+    solve_configs = solve_configs.reshape((-1,))
+    states = states.reshape((-1,))
+    action_costs = action_costs.reshape((-1,))
+    parent_indices = shuffled_path["parent_indices"]
+
+    target_heuristic = _compute_diffusion_distance(
+        solve_configs,
+        states,
+        move_costs,
+        action_costs,
+        parent_indices,
+        SolveConfigsAndStates,
+        k_max,
+    )
 
     cost = move_costs.reshape((-1,))
 
@@ -332,10 +353,50 @@ def _get_datasets_with_diffusion_distance_mixture(
     heuristic_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    k_max: int,
+    shuffle_parallel: int,
     temperature: float = 1.0 / 3.0,
     td_error_clip: Optional[float] = None,
 ):
-    pass
+    return_dict = _get_datasets(
+        puzzle,
+        preproc_fn,
+        heuristic_model,
+        minibatch_size,
+        target_heuristic_params,
+        heuristic_params,
+        shuffled_path,
+        key,
+        temperature,
+        td_error_clip,
+    )
+    target_heuristic = return_dict["target_heuristic"]
+
+    solve_configs = shuffled_path["solve_configs"]
+    states = shuffled_path["states"]
+    move_costs = shuffled_path["move_costs"]
+    action_costs = shuffled_path["action_costs"]
+    parent_indices = shuffled_path["parent_indices"]
+
+    solve_configs = solve_configs.reshape((-1,))
+    states = states.reshape((-1,))
+    action_costs = action_costs.reshape((-1,))
+
+    diffusion_heuristic = _compute_diffusion_distance(
+        solve_configs,
+        states,
+        move_costs,
+        action_costs,
+        parent_indices,
+        SolveConfigsAndStates,
+        k_max,
+    )
+
+    # Mixture: target_heuristic = max(target_heuristic, diffusion_heuristic * 0.8 - 2.0)
+    target_heuristic = jnp.maximum(target_heuristic, diffusion_heuristic * 0.8 - 2.0)
+    return_dict["target_heuristic"] = target_heuristic
+
+    return return_dict
 
 
 def get_heuristic_dataset_builder(
@@ -431,6 +492,8 @@ def get_heuristic_dataset_builder(
                 SolveConfigsAndStates,
                 heuristic_model,
                 nn_minibatch_size,
+                k_max=k_max,
+                shuffle_parallel=shuffle_parallel,
                 temperature=temperature,
                 td_error_clip=td_error_clip,
             )
