@@ -217,6 +217,8 @@ def _get_datasets(
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
+        target_heuristic = jnp.minimum(target_heuristic, move_costs)
+        # heuristic cannot be greater than the move cost.
 
         return None, (
             solve_configs,

@@ -355,6 +355,86 @@ def _get_datasets_with_policy(
     }
 
 
+def _compute_diffusion_q(
+    solve_configs: chex.Array,
+    states: chex.Array,
+    trajectory_actions: chex.Array,
+    move_costs: chex.Array,
+    action_costs: chex.Array,
+    parent_indices: chex.Array,
+    SolveConfigsAndStatesAndActions: Xtructurable,
+    SolveConfigsAndStates: Xtructurable,
+    k_max: int,
+):
+    solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
+        solveconfigs=solve_configs,
+        states=states,
+        actions=trajectory_actions,
+    )
+
+    # 1. Find unique state-action pairs and their minimal move_costs
+    # We use move_costs as the initial estimate for Q(s,a) / Cost(s,a)
+    # For diffusion distance, Q(s,a) approximates the cost to go.
+    target_q = move_costs.reshape((-1,))
+
+    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
+        val=solve_configs_and_states_and_actions,
+        key=target_q,
+        return_index=True,
+        return_inverse=True,
+    )
+    target_q = target_q[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]
+
+    # 2. Find state-wise minimal cost (Global Best Value Table)
+    # This helps sharing optimal cost across different actions for the same state
+    solve_configs_and_states = SolveConfigsAndStates(
+        solveconfigs=solve_configs,
+        states=states,
+    )
+
+    _, unique_state_idx, inverse_state_indices = xnp.unique_mask(
+        val=solve_configs_and_states,
+        key=target_q.reshape(-1),
+        return_index=True,
+        return_inverse=True,
+    )
+    state_min_cost = target_q.reshape(-1)[unique_state_idx][inverse_state_indices][:, jnp.newaxis]
+
+    # Propagate the improved Q values backwards along the trajectory
+    dataset_size = target_q.shape[0]
+
+    # Pad dataset with infinity to handle invalid parent pointers
+    padded_q = jnp.pad(target_q, ((0, 1), (0, 0)), constant_values=jnp.inf)
+    padded_state_min_cost = jnp.pad(state_min_cost, ((0, 1), (0, 0)), constant_values=jnp.inf)
+
+    # Map -1 or out-of-bounds indices to the padded infinity value
+    safe_parent_indices = jnp.where(
+        (parent_indices < 0) | (parent_indices >= dataset_size), dataset_size, parent_indices
+    )
+
+    def body_fun(i, q):
+        # q is padded [N+1, 1]
+        current_q = q[:dataset_size]
+
+        # Gather Q from parents (neighbors closer to goal)
+        # Combine global optimal info (s' best) and trajectory info
+        q_parents_optimal = padded_state_min_cost[safe_parent_indices]  # [N, 1]
+        q_parents_prop = q[safe_parent_indices]  # [N, 1]
+
+        q_parents = jnp.minimum(q_parents_optimal, q_parents_prop)
+
+        # Bellman update: Q(s, a) <= c(s, a, s') + Q(s', a')
+        new_q = action_costs + q_parents
+
+        improved_q = jnp.minimum(current_q, new_q)
+        return q.at[:dataset_size].set(improved_q)
+
+    # Iterate k_max times to propagate along the longest possible path
+    final_padded_q = jax.lax.fori_loop(0, k_max, body_fun, padded_q)
+
+    return final_padded_q[:dataset_size]
+
+
 def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
@@ -379,72 +459,17 @@ def _get_datasets_with_diffusion_distance(
     action_costs = shuffled_path["action_costs"].reshape((-1, 1))
     parent_indices = shuffled_path["parent_indices"]
 
-    solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
-        solveconfigs=solve_configs,
-        states=states,
-        actions=trajectory_actions,
+    target_q = _compute_diffusion_q(
+        solve_configs,
+        states,
+        trajectory_actions,
+        move_costs,
+        action_costs,
+        parent_indices,
+        SolveConfigsAndStatesAndActions,
+        SolveConfigsAndStates,
+        k_max,
     )
-    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
-        val=solve_configs_and_states_and_actions,
-        key=move_costs,
-        return_index=True,
-        return_inverse=True,
-    )
-    target_q = move_costs[unique_uint32eds_idx][inverse_indices][
-        :, jnp.newaxis
-    ]  # [dataset_size, 1]
-
-    # 1. Find state-wise minimal cost (Global Best Value Table)
-
-    solve_configs_and_states = SolveConfigsAndStates(
-        solveconfigs=solve_configs,
-        states=states,
-    )
-
-    _, unique_state_idx, inverse_state_indices = xnp.unique_mask(
-        val=solve_configs_and_states,
-        key=move_costs,  # move_costs is used as initial cost estimate
-        return_index=True,
-        return_inverse=True,
-    )
-    # state_min_cost: best cost found for each state across all actions and trajectories
-    state_min_cost = move_costs[unique_state_idx][inverse_state_indices][:, jnp.newaxis]
-
-    # Propagate the improved Q values backwards along the trajectory
-    dataset_size = target_q.shape[0]
-
-    # Pad dataset with infinity to handle invalid parent pointers
-    padded_q = jnp.pad(target_q, ((0, 1), (0, 0)), constant_values=jnp.inf)
-    # Pad state_min_cost as well for lookup
-    padded_state_min_cost = jnp.pad(state_min_cost, ((0, 1), (0, 0)), constant_values=jnp.inf)
-
-    # Map -1 or out-of-bounds indices to the padded infinity value
-    safe_parent_indices = jnp.where(
-        (parent_indices < 0) | (parent_indices >= dataset_size), dataset_size, parent_indices
-    )
-
-    def body_fun(i, q):
-        # q is padded [N+1, 1]
-        current_q = q[:dataset_size]
-
-        # Gather Q from parents (neighbors closer to goal)
-        # Combine global optimal info (s' best) and trajectory info
-        q_parents_optimal = padded_state_min_cost[safe_parent_indices]  # [N, 1]
-        q_parents_prop = q[safe_parent_indices]  # [N, 1]
-
-        q_parents = jnp.minimum(q_parents_optimal, q_parents_prop)
-
-        # Bellman update: Q(s, a) <= c(s, a, s') + Q(s', a')
-        # where (s', a') is the next state-action pair in the trajectory
-        new_q = action_costs + q_parents
-
-        improved_q = jnp.minimum(current_q, new_q)
-        return q.at[:dataset_size].set(improved_q)
-
-    # Iterate k_max times to propagate along the longest possible path
-    final_padded_q = jax.lax.fori_loop(0, k_max, body_fun, padded_q)
-
-    target_q = final_padded_q[:dataset_size]
 
     zeros = jnp.zeros_like(target_q)
     return {
@@ -487,95 +512,30 @@ def _get_datasets_with_diffusion_distance_mixture(
         td_error_clip,
         use_double_dqn,
     )
-    solve_configs = return_dict["solveconfigs"]
-    states = return_dict["states"]
-    solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
-        solveconfigs=solve_configs,
-        states=states,
-        actions=trajectory_actions,
-    )
     cost = return_dict["cost"]
     target_q = return_dict["target_q"]
 
     # Prepare for propagation
     action_costs = shuffled_path["action_costs"].reshape((-1, 1))
     parent_indices = shuffled_path["parent_indices"]
-    dataset_size = cost.shape[0]
+    solve_configs = return_dict["solveconfigs"]
+    states = return_dict["states"]
 
-    # Find unique states and broadcast the minimal cost to all duplicates
-    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
-        val=solve_configs_and_states_and_actions,
-        key=cost,
-        return_index=True,
-        return_inverse=True,
-    )
-    cost = cost[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]  # [dataset_size, 1]
-
-    # 1. Find state-wise minimal cost (Global Best Value Table)
-    # This helps sharing optimal cost across different actions for the same state
-    # Note: In Q-learning, Q(s,a) depends on 'a', but for distance-to-go metric,
-    # V(s) is a strong lower bound and good estimator.
-    # We use this to enhance the back-propagation.
-
-    # SolveConfigsAndStates structure needs to be defined/imported or created dynamically.
-    # Since it is passed as an argument to other functions but not here,
-    # we might need to use the one from outer scope or create one.
-    # However, we can reuse SolveConfigsAndStatesAndActions but ignore actions for grouping.
-    # Or better, just create a temporary structure for state grouping.
-
-    solve_configs_and_states = SolveConfigsAndStates(
-        solveconfigs=solve_configs,
-        states=states,
+    diffusion_q = _compute_diffusion_q(
+        solve_configs,
+        states,
+        trajectory_actions,
+        cost,  # Use cost (move_costs) as initial estimate
+        action_costs,
+        parent_indices,
+        SolveConfigsAndStatesAndActions,
+        SolveConfigsAndStates,
+        k_max,
     )
 
-    _, unique_state_idx, inverse_state_indices = xnp.unique_mask(
-        val=solve_configs_and_states,
-        key=cost.reshape(-1),
-        return_index=True,
-        return_inverse=True,
-    )
-    # state_min_cost: best cost found for each state across all actions and trajectories
-    state_min_cost = cost[unique_state_idx][inverse_state_indices]
-
-    # Propagate the improved cost values backwards along the trajectory
-    # Pad dataset with infinity to handle invalid parent pointers
-    padded_cost = jnp.pad(cost, ((0, 1), (0, 0)), constant_values=jnp.inf)
-    # Pad state_min_cost as well for lookup
-    padded_state_min_cost = jnp.pad(state_min_cost, ((0, 1), (0, 0)), constant_values=jnp.inf)
-
-    # Map -1 or out-of-bounds indices to the padded infinity value
-    safe_parent_indices = jnp.where(
-        (parent_indices < 0) | (parent_indices >= dataset_size), dataset_size, parent_indices
-    )
-
-    def body_fun(i, c):
-        # c is padded [N+1, 1]
-        current_c = c[:dataset_size]
-
-        # Gather optimal cost of the next state (s') from the global best table
-        # This brings information from other trajectories
-        c_parents_optimal = padded_state_min_cost[safe_parent_indices]  # [N, 1]
-
-        # Also consider the propagated cost within the current trajectory
-        # This ensures consistency if trajectory update is faster/better
-        c_parents_prop = c[safe_parent_indices]
-
-        c_parents = jnp.minimum(c_parents_optimal, c_parents_prop)
-
-        # Bellman update: C(s, a) <= step_cost + C(s', a')
-        new_c = action_costs + c_parents
-
-        improved_c = jnp.minimum(current_c, new_c)
-        return c.at[:dataset_size].set(improved_c)
-
-    # Iterate k_max times to propagate along the longest possible path
-    final_padded_c = jax.lax.fori_loop(0, k_max, body_fun, padded_cost)
-
-    cost = final_padded_c[:dataset_size]
-
-    target_q = jnp.maximum(target_q, cost * 0.8 - 2.0)
+    target_q = jnp.maximum(target_q, diffusion_q * 0.8 - 2.0)
     target_q = jnp.concatenate(
-        (target_q, cost),
+        (target_q, diffusion_q),
         axis=1,
     )  # [dataset_size, 2]
     return_dict["target_q"] = target_q
