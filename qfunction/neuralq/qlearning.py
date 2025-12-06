@@ -533,7 +533,6 @@ def _get_datasets_with_diffusion_distance_mixture(
         k_max,
     )
 
-    target_q = jnp.maximum(target_q, diffusion_q * 0.8 - 2.0)
     target_q = jnp.concatenate(
         (target_q, diffusion_q),
         axis=1,
