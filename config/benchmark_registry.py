@@ -42,6 +42,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_3_4M.pkl",
             ),
+            "davi_lt01": NeuralCallableConfig(
+                callable=RubiksCubeNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube_3_davi_lt01.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
@@ -51,6 +55,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "4M": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube_3_4M.pkl",
+            ),
+            "qlearning_lt01": NeuralCallableConfig(
+                callable=RubiksCubeNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube_3_qlearning_lt01.pkl",
             ),
         },
         eval_options=EvalOptions(
