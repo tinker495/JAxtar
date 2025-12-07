@@ -106,7 +106,7 @@ def astar_builder(
             )  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
             parent_index = jnp.tile(
-                jnp.arange(ncost.shape[1], dtype=ACTION_DTYPE)[jnp.newaxis, :],
+                jnp.arange(ncost.shape[1], dtype=jnp.int32)[jnp.newaxis, :],
                 (ncost.shape[0], 1),
             )  # [n_neighbours, batch_size]
             unflatten_shape = filleds.shape
