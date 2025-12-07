@@ -8,7 +8,7 @@ from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.stars.search_base import Current, Current_with_Parent, Parent, SearchResult
+from JAxtar.stars.search_base import Current, Parent, SearchResult
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -105,17 +105,23 @@ def astar_builder(
                 KEY_DTYPE
             )  # [n_neighbours, batch_size]
             filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
+            # Use int32 for indexing; ACTION_DTYPE (uint8) overflows when batch_size > 255.
             parent_index = jnp.tile(
                 jnp.arange(ncost.shape[1], dtype=jnp.int32)[jnp.newaxis, :],
                 (ncost.shape[0], 1),
             )  # [n_neighbours, batch_size]
             unflatten_shape = filleds.shape
 
+            parent = Parent(
+                hashidx=parent.hashidx[parent_index],
+                action=parent_action,
+            )
+
             flatten_neighbours = neighbours.flatten()
             flatten_filleds = filleds.flatten()
             flatten_nextcosts = nextcosts.flatten()
-            flatten_parent_index = parent_index.flatten()
-            flatten_parent_action = parent_action.flatten()
+            flatten_parents = parent.flatten()
+
             (
                 search_result.hashtable,
                 flatten_new_states_mask,
@@ -139,6 +145,12 @@ def astar_builder(
                 final_process_mask,
                 flatten_nextcosts,  # Use costs before they are set to inf
             )
+            search_result.parent = xnp.update_on_condition(
+                search_result.parent,
+                hash_idx.index,
+                final_process_mask,
+                flatten_parents,
+            )
 
             # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
             # and updating the insertion flag. This ensures they are ignored in subsequent steps.
@@ -151,22 +163,11 @@ def astar_builder(
             flatten_new_states_mask = flatten_new_states_mask[invperm]
             flatten_neighbours = flatten_neighbours[invperm]
             flatten_nextcosts = flatten_nextcosts[invperm]
-            flatten_parent_index = flatten_parent_index[invperm]
-            flatten_parent_action = flatten_parent_action[invperm]
 
             hash_idx = hash_idx[invperm]
             current = Current(hashidx=hash_idx, cost=flatten_nextcosts)
 
-            flatten_aranged_parent = parent[flatten_parent_index]
-            flatten_vals = Current_with_Parent(
-                current=current,
-                parent=Parent(
-                    action=flatten_parent_action,
-                    hashidx=flatten_aranged_parent.hashidx,
-                ),
-            )
-
-            vals = flatten_vals.reshape(unflatten_shape)
+            vals = current.reshape(unflatten_shape)
             neighbours = flatten_neighbours.reshape(unflatten_shape)
             new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
             final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
@@ -178,14 +179,14 @@ def astar_builder(
                 # cache the heuristic value
                 search_result.dist = xnp.update_on_condition(
                     search_result.dist,
-                    vals.current.hashidx.index,
+                    vals.hashidx.index,
                     new_states_mask,
                     neighbour_heur,
                 )
                 return search_result, neighbour_heur
 
             def _old_states(search_result: SearchResult, vals, neighbour, new_states_mask):
-                neighbour_heur = search_result.dist[vals.current.hashidx.index]
+                neighbour_heur = search_result.dist[vals.hashidx.index]
                 return search_result, neighbour_heur
 
             def _inserted(
@@ -193,7 +194,7 @@ def astar_builder(
                 vals,
                 neighbour_heur,
             ):
-                neighbour_key = (cost_weight * vals.current.cost + neighbour_heur).astype(KEY_DTYPE)
+                neighbour_key = (cost_weight * vals.cost + neighbour_heur).astype(KEY_DTYPE)
 
                 search_result.priority_queue = search_result.priority_queue.insert(
                     neighbour_key,

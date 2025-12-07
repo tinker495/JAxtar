@@ -63,21 +63,6 @@ class Current:
 
 
 @xtructure_dataclass
-class Current_with_Parent:
-    """
-    A dataclass representing a hash table heap value for the priority queue.
-    This class maintains the mapping between states in the hash table and their positions.
-
-    Attributes:
-        parent (Parent): The parent state in the search tree
-        current (Current): The current state in the search tree
-    """
-
-    parent: FieldDescriptor.scalar(dtype=Parent)
-    current: FieldDescriptor.scalar(dtype=Current)
-
-
-@xtructure_dataclass
 class Parant_with_Costs:
     """
     A dataclass representing a hash table heap value for the priority queue.
@@ -169,7 +154,7 @@ class SearchResult:
             # Initialize priority queue for state expansion
             priority_queue = BGPQ.build(max_nodes, batch_size, Parant_with_Costs, KEY_DTYPE)
         else:
-            priority_queue = BGPQ.build(max_nodes, batch_size, Current_with_Parent, KEY_DTYPE)
+            priority_queue = BGPQ.build(max_nodes, batch_size, Current, KEY_DTYPE)
 
         # Initialize arrays for tracking costs and state relationships
         # +1 for -1 index as a dummy node
@@ -241,9 +226,9 @@ class SearchResult:
 
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
-        min_key = search_result.mask_unoptimal(min_key, min_val.current)
+        min_key = search_result.mask_unoptimal(min_key, min_val)
         buffer = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
-        buffer_val = Current_with_Parent.default(min_key.shape)
+        buffer_val = min_val
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
@@ -268,7 +253,7 @@ class SearchResult:
                 new_key,
                 new_val,
             ) = search_result.priority_queue.delete_mins()
-            new_key = search_result.mask_unoptimal(new_key, new_val.current)
+            new_key = search_result.mask_unoptimal(new_key, new_val)
 
             # Merge current batch with new nodes, splitting into main and overflow
             main_keys, main_vals, overflow_keys, overflow_vals = _unique_sort_merge_and_split(
@@ -307,25 +292,15 @@ class SearchResult:
         return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
         search_result.priority_queue = search_result.priority_queue.insert(return_keys, min_val)
 
-        # 4. Update the closed set with the nodes we are processing
-        search_result.cost = xnp.update_on_condition(
-            search_result.cost,
-            min_val.current.hashidx.index,
-            final_process_mask,
-            min_val.current.cost,
-        )
-        search_result.parent = search_result.parent.at[
-            min_val.current.hashidx.index
-        ].set_as_condition(final_process_mask, min_val.parent)
         search_result.pop_generation = xnp.update_on_condition(
             search_result.pop_generation,
-            min_val.current.hashidx.index,
+            min_val.hashidx.index,
             final_process_mask,
             search_result.pop_count,
         )
         search_result.pop_count += 1
 
-        return search_result, min_val.current, final_process_mask
+        return search_result, min_val, final_process_mask
 
     def pop_full_with_actions(
         search_result,
@@ -563,6 +538,8 @@ class SearchResult:
         path = [solved_idx]
         parent_last = search_result.get_parent(solved_idx)
         visited = set()
+        costs = [float(search_result.get_cost(solved_idx))]
+        dists = [float(search_result.get_dist(solved_idx))]
         while True:
             idx = int(parent_last.hashidx.index)
             if parent_last.hashidx.index == -1:
@@ -571,63 +548,64 @@ class SearchResult:
                 print(f"Loop detected in path reconstruction at index {idx}")
                 break
             visited.add(idx)
+            costs.append(float(search_result.get_cost(parent_last)))
+            dists.append(float(search_result.get_dist(parent_last)))
             path.append(parent_last)
             parent_last = search_result.get_parent(parent_last)
         path.reverse()
+        costs.reverse()
+        dists.reverse()
+
+        # Check that costs are monotonically increasing to prevent path corruption
+        for i in range(1, len(costs)):
+            if costs[i] < costs[i - 1]:
+                print("ERROR: Path corruption detected - costs are not monotonically increasing!")
+                print(f"costs: {costs}")
+                print(f"dists: {dists}")
+                raise AssertionError(
+                    f"Path corruption: costs are not monotonically increasing at index {i}: {costs[i-1]} > {costs[i]}"
+                )
+
         return path
 
-    def get_state(
-        search_result, idx: HashIdx | Current | Parent | Current_with_Parent
-    ) -> Puzzle.State:
+    def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:
         """
         Get the state from the hash table.
         """
-        if isinstance(idx, (Current_with_Parent)):
-            return search_result.hashtable[idx.current.hashidx]
-        elif isinstance(idx, Current) or isinstance(idx, Parent):
+        if isinstance(idx, Current) or isinstance(idx, Parent):
             return search_result.hashtable[idx.hashidx]
         elif isinstance(idx, HashIdx):
             return search_result.hashtable[idx]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_cost(
-        search_result, idx: HashIdx | Current | Parent | Current_with_Parent
-    ) -> chex.Array:
+    def get_cost(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
         """
         Get the cost of the state from the cost array.
         """
-        if isinstance(idx, (Current_with_Parent, Parant_with_Costs)):
-            return search_result.cost[idx.current.hashidx.index]
-        elif isinstance(idx, Current) or isinstance(idx, Parent):
+        if isinstance(idx, Current) or isinstance(idx, Parent):
             return search_result.cost[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
             return search_result.cost[idx.index]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_dist(
-        search_result, idx: HashIdx | Current | Parent | Current_with_Parent
-    ) -> chex.Array:
+    def get_dist(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
         """
         Get the distance of the state from the distance array.
         """
-        if isinstance(idx, (Current_with_Parent)):
-            return search_result.dist[idx.current.hashidx.index]
-        elif isinstance(idx, Current) or isinstance(idx, Parent):
+        if isinstance(idx, Current) or isinstance(idx, Parent):
             return search_result.dist[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
             return search_result.dist[idx.index]
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_parent(search_result, idx: HashIdx | Current | Parent | Current_with_Parent) -> Parent:
+    def get_parent(search_result, idx: HashIdx | Current | Parent) -> Parent:
         """
         Get the parent action from the parent action array.
         """
-        if isinstance(idx, (Current_with_Parent)):
-            return search_result.parent[idx.current.hashidx.index]
-        elif isinstance(idx, Current) or isinstance(idx, Parent):
+        if isinstance(idx, Current) or isinstance(idx, Parent):
             return search_result.parent[idx.hashidx.index]
         elif isinstance(idx, HashIdx):
             return search_result.parent[idx.index]
@@ -642,24 +620,22 @@ class SearchResult:
         return jnp.where(optimal, min_key, jnp.inf)
 
 
-def unique_sort(
-    key: chex.Array, val: Current_with_Parent
-) -> tuple[chex.Array, Current_with_Parent]:
+def unique_sort(key: chex.Array, val: Current) -> tuple[chex.Array, Current]:
     """
     Sorts the keys and corresponding values.
 
     Args:
         key (chex.Array): Array of keys.
-        val (Current_with_Parent): Array of values.
+        val (Current): Array of values.
 
     Returns:
         tuple:
             - sorted_key (chex.Array): Sorted array of keys.
-            - sorted_val (Current_with_Parent): Values corresponding to the sorted keys.
+            - sorted_val (Current): Values corresponding to the sorted keys.
     """
     n = key.shape[-1]
     filled = jnp.isfinite(key)
-    mask = xnp.unique_mask(val.current.hashidx, val.current.cost, filled)
+    mask = xnp.unique_mask(val.hashidx, val.cost, filled)
     key = jnp.where(mask, key, jnp.inf)
     sorted_key, sorted_idx = jax.lax.sort_key_val(key, jnp.arange(n))
     sorted_val = val[sorted_idx]
