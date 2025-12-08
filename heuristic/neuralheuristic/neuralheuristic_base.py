@@ -11,15 +11,13 @@ from puxle import Puzzle
 from heuristic.heuristic_base import Heuristic
 from neural_util.modules import (
     DEFAULT_NORM_FN,
-    HEAD_DTYPE,
     DTYPE,
+    HEAD_DTYPE,
     PreActivationResBlock,
     ResBlock,
-    get_activation_fn,
-    get_norm_fn,
-    get_resblock_fn,
     swiglu_fn,
 )
+from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     load_params_with_metadata,
     save_params_with_metadata,
@@ -30,34 +28,38 @@ from neural_util.util import download_model, is_model_downloaded
 class HeuristicBase(nn.Module):
 
     Res_N: int = 4
+    initial_dim: int = 5000
     hidden_N: int = 1
     hidden_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
     activation: str = nn.relu
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
+    hidden_node_multiplier: int = 1
 
     @nn.compact
     def __call__(self, x, training=False):
         if self.use_swiglu:
-            x = swiglu_fn(5000, self.activation, self.norm_fn, training)(x)
-            x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn, training)(x)
+            x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn)(x, training)
+            x = swiglu_fn(self.hidden_dim, self.activation, self.norm_fn)(x, training)
         else:
-            x = nn.Dense(5000, dtype=DTYPE)(x)
+            x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training)
             x = self.activation(x)
             x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-            x = self.norm_fn(x, training)
-            x = self.activation(x)
+            if self.resblock_fn != PreActivationResBlock:
+                x = self.norm_fn(x, training)
+                x = self.activation(x)
         for _ in range(self.Res_N):
             x = self.resblock_fn(
-                self.hidden_dim,
+                self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
             )(x, training)
         if self.resblock_fn == PreActivationResBlock:
+            x = self.activation(x)
             x = self.norm_fn(x, training)
         x = x.astype(HEAD_DTYPE)
         x = nn.Dense(1, dtype=HEAD_DTYPE, kernel_init=nn.initializers.normal(stddev=0.01))(x)
@@ -74,14 +76,23 @@ class NeuralHeuristicBase(Heuristic):
         **kwargs,
     ):
         self.puzzle = puzzle
-        kwargs["norm_fn"] = get_norm_fn(kwargs.get("norm_fn", "batch"))
-        kwargs["activation"] = get_activation_fn(kwargs.get("activation", "relu"))
-        kwargs["resblock_fn"] = get_resblock_fn(kwargs.get("resblock_fn", "standard"))
-        kwargs["use_swiglu"] = kwargs.get("use_swiglu", False)
-        self.model = model(**kwargs)
         self.is_fixed = puzzle.fixed_target
         self.path = path
         self.metadata = {}
+        self.nn_args_metadata = {}
+        self._preloaded_params = None
+
+        saved_metadata = {}
+        if self.path is not None and not init_params:
+            saved_metadata = self._preload_metadata()
+
+        resolved_kwargs, nn_args = resolve_model_kwargs(kwargs, saved_metadata.get("nn_args"))
+        self.nn_args_metadata = nn_args
+        self.model = model(**resolved_kwargs)
+
+        self.metadata = saved_metadata or {}
+        self.metadata["nn_args"] = self.nn_args_metadata
+
         if path is not None:
             if init_params:
                 self.params = self.get_new_params()
@@ -109,18 +120,29 @@ class NeuralHeuristicBase(Heuristic):
 
     def load_model(self):
         try:
-            if not is_model_downloaded(self.path):
-                download_model(self.path)
-            params, metadata = load_params_with_metadata(self.path)
-            if params is None:  # Handle case where loading fails or returns None
-                raise ValueError(f"Failed to load valid parameters from {self.path}")
+            params = self._preloaded_params
+            metadata = self.metadata
+            if params is None:
+                if not is_model_downloaded(self.path):
+                    download_model(self.path)
+                params, metadata = load_params_with_metadata(self.path)
+            if params is None:
+                print(
+                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
+                    "Initializing new parameters."
+                )
+                self.metadata = {}
+                self.nn_args_metadata = {}
+                return self.get_new_params()
+            self.metadata = metadata or {}
+            self.metadata["nn_args"] = self.nn_args_metadata
 
             self.model.apply(
                 params,
                 jnp.expand_dims(self.get_dummy_preprocessed_state(), axis=0),
                 training=False,
             )  # check if the params are compatible with the model
-            self.metadata = metadata
+            self._preloaded_params = None
             return params
         except Exception as e:
             print(f"Error loading model: {e}")
@@ -130,8 +152,11 @@ class NeuralHeuristicBase(Heuristic):
         path = path or self.path
         if metadata is None:
             metadata = {}
-        metadata["puzzle_type"] = str(type(self.puzzle))
-        save_params_with_metadata(path, self.params, metadata)
+        combined_metadata = {**self.metadata, **metadata}
+        combined_metadata["puzzle_type"] = str(type(self.puzzle))
+        combined_metadata["nn_args"] = self.nn_args_metadata
+        save_params_with_metadata(path, self.params, combined_metadata)
+        self.metadata = combined_metadata
 
     def batched_distance(
         self, solve_config: Puzzle.SolveConfig, current: Puzzle.State, params: Optional[Any] = None
@@ -183,3 +208,15 @@ class NeuralHeuristicBase(Heuristic):
         This function should return the post-processed distance.
         """
         return x.squeeze(1)
+
+    def _preload_metadata(self):
+        try:
+            if not is_model_downloaded(self.path):
+                download_model(self.path)
+            params, metadata = load_params_with_metadata(self.path)
+            if params is not None:
+                self._preloaded_params = params
+            return metadata or {}
+        except Exception as e:
+            print(f"Error loading metadata from {self.path}: {e}")
+            return {}

@@ -1,3 +1,5 @@
+from typing import Any, Dict
+
 import click
 from puxle import Puzzle
 
@@ -38,11 +40,12 @@ def davi(
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
-    shuffle_length: int,
+    k_max: int,
     eval_options: EvalOptions,
-    heuristic_config: NeuralCallableConfig,
+    heuristic_config: Dict[str, Any],
     **kwargs,
 ):
+    shuffle_length = k_max
     run_davi_training(
         puzzle=puzzle,
         puzzle_opts=puzzle_opts,
@@ -67,12 +70,13 @@ def qlearning(
     qfunction: NeuralQFunctionBase,
     puzzle_name: str,
     train_options: DistTrainOptions,
-    shuffle_length: int,
-    with_policy: bool,
+    k_max: int,
     eval_options: EvalOptions,
-    q_config: NeuralCallableConfig,
+    q_config: Dict[str, Any],
     **kwargs,
 ):
+    shuffle_length = k_max
+    with_policy = True
     run_qlearning_training(
         puzzle=puzzle,
         puzzle_opts=puzzle_opts,

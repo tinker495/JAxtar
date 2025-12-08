@@ -9,7 +9,7 @@ from config.pydantic_models import (
     NeuralCallableConfig,
     PuzzleOptions,
 )
-from JAxtar.qstar import qstar_builder
+from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qlearning import get_qlearning_dataset_builder, qlearning_builder
 

@@ -9,14 +9,29 @@ def human_format_to_float(num_str):
 
 
 def human_format(num):
-    num = float("{:.3g}".format(num))
+    try:
+        num_float = float(num)
+    except (TypeError, ValueError):
+        return str(num)
+
+    if not np.isfinite(num_float):
+        return str(num_float)
+
+    suffixes = ["", "K", "M", "B", "T"]
     magnitude = 0
-    while abs(num) >= 1000:
+
+    while abs(num_float) >= 1000 and magnitude < len(suffixes) - 1:
+        num_float /= 1000.0
         magnitude += 1
-        num /= 1000.0
-    return "{}{}".format(
-        "{:f}".format(num).rstrip("0").rstrip("."), ["", "K", "M", "B", "T"][magnitude]
-    )
+
+    if abs(num_float) >= 1000:
+        return "{:.3g}".format(float(num))
+
+    formatted = "{:f}".format(float("{:.3g}".format(num_float))).rstrip("0").rstrip(".")
+    if formatted == "":
+        formatted = "0"
+
+    return f"{formatted}{suffixes[magnitude]}"
 
 
 def heuristic_dist_format(puzzle, dist) -> Text:

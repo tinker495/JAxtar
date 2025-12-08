@@ -1,15 +1,10 @@
 import json
-import time
 from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, Dict, Type, TypeVar
 
-import jax
-import jax.numpy as jnp
-import xtructure.numpy as xnp
-from puxle import Puzzle
 from pydantic import BaseModel
 
-from JAxtar.search_base import Current, SearchResult
+T = TypeVar("T", bound=BaseModel)
 
 
 def convert_to_serializable_dict(obj: Any) -> Any:
@@ -63,45 +58,27 @@ def display_value(val):
     return str(val)
 
 
-def vmapping_init_target(
-    puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]
-) -> tuple[Puzzle.SolveConfig, Puzzle.State]:
-    start_state_seed = start_state_seeds[0]
-    solve_configs, states = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
-    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (vmap_size, 1))
-    states = xnp.tile(states[jnp.newaxis, ...], (vmap_size, 1))
-
-    if len(start_state_seeds) > 1:
-        for i, start_state_seed in enumerate(start_state_seeds[1:vmap_size]):
-            new_solve_configs, new_states = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
-            states = states.at[i + 1].set(new_states)
-            solve_configs = solve_configs.at[i + 1].set(new_solve_configs)
-    return solve_configs, states
-
-
-def vmapping_search(
-    puzzle: Puzzle,
-    star_fn: callable,
-    vmap_size: int,
-    show_compile_time: bool = False,
-):
+def map_kwargs_to_pydantic(
+    model_class: Type[T], kwargs: Dict[str, Any], pop: bool = True
+) -> Dict[str, Any]:
     """
-    Vmap the search function over the batch dimension.
+    Extracts keys from kwargs that match the fields of a Pydantic model.
+
+    Args:
+        model_class: The Pydantic model class.
+        kwargs: The dictionary of arguments (e.g., from Click).
+        pop: If True, removes the matched keys from kwargs.
+
+    Returns:
+        A dictionary of arguments suitable for initializing the model.
     """
-
-    empty_states = puzzle.State.default((vmap_size,))
-    empty_solve_configs = puzzle.SolveConfig.default((vmap_size,))
-    vmapped_star = jax.jit(jax.vmap(star_fn, in_axes=(0, 0)))
-    if show_compile_time:
-        print("initializing vmapped jit")
-        start = time.time()
-    vmapped_star(empty_solve_configs, empty_states)
-    if show_compile_time:
-        end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
-        print("JIT compiled\n\n")
-    return vmapped_star
-
-
-def vmapping_get_state(search_result: SearchResult, idx: Current):
-    return jax.vmap(SearchResult.get_state, in_axes=(0, 0))(search_result, idx)
+    model_fields = model_class.model_fields.keys()
+    result = {}
+    # Iterate over a copy of keys since we might pop
+    for k in list(kwargs.keys()):
+        if k in model_fields and kwargs[k] is not None:
+            if pop:
+                result[k] = kwargs.pop(k)
+            else:
+                result[k] = kwargs[k]
+    return result

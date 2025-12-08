@@ -2,22 +2,26 @@ import itertools
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, Iterable, List, Optional, Union
 
 import jax
 import numpy as np
 import pandas as pd
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from puxle.benchmark import Benchmark
 from rich.console import Console
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers import human_format
 from helpers.artifact_manager import ArtifactManager
+from helpers.capture import tee_console
 from helpers.config_printer import print_config
 from helpers.logger import BaseLogger
-from helpers.metrics import calculate_heuristic_metrics
+from helpers.metrics import calculate_benchmark_metrics, calculate_heuristic_metrics
+from helpers.path_analysis import extract_heuristic_accuracy_data
 from helpers.plots import (
+    plot_benchmark_path_comparison,
     plot_expansion_distribution,
     plot_heuristic_accuracy,
     plot_nodes_generated_by_path_cost,
@@ -26,10 +30,15 @@ from helpers.plots import (
 )
 from helpers.rich_progress import trange
 from helpers.summaries import create_summary_panel
+from helpers.visualization import (
+    build_path_steps_from_actions,
+    build_path_steps_from_nodes,
+)
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
+from .config_utils import enrich_config
 
 
 class EvaluationRunner:
@@ -45,6 +54,8 @@ class EvaluationRunner:
         output_dir: Optional[Path] = None,
         logger: Optional[BaseLogger] = None,
         step: int = 0,
+        node_metric_label: Optional[str] = None,
+        run_label: Optional[str] = None,
         search_fn_cache: Optional[dict[int, Callable]] = None,
         **kwargs,
     ):
@@ -59,8 +70,28 @@ class EvaluationRunner:
         self.logger = logger
         self.step = step
         self.console = Console()
+        self.node_metric_label = node_metric_label or "Nodes Generated"
         self.kwargs = kwargs
+        self.run_label = run_label or search_model_name
         self.search_fn_cache = {} if search_fn_cache is None else search_fn_cache
+        self.benchmark: Optional[Benchmark] = kwargs.get("benchmark")
+        self.benchmark_name: Optional[str] = kwargs.get("benchmark_name")
+        benchmark_cli_options = kwargs.get("benchmark_cli_options", {})
+        self.benchmark_sample_ids: Optional[Iterable] = benchmark_cli_options.get("sample_ids")
+        self.benchmark_sample_limit: Optional[int] = benchmark_cli_options.get("sample_limit")
+        self._benchmark_total_samples: Optional[int] = None
+        self._selected_benchmark_ids: Optional[list] = None
+
+        self.base_run_name = (
+            self.eval_options.run_name
+            if self.eval_options.run_name
+            else f"{self.puzzle_name}_{self.run_label}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        )
+        self.main_run_dir = (
+            self.output_dir if self.output_dir else Path("runs") / self.base_run_name
+        )
+        self.main_run_dir.mkdir(parents=True, exist_ok=True)
+        self.log_path = self.main_run_dir / "console.log"
 
     def run(self):
         model_metadata = getattr(self.search_model, "metadata", {})
@@ -84,12 +115,9 @@ class EvaluationRunner:
         param_combinations = list(itertools.product(pop_ratios, cost_weights, batch_sizes))
         is_sweep = len(param_combinations) > 1
 
-        base_run_name = (
-            self.eval_options.run_name
-            if self.eval_options.run_name
-            else f"{self.puzzle_name}_{self.search_model_name}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-        )
-        main_run_dir = self.output_dir if self.output_dir else Path("runs") / base_run_name
+        eval_inputs = self._prepare_eval_inputs()
+
+        main_run_dir = self.main_run_dir
         main_run_dir.mkdir(parents=True, exist_ok=True)
 
         if is_sweep:
@@ -118,13 +146,24 @@ class EvaluationRunner:
                 self.search_model_name: self.search_model.__class__.__name__,
                 f"{self.search_model_name}_metadata": model_metadata,
                 "eval_options": current_eval_opts.dict(),
+                "node_metric_label": self.node_metric_label,
             }
+
+            if self.benchmark is not None:
+                config["benchmark"] = {
+                    "name": self.benchmark_name,
+                    "total_available_samples": self._benchmark_total_samples,
+                    "selected_sample_ids": list(self._selected_benchmark_ids or []),
+                    "sample_limit": self.benchmark_sample_limit,
+                }
 
             if is_sweep:
                 self.console.rule(
                     f"[bold cyan]Run {i+1}/{len(param_combinations)}: pr={pr}, cw={cw}, bs={bs}[/bold cyan]"
                 )
-            print_config(f"{self.search_model_name.capitalize()} Evaluation Configuration", config)
+
+            config_title = f"{self.run_label.replace('_', ' ').title()} Evaluation Configuration"
+            print_config(config_title, enrich_config(config))
 
             if bs not in search_fn_cache:
                 search_fn_cache[bs] = self.search_builder_fn(
@@ -137,13 +176,10 @@ class EvaluationRunner:
                 )
             search_fn = search_fn_cache[bs]
 
-            eval_seeds = list(range(self.eval_options.num_eval))
             results = self._run_evaluation(
                 search_fn=search_fn,
                 puzzle=self.puzzle,
-                seeds=eval_seeds,
-                pop_ratio=pr,
-                cost_weight=cw,
+                eval_inputs=eval_inputs,
             )
             for r in results:
                 r["pop_ratio"] = pr
@@ -154,6 +190,39 @@ class EvaluationRunner:
             heuristic_metrics = calculate_heuristic_metrics(results)
             if heuristic_metrics:
                 config["heuristic_metrics"] = heuristic_metrics
+
+            if self.benchmark is not None:
+                benchmark_metrics = calculate_benchmark_metrics(results)
+                if benchmark_metrics:
+                    config["benchmark_metrics"] = benchmark_metrics
+
+                    # Log metrics to artifact manager
+                    if "avg_optimal_cost" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/avg_optimal_cost", benchmark_metrics["avg_optimal_cost"]
+                        )
+                    if "avg_path_cost" in benchmark_metrics:
+                        am.log_scalar("benchmark/avg_path_cost", benchmark_metrics["avg_path_cost"])
+                    if "avg_cost_gap" in benchmark_metrics:
+                        am.log_scalar("benchmark/avg_cost_gap", benchmark_metrics["avg_cost_gap"])
+                    if "avg_optimal_actions" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/avg_optimal_actions",
+                            benchmark_metrics["avg_optimal_actions"],
+                        )
+                    if "avg_path_actions" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/avg_path_actions", benchmark_metrics["avg_path_actions"]
+                        )
+                    if "avg_action_gap" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/avg_action_gap", benchmark_metrics["avg_action_gap"]
+                        )
+                    if "exact_optimal_path_rate" in benchmark_metrics:
+                        am.log_scalar(
+                            "benchmark/exact_optimal_path_rate",
+                            benchmark_metrics["exact_optimal_path_rate"],
+                        )
 
             am.save_config(config)
             am.save_results(results)
@@ -181,12 +250,29 @@ class EvaluationRunner:
                 am.log_scalar("nodes_generated", solved_df["nodes_generated"].mean())
                 am.log_scalar("path_cost", solved_df["path_cost"].mean())
 
+                has_benchmark_cost = (
+                    "benchmark_optimal_path_cost" in solved_df
+                    and solved_df["benchmark_optimal_path_cost"].notna().any()
+                )
+                has_benchmark_length = (
+                    "benchmark_optimal_action_count" in solved_df
+                    and solved_df["benchmark_optimal_action_count"].notna().any()
+                )
+                if self.benchmark is not None and (has_benchmark_cost or has_benchmark_length):
+                    fig = plot_benchmark_path_comparison(solved_df)
+                    am.save_and_log_plot("benchmark_path_comparison", fig)
+
             if heuristic_metrics:
                 am.log_scalar("heuristic_r_squared", heuristic_metrics["r_squared"])
                 am.log_scalar("heuristic_ccc", heuristic_metrics["ccc"])
 
+            file_suffix = (
+                "_optimal_path"
+                if heuristic_metrics and heuristic_metrics.get("has_optimal_path_used")
+                else ""
+            )
             fig = plot_heuristic_accuracy(results, metrics=heuristic_metrics)
-            am.save_and_log_plot("heuristic_accuracy", fig)
+            am.save_and_log_plot(f"heuristic_accuracy{file_suffix}", fig)
 
             plots_generated = 0
             for r in results:
@@ -215,73 +301,252 @@ class EvaluationRunner:
             comparison_generator.generate_report()
             self.console.print(f"Comparison report saved in [bold]{main_run_dir}[/bold]")
 
-    def _run_evaluation(
+    def _prepare_eval_inputs(self) -> List[int]:
+        if self.benchmark is None:
+            limit = self.eval_options.num_eval
+            if limit < 0:
+                raise ValueError("num_eval must be non-negative when no benchmark is provided")
+            return list(range(limit))
+
+        available_ids = list(self.benchmark.sample_ids())
+        if not available_ids:
+            raise ValueError(f"Benchmark '{self.benchmark_name}' provided no sample ids.")
+
+        self._benchmark_total_samples = len(available_ids)
+
+        if self.benchmark_sample_ids is not None:
+            selected = [
+                sample_id for sample_id in self.benchmark_sample_ids if sample_id in available_ids
+            ]
+            if not selected:
+                raise ValueError(
+                    "None of the provided sample IDs were found in the benchmark dataset."
+                )
+        else:
+            limit = self.benchmark_sample_limit
+            if limit is None or limit < 0:
+                limit = self.eval_options.num_eval
+
+            if limit is None or limit < 0:
+                selected = available_ids
+            else:
+                selected = available_ids[: min(limit, len(available_ids))]
+
+        self._selected_benchmark_ids = selected
+        return selected
+
+    def _evaluate_single_sample(
         self,
+        identifier: int,
         search_fn,
-        puzzle: Puzzle,
-        seeds: list[int],
-        pop_ratio: Optional[float] = None,
-        cost_weight: Optional[float] = None,
-    ) -> list[dict]:
-        num_puzzles = len(seeds)
-        results = []
+        heuristic_model,
+        qfunction_model,
+    ) -> dict:
+        benchmark_sample = None
+        if self.benchmark is not None:
+            sample_id = identifier
+            benchmark_sample = self.benchmark.get_sample(sample_id)
+            solve_config = benchmark_sample.solve_config
+            state = benchmark_sample.state
+            run_identifier = sample_id
+        else:
+            seed = int(identifier)
+            solve_config, state = self.puzzle.get_inits(jax.random.PRNGKey(seed))
+            run_identifier = seed
 
-        pbar = trange(
-            num_puzzles,
-            desc="Running Evaluations",
-        )
+        start_time = time.time()
+        search_result = search_fn(solve_config, state)
+        solved = bool(search_result.solved.block_until_ready())
+        end_time = time.time()
 
-        for i in pbar:
-            seed = seeds[i]
-            solve_config, state = puzzle.get_inits(jax.random.PRNGKey(seed))
+        search_time = end_time - start_time
+        generated_nodes = int(search_result.generated_size)
 
-            start_time = time.time()
-            search_kwargs = {}
-            if pop_ratio is not None:
-                search_kwargs["pop_ratio"] = pop_ratio
-            if cost_weight is not None:
-                search_kwargs["cost_weight"] = cost_weight
-            search_result = search_fn(solve_config, state, **search_kwargs)
-            solved = bool(search_result.solved.block_until_ready())
-            end_time = time.time()
+        result_item = {
+            "seed": run_identifier,
+            "solved": solved,
+            "search_time_s": search_time,
+            "nodes_generated": generated_nodes,
+            "node_metric_label": self.node_metric_label,
+            "path_cost": 0,
+            "path_analysis": None,
+            "expansion_analysis": None,
+            "path_state_count": None,
+            "path_action_count": None,
+            "matches_optimal_path": None,
+            "path_actions": None,
+            "path_action_strings": None,
+            "benchmark_verification_error": None,
+            "benchmark_has_optimal_action_sequence": False,
+        }
 
-            search_time = end_time - start_time
-            generated_nodes = int(search_result.generated_size)
+        if self.benchmark is not None:
+            result_item["benchmark_sample_id"] = run_identifier
+            optimal_path_cost = getattr(benchmark_sample, "optimal_path_cost", None)
+            if optimal_path_cost is None:
+                optimal_path_cost = getattr(benchmark_sample, "optimal_path_costs", None)
+            if optimal_path_cost is not None:
+                result_item["benchmark_optimal_path_cost"] = float(optimal_path_cost)
+            optimal_path = getattr(benchmark_sample, "optimal_path", None)
+            if optimal_path is not None:
+                optimal_state_count = len(optimal_path)
+                result_item["benchmark_optimal_path_state_count"] = optimal_state_count
+                if optimal_state_count > 0:
+                    result_item["benchmark_optimal_path_length"] = max(0, optimal_state_count - 1)
+            optimal_action_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
+            if optimal_action_sequence is not None:
+                result_item["benchmark_has_optimal_action_sequence"] = True
+                if not isinstance(optimal_action_sequence, (list, tuple)):
+                    optimal_action_sequence = list(optimal_action_sequence)
+                optimal_actions: list[int | str] = []
+                for action_val in optimal_action_sequence:
+                    if isinstance(action_val, str):
+                        optimal_actions.append(action_val)
+                    else:
+                        optimal_actions.append(int(action_val))
+                result_item["benchmark_optimal_action_sequence"] = optimal_actions
+                result_item["benchmark_optimal_action_count"] = len(optimal_actions)
+            elif optimal_path is not None:
+                result_item["benchmark_optimal_action_count"] = max(0, len(optimal_path) - 1)
 
-            result_item = {
-                "seed": seed,
-                "solved": solved,
-                "search_time_s": search_time,
-                "nodes_generated": generated_nodes,
-                "path_cost": 0,
-                "path_analysis": None,
-                "expansion_analysis": None,
-            }
-
-            if solved:
+        if solved:
+            if hasattr(search_result, "solution_trace"):
+                (
+                    states_trace,
+                    costs_trace,
+                    dists_trace,
+                    actions_trace,
+                ) = search_result.solution_trace()
+                path_steps = build_path_steps_from_actions(
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    actions=actions_trace,
+                    heuristic=heuristic_model,
+                    q_fn=qfunction_model,
+                    states=states_trace,
+                    costs=costs_trace,
+                    dists=dists_trace,
+                )
+            elif hasattr(search_result, "solution_actions"):
+                actions = search_result.solution_actions()
+                path_steps = build_path_steps_from_actions(
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    actions=actions,
+                    heuristic=heuristic_model,
+                    q_fn=qfunction_model,
+                )
+            else:
                 path = search_result.get_solved_path()
-                path_cost = search_result.get_cost(path[-1])
-                result_item["path_cost"] = float(path_cost)
+                path_steps = build_path_steps_from_nodes(
+                    search_result=search_result,
+                    path=path,
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                )
 
-                states = []
-                actual_dists = []
-                estimated_dists = []
-                for state_in_path in path:
-                    states.append(search_result.get_state(state_in_path))
-                    actual_dist = float(path_cost - search_result.get_cost(state_in_path))
-                    estimated_dist = float(search_result.get_dist(state_in_path))
+            path_cost = path_steps[-1].cost if path_steps else 0.0
+            result_item["path_cost"] = float(path_cost)
+            path_state_count = len(path_steps)
+            result_item["path_state_count"] = path_state_count
+            result_item["path_action_count"] = max(0, path_state_count - 1)
+            actual_actions = [
+                int(step.action) for step in path_steps[:-1] if step.action is not None
+            ]
+            result_item["path_actions"] = actual_actions
 
-                    if np.isfinite(estimated_dist):
-                        actual_dists.append(actual_dist)
-                        estimated_dists.append(estimated_dist)
+            states = [step.state for step in path_steps]
 
+            if actual_actions:
+                action_to_string_fn = getattr(self.puzzle, "action_to_string", None)
+                actual_action_labels = []
+                for action_id in actual_actions:
+                    if action_to_string_fn is None:
+                        label = str(action_id)
+                    else:
+                        try:
+                            label = action_to_string_fn(action_id)
+                        except (ValueError, IndexError):
+                            label = str(action_id)
+                    actual_action_labels.append(label)
+                result_item["path_action_strings"] = actual_action_labels
+
+            actual_dists = []
+            estimated_dists = []
+            for step in path_steps:
+                actual_dist = float(path_cost - step.cost)
+                estimated_dist = float(step.dist) if step.dist is not None else np.inf
+
+                if np.isfinite(estimated_dist):
+                    actual_dists.append(actual_dist)
+                    estimated_dists.append(estimated_dist)
+
+            if states:
                 result_item["path_analysis"] = {
                     "actual": actual_dists,
                     "estimated": estimated_dists,
                     "states": xnp.concatenate(states),
+                    "actions": actual_actions,
                 }
 
-            # Extract expansion data for plotting node value distributions
+            if self.benchmark is not None:
+                optimal_actions = getattr(benchmark_sample, "optimal_action_sequence", None)
+                optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
+                if optimal_actions is not None and optimal_sequence is None:
+                    if not isinstance(optimal_actions, (list, tuple)):
+                        optimal_actions = list(optimal_actions)
+                    optimal_sequence = []
+                    for action_val in optimal_actions:
+                        if isinstance(action_val, str):
+                            optimal_sequence.append(action_val)
+                        else:
+                            optimal_sequence.append(int(action_val))
+                    result_item["benchmark_optimal_action_sequence"] = optimal_sequence
+
+                verification_result = None
+                if hasattr(self.benchmark, "verify_solution") and states:
+                    try:
+                        verification_result = self.benchmark.verify_solution(
+                            benchmark_sample,
+                            states=states,
+                            action_sequence=result_item.get("path_action_strings"),
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        verification_result = None
+                        result_item["benchmark_verification_error"] = str(exc)
+
+                result_item["matches_optimal_path"] = verification_result
+
+        # Overwrite path analysis with optimal path if available
+        if self.benchmark is not None:
+            # 1. Try to get optimal sequence from result_item (populated earlier)
+            optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
+
+            # 2. If not found, check benchmark_sample for 'optimal_action_sequence' (standard name)
+            if optimal_sequence is None and benchmark_sample is not None:
+                optimal_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
+
+            # 3. Also check optimal_path (state sequence)
+            optimal_path = getattr(benchmark_sample, "optimal_path", None)
+
+            if optimal_sequence or optimal_path:
+                optimal_analysis = extract_heuristic_accuracy_data(
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    action_sequence=optimal_sequence,
+                    path_states=optimal_path,
+                    heuristic_model=heuristic_model,
+                    qfunction_model=qfunction_model,
+                )
+                if optimal_analysis:
+                    result_item["path_analysis"] = optimal_analysis
+                    result_item["used_optimal_path_for_analysis"] = True
+
+        # Extract expansion data for plotting node value distributions
+        if hasattr(search_result, "pop_generation"):
             expanded_nodes_mask = search_result.pop_generation > -1
             # Use np.asarray to handle potential JAX arrays on different devices
             if np.any(np.asarray(expanded_nodes_mask)):
@@ -295,23 +560,93 @@ class EvaluationRunner:
                         "cost": costs,
                         "dist": dists,
                     }
+        return result_item
+
+    def _run_evaluation(
+        self,
+        search_fn,
+        puzzle: Puzzle,
+        eval_inputs: List[int],
+    ) -> list[dict]:
+        num_puzzles = len(eval_inputs)
+        results = []
+
+        pbar = trange(
+            num_puzzles,
+            desc="Running Evaluations",
+        )
+
+        heuristic_model = self.search_model if isinstance(self.search_model, Heuristic) else None
+        qfunction_model = self.search_model if isinstance(self.search_model, QFunction) else None
+
+        for i in pbar:
+            identifier = eval_inputs[i]
+
+            result_item = self._evaluate_single_sample(
+                identifier=identifier,
+                search_fn=search_fn,
+                heuristic_model=heuristic_model,
+                qfunction_model=qfunction_model,
+            )
 
             results.append(result_item)
 
             solved_results = [r for r in results if r["solved"]]
             num_solved = len(solved_results)
-            success_rate = (num_solved / (i + 1)) * 100
+            total_completed = i + 1
+            success_rate = (num_solved / total_completed) * 100
 
-            pbar_desc_dict = {"Success Rate": f"{success_rate:.2f}%"}
+            optimal_reference_results = [
+                r for r in solved_results if r.get("matches_optimal_path") is not None
+            ]
+            optimal_hits = [r for r in optimal_reference_results if r["matches_optimal_path"]]
+            optimal_rate = (
+                (len(optimal_hits) / len(optimal_reference_results)) * 100
+                if optimal_reference_results
+                else None
+            )
+
+            success_key = (
+                "Success Rate/Optimal Rate" if optimal_rate is not None else "Success Rate"
+            )
+            if optimal_rate is not None:
+                rate_label = f"{success_rate:.2f}%/{optimal_rate:.2f}%"
+            else:
+                rate_label = f"{success_rate:.2f}%"
+
+            pbar_desc_dict = {success_key: rate_label}
             if num_solved > 0:
                 avg_time = sum(r["search_time_s"] for r in solved_results) / num_solved
                 avg_nodes = sum(r["nodes_generated"] for r in solved_results) / num_solved
+                path_costs = [
+                    r["path_cost"] for r in solved_results if r.get("path_cost") is not None
+                ]
+                avg_path_cost = None
+                if path_costs:
+                    avg_path_cost = sum(path_costs) / len(path_costs)
                 pbar_desc_dict.update(
                     {
                         "Avg Time (Solved)": f"{avg_time:.2f}s",
-                        "Avg Nodes (Solved)": f"{human_format(avg_nodes)}",
+                        f"Avg {self.node_metric_label} (Solved)": f"{human_format(avg_nodes)}",
                     }
                 )
+                solved_with_optimal_cost = [
+                    r
+                    for r in solved_results
+                    if r.get("benchmark_has_optimal_action_sequence")
+                    and r.get("benchmark_optimal_path_cost") is not None
+                    and r.get("path_cost") is not None
+                ]
+                optimal_costs = [r["benchmark_optimal_path_cost"] for r in solved_with_optimal_cost]
+                has_optimal_cost_info = bool(solved_with_optimal_cost)
+                cost_key = "Avg Cost/Optimal Cost" if has_optimal_cost_info else "Avg Cost"
+                if avg_path_cost is not None:
+                    cost_label = f"{avg_path_cost:.2f}"
+                    if has_optimal_cost_info:
+                        avg_optimal_cost = sum(optimal_costs) / len(optimal_costs)
+                        delta = avg_path_cost - avg_optimal_cost
+                        cost_label = f"{avg_path_cost:.2f}/{avg_optimal_cost:.2f} ({delta:+.2f})"
+                    pbar_desc_dict[cost_key] = cost_label
             pbar.set_description("Evaluating", desc_dict=pbar_desc_dict)
 
             # Early stopping logic
@@ -329,3 +664,49 @@ class EvaluationRunner:
                     break
 
         return results
+
+
+def run_evaluation_sweep(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    search_model: Union[Heuristic, QFunction],
+    search_model_name: str,
+    search_builder_fn: Callable,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    run_label: Optional[str] = None,
+    output_dir: Optional[Path] = None,
+    logger: Optional[BaseLogger] = None,
+    step: int = 0,
+    **kwargs,
+):
+    runner = EvaluationRunner(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=search_model,
+        search_model_name=search_model_name,
+        run_label=run_label,
+        search_builder_fn=search_builder_fn,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        output_dir=output_dir,
+        logger=logger,
+        step=step,
+        **kwargs,
+    )
+
+    with tee_console(runner.log_path):
+        config_title_label = run_label if run_label else search_model_name
+        config_title = f"{config_title_label.replace('_', ' ').title()} Evaluation Configuration"
+        print_config(
+            config_title,
+            enrich_config(
+                {
+                    "puzzle_options": puzzle_opts.dict(),
+                    search_model_name: search_model.__class__.__name__,
+                    f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
+                    "eval_options": eval_options.dict(),
+                }
+            ),
+        )
+        runner.run()

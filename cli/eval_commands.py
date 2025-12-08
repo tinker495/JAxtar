@@ -1,6 +1,5 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, Union
 
 import click
 import matplotlib
@@ -8,15 +7,16 @@ from puxle import Puzzle
 from rich.console import Console
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
-from helpers.config_printer import print_config
-from helpers.logger import BaseLogger
 from heuristic.heuristic_base import Heuristic
-from JAxtar.astar import astar_builder
-from JAxtar.qstar import qstar_builder
+from JAxtar.beamsearch.heuristic_beam import beam_builder
+from JAxtar.beamsearch.q_beam import qbeam_builder
+from JAxtar.stars.astar import astar_builder
+from JAxtar.stars.astar_d import astar_d_builder
+from JAxtar.stars.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
-from .evaluation_runner import EvaluationRunner
+from .evaluation_runner import run_evaluation_sweep
 from .options import (
     eval_options,
     eval_puzzle_options,
@@ -33,51 +33,11 @@ def evaluation():
     pass
 
 
-def _run_evaluation_sweep(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    search_model: Union[Heuristic, QFunction],
-    search_model_name: str,
-    search_builder_fn: Callable,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    output_dir: Optional[Path] = None,
-    logger: Optional[BaseLogger] = None,
-    step: int = 0,
-    search_fn_cache: Optional[dict[int, Callable]] = None,
-    **kwargs,
-):
-    print_config(
-        "Evaluation Configuration",
-        {
-            "puzzle_options": puzzle_opts.dict(),
-            search_model_name: search_model.__class__.__name__,
-            f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
-            "eval_options": eval_options.dict(),
-        },
-    )
-    runner = EvaluationRunner(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=search_model,
-        search_model_name=search_model_name,
-        search_builder_fn=search_builder_fn,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        output_dir=output_dir,
-        logger=logger,
-        step=step,
-        search_fn_cache=search_fn_cache,
-        **kwargs,
-    )
-    runner.run()
-
-
-@evaluation.command(name="heuristic")
+@evaluation.command(name="astar")
 @eval_puzzle_options
 @eval_options
 @heuristic_options
-def eval_heuristic(
+def eval_astar(
     puzzle: Puzzle,
     puzzle_name: str,
     heuristic: Heuristic,
@@ -85,12 +45,13 @@ def eval_heuristic(
     puzzle_opts: PuzzleOptions,
     **kwargs,
 ):
-    """Evaluate a heuristic with optional parameter sweeps."""
-    _run_evaluation_sweep(
+    """Evaluate a heuristic-driven A* search with optional parameter sweeps."""
+    run_evaluation_sweep(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
         search_model=heuristic,
         search_model_name="heuristic",
+        run_label="astar",
         search_builder_fn=astar_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
@@ -98,11 +59,64 @@ def eval_heuristic(
     )
 
 
-@evaluation.command(name="qlearning")
+@evaluation.command(name="astar_d")
+@eval_puzzle_options
+@eval_options
+@heuristic_options
+def eval_astar_d(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    heuristic: Heuristic,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    **kwargs,
+):
+    """Evaluate a heuristic-driven A* Deferred search with optional parameter sweeps."""
+    run_evaluation_sweep(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=heuristic,
+        search_model_name="heuristic",
+        run_label="astar_d",
+        search_builder_fn=astar_d_builder,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        **kwargs,
+    )
+
+
+@evaluation.command(name="beam")
+@eval_puzzle_options
+@eval_options(variant="beam")
+@heuristic_options
+def eval_beam(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    heuristic: Heuristic,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    **kwargs,
+):
+    """Evaluate a heuristic-driven beam search with optional parameter sweeps."""
+    run_evaluation_sweep(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=heuristic,
+        search_model_name="heuristic",
+        run_label="beam",
+        search_builder_fn=beam_builder,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        node_metric_label="Beam Slots",
+        **kwargs,
+    )
+
+
+@evaluation.command(name="qstar")
 @eval_puzzle_options
 @eval_options
 @qfunction_options
-def eval_qlearning(
+def eval_qstar(
     puzzle: Puzzle,
     puzzle_name: str,
     qfunction: QFunction,
@@ -110,15 +124,43 @@ def eval_qlearning(
     puzzle_opts: PuzzleOptions,
     **kwargs,
 ):
-    """Evaluate a Q-function with optional parameter sweeps."""
-    _run_evaluation_sweep(
+    """Evaluate a Q*-style search with optional parameter sweeps."""
+    run_evaluation_sweep(
         puzzle=puzzle,
         puzzle_name=puzzle_name,
         search_model=qfunction,
         search_model_name="qfunction",
+        run_label="qstar",
         search_builder_fn=qstar_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
+        **kwargs,
+    )
+
+
+@evaluation.command(name="qbeam")
+@eval_puzzle_options
+@eval_options(variant="beam")
+@qfunction_options
+def eval_qbeam(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    qfunction: QFunction,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    **kwargs,
+):
+    """Evaluate a Q-beam search with optional parameter sweeps."""
+    run_evaluation_sweep(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=qfunction,
+        search_model_name="qfunction",
+        run_label="qbeam",
+        search_builder_fn=qbeam_builder,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        node_metric_label="Beam Slots",
         **kwargs,
     )
 

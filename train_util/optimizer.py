@@ -1,19 +1,44 @@
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 import jax
 import optax
 
 PyTree = Any
 
+
+def adoptw(
+    learning_rate: float,
+    weight_decay: float = None,
+    mask: Optional[PyTree] = None,
+    **adopt_kwargs: Any,
+) -> optax.GradientTransformation:
+    if weight_decay is not None:
+        return optax.chain(
+            optax.contrib.scale_by_adopt(
+                **adopt_kwargs,
+            ),
+            optax.add_decayed_weights(weight_decay, mask=mask),
+            optax.scale_by_learning_rate(learning_rate),
+        )
+    else:
+        return optax.chain(
+            optax.contrib.scale_by_adopt(
+                **adopt_kwargs,
+            ),
+            optax.scale_by_learning_rate(learning_rate),
+        )
+
+
 OPTIMIZERS = {
     "adam": optax.adamw,
     "schedule_free_adamw": optax.contrib.schedule_free_adamw,
     "nadam": lambda **kwargs: optax.adamw(nesterov=True, **kwargs),
-    "adopt": optax.contrib.adopt,
-    "nadopt": lambda **kwargs: optax.contrib.adopt(nesterov=True, **kwargs),
+    "adopt": adoptw,
+    "nadopt": lambda **kwargs: adoptw(nesterov=True, **kwargs),
+    "muon": optax.contrib.muon,
     "rmsprop": optax.rmsprop,
     "prodigy": optax.contrib.prodigy,
-    "lamb_adam": optax.lamb,  # This is a placeholder for the lamb optimizer
+    "lamb_adam": optax.lamb,
 }
 
 
@@ -29,6 +54,7 @@ def setup_optimizer(
     # Create the main decay schedule, making it conditional
     is_no_wd = weight_decay_size == 0.0
     in_prodigy = "prodigy" in optimizer_name
+    in_schedule_free = "schedule_free" in optimizer_name
 
     # Add warmup to the learning rate schedule
     lr = lr_init * num_devices if not in_prodigy else 1.0
@@ -40,15 +66,21 @@ def setup_optimizer(
         init_value=1e-6, end_value=lr, transition_steps=warmup_steps
     )
 
-    decay_schedule = optax.schedules.exponential_decay(
-        lr,
-        5000,
-        0.995,
-    )
-    # Combine the schedules
-    lr_schedule = optax.join_schedules(
-        schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
-    )
+    if not in_schedule_free:
+        decay_schedule = optax.schedules.exponential_decay(
+            lr,
+            5000,
+            0.995,
+        )
+        # Combine the schedules
+        lr_schedule = optax.join_schedules(
+            schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
+        )
+    else:
+        constant_schedule = optax.constant_schedule(lr)
+        lr_schedule = optax.join_schedules(
+            schedules=[warmup_schedule, constant_schedule], boundaries=[warmup_steps]
+        )
 
     def mask_batch_stat_or_bias(params):
         def mask_fn(path, value):
@@ -77,7 +109,7 @@ def setup_optimizer(
                 weight_decay=weight_decay_size,
                 mask=mask_tree,
             )
-        return scaler
+        return optax.chain(optax.clip_by_global_norm(1.0), scaler)
 
     optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
     opt_state = optimizer.init(params)

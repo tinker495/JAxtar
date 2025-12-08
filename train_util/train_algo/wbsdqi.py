@@ -9,7 +9,7 @@ from config.pydantic_models import (
     PuzzleOptions,
     WBSDistTrainOptions,
 )
-from JAxtar.qstar import qstar_builder
+from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.wbsdqi import (
     regression_replay_q_trainer_builder,

@@ -19,9 +19,9 @@ class TSPQ(QFunction):
         Get q values for all possible actions from the current state.
         For EmptyQFunction, this returns an array of zeros for each available move.
         """
-        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
+        neighbors, costs = self.puzzle.get_neighbours(solve_config, current)
         dists = jax.vmap(self._distance, in_axes=(None, 0))(solve_config, neighbors)
-        return dists
+        return dists + costs
 
     def _distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> float:
         """Computes Q-value using the same MST + 2-edge heuristic calculation.

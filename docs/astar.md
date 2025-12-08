@@ -31,9 +31,6 @@ These options define the puzzle environment to be solved.
 -   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
     -   Type: `String`
     -   Example: `python main.py astar -pargs '{"size": 4}'`
--   `-ps, --puzzle_size`: A simpler way to set the size for puzzles that support it.
-    -   Type: `String`
-    -   Default: `default`
 -   `-h, --hard`: If available, use a "hard" version of the puzzle.
     -   Type: `Flag`
 -   `-s, --seeds`: A comma-separated list of seeds for generating initial puzzle states. Using multiple seeds will run the solver multiple times.
@@ -46,19 +43,14 @@ These options control the behavior of the A\* search algorithm itself.
 
 -   `-m, --max_node_size`: The maximum number of nodes to explore. Supports scientific notation.
     -   Type: `String`
-    -   Default: `2e6`
 -   `-b, --batch_size`: The number of nodes to process in a single batch on the GPU.
     -   Type: `Integer`
-    -   Default: `10000`
 -   `-w, --cost_weight`: The weight `w` for the path cost in `f(n) = w * g(n) + h(n)`. A value of `1.0` is standard A\*, while a lower value (< 1.0) prioritizes nodes closer to the goal (greedy search), and a higher value (> 1.0) prioritizes exploring cheaper paths.
     -   Type: `Float`
-    -   Default: `0.9`
--   `--pop-ratio`: Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` percent of the best node's cost (e.g., 0.1 allows a 10% margin). A value of `inf` corresponds to a fixed-width beam search determined by the batch size.
+-   `-pr, --pop_ratio`: Ratio for popping nodes from the priority queue.
     -   Type: `Float`
-    -   Default: `inf`
 -   `-vm, --vmap_size`: The number of different initial states to solve in parallel using `jax.vmap`.
     -   Type: `Integer`
-    -   Default: `1`
 -   `--debug`: Disables JIT compilation for easier debugging.
     -   Type: `Flag`
 -   `--profile`: Enables `jax.profiler` and saves a trace to `tmp/tensorboard`.
@@ -72,6 +64,10 @@ These options determine which heuristic function to use for guiding the search.
 
 -   `-nn, --neural_heuristic`: Use a pre-trained neural network as the heuristic function. If not set, a default, non-ML heuristic is used.
     -   Type: `Flag`
+-   `--param-path`: Path to the heuristic parameter file.
+    -   Type: `String`
+-   `--model-type`: Type of the heuristic model.
+    -   Type: `String`
 
 ### Visualization Options (`@visualize_options`)
 

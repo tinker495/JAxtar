@@ -11,6 +11,24 @@ train_presets = {
         dataset_minibatch_size=32768,
         train_minibatch_size=32768,
     ),
+    "diffusion_distance": DistTrainOptions(
+        steps=int(1e4),
+        update_interval=16,
+        use_soft_update=True,
+        use_diffusion_distance=True,
+    ),
+    "diffusion_distance_mixture": DistTrainOptions(
+        steps=int(1e4),
+        update_interval=128,
+        use_diffusion_distance_mixture=True,
+    ),
+    "diffusion_distance_warmup": DistTrainOptions(
+        steps=int(1e4),
+        update_interval=128,
+        use_diffusion_distance=True,
+        use_diffusion_distance_warmup=True,
+        diffusion_distance_warmup_steps=500,
+    ),
 }
 
 wbs_train_presets = {

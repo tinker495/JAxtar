@@ -23,8 +23,9 @@ class SokobanQ(QFunction):
         Computes Q values as the distances between each neighboring state (generated from current)
         and the target state.
         """
-        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
-        return jax.vmap(self._distance, in_axes=(0, None))(neighbors, solve_config.TargetState)
+        neighbors, costs = self.puzzle.get_neighbours(solve_config, current)
+        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, solve_config.TargetState)
+        return dists + costs
 
     def _distance(self, current: Sokoban.State, target: Sokoban.State) -> float:
         """

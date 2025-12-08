@@ -20,9 +20,9 @@ class DotKnotQ(QFunction):
         """
         Get q values for all possible actions from current state.
         """
-        neighbors, _ = self.puzzle.get_neighbours(solve_config, current)
-        dists = jax.vmap(self._distance, in_axes=(0))(neighbors)
-        return dists
+        neighbors, costs = self.puzzle.get_neighbours(solve_config, current)
+        dists = jax.vmap(self._distance, in_axes=(0, None))(neighbors, solve_config.TargetState)
+        return dists + costs
 
     def _distance(self, current: DotKnot.State) -> float:
         """

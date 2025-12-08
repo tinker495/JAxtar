@@ -1,3 +1,4 @@
+from .benchmark_registry import benchmark_bundles
 from .puzzle_registry import puzzle_bundles
 from .pydantic_models import (
     DistQFunctionOptions,
@@ -22,6 +23,7 @@ from .world_model_registry import world_model_bundles
 
 __all__ = [
     "puzzle_bundles",
+    "benchmark_bundles",
     "world_model_bundles",
     "train_presets",
     "wbs_train_presets",
