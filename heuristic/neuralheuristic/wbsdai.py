@@ -13,6 +13,10 @@ from heuristic.neuralheuristic.neuralheuristic_base import (
 )
 from JAxtar.stars.astar import astar_builder
 from train_util.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
+from train_util.util import (
+    apply_with_conditional_batch_stats,
+    build_new_params_from_updates,
+)
 from train_util.wbsampling import get_one_solved_branch_distance_samples
 
 
@@ -28,10 +32,10 @@ def regression_replay_trainer_builder(
         states: chex.Array,
         target_heuristic: chex.Array,
     ):
-        current_heuristic, variable_updates = heuristic_model.apply(
-            heuristic_params, states, training=True, mutable=["batch_stats"]
+        current_heuristic, variable_updates = apply_with_conditional_batch_stats(
+            heuristic_model.apply, heuristic_params, states, training=True
         )
-        heuristic_params["batch_stats"] = variable_updates["batch_stats"]
+        heuristic_params = build_new_params_from_updates(heuristic_params, variable_updates)
         diff = target_heuristic.squeeze() - current_heuristic.squeeze()
         loss = jnp.mean(optax.log_cosh(current_heuristic.squeeze(), target_heuristic.squeeze()))
         return loss, (heuristic_params, diff)

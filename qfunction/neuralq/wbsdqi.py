@@ -11,6 +11,10 @@ from xtructure import xtructure_numpy as xnp
 from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import QModelBase as QModel
 from train_util.replay import BUFFER_STATE_TYPE, BUFFER_TYPE
+from train_util.util import (
+    apply_with_conditional_batch_stats,
+    build_new_params_from_updates,
+)
 from train_util.wbsampling import get_one_solved_branch_q_samples
 
 
@@ -27,10 +31,10 @@ def regression_replay_q_trainer_builder(
         actions: chex.Array,
         target_q: chex.Array,
     ):
-        q_values, variable_updates = qfunction.apply(
-            q_params, states, training=True, mutable=["batch_stats"]
+        q_values, variable_updates = apply_with_conditional_batch_stats(
+            qfunction.apply, q_params, states, training=True
         )
-        q_params["batch_stats"] = variable_updates["batch_stats"]
+        q_params = build_new_params_from_updates(q_params, variable_updates)
         q_values_at_actions = jnp.take_along_axis(q_values, actions[:, jnp.newaxis], axis=1)
         diff = target_q.squeeze() - q_values_at_actions.squeeze()
         loss = jnp.mean(optax.log_cosh(q_values_at_actions.squeeze(), target_q.squeeze()))
