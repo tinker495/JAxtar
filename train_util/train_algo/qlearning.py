@@ -69,6 +69,10 @@ def run_qlearning_training(
             temperature=train_options.temperature,
             td_error_clip=train_options.td_error_clip,
             use_double_dqn=train_options.use_double_dqn,
+            use_diffusion_distance=train_options.use_diffusion_distance,
+            use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
+            use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
+            diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
         )
         return trainer, datasets
 

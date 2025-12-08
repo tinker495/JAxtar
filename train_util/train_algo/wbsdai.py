@@ -14,7 +14,7 @@ from heuristic.neuralheuristic.wbsdai import (
     regression_replay_trainer_builder,
     wbsdai_dataset_builder,
 )
-from JAxtar.astar import astar_builder
+from JAxtar.stars.astar import astar_builder
 
 from .base_wbs_learning import ReplayMetrics, run_wbs_learning
 

@@ -14,7 +14,7 @@ from heuristic.neuralheuristic.davi import (
     regression_trainer_builder,
 )
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from JAxtar.astar import astar_builder
+from JAxtar.stars.astar import astar_builder
 
 from .base_td_learning import DatasetMetrics, run_td_learning
 
@@ -69,6 +69,10 @@ def run_davi_training(
             n_devices=n_devices,
             temperature=train_options.temperature,
             td_error_clip=train_options.td_error_clip,
+            use_diffusion_distance=train_options.use_diffusion_distance,
+            use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
+            use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
+            diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
         )
         return trainer, datasets
 
