@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from puxle import Puzzle
 
-from JAxtar.search_base import Current, HashIdx, Parent, SearchResult
+from JAxtar.stars.search_base import Current, HashIdx, Parent, SearchResult
 
 PARAM_DTYPE: TypeAlias = Any
 
