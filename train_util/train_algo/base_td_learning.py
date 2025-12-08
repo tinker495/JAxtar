@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 from puxle import Puzzle
 
-from cli.eval_commands import _run_evaluation_sweep
+from cli.eval_commands import run_evaluation_sweep
 from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import BaseLogger, create_logger
@@ -189,7 +189,7 @@ def run_td_learning(
             if eval_options.num_eval > 0:
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pause_ctx():
-                    _run_evaluation_sweep(
+                    run_evaluation_sweep(
                         puzzle=puzzle,
                         puzzle_name=puzzle_name,
                         search_model=model,
@@ -212,7 +212,7 @@ def run_td_learning(
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         with pause_ctx():
-            _run_evaluation_sweep(
+            run_evaluation_sweep(
                 puzzle=puzzle,
                 puzzle_name=puzzle_name,
                 search_model=model,

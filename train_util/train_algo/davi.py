@@ -10,7 +10,7 @@ from config.pydantic_models import (
     PuzzleOptions,
 )
 from heuristic.neuralheuristic.davi import (
-    get_davi_dataset_builder,
+    get_heuristic_dataset_builder,
     regression_trainer_builder,
 )
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
@@ -57,7 +57,7 @@ def run_davi_training(
             replay_ratio=train_options.replay_ratio,
             td_error_clip=train_options.td_error_clip,
         )
-        datasets = get_davi_dataset_builder(
+        datasets = get_heuristic_dataset_builder(
             puzzle,
             heuristic.pre_process,
             heuristic.model,

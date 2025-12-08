@@ -13,7 +13,7 @@ import numpy as np
 from flashbax.utils import get_timestep_count
 from puxle import Puzzle
 
-from cli.eval_commands import _run_evaluation_sweep
+from cli.eval_commands import run_evaluation_sweep
 from config.pydantic_models import EvalOptions, PuzzleOptions, WBSDistTrainOptions
 from helpers.config_printer import print_config
 from helpers.formatting import human_format
@@ -184,7 +184,7 @@ def run_wbs_learning(
             model.params = params
             eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
             with pause_ctx():
-                _run_evaluation_sweep(
+                run_evaluation_sweep(
                     puzzle=puzzle,
                     puzzle_name=puzzle_name,
                     search_model=model,
@@ -207,7 +207,7 @@ def run_wbs_learning(
     if eval_options.num_eval > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         with pause_ctx():
-            _run_evaluation_sweep(
+            run_evaluation_sweep(
                 puzzle=puzzle,
                 puzzle_name=puzzle_name,
                 search_model=model,
