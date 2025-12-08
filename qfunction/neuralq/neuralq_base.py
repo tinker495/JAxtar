@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from typing import Any
 
 import chex
 import jax
@@ -156,10 +157,27 @@ class NeuralQFunctionBase(QFunction):
         save_params_with_metadata(path, self.params, combined_metadata)
         self.metadata = combined_metadata
 
+    def prepare_q_parameters(
+        self, solve_config: Puzzle.SolveConfig, **kwargs: Any
+    ) -> tuple[Any, Puzzle.SolveConfig]:
+        """
+        This function prepares the parameters for use in Q-value calculations.
+        By default, it returns the solve config unchanged. Subclasses can override
+        this to transform the solve config into a more efficient representation,
+        such as embedding it into a special vector (e.g., via a neural network)
+        to guide the search toward the goal.
+        """
+        if "params" in kwargs and kwargs["params"] is not None:
+            params = kwargs["params"]
+        else:
+            params = self.params
+        return (params, solve_config)
+
     def batched_q_value(
-        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State
     ) -> chex.Array:
-        return self.batched_param_q_value(self.params, solve_config, current)
+        params, solve_config = q_parameters
+        return self.batched_param_q_value(params, solve_config, current)
 
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
@@ -174,11 +192,12 @@ class NeuralQFunctionBase(QFunction):
     ) -> chex.Array:
         return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
 
-    def q_value(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
+    def q_value(self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State) -> float:
         """
         This function should return the distance between the state and the target.
         """
-        return self.param_q_value(self.params, solve_config, current)[0]
+        params, solve_config = q_parameters
+        return self.param_q_value(params, solve_config, current)[0]
 
     def param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State

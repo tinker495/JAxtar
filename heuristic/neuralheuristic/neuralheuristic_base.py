@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from typing import Any
 
 import chex
 import jax
@@ -150,10 +151,27 @@ class NeuralHeuristicBase(Heuristic):
         save_params_with_metadata(path, self.params, combined_metadata)
         self.metadata = combined_metadata
 
+    def prepare_heuristic_parameters(
+        self, solve_config: Puzzle.SolveConfig, **kwargs: Any
+    ) -> tuple[Any, Puzzle.SolveConfig]:
+        """
+        This function prepares the parameters for use in distance calculations.
+        By default, it returns the solve config unchanged. Subclasses can override
+        this to transform the solve config into a more efficient representation,
+        such as embedding it into a special vector (e.g., via a neural network)
+        to guide the search toward the goal.
+        """
+        if "params" in kwargs and kwargs["params"] is not None:
+            params = kwargs["params"]
+        else:
+            params = self.params
+        return (params, solve_config)
+
     def batched_distance(
-        self, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, heuristic_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State
     ) -> chex.Array:
-        return self.batched_param_distance(self.params, solve_config, current)
+        params, solve_config = heuristic_parameters
+        return self.batched_param_distance(params, solve_config, current)
 
     def batched_param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
@@ -168,11 +186,14 @@ class NeuralHeuristicBase(Heuristic):
     ) -> chex.Array:
         return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
 
-    def distance(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
+    def distance(
+        self, heuristic_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State
+    ) -> float:
         """
         This function should return the distance between the state and the target.
         """
-        return float(self.param_distance(self.params, solve_config, current)[0])
+        params, solve_config = heuristic_parameters
+        return float(self.param_distance(params, solve_config, current)[0])
 
     def param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State

@@ -1,4 +1,5 @@
 import time
+from typing import Any
 
 import chex
 import jax
@@ -58,6 +59,7 @@ def astar_builder(
     def astar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
+        params: Any = None,
     ) -> SearchResult:
         """
         astar is the implementation of the A* algorithm.
@@ -65,6 +67,7 @@ def astar_builder(
         search_result: SearchResult = SearchResult.build(
             statecls, batch_size, max_nodes, pop_ratio=pop_ratio, min_pop=min_pop
         )
+        heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, params=params)
 
         (
             search_result.hashtable,
@@ -174,7 +177,7 @@ def astar_builder(
 
             def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
                 neighbour_heur = variable_heuristic_batch_switcher(
-                    solve_config, neighbour, new_states_mask
+                    heuristic_parameters, neighbour, new_states_mask
                 ).astype(KEY_DTYPE)
                 # cache the heuristic value
                 search_result.dist = xnp.update_on_condition(

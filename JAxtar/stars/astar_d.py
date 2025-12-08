@@ -1,4 +1,5 @@
 import time
+from typing import Any
 
 import chex
 import jax
@@ -77,6 +78,7 @@ def astar_d_builder(
     def astar_d(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
+        params: Any = None,
     ) -> SearchResult:
         """
         astar_d is the implementation of the A* with deferred search algorithm.
@@ -89,6 +91,7 @@ def astar_d_builder(
             min_pop=min_pop,
             parant_with_costs=True,
         )
+        heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, params=params)
 
         (
             search_result.hashtable,
@@ -207,7 +210,7 @@ def astar_d_builder(
                     # 2. Compute: Run batch switcher on packed data
                     # variable_heuristic_batch_switcher handles skipping based on filled count
                     h_val_sorted = variable_heuristic_batch_switcher(
-                        solve_config, sorted_states, sorted_mask
+                        heuristic_parameters, sorted_states, sorted_mask
                     )
 
                     # 3. Scatter: Restore original order
@@ -247,7 +250,7 @@ def astar_d_builder(
                 # the *actions* leading to its children. The children themselves are not
                 # generated or evaluated yet.
                 heuristic_vals = variable_heuristic_batch_switcher(
-                    solve_config, states, filled
+                    heuristic_parameters, states, filled
                 )  # [batch_size]
                 heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)  # [batch_size]
                 heuristic_vals = jnp.tile(

@@ -1,4 +1,5 @@
 import time
+from typing import Any
 
 import chex
 import jax
@@ -65,6 +66,7 @@ def qstar_builder(
     def qstar(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
+        params: Any = None,
     ) -> SearchResult:
         """
         qstar is the implementation of the Q* algorithm.
@@ -77,6 +79,7 @@ def qstar_builder(
             min_pop=min_pop,
             parant_with_costs=True,
         )
+        q_parameters = q_fn.prepare_q_parameters(solve_config, params=params)
 
         (
             search_result.hashtable,
@@ -120,7 +123,7 @@ def qstar_builder(
 
             # Compute Q-values for parent states (not neighbors)
             # This gives us Q(s, a) for all actions from parent states
-            q_vals = variable_q_batch_switcher(solve_config, states, filled)
+            q_vals = variable_q_batch_switcher(q_parameters, states, filled)
             q_vals = q_vals.transpose().astype(KEY_DTYPE)  # [action_size, batch_size]
 
             neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)

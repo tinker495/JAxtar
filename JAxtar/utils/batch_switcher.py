@@ -54,7 +54,7 @@ def variable_batch_switcher_builder(
             batch_sizes.append(0)
 
             # Branch for 0 batch size: return array of pad_value without calling eval_fn
-            def zero_branch(solve_config, current):
+            def zero_branch(distance_fn_parameters, current):
                 # Just return an array of pad_value with shape [max_batch_size, ...]
                 # We need to know the output shape/dtype.
                 # Since we can't infer it easily without calling eval_fn,
@@ -86,7 +86,7 @@ def variable_batch_switcher_builder(
 
                 # Let's try standard path: slice 0 -> eval_fn -> pad.
                 sliced_current = current[:0]
-                values = eval_fn(solve_config, sliced_current)
+                values = eval_fn(distance_fn_parameters, sliced_current)
                 return _pad_leading_axis(values, max_batch_size, pad_value)
 
             branches.append(zero_branch)
@@ -97,9 +97,9 @@ def variable_batch_switcher_builder(
         pad_width = max_batch_size - current_batch
 
         def make_branch(batch_size: int, pad_width: int):
-            def branch(solve_config, current):
+            def branch(distance_fn_parameters, current):
                 sliced_current = current[:batch_size]
-                values = eval_fn(solve_config, sliced_current)
+                values = eval_fn(distance_fn_parameters, sliced_current)
                 return _pad_leading_axis(values, pad_width, pad_value)
 
             return branch
@@ -129,7 +129,7 @@ def variable_batch_switcher_builder(
     num_branches = len(branches)
 
     def variable_batch_switcher(
-        solve_config,
+        distance_fn_parameters,
         current,
         filled: chex.Array,
     ):
@@ -141,7 +141,7 @@ def variable_batch_switcher_builder(
         return jax.lax.switch(
             branch_index,
             tuple(branches),
-            solve_config,
+            distance_fn_parameters,
             current,
         )
 
