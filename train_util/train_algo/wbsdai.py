@@ -14,7 +14,7 @@ from heuristic.neuralheuristic.wbsdai import (
     regression_replay_trainer_builder,
     wbsdai_dataset_builder,
 )
-from JAxtar.stars.astar import astar_builder
+from JAxtar.stars.astar_d import astar_d_builder
 
 from .base_wbs_learning import ReplayMetrics, run_wbs_learning
 
@@ -84,7 +84,7 @@ def run_wbsdai_training(
         checkpoint_prefix="heuristic",
         build_components=build_components,
         metrics_fn=extract_metrics,
-        eval_search_builder_fn=astar_builder,
+        eval_search_builder_fn=astar_d_builder,
         eval_kwargs=kwargs,
         replay_use_action=False,
     )
