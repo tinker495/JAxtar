@@ -5,6 +5,7 @@ imageio
 click
 rich
 pre-commit
+ruff
 pytest
 jax[tpu]
 chex

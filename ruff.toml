@@ -1,0 +1,45 @@
+# Ruff configuration file
+# Replaces flake8, black, and isort
+
+# Line length for formatting (matching black's --line-length=100)
+line-length = 100
+
+# Target Python version
+target-version = "py39"
+
+# Enable import sorting (replaces isort)
+[lint.isort]
+known-first-party = []
+
+# Linting rules
+[lint]
+# Select all rules except those we want to ignore
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "PIE", # flake8-pie
+    "SIM", # flake8-simplify
+]
+
+# Ignore rules that match previous flake8 configuration
+ignore = [
+    "E121",  # continuation line indentation
+    "E123",  # closing bracket indentation
+    "E126",  # continuation line over-indented
+    "E203",  # whitespace before ':'
+    "E226",  # missing whitespace around arithmetic operator
+    "E24",   # whitespace around ':' (covered by E203, E226)
+    "E704",  # multiple statements on one line (def)
+    "W503",  # line break before binary operator
+    "W504",  # line break after binary operator
+]
+
+# Per-file ignores
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports (matching flake8 --per-file-ignores)
