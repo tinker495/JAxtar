@@ -56,6 +56,7 @@ def qbeam_builder(
             beam_width,
             max_depth,
         )
+        q_parameters = q_fn.prepare_q_parameters(solve_config)
 
         result.beam = result.beam.at[0].set(start)
         result.cost = result.cost.at[0].set(0)
@@ -93,7 +94,7 @@ def qbeam_builder(
             child_costs = jnp.where(child_valid, child_costs, jnp.inf)
 
             def _compute_q(_):
-                vals = variable_q_batch_switcher(solve_config, beam_states, filled_mask)
+                vals = variable_q_batch_switcher(q_parameters, beam_states, filled_mask)
                 vals = vals.transpose().astype(KEY_DTYPE)
                 return jnp.where(child_valid, vals, jnp.inf)
 
