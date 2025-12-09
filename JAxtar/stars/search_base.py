@@ -211,18 +211,6 @@ class SearchResult:
         This is the number of states in the founded set."""
         return self.hashtable.size
 
-    @property
-    def opened_size(self) -> int:
-        """Current number of states stored in the opened set.
-        This is the number of states in the hash table but not in the closed set."""
-        return self.generated_size - self.closed_size
-
-    @property
-    def closed_size(self) -> int:
-        """Current number of states stored in the closed set.
-        This is the number of states in the closed set."""
-        return jnp.sum(jnp.isfinite(self.cost))
-
     def pop_full(search_result, **kwargs) -> tuple["SearchResult", Current, chex.Array]:
         if isinstance(search_result.priority_queue.val_store, Current):
             return search_result._pop_full_with_current(**kwargs)
