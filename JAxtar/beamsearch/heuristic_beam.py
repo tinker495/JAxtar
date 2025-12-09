@@ -56,13 +56,14 @@ def beam_builder(
             beam_width,
             max_depth,
         )
+        heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config)
 
         result.beam = result.beam.at[0].set(start)
         result.cost = result.cost.at[0].set(0)
 
         init_filled = jnp.zeros(beam_width, dtype=jnp.bool_).at[0].set(True)
         start_dist = variable_heuristic_batch_switcher(
-            solve_config, result.beam, init_filled
+            heuristic_parameters, result.beam, init_filled
         ).astype(KEY_DTYPE)[0]
         start_score = (cost_weight * result.cost[0] + start_dist).astype(KEY_DTYPE)
         result.dist = result.dist.at[0].set(start_dist)
@@ -159,7 +160,7 @@ def beam_builder(
                 def _calc(_):
                     chunk_states = chunk_states_tree[i]
                     dist_row = variable_heuristic_batch_switcher(
-                        solve_config,
+                        heuristic_parameters,
                         chunk_states,
                         row_mask,
                     ).astype(KEY_DTYPE)
