@@ -38,6 +38,28 @@ def extract_heuristic_accuracy_data(
     actions_int = None
 
     try:
+        heuristic_params = (
+            heuristic_model.prepare_heuristic_parameters(solve_config)
+            if heuristic_model is not None
+            else None
+        )
+        qfunction_params = (
+            qfunction_model.prepare_q_parameters(solve_config)
+            if qfunction_model is not None
+            else None
+        )
+
+        def _evaluate_model(state):
+            if heuristic_model is not None:
+                params = heuristic_params if heuristic_params is not None else solve_config
+                return float(heuristic_model.distance(params, state))
+            if qfunction_model is not None:
+                params = qfunction_params if qfunction_params is not None else solve_config
+                q_vals = qfunction_model.q_value(params, state)
+                q_vals_arr = jnp.asarray(q_vals)
+                return float(jnp.min(q_vals_arr))
+            return None
+
         if action_sequence is not None:
             actions_int = []
             action_lookup = None
@@ -83,12 +105,7 @@ def extract_heuristic_accuracy_data(
             # This matches how search algorithms (like search_base.py) update 'dist'
             # by evaluating the state when it is generated.
             for step in path_steps:
-                step.dist = _evaluate_model(
-                    step.state,
-                    solve_config,
-                    heuristic_model,
-                    qfunction_model,
-                )
+                step.dist = _evaluate_model(step.state)
 
         elif path_states is not None:
             # Construct path steps from states
@@ -142,7 +159,7 @@ def extract_heuristic_accuracy_data(
 
                 # Evaluate current state's dist (heuristic/Q-value)
                 steps[-1].dist = _evaluate_model(
-                    curr_s, solve_config, heuristic_model, qfunction_model
+                    curr_s,
                 )
 
                 current_cost += step_cost
@@ -153,7 +170,7 @@ def extract_heuristic_accuracy_data(
             # Update the final state's distance
             if valid_path and steps:
                 steps[-1].dist = _evaluate_model(
-                    steps[-1].state, solve_config, heuristic_model, qfunction_model
+                    steps[-1].state,
                 )
                 path_steps = steps
 
@@ -192,21 +209,3 @@ def extract_heuristic_accuracy_data(
 
     except Exception:
         return None
-
-
-def _evaluate_model(
-    state,
-    solve_config,
-    heuristic,
-    q_fn,
-) -> Optional[float]:
-    """Evaluates the model (Heuristic or Q-Function) on a given state."""
-    if heuristic is not None:
-        return float(heuristic.distance(solve_config, state))
-    if q_fn is not None:
-        # For Q-function, the 'heuristic' value of a state is typically min Q(s, a)
-        # representing the estimated cost-to-go from state s.
-        q_vals = q_fn.q_value(solve_config, state)
-        q_vals_arr = jnp.asarray(q_vals)
-        return float(jnp.min(q_vals_arr))
-    return None

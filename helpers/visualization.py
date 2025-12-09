@@ -377,6 +377,10 @@ def build_path_steps_from_actions(
     dists=None,
 ) -> List[PathStep]:
     steps: List[PathStep] = []
+    heuristic_params = (
+        heuristic.prepare_heuristic_parameters(solve_config) if heuristic is not None else None
+    )
+    q_fn_params = q_fn.prepare_q_parameters(solve_config) if q_fn is not None else None
 
     # Normalise actions to Python ints and drop any padding sentinel.
     action_sequence: List[int] = []
@@ -404,9 +408,12 @@ def build_path_steps_from_actions(
                 val = float(val)
             return float(val)
         if heuristic is not None:
-            return float(heuristic.distance(solve_config, current_state))
+            # Prefer prepared params when available to mirror search-time evaluation.
+            params = heuristic_params if heuristic_params is not None else solve_config
+            return float(heuristic.distance(params, current_state))
         if q_fn is not None:
-            q_vals = q_fn.q_value(solve_config, current_state)
+            params = q_fn_params if q_fn_params is not None else solve_config
+            q_vals = q_fn.q_value(params, current_state)
             return float(jnp.min(jnp.asarray(q_vals)))
         return None
 
