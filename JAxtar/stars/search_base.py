@@ -9,6 +9,7 @@ Key features:
 """
 
 from functools import partial
+from typing import Any
 
 import chex
 import jax
@@ -72,6 +73,20 @@ class Parant_with_Costs:
     parent: FieldDescriptor.scalar(dtype=Parent)
     cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
     dist: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+
+
+@chex.dataclass
+class LoopState:
+    """
+    Unified loop state for search loops (A*, Q*, A*_d).
+    Tracks hash indices, costs, and masks; states can be fetched on demand.
+    """
+
+    search_result: "SearchResult"
+    solve_config: Puzzle.SolveConfig
+    params: Any
+    current: Current
+    filled: chex.Array
 
 
 @base_dataclass
@@ -307,7 +322,7 @@ class SearchResult:
         puzzle: Puzzle,
         solve_config: Puzzle.SolveConfig,
         use_heuristic: bool = False,
-    ) -> tuple["SearchResult", Current, chex.Array, chex.Array]:
+    ) -> tuple["SearchResult", Current, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
@@ -327,7 +342,6 @@ class SearchResult:
             tuple: Contains:
                 - Updated SearchResult
                 - A batch of the best values to be processed (Current)
-                - Next states (S')
                 - A boolean mask indicating which entries in the batch are valid
         """
 
@@ -526,7 +540,7 @@ class SearchResult:
         )
         search_result.pop_count += 1
 
-        return search_result, final_currents, final_states, final_process_mask
+        return search_result, final_currents, final_process_mask
 
     def get_solved_path(search_result) -> list[Parent]:
         """
