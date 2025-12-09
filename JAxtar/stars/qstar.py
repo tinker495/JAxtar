@@ -45,7 +45,7 @@ def _qstar_loop_builder(
     # The formula (batch_size // (puzzle.action_size // 2)) is chosen to balance the number of expansions per batch,
     # so that each batch is filled as evenly as possible and computational resources are used efficiently.
     variable_q_batch_switcher = variable_batch_switcher_builder(
-        lambda solve_config, current: q_fn.batched_q_value(solve_config, current),
+        q_fn.batched_q_value,
         max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,

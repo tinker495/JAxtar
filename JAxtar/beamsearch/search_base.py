@@ -9,6 +9,7 @@ builders.
 
 import math
 from functools import partial
+from typing import Any
 
 import chex
 import jax
@@ -23,6 +24,13 @@ ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
 TRACE_INDEX_DTYPE = jnp.uint32
 TRACE_INVALID_INT = int(jnp.iinfo(TRACE_INDEX_DTYPE).max)
 TRACE_INVALID = jnp.array(TRACE_INVALID_INT, dtype=TRACE_INDEX_DTYPE)
+
+
+@chex.dataclass
+class BeamSearchLoopState:
+    search_result: "BeamSearchResult"
+    solve_config: Puzzle.SolveConfig
+    params: Any
 
 
 @base_dataclass

@@ -33,7 +33,7 @@ def _astar_d_loop_builder(
     statecls = puzzle.State
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
-        lambda solve_config, current: heuristic.batched_distance(solve_config, current),
+        heuristic.batched_distance,
         max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
