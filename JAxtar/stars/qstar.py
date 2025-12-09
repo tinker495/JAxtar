@@ -226,7 +226,9 @@ def _qstar_loop_builder(
             search_result,
             (neighbour_keys, vals, optimal_mask),
         )
-        search_result, min_val, filled = search_result.pop_full_with_actions(puzzle, solve_config)
+        search_result, min_val, filled = search_result.pop_full(
+            puzzle=puzzle, solve_config=solve_config
+        )
 
         return LoopState(
             search_result=search_result,

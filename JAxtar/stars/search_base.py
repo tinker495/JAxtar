@@ -223,7 +223,15 @@ class SearchResult:
         This is the number of states in the closed set."""
         return jnp.sum(jnp.isfinite(self.cost))
 
-    def pop_full(search_result) -> tuple["SearchResult", Current, chex.Array]:
+    def pop_full(search_result, **kwargs) -> tuple["SearchResult", Current, chex.Array]:
+        if isinstance(search_result.priority_queue.val_store, Current):
+            return search_result._pop_full_with_current(**kwargs)
+        else:
+            return search_result._pop_full_with_parent_with_costs(**kwargs)
+
+    def _pop_full_with_current(
+        search_result, **kwargs
+    ) -> tuple["SearchResult", Current, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
@@ -317,11 +325,12 @@ class SearchResult:
 
         return search_result, min_val, final_process_mask
 
-    def pop_full_with_actions(
+    def _pop_full_with_parent_with_costs(
         search_result,
         puzzle: Puzzle,
         solve_config: Puzzle.SolveConfig,
         use_heuristic: bool = False,
+        **kwargs,
     ) -> tuple["SearchResult", Current, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining

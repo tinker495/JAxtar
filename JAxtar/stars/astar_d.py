@@ -236,8 +236,8 @@ def _astar_d_loop_builder(
             search_result,
             (neighbour_keys, vals, optimal_unique_mask),
         )
-        search_result, min_val, filled = search_result.pop_full_with_actions(
-            puzzle, solve_config, use_heuristic=True
+        search_result, min_val, filled = search_result.pop_full(
+            puzzle=puzzle, solve_config=solve_config, use_heuristic=True
         )
 
         return LoopState(
