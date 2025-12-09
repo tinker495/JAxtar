@@ -9,6 +9,7 @@ Key features:
 """
 
 from functools import partial
+from typing import Any
 
 import chex
 import jax
@@ -72,6 +73,20 @@ class Parant_with_Costs:
     parent: FieldDescriptor.scalar(dtype=Parent)
     cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
     dist: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+
+
+@chex.dataclass
+class LoopState:
+    """
+    Unified loop state for search loops (A*, Q*, A*_d).
+    Tracks hash indices, costs, and masks; states can be fetched on demand.
+    """
+
+    search_result: "SearchResult"
+    solve_config: Puzzle.SolveConfig
+    params: Any
+    current: Current
+    filled: chex.Array
 
 
 @base_dataclass
@@ -196,19 +211,15 @@ class SearchResult:
         This is the number of states in the founded set."""
         return self.hashtable.size
 
-    @property
-    def opened_size(self) -> int:
-        """Current number of states stored in the opened set.
-        This is the number of states in the hash table but not in the closed set."""
-        return self.generated_size - self.closed_size
+    def pop_full(search_result, **kwargs) -> tuple["SearchResult", Current, chex.Array]:
+        if isinstance(search_result.priority_queue.val_store, Current):
+            return search_result._pop_full_with_current(**kwargs)
+        else:
+            return search_result._pop_full_with_parent_with_costs(**kwargs)
 
-    @property
-    def closed_size(self) -> int:
-        """Current number of states stored in the closed set.
-        This is the number of states in the closed set."""
-        return jnp.sum(jnp.isfinite(self.cost))
-
-    def pop_full(search_result) -> tuple["SearchResult", Current, chex.Array]:
+    def _pop_full_with_current(
+        search_result, **kwargs
+    ) -> tuple["SearchResult", Current, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
@@ -302,12 +313,13 @@ class SearchResult:
 
         return search_result, min_val, final_process_mask
 
-    def pop_full_with_actions(
+    def _pop_full_with_parent_with_costs(
         search_result,
         puzzle: Puzzle,
         solve_config: Puzzle.SolveConfig,
         use_heuristic: bool = False,
-    ) -> tuple["SearchResult", Current, chex.Array, chex.Array]:
+        **kwargs,
+    ) -> tuple["SearchResult", Current, chex.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
@@ -327,7 +339,6 @@ class SearchResult:
             tuple: Contains:
                 - Updated SearchResult
                 - A batch of the best values to be processed (Current)
-                - Next states (S')
                 - A boolean mask indicating which entries in the batch are valid
         """
 
@@ -526,7 +537,7 @@ class SearchResult:
         )
         search_result.pop_count += 1
 
-        return search_result, final_currents, final_states, final_process_mask
+        return search_result, final_currents, final_process_mask
 
     def get_solved_path(search_result) -> list[Parent]:
         """
