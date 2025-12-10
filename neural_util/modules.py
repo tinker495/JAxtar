@@ -161,7 +161,7 @@ class ResBlock(nn.Module):
         out_dim = x0.shape[-1]
         for _ in range(self.hidden_N):
             if self.use_swiglu:
-                x = swiglu_fn(self.node_size, self.activation, self.norm_fn)(x, training)
+                x = swiglu_fn(self.node_size, self.activation)(x)
             else:
                 x = nn.Dense(self.node_size, dtype=DTYPE)(x)
                 x = self.norm_fn(x, training)
@@ -189,13 +189,9 @@ class PreActivationResBlock(nn.Module):
         residual = self.activation(residual)
         for _ in range(self.hidden_N):
             if self.use_swiglu:
-                residual = swiglu_fn(self.node_size, self.activation, self.norm_fn)(
-                    residual, training
-                )
+                residual = swiglu_fn(self.node_size, self.activation)(residual)
             else:
-                residual = nn.Dense(self.node_size, dtype=DTYPE)(
-                    residual
-                )
+                residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
                 residual = self.activation(residual)
 
         if self.zero_init_last:

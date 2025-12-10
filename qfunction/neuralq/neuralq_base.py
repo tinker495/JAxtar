@@ -40,7 +40,7 @@ class QModelBase(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         if self.use_swiglu:
-            x = swiglu_fn(self.initial_dim, self.activation, self.norm_fn)(x, training)
+            x = swiglu_fn(self.initial_dim, self.activation)(x)
         else:
             x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training)
