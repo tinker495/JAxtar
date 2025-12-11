@@ -14,7 +14,7 @@ from neural_util.modules import (
     HEAD_DTYPE,
     PreActivationResBlock,
     ResBlock,
-    swiglu_fn,
+    Swiglu,
 )
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
@@ -40,7 +40,7 @@ class QModelBase(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         if self.use_swiglu:
-            x = swiglu_fn(self.initial_dim, self.activation)(x)
+            x = Swiglu(self.initial_dim)(x)
         else:
             x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training)

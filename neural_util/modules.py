@@ -88,26 +88,35 @@ def get_norm_fn(norm_name_or_fn=None):
     raise TypeError(f"norm_fn must be a string or callable, got {type(norm_name_or_fn)}")
 
 
-def swiglu_fn(hidden_N, base_activation=nn.silu, norm_fn=None, param_matching=False):
-    target_hidden = hidden_N
-    if param_matching:  # match parameter count with non-gated MLP
-        target_hidden = max(1, (2 * hidden_N) // 3)
+class Trueswish(nn.Module):
+    @nn.compact
+    def __call__(self, x, training=False):
+        Beta = self.param("beta", nn.initializers.ones, (x.shape[-1],))
+        return x * nn.sigmoid(x * Beta)
 
-    def _swiglu_fn(x, training=False):
-        x = nn.Dense(2 * target_hidden, dtype=DTYPE)(x)
+
+class Swiglu(nn.Module):
+    hidden_N: int = None
+    norm_fn: Callable = None
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        if self.hidden_N is None:
+            hidden_N = x.shape[-1]
+        else:
+            hidden_N = self.hidden_N
+        x = nn.Dense(2 * hidden_N, dtype=DTYPE)(x)
         x, gate = jnp.split(x, 2, axis=-1)
-        if norm_fn is not None:
-            gate = norm_fn(gate, training)
-        return x * base_activation(gate)
-
-    return _swiglu_fn
+        if self.norm_fn is not None:
+            gate = self.norm_fn(gate, training)
+        return x * Trueswish()(gate)
 
 
 ACTIVATION_FN_REGISTRY = {
     "relu": nn.relu,
     "leaky_relu": nn.leaky_relu,
     "gelu": nn.gelu,
-    "swish": nn.swish,
+    "swish": Trueswish(),
     "hard_swish": nn.hard_swish,
     "silu": nn.silu,
     "tanh": nn.tanh,
@@ -161,7 +170,7 @@ class ResBlock(nn.Module):
         out_dim = x0.shape[-1]
         for _ in range(self.hidden_N):
             if self.use_swiglu:
-                x = swiglu_fn(self.node_size, self.activation)(x)
+                x = Swiglu(self.node_size)(x)
             else:
                 x = nn.Dense(self.node_size, dtype=DTYPE)(x)
                 x = self.norm_fn(x, training)
@@ -189,7 +198,7 @@ class PreActivationResBlock(nn.Module):
         residual = self.activation(residual)
         for _ in range(self.hidden_N):
             if self.use_swiglu:
-                residual = swiglu_fn(self.node_size, self.activation)(residual)
+                residual = Swiglu(self.node_size)(residual)
             else:
                 residual = nn.Dense(self.node_size, dtype=DTYPE)(residual)
                 residual = self.activation(residual)
