@@ -141,28 +141,48 @@ def _astar_d_loop_builder(
 
             need_compute = optimal_mask_reshaped & ~found_reshaped
 
-            def _calc_heuristic(carry, input_slice):
+            # Pack all `need_compute=True` entries contiguously across the full
+            # (action_size * batch_size) batch to maximize effective batch size
+            # in `variable_heuristic_batch_switcher` (less padding / fewer small calls).
+            flat_states = neighbour_look_a_head.flatten()
+            flat_need_compute = need_compute.flatten()
+
+            n = flat_need_compute.shape[0]
+            indices = jnp.arange(n, dtype=jnp.int32)
+            # Stable sort so `need_compute=True` comes first (key False), preserving order.
+            sort_key = jnp.logical_not(flat_need_compute).astype(jnp.int32)
+            _, sorted_indices = jax.lax.sort_key_val(sort_key, indices, dimension=0, is_stable=True)
+
+            sorted_states = flat_states[sorted_indices]
+            sorted_mask = flat_need_compute[sorted_indices]
+
+            # `variable_heuristic_batch_switcher` is built with max_batch_size=batch_size,
+            # so we must not call it with a larger leading dimension than `batch_size`.
+            # Reshape the globally-packed vector into `action_size` chunks of `batch_size`
+            # and compute per-chunk via scan.
+            # `sorted_states` is a (flattened) Puzzle.State pytree (xtructure),
+            # so reshape expects just the leading batch shape.
+            sorted_states_chunked = sorted_states.reshape((puzzle.action_size, batch_size))
+            sorted_mask_chunked = sorted_mask.reshape((puzzle.action_size, batch_size))
+
+            def _calc_heuristic_chunk(carry, input_slice):
                 states_slice, compute_mask = input_slice
-
-                sort_key = ~compute_mask
-                sorted_indices = jnp.argsort(sort_key)
-
-                sorted_states = states_slice[sorted_indices]
-                sorted_mask = compute_mask[sorted_indices]
-
-                h_val_sorted = variable_heuristic_batch_switcher(
-                    heuristic_parameters, sorted_states, sorted_mask
+                h_val = variable_heuristic_batch_switcher(
+                    heuristic_parameters, states_slice, compute_mask
                 )
-
-                h_val = jnp.empty_like(h_val_sorted).at[sorted_indices].set(h_val_sorted)
-
                 return carry, h_val
 
-            _, computed_heuristic_vals = jax.lax.scan(
-                _calc_heuristic,
+            _, h_val_chunks = jax.lax.scan(
+                _calc_heuristic_chunk,
                 None,
-                (neighbour_look_a_head, need_compute),
+                (sorted_states_chunked, sorted_mask_chunked),
             )  # [action_size, batch_size]
+
+            h_val_sorted = h_val_chunks.reshape(-1)  # [action_size * batch_size]
+            flat_h_val = (
+                jnp.empty((n,), dtype=h_val_sorted.dtype).at[sorted_indices].set(h_val_sorted)
+            )
+            computed_heuristic_vals = flat_h_val.reshape(puzzle.action_size, batch_size)
 
             heuristic_vals = jnp.where(
                 found_reshaped,
