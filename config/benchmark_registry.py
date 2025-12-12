@@ -46,6 +46,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_3_davi_lt01.pkl",
             ),
+            "asym_logcosh": NeuralCallableConfig(
+                callable=RubiksCubeNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube_3_asym_logcosh.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
