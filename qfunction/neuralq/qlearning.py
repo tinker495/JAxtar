@@ -383,6 +383,7 @@ def _compute_diffusion_q(
         return_index=True,
         return_inverse=True,
     )
+    num_unique_state_actions = unique_uint32eds_idx.shape[0]
     target_q = target_q[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]
 
     # 2. Find state-wise minimal cost (Global Best Value Table)
@@ -398,28 +399,53 @@ def _compute_diffusion_q(
         return_index=True,
         return_inverse=True,
     )
-    state_min_cost = target_q.reshape(-1)[unique_state_idx][inverse_state_indices][:, jnp.newaxis]
+    num_unique_states = unique_state_idx.shape[0]
+
+    def _collapse_duplicate_state_actions(q_vec: chex.Array) -> chex.Array:
+        """Collapse duplicate (solve_config, state, action) rows to minimal Q."""
+        group_min = (
+            jnp.full((num_unique_state_actions, 1), jnp.inf, dtype=q_vec.dtype)
+            .at[inverse_indices]
+            .min(q_vec)
+        )
+        return group_min[inverse_indices]
+
+    def _state_min_over_actions(q_vec: chex.Array) -> chex.Array:
+        """Compute per-state min_a Q(s,a) from the (possibly duplicated) dataset rows."""
+        group_min_state = (
+            jnp.full((num_unique_states, 1), jnp.inf, dtype=q_vec.dtype)
+            .at[inverse_state_indices]
+            .min(q_vec)
+        )
+        return group_min_state
 
     # Propagate the improved Q values backwards along the trajectory
     dataset_size = target_q.shape[0]
 
     # Pad dataset with infinity to handle invalid parent pointers
     padded_q = jnp.pad(target_q, ((0, 1), (0, 0)), constant_values=jnp.inf)
-    padded_state_min_cost = jnp.pad(state_min_cost, ((0, 1), (0, 0)), constant_values=jnp.inf)
 
     # Map -1 or out-of-bounds indices to the padded infinity value
     safe_parent_indices = jnp.where(
         (parent_indices < 0) | (parent_indices >= dataset_size), dataset_size, parent_indices
     )
+    # Parent indices refer to dataset rows; map those rows to their parent-state group id.
+    inverse_state_indices_padded = jnp.pad(
+        inverse_state_indices, (0, 1), constant_values=num_unique_states
+    )
 
     def body_fun(i, q):
         # q is padded [N+1, 1]
-        current_q = q[:dataset_size]
+        current_q = _collapse_duplicate_state_actions(q[:dataset_size])
+        state_min_cost = _state_min_over_actions(current_q)
+        padded_state_min_cost = jnp.pad(state_min_cost, ((0, 1), (0, 0)), constant_values=jnp.inf)
+        parent_state_group = inverse_state_indices_padded[safe_parent_indices]
+        collapsed_padded_q = jnp.pad(current_q, ((0, 1), (0, 0)), constant_values=jnp.inf)
 
         # Gather Q from parents (neighbors closer to goal)
         # Combine global optimal info (s' best) and trajectory info
-        q_parents_optimal = padded_state_min_cost[safe_parent_indices]  # [N, 1]
-        q_parents_prop = q[safe_parent_indices]  # [N, 1]
+        q_parents_optimal = padded_state_min_cost[parent_state_group]  # [N, 1]
+        q_parents_prop = collapsed_padded_q[safe_parent_indices]  # [N, 1]
 
         q_parents = jnp.minimum(q_parents_optimal, q_parents_prop)
 
@@ -432,7 +458,7 @@ def _compute_diffusion_q(
     # Iterate k_max times to propagate along the longest possible path
     final_padded_q = jax.lax.fori_loop(0, k_max, body_fun, padded_q)
 
-    return final_padded_q[:dataset_size]
+    return _collapse_duplicate_state_actions(final_padded_q[:dataset_size])
 
 
 def _get_datasets_with_diffusion_distance(

@@ -265,7 +265,23 @@ def _compute_diffusion_distance(
         return_index=True,
         return_inverse=True,
     )
-    target_heuristic = target_heuristic[unique_uint32eds_idx][inverse_indices]
+    num_unique_states = unique_uint32eds_idx.shape[0]
+
+    def _collapse_duplicate_states(h_vec: chex.Array) -> chex.Array:
+        """Collapse duplicate (solve_config, state) rows to their minimal heuristic.
+
+        Important: duplicate states can appear in different trajectories. During diffusion,
+        one copy may get improved earlier than another; re-collapsing ensures all parents
+        always see the shortest value for a repeated child state.
+        """
+        group_min = (
+            jnp.full((num_unique_states,), jnp.inf, dtype=h_vec.dtype)
+            .at[inverse_indices]
+            .min(h_vec)
+        )
+        return group_min[inverse_indices]
+
+    target_heuristic = _collapse_duplicate_states(target_heuristic)
 
     # Propagate the improved heuristic values backwards along the trajectory
     dataset_size = target_heuristic.shape[0]
@@ -280,10 +296,11 @@ def _compute_diffusion_distance(
 
     def body_fun(i, h):
         # h is padded [N+1]
-        current_h = h[:dataset_size]
+        current_h = _collapse_duplicate_states(h[:dataset_size])
+        collapsed_padded_h = jnp.pad(current_h, (0, 1), constant_values=jnp.inf)
 
         # Gather heuristic from parents (neighbors closer to goal)
-        h_parents = h[safe_parent_indices]  # [N]
+        h_parents = collapsed_padded_h[safe_parent_indices]  # [N]
 
         # Bellman update: h(s) <= c(s, s') + h(s')
         # action_costs is c(s, s') where s' is the parent/next state in path
@@ -295,7 +312,7 @@ def _compute_diffusion_distance(
     # Iterate k_max times to propagate along the longest possible path
     final_padded_h = jax.lax.fori_loop(0, k_max, body_fun, padded_heuristic)
 
-    target_heuristic = final_padded_h[:dataset_size]
+    target_heuristic = _collapse_duplicate_states(final_padded_h[:dataset_size])
     return target_heuristic
 
 
