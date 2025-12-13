@@ -17,6 +17,7 @@ from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
+    flatten_scanned_paths,
 )
 from train_util.util import (
     apply_with_conditional_batch_stats,
@@ -293,6 +294,18 @@ def _compute_diffusion_distance(
     safe_parent_indices = jnp.where(
         (parent_indices < 0) | (parent_indices >= dataset_size), dataset_size, parent_indices
     )
+    idx = jnp.arange(dataset_size, dtype=safe_parent_indices.dtype)
+    valid_parent = safe_parent_indices[:dataset_size] != dataset_size
+    # Heuristic for whether `action_costs` are aligned to the child row or the parent row:
+    # - Hindsight trajectory sampling uses parent=i+P (parent index ahead), and action_costs are aligned to the child.
+    # - Inverse-trajectory sampling uses parent=i-P (parent index behind), and action_costs are aligned to the parent.
+    parent_is_behind = (safe_parent_indices[:dataset_size] < idx) & valid_parent
+    behind_ratio = jnp.sum(parent_is_behind).astype(jnp.float32) / jnp.maximum(
+        jnp.sum(valid_parent).astype(jnp.float32), 1.0
+    )
+    use_parent_indexed_costs = behind_ratio > 0.5
+
+    padded_action_costs = jnp.pad(action_costs, (0, 1), constant_values=0.0)
 
     def body_fun(i, h):
         # h is padded [N+1]
@@ -302,9 +315,17 @@ def _compute_diffusion_distance(
         # Gather heuristic from parents (neighbors closer to goal)
         h_parents = collapsed_padded_h[safe_parent_indices]  # [N]
 
+        # Choose edge costs consistent with how the shuffled path was built.
+        # If costs are aligned to the parent row (inverse trajectories), gather costs via parent_indices.
+        edge_costs = jax.lax.cond(
+            use_parent_indexed_costs,
+            lambda: padded_action_costs[safe_parent_indices],
+            lambda: action_costs,
+        )
+
         # Bellman update: h(s) <= c(s, s') + h(s')
         # action_costs is c(s, s') where s' is the parent/next state in path
-        new_h = action_costs + h_parents
+        new_h = edge_costs + h_parents
 
         improved_h = jnp.minimum(current_h, new_h)
         return h.at[:dataset_size].set(improved_h)
@@ -555,8 +576,7 @@ def get_heuristic_dataset_builder(
                 return scan_key, paths
 
             key_inner, paths = jax.lax.scan(scan_fn, key, None, length=steps)
-            for k, v in paths.items():
-                paths[k] = v.flatten()[:dataset_size]
+            paths = flatten_scanned_paths(paths, dataset_size)
             flatten_dataset = dataset_extractor(
                 target_heuristic_params,
                 heuristic_params,

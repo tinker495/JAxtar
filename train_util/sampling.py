@@ -5,6 +5,39 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 
+def _offset_parent_indices_for_scan(parent_indices: chex.Array) -> chex.Array:
+    """Offset local `parent_indices` when multiple trajectory chunks are concatenated.
+
+    The various `create_*_shuffled_path` functions return `parent_indices` that are local to a
+    single chunk: indices are in `[0, chunk_size)` (or `-1` for invalid), where
+    `chunk_size == k_max * shuffle_parallel`.
+
+    In dataset builders, we often generate multiple chunks via `jax.lax.scan`, producing an array
+    shaped `[steps, chunk_size]`. When these are flattened, each chunk must have its parent indices
+    shifted by `step_idx * chunk_size` so pointers remain within the correct chunk.
+    """
+    if parent_indices.ndim != 2:
+        return parent_indices
+    steps, chunk_size = parent_indices.shape
+    offsets = (jnp.arange(steps, dtype=parent_indices.dtype) * chunk_size)[:, jnp.newaxis]
+    return jnp.where(parent_indices >= 0, parent_indices + offsets, parent_indices)
+
+
+def flatten_scanned_paths(paths: dict[str, chex.Array], dataset_size: int) -> dict[str, chex.Array]:
+    """Flatten `jax.lax.scan` outputs of shuffled paths into a dataset batch.
+
+    Handles `parent_indices` specially: when multiple chunks are concatenated, parent pointers are
+    offset so they continue to reference the correct row after flattening.
+    """
+    dataset_size = int(dataset_size)
+    out = dict(paths)
+    if "parent_indices" in out:
+        out["parent_indices"] = _offset_parent_indices_for_scan(out["parent_indices"])
+    for k, v in out.items():
+        out[k] = v.flatten()[:dataset_size]
+    return out
+
+
 def _leafwise_equal(candidate_leaf: chex.Array, reference_leaf: chex.Array) -> chex.Array:
     expanded_ref = reference_leaf[jnp.newaxis, ...]
     eq = jnp.equal(candidate_leaf, expanded_ref)
@@ -247,7 +280,7 @@ def create_target_shuffled_path(
     action_costs = inverse_trajectory["action_costs"]
 
     solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (k_max, 1))
-    
+
     # Create parent indices
     # shape (k_max, shuffle_parallel)
     # parent is (i-1, j) which is index - shuffle_parallel
@@ -255,7 +288,7 @@ def create_target_shuffled_path(
     parent_indices = indices - shuffle_parallel
     # First row has no parent in batch, mark as -1
     parent_indices = parent_indices.at[0].set(-1)
-    
+
     solve_configs = solve_configs.flatten()
     states = states.flatten()
     move_costs = move_costs.flatten()
@@ -440,7 +473,7 @@ def create_hindsight_target_triangular_shuffled_path(
     final_move_costs_tm1 = final_move_costs_tm1.flatten()
     final_actions = final_actions.flatten()
     final_action_costs = final_action_costs.flatten()
-    
+
     # Triangular sampling produces independent samples, no valid parent structure
     parent_indices = jnp.full_like(final_action_costs, -1, dtype=jnp.int32)
 

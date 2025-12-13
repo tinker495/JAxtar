@@ -291,6 +291,8 @@ def plot_heuristic_accuracy(
     fig, ax = plt.subplots(figsize=(12, 12))
 
     # Adjust title based on data source
+    # - Optimal Path: "Actual" is optimal remaining cost-to-go (benchmark reference).
+    # - Search Path: "Actual" is remaining cost-to-go along the *found* solution path, which can be suboptimal.
     source_label = "Optimal Path" if has_optimal_path_used else "Search Path"
     title = f"Heuristic/Q-function Accuracy Analysis ({source_label})"
 
@@ -326,9 +328,12 @@ def plot_heuristic_accuracy(
 
         limit = int(max_val) + 1 if max_val > 0 else 10
 
-        ax.plot(
-            [0, limit], [0, limit], "g--", alpha=0.75, zorder=0, label="y=x (Perfect Heuristic)"
+        diag_label = (
+            "y=x (Perfect Heuristic)"
+            if has_optimal_path_used
+            else "y=x (Perfect if found path is optimal)"
         )
+        ax.plot([0, limit], [0, limit], "g--", alpha=0.75, zorder=0, label=diag_label)
         ax.set_xlim(0, limit)
         ax.set_ylim(0, limit)
 

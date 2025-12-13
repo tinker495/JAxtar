@@ -17,6 +17,7 @@ from train_util.sampling import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
+    flatten_scanned_paths,
 )
 from train_util.util import (
     apply_with_conditional_batch_stats,
@@ -433,6 +434,14 @@ def _compute_diffusion_q(
     inverse_state_indices_padded = jnp.pad(
         inverse_state_indices, (0, 1), constant_values=num_unique_states
     )
+    idx = jnp.arange(dataset_size, dtype=safe_parent_indices.dtype)
+    valid_parent = safe_parent_indices[:dataset_size] != dataset_size
+    parent_is_behind = (safe_parent_indices[:dataset_size] < idx) & valid_parent
+    behind_ratio = jnp.sum(parent_is_behind).astype(jnp.float32) / jnp.maximum(
+        jnp.sum(valid_parent).astype(jnp.float32), 1.0
+    )
+    use_parent_indexed_costs = behind_ratio > 0.5
+    padded_action_costs = jnp.pad(action_costs, ((0, 1), (0, 0)), constant_values=0.0)
 
     def body_fun(i, q):
         # q is padded [N+1, 1]
@@ -450,7 +459,12 @@ def _compute_diffusion_q(
         q_parents = jnp.minimum(q_parents_optimal, q_parents_prop)
 
         # Bellman update: Q(s, a) <= c(s, a, s') + Q(s', a')
-        new_q = action_costs + q_parents
+        edge_costs = jax.lax.cond(
+            use_parent_indexed_costs,
+            lambda: padded_action_costs[safe_parent_indices],
+            lambda: action_costs,
+        )
+        new_q = edge_costs + q_parents
 
         improved_q = jnp.minimum(current_q, new_q)
         return q.at[:dataset_size].set(improved_q)
@@ -724,8 +738,7 @@ def get_qlearning_dataset_builder(
                 return scan_key, paths
 
             key_inner, paths = jax.lax.scan(scan_fn, key, None, length=steps)
-            for k, v in paths.items():
-                paths[k] = v.flatten()[:dataset_size]
+            paths = flatten_scanned_paths(paths, dataset_size)
             flatten_dataset = dataset_extractor(
                 target_q_params,
                 q_params,
