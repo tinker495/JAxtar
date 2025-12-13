@@ -367,6 +367,7 @@ def _compute_diffusion_q(
     SolveConfigsAndStates: Xtructurable,
     k_max: int,
 ):
+    raw_move_costs = move_costs.reshape((-1,))
     solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
         solveconfigs=solve_configs,
         states=states,
@@ -376,7 +377,7 @@ def _compute_diffusion_q(
     # 1. Find unique state-action pairs and their minimal move_costs
     # We use move_costs as the initial estimate for Q(s,a) / Cost(s,a)
     # For diffusion distance, Q(s,a) approximates the cost to go.
-    target_q = move_costs.reshape((-1,))
+    target_q = raw_move_costs
 
     _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
         val=solve_configs_and_states_and_actions,
@@ -440,8 +441,34 @@ def _compute_diffusion_q(
     behind_ratio = jnp.sum(parent_is_behind).astype(jnp.float32) / jnp.maximum(
         jnp.sum(valid_parent).astype(jnp.float32), 1.0
     )
-    use_parent_indexed_costs = behind_ratio > 0.5
+    default_use_parent_indexed_costs = behind_ratio > 0.5
     padded_action_costs = jnp.pad(action_costs, ((0, 1), (0, 0)), constant_values=0.0)
+    padded_move_costs = jnp.pad(raw_move_costs, (0, 1), constant_values=0.0)
+
+    parent_move_costs = padded_move_costs[safe_parent_indices][:, jnp.newaxis]
+    parent_aligned_costs = padded_action_costs[safe_parent_indices]
+    child_aligned_costs = action_costs
+    err_child = jnp.abs(raw_move_costs[:, jnp.newaxis] - (parent_move_costs + child_aligned_costs))
+    err_parent = jnp.abs(
+        raw_move_costs[:, jnp.newaxis] - (parent_move_costs + parent_aligned_costs)
+    )
+    valid_parent_f = valid_parent.astype(raw_move_costs.dtype)[:, jnp.newaxis]
+    denom = jnp.maximum(jnp.sum(valid_parent_f), 1.0)
+    mean_err_child = jnp.sum(err_child * valid_parent_f) / denom
+    mean_err_parent = jnp.sum(err_parent * valid_parent_f) / denom
+    min_mean_err = jnp.minimum(mean_err_child, mean_err_parent)
+    use_error_based = min_mean_err < 1e-3
+    use_parent_indexed_costs = jax.lax.select(
+        use_error_based,
+        mean_err_parent < mean_err_child,
+        default_use_parent_indexed_costs,
+    )
+
+    edge_costs = jax.lax.cond(
+        use_parent_indexed_costs,
+        lambda: padded_action_costs[safe_parent_indices],
+        lambda: action_costs,
+    )
 
     def body_fun(i, q):
         # q is padded [N+1, 1]
@@ -459,11 +486,6 @@ def _compute_diffusion_q(
         q_parents = jnp.minimum(q_parents_optimal, q_parents_prop)
 
         # Bellman update: Q(s, a) <= c(s, a, s') + Q(s', a')
-        edge_costs = jax.lax.cond(
-            use_parent_indexed_costs,
-            lambda: padded_action_costs[safe_parent_indices],
-            lambda: action_costs,
-        )
         new_q = edge_costs + q_parents
 
         improved_q = jnp.minimum(current_q, new_q)

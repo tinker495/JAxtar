@@ -256,8 +256,10 @@ def _compute_diffusion_distance(
     SolveConfigsAndStates: Xtructurable,
     k_max: int,
 ):
+    raw_move_costs = move_costs.reshape((-1,))
+    action_costs = action_costs.reshape((-1,))
     solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
-    target_heuristic = move_costs.reshape((-1,))
+    target_heuristic = raw_move_costs
 
     # Find unique states and broadcast the minimal target_heuristic to all duplicates
     _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
@@ -303,9 +305,37 @@ def _compute_diffusion_distance(
     behind_ratio = jnp.sum(parent_is_behind).astype(jnp.float32) / jnp.maximum(
         jnp.sum(valid_parent).astype(jnp.float32), 1.0
     )
-    use_parent_indexed_costs = behind_ratio > 0.5
+    default_use_parent_indexed_costs = behind_ratio > 0.5
 
     padded_action_costs = jnp.pad(action_costs, (0, 1), constant_values=0.0)
+    padded_move_costs = jnp.pad(raw_move_costs, (0, 1), constant_values=0.0)
+
+    # If `move_costs` are true path costs (as produced by `create_*_shuffled_path`), we can
+    # disambiguate parent- vs child-aligned `action_costs` by checking which alignment satisfies:
+    #   move_cost(i) ≈ move_cost(parent(i)) + edge_cost(i)
+    parent_move_costs = padded_move_costs[safe_parent_indices]
+    parent_aligned_costs = padded_action_costs[safe_parent_indices]
+    child_aligned_costs = action_costs
+    err_child = jnp.abs(raw_move_costs - (parent_move_costs + child_aligned_costs))
+    err_parent = jnp.abs(raw_move_costs - (parent_move_costs + parent_aligned_costs))
+    valid_parent_f = valid_parent.astype(raw_move_costs.dtype)
+    denom = jnp.maximum(jnp.sum(valid_parent_f), 1.0)
+    mean_err_child = jnp.sum(err_child * valid_parent_f) / denom
+    mean_err_parent = jnp.sum(err_parent * valid_parent_f) / denom
+    min_mean_err = jnp.minimum(mean_err_child, mean_err_parent)
+    # Only trust this check when errors are near-zero; otherwise fall back to the index-direction heuristic.
+    use_error_based = min_mean_err < 1e-3
+    use_parent_indexed_costs = jax.lax.select(
+        use_error_based,
+        mean_err_parent < mean_err_child,
+        default_use_parent_indexed_costs,
+    )
+
+    edge_costs = jax.lax.cond(
+        use_parent_indexed_costs,
+        lambda: padded_action_costs[safe_parent_indices],
+        lambda: action_costs,
+    )
 
     def body_fun(i, h):
         # h is padded [N+1]
@@ -314,14 +344,6 @@ def _compute_diffusion_distance(
 
         # Gather heuristic from parents (neighbors closer to goal)
         h_parents = collapsed_padded_h[safe_parent_indices]  # [N]
-
-        # Choose edge costs consistent with how the shuffled path was built.
-        # If costs are aligned to the parent row (inverse trajectories), gather costs via parent_indices.
-        edge_costs = jax.lax.cond(
-            use_parent_indexed_costs,
-            lambda: padded_action_costs[safe_parent_indices],
-            lambda: action_costs,
-        )
 
         # Bellman update: h(s) <= c(s, s') + h(s')
         # action_costs is c(s, s') where s' is the parent/next state in path
