@@ -25,11 +25,11 @@ The following model configurations are used throughout the benchmark results. Ea
 | Algorithm | Model | Success Rate / Optimal Rate | Avg Time (s) | Avg Nodes | Avg Path Cost | R² (Heuristic) | CCC (Heuristic) | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A* | DAVI loss thresholded(0.1) - 14.7M params | 99.80% / 70.24% | 6.812s | 7.67M | 21.23 | 0.797 | 0.872 | Use 50M max nodes |
-| A* | Diffusion Distance - 14.7M params | 100% / 51.80% | 1.413s | 1.82M | 21.68 | 0.893 | 0.952 | |
-| A* | Diffusion Distance - 4M params | 100% / 45.70% | 0.947s | 1.84M | 21.84 | 0.883 | 0.948 | |
+| A* | Diffusion Distance - 14.7M params | 100% / 54.70% | 1.567s | 1.81M | 21.60 | 0.894 | 0.953 | |
+| A* | Diffusion Distance - 4M params | 100% / 45.70% | 1.097s | 1.84M | 21.86 | 0.883 | 0.948 | |
 | A* Deferred | DAVI loss thresholded(0.1) - 14.7M params | 100.00% / 70.20% | 7.362s | 764K | 21.24 | 0.797 | 0.872 | |
-| A* Deferred | Diffusion Distance - 14.7M params | 100% / 51.80% | 1.508s | 188K | 21.68 | 0.893 | 0.952 | |
-| A* Deferred | Diffusion Distance - 4M params | 100% / 45.70% | 0.937s | 189K | 21.84 | 0.883 | 0.948 | |
+| A* Deferred | Diffusion Distance - 14.7M params | 100% / 54.70% | 1.682s | 187K | 21.60 | 0.894 | 0.953 | |
+| A* Deferred | Diffusion Distance - 4M params | 100% / 45.60% | 1.192s | 190K | 21.86 | 0.883 | 0.948 | |
 | Q* | Q-learning loss thresholded(0.1) - 14.7M params | 100.00% / 28.60% | 1.236s | 264K | 22.39 | 0.871 | 0.923 | |
 | Q* | Diffusion Distance warmup - 14.7M params | 100% / 49.50% | 0.589s | 188K | 21.72 | 0.87 | 0.945 | |
 | Q* | Diffusion Distance warmup - 4M params | 100% / 36.50% | 0.571s | 192K | 22.1 | 0.929 | 0.963 | |
@@ -48,8 +48,8 @@ The following model configurations are used throughout the benchmark results. Ea
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A* | - | Mostly OOM | - | - | - | - | - | - |
 | A* Deferred | DAVI loss thresholded(0.1) - 14.7M params | 100% / 75.70% | 11.357s | 4.41M | 21.12 | 0.797 | 0.872 | |
-| A* Deferred | Diffusion Distance - 14.7M params | 100% / 84.40% | 9.088s | 4.28M | 20.95 | 0.892 | 0.952 | |
-| A* Deferred | Diffusion Distance - 4M params | 100% / 80.7% | 4.383s | 4.3M | 21.02 | 0.882 | 0.948 | |
+| A* Deferred | Diffusion Distance - 14.7M params | 100% / 86.00% | 8.315s | 4.27M | 20.92 | 0.894 | 0.953 | |
+| A* Deferred | Diffusion Distance - 4M params | 100% / 80.50% | 3.952s | 4.3M | 21.03 | 0.883 | 0.948 | |
 | Q* | Q-learning loss thresholded(0.1) - 14.7M params | 100% / 81.50% | 1.278s | 4.29M | 21.01 | 0.87 | 0.945 | Not yet |
 | Q* | Diffusion Distance warmup - 14.7M params | 100% / 81.50% | 1.278s | 4.29M | 21.01 | 0.87 | 0.945 | |
 | Q* | Diffusion Distance warmup - 4M params | 100% / 73.7.% | 0.895s | 4.34M | 21.17 | 0.929 | 0.963 | |
