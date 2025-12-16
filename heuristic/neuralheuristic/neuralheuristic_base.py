@@ -45,7 +45,7 @@ class HeuristicBase(nn.Module):
             if self.resblock_fn != PreActivationResBlock:
                 x = Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE)(x, training)
             else:
-                x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+                x = nn.Dense(int(self.hidden_dim * 2 / 3), dtype=DTYPE)(x)
         else:
             x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training, dtype=DTYPE)
