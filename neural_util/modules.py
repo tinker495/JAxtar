@@ -97,7 +97,7 @@ class Trueswish(nn.Module):
 
 
 class Swiglu(nn.Module):
-    hidden_N: int = None
+    node_size: int = None
     param_size_equal: bool = True
     norm_fn: Callable = None
     dtype: any = DTYPE
@@ -107,16 +107,16 @@ class Swiglu(nn.Module):
     def __call__(self, x, training=False):
         dtype = self.dtype
         param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
-        if self.hidden_N is None:
-            hidden_N = x.shape[-1]
+        if self.node_size is None:
+            node_size = x.shape[-1]
         else:
-            hidden_N = self.hidden_N
+            node_size = self.node_size
         # Parameter-count matching with a 2-layer MLP (Dense -> Dense) of width H:
         # MLP params ~ d*H + H*d = 2*d*H (bias ignored)
         # SwiGLU params ~ d*(2*h) + h*d = 3*d*h  => h = (2/3)*H
         if self.param_size_equal:
-            hidden_N = max(1, int(round(hidden_N * 2.0 / 3.0)))
-        x = nn.Dense(2 * hidden_N, dtype=dtype, param_dtype=param_dtype)(x)
+            node_size = max(1, int(round(node_size * 2.0 / 3.0)))
+        x = nn.Dense(2 * node_size, dtype=dtype, param_dtype=param_dtype)(x)
         x, gate = jnp.split(x, 2, axis=-1)
         if self.norm_fn is not None:
             gate = self.norm_fn(gate, training, dtype=dtype)
