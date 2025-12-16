@@ -42,10 +42,9 @@ class HeuristicBase(nn.Module):
     def __call__(self, x, training=False):
         if self.use_swiglu:
             x = Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE)(x, training)
-            if self.resblock_fn != PreActivationResBlock:
-                x = Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE)(x, training)
-            else:
-                x = nn.Dense(int(self.hidden_dim * 2 / 3), dtype=DTYPE)(x)
+            # Keep parameter count (and feature width) nearly identical regardless of resblock_fn.
+            # Swiglu already applies 2/3 width scaling when param_size_equal=True (default).
+            x = Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE)(x, training)
         else:
             x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
             x = self.norm_fn(x, training, dtype=DTYPE)
