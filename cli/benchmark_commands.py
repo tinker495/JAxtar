@@ -7,6 +7,7 @@ import click
 from puxle import Puzzle
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
+from helpers.param_stats import attach_runtime_metadata
 from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
@@ -65,12 +66,14 @@ def _load_benchmark_heuristic(
     resolved_param_path = _resolve_param_path(path_template, puzzle, param_path)
     neural_config = {}
 
-    return heuristic_config.callable(
+    solver = heuristic_config.callable(
         puzzle=puzzle,
         path=resolved_param_path,
         init_params=False,
         **neural_config,
     )
+    attach_runtime_metadata(solver, model_type=model_type, param_path=resolved_param_path)
+    return solver
 
 
 def _load_benchmark_qfunction(
@@ -101,12 +104,14 @@ def _load_benchmark_qfunction(
     resolved_param_path = _resolve_param_path(path_template, puzzle, param_path)
     neural_config = {}
 
-    return q_config.callable(
+    solver = q_config.callable(
         puzzle=puzzle,
         path=resolved_param_path,
         init_params=False,
         **neural_config,
     )
+    attach_runtime_metadata(solver, model_type=model_type, param_path=resolved_param_path)
+    return solver
 
 
 def _run_benchmark(
