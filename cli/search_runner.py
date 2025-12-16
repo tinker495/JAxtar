@@ -36,6 +36,36 @@ from qfunction.q_base import QFunction
 from .config_utils import enrich_config
 
 
+def _prepare_dist_parameters(
+    solve_config: Puzzle.SolveConfig,
+    *,
+    heuristic: Heuristic | None,
+    qfunction: QFunction | None,
+):
+    """
+    Normalize distance/Q-value function inputs.
+
+    - Heuristics are defined as distance(heuristic_parameters, state)
+    - Q-functions are defined as q_value(q_parameters, state)
+
+    Most simple implementations use the raw solve_config as parameters, but neural
+    implementations typically require (params, solve_config). Some older code uses
+    `prepare_parameters` instead of the base-class `prepare_*_parameters` hook, so we
+    support both here.
+    """
+    if heuristic is not None:
+        if hasattr(heuristic, "prepare_parameters"):
+            return heuristic.prepare_parameters(solve_config)
+        return heuristic.prepare_heuristic_parameters(solve_config)
+
+    if qfunction is not None:
+        if hasattr(qfunction, "prepare_parameters"):
+            return qfunction.prepare_parameters(solve_config)
+        return qfunction.prepare_q_parameters(solve_config)
+
+    return solve_config
+
+
 def search_samples(
     search_fn,
     puzzle: Puzzle,
@@ -63,7 +93,10 @@ def search_samples(
 
     for seed in iterable:
         solve_config, state = puzzle.get_inits(jax.random.PRNGKey(seed))
-        dist_values = dist_fn(solve_config, state)
+        dist_parameters = _prepare_dist_parameters(
+            solve_config, heuristic=heuristic, qfunction=qfunction
+        )
+        dist_values = dist_fn(dist_parameters, state)
 
         if len(seeds) == 1:
             console.print(

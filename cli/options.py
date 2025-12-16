@@ -21,6 +21,7 @@ from config.pydantic_models import (
     WorldModelPuzzleConfig,
 )
 from helpers.formatting import human_format_to_float
+from helpers.param_stats import attach_runtime_metadata
 from helpers.util import map_kwargs_to_pydantic
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
@@ -75,6 +76,13 @@ def _setup_neural_component(
         path=param_path,
         init_params=reset_params,
         **final_neural_config,
+    )
+    # Attach runtime metadata (model type / path / param stats) for nicer config printing.
+    attach_runtime_metadata(
+        component,
+        model_type=model_type,
+        param_path=param_path,
+        extra={"cli_neural_config": final_neural_config},
     )
     return {comp_key: component, config_key: final_neural_config}
 
@@ -452,6 +460,11 @@ def heuristic_options(func: callable) -> callable:
                 path=param_path,
                 init_params=False,
             )
+            attach_runtime_metadata(
+                heuristic,
+                model_type=model_type,
+                param_path=param_path,
+            )
         else:
             heuristic_callable = puzzle_bundle.heuristic
             if heuristic_callable is None:
@@ -517,6 +530,11 @@ def qfunction_options(func: callable) -> callable:
                 puzzle=puzzle,
                 path=param_path,
                 init_params=False,
+            )
+            attach_runtime_metadata(
+                qfunction,
+                model_type=model_type,
+                param_path=param_path,
             )
         else:
             q_callable = puzzle_bundle.q_function

@@ -61,6 +61,8 @@ def davi(
 
     config = {
         "puzzle_options": puzzle_opts,
+        "heuristic": heuristic.__class__.__name__,
+        "heuristic_metadata": getattr(heuristic, "metadata", {}),
         "heuristic_config": heuristic_config,
         "train_options": train_options,
         "eval_options": eval_options,
@@ -270,6 +272,8 @@ def qlearning(
 
     config = {
         "puzzle_options": puzzle_opts,
+        "qfunction": qfunction.__class__.__name__,
+        "qfunction_metadata": getattr(qfunction, "metadata", {}),
         "train_options": train_options,
         "eval_options": eval_options,
         "q_config": q_config,
