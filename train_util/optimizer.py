@@ -36,6 +36,7 @@ OPTIMIZERS = {
     "adopt": adoptw,
     "nadopt": lambda **kwargs: adoptw(nesterov=True, **kwargs),
     "muon": optax.contrib.muon,
+    "normuon": optax.contrib.normuon,
     "rmsprop": optax.rmsprop,
     "prodigy": optax.contrib.prodigy,
     "lamb_adam": optax.lamb,
