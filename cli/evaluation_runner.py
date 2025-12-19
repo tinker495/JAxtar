@@ -472,6 +472,38 @@ class EvaluationRunner:
             result_item["path_actions"] = actual_actions
 
             states = [step.state for step in path_steps]
+
+            if (
+                self.benchmark is not None
+                and states
+                and hasattr(self.benchmark, "verify_solution")
+                and result_item.get("matches_optimal_path") is None
+            ):
+                if actual_actions and not result_item.get("path_action_strings"):
+                    action_to_string_fn = getattr(self.puzzle, "action_to_string", None)
+                    actual_action_labels = []
+                    for action_id in actual_actions:
+                        if action_to_string_fn is None:
+                            label = str(action_id)
+                        else:
+                            try:
+                                label = action_to_string_fn(action_id)
+                            except (ValueError, IndexError):
+                                label = str(action_id)
+                        actual_action_labels.append(label)
+                    result_item["path_action_strings"] = actual_action_labels
+
+                try:
+                    verification_result = self.benchmark.verify_solution(
+                        benchmark_sample,
+                        states=states,
+                        action_sequence=result_item.get("path_action_strings"),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    verification_result = None
+                    result_item["benchmark_verification_error"] = str(exc)
+
+                result_item["matches_optimal_path"] = verification_result
             deferred_payload.update(
                 {
                     "path_steps": path_steps,
