@@ -49,6 +49,54 @@ def print_states_w_actions(states: Xtructurable, costs: chex.Array, actions: che
     print(f"actions: {actions}")
 
 
+@partial(jax.jit, static_argnames=("max_steps",))
+def _reconstruct_path_arrays(
+    parent_indices: chex.Array,
+    costs: chex.Array,
+    dists: chex.Array,
+    solved_index: chex.Array,
+    max_steps: int,
+) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
+    path_idx = jnp.full((max_steps,), -1, dtype=jnp.int32)
+    path_costs = jnp.full((max_steps,), jnp.nan, dtype=costs.dtype)
+    path_dists = jnp.full((max_steps,), jnp.nan, dtype=dists.dtype)
+
+    def _cond(carry):
+        idx, step, *_ = carry
+        return jnp.logical_and(idx >= 0, step < max_steps)
+
+    def _body(carry):
+        idx, step, path_idx, path_costs, path_dists = carry
+        path_idx = path_idx.at[step].set(idx)
+        path_costs = path_costs.at[step].set(costs[idx])
+        path_dists = path_dists.at[step].set(dists[idx])
+        next_idx = parent_indices[idx]
+        return next_idx, step + 1, path_idx, path_costs, path_dists
+
+    init = (
+        solved_index.astype(jnp.int32),
+        jnp.array(0, dtype=jnp.int32),
+        path_idx,
+        path_costs,
+        path_dists,
+    )
+    _, length, path_idx, path_costs, path_dists = jax.lax.while_loop(_cond, _body, init)
+
+    def _detect_loop():
+        used = path_idx[:length]
+        sorted_used = jnp.sort(used)
+        return jnp.any(sorted_used[1:] == sorted_used[:-1])
+
+    def _detect_corruption():
+        used_costs = path_costs[:length]
+        reversed_costs = jnp.flip(used_costs, axis=0)
+        return jnp.any(reversed_costs[1:] < reversed_costs[:-1])
+
+    loop_detected = jax.lax.cond(length > 1, _detect_loop, lambda: jnp.array(False))
+    corruption_detected = jax.lax.cond(length > 1, _detect_corruption, lambda: jnp.array(False))
+    return path_idx, path_costs, path_dists, length, loop_detected, corruption_detected
+
+
 @xtructure_dataclass
 class Parent:
 
@@ -603,37 +651,61 @@ class SearchResult:
         """
         assert search_result.solved
         solved_idx = search_result.solved_idx
+        solved_index = int(jax.device_get(solved_idx.hashidx.index))
+        max_steps = max(1, int(jax.device_get(search_result.generated_size)) + 1)
+
+        (
+            path_idx,
+            path_costs,
+            path_dists,
+            length,
+            loop_detected,
+            corruption_detected,
+        ) = _reconstruct_path_arrays(
+            search_result.parent.hashidx.index,
+            search_result.cost,
+            search_result.dist,
+            jnp.array(solved_index, dtype=jnp.int32),
+            max_steps=max_steps,
+        )
+        path_idx = jax.device_get(path_idx)
+        length = int(jax.device_get(length))
+        loop_detected = bool(jax.device_get(loop_detected))
+        corruption_detected = bool(jax.device_get(corruption_detected))
 
         path = [solved_idx]
-        parent_last = search_result.get_parent(solved_idx)
-        visited = set()
-        costs = [float(search_result.get_cost(solved_idx))]
-        dists = [float(search_result.get_dist(solved_idx))]
-        while True:
-            idx = int(parent_last.hashidx.index)
-            if parent_last.hashidx.index == -1:
+        steps_added = 0
+        for step in range(max(0, length - 1)):
+            parent_idx = int(path_idx[step + 1])
+            if parent_idx == -1:
                 break
-            if idx in visited:
-                print(f"Loop detected in path reconstruction at index {idx}")
-                break
-            visited.add(idx)
-            costs.append(float(search_result.get_cost(parent_last)))
-            dists.append(float(search_result.get_dist(parent_last)))
-            path.append(parent_last)
-            parent_last = search_result.get_parent(parent_last)
+            path.append(search_result.parent[int(path_idx[step])])
+            steps_added += 1
+
         path.reverse()
-        costs.reverse()
-        dists.reverse()
+
+        if loop_detected:
+            loop_idx = int(path_idx[length - 1]) if length > 0 else -1
+            print(f"Loop detected in path reconstruction at index {loop_idx}")
 
         # Check that costs are monotonically increasing to prevent path corruption
-        for i in range(1, len(costs)):
-            if costs[i] < costs[i - 1]:
-                print("ERROR: Path corruption detected - costs are not monotonically increasing!")
-                print(f"costs: {costs}")
-                print(f"dists: {dists}")
-                raise AssertionError(
-                    f"Path corruption: costs are not monotonically increasing at index {i}: {costs[i-1]} > {costs[i]}"
-                )
+        if corruption_detected:
+            path_costs = jax.device_get(path_costs)
+            path_dists = jax.device_get(path_dists)
+            used_len = steps_added + 1
+            costs = [float(val) for val in path_costs[:used_len]]
+            dists = [float(val) for val in path_dists[:used_len]]
+            costs.reverse()
+            dists.reverse()
+            print("ERROR: Path corruption detected - costs are not monotonically increasing!")
+            print(f"costs: {costs}")
+            print(f"dists: {dists}")
+            for i in range(1, len(costs)):
+                if costs[i] < costs[i - 1]:
+                    raise AssertionError(
+                        "Path corruption: costs are not monotonically increasing at index "
+                        f"{i}: {costs[i-1]} > {costs[i]}"
+                    )
 
         return path
 

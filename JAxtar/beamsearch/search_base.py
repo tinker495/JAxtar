@@ -26,6 +26,33 @@ TRACE_INVALID_INT = int(jnp.iinfo(TRACE_INDEX_DTYPE).max)
 TRACE_INVALID = jnp.array(TRACE_INVALID_INT, dtype=TRACE_INDEX_DTYPE)
 
 
+@partial(jax.jit, static_argnames=("max_steps",))
+def _reconstruct_trace_indices(
+    trace_parent: chex.Array,
+    start_node: chex.Array,
+    max_steps: int,
+) -> tuple[chex.Array, chex.Array]:
+    path_idx = jnp.full((max_steps,), TRACE_INVALID, dtype=trace_parent.dtype)
+
+    def _cond(carry):
+        idx, step, *_ = carry
+        return jnp.logical_and(step < max_steps, idx != TRACE_INVALID)
+
+    def _body(carry):
+        idx, step, path_idx = carry
+        path_idx = path_idx.at[step].set(idx)
+        next_idx = trace_parent[idx]
+        return next_idx, step + 1, path_idx
+
+    init = (
+        start_node.astype(TRACE_INDEX_DTYPE),
+        jnp.array(0, dtype=jnp.int32),
+        path_idx,
+    )
+    _, length, path_idx = jax.lax.while_loop(_cond, _body, init)
+    return path_idx, length
+
+
 @base_dataclass(static_fields=("params"))
 class BeamSearchLoopState:
     search_result: "BeamSearchResult"
@@ -132,7 +159,32 @@ class BeamSearchResult:
 
     def get_solved_path(self):
         """Return the sequence of states along the solved path."""
-        return []
+        solved_idx = int(self.solved_idx)
+        if solved_idx < 0:
+            return []
+
+        active_trace = np.asarray(jax.device_get(self.active_trace), dtype=np.uint32)
+        start_node = int(active_trace[solved_idx])
+        if start_node == TRACE_INVALID_INT:
+            return []
+
+        max_steps = int(self.trace_parent.shape[0])
+        path_idx, length = _reconstruct_trace_indices(
+            self.trace_parent,
+            jnp.array(start_node, dtype=TRACE_INDEX_DTYPE),
+            max_steps=max_steps,
+        )
+        path_idx = np.asarray(jax.device_get(path_idx), dtype=np.uint32)
+        length = int(jax.device_get(length))
+
+        states = []
+        for step in range(length):
+            node_idx = int(path_idx[step])
+            if node_idx == TRACE_INVALID_INT:
+                break
+            states.append(self.trace_state[node_idx])
+        states.reverse()
+        return states
 
     def solution_trace(self):
         """Return (states, costs, dists, actions) describing the solved path."""

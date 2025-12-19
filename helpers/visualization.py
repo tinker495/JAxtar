@@ -416,6 +416,12 @@ def build_path_steps_from_actions(
         action_sequence.append(action_val)
 
     states_list = list(states) if states is not None else None
+    costs_arr = np.asarray(costs) if costs is not None else None
+    can_use_trace = (
+        states_list is not None
+        and costs_arr is not None
+        and len(costs_arr) >= (len(action_sequence) + 1)
+    )
     state = states_list[0] if states_list else initial_state
     running_cost = 0.0
 
@@ -448,15 +454,20 @@ def build_path_steps_from_actions(
     steps.append(PathStep(state=state, cost=start_cost, dist=start_dist, action=start_action))
 
     for depth, action_val in enumerate(action_sequence):
-        neighbours, transition_cost = puzzle.get_neighbours(solve_config, state, True)
-        step_cost = float(transition_cost[action_val])
-        if not np.isfinite(step_cost):
-            break
-
-        running_cost += step_cost
-        next_state = neighbours[action_val]
-        if states_list is not None and depth + 1 < len(states_list):
+        if can_use_trace and depth + 1 < len(states_list):
             next_state = states_list[depth + 1]
+            next_cost = float(costs_arr[depth + 1])
+            step_cost = next_cost - float(costs_arr[depth])
+            running_cost = next_cost
+        else:
+            neighbours, transition_cost = puzzle.get_neighbours(solve_config, state, True)
+            step_cost = float(transition_cost[action_val])
+            if not np.isfinite(step_cost):
+                break
+            running_cost += step_cost
+            next_state = neighbours[action_val]
+            if states_list is not None and depth + 1 < len(states_list):
+                next_state = states_list[depth + 1]
 
         cost_val = _trace_cost(depth + 1, running_cost)
         dist_val = _trace_dist(depth + 1, next_state)

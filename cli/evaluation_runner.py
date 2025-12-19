@@ -1,10 +1,12 @@
 import itertools
 import time
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Union
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 import xtructure.numpy as xnp
@@ -39,6 +41,17 @@ from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
+
+
+@partial(jax.jit)
+def _bulk_actual_estimated(
+    costs: jnp.ndarray,
+    dists: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    path_cost = costs[-1]
+    actual = path_cost - costs
+    valid = jnp.isfinite(dists)
+    return actual, dists, valid
 
 
 class EvaluationRunner:
@@ -468,17 +481,24 @@ class EvaluationRunner:
                     actual_action_labels.append(label)
                 result_item["path_action_strings"] = actual_action_labels
 
-            actual_dists = []
-            estimated_dists = []
-            for step in path_steps:
-                actual_dist = float(path_cost - step.cost)
-                estimated_dist = float(step.dist) if step.dist is not None else np.inf
-
-                if np.isfinite(estimated_dist):
-                    actual_dists.append(actual_dist)
-                    estimated_dists.append(estimated_dist)
-
             if states:
+                costs_arr = jnp.asarray(
+                    [step.cost for step in path_steps],
+                    dtype=jnp.float32,
+                )
+                dists_arr = jnp.asarray(
+                    [float(step.dist) if step.dist is not None else np.inf for step in path_steps],
+                    dtype=jnp.float32,
+                )
+                actual_dists_arr, estimated_dists_arr, valid_mask = _bulk_actual_estimated(
+                    costs_arr,
+                    dists_arr,
+                )
+                actual_np = np.asarray(actual_dists_arr)
+                estimated_np = np.asarray(estimated_dists_arr)
+                valid_np = np.asarray(valid_mask)
+                actual_dists = [float(v) for v in actual_np[valid_np]]
+                estimated_dists = [float(v) for v in estimated_np[valid_np]]
                 result_item["path_analysis"] = {
                     "actual": actual_dists,
                     "estimated": estimated_dists,
