@@ -84,14 +84,19 @@ def _reconstruct_path_arrays(
     _, length, path_idx, path_costs, path_dists = jax.lax.while_loop(_cond, _body, init)
 
     def _detect_loop():
-        used = path_idx[:length]
-        sorted_used = jnp.sort(used)
+        valid_mask = jnp.arange(max_steps) < length
+        sentinel_base = jnp.iinfo(jnp.int32).max
+        sentinel = sentinel_base - jnp.arange(max_steps, dtype=jnp.int32)
+        safe_used = jnp.where(valid_mask, path_idx, sentinel)
+        sorted_used = jnp.sort(safe_used)
         return jnp.any(sorted_used[1:] == sorted_used[:-1])
 
     def _detect_corruption():
-        used_costs = path_costs[:length]
-        reversed_costs = jnp.flip(used_costs, axis=0)
-        return jnp.any(reversed_costs[1:] < reversed_costs[:-1])
+        valid_mask = jnp.arange(max_steps) < length
+        pair_valid = jnp.logical_and(valid_mask[1:], valid_mask[:-1])
+        next_costs = path_costs[1:]
+        prev_costs = path_costs[:-1]
+        return jnp.any(jnp.logical_and(next_costs > prev_costs, pair_valid))
 
     loop_detected = jax.lax.cond(length > 1, _detect_loop, lambda: jnp.array(False))
     corruption_detected = jax.lax.cond(length > 1, _detect_corruption, lambda: jnp.array(False))
