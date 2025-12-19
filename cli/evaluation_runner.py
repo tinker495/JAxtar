@@ -702,6 +702,8 @@ class EvaluationRunner:
         batched_actual = None
         batched_estimated = None
         batched_valid = None
+        padded_costs = None
+        padded_dists = None
         if batched_payloads:
             padded_costs = np.full((len(batched_payloads), max_len), 0.0, dtype=np.float32)
             padded_dists = np.full((len(batched_payloads), max_len), np.inf, dtype=np.float32)
@@ -712,15 +714,6 @@ class EvaluationRunner:
                 padded_dists[i, :length] = np.asarray(dists, dtype=np.float32)
                 if length < max_len:
                     padded_costs[i, length:] = padded_costs[i, length - 1]
-
-            actual_arr, estimated_arr, valid_mask = _bulk_actual_estimated_batch(
-                jnp.asarray(padded_costs),
-                jnp.asarray(padded_dists),
-                jnp.asarray(batched_path_costs, dtype=jnp.float32),
-            )
-            batched_actual = np.asarray(actual_arr)
-            batched_estimated = np.asarray(estimated_arr)
-            batched_valid = np.asarray(valid_mask)
 
         finalize_bar = trange(
             len(deferred_payloads),
@@ -738,6 +731,16 @@ class EvaluationRunner:
 
             if path_steps and states and not result_item.get("path_analysis"):
                 batch_index = payload.get("_batch_index")
+                if batched_actual is None and batched_payloads:
+                    actual_arr, estimated_arr, valid_mask = _bulk_actual_estimated_batch(
+                        jnp.asarray(padded_costs),
+                        jnp.asarray(padded_dists),
+                        jnp.asarray(batched_path_costs, dtype=jnp.float32),
+                    )
+                    batched_actual = np.asarray(actual_arr)
+                    batched_estimated = np.asarray(estimated_arr)
+                    batched_valid = np.asarray(valid_mask)
+
                 if batched_actual is not None and batch_index is not None:
                     length = batched_lengths[batch_index]
                     actual_np = batched_actual[batch_index, :length]
