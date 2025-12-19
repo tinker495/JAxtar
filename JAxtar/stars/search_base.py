@@ -75,7 +75,7 @@ class Parant_with_Costs:
     dist: FieldDescriptor.scalar(dtype=KEY_DTYPE)
 
 
-@chex.dataclass
+@base_dataclass(static_fields=("params"))
 class LoopState:
     """
     Unified loop state for search loops (A*, Q*, A*_d).
@@ -89,7 +89,25 @@ class LoopState:
     filled: chex.Array
 
 
-@base_dataclass
+@base_dataclass(static_fields=("params"))
+class LoopStateWithStates:
+    """
+    Loop state that carries the already-expanded current states.
+
+    This avoids an extra `HashTable.__getitem__` / gather of the same states in both
+    the loop condition and body (notably in deferred variants where the states were
+    already materialized during `pop_full_with_actions`).
+    """
+
+    search_result: "SearchResult"
+    solve_config: Puzzle.SolveConfig
+    params: Any
+    current: Current
+    states: Puzzle.State
+    filled: chex.Array
+
+
+@base_dataclass(static_fields=("action_size",))
 class SearchResult:
     """
     A dataclass containing the data structures used in the A*/Q* search algorithms.
@@ -105,6 +123,7 @@ class SearchResult:
     Attributes:
         hashtable (HashTable): Stores all encountered states for efficient lookup
         priority_queue (BGPQ): Priority queue for ordering state expansions
+        action_size (int): Number of actions available from each state
         pop_ratio (float): The final pop ratio for the search, controlling the
                 beam width. It is used to calculate a multiplier `M = max(1.0 + pop_ratio, 1.01)`.
                 The search beam will include all nodes with a cost up to `min_cost * M`.
@@ -118,6 +137,7 @@ class SearchResult:
 
     hashtable: HashTable  # hash table
     priority_queue: BGPQ  # priority queue
+    action_size: int  # number of actions available from each state
     pop_ratio: float  # ratio of states to pop from the priority queue
     min_pop: int  # minimum number of states to pop from the priority queue
     cost: chex.Array  # cost array - g value
@@ -129,11 +149,12 @@ class SearchResult:
     pop_count: chex.Array  # counter for pop_full calls
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2), static_argnames=("parant_with_costs",))
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3), static_argnames=("parant_with_costs",))
     def build(
         statecls: Puzzle.State,
         batch_size: int,
         max_nodes: int,
+        action_size: int,
         pop_ratio: float = jnp.inf,
         min_pop: int = 1,
         seed=42,
@@ -146,6 +167,7 @@ class SearchResult:
             statecls (Puzzle.State): The state class for the puzzle being solved
             batch_size (int): Size of batches for parallel processing
             max_nodes (int): Maximum number of nodes to store
+            action_size (int): Number of actions available from each state
             pop_ratio (float): Controls the search beam width. It is used to calculate
                 a multiplier `M = max(1.0 + pop_ratio, 1.01)`. The search beam will
                 include all nodes with a cost up to `min_cost * M`.
@@ -184,6 +206,7 @@ class SearchResult:
         return SearchResult(
             hashtable=hashtable,
             priority_queue=priority_queue,
+            action_size=action_size,
             pop_ratio=jnp.maximum(1.0 + pop_ratio, 1.01),
             min_pop=min_pop,
             cost=cost,
@@ -217,6 +240,35 @@ class SearchResult:
         else:
             return search_result._pop_full_with_parent_with_costs(**kwargs)
 
+    def pop_full_with_actions(
+        search_result,
+        puzzle: Puzzle,
+        solve_config: Puzzle.SolveConfig,
+        use_heuristic: bool = False,
+        **kwargs,
+    ) -> tuple["SearchResult", Current, Puzzle.State, chex.Array]:
+        """
+        Pop a full batch and also return the corresponding materialized states.
+
+        - For standard A* (`Current` PQ values), states are gathered from the hash table.
+        - For deferred variants (`Parant_with_Costs` PQ values), states are already
+          computed during the eager expansion inside the pop routine, so returning
+          them avoids re-gathering the same batch again in the caller.
+        """
+
+        if isinstance(search_result.priority_queue.val_store, Current):
+            search_result, current, filled = search_result._pop_full_with_current(**kwargs)
+            states = search_result.get_state(current)
+            return search_result, current, states, filled
+
+        return search_result._pop_full_with_parent_with_costs(
+            puzzle=puzzle,
+            solve_config=solve_config,
+            use_heuristic=use_heuristic,
+            return_states=True,
+            **kwargs,
+        )
+
     def _pop_full_with_current(
         search_result, **kwargs
     ) -> tuple["SearchResult", Current, chex.Array]:
@@ -238,8 +290,9 @@ class SearchResult:
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
         min_key = search_result.mask_unoptimal(min_key, min_val)
-        buffer = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
-        buffer_val = min_val
+        batch_size = search_result.batch_size
+        buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
+        buffer_val = Current.default((batch_size,))
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
@@ -268,7 +321,7 @@ class SearchResult:
 
             # Merge current batch with new nodes, splitting into main and overflow
             main_keys, main_vals, overflow_keys, overflow_vals = _unique_sort_merge_and_split(
-                key, val, new_key, new_val
+                key, val, new_key, new_val, batch_size
             )
             return search_result, main_keys, main_vals, overflow_keys, overflow_vals
 
@@ -318,8 +371,11 @@ class SearchResult:
         puzzle: Puzzle,
         solve_config: Puzzle.SolveConfig,
         use_heuristic: bool = False,
+        return_states: bool = False,
         **kwargs,
-    ) -> tuple["SearchResult", Current, chex.Array]:
+    ) -> tuple["SearchResult", Current, chex.Array] | tuple[
+        "SearchResult", Current, Puzzle.State, chex.Array
+    ]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
@@ -376,7 +432,8 @@ class SearchResult:
 
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
-        batch_size = min_key.shape[-1]
+        batch_size = search_result.batch_size
+        stack_size = batch_size * 2
 
         # Initial expansion and filtering
         (current_states, current_costs, current_dists, min_key) = _expand_and_filter(
@@ -389,8 +446,8 @@ class SearchResult:
         min_key = jnp.where(unique_mask, min_key, jnp.inf)
 
         # Initialize buffer for overflow (inf)
-        buffer_key = jnp.full(min_key.shape, jnp.inf, dtype=KEY_DTYPE)
-        buffer_val = Parant_with_Costs.default(min_key.shape)
+        buffer_key = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
+        buffer_val = Parant_with_Costs.default((batch_size,))
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
@@ -431,9 +488,7 @@ class SearchResult:
             stack_key = jnp.where(unique_mask, stack_key, jnp.inf)
 
             # Sort to keep best candidates
-            sorted_key, sorted_idx = jax.lax.sort_key_val(
-                stack_key, jnp.arange(stack_key.shape[-1])
-            )
+            sorted_key, sorted_idx = jax.lax.sort_key_val(stack_key, jnp.arange(stack_size))
             sorted_val = stack_val[sorted_idx]
             sorted_states = stack_states[sorted_idx]
             sorted_costs = stack_costs[sorted_idx]
@@ -537,6 +592,9 @@ class SearchResult:
         )
         search_result.pop_count += 1
 
+        if return_states:
+            return search_result, final_currents, final_states, final_process_mask
+
         return search_result, final_currents, final_process_mask
 
     def get_solved_path(search_result) -> list[Parent]:
@@ -631,20 +689,23 @@ class SearchResult:
         return jnp.where(optimal, min_key, jnp.inf)
 
 
-def unique_sort(key: chex.Array, val: Current) -> tuple[chex.Array, Current]:
+def unique_sort(
+    key: chex.Array, val: Current, size: int | None = None
+) -> tuple[chex.Array, Current]:
     """
     Sorts the keys and corresponding values.
 
     Args:
         key (chex.Array): Array of keys.
         val (Current): Array of values.
+        size (int | None): Optional static length for the sort index array.
 
     Returns:
         tuple:
             - sorted_key (chex.Array): Sorted array of keys.
             - sorted_val (Current): Values corresponding to the sorted keys.
     """
-    n = key.shape[-1]
+    n = key.shape[-1] if size is None else size
     filled = jnp.isfinite(key)
     mask = xnp.unique_mask(val.hashidx, val.cost, filled)
     key = jnp.where(mask, key, jnp.inf)
@@ -654,13 +715,13 @@ def unique_sort(key: chex.Array, val: Current) -> tuple[chex.Array, Current]:
 
 
 # Helper to merge, sort, and split two batches of nodes
-def _unique_sort_merge_and_split(k1, v1, k2, v2):
-    batch_size = k1.shape[-1]
+def _unique_sort_merge_and_split(k1, v1, k2, v2, batch_size: int):
     merged_key = jnp.concatenate([k1, k2])
     merged_val = xnp.concatenate([v1, v2])
+    merged_size = batch_size * 2
 
     # Sort and remove duplicates from the combined batch
-    sorted_key, sorted_val = unique_sort(merged_key, merged_val)
+    sorted_key, sorted_val = unique_sort(merged_key, merged_val, merged_size)
 
     # Split into a main batch and an overflow batch
     main_keys = sorted_key[:batch_size]

@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List
 
-import cv2
 import jax.numpy as jnp
 import numpy as np
 from rich.align import Align
@@ -18,6 +17,31 @@ from helpers.formatting import human_format
 from JAxtar.annotate import ACTION_DTYPE
 
 ACTION_PAD_INT = int(np.iinfo(np.dtype(ACTION_DTYPE)).max)
+
+
+def _require_cv2():  # pragma: no cover
+    global cv2, _CV2_IMPORT_ERROR
+    if cv2 is not None:
+        return cv2
+    if _CV2_IMPORT_ERROR is not None:
+        raise ImportError(
+            "OpenCV (cv2) is required for saving solution animations/frames. "
+            "Install a NumPy-compatible build (e.g., downgrade to `numpy<2` or reinstall `opencv-python`)."
+        ) from _CV2_IMPORT_ERROR
+    try:
+        import cv2 as cv2_mod  # type: ignore
+    except Exception as exc:
+        _CV2_IMPORT_ERROR = exc
+        raise ImportError(
+            "OpenCV (cv2) is required for saving solution animations/frames. "
+            "Install a NumPy-compatible build (e.g., downgrade to `numpy<2` or reinstall `opencv-python`)."
+        ) from exc
+    cv2 = cv2_mod
+    return cv2_mod
+
+
+cv2 = None  # type: ignore[assignment]
+_CV2_IMPORT_ERROR: Exception | None = None
 
 
 def build_human_play_setup_panel(has_target, solve_config, init_state) -> Panel:
@@ -313,6 +337,7 @@ def save_solution_animation_and_frames(
 ) -> str:
     import imageio
 
+    cv2_mod = _require_cv2()
     imgs = []
     logging_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     logging_name = f"{puzzle_name}_{logging_time}"
@@ -321,13 +346,13 @@ def save_solution_animation_and_frames(
     for idx, step in enumerate(path_steps):
         img = step.state.img(idx=idx, path=path_states, solve_config=solve_config)
         imgs.append(img)
-        cv2.imwrite(
+        cv2_mod.imwrite(
             (
                 f"tmp/{logging_name}/img_{idx}_c"
                 f"{step.cost:.1f}_d"
                 f"{(step.dist if step.dist is not None else 0.0):.1f}.png"
             ),
-            cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
+            cv2_mod.cvtColor(img, cv2_mod.COLOR_BGR2RGB),
         )
     gif_path = f"tmp/{logging_name}/animation.gif"
     num_frames = len(imgs)

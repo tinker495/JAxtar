@@ -9,7 +9,7 @@ from puxle import Puzzle
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
     Current,
-    LoopState,
+    LoopStateWithStates,
     Parant_with_Costs,
     Parent,
     SearchResult,
@@ -32,6 +32,7 @@ def _qstar_loop_builder(
     # access mid-loop data (params, queue/hash state) without rewriting
     # the search plumbing or retracing the whole loop.
     statecls = puzzle.State
+    action_size = puzzle.action_size
 
     dist_sign = -1.0 if pessimistic_update else 1.0
     denom = max(1, puzzle.action_size // 2)
@@ -56,6 +57,7 @@ def _qstar_loop_builder(
             statecls,
             batch_size,
             max_nodes,
+            action_size,
             pop_ratio=pop_ratio,
             min_pop=min_pop,
             parant_with_costs=True,
@@ -69,50 +71,56 @@ def _qstar_loop_builder(
         ) = search_result.hashtable.insert(start)
 
         search_result.cost = search_result.cost.at[hash_idx.index].set(0)
-        costs = jnp.zeros((batch_size,), dtype=KEY_DTYPE)
-        hash_idxs = xnp.pad(hash_idx, (0, batch_size - 1))
-        filled = jnp.zeros(batch_size, dtype=jnp.bool_).at[0].set(True)
+        sr_batch_size = search_result.batch_size
+        costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+        states = xnp.pad(start, (0, sr_batch_size - 1))
+        hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
+        filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
 
-        loop_state = LoopState(
+        loop_state = LoopStateWithStates(
             search_result=search_result,
             solve_config=solve_config,
             params=q_parameters,
             current=Current(hashidx=hash_idxs, cost=costs),
+            states=states,
             filled=filled,
         )
         return loop_state
 
-    def loop_condition(loop_state: LoopState):
+    def loop_condition(loop_state: LoopStateWithStates):
         search_result = loop_state.search_result
         solve_config = loop_state.solve_config
-        states = search_result.get_state(loop_state.current)
+        states = loop_state.states
         filled = loop_state.filled
         hash_size = search_result.generated_size
         size_cond1 = filled.any()  # queue is not empty
-        size_cond2 = hash_size < max_nodes  # hash table is not full
+        size_cond2 = hash_size < search_result.capacity  # hash table is not full
         size_cond = jnp.logical_and(size_cond1, size_cond2)
 
         solved = puzzle.batched_is_solved(solve_config, states)
         solved = jnp.logical_and(solved, filled)
         return jnp.logical_and(size_cond, ~solved.any())
 
-    def loop_body(loop_state: LoopState):
+    def loop_body(loop_state: LoopStateWithStates):
         search_result = loop_state.search_result
         solve_config = loop_state.solve_config
         q_parameters = loop_state.params
         cost = loop_state.current.cost
         hash_idx = loop_state.current.hashidx
         filled = loop_state.filled
-        states = search_result.get_state(loop_state.current)
+        states = loop_state.states
 
-        idx_tiles = xnp.tile(hash_idx, (puzzle.action_size, 1))  # [action_size, batch_size, ...]
+        action_size = search_result.action_size
+        sr_batch_size = search_result.batch_size
+        flat_size = action_size * sr_batch_size
+        idx_tiles = xnp.tile(hash_idx, (action_size, 1))  # [action_size, batch_size, ...]
         action = jnp.tile(
-            jnp.arange(puzzle.action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, cost.shape[0]),
+            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
+            (1, sr_batch_size),
         )  # [n_neighbours, batch_size]
-        costs = jnp.tile(cost[jnp.newaxis, :], (puzzle.action_size, 1))  # [action_size, batch_size]
+        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))  # [action_size, batch_size]
         filled_tiles = jnp.tile(
-            filled[jnp.newaxis, :], (puzzle.action_size, 1)
+            filled[jnp.newaxis, :], (action_size, 1)
         )  # [action_size, batch_size]
 
         # Compute Q-values for parent states (not neighbors)
@@ -191,14 +199,14 @@ def _qstar_loop_builder(
 
         # Sort to keep best candidates
         sorted_key, sorted_idx = jax.lax.sort_key_val(
-            flattened_neighbour_keys, jnp.arange(flattened_neighbour_keys.shape[-1])
+            flattened_neighbour_keys, jnp.arange(flat_size)
         )
         sorted_vals = flattened_vals[sorted_idx]
         optimal_mask = optimal_mask[sorted_idx]
 
-        neighbour_keys = sorted_key.reshape(puzzle.action_size, batch_size)
-        vals = sorted_vals.reshape((puzzle.action_size, batch_size))
-        optimal_mask = optimal_mask.reshape(puzzle.action_size, batch_size)
+        neighbour_keys = sorted_key.reshape(action_size, sr_batch_size)
+        vals = sorted_vals.reshape((action_size, sr_batch_size))
+        optimal_mask = optimal_mask.reshape(action_size, sr_batch_size)
 
         def _insert(search_result: SearchResult, neighbour_keys, vals):
 
@@ -226,15 +234,16 @@ def _qstar_loop_builder(
             search_result,
             (neighbour_keys, vals, optimal_mask),
         )
-        search_result, min_val, filled = search_result.pop_full(
+        search_result, min_val, next_states, filled = search_result.pop_full_with_actions(
             puzzle=puzzle, solve_config=solve_config
         )
 
-        return LoopState(
+        return LoopStateWithStates(
             search_result=search_result,
             solve_config=solve_config,
             params=q_parameters,
             current=min_val,
+            states=next_states,
             filled=filled,
         )
 
@@ -295,9 +304,11 @@ def qstar_builder(
 
         search_result = loop_state.search_result
         current = loop_state.current
-        states = search_result.get_state(current)
+        states = loop_state.states
+        filled = loop_state.filled
 
         solved = puzzle.batched_is_solved(solve_config, states)
+        solved = jnp.logical_and(solved, filled)
         search_result.solved = solved.any()
         search_result.solved_idx = current[jnp.argmax(solved)]
         return search_result

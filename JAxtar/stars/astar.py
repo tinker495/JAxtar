@@ -25,6 +25,7 @@ def _astar_loop_builder(
     # can reuse intermediate loop data (e.g., parameters, queue state)
     # without retracing or reassembling the search plumbing each time.
     statecls = puzzle.State
+    action_size = puzzle.action_size
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -37,7 +38,12 @@ def _astar_loop_builder(
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
         search_result: SearchResult = SearchResult.build(
-            statecls, batch_size, max_nodes, pop_ratio=pop_ratio, min_pop=min_pop
+            statecls,
+            batch_size,
+            max_nodes,
+            action_size,
+            pop_ratio=pop_ratio,
+            min_pop=min_pop,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
 
@@ -48,9 +54,10 @@ def _astar_loop_builder(
         ) = search_result.hashtable.insert(start)
 
         search_result.cost = search_result.cost.at[hash_idx.index].set(0)
-        hash_idxs = xnp.pad(hash_idx, (0, batch_size - 1))
-        costs = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
-        filled = jnp.zeros(batch_size, dtype=jnp.bool_).at[0].set(True)
+        sr_batch_size = search_result.batch_size
+        hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
+        costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
+        filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
 
         return LoopState(
             search_result=search_result,
@@ -67,7 +74,7 @@ def _astar_loop_builder(
         filled = loop_state.filled
         hash_size = search_result.generated_size
         size_cond1 = filled.any()  # queue is not empty
-        size_cond2 = hash_size < max_nodes  # hash table is not full
+        size_cond2 = hash_size < search_result.capacity  # hash table is not full
         size_cond = jnp.logical_and(size_cond1, size_cond2)
 
         solved = puzzle.batched_is_solved(solve_config, states)
@@ -83,9 +90,11 @@ def _astar_loop_builder(
         states = search_result.get_state(current)
 
         neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
+        action_size = search_result.action_size
+        sr_batch_size = search_result.batch_size
         parent_action = jnp.tile(
-            jnp.arange(ncost.shape[0], dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, ncost.shape[1]),
+            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
+            (1, sr_batch_size),
         )  # [n_neighbours, batch_size]
         nextcosts = (current.cost[jnp.newaxis, :] + ncost).astype(
             KEY_DTYPE
@@ -93,10 +102,10 @@ def _astar_loop_builder(
         filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
         # Use int32 for indexing; ACTION_DTYPE (uint8) overflows when batch_size > 255.
         parent_index = jnp.tile(
-            jnp.arange(ncost.shape[1], dtype=jnp.int32)[jnp.newaxis, :],
-            (ncost.shape[0], 1),
+            jnp.arange(sr_batch_size, dtype=jnp.int32)[jnp.newaxis, :],
+            (action_size, 1),
         )  # [n_neighbours, batch_size]
-        unflatten_shape = filleds.shape
+        unflatten_shape = (action_size, sr_batch_size)
 
         parent = Parent(
             hashidx=current.hashidx[parent_index],

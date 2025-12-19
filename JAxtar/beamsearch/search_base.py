@@ -26,17 +26,20 @@ TRACE_INVALID_INT = int(jnp.iinfo(TRACE_INDEX_DTYPE).max)
 TRACE_INVALID = jnp.array(TRACE_INVALID_INT, dtype=TRACE_INDEX_DTYPE)
 
 
-@chex.dataclass
+@base_dataclass(static_fields=("params"))
 class BeamSearchLoopState:
     search_result: "BeamSearchResult"
     solve_config: Puzzle.SolveConfig
     params: Any
 
 
-@base_dataclass
+@base_dataclass(static_fields=("beam_width", "max_depth", "action_size"))
 class BeamSearchResult:
     """Compact container for the active beam."""
 
+    beam_width: int
+    max_depth: int
+    action_size: int
     cost: chex.Array
     dist: chex.Array
     scores: chex.Array
@@ -55,11 +58,12 @@ class BeamSearchResult:
     active_trace: chex.Array
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2))
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
     def build(
         statecls: Puzzle.State,
         beam_width: int,
         max_depth: int,
+        action_size: int,
     ) -> "BeamSearchResult":
         """Allocate fixed-size buffers for the beam."""
         cost = jnp.full((beam_width,), jnp.inf, dtype=KEY_DTYPE)
@@ -82,6 +86,9 @@ class BeamSearchResult:
         trace_state = statecls.default((trace_capacity,))
 
         return BeamSearchResult(
+            beam_width=beam_width,
+            max_depth=max_depth,
+            action_size=action_size,
             cost=cost,
             dist=dist,
             scores=scores,

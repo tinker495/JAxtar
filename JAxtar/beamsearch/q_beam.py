@@ -29,8 +29,9 @@ def _qbeam_loop_builder(
     non_backtracking_steps: int = 3,
 ):
     statecls = puzzle.State
+    action_size = puzzle.action_size
     beam_width = batch_size
-    denom = max(1, puzzle.action_size // 2)
+    denom = max(1, action_size // 2)
     min_keep = max(1, beam_width // denom)
     pop_ratio = float(pop_ratio)
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
@@ -50,6 +51,7 @@ def _qbeam_loop_builder(
             statecls,
             beam_width,
             max_depth,
+            action_size,
         )
         q_parameters = q_fn.prepare_q_parameters(solve_config)
 
@@ -77,7 +79,7 @@ def _qbeam_loop_builder(
         solve_config = loop_state.solve_config
         filled_mask = search_result.filled_mask()
         has_states = filled_mask.any()
-        depth_ok = search_result.depth < max_depth
+        depth_ok = search_result.depth < search_result.max_depth
 
         beam_states = search_result.beam
         solved = puzzle.batched_is_solved(solve_config, beam_states)
@@ -91,6 +93,11 @@ def _qbeam_loop_builder(
 
         filled_mask = search_result.filled_mask()
         beam_states = search_result.beam
+        sr_beam_width = search_result.beam_width
+        sr_action_size = search_result.action_size
+        sr_max_depth = search_result.max_depth
+        child_shape = (sr_action_size, sr_beam_width)
+        flat_count = sr_action_size * sr_beam_width
 
         neighbours, transition_cost = puzzle.batched_get_neighbours(
             solve_config, beam_states, filled_mask
@@ -110,7 +117,7 @@ def _qbeam_loop_builder(
             jax.lax.cond(
                 jnp.any(child_valid),
                 _compute_q,
-                lambda _: jnp.full(child_valid.shape, jnp.inf, dtype=KEY_DTYPE),
+                lambda _: jnp.full(child_shape, jnp.inf, dtype=KEY_DTYPE),
                 None,
             )
             - transition_cost
@@ -119,15 +126,15 @@ def _qbeam_loop_builder(
         scores = (cost_weight * child_costs + q_vals).astype(KEY_DTYPE)
         scores = jnp.where(child_valid, scores, jnp.inf)
 
-        flat_states = neighbours.flatten()
-        flat_cost = child_costs.reshape(-1)
-        flat_q = q_vals.reshape(-1)
-        flat_scores = scores.reshape(-1)
-        flat_valid = child_valid.reshape(-1)
+        flat_states = neighbours.reshape((flat_count,))
+        flat_cost = child_costs.reshape((flat_count,))
+        flat_q = q_vals.reshape((flat_count,))
+        flat_scores = scores.reshape((flat_count,))
+        flat_valid = child_valid.reshape((flat_count,))
 
         selected_scores, selected_idx, keep_mask = select_beam(
             flat_scores,
-            beam_width,
+            sr_beam_width,
             pop_ratio=pop_ratio,
             min_keep=min_keep,
         )
@@ -135,8 +142,8 @@ def _qbeam_loop_builder(
         selected_states = flat_states[selected_idx]
         selected_costs = flat_cost[selected_idx]
         selected_q = flat_q[selected_idx]
-        selected_actions = (selected_idx // beam_width).astype(ACTION_DTYPE)
-        selected_parents = (selected_idx % beam_width).astype(jnp.int32)
+        selected_actions = (selected_idx // sr_beam_width).astype(ACTION_DTYPE)
+        selected_parents = (selected_idx % sr_beam_width).astype(jnp.int32)
         selected_valid = jnp.logical_and(keep_mask, flat_valid[selected_idx])
         unique_valid = xnp.unique_mask(
             selected_states,
@@ -164,11 +171,11 @@ def _qbeam_loop_builder(
         invalid_parent = jnp.full_like(parent_trace_ids, TRACE_INVALID)
         parent_trace_ids = jnp.where(selected_valid, parent_trace_ids, invalid_parent)
 
-        next_depth_idx = jnp.minimum(search_result.depth + 1, max_depth)
+        next_depth_idx = jnp.minimum(search_result.depth + 1, sr_max_depth)
         trace_offset = next_depth_idx.astype(TRACE_INDEX_DTYPE) * jnp.asarray(
-            beam_width, dtype=TRACE_INDEX_DTYPE
+            sr_beam_width, dtype=TRACE_INDEX_DTYPE
         )
-        slot_indices = jnp.arange(beam_width, dtype=TRACE_INDEX_DTYPE)
+        slot_indices = jnp.arange(sr_beam_width, dtype=TRACE_INDEX_DTYPE)
         next_trace_ids = trace_offset + slot_indices
 
         trace_actions = jnp.where(
@@ -176,8 +183,8 @@ def _qbeam_loop_builder(
             selected_actions,
             jnp.full_like(selected_actions, ACTION_PAD),
         )
-        depth_fill = jnp.full((beam_width,), next_depth_idx, dtype=jnp.int32)
-        depth_default = -jnp.ones((beam_width,), dtype=jnp.int32)
+        depth_fill = jnp.full((sr_beam_width,), next_depth_idx, dtype=jnp.int32)
+        depth_default = -jnp.ones((sr_beam_width,), dtype=jnp.int32)
         trace_depths = jnp.where(selected_valid, depth_fill, depth_default)
 
         search_result.trace_parent = search_result.trace_parent.at[next_trace_ids].set(
