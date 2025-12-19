@@ -231,6 +231,7 @@ class PuzzleBundle(BaseModel):
     puzzle: Optional[Union[Callable, PuzzleConfig, WorldModelPuzzleConfig]] = None
     puzzle_hard: Optional[Union[Callable, PuzzleConfig]] = None
     puzzle_ds: Optional[Callable] = None
+    eval_benchmark: Optional[str] = None
     heuristic: Callable = EmptyHeuristic
     heuristic_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
     q_function: Callable = EmptyQFunction

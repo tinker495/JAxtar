@@ -9,6 +9,7 @@ import numpy as np
 from puxle import Puzzle
 
 from cli.evaluation_runner import run_evaluation_sweep
+from config import benchmark_bundles
 from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import create_logger
@@ -32,6 +33,42 @@ from ..options import (
 )
 
 
+def _resolve_eval_context(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    puzzle_opts: PuzzleOptions,
+    puzzle_bundle,
+):
+    eval_benchmark = getattr(puzzle_bundle, "eval_benchmark", None) if puzzle_bundle else None
+    if not eval_benchmark:
+        return puzzle, puzzle_name, puzzle_opts, {}
+
+    benchmark_bundle = benchmark_bundles.get(eval_benchmark)
+    if benchmark_bundle is None:
+        raise click.UsageError(
+            f"Eval benchmark '{eval_benchmark}' is not registered for puzzle '{puzzle_name}'."
+        )
+
+    benchmark_args = dict(benchmark_bundle.benchmark_args or {})
+    benchmark_instance = benchmark_bundle.benchmark(**benchmark_args)
+
+    eval_kwargs = {
+        "benchmark": benchmark_instance,
+        "benchmark_name": eval_benchmark,
+        "benchmark_bundle": benchmark_bundle,
+        "benchmark_cli_options": {
+            "sample_limit": None,
+            "sample_ids": None,
+        },
+    }
+    return (
+        benchmark_instance.puzzle,
+        eval_benchmark,
+        PuzzleOptions(puzzle=eval_benchmark),
+        eval_kwargs,
+    )
+
+
 @click.command()
 @dist_puzzle_options
 @dist_train_options
@@ -42,12 +79,16 @@ def davi(
     puzzle_opts: PuzzleOptions,
     heuristic: NeuralHeuristicBase,
     puzzle_name: str,
+    puzzle_bundle,
     train_options: DistTrainOptions,
     k_max: int,
     eval_options: EvalOptions,
     heuristic_config: Dict[str, Any],
     **kwargs,
 ):
+    eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
+        puzzle, puzzle_name, puzzle_opts, puzzle_bundle
+    )
     # Calculate derived parameters first for logging
     steps = train_options.steps // train_options.replay_ratio
     update_interval = train_options.update_interval // train_options.replay_ratio
@@ -202,17 +243,18 @@ def davi(
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pbar.pause():
                     run_evaluation_sweep(
-                        puzzle=puzzle,
-                        puzzle_name=puzzle_name,
+                        puzzle=eval_puzzle,
+                        puzzle_name=eval_puzzle_name,
                         search_model=heuristic,
                         search_model_name="heuristic",
                         run_label="astar",
                         search_builder_fn=astar_d_builder,
                         eval_options=light_eval_options,
-                        puzzle_opts=puzzle_opts,
+                        puzzle_opts=eval_puzzle_opts,
                         output_dir=eval_run_dir,
                         logger=logger,
                         step=i,
+                        **eval_kwargs,
                         **kwargs,
                     )
     heuristic.params = eval_params
@@ -226,17 +268,18 @@ def davi(
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         with pbar.pause():
             run_evaluation_sweep(
-                puzzle=puzzle,
-                puzzle_name=puzzle_name,
+                puzzle=eval_puzzle,
+                puzzle_name=eval_puzzle_name,
                 search_model=heuristic,
                 search_model_name="heuristic",
                 run_label="astar",
                 search_builder_fn=astar_d_builder,
                 eval_options=eval_options,
-                puzzle_opts=puzzle_opts,
+                puzzle_opts=eval_puzzle_opts,
                 output_dir=eval_run_dir,
                 logger=logger,
                 step=steps,
+                **eval_kwargs,
                 **kwargs,
             )
 
@@ -253,12 +296,16 @@ def qlearning(
     puzzle_opts: PuzzleOptions,
     qfunction: NeuralQFunctionBase,
     puzzle_name: str,
+    puzzle_bundle,
     train_options: DistTrainOptions,
     k_max: int,
     eval_options: EvalOptions,
     q_config: Dict[str, Any],
     **kwargs,
 ):
+    eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
+        puzzle, puzzle_name, puzzle_opts, puzzle_bundle
+    )
     # Calculate derived parameters first for logging
     steps = train_options.steps
     update_interval = train_options.update_interval
@@ -414,17 +461,18 @@ def qlearning(
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
                 with pbar.pause():
                     run_evaluation_sweep(
-                        puzzle=puzzle,
-                        puzzle_name=puzzle_name,
+                        puzzle=eval_puzzle,
+                        puzzle_name=eval_puzzle_name,
                         search_model=qfunction,
                         search_model_name="qfunction",
                         run_label="qstar",
                         search_builder_fn=qstar_builder,
                         eval_options=light_eval_options,
-                        puzzle_opts=puzzle_opts,
+                        puzzle_opts=eval_puzzle_opts,
                         output_dir=eval_run_dir,
                         logger=logger,
                         step=i,
+                        **eval_kwargs,
                         **kwargs,
                     )
     qfunction.params = eval_params
@@ -438,17 +486,18 @@ def qlearning(
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         with pbar.pause():
             run_evaluation_sweep(
-                puzzle=puzzle,
-                puzzle_name=puzzle_name,
+                puzzle=eval_puzzle,
+                puzzle_name=eval_puzzle_name,
                 search_model=qfunction,
                 search_model_name="qfunction",
                 run_label="qstar",
                 search_builder_fn=qstar_builder,
                 eval_options=eval_options,
-                puzzle_opts=puzzle_opts,
+                puzzle_opts=eval_puzzle_opts,
                 output_dir=eval_run_dir,
                 logger=logger,
                 step=steps,
+                **eval_kwargs,
                 **kwargs,
             )
 

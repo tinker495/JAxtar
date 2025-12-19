@@ -110,6 +110,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 param_path="qfunction/neuralq/model/params/n-puzzle-conv_{size}.pkl",
             ),
         },
+        eval_benchmark="slide15-deepcubea",
     ),
     "n-puzzle-random": PuzzleBundle(
         puzzle=SlidePuzzleRandom,
@@ -172,6 +173,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             batch_size=1000,
             pop_ratio=float("inf"),
         ),
+        eval_benchmark="lightsout-deepcubea",
     ),
     "rubikscube": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCube),
@@ -191,6 +193,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube_{size}.pkl",
             ),
         },
+        eval_benchmark="rubikscube-deepcubea",
     ),
     "rubikscube-random": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCubeRandom),
@@ -230,6 +233,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_{size}.pkl",
             )
         },
+        eval_benchmark="rubikscube-santa333",
     ),
     "rubikscube-uqtm-random": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCubeRandom, kwargs={"metric": "UQTM"}),
@@ -502,17 +506,25 @@ def _sized_bundle(
 
 # n-puzzle families (3x3, 4x4, 5x5, 6x6, 7x7) with size-specific k_max defaults
 _NP_KMAX = {3: 100, 4: 500, 5: 500, 6: 500, 7: 500}
+_NP_BENCHMARKS = {
+    4: "slide15-deepcubea",
+    5: "slide24-deepcubea",
+    6: "slide35-deepcubea",
+    7: "slide48-deepcubea",
+}
 for _s in [3, 4, 5, 6, 7]:
     bundle = _sized_bundle(
         puzzle_bundles["n-puzzle"], size=_s, puzzle_cls=SlidePuzzle, hard_cls=None
     )
     bundle.k_max = _NP_KMAX[_s]
+    bundle.eval_benchmark = _NP_BENCHMARKS.get(_s)
     puzzle_bundles[f"n-puzzle-{_s}"] = bundle
 
     bundle_r = _sized_bundle(
         puzzle_bundles["n-puzzle-random"], size=_s, puzzle_cls=SlidePuzzleRandom, hard_cls=None
     )
     bundle_r.k_max = _NP_KMAX[_s]
+    bundle_r.eval_benchmark = _NP_BENCHMARKS.get(_s)
     puzzle_bundles[f"n-puzzle-random-{_s}"] = bundle_r
 
 # LightsOut common sizes (5, 7) with same hard initial shuffle policy and size-specific k_max
@@ -526,11 +538,18 @@ for _s in [5, 7]:
         hard_initial_shuffle=50,
     )
     bundle_l.k_max = _LO_KMAX[_s]
+    if _s == 7:
+        bundle_l.eval_benchmark = "lightsout-deepcubea"
     puzzle_bundles[f"lightsout-{_s}"] = bundle_l
 
 
 # Rubik's Cube size 3 with size-specific k_max
 _RC_KMAX = {3: 26, 4: 45, 5: 65}
+_RC_UQTM_BENCHMARKS = {
+    3: "rubikscube-santa333",
+    4: "rubikscube-santa444",
+    5: "rubikscube-santa555",
+}
 for _s in [3, 4, 5]:
     bundle_rc = _sized_bundle(
         puzzle_bundles["rubikscube"],
@@ -540,6 +559,8 @@ for _s in [3, 4, 5]:
         hard_initial_shuffle=120,
     )
     bundle_rc.k_max = _RC_KMAX[_s]
+    if _s == 3:
+        bundle_rc.eval_benchmark = "rubikscube-deepcubea"
     puzzle_bundles[f"rubikscube-{_s}"] = bundle_rc
 
     bundle_rcr = _sized_bundle(
@@ -557,6 +578,7 @@ for _s in [3, 4, 5]:
         hard_initial_shuffle=120,
     )
     bundle_rcu.k_max = _RC_KMAX[_s]
+    bundle_rcu.eval_benchmark = _RC_UQTM_BENCHMARKS.get(_s)
     puzzle_bundles[f"rubikscube-uqtm-{_s}"] = bundle_rcu
 
     bundle_rcur = _sized_bundle(

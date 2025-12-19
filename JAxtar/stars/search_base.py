@@ -57,6 +57,7 @@ def _reconstruct_path_arrays(
     solved_index: chex.Array,
     max_steps: int,
 ) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
+    parent_indices = parent_indices.astype(jnp.int32)
     path_idx = jnp.full((max_steps,), -1, dtype=jnp.int32)
     path_costs = jnp.full((max_steps,), jnp.nan, dtype=costs.dtype)
     path_dists = jnp.full((max_steps,), jnp.nan, dtype=dists.dtype)
