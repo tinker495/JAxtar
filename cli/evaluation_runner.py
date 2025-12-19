@@ -349,7 +349,7 @@ class EvaluationRunner:
         search_fn,
         heuristic_model,
         qfunction_model,
-    ) -> dict:
+    ) -> tuple[dict, Optional[dict]]:
         benchmark_sample = None
         if self.benchmark is not None:
             sample_id = identifier
@@ -417,6 +417,12 @@ class EvaluationRunner:
             elif optimal_path is not None:
                 result_item["benchmark_optimal_action_count"] = max(0, len(optimal_path) - 1)
 
+        deferred_payload = {
+            "result_item": result_item,
+            "solve_config": solve_config,
+            "initial_state": state,
+            "benchmark_sample": benchmark_sample,
+        }
         if solved:
             if hasattr(search_result, "solution_trace"):
                 (
@@ -466,8 +472,47 @@ class EvaluationRunner:
             result_item["path_actions"] = actual_actions
 
             states = [step.state for step in path_steps]
+            deferred_payload.update(
+                {
+                    "path_steps": path_steps,
+                    "states": states,
+                    "actual_actions": actual_actions,
+                }
+            )
 
-            if actual_actions:
+        # Extract expansion data for plotting node value distributions
+        if hasattr(search_result, "pop_generation"):
+            expanded_nodes_mask = search_result.pop_generation > -1
+            # Use np.asarray to handle potential JAX arrays on different devices
+            if np.any(np.asarray(expanded_nodes_mask)):
+                pop_generations = np.asarray(search_result.pop_generation[expanded_nodes_mask])
+                costs = np.asarray(search_result.cost[expanded_nodes_mask])
+                dists = np.asarray(search_result.dist[expanded_nodes_mask])
+
+                if pop_generations.size > 0:
+                    result_item["expansion_analysis"] = {
+                        "pop_generation": pop_generations,
+                        "cost": costs,
+                        "dist": dists,
+                    }
+        return result_item, deferred_payload
+
+    def _finalize_deferred_results(
+        self,
+        deferred_payloads: list[dict],
+        heuristic_model,
+        qfunction_model,
+    ) -> None:
+        for payload in deferred_payloads:
+            result_item = payload["result_item"]
+            path_steps = payload.get("path_steps")
+            states = payload.get("states") or []
+            actual_actions = payload.get("actual_actions") or []
+            benchmark_sample = payload.get("benchmark_sample")
+            solve_config = payload.get("solve_config")
+            initial_state = payload.get("initial_state")
+
+            if path_steps and actual_actions and not result_item.get("path_action_strings"):
                 action_to_string_fn = getattr(self.puzzle, "action_to_string", None)
                 actual_action_labels = []
                 for action_id in actual_actions:
@@ -481,7 +526,7 @@ class EvaluationRunner:
                     actual_action_labels.append(label)
                 result_item["path_action_strings"] = actual_action_labels
 
-            if states:
+            if path_steps and states and not result_item.get("path_analysis"):
                 costs_arr = jnp.asarray(
                     [step.cost for step in path_steps],
                     dtype=jnp.float32,
@@ -506,76 +551,45 @@ class EvaluationRunner:
                     "actions": actual_actions,
                 }
 
-            if self.benchmark is not None:
-                optimal_actions = getattr(benchmark_sample, "optimal_action_sequence", None)
-                optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
-                if optimal_actions is not None and optimal_sequence is None:
-                    if not isinstance(optimal_actions, (list, tuple)):
-                        optimal_actions = list(optimal_actions)
-                    optimal_sequence = []
-                    for action_val in optimal_actions:
-                        if isinstance(action_val, str):
-                            optimal_sequence.append(action_val)
-                        else:
-                            optimal_sequence.append(int(action_val))
-                    result_item["benchmark_optimal_action_sequence"] = optimal_sequence
-
-                verification_result = None
-                if hasattr(self.benchmark, "verify_solution") and states:
-                    try:
-                        verification_result = self.benchmark.verify_solution(
-                            benchmark_sample,
-                            states=states,
-                            action_sequence=result_item.get("path_action_strings"),
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        verification_result = None
-                        result_item["benchmark_verification_error"] = str(exc)
-
+            if (
+                self.benchmark is not None
+                and states
+                and hasattr(self.benchmark, "verify_solution")
+                and result_item.get("matches_optimal_path") is None
+            ):
+                try:
+                    verification_result = self.benchmark.verify_solution(
+                        benchmark_sample,
+                        states=states,
+                        action_sequence=result_item.get("path_action_strings"),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    verification_result = None
+                    result_item["benchmark_verification_error"] = str(exc)
                 result_item["matches_optimal_path"] = verification_result
 
-        # Overwrite path analysis with optimal path if available
-        if self.benchmark is not None:
-            # 1. Try to get optimal sequence from result_item (populated earlier)
-            optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
+            if self.benchmark is not None and solve_config is not None:
+                optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
+                if optimal_sequence is None and benchmark_sample is not None:
+                    optimal_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
 
-            # 2. If not found, check benchmark_sample for 'optimal_action_sequence' (standard name)
-            if optimal_sequence is None and benchmark_sample is not None:
-                optimal_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
+                optimal_path = None
+                if benchmark_sample is not None:
+                    optimal_path = getattr(benchmark_sample, "optimal_path", None)
 
-            # 3. Also check optimal_path (state sequence)
-            optimal_path = getattr(benchmark_sample, "optimal_path", None)
-
-            if optimal_sequence or optimal_path:
-                optimal_analysis = extract_heuristic_accuracy_data(
-                    puzzle=self.puzzle,
-                    solve_config=solve_config,
-                    initial_state=state,
-                    action_sequence=optimal_sequence,
-                    path_states=optimal_path,
-                    heuristic_model=heuristic_model,
-                    qfunction_model=qfunction_model,
-                )
-                if optimal_analysis:
-                    result_item["path_analysis"] = optimal_analysis
-                    result_item["used_optimal_path_for_analysis"] = True
-
-        # Extract expansion data for plotting node value distributions
-        if hasattr(search_result, "pop_generation"):
-            expanded_nodes_mask = search_result.pop_generation > -1
-            # Use np.asarray to handle potential JAX arrays on different devices
-            if np.any(np.asarray(expanded_nodes_mask)):
-                pop_generations = np.asarray(search_result.pop_generation[expanded_nodes_mask])
-                costs = np.asarray(search_result.cost[expanded_nodes_mask])
-                dists = np.asarray(search_result.dist[expanded_nodes_mask])
-
-                if pop_generations.size > 0:
-                    result_item["expansion_analysis"] = {
-                        "pop_generation": pop_generations,
-                        "cost": costs,
-                        "dist": dists,
-                    }
-        return result_item
+                if optimal_sequence or optimal_path:
+                    optimal_analysis = extract_heuristic_accuracy_data(
+                        puzzle=self.puzzle,
+                        solve_config=solve_config,
+                        initial_state=initial_state,
+                        action_sequence=optimal_sequence,
+                        path_states=optimal_path,
+                        heuristic_model=heuristic_model,
+                        qfunction_model=qfunction_model,
+                    )
+                    if optimal_analysis:
+                        result_item["path_analysis"] = optimal_analysis
+                        result_item["used_optimal_path_for_analysis"] = True
 
     def _run_evaluation(
         self,
@@ -585,6 +599,7 @@ class EvaluationRunner:
     ) -> list[dict]:
         num_puzzles = len(eval_inputs)
         results = []
+        deferred_payloads = []
 
         pbar = trange(
             num_puzzles,
@@ -597,7 +612,7 @@ class EvaluationRunner:
         for i in pbar:
             identifier = eval_inputs[i]
 
-            result_item = self._evaluate_single_sample(
+            result_item, deferred_payload = self._evaluate_single_sample(
                 identifier=identifier,
                 search_fn=search_fn,
                 heuristic_model=heuristic_model,
@@ -605,6 +620,8 @@ class EvaluationRunner:
             )
 
             results.append(result_item)
+            if deferred_payload is not None:
+                deferred_payloads.append(deferred_payload)
 
             solved_results = [r for r in results if r["solved"]]
             num_solved = len(solved_results)
@@ -677,6 +694,13 @@ class EvaluationRunner:
                         f"({self.eval_options.early_stop_threshold:.2%}) after {i + 1} samples."
                     )
                     break
+
+        if deferred_payloads:
+            self._finalize_deferred_results(
+                deferred_payloads,
+                heuristic_model=heuristic_model,
+                qfunction_model=qfunction_model,
+            )
 
         return results
 
