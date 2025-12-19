@@ -66,7 +66,7 @@ def extract_heuristic_accuracy_data(
                 return heuristic_model.batched_distance(params, states)
             if qfunction_model is not None:
                 params = qfunction_params if qfunction_params is not None else solve_config
-                return qfunction_model.batched_q_value(params, states)
+                return jnp.min(qfunction_model.batched_q_value(params, states), axis=-1)
             return None
 
         if action_sequence is not None:
