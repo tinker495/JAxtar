@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional, Union
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import xtructure.numpy as xnp
@@ -60,6 +61,31 @@ def extract_heuristic_accuracy_data(
                 return float(jnp.min(q_vals_arr))
             return None
 
+        def _batch_evaluate_model(states):
+            if heuristic_model is not None:
+                params = heuristic_params if heuristic_params is not None else solve_config
+
+                def fn(s):
+                    return heuristic_model.distance(params, s)
+
+                try:
+                    return jax.vmap(fn)(states)
+                except Exception:
+                    return jnp.asarray([_evaluate_model(s) for s in states])
+            if qfunction_model is not None:
+                params = qfunction_params if qfunction_params is not None else solve_config
+
+                def fn(s):
+                    return qfunction_model.q_value(params, s)
+
+                try:
+                    q_vals = jax.vmap(fn)(states)
+                    q_vals_arr = jnp.asarray(q_vals)
+                    return jnp.min(q_vals_arr, axis=-1)
+                except Exception:
+                    return jnp.asarray([_evaluate_model(s) for s in states])
+            return None
+
         if action_sequence is not None:
             actions_int = []
             action_lookup = None
@@ -97,15 +123,24 @@ def extract_heuristic_accuracy_data(
                 solve_config=solve_config,
                 initial_state=initial_state,
                 actions=actions_int,
-                heuristic=heuristic_model,
-                q_fn=qfunction_model,
+                heuristic=None,
+                q_fn=None,
             )
 
             # Re-evaluate dist for each step using the model directly on the state.
             # This matches how search algorithms (like search_base.py) update 'dist'
             # by evaluating the state when it is generated.
-            for step in path_steps:
-                step.dist = _evaluate_model(step.state)
+            if path_steps:
+                states = [step.state for step in path_steps]
+                states_batch = xnp.concatenate(states)
+                dists = _batch_evaluate_model(states_batch)
+                if dists is not None:
+                    dists_arr = np.asarray(dists)
+                    for step, dist_val in zip(path_steps, dists_arr):
+                        step.dist = float(dist_val)
+                else:
+                    for step in path_steps:
+                        step.dist = _evaluate_model(step.state)
 
         elif path_states is not None:
             # Construct path steps from states
@@ -167,11 +202,19 @@ def extract_heuristic_accuracy_data(
                 # Add next state placeholder
                 steps.append(PathStep(state=next_s, cost=current_cost, dist=0.0, action=None))
 
-            # Update the final state's distance
+            # Update distances in batch if possible.
             if valid_path and steps:
-                steps[-1].dist = _evaluate_model(
-                    steps[-1].state,
-                )
+                states = [s.state for s in steps]
+                states_batch = xnp.concatenate(states)
+                dists = _batch_evaluate_model(states_batch)
+                if dists is not None:
+                    dists_arr = np.asarray(dists)
+                    for step, dist_val in zip(steps, dists_arr):
+                        step.dist = float(dist_val)
+                else:
+                    steps[-1].dist = _evaluate_model(
+                        steps[-1].state,
+                    )
                 path_steps = steps
 
                 # Extract actions for return dict

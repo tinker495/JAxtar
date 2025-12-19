@@ -1,4 +1,8 @@
+import concurrent.futures
 import itertools
+import multiprocessing as mp
+import os
+import pickle
 import time
 from datetime import datetime
 from functools import partial
@@ -42,6 +46,22 @@ from qfunction.q_base import QFunction
 from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
 
+_VERIFY_BENCHMARK = None
+
+
+def _init_verify_worker(benchmark):
+    global _VERIFY_BENCHMARK
+    _VERIFY_BENCHMARK = benchmark
+
+
+def _verify_solution_worker(args):
+    benchmark_sample, states, action_sequence = args
+    return _VERIFY_BENCHMARK.verify_solution(
+        benchmark_sample,
+        states=states,
+        action_sequence=action_sequence,
+    )
+
 
 @partial(jax.jit)
 def _bulk_actual_estimated(
@@ -50,6 +70,17 @@ def _bulk_actual_estimated(
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     path_cost = costs[-1]
     actual = path_cost - costs
+    valid = jnp.isfinite(dists)
+    return actual, dists, valid
+
+
+@partial(jax.jit)
+def _bulk_actual_estimated_batch(
+    costs: jnp.ndarray,
+    dists: jnp.ndarray,
+    path_costs: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    actual = path_costs[:, None] - costs
     valid = jnp.isfinite(dists)
     return actual, dists, valid
 
@@ -472,6 +503,11 @@ class EvaluationRunner:
             result_item["path_actions"] = actual_actions
 
             states = [step.state for step in path_steps]
+            costs_list = [step.cost for step in path_steps]
+            dists_list = [
+                float(step.dist) if step.dist is not None else np.inf for step in path_steps
+            ]
+            states_concat = xnp.concatenate(states) if states else None
 
             if (
                 self.benchmark is not None
@@ -504,11 +540,18 @@ class EvaluationRunner:
                     result_item["benchmark_verification_error"] = str(exc)
 
                 result_item["matches_optimal_path"] = verification_result
+                deferred_payload["path_action_strings"] = result_item.get("path_action_strings")
+                deferred_payload["verify_result"] = verification_result
+                deferred_payload["verify_error"] = result_item.get("benchmark_verification_error")
             deferred_payload.update(
                 {
                     "path_steps": path_steps,
                     "states": states,
                     "actual_actions": actual_actions,
+                    "path_costs": costs_list,
+                    "path_dists": dists_list,
+                    "path_len": len(costs_list),
+                    "states_concat": states_concat,
                 }
             )
 
@@ -535,17 +578,24 @@ class EvaluationRunner:
         heuristic_model,
         qfunction_model,
     ) -> None:
-        for payload in deferred_payloads:
+        batched_payloads = []
+        batched_costs = []
+        batched_dists = []
+        batched_lengths = []
+        batched_path_costs = []
+        max_len = 0
+
+        verify_jobs = []
+        action_to_string_fn = getattr(self.puzzle, "action_to_string", None)
+        for idx, payload in enumerate(deferred_payloads):
             result_item = payload["result_item"]
             path_steps = payload.get("path_steps")
             states = payload.get("states") or []
             actual_actions = payload.get("actual_actions") or []
-            benchmark_sample = payload.get("benchmark_sample")
-            solve_config = payload.get("solve_config")
-            initial_state = payload.get("initial_state")
 
-            if path_steps and actual_actions and not result_item.get("path_action_strings"):
-                action_to_string_fn = getattr(self.puzzle, "action_to_string", None)
+            if payload.get("path_action_strings") is not None:
+                result_item["path_action_strings"] = payload.get("path_action_strings")
+            elif path_steps and actual_actions and not result_item.get("path_action_strings"):
                 actual_action_labels = []
                 for action_id in actual_actions:
                     if action_to_string_fn is None:
@@ -558,47 +608,188 @@ class EvaluationRunner:
                     actual_action_labels.append(label)
                 result_item["path_action_strings"] = actual_action_labels
 
-            if path_steps and states and not result_item.get("path_analysis"):
-                costs_arr = jnp.asarray(
-                    [step.cost for step in path_steps],
-                    dtype=jnp.float32,
-                )
-                dists_arr = jnp.asarray(
-                    [float(step.dist) if step.dist is not None else np.inf for step in path_steps],
-                    dtype=jnp.float32,
-                )
-                actual_dists_arr, estimated_dists_arr, valid_mask = _bulk_actual_estimated(
-                    costs_arr,
-                    dists_arr,
-                )
-                actual_np = np.asarray(actual_dists_arr)
-                estimated_np = np.asarray(estimated_dists_arr)
-                valid_np = np.asarray(valid_mask)
-                actual_dists = [float(v) for v in actual_np[valid_np]]
-                estimated_dists = [float(v) for v in estimated_np[valid_np]]
-                result_item["path_analysis"] = {
-                    "actual": actual_dists,
-                    "estimated": estimated_dists,
-                    "states": xnp.concatenate(states),
-                    "actions": actual_actions,
-                }
-
             if (
                 self.benchmark is not None
                 and states
                 and hasattr(self.benchmark, "verify_solution")
                 and result_item.get("matches_optimal_path") is None
             ):
-                try:
-                    verification_result = self.benchmark.verify_solution(
-                        benchmark_sample,
-                        states=states,
-                        action_sequence=result_item.get("path_action_strings"),
+                verify_jobs.append(
+                    (
+                        idx,
+                        payload.get("benchmark_sample"),
+                        states,
+                        result_item.get("path_action_strings"),
                     )
-                except Exception as exc:  # noqa: BLE001
-                    verification_result = None
-                    result_item["benchmark_verification_error"] = str(exc)
-                result_item["matches_optimal_path"] = verification_result
+                )
+
+        for payload in deferred_payloads:
+            result_item = payload["result_item"]
+            path_steps = payload.get("path_steps")
+            states = payload.get("states") or []
+            if path_steps and states and not result_item.get("path_analysis"):
+                costs = payload.get("path_costs") or [step.cost for step in path_steps]
+                dists = payload.get("path_dists") or [
+                    float(step.dist) if step.dist is not None else np.inf for step in path_steps
+                ]
+                length = payload.get("path_len") or len(costs)
+                if length == 0:
+                    continue
+                payload["_batch_index"] = len(batched_payloads)
+                batched_payloads.append(payload)
+                batched_costs.append(costs)
+                batched_dists.append(dists)
+                batched_lengths.append(length)
+                batched_path_costs.append(float(costs[-1]))
+                if length > max_len:
+                    max_len = length
+
+        verify_results = {}
+        if verify_jobs:
+            use_process_pool = False
+            try:
+                pickle.dumps(self.benchmark)
+                sample_job = verify_jobs[0]
+                pickle.dumps(sample_job[1])
+                pickle.dumps(sample_job[2])
+                pickle.dumps(sample_job[3])
+                use_process_pool = True
+            except Exception:
+                use_process_pool = False
+
+            max_workers = min(len(verify_jobs), max(1, os.cpu_count() or 1))
+            if use_process_pool:
+                ctx = mp.get_context("spawn")
+                with concurrent.futures.ProcessPoolExecutor(
+                    max_workers=max_workers,
+                    mp_context=ctx,
+                    initializer=_init_verify_worker,
+                    initargs=(self.benchmark,),
+                ) as executor:
+                    future_map = {
+                        executor.submit(
+                            _verify_solution_worker,
+                            (sample, states, actions),
+                        ): idx
+                        for idx, sample, states, actions in verify_jobs
+                    }
+                    for future in concurrent.futures.as_completed(future_map):
+                        idx = future_map[future]
+                        try:
+                            verify_results[idx] = (future.result(), None)
+                        except Exception as exc:  # noqa: BLE001
+                            verify_results[idx] = (None, str(exc))
+            else:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=min(32, max_workers)
+                ) as executor:
+                    future_map = {
+                        executor.submit(
+                            self.benchmark.verify_solution,
+                            sample,
+                            states=states,
+                            action_sequence=actions,
+                        ): idx
+                        for idx, sample, states, actions in verify_jobs
+                    }
+                    for future in concurrent.futures.as_completed(future_map):
+                        idx = future_map[future]
+                        try:
+                            verify_results[idx] = (future.result(), None)
+                        except Exception as exc:  # noqa: BLE001
+                            verify_results[idx] = (None, str(exc))
+
+        batched_actual = None
+        batched_estimated = None
+        batched_valid = None
+        if batched_payloads:
+            padded_costs = np.full((len(batched_payloads), max_len), 0.0, dtype=np.float32)
+            padded_dists = np.full((len(batched_payloads), max_len), np.inf, dtype=np.float32)
+            for i, (costs, dists, length) in enumerate(
+                zip(batched_costs, batched_dists, batched_lengths)
+            ):
+                padded_costs[i, :length] = np.asarray(costs, dtype=np.float32)
+                padded_dists[i, :length] = np.asarray(dists, dtype=np.float32)
+                if length < max_len:
+                    padded_costs[i, length:] = padded_costs[i, length - 1]
+
+            actual_arr, estimated_arr, valid_mask = _bulk_actual_estimated_batch(
+                jnp.asarray(padded_costs),
+                jnp.asarray(padded_dists),
+                jnp.asarray(batched_path_costs, dtype=jnp.float32),
+            )
+            batched_actual = np.asarray(actual_arr)
+            batched_estimated = np.asarray(estimated_arr)
+            batched_valid = np.asarray(valid_mask)
+
+        finalize_bar = trange(
+            len(deferred_payloads),
+            desc="Finalizing Results",
+        )
+        for idx in finalize_bar:
+            payload = deferred_payloads[idx]
+            result_item = payload["result_item"]
+            path_steps = payload.get("path_steps")
+            states = payload.get("states") or []
+            actual_actions = payload.get("actual_actions") or []
+            benchmark_sample = payload.get("benchmark_sample")
+            solve_config = payload.get("solve_config")
+            initial_state = payload.get("initial_state")
+
+            if path_steps and states and not result_item.get("path_analysis"):
+                batch_index = payload.get("_batch_index")
+                if batched_actual is not None and batch_index is not None:
+                    length = batched_lengths[batch_index]
+                    actual_np = batched_actual[batch_index, :length]
+                    estimated_np = batched_estimated[batch_index, :length]
+                    valid_np = batched_valid[batch_index, :length]
+                    actual_dists = [float(v) for v in actual_np[valid_np]]
+                    estimated_dists = [float(v) for v in estimated_np[valid_np]]
+                else:
+                    costs_arr = jnp.asarray(
+                        [step.cost for step in path_steps],
+                        dtype=jnp.float32,
+                    )
+                    dists_arr = jnp.asarray(
+                        [
+                            float(step.dist) if step.dist is not None else np.inf
+                            for step in path_steps
+                        ],
+                        dtype=jnp.float32,
+                    )
+                    actual_dists_arr, estimated_dists_arr, valid_mask = _bulk_actual_estimated(
+                        costs_arr,
+                        dists_arr,
+                    )
+                    actual_np = np.asarray(actual_dists_arr)
+                    estimated_np = np.asarray(estimated_dists_arr)
+                    valid_np = np.asarray(valid_mask)
+                    actual_dists = [float(v) for v in actual_np[valid_np]]
+                    estimated_dists = [float(v) for v in estimated_np[valid_np]]
+
+                result_item["path_analysis"] = {
+                    "actual": actual_dists,
+                    "estimated": estimated_dists,
+                    "states": payload.get("states_concat") or xnp.concatenate(states),
+                    "actions": actual_actions,
+                }
+
+            if result_item.get("matches_optimal_path") is None:
+                if (
+                    payload.get("verify_result") is not None
+                    or payload.get("verify_error") is not None
+                ):
+                    result_item["matches_optimal_path"] = payload.get("verify_result")
+                    if payload.get("verify_error") is not None:
+                        result_item["benchmark_verification_error"] = payload.get("verify_error")
+                else:
+                    verify_result = verify_results.get(idx)
+                    if verify_result is not None:
+                        verification_result, error_text = verify_result
+                        if error_text is not None:
+                            result_item["benchmark_verification_error"] = error_text
+                        if verification_result is not None:
+                            result_item["matches_optimal_path"] = verification_result
 
             if self.benchmark is not None and solve_config is not None:
                 optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
