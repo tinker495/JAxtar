@@ -1,6 +1,5 @@
 from typing import Any, Dict, List, Optional, Union
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import xtructure.numpy as xnp
@@ -64,26 +63,10 @@ def extract_heuristic_accuracy_data(
         def _batch_evaluate_model(states):
             if heuristic_model is not None:
                 params = heuristic_params if heuristic_params is not None else solve_config
-
-                def fn(s):
-                    return heuristic_model.distance(params, s)
-
-                try:
-                    return jax.vmap(fn)(states)
-                except Exception:
-                    return jnp.asarray([_evaluate_model(s) for s in states])
+                return heuristic_model.batched_distance(params, states)
             if qfunction_model is not None:
                 params = qfunction_params if qfunction_params is not None else solve_config
-
-                def fn(s):
-                    return qfunction_model.q_value(params, s)
-
-                try:
-                    q_vals = jax.vmap(fn)(states)
-                    q_vals_arr = jnp.asarray(q_vals)
-                    return jnp.min(q_vals_arr, axis=-1)
-                except Exception:
-                    return jnp.asarray([_evaluate_model(s) for s in states])
+                return qfunction_model.batched_q_value(params, states)
             return None
 
         if action_sequence is not None:
