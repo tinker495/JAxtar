@@ -25,20 +25,18 @@ The following model configurations are used throughout the benchmark results. Ea
 | Algorithm | Model | Success Rate / Optimal Rate | Avg Time (s) | Avg Nodes | Avg Path Cost | R² (Heuristic) | CCC (Heuristic) | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A* | DAVI loss thresholded(0.1) - 14.7M params | 99.80% / 70.24% | 6.812s | 7.67M | 21.23 | 0.797 | 0.872 | Use 50M max nodes |
-| A* | Diffusion Distance - 14.7M params | 100% / 54.70% | 1.567s | 1.81M | 21.60 | 0.894 | 0.953 | |
-| A* | Diffusion Distance - 4M params | 100% / 45.70% | 1.097s | 1.84M | 21.86 | 0.883 | 0.948 | |
+| A* | Diffusion Distance - 14.7M params | 100% / 54.60% | 1.438s | 1.82M | 21.61 | 0.891 | 0.952 | |
+| A* | Diffusion Distance - 4M params | 100% / 45.70% | 0.973s | 1.84M | 21.86 | 0.883 | 0.948 | |
 | A* Deferred | DAVI loss thresholded(0.1) - 14.7M params | 100.00% / 70.20% | 7.362s | 764K | 21.24 | 0.797 | 0.872 | |
-| A* Deferred | Diffusion Distance - 14.7M params | 100% / 54.70% | 1.682s | 187K | 21.60 | 0.894 | 0.953 | |
-| A* Deferred | Diffusion Distance - 4M params | 100% / 45.60% | 1.192s | 190K | 21.86 | 0.883 | 0.948 | |
-| Q* | Q-learning loss thresholded(0.1) - 14.7M params | 100.00% / 28.60% | 1.236s | 264K | 22.39 | 0.871 | 0.923 | |
-| Q* | Diffusion Distance warmup - 14.7M params | 100% / 49.50% | 0.589s | 188K | 21.72 | 0.87 | 0.945 | |
-| Q* | Diffusion Distance warmup - 4M params | 100% / 36.50% | 0.571s | 192K | 22.1 | 0.929 | 0.963 | |
-| Beam Search | DAVI loss thresholded(0.1) - 14.7M params | 100.00% / 33.50% | 1.098s | 194K | 22.24 | 0.797 | 0.872 | |
-| Beam Search | Diffusion Distance - 14.7M params | 100% / 51.10% | 1.078s | 188K | 21.70 | 0.893 | 0.952 | |
-| Beam Search | Diffusion Distance - 4M params | 100% / 44% | 0.595s | 190K | 21.89 | 0.883 | 0.948 | |
-| Q-Beam Search | Q-learning loss thresholded(0.1) - 14.7M params | 100.00% / 25.90% | 0.293s | 136K | 22.51 | 0.871 | 0.923 | |
-| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% / 46.30% | 0.278s | 137K | 21.8 | 0.87 | 0.945 | |
-| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% / 33.90% | 0.234s | 134K | 22.21 | 0.929 | 0.963 | |
+| A* Deferred | Diffusion Distance - 14.7M params | 100% / 54.50% | 1.527s | 187K | 21.61 | 0.891 | 0.952 | |
+| A* Deferred | Diffusion Distance - 4M params | 100% / 45.70% | 0.973s | 1.84M | 21.86 | 0.883 | 0.948 | |
+| Q* | Q-learning loss thresholded(0.1) - 14.7M params | 100% / 28.60% | 1.236s | 264K | 22.39 | 0.871 | 0.923 | |
+| Q* | Diffusion Distance warmup - 14.7M params | 100% / 51.30% | 0.710s | 188K | 21.68 | 0.941 | 0.970 | |
+| Q* | Diffusion Distance warmup - 4M params | 100% / 39.40% | 0.699s | 191K | 22.01 | 0.932 | 0.965 | |
+| Beam Search | Diffusion Distance - 14.7M params | 100% / 53.70% | 0.943s | 187K | 21.63 | 0.891 | 0.952 | |
+| Beam Search | Diffusion Distance - 4M params | 100% / 44.70% | 0.468s | 190K | 21.88 | 0.883 | 0.948 | |
+| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% / 47.70% | 0.094s | 130K | 21.77 | 0.941 | 0.970 | |
+| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% / 34.50% | 0.055s | 134K | 22.15 | 0.932 | 0.965 | |
 
 # CayleyPy Batch Size Configuration
 - Batch Size: 2^18 / Max Node Size: 20M / Cost Weight: 0.9 / Pop Ratio: inf
@@ -47,15 +45,11 @@ The following model configurations are used throughout the benchmark results. Ea
 | Algorithm | Model | Success Rate / Optimal Rate | Avg Time (s) | Avg Nodes | Avg Path Cost | R² (Heuristic) | CCC (Heuristic) | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A* | - | Mostly OOM | - | - | - | - | - | - |
-| A* Deferred | DAVI loss thresholded(0.1) - 14.7M params | 100% / 75.70% | 11.357s | 4.41M | 21.12 | 0.797 | 0.872 | |
-| A* Deferred | Diffusion Distance - 14.7M params | 100% / 86.00% | 8.315s | 4.27M | 20.92 | 0.894 | 0.953 | |
-| A* Deferred | Diffusion Distance - 4M params | 100% / 80.50% | 3.952s | 4.3M | 21.03 | 0.883 | 0.948 | |
-| Q* | Q-learning loss thresholded(0.1) - 14.7M params | 100% / 81.50% | 1.278s | 4.29M | 21.01 | 0.87 | 0.945 | Not yet |
-| Q* | Diffusion Distance warmup - 14.7M params | 100% / 81.50% | 1.278s | 4.29M | 21.01 | 0.87 | 0.945 | |
-| Q* | Diffusion Distance warmup - 4M params | 100% / 73.7.% | 0.895s | 4.34M | 21.17 | 0.929 | 0.963 | |
-| Beam Search | DAVI loss thresholded(0.1) - 14.7M params | 100.00% / 73.20% | 9.781s | 4.35M | 21.18 | 0.797 | 0.872 | |
-| Beam Search | Diffusion Distance - 14.7M params | 100% / 84.10% | 7.878s | 4.29M | 20.96 | 0.892 | 0.952 | |
-| Beam Search | Diffusion Distance - 4M params | 100% / 80.3% | 3.669s | 4.31M | 21.03 | 0.882 | 0.948 | |
-| Q-Beam Search | Q-learning loss thresholded(0.1) - 14.7M params | 100% / 84.10% | 7.878s | 4.29M | 20.96 | 0.892 | 0.952 | Not yet |
-| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% / 79.80% | 0.846s | 3.14M | 21.04 | 0.87 | 0.945 | |
-| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% / 70.60% | 0.453s | 3.06M | 21.24 | 0.929 | 0.963 | |
+| A* Deferred | Diffusion Distance - 14.7M params | 100% / 86.00% | 8.350s | 4.27M | 20.92 | 0.894 | 0.953 | |
+| A* Deferred | Diffusion Distance - 4M params | 100% / 80.50% | 3.941s | 4.3M | 21.03 | 0.883 | 0.948 | |
+| Q* | Diffusion Distance warmup - 14.7M params | 100% / 84.20% | 1.254s | 4.28M | 20.95 | 0.941 | 0.970 | |
+| Q* | Diffusion Distance warmup - 4M params | 100% / 76.90% | 0.850s | 4.32M | 21.10 | 0.932 | 0.965 | |
+| Beam Search | Diffusion Distance - 14.7M params | 100% / 85.50% | 8.052s | 4.28M | 20.93 | 0.894 | 0.953 | |
+| Beam Search | Diffusion Distance - 4M params | 100% / 80.00% | 3.649s | 4.31M | 21.04 | 0.883 | 0.948 | |
+| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% / 81.30% | 0.851s | 2.98M | 21.01 | 0.941 | 0.970 | |
+| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% / 72.30% | 0.452s | 3.07M | 21.20 | 0.932 | 0.965 | |
