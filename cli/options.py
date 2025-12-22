@@ -583,171 +583,189 @@ def human_play_options(func: callable) -> callable:
     return wrapper
 
 
-def dist_train_options(func: callable) -> callable:
-    @click.option("-s", "--steps", type=int, default=None)
-    @click.option("-db", "--dataset_batch_size", type=int, default=None)
-    @click.option("-dmb", "--dataset_minibatch_size", type=int, default=None)
-    @click.option(
-        "--sampling-non-backtracking-steps",
-        type=int,
-        default=None,
-        help="Number of previous states to avoid revisiting during dataset sampling.",
-    )
-    @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
-    @click.option("-k", "--key", type=int, default=None)
-    @click.option("-r", "--reset", type=bool, default=None)
-    @click.option("-lt", "--loss_threshold", type=float, default=None)
-    @click.option("-ui", "--update_interval", type=int, default=None)
-    @click.option("-fui", "--force_update_interval", type=int, default=None)
-    @click.option("-su", "--use_soft_update", is_flag=True, default=None)
-    @click.option(
-        "-ddn",
-        "--use_double_dqn",
-        is_flag=True,
-        default=None,
-        help="Enable Double DQN target computation.",
-    )
-    @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
-    @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
-    @click.option(
-        "-dd",
-        "--use_diffusion_distance",
-        is_flag=True,
-        default=None,
-        help="Enable diffusion distance features in dataset creation.",
-    )
-    @click.option(
-        "-ddm",
-        "--use_diffusion_distance_mixture",
-        is_flag=True,
-        default=None,
-        help="Enable diffusion distance mixture features in dataset creation.",
-    )
-    @click.option(
-        "--use_diffusion_distance_warmup",
-        is_flag=True,
-        default=None,
-        help="Enable warmup schedule when using diffusion distance features.",
-    )
-    @click.option(
-        "--diffusion_distance_warmup_steps",
-        type=int,
-        default=None,
-        help="Number of iterations to run before enabling diffusion distance features.",
-    )
-    @click.option(
-        "-tp",
-        "--temperature",
-        type=float,
-        default=None,
-        help="Boltzmann temperature for action selection.",
-    )
-    @click.option("-d", "--debug", is_flag=True, default=None)
-    @click.option("-md", "--multi_device", type=bool, default=None)
-    @click.option("-ri", "--reset_interval", type=int, default=None)
-    @click.option("-osr", "--opt_state_reset", type=bool, default=None)
-    @click.option("--tau", type=float, default=None)
-    @click.option(
-        "--optimizer",
-        type=click.Choice(list(OPTIMIZERS.keys())),
-        default="adam",
-        help="Optimizer to use",
-    )
-    @click.option("-lr", "--learning_rate", type=float, default=None)
-    @click.option(
-        "-wd",
-        "--weight_decay_size",
-        type=float,
-        default=None,
-        help="Weight decay size for regularization.",
-    )
-    @click.option(
-        "--loss",
-        type=click.Choice(
-            [
-                "mse",
-                "huber",
-                "logcosh",
-                "asymmetric_huber",
-                "asymmetric_logcosh",
-            ]
-        ),
-        default=None,
-        help="Select training loss.",
-    )
-    @click.option(
-        "--loss-args",
-        "loss_args",
-        type=str,
-        default=None,
-        help=(
-            "JSON object of additional keyword arguments for the selected loss, "
-            'e.g. \'{"huber_delta":0.2,"asymmetric_tau":0.1}\'.'
-        ),
-    )
-    @click.option(
-        "--td-error-clip",
-        "td_error_clip",
-        type=float,
-        default=None,
-        help="Absolute clip value for TD-error; set <= 0 to disable.",
-    )
-    @click.option(
-        "-km",
-        "--k_max",
-        type=int,
-        default=None,
-        help="Override puzzle's default k_max (formerly shuffle_length).",
-    )
-    @click.option(
-        "--logger",
-        type=click.Choice(["aim", "tensorboard", "wandb", "none"]),
-        default=None,
-        help="Logger to use.",
-    )
-    @click.option(
-        "-pre",
-        "--preset",
-        type=click.Choice(list(train_presets.keys())),
-        default="default",
-        help="Training configuration preset.",
-    )
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        puzzle_bundle = kwargs["puzzle_bundle"]
+def dist_train_options(
+    func: callable = None, *, preset_category: str, default_preset: str | None = None
+) -> callable:
+    preset_map = train_presets.get(preset_category)
+    if not preset_map:
+        raise RuntimeError(f"Unknown training preset category '{preset_category}'.")
 
-        user_kmax = kwargs.pop("k_max")
-        final_kmax = user_kmax if user_kmax is not None else puzzle_bundle.k_max
-        # Pass through as k_max to downstream commands
-        kwargs["k_max"] = final_kmax
+    preset_choices = list(preset_map.keys())
+    preset_default = default_preset or preset_choices[0]
+    if preset_default not in preset_map:
+        raise RuntimeError(
+            f"Default preset '{preset_default}' is not registered for category '{preset_category}'."
+        )
 
-        preset_name = kwargs.pop("preset")
-        preset = train_presets[preset_name]
+    def decorator(inner: callable) -> callable:
+        @click.option("-s", "--steps", type=int, default=None)
+        @click.option("-db", "--dataset_batch_size", type=int, default=None)
+        @click.option("-dmb", "--dataset_minibatch_size", type=int, default=None)
+        @click.option(
+            "--sampling-non-backtracking-steps",
+            type=int,
+            default=None,
+            help="Number of previous states to avoid revisiting during dataset sampling.",
+        )
+        @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
+        @click.option("-k", "--key", type=int, default=None)
+        @click.option("-r", "--reset", type=bool, default=None)
+        @click.option("-lt", "--loss_threshold", type=float, default=None)
+        @click.option("-ui", "--update_interval", type=int, default=None)
+        @click.option("-fui", "--force_update_interval", type=int, default=None)
+        @click.option("-su", "--use_soft_update", is_flag=True, default=None)
+        @click.option(
+            "-ddn",
+            "--use_double_dqn",
+            is_flag=True,
+            default=None,
+            help="Enable Double DQN target computation.",
+        )
+        @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
+        @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
+        @click.option(
+            "-dd",
+            "--use_diffusion_distance",
+            is_flag=True,
+            default=None,
+            help="Enable diffusion distance features in dataset creation.",
+        )
+        @click.option(
+            "-ddm",
+            "--use_diffusion_distance_mixture",
+            is_flag=True,
+            default=None,
+            help="Enable diffusion distance mixture features in dataset creation.",
+        )
+        @click.option(
+            "--use_diffusion_distance_warmup",
+            is_flag=True,
+            default=None,
+            help="Enable warmup schedule when using diffusion distance features.",
+        )
+        @click.option(
+            "--diffusion_distance_warmup_steps",
+            type=int,
+            default=None,
+            help="Number of iterations to run before enabling diffusion distance features.",
+        )
+        @click.option(
+            "-tp",
+            "--temperature",
+            type=float,
+            default=None,
+            help="Boltzmann temperature for action selection.",
+        )
+        @click.option("-d", "--debug", is_flag=True, default=None)
+        @click.option("-md", "--multi_device", type=bool, default=None)
+        @click.option("-ri", "--reset_interval", type=int, default=None)
+        @click.option("-osr", "--opt_state_reset", type=bool, default=None)
+        @click.option("--tau", type=float, default=None)
+        @click.option(
+            "--optimizer",
+            type=click.Choice(list(OPTIMIZERS.keys())),
+            default="adam",
+            help="Optimizer to use",
+        )
+        @click.option("-lr", "--learning_rate", type=float, default=None)
+        @click.option(
+            "-wd",
+            "--weight_decay_size",
+            type=float,
+            default=None,
+            help="Weight decay size for regularization.",
+        )
+        @click.option(
+            "--loss",
+            type=click.Choice(
+                [
+                    "mse",
+                    "huber",
+                    "logcosh",
+                    "asymmetric_huber",
+                    "asymmetric_logcosh",
+                ]
+            ),
+            default=None,
+            help="Select training loss.",
+        )
+        @click.option(
+            "--loss-args",
+            "loss_args",
+            type=str,
+            default=None,
+            help=(
+                "JSON object of additional keyword arguments for the selected loss, "
+                'e.g. \'{"huber_delta":0.2,"asymmetric_tau":0.1}\'.'
+            ),
+        )
+        @click.option(
+            "--td-error-clip",
+            "td_error_clip",
+            type=float,
+            default=None,
+            help="Absolute clip value for TD-error; set <= 0 to disable.",
+        )
+        @click.option(
+            "-km",
+            "--k_max",
+            type=int,
+            default=None,
+            help="Override puzzle's default k_max (formerly shuffle_length).",
+        )
+        @click.option(
+            "--logger",
+            type=click.Choice(["aim", "tensorboard", "wandb", "none"]),
+            default=None,
+            help="Logger to use.",
+        )
+        @click.option(
+            "-pre",
+            "--preset",
+            type=click.Choice(preset_choices),
+            default=preset_default,
+            help=f"Training configuration preset for {preset_category.replace('_', ' ')}.",
+        )
+        @wraps(inner)
+        def wrapper(*args, **kwargs):
+            puzzle_bundle = kwargs["puzzle_bundle"]
 
-        # Collect any user-provided options to override the preset
-        # map_kwargs_to_pydantic handles popping
-        overrides = map_kwargs_to_pydantic(DistTrainOptions, kwargs)
+            user_kmax = kwargs.pop("k_max")
+            final_kmax = user_kmax if user_kmax is not None else puzzle_bundle.k_max
+            # Pass through as k_max to downstream commands
+            kwargs["k_max"] = final_kmax
 
-        # Cleanup None values remaining in kwargs that correspond to DistTrainOptions fields
-        for key in list(kwargs.keys()):
-            if key in DistTrainOptions.model_fields and kwargs[key] is None:
-                kwargs.pop(key)
+            preset_name = kwargs.pop("preset")
+            preset = preset_map[preset_name]
 
-        # Handle special case for loss_args if it's a string in overrides
-        if "loss_args" in overrides and isinstance(overrides["loss_args"], str):
-            overrides["loss_args"] = json.loads(overrides["loss_args"])
+            # Collect any user-provided options to override the preset
+            # map_kwargs_to_pydantic handles popping
+            overrides = map_kwargs_to_pydantic(DistTrainOptions, kwargs)
 
-        # Create a final options object by applying overrides to the preset
-        train_opts = preset.model_copy(update=overrides)
+            # Cleanup None values remaining in kwargs that correspond to DistTrainOptions fields
+            for key in list(kwargs.keys()):
+                if key in DistTrainOptions.model_fields and kwargs[key] is None:
+                    kwargs.pop(key)
 
-        if train_opts.debug:
-            print("Disabling JIT")
-            jax.config.update("jax_disable_jit", True)
+            # Handle special case for loss_args if it's a string in overrides
+            if "loss_args" in overrides and isinstance(overrides["loss_args"], str):
+                overrides["loss_args"] = json.loads(overrides["loss_args"])
 
-        kwargs["train_options"] = train_opts
-        return func(*args, **kwargs)
+            # Create a final options object by applying overrides to the preset
+            train_opts = preset.model_copy(update=overrides)
 
-    return wrapper
+            if train_opts.debug:
+                print("Disabling JIT")
+                jax.config.update("jax_disable_jit", True)
+
+            kwargs["train_options"] = train_opts
+            return inner(*args, **kwargs)
+
+        return wrapper
+
+    if func is None:
+        return decorator
+    return decorator(func)
 
 
 def dist_heuristic_options(func: callable) -> callable:

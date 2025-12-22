@@ -1,26 +1,26 @@
-# Q-Learning Training Command (`distance_train qlearning`)
+# Q-Learning Training Command (`distance_train qfunction`)
 
-The `distance_train qlearning` command is used to train a neural network to serve as a Q-function. The goal of the model is to estimate the expected cost (Q-value) of taking a specific action from a given state. This is a fundamental concept in reinforcement learning and can be used to guide search algorithms like Q\*.
+The `distance_train qfunction` command is used to train a neural network to serve as a Q-function. The goal of the model is to estimate the expected cost (Q-value) of taking a specific action from a given state. This is a fundamental concept in reinforcement learning and can be used to guide search algorithms like Q\*.
 
 This command is intended for users interested in reinforcement learning, Q-functions, or training custom models for puzzles.
 
 ## Usage
 
-The basic syntax for the `distance_train qlearning` command is:
+The basic syntax for the `distance_train qfunction` command is:
 
 ```bash
-python main.py distance_train qlearning [OPTIONS]
+python main.py distance_train qfunction [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py distance_train qlearning -p rubikscube -pre default -s 10000
+python main.py distance_train qfunction -p rubikscube -pre default -s 10000
 ```
 
 ## Options
 
-The `distance_train qlearning` command uses several option groups to configure the training process.
+The `distance_train qfunction` command uses several option groups to configure the training process.
 
 ### Puzzle Options (`@dist_puzzle_options`)
 

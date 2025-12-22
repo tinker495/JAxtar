@@ -1,26 +1,26 @@
-# DAVI Heuristic Training Command (`distance_train davi`)
+# DAVI Heuristic Training Command (`distance_train heuristic`)
 
-The `distance_train davi` command is used to train a neural network heuristic model. It implements a variant of the "learning from demonstration" paradigm, specifically tailored for heuristic search, which can be thought of as Dynamic A* Value Iteration (DAVI). The goal is to train a model that can accurately predict the distance (cost) from any given state to the goal state.
+The `distance_train heuristic` command is used to train a neural network heuristic model. It implements a variant of the "learning from demonstration" paradigm, specifically tailored for heuristic search, which can be thought of as Dynamic A* Value Iteration (DAVI). The goal is to train a model that can accurately predict the distance (cost) from any given state to the goal state.
 
 This command is intended for users interested in research on neural heuristics or training custom models for puzzles.
 
 ## Usage
 
-The basic syntax for the `distance_train davi` command is:
+The basic syntax for the `distance_train heuristic` command is:
 
 ```bash
-python main.py distance_train davi [OPTIONS]
+python main.py distance_train heuristic [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py distance_train davi -p rubikscube -pre default -s 10000 -db 1000 -dmb 200 -tmb 200
+python main.py distance_train heuristic -p rubikscube -pre default -s 10000 -db 1000 -dmb 200 -tmb 200
 ```
 
 ## Options
 
-The `distance_train davi` command uses several option groups to configure the training process.
+The `distance_train heuristic` command uses several option groups to configure the training process.
 
 ### Puzzle Options (`@dist_puzzle_options`)
 
