@@ -8,14 +8,7 @@ import numpy as np
 from flax import linen as nn
 from puxle import Puzzle
 
-from neural_util.modules import (
-    DEFAULT_NORM_FN,
-    DTYPE,
-    HEAD_DTYPE,
-    PreActivationResBlock,
-    ResBlock,
-    Swiglu,
-)
+from neural_util.basemodel import BaseModel
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -23,7 +16,7 @@ from neural_util.param_manager import (
 )
 from neural_util.util import download_model, is_model_downloaded
 from qfunction.q_base import QFunction
-from neural_util.basemodel import BaseModel
+
 
 class NeuralQFunctionBase(QFunction):
     def __init__(
@@ -36,7 +29,7 @@ class NeuralQFunctionBase(QFunction):
     ):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
-        self.action_size = self._get_action_size()
+        self.action_size = puzzle.action_size
         self.metadata = {}
         self.nn_args_metadata = {}
         self._preloaded_params = None
@@ -58,11 +51,6 @@ class NeuralQFunctionBase(QFunction):
                 self.params = self.load_model()
         else:
             self.params = self.get_new_params()
-
-    def _get_action_size(self):
-        dummy_solve_config = self.puzzle.SolveConfig.default()
-        dummy_current = self.puzzle.State.default()
-        return self.puzzle.get_neighbours(dummy_solve_config, dummy_current)[0].shape[0][0]
 
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
