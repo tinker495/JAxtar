@@ -10,7 +10,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
-from qfunction.neuralq.neuralq_base import QModelBase
+from neural_util.basemodel import BaseModel
 from train_util.annotate import MAX_GEN_DS_BATCH_SIZE
 from train_util.losses import loss_from_diff
 from train_util.sampling import (
@@ -27,7 +27,7 @@ from train_util.util import (
 
 def qlearning_builder(
     minibatch_size: int,
-    q_fn: QModelBase,
+    q_fn: BaseModel,
     optimizer: optax.GradientTransformation,
     preproc_fn: Callable,
     n_devices: int = 1,
@@ -210,7 +210,7 @@ def boltzmann_action_selection(
 def _get_datasets_with_policy(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    q_model: QModelBase,
+    q_model: BaseModel,
     minibatch_size: int,
     target_q_params: Any,
     q_params: Any,
@@ -502,7 +502,7 @@ def _get_datasets_with_diffusion_distance(
     preproc_fn: Callable,
     SolveConfigsAndStatesAndActions: Xtructurable,
     SolveConfigsAndStates: Xtructurable,
-    q_model: QModelBase,
+    q_model: BaseModel,
     minibatch_size: int,
     target_q_params: Any,
     q_params: Any,
@@ -548,7 +548,7 @@ def _get_datasets_with_diffusion_distance_mixture(
     preproc_fn: Callable,
     SolveConfigsAndStatesAndActions: Xtructurable,
     SolveConfigsAndStates: Xtructurable,
-    q_model: QModelBase,
+    q_model: BaseModel,
     minibatch_size: int,
     target_q_params: Any,
     q_params: Any,
@@ -612,7 +612,7 @@ def _get_datasets_with_diffusion_distance_mixture(
 def get_qlearning_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    q_model: QModelBase,
+    q_model: BaseModel,
     dataset_size: int,
     k_max: int,
     dataset_minibatch_size: int,

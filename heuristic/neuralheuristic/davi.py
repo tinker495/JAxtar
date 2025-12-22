@@ -10,7 +10,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
-from heuristic.neuralheuristic.neuralheuristic_base import HeuristicBase
+from neural_util.basemodel import BaseModel
 from train_util.annotate import MAX_GEN_DS_BATCH_SIZE
 from train_util.losses import loss_from_diff
 from train_util.sampling import (
@@ -27,7 +27,7 @@ from train_util.util import (
 
 def davi_builder(
     minibatch_size: int,
-    heuristic_model: HeuristicBase,
+    heuristic_model: BaseModel,
     optimizer: optax.GradientTransformation,
     preproc_fn: Callable,
     n_devices: int = 1,
@@ -174,7 +174,7 @@ def davi_builder(
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_model: HeuristicBase,
+    heuristic_model: BaseModel,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
@@ -363,7 +363,7 @@ def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
     SolveConfigsAndStates: Xtructurable,
-    heuristic_model: HeuristicBase,
+    heuristic_model: BaseModel,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
@@ -409,7 +409,7 @@ def _get_datasets_with_diffusion_distance_mixture(
     puzzle: Puzzle,
     preproc_fn: Callable,
     SolveConfigsAndStates: Xtructurable,
-    heuristic_model: HeuristicBase,
+    heuristic_model: BaseModel,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
@@ -464,7 +464,7 @@ def _get_datasets_with_diffusion_distance_mixture(
 def get_heuristic_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_model: HeuristicBase,
+    heuristic_model: BaseModel,
     dataset_size: int,
     k_max: int,
     dataset_minibatch_size: int,
