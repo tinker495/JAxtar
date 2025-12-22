@@ -14,18 +14,16 @@ from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
-from heuristic.neuralheuristic.distance_train import (
-    davi_builder,
+from heuristic.neuralheuristic.heuristic_train import davi_builder
+from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from heuristic.neuralheuristic.target_dataset_builder import (
     get_heuristic_dataset_builder,
 )
-from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
-from qfunction.neuralq.qfunction_train import (
-    get_qlearning_dataset_builder,
-    qlearning_builder,
-)
+from qfunction.neuralq.qfunction_train import qlearning_builder
+from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
 from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer
 from train_util.target_update import scaled_by_reset, soft_update
 
@@ -371,7 +369,7 @@ def qfunction_train_command(
         replay_ratio=train_options.replay_ratio,
         td_error_clip=train_options.td_error_clip,
     )
-    get_datasets = get_qlearning_dataset_builder(
+    get_datasets = get_qfunction_dataset_builder(
         puzzle,
         qfunction.pre_process,
         qfunc_model,

@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import pytest
 from xtructure import FieldDescriptor, xtructure_dataclass
 
-from heuristic.neuralheuristic.distance_train import _compute_diffusion_distance
+from heuristic.neuralheuristic.heuristic_train import _compute_diffusion_distance
 from qfunction.neuralq.qfunction_train import _compute_diffusion_q
 
 
