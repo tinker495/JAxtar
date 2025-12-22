@@ -8,16 +8,16 @@
 
 | Algorithm | Model | Success Rate | Avg Time (s) | Avg Nodes | Avg Path Cost | R² (Heuristic) | CCC (Heuristic) | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| A* | Diffusion Distance - 14.7M params | 100.00% | 1.74 | 2.63M | 20.44 | 0.945 | 0.973 | - |
-| A* | Diffusion Distance - 4M params | 100.00% | 1.11 | 2.7M | 20.78 | 0.918 | 0.959 | - |
-| A* Deferred | Diffusion Distance - 14.7M params | 100.00% | 1.79 | 178K | 20.44 | 0.933 | 0.970 | - |
-| A* Deferred | Diffusion Distance - 4M params | 100.00% | 1.12 | 182K | 20.78 | 0.904 | 0.954 | - |
-| Q* | Diffusion Distance warmup - 14.7M params | 100.00% | 0.53 | 180K | 20.59 | 0.927 | 0.968 | - |
-| Q* | Diffusion Distance warmup - 4M params | 100.00% | 0.53 | 184K | 21.00 | 0.920 | 0.955 | - |
-| Beam Search | Diffusion Distance - 14.7M params | 100.00% | 1.27 | 179K | 20.46 | 0.946 | 0.975 | - |
-| Beam Search | Diffusion Distance - 4M params | 100.00% | 0.60 | 182K | 20.78 | 0.943 | 0.972 | - |
-| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100.00% | 0.09 | 132K | 20.68 | 0.442 | 0.746 | - |
-| Q-Beam Search | Diffusion Distance warmup - 4M params | 100.00% | 0.07 | 131K | 21.24 | 0.425 | 0.682 | - |
+| A* | Diffusion Distance - 14.7M params | 100% | 2.189 | 2.61M | 20.34 | 0.938 | 0.972 | - |
+| A* | Diffusion Distance - 4M params | 100% | 1.587 | 2.64M | 20.49 | 0.945 | 0.974 | - |
+| A* Deferred | Diffusion Distance - 14.7M params | 100% | 2.090 | 177K | 20.34 | 0.938 | 0.972 | - |
+| A* Deferred | Diffusion Distance - 4M params | 100% | 1.408 | 179K | 20.49 | 0.945 | 0.974 | - |
+| Q* | Diffusion Distance warmup - 14.7M params | 100% | 0.853 | 179K | 20.54 | 0.951 | 0.974 | - |
+| Q* | Diffusion Distance warmup - 4M params | 100% | 0.53 | 184K | 21.00 | 0.920 | 0.955 | - |
+| Beam Search | Diffusion Distance - 14.7M params | 100% | 1.319 | 178K | 20.39 | 0.943 | 0.974 | - |
+| Beam Search | Diffusion Distance - 4M params | 100% | 0.604 | 179K | 20.54 | 0.951 | 0.977 | - |
+| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% | 0.127 | 127K | 20.83 | 0.458 | 0.712 | - |
+| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% | 0.050 | 130K | 21.10 | 0.437 | 0.693 | - |
 
 # CayleyPy Batch Size Configuration
 - Batch Size: 2^18 / Max Node Size: 20M / Cost Weight: 0.9 / Pop Ratio: inf
@@ -26,12 +26,11 @@
 | Algorithm | Model | Success Rate | Avg Time (s) | Avg Nodes | Avg Path Cost | R² (Heuristic) | CCC (Heuristic) | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A* | - | Mostly OOM | - | - | - | - | - | - |
-| A* | - | Mostly OOM | - | - | - | - | - | - |
-| A* Deferred | Diffusion Distance - 14.7M params | 100% | 13.979s | 4.16M | 19.68 | 0.913 | 0.965 | - |
-| A* Deferred | Diffusion Distance - 4M params | 100% | 6.566s | 4.2M | 19.83 | 0.92 | 0.967 | - |
-| Q* | Diffusion Distance warmup - 14.7M params | 100% | 1.658s | 4.21M | 19.88 | 0.822 | 0.932 | - |
-| Q* | Diffusion Distance warmup - 4M params | 100% | 1.261s | 4.22M | 19.90 | 0.963 | 0.981 | - |
-| Beam Search | Diffusion Distance - 14.7M params | 100% | 12.263s | 4.17M | 19.68 | 0.879 | 0.951 | - |
-| Beam Search | Diffusion Distance - 4M params | 100% | 5.592s | 4.21M | 19.83 | 0.901 | 0.958 | - |
-| Q-Beam | Diffusion Distance warmup - 14.7M params | 100% | 0.916s | 3.1M | 19.95 | 0.348 | 0.734 | - |
-| Q-Beam | Diffusion Distance warmup - 4M params | 100% | 0.496s | 3M | 19.93 | 0.451 | 0.718 | - |
+| A* Deferred | Diffusion Distance - 14.7M params | 100% | 12.310s | 4.13M | 19.59 | 0.852 | 0.942 | - |
+| A* Deferred | Diffusion Distance - 4M params | 100% | 5.765s | 4.15M | 19.63 | 0.866 | 0.947 | - |
+| Q* | Diffusion Distance warmup - 14.7M params | 100% | 1.560s | 4.16M | 19.71 | 0.963 | 0.983 | - |
+| Q* | Diffusion Distance warmup - 4M params | 100% | 1.174s | 4.21M | 19.85 | 0.962 | 0.981 | - |
+| Beam Search | Diffusion Distance - 14.7M params | 100% | 11.992s | 4.14M | 19.59 | 0.867 | 0.947 | - |
+| Beam Search | Diffusion Distance - 4M params | 100% | 5.426s | 4.15M | 19.63 | 0.881 | 0.952 | - |
+| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% | 0.888s | 2.92M | 19.71 | 0.446 | 0.732 | - |
+| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% | 0.490s | 2.99M | 19.95 | 0.454 | 0.725 | - |
