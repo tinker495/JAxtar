@@ -14,7 +14,7 @@ from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
-from heuristic.neuralheuristic.heuristic_train import davi_builder
+from heuristic.neuralheuristic.heuristic_train import heuristic_train_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from heuristic.neuralheuristic.target_dataset_builder import (
     get_heuristic_dataset_builder,
@@ -22,7 +22,7 @@ from heuristic.neuralheuristic.target_dataset_builder import (
 from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
-from qfunction.neuralq.qfunction_train import qlearning_builder
+from qfunction.neuralq.qfunction_train import qfunction_train_builder
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
 from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer
 from train_util.target_update import scaled_by_reset, soft_update
@@ -142,7 +142,7 @@ def heuristic_train_command(
         lr_init=train_options.learning_rate,
         weight_decay_size=train_options.weight_decay_size,
     )
-    davi_fn = davi_builder(
+    heuristic_train_fn = heuristic_train_builder(
         train_options.train_minibatch_size,
         heuristic_model,
         optimizer,
@@ -187,7 +187,7 @@ def heuristic_train_command(
             heuristic_params,
             opt_state,
             loss,
-        ) = davi_fn(key, dataset, heuristic_params, opt_state)
+        ) = heuristic_train_fn(key, dataset, heuristic_params, opt_state)
         eval_params = get_eval_params(opt_state, heuristic_params)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
@@ -358,7 +358,7 @@ def qfunction_train_command(
         lr_init=train_options.learning_rate,
         weight_decay_size=train_options.weight_decay_size,
     )
-    qlearning_fn = qlearning_builder(
+    qfunction_train_fn = qfunction_train_builder(
         train_options.train_minibatch_size,
         qfunc_model,
         optimizer,
@@ -404,7 +404,7 @@ def qfunction_train_command(
             qfunc_params,
             opt_state,
             loss,
-        ) = qlearning_fn(key, dataset, qfunc_params, opt_state)
+        ) = qfunction_train_fn(key, dataset, qfunc_params, opt_state)
         eval_params = get_eval_params(opt_state, qfunc_params)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
