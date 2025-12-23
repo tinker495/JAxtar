@@ -27,11 +27,11 @@ class SokobanQ(QFunction):
         and the number of boxes correctly placed in the current state's corresponding positions.
         """
         # Count the total number of boxes in the target state
-        target_board = target.unpacked.board
+        target_board = target.board_unpacked
         target_box_count = jnp.sum(target_board == Sokoban.Object.BOX.value)
 
         # Count the number of boxes in the same position in both current and target
-        current_board = current.unpacked.board
+        current_board = current.board_unpacked
         matching_boxes = jnp.sum(
             jnp.logical_and(
                 current_board == Sokoban.Object.BOX.value, target_board == Sokoban.Object.BOX.value

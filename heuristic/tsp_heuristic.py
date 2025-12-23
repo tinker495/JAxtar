@@ -23,9 +23,8 @@ class TSPHeuristic(Heuristic):
         This value is a lower bound of the actual remaining tour cost and is admissible for A* search.
         """
         # Unpack visited mask and point index.
-        unpacked = current.unpacked
-        visited = unpacked.mask.astype(jnp.bool_)
-        current_idx = unpacked.point
+        visited = current.mask_unpacked.astype(jnp.bool_)
+        current_idx = current.point_unpacked
 
         distance_matrix = solve_config.distance_matrix
         start_idx = solve_config.start

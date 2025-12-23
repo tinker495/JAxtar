@@ -31,9 +31,8 @@ class SlidePuzzleQ(QFunction):
         """
         This function should return the distance between the state and the target.
         """
-        current = current.unpacked
-        diff, tpos = self._diff_pos(current, target.unpacked)
-        not_empty = current.board != 0
+        diff, tpos = self._diff_pos(current, target)
+        not_empty = current.board_unpacked != 0
         return (
             self._manhattan_distance(not_empty, diff) + self._linear_conflict(tpos, not_empty, diff)
         ).astype(jnp.float32)
@@ -49,7 +48,9 @@ class SlidePuzzleQ(QFunction):
         def pos(num, board):
             return to_xy(jnp.argmax(board == num))
 
-        tpos = jnp.array([pos(i, target.board) for i in current.board], dtype=jnp.int8)
+        tpos = jnp.array(
+            [pos(i, target.board_unpacked) for i in current.board_unpacked], dtype=jnp.int8
+        )
         diff = self.base_xy - tpos
         return (diff, tpos)
 

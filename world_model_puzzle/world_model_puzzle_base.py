@@ -5,7 +5,6 @@ import numpy as np
 from flax import linen as nn
 from puxle import Puzzle
 from puxle.core.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
-from puxle.utils import from_uint8, to_uint8
 from puxle.utils.annotate import IMG_SIZE
 from xtructure import numpy as xnp
 
@@ -107,26 +106,14 @@ class WorldModelPuzzleBase(Puzzle):
     def define_state_class(self) -> PuzzleState:
         """Defines the state class for WorldModelPuzzleBase using xtructure."""
         str_parser = self.get_string_parser()
-        latent_bool = jnp.zeros(self.latent_shape, dtype=jnp.bool_)
-        latent_uint8 = to_uint8(latent_bool)
         latent_shape = self.latent_shape
 
         @state_dataclass
         class State:
-            latent: FieldDescriptor.tensor(dtype=jnp.uint8, shape=latent_uint8.shape)
+            latent: FieldDescriptor.packed_tensor(shape=latent_shape, packed_bits=1)
 
             def __str__(self, **kwargs):
                 return str_parser(self, **kwargs)
-
-            @property
-            def packed(self):
-                packed_latent = to_uint8(self.latent)
-                return State(latent=packed_latent)
-
-            @property
-            def unpacked(self):
-                latent = from_uint8(self.latent, latent_shape)
-                return State(latent=latent)
 
         return State
 
@@ -326,7 +313,7 @@ class WorldModelPuzzleBase(Puzzle):
             target_height: int = IMG_SIZE[1],
             **kwargs,
         ) -> jnp.ndarray:
-            latent = state.unpacked.latent
+            latent = state.latent_unpacked
             latent = jnp.expand_dims(latent, axis=0)
             data = self.model.apply(
                 self.params, latent, training=False, method=self.model.decode
@@ -339,7 +326,7 @@ class WorldModelPuzzleBase(Puzzle):
             else:
                 img = data
             if solve_config is not None and show_target_state_img:
-                latent = solve_config.TargetState.unpacked.latent
+                latent = solve_config.TargetState.latent_unpacked
                 latent = jnp.expand_dims(latent, axis=0)
                 data = self.model.apply(
                     self.params, latent, training=False, method=self.model.decode
@@ -375,7 +362,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, target_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        return self.SolveConfig(TargetState=self.State(latent=latent).packed)
+        return self.SolveConfig(TargetState=self.State.from_unpacked(latent=latent))
 
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
@@ -388,7 +375,7 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, init_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        return self.State(latent=latent).packed
+        return self.State.from_unpacked(latent=latent)
 
     def batched_get_actions(
         self,
@@ -437,7 +424,7 @@ class WorldModelPuzzleBase(Puzzle):
         """
         This function should return a neighbours, and the cost of the move.
         """
-        bit_latent = jax.vmap(lambda x: x.unpacked.latent)(states)
+        bit_latent = states.latent_unpacked
         next_bit_latent = self.model.apply(
             self.params, bit_latent, training=False, method=self.model.transition
         )  # (batch_size, action_size, latent_size)
@@ -445,8 +432,9 @@ class WorldModelPuzzleBase(Puzzle):
         next_bit_latent = jnp.swapaxes(
             next_bit_latent, 0, 1
         )  # (action_size, batch_size, latent_size)
-        next_states = self.State(latent=next_bit_latent)
-        next_states = jax.vmap(jax.vmap(lambda x: x.packed))(next_states)
+        next_states = jax.vmap(jax.vmap(lambda lat: self.State.from_unpacked(latent=lat)))(
+            next_bit_latent
+        )
         cost = jnp.where(
             filleds,
             jnp.ones((self.action_size, states.latent.shape[0]), dtype=jnp.float16),

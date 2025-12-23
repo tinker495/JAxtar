@@ -26,9 +26,8 @@ class TSPQ(QFunction):
         adding this value to the edge cost provides the same effect as f = g + h.
         """
         # Adapted MST + two nearest edges heuristic (same as in TSPHeuristic).
-        current = current.unpacked
-        visited = current.mask.astype(jnp.bool_)
-        current_idx = current.point
+        visited = current.mask_unpacked.astype(jnp.bool_)
+        current_idx = current.point_unpacked
 
         distance_matrix = solve_config.distance_matrix
         start_idx = solve_config.start

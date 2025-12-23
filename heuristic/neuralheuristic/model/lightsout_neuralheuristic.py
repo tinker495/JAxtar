@@ -14,11 +14,11 @@ class LightsOutNeuralHeuristic(NeuralHeuristicBase):
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
     ) -> chex.Array:
-        current_map = current.unpacked.board.astype(DTYPE)
+        current_map = current.board_unpacked.astype(DTYPE)
         if self.is_fixed:
             one_hots = current_map
         else:
-            target_map = solve_config.TargetState.unpacked.board.astype(DTYPE)
+            target_map = solve_config.TargetState.board_unpacked.astype(DTYPE)
             one_hots = jnp.concatenate([target_map, current_map], axis=-1)
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
@@ -59,6 +59,6 @@ class LightsOutConvNeuralHeuristic(NeuralHeuristicBase):
         """
         This function should return the difference, not_equal of the current state and the target state
         """
-        current_map = current.unpacked.board.astype(DTYPE)
-        target_map = target.unpacked.board.astype(DTYPE)
+        current_map = current.board_unpacked.astype(DTYPE)
+        target_map = target.board_unpacked.astype(DTYPE)
         return jnp.not_equal(current_map, target_map).astype(DTYPE)

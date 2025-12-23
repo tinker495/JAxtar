@@ -28,13 +28,13 @@ class SlidePuzzleNeuralQ(NeuralQFunctionBase):
         """
         # Create a one-hot encoding of the current state
         # Shape will be [puzzle_size, puzzle_size, puzzle_size*puzzle_size]
-        current_board = current.unpacked.board
+        current_board = current.board_unpacked
         current_board_one_hot = jax.nn.one_hot(current_board, self.size_square).flatten()
 
         if self.is_fixed:
             one_hots = current_board_one_hot
         else:
-            target_board = solve_config.TargetState.unpacked.board
+            target_board = solve_config.TargetState.board_unpacked
             target_board_one_hot = jax.nn.one_hot(target_board, self.size_square).flatten()
             one_hots = jnp.concatenate([target_board_one_hot, current_board_one_hot], axis=-1)
 
@@ -73,11 +73,9 @@ class SlidePuzzleConvNeuralQ(NeuralQFunctionBase):
     def pre_process(
         self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
     ) -> chex.Array:
-        current = current.unpacked
-        target = solve_config.TargetState.unpacked
-        diff = self.to_2d(self._diff_pos(current, target))  # [n, n, 2]
+        diff = self.to_2d(self._diff_pos(current, solve_config.TargetState))  # [n, n, 2]
         c_zero = self.to_2d(self._zero_pos(current))  # [n, n, 1]
-        t_zero = self.to_2d(self._zero_pos(target))  # [n, n, 1]
+        t_zero = self.to_2d(self._zero_pos(solve_config.TargetState))  # [n, n, 1]
         x = jnp.concatenate([diff, c_zero, t_zero], axis=-1)  # [n, n, 4]
         return x.astype(DTYPE)
 
@@ -95,7 +93,9 @@ class SlidePuzzleConvNeuralQ(NeuralQFunctionBase):
         def pos(num, board):
             return to_xy(jnp.argmax(board == num))
 
-        tpos = jnp.array([pos(i, target.board) for i in current.board], dtype=jnp.int8)  # [16, 2]
+        tpos = jnp.array(
+            [pos(i, target.board_unpacked) for i in current.board_unpacked], dtype=jnp.int8
+        )  # [16, 2]
         diff = self.base_xy - tpos  # [16, 2]
         return diff
 
@@ -103,4 +103,4 @@ class SlidePuzzleConvNeuralQ(NeuralQFunctionBase):
         """
         This function should return the zero position in the state.
         """
-        return jnp.expand_dims(current.board == 0, axis=-1).astype(jnp.float32)
+        return jnp.expand_dims(current.board_unpacked == 0, axis=-1).astype(jnp.float32)

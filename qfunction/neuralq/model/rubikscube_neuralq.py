@@ -45,7 +45,7 @@ class RubiksCubeNeuralQ(NeuralQFunctionBase):
     def pre_process(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
-        current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
+        current_flatten_face = current.faces_unpacked.flatten()  # (3,3,6) -> (54,)
         if self.metric == "UQTM":
             # UQTM need to use all the stickers
             current_one_hot = self._one_hot_faces(current_flatten_face).flatten()
@@ -70,7 +70,7 @@ class RubiksCubeRandomNeuralQ(NeuralQFunctionBase):
     def pre_process(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
-        current_flatten_face = current.unpacked.faces.flatten()  # (3,3,6) -> (54,)
+        current_flatten_face = current.faces_unpacked.flatten()  # (3,3,6) -> (54,)
         if self.metric == "UQTM":
             # UQTM need to use all the stickers
             current_one_hot = self._one_hot_faces(current_flatten_face).flatten()
@@ -78,7 +78,7 @@ class RubiksCubeRandomNeuralQ(NeuralQFunctionBase):
             current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
             # Create a one-hot encoding of the flattened face without centre stickers
             current_one_hot = self._one_hot_faces(current_no_centers).flatten()
-        target_flatten_face = solve_config.TargetState.unpacked.faces.flatten()
+        target_flatten_face = solve_config.TargetState.faces_unpacked.flatten()
         if self.metric == "UQTM":
             # UQTM need to use all the stickers
             target_one_hot = self._one_hot_faces(target_flatten_face).flatten()

@@ -20,8 +20,8 @@ class RubiksCubeHeuristic(Heuristic):
         """
         Get distance between current state and target state.
         """
-        current_faces = current.unpacked.faces
-        target_faces = solve_config.TargetState.unpacked.faces
+        current_faces = current.faces_unpacked
+        target_faces = solve_config.TargetState.faces_unpacked
         if not self._use_color_embedding:
             current_faces = jnp.floor_divide(current_faces, self._tile_count)
             target_faces = jnp.floor_divide(target_faces, self._tile_count)
