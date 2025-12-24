@@ -5,6 +5,35 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 
+def _masked_action_sample_uniform(mask: chex.Array, key: chex.PRNGKey) -> chex.Array:
+    """Sample an action uniformly among True entries in `mask`.
+
+    Args:
+        mask: bool array shaped [action, batch]
+        key: PRNGKey
+
+    Returns:
+        actions: int array shaped [batch]
+    """
+    # `jax.random.categorical` samples along the last axis, so transpose to [batch, action].
+    mask_bt = mask.T
+    # Use a large negative value instead of -inf for better numerical/device compatibility.
+    logits = jnp.where(mask_bt, jnp.array(0.0, dtype=jnp.float32), jnp.array(-1.0e9, dtype=jnp.float32))
+    keys = jax.random.split(key, logits.shape[0])
+    actions = jax.vmap(lambda k, l: jax.random.categorical(k, l, axis=-1))(keys, logits)
+    return actions.astype(jnp.int32)
+
+
+def _gather_by_action(neighbor_states, actions: chex.Array):
+    """Gather `neighbor_states[action, batch, ...]` using `actions[batch]` for each batch."""
+    batch_idx = jnp.arange(actions.shape[0], dtype=jnp.int32)
+
+    def _gather(leaf: chex.Array) -> chex.Array:
+        return leaf[actions, batch_idx, ...]
+
+    return jax.tree_util.tree_map(_gather, neighbor_states)
+
+
 def _offset_parent_indices_for_scan(parent_indices: chex.Array) -> chex.Array:
     """Offset local `parent_indices` when multiple trajectory chunks are concatenated.
 
@@ -103,51 +132,39 @@ def get_random_inverse_trajectory(
     history_states = _initialize_history(target_states, int(non_backtracking_steps))
     use_history = history_states is not None
 
-    def _scan(carry, _):
-        history, state, move_cost, key = carry
-        key, subkey = jax.random.split(key)
+    step_keys = jax.random.split(key_scan, k_max)
+
+    def _scan(carry, step_key):
+        history, state, move_cost = carry
         neighbor_states, cost = puzzle.batched_get_inverse_neighbours(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
-        action_mask = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
-        history_block = (
-            _match_history(neighbor_states, history).astype(jnp.float32)
-            if use_history
-            else jnp.zeros_like(action_mask)
-        )
-        same_block = _states_equal(neighbor_states, state).astype(jnp.float32)
-        backtracking_mask = (1.0 - history_block) * (1.0 - same_block)
-        masked = action_mask * backtracking_mask
-        denom = jnp.sum(masked, axis=0)  # [batch]
-        no_valid_backtracking = denom == 0
+        action_mask = jnp.isfinite(cost)  # bool [action, batch]
+        history_block = _match_history(neighbor_states, history) if use_history else jnp.zeros_like(action_mask)
+        same_block = _states_equal(neighbor_states, state)
+        backtracking_mask = (~history_block) & (~same_block)
+        masked = action_mask & backtracking_mask
+        no_valid_backtracking = jnp.sum(masked, axis=0) == 0  # [batch]
         final_mask = jnp.where(no_valid_backtracking[jnp.newaxis, :], action_mask, masked)
-        denom = jnp.sum(final_mask, axis=0)
-        prob = final_mask / denom  # [action, batch]
-        choices = jnp.arange(cost.shape[0])  # [action]
-        inv_actions = jax.vmap(
-            lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
-        )(
-            jax.random.split(subkey, prob.shape[1]), prob
-        )  # [batch]
-        next_state = jax.vmap(lambda ns, i: ns[i], in_axes=(1, 0), out_axes=0)(
-            neighbor_states, inv_actions
-        )  # [batch, ...]
-        cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, inv_actions)  # [batch]
+        inv_actions = _masked_action_sample_uniform(final_mask, step_key)  # [batch]
+        next_state = _gather_by_action(neighbor_states, inv_actions)
+        batch_idx = jnp.arange(inv_actions.shape[0], dtype=jnp.int32)
+        step_cost = cost[inv_actions, batch_idx]  # [batch]
         next_history = _roll_history(history, state) if use_history else history
         return (
-            (next_history, next_state, move_cost + cost, key),  # carry
-            (state, move_cost, inv_actions, cost),  # return
+            (next_history, next_state, move_cost + step_cost),  # carry
+            (state, move_cost, inv_actions, step_cost),  # return
         )
 
-    (_, last_state, last_move_cost, _), (
+    (_, last_state, last_move_cost), (
         states,
         move_costs,
         inv_actions,
         action_costs,
     ) = jax.lax.scan(
         _scan,
-        (history_states, target_states, jnp.zeros(shuffle_parallel), key_scan),
-        None,
+        (history_states, target_states, jnp.zeros(shuffle_parallel)),
+        step_keys,
         length=k_max,
     )  # [k_max, batch_size, ...]
 
@@ -188,46 +205,34 @@ def get_random_trajectory(
     history_states = _initialize_history(initial_states, int(non_backtracking_steps))
     use_history = history_states is not None
 
-    def _scan(carry, _):
-        history, state, move_cost, key = carry
-        key, subkey = jax.random.split(key)
+    step_keys = jax.random.split(key_scan, k_max)
+
+    def _scan(carry, step_key):
+        history, state, move_cost = carry
         neighbor_states, cost = puzzle.batched_get_neighbours(
             solve_configs, state, filleds=jnp.ones_like(move_cost), multi_solve_config=True
         )  # [action, batch, ...]
-        action_mask = jnp.isfinite(cost).astype(jnp.float32)  # [action, batch]
-        history_block = (
-            _match_history(neighbor_states, history).astype(jnp.float32)
-            if use_history
-            else jnp.zeros_like(action_mask)
-        )
-        same_block = _states_equal(neighbor_states, state).astype(jnp.float32)
-        backtracking_mask = (1.0 - history_block) * (1.0 - same_block)
-        masked = action_mask * backtracking_mask
-        denom = jnp.sum(masked, axis=0)  # [batch]
-        no_valid_backtracking = denom == 0
+        action_mask = jnp.isfinite(cost)  # bool [action, batch]
+        history_block = _match_history(neighbor_states, history) if use_history else jnp.zeros_like(action_mask)
+        same_block = _states_equal(neighbor_states, state)
+        backtracking_mask = (~history_block) & (~same_block)
+        masked = action_mask & backtracking_mask
+        no_valid_backtracking = jnp.sum(masked, axis=0) == 0  # [batch]
         final_mask = jnp.where(no_valid_backtracking[jnp.newaxis, :], action_mask, masked)
-        denom = jnp.sum(final_mask, axis=0)
-        prob = final_mask / denom  # [action, batch]
-        choices = jnp.arange(cost.shape[0])  # [action]
-        actions = jax.vmap(
-            lambda key, prob: jax.random.choice(key, choices, p=prob), in_axes=(0, 1)
-        )(
-            jax.random.split(subkey, prob.shape[1]), prob
-        )  # [batch]
-        next_state = jax.vmap(lambda ns, i: ns[i], in_axes=(1, 0), out_axes=0)(
-            neighbor_states, actions
-        )  # [batch, ...]
-        cost = jax.vmap(lambda c, i: c[i], in_axes=(1, 0), out_axes=0)(cost, actions)  # [batch]
+        actions = _masked_action_sample_uniform(final_mask, step_key)  # [batch]
+        next_state = _gather_by_action(neighbor_states, actions)
+        batch_idx = jnp.arange(actions.shape[0], dtype=jnp.int32)
+        step_cost = cost[actions, batch_idx]  # [batch]
         next_history = _roll_history(history, state) if use_history else history
         return (
-            (next_history, next_state, move_cost + cost, key),  # carry
-            (state, move_cost, actions, cost),  # return
+            (next_history, next_state, move_cost + step_cost),  # carry
+            (state, move_cost, actions, step_cost),  # return
         )
 
-    (_, last_state, last_move_cost, _), (states, move_costs, actions, action_costs) = jax.lax.scan(
+    (_, last_state, last_move_cost), (states, move_costs, actions, action_costs) = jax.lax.scan(
         _scan,
-        (history_states, initial_states, jnp.zeros(shuffle_parallel), key_scan),
-        None,
+        (history_states, initial_states, jnp.zeros(shuffle_parallel)),
+        step_keys,
         length=k_max,
     )  # [k_max, shuffle_parallel, ...]
 
