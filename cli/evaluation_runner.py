@@ -1,4 +1,5 @@
 import concurrent.futures
+import inspect
 import itertools
 import multiprocessing as mp
 import os
@@ -206,13 +207,21 @@ class EvaluationRunner:
             config_title = f"{self.run_label.replace('_', ' ').title()} Evaluation Configuration"
             print_config(config_title, enrich_config(config))
 
+            # Some builder fns accept optional kwargs (e.g. show_compile_time). We only pass
+            # supported kwargs to keep compatibility across different search implementations.
+            builder_kwargs = {
+                "pop_ratio": pr,
+                "cost_weight": cw,
+                "show_compile_time": current_eval_opts.show_compile_time,
+            }
+            sig = inspect.signature(self.search_builder_fn)
+            supported_kwargs = {k: v for k, v in builder_kwargs.items() if k in sig.parameters}
             search_fn = self.search_builder_fn(
                 self.puzzle,
                 self.search_model,
                 bs,
                 self.eval_options.get_max_node_size(bs),
-                pop_ratio=pr,
-                cost_weight=cw,
+                **supported_kwargs,
             )
 
             results = self._run_evaluation(

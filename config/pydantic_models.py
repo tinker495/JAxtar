@@ -48,6 +48,7 @@ class EvalOptions(BaseModel):
         [10000], description="Batch size for search. Can be a single int or a list of ints."
     )
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
+    show_compile_time: bool = Field(False, description="Show compile time for search.")
     cost_weight: Union[float, List[float]] = Field(
         [0.9, 0.6, 0.3],
         description="Weight for cost in search. Can be a single float or a list of floats.",
@@ -160,6 +161,13 @@ class DistTrainOptions(BaseModel):
     )
     td_error_clip: Optional[float] = Field(
         None, description="Absolute clip value applied to TD-error."
+    )
+    eval_search_metric: Optional[str] = Field(
+        None,
+        description=(
+            "Evaluation search algorithm used during training (e.g. 'astar', 'astar_d', "
+            "'beam', 'qstar', 'qbeam'). If not provided, a sensible default is chosen per command."
+        ),
     )
 
 
