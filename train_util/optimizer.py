@@ -10,6 +10,7 @@ def adoptw(
     learning_rate: float,
     weight_decay: float = None,
     mask: Optional[PyTree] = None,
+    cautious_weight_decay: bool = True,
     **adopt_kwargs: Any,
 ) -> optax.GradientTransformation:
     if weight_decay is not None:
@@ -17,7 +18,9 @@ def adoptw(
             optax.contrib.scale_by_adopt(
                 **adopt_kwargs,
             ),
-            optax.add_decayed_weights(weight_decay, mask=mask),
+            optax.contrib.add_cautious_weight_decay(weight_decay, mask)
+            if cautious_weight_decay
+            else optax.add_decayed_weights(weight_decay, mask),
             optax.scale_by_learning_rate(learning_rate),
         )
     else:
@@ -30,13 +33,13 @@ def adoptw(
 
 
 OPTIMIZERS = {
-    "adam": optax.adamw,
+    "adam": lambda **kwargs: optax.adamw(cautious_weight_decay=True, **kwargs),
     "schedule_free_adamw": optax.contrib.schedule_free_adamw,
     "nadam": lambda **kwargs: optax.adamw(nesterov=True, **kwargs),
     "adopt": adoptw,
-    "nadopt": lambda **kwargs: adoptw(nesterov=True, **kwargs),
-    "muon": optax.contrib.muon,
-    "normuon": optax.contrib.normuon,
+    "nadopt": lambda **kwargs: adoptw(nesterov=True, cautious_weight_decay=True, **kwargs),
+    "muon": lambda **kwargs: optax.contrib.muon(cautious_weight_decay=True, **kwargs),
+    "normuon": lambda **kwargs: optax.contrib.normuon(cautious_weight_decay=True, **kwargs),
     "rmsprop": optax.rmsprop,
     "prodigy": optax.contrib.prodigy,
     "lamb_adam": optax.lamb,
