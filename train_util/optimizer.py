@@ -105,7 +105,11 @@ def setup_optimizer(
                 and isinstance(path[-1], jax.tree_util.DictKey)
                 and path[-1].key in ("bias", "scale", "beta")
             )
-            return not (is_batch_stat or is_no_wd_param)
+            # Check if 'head' is part of any dictionary key in the path (e.g., 'head', 'head_resblock_0')
+            is_head_param = any(
+                isinstance(entry, jax.tree_util.DictKey) and "head" in entry.key for entry in path
+            )
+            return not (is_batch_stat or is_no_wd_param or is_head_param)
 
         return jax.tree_util.tree_map_with_path(mask_fn, params)
 
