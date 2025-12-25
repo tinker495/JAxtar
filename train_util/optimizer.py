@@ -111,7 +111,7 @@ def setup_optimizer(
             scaler = OPTIMIZERS[optimizer_name](
                 learning_rate=learning_rate,
                 weight_decay=weight_decay_size,
-                mask=mask_tree,
+                weight_decay_mask=mask_tree,
             )
         return optax.chain(optax.clip_by_global_norm(1.0), scaler)
 
