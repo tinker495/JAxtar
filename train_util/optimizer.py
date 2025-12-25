@@ -100,10 +100,12 @@ def setup_optimizer(
                 isinstance(entry, jax.tree_util.DictKey) and "batch_stats" in entry.key
                 for entry in path
             )
-            is_bias = (
-                path and isinstance(path[-1], jax.tree_util.DictKey) and path[-1].key == "bias"
+            is_no_wd_param = (
+                path
+                and isinstance(path[-1], jax.tree_util.DictKey)
+                and path[-1].key in ("bias", "scale", "beta")
             )
-            return not (is_batch_stat or is_bias)
+            return not (is_batch_stat or is_no_wd_param)
 
         return jax.tree_util.tree_map_with_path(mask_fn, params)
 
