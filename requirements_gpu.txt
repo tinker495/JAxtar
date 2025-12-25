@@ -11,7 +11,7 @@ dm_pix
 dm-haiku
 huggingface_hub
 flax
-optax @ git+https://github.com/tinker495/optax.git@feature/add-normuon
+optax @ git+https://github.com/tinker495/optax.git@dev/merge-all-custom
 termcolor
 tensorboardX
 pydantic
