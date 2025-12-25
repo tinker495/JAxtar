@@ -9,7 +9,7 @@ PyTree = Any
 def adoptw(
     learning_rate: float,
     weight_decay: float = None,
-    mask: Optional[PyTree] = None,
+    weight_decay_mask: Optional[PyTree] = None,
     cautious_weight_decay: bool = True,
     **adopt_kwargs: Any,
 ) -> optax.GradientTransformation:
@@ -18,9 +18,9 @@ def adoptw(
             optax.contrib.scale_by_adopt(
                 **adopt_kwargs,
             ),
-            optax.contrib.add_cautious_weight_decay(weight_decay, mask)
+            optax.contrib.add_cautious_weight_decay(weight_decay, weight_decay_mask)
             if cautious_weight_decay
-            else optax.add_decayed_weights(weight_decay, mask),
+            else optax.add_decayed_weights(weight_decay, weight_decay_mask),
             optax.scale_by_learning_rate(learning_rate),
         )
     else:
@@ -33,9 +33,16 @@ def adoptw(
 
 
 OPTIMIZERS = {
-    "adam": lambda **kwargs: optax.adamw(cautious_weight_decay=True, **kwargs),
+    "adam": lambda **kwargs: optax.adamw(
+        cautious_weight_decay=True, mask=kwargs.get("weight_decay_mask", None), **kwargs
+    ),
     "schedule_free_adamw": optax.contrib.schedule_free_adamw,
-    "nadam": lambda **kwargs: optax.adamw(nesterov=True, **kwargs),
+    "nadam": lambda **kwargs: optax.adamw(
+        nesterov=True,
+        cautious_weight_decay=True,
+        mask=kwargs.get("weight_decay_mask", None),
+        **kwargs,
+    ),
     "adopt": adoptw,
     "nadopt": lambda **kwargs: adoptw(nesterov=True, cautious_weight_decay=True, **kwargs),
     "muon": lambda **kwargs: optax.contrib.muon(cautious_weight_decay=True, **kwargs),
