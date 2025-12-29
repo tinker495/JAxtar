@@ -8,7 +8,6 @@ import optax
 import xtructure.numpy as xnp
 
 from neural_util.basemodel import BaseModel
-from train_util.losses import loss_from_diff
 from train_util.util import (
     apply_with_conditional_batch_stats,
     build_new_params_from_updates,
@@ -36,19 +35,21 @@ def qfunction_train_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        q_values, variable_updates = apply_with_conditional_batch_stats(
-            q_fn.apply, q_params, preproc, training=True, n_devices=n_devices
+        per_sample_loss, variable_updates = apply_with_conditional_batch_stats(
+            q_fn.apply,
+            q_params,
+            preproc,
+            target_qs,
+            actions,
+            training=True,
+            n_devices=n_devices,
+            method=q_fn.train_loss,
+            loss_type=loss_type,
+            loss_args=loss_args,
+            td_error_clip=td_error_clip,
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
-        q_values_at_actions = jnp.take_along_axis(
-            q_values, actions, axis=1
-        )  # [batch_size, minibatch_size, 1 or 2]
-        diff = target_qs - q_values_at_actions  # [batch_size, minibatch_size, 1 or 2]
-        if td_error_clip is not None and td_error_clip > 0:
-            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
-            diff = jnp.clip(diff, -clip_val, clip_val)
-        per_sample = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
-        loss_value = jnp.mean(per_sample * weights[:, jnp.newaxis])
+        loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
         return loss_value, new_params
 
     def qfunction_train(

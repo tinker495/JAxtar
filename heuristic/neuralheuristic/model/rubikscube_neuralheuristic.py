@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from puxle import RubiksCube
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.basemodel import BaseHLGModel
 from neural_util.modules import DTYPE
 
 
@@ -87,3 +88,13 @@ class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
             target_one_hot = self._one_hot_faces(target_no_centers).flatten()
         one_hots = jnp.concatenate([target_one_hot, current_one_hot], axis=-1)
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
+
+
+class RubiksCubeHLGNeuralHeuristic(RubiksCubeNeuralHeuristic):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=BaseHLGModel, **kwargs)
+
+
+class RubiksCubeRandomHLGNeuralHeuristic(RubiksCubeRandomNeuralHeuristic):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=BaseHLGModel, **kwargs)

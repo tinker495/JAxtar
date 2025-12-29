@@ -34,7 +34,9 @@ from heuristic.neuralheuristic import (
     LightsOutConvNeuralHeuristic,
     LightsOutNeuralHeuristic,
     PancakeNeuralHeuristic,
+    RubiksCubeHLGNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
+    RubiksCubeRandomHLGNeuralHeuristic,
     RubiksCubeRandomNeuralHeuristic,
     SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
@@ -56,7 +58,9 @@ from qfunction.neuralq import (
     LightsOutConvNeuralQ,
     LightsOutNeuralQ,
     PancakeNeuralQ,
+    RubiksCubeHLGNeuralQ,
     RubiksCubeNeuralQ,
+    RubiksCubeRandomHLGNeuralQ,
     RubiksCubeRandomNeuralQ,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
@@ -186,11 +190,19 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_{size}.pkl",
             ),
+            "hlg": NeuralCallableConfig(
+                callable=RubiksCubeHLGNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-hlg_{size}.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube_{size}.pkl",
+            ),
+            "hlg": NeuralCallableConfig(
+                callable=RubiksCubeHLGNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-hlg_{size}.pkl",
             ),
         },
         eval_benchmark="rubikscube-deepcubea",
@@ -205,11 +217,19 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 callable=RubiksCubeRandomNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-random_{size}.pkl",
             ),
+            "hlg": NeuralCallableConfig(
+                callable=RubiksCubeRandomHLGNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-random-hlg_{size}.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeRandomNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-random_{size}.pkl",
+            ),
+            "hlg": NeuralCallableConfig(
+                callable=RubiksCubeRandomHLGNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-random-hlg_{size}.pkl",
             ),
         },
     ),
@@ -225,13 +245,21 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_{size}.pkl",
-            )
+            ),
+            "hlg": NeuralCallableConfig(
+                callable=RubiksCubeHLGNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-hlg_{size}.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_{size}.pkl",
-            )
+            ),
+            "hlg": NeuralCallableConfig(
+                callable=RubiksCubeHLGNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm-hlg_{size}.pkl",
+            ),
         },
         eval_benchmark="rubikscube-santa333",
     ),
@@ -247,13 +275,21 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeRandomNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-random_{size}.pkl",
-            )
+            ),
+            "hlg": NeuralCallableConfig(
+                callable=RubiksCubeRandomHLGNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-random-hlg_{size}.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeRandomNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm-random_{size}.pkl",
-            )
+            ),
+            "hlg": NeuralCallableConfig(
+                callable=RubiksCubeRandomHLGNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm-random-hlg_{size}.pkl",
+            ),
         },
     ),
     "maze": PuzzleBundle(puzzle=Maze, heuristic=MazeHeuristic, q_function=MazeQ),
