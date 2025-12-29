@@ -215,8 +215,9 @@ class BaseHLGModel(nn.Module):
 
     def __call__(self, x, training=False):
         logits = self.get_logits(x, training)
+        softmax = jax.nn.softmax(logits, axis=-1)
         categorial_centers = self.categorial_centers
-        x = jnp.sum(logits * categorial_centers, axis=-1)  # (batch_size, output_dim)
+        x = jnp.sum(softmax * categorial_centers, axis=-1)  # (batch_size, output_dim)
         return x
 
     def train_loss(self, x, target_q, actions=None, **kwargs):
