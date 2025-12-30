@@ -47,6 +47,7 @@ OPTIMIZERS = {
     "nadopt": lambda **kwargs: adoptw(nesterov=True, cautious_weight_decay=True, **kwargs),
     "muon": lambda **kwargs: optax.contrib.muon(cautious_weight_decay=True, **kwargs),
     "normuon": lambda **kwargs: optax.contrib.normuon(cautious_weight_decay=True, **kwargs),
+    "adago": lambda **kwargs: optax.contrib.adago(cautious_weight_decay=True, **kwargs),
     "rmsprop": optax.rmsprop,
     "prodigy": optax.contrib.prodigy,
     "lamb_adam": optax.lamb,
