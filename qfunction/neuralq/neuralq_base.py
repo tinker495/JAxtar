@@ -111,6 +111,7 @@ class NeuralQFunctionBase(QFunction):
                 params,
                 jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
                 training=False,
+                rngs={"params": jax.random.PRNGKey(0)},
             )  # check if the params are compatible with the model
             self._preloaded_params = None
             return params
@@ -154,7 +155,7 @@ class NeuralQFunctionBase(QFunction):
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
         x = self.batched_pre_process(solve_config, current)
-        x = self.model.apply(params, x, training=False)
+        x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
         x = self.post_process(x)
         return x
 
@@ -175,7 +176,7 @@ class NeuralQFunctionBase(QFunction):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x = self.model.apply(params, x, training=False)
+        x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
         return self.post_process(x)
 
     @abstractmethod

@@ -78,6 +78,8 @@ def create_serving_fn(model_cls, serving_variables, aqt_cfg, **model_kwargs):
 
     @jax.jit
     def serve_fn(x):
-        return serving_model.apply(serving_variables, x, training=False)
+        return serving_model.apply(
+            serving_variables, x, training=False, rngs={"params": jax.random.PRNGKey(0)}
+        )
 
     return serve_fn

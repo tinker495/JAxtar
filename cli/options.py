@@ -37,6 +37,7 @@ def _setup_neural_component(
     neural_config_override,
     reset_params,
     model_type="default",
+    aqt_cfg=None,
 ):
     if component_type == "heuristic":
         nn_configs = puzzle_bundle.heuristic_nn_configs
@@ -70,6 +71,9 @@ def _setup_neural_component(
     final_neural_config = {}
     if neural_config_override is not None:
         final_neural_config.update(json.loads(neural_config_override))
+
+    if aqt_cfg is not None:
+        final_neural_config["aqt_cfg"] = aqt_cfg
 
     component = nn_config.callable(
         puzzle=puzzle,
@@ -424,10 +428,19 @@ def heuristic_options(func: callable) -> callable:
         default=None,
         help="Type of the heuristic model.",
     )
+    @click.option(
+        "-q",
+        "--use-quantize",
+        is_flag=True,
+        default=False,
+        help="Use quantization (int8).",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         heuristic_kwargs = map_kwargs_to_pydantic(HeuristicOptions, kwargs)
         heuristic_opts = HeuristicOptions(**heuristic_kwargs)
+        use_quantize = kwargs.pop("use_quantize")
+        aqt_cfg = "int8" if use_quantize else None
 
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
@@ -460,11 +473,13 @@ def heuristic_options(func: callable) -> callable:
                 puzzle=puzzle,
                 path=param_path,
                 init_params=False,
+                aqt_cfg=aqt_cfg,
             )
             attach_runtime_metadata(
                 heuristic,
                 model_type=model_type,
                 param_path=param_path,
+                extra={"aqt_cfg": aqt_cfg},
             )
         else:
             heuristic_callable = puzzle_bundle.heuristic
@@ -495,10 +510,19 @@ def qfunction_options(func: callable) -> callable:
         default=None,
         help="Type of the Q-function model.",
     )
+    @click.option(
+        "-q",
+        "--use-quantize",
+        is_flag=True,
+        default=False,
+        help="Use quantization (int8).",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         q_kwargs = map_kwargs_to_pydantic(QFunctionOptions, kwargs)
         q_opts = QFunctionOptions(**q_kwargs)
+        use_quantize = kwargs.pop("use_quantize")
+        aqt_cfg = "int8" if use_quantize else None
 
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
@@ -531,11 +555,13 @@ def qfunction_options(func: callable) -> callable:
                 puzzle=puzzle,
                 path=param_path,
                 init_params=False,
+                aqt_cfg=aqt_cfg,
             )
             attach_runtime_metadata(
                 qfunction,
                 model_type=model_type,
                 param_path=param_path,
+                extra={"aqt_cfg": aqt_cfg},
             )
         else:
             q_callable = puzzle_bundle.q_function
@@ -791,12 +817,21 @@ def dist_heuristic_options(func: callable) -> callable:
         default=None,
         help="Type of the heuristic model.",
     )
+    @click.option(
+        "-q",
+        "--use-quantize",
+        is_flag=True,
+        default=False,
+        help="Use quantization (int8).",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         puzzle_name = kwargs["puzzle_name"]
         reset = kwargs["train_options"].reset
+        use_quantize = kwargs.pop("use_quantize")
+        aqt_cfg = "int8" if use_quantize else None
 
         result = _setup_neural_component(
             puzzle_bundle,
@@ -807,6 +842,7 @@ def dist_heuristic_options(func: callable) -> callable:
             kwargs.pop("neural_config"),
             reset,
             kwargs.pop("model_type") or "default",
+            aqt_cfg=aqt_cfg,
         )
         kwargs.update(result)
         return func(*args, **kwargs)
@@ -834,12 +870,21 @@ def dist_qfunction_options(func: callable) -> callable:
         default=None,
         help="Type of the Q-function model.",
     )
+    @click.option(
+        "-q",
+        "--use-quantize",
+        is_flag=True,
+        default=False,
+        help="Use quantization (int8).",
+    )
     @wraps(func)
     def wrapper(*args, **kwargs):
         puzzle_bundle = kwargs["puzzle_bundle"]
         puzzle = kwargs["puzzle"]
         puzzle_name = kwargs["puzzle_name"]
         reset = kwargs["train_options"].reset
+        use_quantize = kwargs.pop("use_quantize")
+        aqt_cfg = "int8" if use_quantize else None
 
         result = _setup_neural_component(
             puzzle_bundle,
@@ -850,6 +895,7 @@ def dist_qfunction_options(func: callable) -> callable:
             kwargs.pop("neural_config"),
             reset,
             kwargs.pop("model_type") or "default",
+            aqt_cfg=aqt_cfg,
         )
         kwargs.update(result)
         return func(*args, **kwargs)
