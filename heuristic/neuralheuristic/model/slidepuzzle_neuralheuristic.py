@@ -5,6 +5,7 @@ from flax import linen as nn
 from puxle import SlidePuzzle
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
+from neural_util.basemodel import DistanceModel
 from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ConvResBlock, ResBlock
 
 
@@ -41,7 +42,7 @@ class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
 
-class Model(nn.Module):
+class Model(DistanceModel):
     norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact

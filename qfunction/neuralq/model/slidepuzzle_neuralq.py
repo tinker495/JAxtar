@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from flax import linen as nn
 from puxle import SlidePuzzle
 
+from neural_util.basemodel import DistanceModel
 from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ConvResBlock, ResBlock
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
@@ -41,8 +42,7 @@ class SlidePuzzleNeuralQ(NeuralQFunctionBase):
         return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
 
-class Model(nn.Module):
-    action_size: int
+class Model(DistanceModel):
     norm_fn: callable = DEFAULT_NORM_FN
 
     @nn.compact

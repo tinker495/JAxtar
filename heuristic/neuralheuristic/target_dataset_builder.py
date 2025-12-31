@@ -9,7 +9,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
-from neural_util.basemodel import BaseModel
+from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.annotate import MAX_GEN_DS_BATCH_SIZE
 from train_util.sampling import (
     create_hindsight_target_shuffled_path,
@@ -22,7 +22,7 @@ from train_util.sampling import (
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_model: BaseModel,
+    heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
@@ -210,7 +210,7 @@ def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
     SolveConfigsAndStates: Xtructurable,
-    heuristic_model: BaseModel,
+    heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
@@ -255,7 +255,7 @@ def _get_datasets_with_diffusion_distance_mixture(
     puzzle: Puzzle,
     preproc_fn: Callable,
     SolveConfigsAndStates: Xtructurable,
-    heuristic_model: BaseModel,
+    heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
@@ -308,7 +308,7 @@ def _get_datasets_with_diffusion_distance_mixture(
 def get_heuristic_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    heuristic_model: BaseModel,
+    heuristic_model: DistanceModel | DistanceHLGModel,
     dataset_size: int,
     k_max: int,
     dataset_minibatch_size: int,

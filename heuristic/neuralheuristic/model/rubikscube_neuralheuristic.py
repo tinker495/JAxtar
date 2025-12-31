@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from puxle import RubiksCube
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.basemodel import BaseHLGModel
+from neural_util.basemodel import HLGResMLPModel
 from neural_util.modules import DTYPE
 
 
@@ -92,9 +92,9 @@ class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
 
 class RubiksCubeHLGNeuralHeuristic(RubiksCubeNeuralHeuristic):
     def __init__(self, puzzle: RubiksCube, **kwargs):
-        super().__init__(puzzle, model=BaseHLGModel, **kwargs)
+        super().__init__(puzzle, model=HLGResMLPModel, **kwargs)
 
 
 class RubiksCubeRandomHLGNeuralHeuristic(RubiksCubeRandomNeuralHeuristic):
     def __init__(self, puzzle: RubiksCube, **kwargs):
-        super().__init__(puzzle, model=BaseHLGModel, **kwargs)
+        super().__init__(puzzle, model=HLGResMLPModel, **kwargs)

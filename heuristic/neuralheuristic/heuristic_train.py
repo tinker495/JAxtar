@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import optax
 import xtructure.numpy as xnp
 
-from neural_util.basemodel import BaseModel
+from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.util import (
     apply_with_conditional_batch_stats,
     build_new_params_from_updates,
@@ -16,7 +16,7 @@ from train_util.util import (
 
 def heuristic_train_builder(
     minibatch_size: int,
-    heuristic_model: BaseModel,
+    heuristic_model: DistanceModel | DistanceHLGModel,
     optimizer: optax.GradientTransformation,
     preproc_fn: Callable,
     n_devices: int = 1,

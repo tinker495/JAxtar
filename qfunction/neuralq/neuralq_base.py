@@ -5,10 +5,9 @@ import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
-from flax import linen as nn
 from puxle import Puzzle
 
-from neural_util.basemodel import BaseModel
+from neural_util.basemodel import DistanceHLGModel, DistanceModel, ResMLPModel
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -22,7 +21,7 @@ class NeuralQFunctionBase(QFunction):
     def __init__(
         self,
         puzzle: Puzzle,
-        model: nn.Module = BaseModel,
+        model: DistanceModel | DistanceHLGModel = ResMLPModel,
         init_params: bool = True,
         path: str = None,
         **kwargs,
