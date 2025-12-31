@@ -44,8 +44,15 @@ class DistanceHLGModel(ABC, nn.Module):
         self.sigma = self._sigma * (self.categorial_bins[1] - self.categorial_bins[0])
 
     @abstractmethod
-    def __call__(self, x, training=False):
+    def get_logits(self, x, training=False):
         pass
+
+    def __call__(self, x, training=False):
+        logits = self.get_logits(x, training)
+        softmax = jax.nn.softmax(logits, axis=-1)
+        categorial_centers = self.categorial_centers
+        x = jnp.sum(softmax * categorial_centers, axis=-1)  # (batch_size, action_size)
+        return x
 
     def train_loss(self, x, target, actions=None, **kwargs):
         categorial_bins, sigma = self.categorial_bins, self.sigma

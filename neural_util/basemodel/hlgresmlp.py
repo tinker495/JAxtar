@@ -1,4 +1,3 @@
-import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
@@ -124,11 +123,4 @@ class HLGResMLPModel(DistanceHLGModel):
             x = self.final_dense(x, training)
 
         x = x.reshape(x.shape[0], self.action_size, self.categorial_n)
-        return x
-
-    def __call__(self, x, training=False):
-        logits = self.get_logits(x, training)
-        softmax = jax.nn.softmax(logits, axis=-1)
-        categorial_centers = self.categorial_centers
-        x = jnp.sum(softmax * categorial_centers, axis=-1)  # (batch_size, action_size)
         return x
