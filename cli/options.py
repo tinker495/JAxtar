@@ -433,14 +433,21 @@ def heuristic_options(func: callable) -> callable:
         "--use-quantize",
         is_flag=True,
         default=False,
-        help="Use quantization (int8).",
+        help="Use quantization (defaults to int8).",
+    )
+    @click.option(
+        "--quant-type",
+        type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+        default="int8",
+        help="Specific AQT quantization configuration to use.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
         heuristic_kwargs = map_kwargs_to_pydantic(HeuristicOptions, kwargs)
         heuristic_opts = HeuristicOptions(**heuristic_kwargs)
         use_quantize = kwargs.pop("use_quantize")
-        aqt_cfg = "int8" if use_quantize else None
+        quant_type = kwargs.pop("quant_type")
+        aqt_cfg = quant_type if use_quantize else None
 
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
@@ -515,14 +522,21 @@ def qfunction_options(func: callable) -> callable:
         "--use-quantize",
         is_flag=True,
         default=False,
-        help="Use quantization (int8).",
+        help="Use quantization (defaults to int8).",
+    )
+    @click.option(
+        "--quant-type",
+        type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+        default="int8",
+        help="Specific AQT quantization configuration to use.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
         q_kwargs = map_kwargs_to_pydantic(QFunctionOptions, kwargs)
         q_opts = QFunctionOptions(**q_kwargs)
         use_quantize = kwargs.pop("use_quantize")
-        aqt_cfg = "int8" if use_quantize else None
+        quant_type = kwargs.pop("quant_type")
+        aqt_cfg = quant_type if use_quantize else None
 
         puzzle_bundle = kwargs.pop("puzzle_bundle")
         puzzle = kwargs["puzzle"]
@@ -822,7 +836,13 @@ def dist_heuristic_options(func: callable) -> callable:
         "--use-quantize",
         is_flag=True,
         default=False,
-        help="Use quantization (int8).",
+        help="Use quantization (defaults to int8).",
+    )
+    @click.option(
+        "--quant-type",
+        type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+        default="int8",
+        help="Specific AQT quantization configuration to use.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -831,7 +851,8 @@ def dist_heuristic_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle_name"]
         reset = kwargs["train_options"].reset
         use_quantize = kwargs.pop("use_quantize")
-        aqt_cfg = "int8" if use_quantize else None
+        quant_type = kwargs.pop("quant_type")
+        aqt_cfg = quant_type if use_quantize else None
 
         result = _setup_neural_component(
             puzzle_bundle,
@@ -875,7 +896,13 @@ def dist_qfunction_options(func: callable) -> callable:
         "--use-quantize",
         is_flag=True,
         default=False,
-        help="Use quantization (int8).",
+        help="Use quantization (defaults to int8).",
+    )
+    @click.option(
+        "--quant-type",
+        type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+        default="int8",
+        help="Specific AQT quantization configuration to use.",
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -884,7 +911,8 @@ def dist_qfunction_options(func: callable) -> callable:
         puzzle_name = kwargs["puzzle_name"]
         reset = kwargs["train_options"].reset
         use_quantize = kwargs.pop("use_quantize")
-        aqt_cfg = "int8" if use_quantize else None
+        quant_type = kwargs.pop("quant_type")
+        aqt_cfg = quant_type if use_quantize else None
 
         result = _setup_neural_component(
             puzzle_bundle,

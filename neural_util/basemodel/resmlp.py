@@ -1,9 +1,9 @@
-import functools
 from typing import Any
 
 from aqt.jax.v2.flax import aqt_flax
 from flax import linen as nn
 
+from neural_util.aqt_utils import build_aqt_dot_general
 from neural_util.basemodel.base import DistanceModel
 from neural_util.modules import (
     DEFAULT_NORM_FN,
@@ -34,11 +34,7 @@ class ResMLPModel(DistanceModel):
         aqt_dg = None
         if self.aqt_cfg is not None:
             mode = self.quant_mode if self.quant_mode is not None else aqt_flax.QuantMode.TRAIN
-            aqt_dg = functools.partial(
-                aqt_flax.AqtDotGeneral,
-                self.aqt_cfg,
-                rhs_quant_mode=mode,
-            )
+            aqt_dg = build_aqt_dot_general(self.aqt_cfg, mode)
 
         if self.use_swiglu:
             x = Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg)(

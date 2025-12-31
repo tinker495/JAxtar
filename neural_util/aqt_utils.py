@@ -1,21 +1,99 @@
+import functools
+import inspect
+
 import jax
 from aqt.jax.v2 import config as aqt_config
 from aqt.jax.v2.flax import aqt_flax
 
 
 def get_aqt_cfg(aqt_cfg: str = "int8"):
+    """
+    Returns an AQT configuration based on the provided string.
+    Supported: 'int8', 'int4', 'int4_w8a', 'int8_w_only'
+    """
     if aqt_cfg == "int8":
         return get_int8_config()
+    elif aqt_cfg == "int4":
+        return get_int4_config()
+    elif aqt_cfg == "int4_w8a":
+        return get_int4_weight_int8_act_config()
+    elif aqt_cfg == "int8_w_only":
+        return get_int8_weight_only_config()
     else:
         raise ValueError(f"Invalid AQT configuration: {aqt_cfg}")
 
 
 def get_int8_config():
-    """Returns a fully quantized int8 configuration for AQT."""
+    """Returns a fully quantized 8-bit configuration (weights and activations)."""
     return aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
 
 
-def convert_to_serving(model_cls, params, sample_input, aqt_cfg, **model_kwargs):
+def get_int4_config():
+    """Returns a fully quantized 4-bit configuration (weights and activations)."""
+    return aqt_config.fully_quantized(fwd_bits=4, bwd_bits=4)
+
+
+def get_int4_weight_int8_act_config():
+    """
+    Returns a configuration with 4-bit weights and 8-bit activations.
+    """
+    cfg = aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
+    # RHS is typically weights in nn.Dense
+    if cfg.fwd.rhs.tensor is not None:
+        cfg.fwd.rhs.tensor.num_bits = 4
+    if cfg.dlhs.rhs.tensor is not None:
+        cfg.dlhs.rhs.tensor.num_bits = 4
+    if cfg.drhs.rhs.tensor is not None:
+        cfg.drhs.rhs.tensor.num_bits = 4
+    return cfg
+
+
+def get_int8_weight_only_config():
+    """Returns a configuration where only weights are quantized to 8-bit."""
+    cfg = aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
+    # LHS is activations, RHS is weights
+    cfg.fwd.lhs.tensor = None
+    cfg.dlhs.lhs.tensor = None
+    cfg.drhs.lhs.tensor = None
+    return cfg
+
+
+def _resolve_freezer_mode(quant_mode):
+    freezer_mode = getattr(aqt_flax, "FreezerMode", None)
+    if freezer_mode is None:
+        return None
+    if quant_mode == aqt_flax.QuantMode.CONVERT:
+        for name in ("CALIBRATION", "CALIBRATE", "WRITE", "CONVERT"):
+            if hasattr(freezer_mode, name):
+                return getattr(freezer_mode, name)
+    if quant_mode == aqt_flax.QuantMode.SERVE:
+        for name in ("CALIBRATION_AND_VALUE", "FREEZE", "FROZEN", "READ", "SERVE", "INFERENCE"):
+            if hasattr(freezer_mode, name):
+                return getattr(freezer_mode, name)
+    for name in ("NONE",):
+        if hasattr(freezer_mode, name):
+            return getattr(freezer_mode, name)
+    return None
+
+
+def build_aqt_dot_general(aqt_cfg, quant_mode):
+    """
+    Build an AqtDotGeneral partial with quant/freezer modes wired for the active AQT version.
+    """
+    kwargs = {
+        "rhs_quant_mode": quant_mode,
+    }
+    freezer_mode = _resolve_freezer_mode(quant_mode)
+    if freezer_mode is not None:
+        sig = inspect.signature(aqt_flax.AqtDotGeneral)
+        if "rhs_freeze_mode" in sig.parameters:
+            kwargs["rhs_freeze_mode"] = freezer_mode
+        if "freezer_mode" in sig.parameters and "rhs_freeze_mode" not in kwargs:
+            kwargs["freezer_mode"] = freezer_mode
+    return functools.partial(aqt_flax.AqtDotGeneral, aqt_cfg, **kwargs)
+
+
+def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
     """
     Converts a trained model with AQT config to a serving model (freezing quantization stats).
 
@@ -23,13 +101,22 @@ def convert_to_serving(model_cls, params, sample_input, aqt_cfg, **model_kwargs)
         model_cls: The Flax model class (e.g. ResMLPModel).
         params: The trained parameters (FrozenDict).
         sample_input: A sample input array with correct shape and dtype.
-        aqt_cfg: The AQT configuration used during training.
-        **model_kwargs: Additional arguments for model initialization.
+        **model_kwargs: Additional arguments for model initialization, including 'aqt_cfg'.
 
     Returns:
         serving_model: The model instance configured for serving.
         serving_variables: The variables (params + frozen quant stats) for serving.
     """
+    # Extract aqt_cfg from model_kwargs
+    aqt_cfg = model_kwargs.pop("aqt_cfg", None)
+
+    if aqt_cfg is None:
+        raise ValueError("aqt_cfg must be provided in model_kwargs")
+
+    # If it's a string, resolve it to a DotGeneral config object
+    if isinstance(aqt_cfg, str):
+        aqt_cfg = get_aqt_cfg(aqt_cfg)
+
     # 1. Initialize model in CONVERT mode
     convert_kwargs = model_kwargs.copy()
     convert_kwargs["aqt_cfg"] = aqt_cfg
@@ -54,6 +141,7 @@ def convert_to_serving(model_cls, params, sample_input, aqt_cfg, **model_kwargs)
         sample_input,
         training=True,  # Often needed to activate stats collection if any
         mutable=True,
+        rngs={"params": jax.random.PRNGKey(0)},
     )
 
     # 3. Create Serving Model
@@ -66,10 +154,18 @@ def convert_to_serving(model_cls, params, sample_input, aqt_cfg, **model_kwargs)
     return serving_model, converting_variables
 
 
-def create_serving_fn(model_cls, serving_variables, aqt_cfg, **model_kwargs):
+def create_serving_fn(model_cls, serving_variables, **model_kwargs):
     """
     Creates a jit-compiled serving function.
     """
+    aqt_cfg = model_kwargs.pop("aqt_cfg", None)
+
+    if aqt_cfg is None:
+        raise ValueError("aqt_cfg must be provided in model_kwargs")
+
+    if isinstance(aqt_cfg, str):
+        aqt_cfg = get_aqt_cfg(aqt_cfg)
+
     serve_kwargs = model_kwargs.copy()
     serve_kwargs["aqt_cfg"] = aqt_cfg
     serve_kwargs["quant_mode"] = aqt_flax.QuantMode.SERVE

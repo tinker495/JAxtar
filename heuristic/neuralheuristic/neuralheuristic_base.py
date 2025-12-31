@@ -102,7 +102,6 @@ class NeuralHeuristicBase(Heuristic):
                     self.model_cls,
                     params,
                     sample_input,
-                    self.aqt_cfg,
                     **self.model_kwargs,
                 )
 
@@ -118,7 +117,8 @@ class NeuralHeuristicBase(Heuristic):
             return params
         except Exception as e:
             print(f"Error loading model: {e}")
-            return self.get_new_params()
+            raise e
+            # return self.get_new_params()
 
     def save_model(self, path: str = None, metadata: dict = None):
         path = path or self.path

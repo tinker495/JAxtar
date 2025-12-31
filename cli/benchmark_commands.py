@@ -187,7 +187,13 @@ def _run_benchmark(
     "--use-quantize",
     is_flag=True,
     default=False,
-    help="Use quantization (int8).",
+    help="Use quantization (defaults to int8).",
+)
+@click.option(
+    "--quant-type",
+    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+    default="int8",
+    help="Specific AQT quantization configuration to use.",
 )
 @click.option(
     "--output-dir",
@@ -205,10 +211,11 @@ def benchmark_astar(
     param_path: Optional[str],
     model_type: str,
     use_quantize: bool,
+    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = "int8" if use_quantize else None
+    aqt_cfg = quant_type if use_quantize else None
     solver = _load_benchmark_heuristic(
         puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
     )
@@ -250,7 +257,13 @@ def benchmark_astar(
     "--use-quantize",
     is_flag=True,
     default=False,
-    help="Use quantization (int8).",
+    help="Use quantization (defaults to int8).",
+)
+@click.option(
+    "--quant-type",
+    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+    default="int8",
+    help="Specific AQT quantization configuration to use.",
 )
 @click.option(
     "--output-dir",
@@ -268,10 +281,11 @@ def benchmark_astar_d(
     param_path: Optional[str],
     model_type: str,
     use_quantize: bool,
+    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = "int8" if use_quantize else None
+    aqt_cfg = quant_type if use_quantize else None
     solver = _load_benchmark_heuristic(
         puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
     )
@@ -313,7 +327,13 @@ def benchmark_astar_d(
     "--use-quantize",
     is_flag=True,
     default=False,
-    help="Use quantization (int8).",
+    help="Use quantization (defaults to int8).",
+)
+@click.option(
+    "--quant-type",
+    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+    default="int8",
+    help="Specific AQT quantization configuration to use.",
 )
 @click.option(
     "--output-dir",
@@ -331,10 +351,11 @@ def benchmark_qstar(
     param_path: Optional[str],
     model_type: str,
     use_quantize: bool,
+    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = "int8" if use_quantize else None
+    aqt_cfg = quant_type if use_quantize else None
     solver = _load_benchmark_qfunction(
         puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
     )
@@ -376,7 +397,13 @@ def benchmark_qstar(
     "--use-quantize",
     is_flag=True,
     default=False,
-    help="Use quantization (int8).",
+    help="Use quantization (defaults to int8).",
+)
+@click.option(
+    "--quant-type",
+    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+    default="int8",
+    help="Specific AQT quantization configuration to use.",
 )
 @click.option(
     "--output-dir",
@@ -394,10 +421,11 @@ def benchmark_beam(
     param_path: Optional[str],
     model_type: str,
     use_quantize: bool,
+    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = "int8" if use_quantize else None
+    aqt_cfg = quant_type if use_quantize else None
     solver = _load_benchmark_heuristic(
         puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
     )
@@ -439,7 +467,13 @@ def benchmark_beam(
     "--use-quantize",
     is_flag=True,
     default=False,
-    help="Use quantization (int8).",
+    help="Use quantization (defaults to int8).",
+)
+@click.option(
+    "--quant-type",
+    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
+    default="int8",
+    help="Specific AQT quantization configuration to use.",
 )
 @click.option(
     "--output-dir",
@@ -457,10 +491,11 @@ def benchmark_qbeam(
     param_path: Optional[str],
     model_type: str,
     use_quantize: bool,
+    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = "int8" if use_quantize else None
+    aqt_cfg = quant_type if use_quantize else None
     solver = _load_benchmark_qfunction(
         puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
     )
