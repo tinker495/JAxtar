@@ -1,4 +1,3 @@
-import math
 from functools import partial
 from typing import Any, Callable
 
@@ -12,49 +11,14 @@ from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.annotate import MAX_GEN_DS_BATCH_SIZE
 from train_util.sampling import (
+    calculate_dataset_params,
+    compute_diffusion_targets,
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
-    flatten_scanned_paths,
+    wrap_dataset_runner,
 )
-
-
-def boltzmann_action_selection(
-    q_values: chex.Array,
-    temperature: float = 1.0 / 3.0,
-    epsilon: float = 0.1,
-) -> chex.Array:
-    # Determine valid entries before sanitizing infinities
-    mask = jnp.isfinite(q_values)
-    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
-
-    # Scale Q-values by temperature for softmax
-    safe_temperature = jnp.maximum(temperature, 1e-8)
-    scaled_q_values = -q_values / safe_temperature
-
-    # Apply mask before softmax to avoid overflow
-    masked_q_values = jnp.where(mask, scaled_q_values, -jnp.inf)
-    probs = jax.nn.softmax(masked_q_values, axis=1)
-    probs = jnp.where(mask, probs, 0.0)
-
-    # Row-wise normalization with guard
-    row_sum = jnp.sum(probs, axis=1, keepdims=True)
-    probs = jnp.where(row_sum > 0.0, probs / row_sum, probs)
-
-    # Calculate uniform probabilities
-    valid_actions = jnp.sum(mask, axis=1, keepdims=True)
-    uniform_valid = jnp.where(mask, 1.0 / jnp.maximum(valid_actions, 1.0), 0.0)
-
-    action_size = q_values.shape[1]
-    uniform_all = jnp.ones_like(probs) / jnp.maximum(action_size, 1)
-
-    # Fallback if no valid actions in a row
-    probs = jnp.where(valid_actions > 0, probs, uniform_all)
-
-    # ε-greedy mixing and final guard renormalization
-    probs = probs * (1.0 - epsilon) + uniform_valid * epsilon
-    probs = probs / (jnp.sum(probs, axis=1, keepdims=True) + 1e-8)
-    return probs
+from train_util.util import boltzmann_action_selection
 
 
 def _get_datasets_with_policy(
@@ -223,127 +187,40 @@ def _compute_diffusion_q(
         actions=trajectory_actions,
     )
 
-    # 1. Find unique state-action pairs and their minimal move_costs
-    # We use move_costs as the initial estimate for Q(s,a) / Cost(s,a)
-    # For diffusion distance, Q(s,a) approximates the cost to go.
-    target_q = raw_move_costs
-
-    _, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
+    # 1. Unique state-action pairs
+    _, unique_state_action_idx, inverse_indices = xnp.unique_mask(
         val=solve_configs_and_states_and_actions,
-        key=target_q,
+        key=raw_move_costs,
         return_index=True,
         return_inverse=True,
     )
-    num_unique_state_actions = unique_uint32eds_idx.shape[0]
-    target_q = target_q[unique_uint32eds_idx][inverse_indices][:, jnp.newaxis]
+    num_unique_state_actions = unique_state_action_idx.shape[0]
 
-    # 2. Find state-wise minimal cost (Global Best Value Table)
-    # This helps sharing optimal cost across different actions for the same state
+    # 2. Unique states (for state-min-over-actions propagation)
     solve_configs_and_states = SolveConfigsAndStates(
         solveconfigs=solve_configs,
         states=states,
     )
-
     _, unique_state_idx, inverse_state_indices = xnp.unique_mask(
         val=solve_configs_and_states,
-        key=target_q.reshape(-1),
+        key=raw_move_costs,
         return_index=True,
         return_inverse=True,
     )
     num_unique_states = unique_state_idx.shape[0]
 
-    def _collapse_duplicate_state_actions(q_vec: chex.Array) -> chex.Array:
-        """Collapse duplicate (solve_config, state, action) rows to minimal Q."""
-        group_min = (
-            jnp.full((num_unique_state_actions, 1), jnp.inf, dtype=q_vec.dtype)
-            .at[inverse_indices]
-            .min(q_vec)
-        )
-        return group_min[inverse_indices]
-
-    def _state_min_over_actions(q_vec: chex.Array) -> chex.Array:
-        """Compute per-state min_a Q(s,a) from the (possibly duplicated) dataset rows."""
-        group_min_state = (
-            jnp.full((num_unique_states, 1), jnp.inf, dtype=q_vec.dtype)
-            .at[inverse_state_indices]
-            .min(q_vec)
-        )
-        return group_min_state
-
-    # Propagate the improved Q values backwards along the trajectory
-    dataset_size = target_q.shape[0]
-
-    # Pad dataset with infinity to handle invalid parent pointers
-    padded_q = jnp.pad(target_q, ((0, 1), (0, 0)), constant_values=jnp.inf)
-
-    # Map -1 or out-of-bounds indices to the padded infinity value
-    safe_parent_indices = jnp.where(
-        (parent_indices < 0) | (parent_indices >= dataset_size), dataset_size, parent_indices
+    # 3. Compute diffusion using common utility
+    return compute_diffusion_targets(
+        initial_values=raw_move_costs[:, jnp.newaxis],
+        parent_indices=parent_indices,
+        action_costs=action_costs,
+        raw_move_costs=raw_move_costs,
+        k_max=k_max,
+        inverse_indices=inverse_indices,
+        num_unique=num_unique_state_actions,
+        inverse_state_indices=inverse_state_indices,
+        num_unique_states=num_unique_states,
     )
-    # Parent indices refer to dataset rows; map those rows to their parent-state group id.
-    inverse_state_indices_padded = jnp.pad(
-        inverse_state_indices, (0, 1), constant_values=num_unique_states
-    )
-    idx = jnp.arange(dataset_size, dtype=safe_parent_indices.dtype)
-    valid_parent = safe_parent_indices[:dataset_size] != dataset_size
-    parent_is_behind = (safe_parent_indices[:dataset_size] < idx) & valid_parent
-    behind_ratio = jnp.sum(parent_is_behind).astype(jnp.float32) / jnp.maximum(
-        jnp.sum(valid_parent).astype(jnp.float32), 1.0
-    )
-    default_use_parent_indexed_costs = behind_ratio > 0.5
-    padded_action_costs = jnp.pad(action_costs, ((0, 1), (0, 0)), constant_values=0.0)
-    padded_move_costs = jnp.pad(raw_move_costs, (0, 1), constant_values=0.0)
-
-    parent_move_costs = padded_move_costs[safe_parent_indices][:, jnp.newaxis]
-    parent_aligned_costs = padded_action_costs[safe_parent_indices]
-    child_aligned_costs = action_costs
-    err_child = jnp.abs(raw_move_costs[:, jnp.newaxis] - (parent_move_costs + child_aligned_costs))
-    err_parent = jnp.abs(
-        raw_move_costs[:, jnp.newaxis] - (parent_move_costs + parent_aligned_costs)
-    )
-    valid_parent_f = valid_parent.astype(raw_move_costs.dtype)[:, jnp.newaxis]
-    denom = jnp.maximum(jnp.sum(valid_parent_f), 1.0)
-    mean_err_child = jnp.sum(err_child * valid_parent_f) / denom
-    mean_err_parent = jnp.sum(err_parent * valid_parent_f) / denom
-    min_mean_err = jnp.minimum(mean_err_child, mean_err_parent)
-    use_error_based = min_mean_err < 1e-3
-    use_parent_indexed_costs = jax.lax.select(
-        use_error_based,
-        mean_err_parent < mean_err_child,
-        default_use_parent_indexed_costs,
-    )
-
-    edge_costs = jax.lax.cond(
-        use_parent_indexed_costs,
-        lambda: padded_action_costs[safe_parent_indices],
-        lambda: action_costs,
-    )
-
-    def body_fun(i, q):
-        # q is padded [N+1, 1]
-        current_q = _collapse_duplicate_state_actions(q[:dataset_size])
-        state_min_cost = _state_min_over_actions(current_q)
-        padded_state_min_cost = jnp.pad(state_min_cost, ((0, 1), (0, 0)), constant_values=jnp.inf)
-        parent_state_group = inverse_state_indices_padded[safe_parent_indices]
-        collapsed_padded_q = jnp.pad(current_q, ((0, 1), (0, 0)), constant_values=jnp.inf)
-
-        # Gather Q from parents (neighbors closer to goal)
-        # Combine global optimal info (s' best) and trajectory info
-        q_parents_optimal = padded_state_min_cost[parent_state_group]  # [N, 1]
-        q_parents_prop = collapsed_padded_q[safe_parent_indices]  # [N, 1]
-
-        q_parents = jnp.minimum(q_parents_optimal, q_parents_prop)
-
-        # Bellman update: Q(s, a) <= c(s, a, s') + Q(s', a')
-        new_q = edge_costs + q_parents
-
-        improved_q = jnp.minimum(current_q, new_q)
-        return q.at[:dataset_size].set(improved_q)
-
-    # Iterate k_max times to propagate along the longest possible path
-    final_padded_q = jax.lax.fori_loop(0, k_max, body_fun, padded_q)
-
-    return _collapse_duplicate_state_actions(final_padded_q[:dataset_size])
 
 
 def _get_datasets_with_diffusion_distance(
@@ -477,18 +354,10 @@ def get_qfunction_dataset_builder(
         raise ValueError("non_backtracking_steps must be non-negative")
     non_backtracking_steps = int(non_backtracking_steps)
 
-    # Calculate optimal nn_minibatch_size
-    # It must be <= MAX_GEN_DS_BATCH_SIZE and divide dataset_size
-    n_batches = math.ceil(dataset_size / MAX_GEN_DS_BATCH_SIZE)
-    while dataset_size % n_batches != 0:
-        n_batches += 1
-    nn_minibatch_size = dataset_size // n_batches
-
-    # Calculate optimal shuffle_parallel and steps to respect MAX_GEN_DS_BATCH_SIZE
-    max_shuffle_parallel = max(1, int(MAX_GEN_DS_BATCH_SIZE / k_max))
-    needed_trajectories = math.ceil(dataset_size / k_max)
-    shuffle_parallel = min(needed_trajectories, max_shuffle_parallel)
-    steps = math.ceil(needed_trajectories / shuffle_parallel)
+    # Calculate optimal parameters for dataset generation
+    nn_minibatch_size, shuffle_parallel, steps = calculate_dataset_params(
+        dataset_size, k_max, MAX_GEN_DS_BATCH_SIZE
+    )
 
     if using_hindsight_target:
         assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
@@ -589,46 +458,12 @@ def get_qfunction_dataset_builder(
             return step < warmup_steps
         return True
 
-    def build_runner(dataset_extractor: Callable):
-        @jax.jit
-        def runner(
-            target_q_params: Any,
-            q_params: Any,
-            key: chex.PRNGKey,
-        ):
-            def scan_fn(scan_key, _):
-                scan_key, subkey = jax.random.split(scan_key)
-                paths = jited_create_shuffled_path(subkey)
-                return scan_key, paths
-
-            key_inner, paths = jax.lax.scan(scan_fn, key, None, length=steps)
-            paths = flatten_scanned_paths(paths, dataset_size)
-            flatten_dataset = dataset_extractor(
-                target_q_params,
-                q_params,
-                paths,
-                key_inner,
-            )
-            return flatten_dataset
-
-        return runner
-
-    default_runner = build_runner(base_get_datasets)
-    diffusion_runner = build_runner(diffusion_get_datasets)
-
-    if n_devices > 1:
-        pmap_default_runner = jax.pmap(default_runner, in_axes=(None, None, 0))
-        pmap_diffusion_runner = jax.pmap(diffusion_runner, in_axes=(None, None, 0))
-
-        def get_datasets(target_q_params, q_params, key, step: int):
-            keys = jax.random.split(key, n_devices)
-            runner = pmap_diffusion_runner if should_use_diffusion(step) else pmap_default_runner
-            return runner(target_q_params, q_params, keys)
-
-        return get_datasets
-
-    def single_device_get_datasets(target_q_params, q_params, key, step: int):
-        runner = diffusion_runner if should_use_diffusion(step) else default_runner
-        return runner(target_q_params, q_params, key)
-
-    return single_device_get_datasets
+    return wrap_dataset_runner(
+        dataset_size=dataset_size,
+        steps=steps,
+        jited_create_shuffled_path=jited_create_shuffled_path,
+        base_get_datasets=base_get_datasets,
+        diffusion_get_datasets=diffusion_get_datasets,
+        should_use_diffusion_fn=should_use_diffusion,
+        n_devices=n_devices,
+    )

@@ -11,6 +11,44 @@ def round_through_gradient(x: chex.Array) -> chex.Array:
     return x + jax.lax.stop_gradient(jnp.where(x > 0.5, 1.0, 0.0).astype(jnp.float32) - x)
 
 
+def boltzmann_action_selection(
+    q_values: chex.Array,
+    temperature: float = 1.0 / 3.0,
+    epsilon: float = 0.1,
+) -> chex.Array:
+    # Determine valid entries before sanitizing infinities
+    mask = jnp.isfinite(q_values)
+    q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
+
+    # Scale Q-values by temperature for softmax
+    safe_temperature = jnp.maximum(temperature, 1e-8)
+    scaled_q_values = -q_values / safe_temperature
+
+    # Apply mask before softmax to avoid overflow
+    masked_q_values = jnp.where(mask, scaled_q_values, -jnp.inf)
+    probs = jax.nn.softmax(masked_q_values, axis=1)
+    probs = jnp.where(mask, probs, 0.0)
+
+    # Row-wise normalization with guard
+    row_sum = jnp.sum(probs, axis=1, keepdims=True)
+    probs = jnp.where(row_sum > 0.0, probs / row_sum, probs)
+
+    # Calculate uniform probabilities
+    valid_actions = jnp.sum(mask, axis=1, keepdims=True)
+    uniform_valid = jnp.where(mask, 1.0 / jnp.maximum(valid_actions, 1.0), 0.0)
+
+    action_size = q_values.shape[1]
+    uniform_all = jnp.ones_like(probs) / jnp.maximum(action_size, 1)
+
+    # Fallback if no valid actions in a row
+    probs = jnp.where(valid_actions > 0, probs, uniform_all)
+
+    # ε-greedy mixing and final guard renormalization
+    probs = probs * (1.0 - epsilon) + uniform_valid * epsilon
+    probs = probs / (jnp.sum(probs, axis=1, keepdims=True) + 1e-8)
+    return probs
+
+
 def apply_with_conditional_batch_stats(
     apply_fn: Callable,
     params: Any,
