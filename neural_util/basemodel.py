@@ -71,19 +71,12 @@ class BaseModel(nn.Module):
         )(x)
         return x
 
-    def train_loss(
-        self, x, target, actions=None, loss_type="mse", loss_args=None, td_error_clip=None, **kwargs
-    ):
+    def train_loss(self, x, target, actions=None, loss_type="mse", loss_args=None, **kwargs):
         pred = self(x, training=True)
         if actions is not None:
             pred = jnp.take_along_axis(pred, actions[:, jnp.newaxis], axis=1)
 
         diff = target - pred
-
-        if td_error_clip is not None and td_error_clip > 0:
-            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
-            diff = jnp.clip(diff, -clip_val, clip_val)
-
         return loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
 
 

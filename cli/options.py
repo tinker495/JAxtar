@@ -312,9 +312,7 @@ def search_options(func=None, *, variant: str = "default") -> callable:
 def eval_options(func=None, *, variant: str = "default") -> callable:
     def decorator(func: callable) -> callable:
         @click.option("-b", "--batch-size", type=int, default=None, help="Batch size for search.")
-        @click.option(
-            "--show_compile_time", is_flag=True, default=None, help="Show compile time"
-        )
+        @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
         @click.option(
             "-m",
             "--max-node-size",
@@ -701,13 +699,6 @@ def dist_train_options(
                 "JSON object of additional keyword arguments for the selected loss, "
                 'e.g. \'{"huber_delta":0.2,"asymmetric_tau":0.1}\'.'
             ),
-        )
-        @click.option(
-            "--td-error-clip",
-            "td_error_clip",
-            type=float,
-            default=None,
-            help="Absolute clip value for TD-error; set <= 0 to disable.",
         )
         @click.option(
             "--eval-search-metric",

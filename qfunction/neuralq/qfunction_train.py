@@ -23,7 +23,6 @@ def qfunction_train_builder(
     loss_type: str = "mse",
     loss_args: Optional[dict[str, Any]] = None,
     replay_ratio: int = 1,
-    td_error_clip: Optional[float] = None,
 ):
     def qfunction_train_loss(
         q_params: Any,
@@ -46,7 +45,6 @@ def qfunction_train_builder(
             method=q_fn.train_loss,
             loss_type=loss_type,
             loss_args=loss_args,
-            td_error_clip=td_error_clip,
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
         loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
