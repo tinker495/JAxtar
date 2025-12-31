@@ -159,15 +159,14 @@ def heuristic_train_command(
         "puzzle_options": puzzle_opts,
         "heuristic": heuristic.__class__.__name__,
         "heuristic_metadata": getattr(heuristic, "metadata", {}),
-        "heuristic_config": heuristic_config,
         "train_options": train_options,
         "eval_options": eval_options,
+        "heuristic_config": heuristic_config,
         "derived_parameters": {
             "effective_steps": steps,
             "effective_update_interval": update_interval,
             "effective_reset_interval": reset_interval,
             "n_devices": n_devices,
-            "replay_ratio": train_options.replay_ratio,
         },
     }
     print_config("Heuristic Training Configuration", enrich_config(config))
@@ -392,7 +391,7 @@ def qfunction_train_command(
             "n_devices": n_devices,
         },
     }
-    print_config("Q-Learning Training Configuration", enrich_config(config))
+    print_config("Q-Function Training Configuration", enrich_config(config))
     logger = create_logger(train_options.logger, f"{puzzle_name}-dist-q-train", config)
     key = jax.random.PRNGKey(
         np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
@@ -463,7 +462,7 @@ def qfunction_train_command(
         eval_params = get_eval_params(opt_state, qfunc_params)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
-            desc="Q-Learning Training",
+            desc="Q-Function Training",
             desc_dict={
                 "lr": lr,
                 "loss": float(loss),
