@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax import linen as nn
 
@@ -18,7 +19,7 @@ class DistanceModel(ABC, nn.Module):
     def train_loss(self, x, target, actions=None, loss_type="mse", loss_args=None, **kwargs):
         pred = self(x, training=True)
         if actions is not None:
-            pred = jnp.take_along_axis(pred, actions[:, jnp.newaxis], axis=1)
+            pred = jnp.take_along_axis(pred, actions, axis=1)
 
         diff = target - pred
         return loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
@@ -31,6 +32,16 @@ class DistanceHLGModel(ABC, nn.Module):
     vmin: float = -1.0
     vmax: float = 30.0
     _sigma: float = 0.75
+
+    def setup(self):
+        self.categorial_bins = np.linspace(
+            self.vmin, self.vmax, self.categorial_n + 1
+        )  # (categorial_n + 1,)
+        categorial_centers = (
+            self.categorial_bins[:-1] + self.categorial_bins[1:]
+        ) / 2  # (categorial_n,)
+        self.categorial_centers = categorial_centers.reshape(1, 1, -1)  # (1, 1, categorial_n)
+        self.sigma = self._sigma * (self.categorial_bins[1] - self.categorial_bins[0])
 
     @abstractmethod
     def __call__(self, x, training=False):
@@ -51,8 +62,6 @@ class DistanceHLGModel(ABC, nn.Module):
         if actions is None:
             logits = logits_actions.squeeze(1)
         else:
-            logits = jnp.take_along_axis(
-                logits_actions, actions[:, jnp.newaxis, jnp.newaxis], axis=1
-            ).squeeze(1)
+            logits = jnp.take_along_axis(logits_actions, actions[:, jnp.newaxis], axis=1).squeeze(1)
         sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size,)
         return sce

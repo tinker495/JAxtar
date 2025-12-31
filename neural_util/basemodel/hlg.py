@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
 from flax import linen as nn
 
 from neural_util.basemodel.base import DistanceHLGModel
@@ -57,14 +56,7 @@ class HLGResMLPModel(DistanceHLGModel):
     tail_head_precision: int = 0
 
     def setup(self):
-        self.categorial_bins = np.linspace(
-            self.vmin, self.vmax, self.categorial_n + 1
-        )  # (categorial_n + 1,)
-        self.categorial_centers = (
-            self.categorial_bins[:-1] + self.categorial_bins[1:]
-        ) / 2  # (categorial_n,)
-        self.categorial_centers = self.categorial_centers.reshape(1, 1, -1)  # (1, 1, categorial_n)
-        self.sigma = self._sigma * (self.categorial_bins[1] - self.categorial_bins[0])
+        super().setup()
 
         self.initial_mlp = (
             Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE)
