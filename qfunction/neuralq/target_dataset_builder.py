@@ -172,6 +172,7 @@ def _get_datasets_with_policy(
 def _compute_diffusion_q(
     solve_configs: chex.Array,
     states: chex.Array,
+    is_solved: chex.Array,
     trajectory_actions: chex.Array,
     move_costs: chex.Array,
     action_costs: chex.Array,
@@ -212,6 +213,7 @@ def _compute_diffusion_q(
     # 3. Compute diffusion using common utility
     return compute_diffusion_targets(
         initial_values=raw_move_costs[:, jnp.newaxis],
+        is_solved=is_solved,
         parent_indices=parent_indices,
         action_costs=action_costs,
         raw_move_costs=raw_move_costs,
@@ -246,9 +248,18 @@ def _get_datasets_with_diffusion_distance(
     action_costs = shuffled_path["action_costs"].reshape((-1, 1))
     parent_indices = shuffled_path["parent_indices"]
 
+    # Flatten strictly for compute_diffusion logic inside
+    solve_configs_flat = solve_configs.reshape((-1,))
+    states_flat = states.reshape((-1,))
+
+    is_solved = puzzle.batched_is_solved(
+        solve_configs_flat, states_flat, multi_solve_config=True
+    ).reshape((-1,))
+
     target_q = _compute_diffusion_q(
-        solve_configs,
-        states,
+        solve_configs_flat,
+        states_flat,
+        is_solved,
         trajectory_actions,
         move_costs,
         action_costs,
@@ -260,8 +271,8 @@ def _get_datasets_with_diffusion_distance(
 
     zeros = jnp.zeros_like(target_q)
     return {
-        "solveconfigs": solve_configs,
-        "states": states,
+        "solveconfigs": solve_configs_flat,
+        "states": states_flat,
         "target_q": target_q,
         "actions": trajectory_actions,
         "cost": zeros,
@@ -306,9 +317,17 @@ def _get_datasets_with_diffusion_distance_mixture(
     solve_configs = return_dict["solveconfigs"]
     states = return_dict["states"]
 
+    # Already flattened in return_dict of _get_datasets_with_policy?
+    # Yes, solve_configs.reshape((-1,)) at end of _get_datasets_with_policy
+
+    is_solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True).reshape(
+        (-1,)
+    )
+
     diffusion_q = _compute_diffusion_q(
         solve_configs,
         states,
+        is_solved,
         trajectory_actions,
         cost,  # Use cost (move_costs) as initial estimate
         action_costs,

@@ -28,6 +28,7 @@ def calculate_dataset_params(dataset_size: int, k_max: int, max_batch_size: int)
 
 def compute_diffusion_targets(
     initial_values: chex.Array,  # [N] or [N, D]
+    is_solved: chex.Array,  # [N]
     parent_indices: chex.Array,  # [N]
     action_costs: chex.Array,  # [N] or [N, D]
     raw_move_costs: chex.Array,  # [N]
@@ -48,6 +49,10 @@ def compute_diffusion_targets(
     if is_1d:
         initial_values = initial_values[:, jnp.newaxis]
         action_costs = action_costs[:, jnp.newaxis]
+
+    # Always ensure is_solved matches initial_values dimensions for broadcasting
+    if is_solved.ndim == 1:
+        is_solved = is_solved[:, jnp.newaxis]
 
     # 1. Edge cost alignment logic
     idx = jnp.arange(dataset_size, dtype=parent_indices.dtype)
@@ -124,6 +129,15 @@ def compute_diffusion_targets(
 
         new_v = edge_costs + v_parents
         improved_v = jnp.minimum(current_v, new_v)
+
+        # [Goal State Anchoring]
+        improved_v = jnp.where(is_solved, 0.0, improved_v)
+
+        # [Utilizing State Identity]
+        # Consolidate improvements across identical states immediately
+        unique_improved = _collapse(improved_v, inverse_indices, num_unique)
+        improved_v = unique_improved[inverse_indices]
+
         return v.at[:dataset_size].set(improved_v)
 
     padded_v = jnp.pad(initial_values, ((0, 1), (0, 0)), constant_values=jnp.inf)

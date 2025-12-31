@@ -98,6 +98,7 @@ def _get_datasets(
 def _compute_diffusion_distance(
     solve_configs: chex.Array,
     states: chex.Array,
+    is_solved: chex.Array,
     move_costs: chex.Array,
     action_costs: chex.Array,
     parent_indices: chex.Array,
@@ -120,6 +121,7 @@ def _compute_diffusion_distance(
     # 2. Compute diffusion using common utility
     return compute_diffusion_targets(
         initial_values=raw_move_costs,
+        is_solved=is_solved,
         parent_indices=parent_indices,
         action_costs=action_costs,
         raw_move_costs=raw_move_costs,
@@ -154,9 +156,14 @@ def _get_datasets_with_diffusion_distance(
     action_costs = action_costs.reshape((-1,))
     parent_indices = shuffled_path["parent_indices"]
 
+    is_solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True).reshape(
+        (-1,)
+    )
+
     target_heuristic = _compute_diffusion_distance(
         solve_configs,
         states,
+        is_solved,
         move_costs,
         action_costs,
         parent_indices,
@@ -211,9 +218,14 @@ def _get_datasets_with_diffusion_distance_mixture(
     states = states.reshape((-1,))
     action_costs = action_costs.reshape((-1,))
 
+    is_solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True).reshape(
+        (-1,)
+    )
+
     diffusion_heuristic = _compute_diffusion_distance(
         solve_configs,
         states,
+        is_solved,
         move_costs,
         action_costs,
         parent_indices,
