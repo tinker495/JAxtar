@@ -31,6 +31,7 @@ def qfunction_train_builder(
         actions: chex.Array,
         target_qs: chex.Array,
         weights: chex.Array,
+        key: chex.PRNGKey,
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
@@ -45,6 +46,7 @@ def qfunction_train_builder(
             method=q_fn.train_loss,
             loss_type=loss_type,
             loss_args=loss_args,
+            rngs={"params": key},
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
         loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
@@ -68,7 +70,8 @@ def qfunction_train_builder(
         loss_weights = loss_weights / jnp.mean(loss_weights)
 
         def train_loop(carry, batched_dataset):
-            q_params, opt_state = carry
+            q_params, opt_state, key = carry
+            step_key, key = jax.random.split(key)
             solveconfigs, states, target_q, actions, weights = batched_dataset
             (loss, q_params), grads = jax.value_and_grad(qfunction_train_loss, has_aux=True)(
                 q_params,
@@ -77,17 +80,18 @@ def qfunction_train_builder(
                 actions,
                 target_q,
                 weights,
+                step_key,
             )
             if n_devices > 1:
                 grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
-            return (q_params, opt_state), loss
+            return (q_params, opt_state, key), loss
 
         def replay_loop(carry, replay_key):
             q_params, opt_state = carry
 
-            key_perm, key_fill = jax.random.split(replay_key)
+            key_perm, key_fill, key_train = jax.random.split(replay_key, 3)
             batch_indexs = jnp.concatenate(
                 [
                     jax.random.permutation(key_perm, jnp.arange(data_size)),
@@ -111,9 +115,9 @@ def qfunction_train_builder(
                 jnp.mean(batched_weights, axis=1, keepdims=True) + 1e-8
             )
 
-            (q_params, opt_state,), losses = jax.lax.scan(
+            (q_params, opt_state, _), losses = jax.lax.scan(
                 train_loop,
-                (q_params, opt_state),
+                (q_params, opt_state, key_train),
                 (
                     batched_solveconfigs,
                     batched_states,

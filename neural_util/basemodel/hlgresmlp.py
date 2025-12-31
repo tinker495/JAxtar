@@ -1,4 +1,8 @@
+import functools
+from typing import Any
+
 import jax.numpy as jnp
+from aqt.jax.v2.flax import aqt_flax
 from flax import linen as nn
 
 from neural_util.basemodel.base import DistanceHLGModel
@@ -17,10 +21,11 @@ class MLP(nn.Module):
     hidden_dim: int = 1000
     norm_fn: callable = DEFAULT_NORM_FN
     activation: str = nn.relu
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+        x = nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=self.dot_general_cls)(x)
         x = self.norm_fn(x, training, dtype=DTYPE)
         x = self.activation(x)
         return x
@@ -31,13 +36,17 @@ class preactivation_MLP(nn.Module):
     norm_fn: callable = DEFAULT_NORM_FN
     activation: str = nn.relu
     dtype: any = jnp.float32
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
         x = self.norm_fn(x, training, dtype=self.dtype)
         x = self.activation(x)
         x = nn.Dense(
-            self.hidden_dim, dtype=self.dtype, kernel_init=nn.initializers.normal(stddev=0.01)
+            self.hidden_dim,
+            dtype=self.dtype,
+            kernel_init=nn.initializers.normal(stddev=0.01),
+            dot_general_cls=self.dot_general_cls,
         )(x)
         return x
 
@@ -53,23 +62,44 @@ class HLGResMLPModel(DistanceHLGModel):
     use_swiglu: bool = False
     hidden_node_multiplier: int = 1
     tail_head_precision: int = 0
+    aqt_cfg: Any = None
+    quant_mode: Any = None
 
     def setup(self):
         super().setup()
 
+        aqt_dg = None
+        if self.aqt_cfg is not None:
+            mode = self.quant_mode if self.quant_mode is not None else aqt_flax.QuantMode.TRAIN
+            aqt_dg = functools.partial(
+                aqt_flax.AqtDotGeneral,
+                self.aqt_cfg,
+                rhs_quant_mode=mode,
+            )
+
         self.initial_mlp = (
-            Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE)
+            Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg)
             if self.use_swiglu
-            else MLP(self.initial_dim, norm_fn=self.norm_fn, activation=self.activation)
+            else MLP(
+                self.initial_dim,
+                norm_fn=self.norm_fn,
+                activation=self.activation,
+                dot_general_cls=aqt_dg,
+            )
         )
         self.second_mlp = (
             (
-                Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE)
+                Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg)
                 if self.use_swiglu
-                else MLP(self.hidden_dim, norm_fn=self.norm_fn, activation=self.activation)
+                else MLP(
+                    self.hidden_dim,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    dot_general_cls=aqt_dg,
+                )
             )
             if self.resblock_fn != PreActivationResBlock
-            else nn.Dense(self.hidden_dim, dtype=DTYPE)
+            else nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=aqt_dg)
         )
 
         self.resblocks = [
@@ -79,6 +109,7 @@ class HLGResMLPModel(DistanceHLGModel):
                 hidden_N=self.hidden_N,
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
+                dot_general_cls=aqt_dg,
             )
             for _ in range(self.Res_N - self.tail_head_precision)
         ]
@@ -91,16 +122,20 @@ class HLGResMLPModel(DistanceHLGModel):
                 use_swiglu=self.use_swiglu,
                 dtype=HEAD_DTYPE,
                 param_dtype=HEAD_DTYPE,
+                dot_general_cls=aqt_dg,
             )
             for _ in range(self.tail_head_precision)
         ]
         self.final_dense = (
-            preactivation_MLP(self.action_size * self.categorial_n, dtype=HEAD_DTYPE)
+            preactivation_MLP(
+                self.action_size * self.categorial_n, dtype=HEAD_DTYPE, dot_general_cls=aqt_dg
+            )
             if self.resblock_fn == PreActivationResBlock
             else nn.Dense(
                 self.action_size * self.categorial_n,
                 dtype=HEAD_DTYPE,
                 kernel_init=nn.initializers.normal(stddev=0.01),
+                dot_general_cls=aqt_dg,
             )
         )
 
