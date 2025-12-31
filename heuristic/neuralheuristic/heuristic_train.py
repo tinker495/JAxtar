@@ -8,7 +8,6 @@ import optax
 import xtructure.numpy as xnp
 
 from neural_util.basemodel import BaseModel
-from train_util.losses import loss_from_diff
 from train_util.util import (
     apply_with_conditional_batch_stats,
     build_new_params_from_updates,
@@ -24,7 +23,6 @@ def heuristic_train_builder(
     loss_type: str = "mse",
     loss_args: Optional[dict[str, Any]] = None,
     replay_ratio: int = 1,
-    td_error_clip: Optional[float] = None,
 ):
     def heuristic_train_loss(
         heuristic_params: Any,
@@ -35,16 +33,19 @@ def heuristic_train_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        current_heuristic, variable_updates = apply_with_conditional_batch_stats(
-            heuristic_model.apply, heuristic_params, preproc, training=True, n_devices=n_devices
+        per_sample_loss, variable_updates = apply_with_conditional_batch_stats(
+            heuristic_model.apply,
+            heuristic_params,
+            preproc,
+            target_heuristic,
+            training=True,
+            n_devices=n_devices,
+            method=heuristic_model.train_loss,
+            loss_type=loss_type,
+            loss_args=loss_args,
         )
         new_params = build_new_params_from_updates(heuristic_params, variable_updates)
-        diff = target_heuristic.squeeze() - current_heuristic.squeeze()
-        if td_error_clip is not None and td_error_clip > 0:
-            clip_val = jnp.asarray(td_error_clip, dtype=diff.dtype)
-            diff = jnp.clip(diff, -clip_val, clip_val)
-        per_sample = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
-        loss_value = jnp.mean(per_sample * weights)
+        loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
         return loss_value, new_params
 
     def heuristic_train(

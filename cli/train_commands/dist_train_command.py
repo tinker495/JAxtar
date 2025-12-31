@@ -19,10 +19,10 @@ from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from heuristic.neuralheuristic.target_dataset_builder import (
     get_heuristic_dataset_builder,
 )
-from JAxtar.stars.astar_d import astar_d_builder
-from JAxtar.stars.qstar import qstar_builder
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
+from JAxtar.stars.astar_d import astar_d_builder
+from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qfunction_train import qfunction_train_builder
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
@@ -202,7 +202,6 @@ def heuristic_train_command(
         loss_type=train_options.loss,
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
-        td_error_clip=train_options.td_error_clip,
     )
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
@@ -215,7 +214,6 @@ def heuristic_train_command(
         train_options.using_triangular_sampling,
         n_devices=n_devices,
         temperature=train_options.temperature,
-        td_error_clip=train_options.td_error_clip,
         use_diffusion_distance=train_options.use_diffusion_distance,
         use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
         use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
@@ -426,7 +424,6 @@ def qfunction_train_command(
         loss_type=train_options.loss,
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
-        td_error_clip=train_options.td_error_clip,
     )
     get_datasets = get_qfunction_dataset_builder(
         puzzle,
@@ -439,7 +436,6 @@ def qfunction_train_command(
         train_options.using_triangular_sampling,
         n_devices=n_devices,
         temperature=train_options.temperature,
-        td_error_clip=train_options.td_error_clip,
         use_double_dqn=train_options.use_double_dqn,
         use_diffusion_distance=train_options.use_diffusion_distance,
         use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,

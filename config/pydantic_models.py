@@ -159,9 +159,6 @@ class DistTrainOptions(BaseModel):
         default_factory=dict,
         description="Additional keyword arguments for the selected loss (JSON key/value).",
     )
-    td_error_clip: Optional[float] = Field(
-        None, description="Absolute clip value applied to TD-error."
-    )
     eval_search_metric: Optional[str] = Field(
         None,
         description=(

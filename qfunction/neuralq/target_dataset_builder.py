@@ -1,6 +1,6 @@
 import math
 from functools import partial
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import chex
 import jax
@@ -67,7 +67,6 @@ def _get_datasets_with_policy(
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
     temperature: float = 1.0 / 3.0,
-    td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
@@ -361,7 +360,6 @@ def _get_datasets_with_diffusion_distance(
     k_max: int,
     shuffle_parallel: int,
     temperature: float = 1.0 / 3.0,
-    td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
 ):
     trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
@@ -407,7 +405,6 @@ def _get_datasets_with_diffusion_distance_mixture(
     k_max: int,
     shuffle_parallel: int,
     temperature: float = 1.0 / 3.0,
-    td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
 ):
     trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
@@ -421,7 +418,6 @@ def _get_datasets_with_diffusion_distance_mixture(
         shuffled_path,
         key,
         temperature,
-        td_error_clip,
         use_double_dqn,
     )
     cost = return_dict["cost"]
@@ -470,7 +466,6 @@ def get_qfunction_dataset_builder(
     using_triangular_sampling: bool = False,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
-    td_error_clip: Optional[float] = None,
     use_double_dqn: bool = False,
     use_diffusion_distance: bool = False,
     use_diffusion_distance_mixture: bool = False,
@@ -535,7 +530,6 @@ def get_qfunction_dataset_builder(
         q_model,
         nn_minibatch_size,
         temperature=temperature,
-        td_error_clip=td_error_clip,
         use_double_dqn=use_double_dqn,
     )
 
@@ -566,7 +560,6 @@ def get_qfunction_dataset_builder(
                 k_max=k_max,
                 shuffle_parallel=shuffle_parallel,
                 temperature=temperature,
-                td_error_clip=td_error_clip,
                 use_double_dqn=use_double_dqn,
             )
         else:
@@ -581,7 +574,6 @@ def get_qfunction_dataset_builder(
                 k_max=k_max,
                 shuffle_parallel=shuffle_parallel,
                 temperature=temperature,
-                td_error_clip=td_error_clip,
                 use_double_dqn=use_double_dqn,
             )
     else:
