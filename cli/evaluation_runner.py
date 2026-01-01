@@ -34,6 +34,7 @@ from helpers.plots import (
     plot_nodes_generated_by_path_cost,
     plot_path_cost_distribution,
     plot_search_time_by_path_cost,
+    plot_search_tree_semantic,
 )
 from helpers.rich_progress import trange
 from helpers.summaries import create_summary_panel
@@ -322,18 +323,28 @@ class EvaluationRunner:
             fig = plot_heuristic_accuracy(results, metrics=heuristic_metrics)
             am.save_and_log_plot(f"heuristic_accuracy{file_suffix}", fig)
 
-            plots_generated = 0
-            for r in results:
-                if plots_generated >= current_eval_opts.max_expansion_plots:
-                    break
+            for r in results[: current_eval_opts.max_expansion_plots]:
                 if r.get("expansion_analysis"):
+                    # Original Expansion Plots
                     fig = plot_expansion_distribution(
                         [r], scatter_max_points=current_eval_opts.scatter_max_points
                     )
                     am.save_and_log_plot(
                         f"expansion_dist_seed_{r['seed']}", fig, sub_dir="expansion_plots"
                     )
-                    plots_generated += 1
+
+                    # New Semantic Search Tree Plot (g vs h)
+                    try:
+                        fig_tree = plot_search_tree_semantic(
+                            r, max_points=current_eval_opts.max_node_size  # Use a large limit
+                        )
+                        am.save_and_log_plot(
+                            f"search_tree_semantic_seed_{r['seed']}",
+                            fig_tree,
+                            sub_dir="expansion_plots",
+                        )
+                    except Exception as e:
+                        print(f"Warning: Failed to generate semantic search tree plot: {e}")
 
         if is_sweep:
             self.console.rule(
@@ -574,11 +585,65 @@ class EvaluationRunner:
                 dists = np.asarray(search_result.dist[expanded_nodes_mask])
 
                 if pop_generations.size > 0:
-                    result_item["expansion_analysis"] = {
+                    analysis_data = {
                         "pop_generation": pop_generations,
                         "cost": costs,
                         "dist": dists,
                     }
+
+                    # Try to extract states and graph structure (parent indices)
+                    try:
+                        # Extract states
+                        all_states = search_result.hashtable.table
+                        expanded_states = jax.tree_util.tree_map(
+                            lambda x: x[expanded_nodes_mask], all_states
+                        )
+                        expanded_states_np = jax.tree_util.tree_map(
+                            lambda x: np.asarray(x), expanded_states
+                        )
+
+                        # Flatten structured states to a single 2D array (N, -1) for visualization/analysis
+                        leaves = jax.tree_util.tree_leaves(expanded_states_np)
+                        if leaves:
+                            N = leaves[0].shape[0]
+                            flat_states_np = np.concatenate(
+                                [x.reshape(N, -1) for x in leaves], axis=1
+                            )
+                            analysis_data["states"] = flat_states_np
+                        else:
+                            analysis_data["states"] = expanded_states_np
+
+                        # Extract parent structure for graph visualization
+                        # Original indices in the hashtable (0 to capacity)
+                        capacity = expanded_nodes_mask.shape[0]
+                        original_indices = np.arange(capacity)[np.asarray(expanded_nodes_mask)]
+                        analysis_data["original_indices"] = original_indices
+
+                        # Parent indices (pointing to hashtable slots)
+                        if hasattr(search_result, "parent") and hasattr(
+                            search_result.parent, "hashidx"
+                        ):
+                            parents = search_result.parent.hashidx.index
+                            expanded_parents = parents[expanded_nodes_mask]
+                            analysis_data["parent_indices"] = np.asarray(expanded_parents)
+                        if solved:
+                            try:
+                                solved_hash = int(
+                                    np.asarray(
+                                        jax.device_get(search_result.solved_idx.hashidx.index)
+                                    )
+                                )
+                                analysis_data["solved_index"] = solved_hash
+                            except Exception as exc:
+                                print(f"Warning: Could not extract solved index: {exc}")
+
+                    except Exception as e:
+                        print(
+                            f"Warning: Could not extract states/parents for expansion analysis: {e}"
+                        )
+
+                    result_item["expansion_analysis"] = analysis_data
+
         return result_item, deferred_payload
 
     def _finalize_deferred_results(

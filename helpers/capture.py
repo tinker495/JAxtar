@@ -210,6 +210,8 @@ class _LogCapture:
         self._flush(final=True)
 
     def _flush(self, *, final: bool):
+        if self._file.closed:
+            return
         content = self._sanitizer.render(final=final)
         self._file.seek(self._offset)
         if content:
