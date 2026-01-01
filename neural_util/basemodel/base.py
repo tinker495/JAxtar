@@ -20,8 +20,10 @@ class DistanceModel(ABC, nn.Module):
         pred = self(x, training=True)
         if actions is not None:
             pred = jnp.take_along_axis(pred, actions, axis=1)
+        else:
+            pred = pred.squeeze(1)
 
-        diff = target - pred.squeeze(1)
+        diff = target - pred
         return loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
 
 

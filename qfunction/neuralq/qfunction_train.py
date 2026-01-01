@@ -5,9 +5,9 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
-import xtructure.numpy as xnp
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
+from train_util.sampling import minibatch_datasets
 from train_util.util import (
     apply_with_conditional_batch_stats,
     build_new_params_from_updates,
@@ -87,28 +87,22 @@ def qfunction_train_builder(
         def replay_loop(carry, replay_key):
             q_params, opt_state = carry
 
-            key_perm, key_fill = jax.random.split(replay_key)
-            batch_indexs = jnp.concatenate(
-                [
-                    jax.random.permutation(key_perm, jnp.arange(data_size)),
-                    jax.random.randint(
-                        key_fill,
-                        (batch_size * minibatch_size - data_size,),
-                        0,
-                        data_size,
-                    ),
-                ],
-                axis=0,
-            )
-            batch_indexs = jnp.reshape(batch_indexs, (batch_size, minibatch_size))
-
-            batched_solveconfigs = xnp.take(solveconfigs, batch_indexs, axis=0)
-            batched_states = xnp.take(states, batch_indexs, axis=0)
-            batched_target_q = jnp.take(target_q, batch_indexs, axis=0)
-            batched_actions = jnp.take(actions, batch_indexs, axis=0)
-            batched_weights = jnp.take(loss_weights, batch_indexs, axis=0)
-            batched_weights = batched_weights / (
-                jnp.mean(batched_weights, axis=1, keepdims=True) + 1e-8
+            (
+                batched_solveconfigs,
+                batched_states,
+                batched_target_q,
+                batched_actions,
+                batched_weights,
+            ) = minibatch_datasets(
+                solveconfigs,
+                states,
+                target_q,
+                actions,
+                loss_weights,
+                data_size=data_size,
+                batch_size=batch_size,
+                minibatch_size=minibatch_size,
+                key=replay_key,
             )
 
             (q_params, opt_state,), losses = jax.lax.scan(

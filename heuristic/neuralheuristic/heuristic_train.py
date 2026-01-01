@@ -5,9 +5,9 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
-import xtructure.numpy as xnp
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
+from train_util.sampling import minibatch_datasets
 from train_util.util import (
     apply_with_conditional_batch_stats,
     build_new_params_from_updates,
@@ -88,33 +88,20 @@ def heuristic_train_builder(
         def replay_loop(carry, replay_key):
             heuristic_params, opt_state = carry
 
-            key_perm_replay, key_fill_replay = jax.random.split(replay_key)
-            batch_indexs_replay = jnp.concatenate(
-                [
-                    jax.random.permutation(key_perm_replay, jnp.arange(data_size)),
-                    jax.random.randint(
-                        key_fill_replay,
-                        (batch_size * minibatch_size - data_size,),
-                        0,
-                        data_size,
-                    ),
-                ],
-                axis=0,
-            )
-            loss_weights_replay = loss_weights
-
-            batch_indexs_replay = jnp.reshape(batch_indexs_replay, (batch_size, minibatch_size))
-
-            # Create new batches with reshuffled indices
-            batched_solveconfigs_replay = xnp.take(solveconfigs, batch_indexs_replay, axis=0)
-            batched_states_replay = xnp.take(states, batch_indexs_replay, axis=0)
-            batched_target_heuristic_replay = jnp.take(
-                target_heuristic, batch_indexs_replay, axis=0
-            )
-            batched_weights_replay = jnp.take(loss_weights_replay, batch_indexs_replay, axis=0)
-            # Normalize weights per batch to prevent scale drift
-            batched_weights_replay = batched_weights_replay / (
-                jnp.mean(batched_weights_replay, axis=1, keepdims=True) + 1e-8
+            (
+                batched_solveconfigs_replay,
+                batched_states_replay,
+                batched_target_heuristic_replay,
+                batched_weights_replay,
+            ) = minibatch_datasets(
+                solveconfigs,
+                states,
+                target_heuristic,
+                loss_weights,
+                data_size=data_size,
+                batch_size=batch_size,
+                minibatch_size=minibatch_size,
+                key=replay_key,
             )
 
             (heuristic_params, opt_state), losses = jax.lax.scan(

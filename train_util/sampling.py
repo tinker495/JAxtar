@@ -6,6 +6,42 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from xtructure.core.type_utils import is_xtructure_dataclass_instance
+
+
+def minibatch_datasets(
+    *train_datasets: dict[str, chex.Array],
+    data_size: int = None,
+    batch_size: int = None,
+    minibatch_size: int = None,
+    sample_path_length: int = 1,
+    key: chex.PRNGKey = jax.random.PRNGKey(0),
+):
+    key_perm_replay, key_fill_replay = jax.random.split(key)
+    batch_indexs_replay = jnp.concatenate(
+        [
+            jax.random.permutation(key_perm_replay, jnp.arange(data_size)),
+            jax.random.randint(
+                key_fill_replay,
+                (batch_size * minibatch_size - data_size,),
+                0,
+                data_size,
+            ),
+        ],
+        axis=0,
+    )
+
+    batch_indexs_replay = jnp.reshape(batch_indexs_replay, (batch_size, minibatch_size))
+
+    batched_train_datasets = []
+    for train_dataset in train_datasets:
+        if is_xtructure_dataclass_instance(train_dataset):
+            batched_train_dataset = xnp.take(train_dataset, batch_indexs_replay, axis=0)
+        else:
+            batched_train_dataset = jnp.take(train_dataset, batch_indexs_replay, axis=0)
+        print(batched_train_dataset.shape)
+        batched_train_datasets.append(batched_train_dataset)
+    return tuple(batched_train_datasets)
 
 
 def calculate_dataset_params(dataset_size: int, k_max: int, max_batch_size: int):
@@ -482,32 +518,51 @@ def create_target_shuffled_path(
     inv_actions = inverse_trajectory["actions"]
     action_costs = inverse_trajectory["action_costs"]
 
-    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (k_max, 1))
+    # Transpose to [shuffle_parallel, k_max, ...] to keep trajectories contiguous
+    states = states.transpose((1, 0))
+    move_costs = move_costs.transpose((1, 0))
+    move_costs_tm1 = move_costs_tm1.transpose((1, 0))
+    inv_actions = inv_actions.transpose((1, 0))
+    action_costs = action_costs.transpose((1, 0))
+
+    # Tile solve_configs: [shuffle_parallel, ...] -> [shuffle_parallel, k_max, ...]
+    solve_configs = xnp.repeat(solve_configs[:, jnp.newaxis], k_max, axis=1)
+
+    # Create indices
+    # trajectory_indices: [shuffle_parallel, k_max] -> value p for p in 0..P-1
+    trajectory_indices = jnp.broadcast_to(
+        jnp.arange(shuffle_parallel, dtype=jnp.int32)[:, jnp.newaxis],
+        (shuffle_parallel, k_max),
+    )
+
+    # step_indices: [shuffle_parallel, k_max] -> value k for k in 0..K-1
+    # For inverse trajectory, step 0 is closest to solved state (distance 0 or 1).
+    step_indices = jnp.broadcast_to(
+        jnp.arange(k_max, dtype=jnp.int32)[jnp.newaxis, :],
+        (shuffle_parallel, k_max),
+    )
 
     # Create parent indices
-    # shape (k_max, shuffle_parallel)
-    # parent is (i-1, j) which is index - shuffle_parallel
-    indices = jnp.arange(k_max * shuffle_parallel, dtype=jnp.int32).reshape(k_max, shuffle_parallel)
-    parent_indices = indices - shuffle_parallel
-    # First row has no parent in batch, mark as -1
-    parent_indices = parent_indices.at[0].set(-1)
-
-    solve_configs = solve_configs.flatten()
-    states = states.flatten()
-    move_costs = move_costs.flatten()
-    move_costs_tm1 = move_costs_tm1.flatten()
-    inv_actions = inv_actions.flatten()
-    action_costs = action_costs.flatten()
-    parent_indices = parent_indices.flatten()
+    # Flattened order is (traj 0, step 0), (traj 0, step 1), ...
+    # Parent of step t is step t-1 (closer to solved state in inverse generation).
+    # Index I corresponds to (p, t). Parent I-1 corresponds to (p, t-1).
+    indices = jnp.arange(k_max * shuffle_parallel, dtype=jnp.int32)
+    parent_indices = indices - 1
+    # Mask the first element of each trajectory (step 0 has no parent in this batch)
+    # reshaped: [shuffle_parallel, k_max]
+    parent_indices = parent_indices.reshape(shuffle_parallel, k_max)
+    parent_indices = parent_indices.at[:, 0].set(-1)
 
     return {
-        "solve_configs": solve_configs,
-        "states": states,
-        "move_costs": move_costs,
-        "move_costs_tm1": move_costs_tm1,
-        "actions": inv_actions,
-        "action_costs": action_costs,
-        "parent_indices": parent_indices,
+        "solve_configs": solve_configs.flatten(),
+        "states": states.flatten(),
+        "move_costs": move_costs.flatten(),
+        "move_costs_tm1": move_costs_tm1.flatten(),
+        "actions": inv_actions.flatten(),
+        "action_costs": action_costs.flatten(),
+        "parent_indices": parent_indices.flatten(),
+        "trajectory_indices": trajectory_indices.flatten(),
+        "step_indices": step_indices.flatten(),
     }
 
 
@@ -545,7 +600,6 @@ def create_hindsight_target_shuffled_path(
     solve_configs = puzzle.batched_hindsight_transform(
         original_solve_configs, targets
     )  # [shuffle_parallel, ...]
-    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (k_max, 1))
 
     if include_solved_states:
         move_costs = move_costs[-1, ...] - move_costs[1:, ...]  # [k_max, shuffle_parallel]
@@ -566,30 +620,57 @@ def create_hindsight_target_shuffled_path(
         move_costs_tm1 = move_costs[-1, ...] - move_costs_tm1[:-1, ...]  # [k_max, shuffle_parallel]
         move_costs_tm1 = move_costs_tm1.at[0, ...].set(0.0)
 
-    # Create parent indices
-    # shape (k_max, shuffle_parallel)
-    # parent is (i+1, j) which is index + shuffle_parallel
-    indices = jnp.arange(k_max * shuffle_parallel, dtype=jnp.int32).reshape(k_max, shuffle_parallel)
-    parent_indices = indices + shuffle_parallel
-    # Last row has no parent in batch, mark as -1
-    parent_indices = parent_indices.at[-1].set(-1)
+    # Reverse along time axis (axis 0) to order from Target (close) to Start (far)
+    states = states[::-1, ...]
+    move_costs = move_costs[::-1, ...]
+    move_costs_tm1 = move_costs_tm1[::-1, ...]
+    actions = actions[::-1, ...]
+    action_costs = action_costs[::-1, ...]
 
-    solve_configs = solve_configs.flatten()
-    states = states.flatten()
-    move_costs = move_costs.flatten()
-    move_costs_tm1 = move_costs_tm1.flatten()
-    actions = actions.flatten()
-    action_costs = action_costs.flatten()
-    parent_indices = parent_indices.flatten()
+    # Transpose to [shuffle_parallel, k_max, ...]
+    states = states.transpose((1, 0))
+    move_costs = move_costs.transpose((1, 0))
+    move_costs_tm1 = move_costs_tm1.transpose((1, 0))
+    actions = actions.transpose((1, 0))
+    action_costs = action_costs.transpose((1, 0))
+
+    # Tile solve_configs: [shuffle_parallel, ...] -> [shuffle_parallel, k_max, ...]
+    solve_configs = xnp.repeat(solve_configs[:, jnp.newaxis], k_max, axis=1)
+
+    # Create indices
+    trajectory_indices = jnp.broadcast_to(
+        jnp.arange(shuffle_parallel, dtype=jnp.int32)[:, jnp.newaxis],
+        (shuffle_parallel, k_max),
+    )
+    step_indices = jnp.broadcast_to(
+        jnp.arange(k_max, dtype=jnp.int32)[jnp.newaxis, :],
+        (shuffle_parallel, k_max),
+    )
+
+    # Parent indices:
+    # After reversal, index 0 is Target (or closest to it). Index 1 is next step away.
+    # Parent of s_i is s_{i-1} (the one closer to target in this reversed view? No.)
+    # Original path: s_start -> ... -> s_target.
+    # Reversed: s_target -> ... -> s_start.
+    # In learning (Bellman), value at s_{t} depends on s_{t+1} (closer to target).
+    # Here, s_0 (Target) has value. s_1 (Target-1) depends on s_0.
+    # So parent of s_1 is s_0.
+    # Parent of index t is t-1.
+    indices = jnp.arange(k_max * shuffle_parallel, dtype=jnp.int32)
+    parent_indices = indices - 1
+    parent_indices = parent_indices.reshape(shuffle_parallel, k_max)
+    parent_indices = parent_indices.at[:, 0].set(-1)
 
     return {
-        "solve_configs": solve_configs,
-        "states": states,
-        "move_costs": move_costs,
-        "move_costs_tm1": move_costs_tm1,
-        "actions": actions,
-        "action_costs": action_costs,
-        "parent_indices": parent_indices,
+        "solve_configs": solve_configs.flatten(),
+        "states": states.flatten(),
+        "move_costs": move_costs.flatten(),
+        "move_costs_tm1": move_costs_tm1.flatten(),
+        "actions": actions.flatten(),
+        "action_costs": action_costs.flatten(),
+        "parent_indices": parent_indices.flatten(),
+        "trajectory_indices": trajectory_indices.flatten(),
+        "step_indices": step_indices.flatten(),
     }
 
 
@@ -629,7 +710,7 @@ def create_hindsight_target_triangular_shuffled_path(
         shape=(k_max, shuffle_parallel),
         minval=minval,
         maxval=k_max + 1,
-    )  # [L, P]
+    )  # [L, P] -> [k_max, shuffle_parallel]
 
     # 2. For each `k`, sample start_index `i` uniformly from [0, L-k]
     random_floats = jax.random.uniform(key_i, shape=(k_max, shuffle_parallel))  # [L, P]
@@ -664,28 +745,59 @@ def create_hindsight_target_triangular_shuffled_path(
     final_action_costs = jnp.where(is_goal_state, 0.0, final_action_costs)
 
     # Apply hindsight transform
-    tiled_solve_configs = xnp.tile(original_solve_configs[None, ...], (k_max, 1))
-
+    tiled_solve_configs = xnp.repeat(original_solve_configs[jnp.newaxis, ...], k_max, axis=0)
     flat_tiled_sc = tiled_solve_configs.flatten()
     flat_target_states = target_states.flatten()
-    final_solve_configs = puzzle.batched_hindsight_transform(flat_tiled_sc, flat_target_states)
+    final_solve_configs = puzzle.batched_hindsight_transform(
+        flat_tiled_sc, flat_target_states
+    ).reshape((k_max, shuffle_parallel, -1))
 
-    # Flatten the rest of the data
-    final_start_states = start_states.flatten()
-    final_move_costs = final_move_costs.flatten()
-    final_move_costs_tm1 = final_move_costs_tm1.flatten()
-    final_actions = final_actions.flatten()
-    final_action_costs = final_action_costs.flatten()
+    # Transpose everything to [shuffle_parallel, k_max, ...]
+    # k (distance) is used for sorting
+    # current shape: [k_max, shuffle_parallel]
+    k_transposed = k.transpose((1, 0))  # [P, k_max]
+
+    # Sort indices based on k (ascending: small distance first -> close to solved)
+    sort_indices = jnp.argsort(k_transposed, axis=1)  # [P, k_max]
+
+    def _sort_and_transpose(arr):
+        # arr is [k_max, shuffle_parallel, ...]
+        # Transpose first: [shuffle_parallel, k_max, ...]
+        arr_t = jnp.swapaxes(arr, 0, 1)
+        # Apply sort
+        # Expand sort_indices to match rank of arr_t for take_along_axis
+        indices = sort_indices
+        while indices.ndim < arr_t.ndim:
+            indices = indices[..., jnp.newaxis]
+        return jnp.take_along_axis(arr_t, indices, axis=1)
+
+    final_solve_configs = _sort_and_transpose(final_solve_configs)
+    final_start_states = _sort_and_transpose(start_states)
+    final_move_costs = _sort_and_transpose(final_move_costs)
+    final_move_costs_tm1 = _sort_and_transpose(final_move_costs_tm1)
+    final_actions = _sort_and_transpose(final_actions)
+    final_action_costs = _sort_and_transpose(final_action_costs)
+
+    # step_indices is the sorted k (distance)
+    step_indices = jnp.take_along_axis(k_transposed, sort_indices, axis=1)
+
+    # trajectory_indices
+    trajectory_indices = jnp.broadcast_to(
+        jnp.arange(shuffle_parallel, dtype=jnp.int32)[:, jnp.newaxis],
+        (shuffle_parallel, k_max),
+    )
 
     # Triangular sampling produces independent samples, no valid parent structure
-    parent_indices = jnp.full_like(final_action_costs, -1, dtype=jnp.int32)
+    parent_indices = jnp.full((shuffle_parallel, k_max), -1, dtype=jnp.int32)
 
     return {
-        "solve_configs": final_solve_configs,
-        "states": final_start_states,
-        "move_costs": final_move_costs,
-        "move_costs_tm1": final_move_costs_tm1,
-        "actions": final_actions,
-        "action_costs": final_action_costs,
-        "parent_indices": parent_indices,
+        "solve_configs": final_solve_configs.flatten(),
+        "states": final_start_states.flatten(),
+        "move_costs": final_move_costs.flatten(),
+        "move_costs_tm1": final_move_costs_tm1.flatten(),
+        "actions": final_actions.flatten(),
+        "action_costs": final_action_costs.flatten(),
+        "parent_indices": parent_indices.flatten(),
+        "trajectory_indices": trajectory_indices.flatten(),
+        "step_indices": step_indices.flatten(),
     }
