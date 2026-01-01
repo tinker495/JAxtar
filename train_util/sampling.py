@@ -39,7 +39,6 @@ def minibatch_datasets(
             batched_train_dataset = xnp.take(train_dataset, batch_indexs_replay, axis=0)
         else:
             batched_train_dataset = jnp.take(train_dataset, batch_indexs_replay, axis=0)
-        print(batched_train_dataset.shape)
         batched_train_datasets.append(batched_train_dataset)
     return tuple(batched_train_datasets)
 
