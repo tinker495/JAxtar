@@ -14,24 +14,34 @@ def minibatch_datasets(
     data_size: int = None,
     batch_size: int = None,
     minibatch_size: int = None,
-    sample_path_length: int = 1,
+    sample_path_length: int = 8,
     key: chex.PRNGKey = jax.random.PRNGKey(0),
 ):
     key_perm_replay, key_fill_replay = jax.random.split(key)
-    batch_indexs_replay = jnp.concatenate(
+
+    num_starts = batch_size * (minibatch_size // sample_path_length)
+    num_possible_starts = data_size - sample_path_length + 1
+    fill_size = max(0, num_starts - num_possible_starts)
+
+    start_indices = jnp.concatenate(
         [
-            jax.random.permutation(key_perm_replay, jnp.arange(data_size)),
+            jax.random.permutation(key_perm_replay, jnp.arange(num_possible_starts)),
             jax.random.randint(
                 key_fill_replay,
-                (batch_size * minibatch_size - data_size,),
+                (fill_size,),
                 0,
-                data_size,
+                num_possible_starts,
             ),
         ],
         axis=0,
-    )
+    )[:num_starts]
 
-    batch_indexs_replay = jnp.reshape(batch_indexs_replay, (batch_size, minibatch_size))
+    offsets = jnp.arange(sample_path_length)
+    batch_indexs_replay = start_indices[:, None] + offsets[None, :]
+    batch_indexs_replay = batch_indexs_replay.reshape(
+        batch_size, minibatch_size // sample_path_length, sample_path_length
+    )
+    batch_indexs_replay = jnp.swapaxes(batch_indexs_replay, 1, 2)
 
     batched_train_datasets = []
     for train_dataset in train_datasets:

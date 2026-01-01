@@ -11,6 +11,7 @@ from train_util.sampling import minibatch_datasets
 from train_util.util import (
     apply_with_conditional_batch_stats,
     build_new_params_from_updates,
+    get_self_predictive_train_args,
 )
 
 
@@ -29,10 +30,13 @@ def heuristic_train_builder(
         solveconfigs: chex.Array,
         states: chex.Array,
         target_heuristic: chex.Array,
+        path_actions: chex.Array,
+        ema_latents: chex.Array,
+        same_trajectory_masks: chex.Array,
         weights: chex.Array,
     ):
         # Preprocess during training
-        preproc = jax.vmap(preproc_fn)(solveconfigs, states)
+        preproc = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)
         per_sample_loss, variable_updates = apply_with_conditional_batch_stats(
             heuristic_model.apply,
             heuristic_params,
@@ -43,6 +47,9 @@ def heuristic_train_builder(
             method=heuristic_model.train_loss,
             loss_type=loss_type,
             loss_args=loss_args,
+            path_actions=path_actions,
+            ema_latents=ema_latents,
+            same_trajectory_masks=same_trajectory_masks,
         )
         new_params = build_new_params_from_updates(heuristic_params, variable_updates)
         loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
@@ -52,6 +59,7 @@ def heuristic_train_builder(
         key: chex.PRNGKey,
         dataset: dict[str, chex.Array],
         heuristic_params: Any,
+        target_heuristic_params: Any,
         opt_state: optax.OptState,
     ):
         """
@@ -60,6 +68,9 @@ def heuristic_train_builder(
         solveconfigs = dataset["solveconfigs"]
         states = dataset["states"]
         target_heuristic = dataset["target_heuristic"]
+        path_actions = dataset["path_actions"]
+        trajectory_indices = dataset["trajectory_indices"]
+        step_indices = dataset["step_indices"]
         data_size = target_heuristic.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -68,7 +79,23 @@ def heuristic_train_builder(
 
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
-            solveconfigs, states, target_heuristic, weights = batched_dataset
+            (
+                solveconfigs,
+                states,
+                target_heuristic,
+                path_actions,
+                trajectory_indices,
+                step_indices,
+                weights,
+            ) = batched_dataset
+
+            ema_next_state_latents, same_trajectory_masks = get_self_predictive_train_args(
+                heuristic_model,
+                target_heuristic_params,
+                solveconfigs,
+                trajectory_indices,
+                step_indices,
+            )
             (loss, heuristic_params), grads = jax.value_and_grad(
                 heuristic_train_loss, has_aux=True
             )(
@@ -76,6 +103,9 @@ def heuristic_train_builder(
                 solveconfigs,
                 states,
                 target_heuristic,
+                path_actions,
+                ema_next_state_latents,
+                same_trajectory_masks,
                 weights,
             )
             if n_devices > 1:
@@ -92,11 +122,17 @@ def heuristic_train_builder(
                 batched_solveconfigs_replay,
                 batched_states_replay,
                 batched_target_heuristic_replay,
+                batched_path_actions_replay,
+                batched_trajectory_indices_replay,
+                batched_step_indices_replay,
                 batched_weights_replay,
             ) = minibatch_datasets(
                 solveconfigs,
                 states,
                 target_heuristic,
+                path_actions,
+                trajectory_indices,
+                step_indices,
                 loss_weights,
                 data_size=data_size,
                 batch_size=batch_size,
@@ -111,6 +147,9 @@ def heuristic_train_builder(
                     batched_solveconfigs_replay,
                     batched_states_replay,
                     batched_target_heuristic_replay,
+                    batched_path_actions_replay,
+                    batched_trajectory_indices_replay,
+                    batched_step_indices_replay,
                     batched_weights_replay,
                 ),
             )

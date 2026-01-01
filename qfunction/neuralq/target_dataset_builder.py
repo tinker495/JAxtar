@@ -36,6 +36,9 @@ def _get_datasets_with_policy(
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
+    path_actions = shuffled_path["actions"]
+    trajectory_indices = shuffled_path["trajectory_indices"]
+    step_indices = shuffled_path["step_indices"]
 
     minibatched_solve_configs = solve_configs.reshape((-1, minibatch_size))
     minibatched_states = states.reshape((-1, minibatch_size))
@@ -159,6 +162,9 @@ def _get_datasets_with_policy(
     target_q = target_q.reshape((-1, 1))
     actions = actions.reshape((-1, 1))
     cost = move_costs.reshape((-1,))
+    path_actions = path_actions.reshape((-1,))
+    trajectory_indices = trajectory_indices.reshape((-1,))
+    step_indices = step_indices.reshape((-1,))
 
     return {
         "solveconfigs": solve_configs,
@@ -166,6 +172,9 @@ def _get_datasets_with_policy(
         "target_q": target_q,
         "actions": actions,
         "cost": cost,
+        "path_actions": path_actions,
+        "trajectory_indices": trajectory_indices,
+        "step_indices": step_indices,
     }
 
 
@@ -247,6 +256,8 @@ def _get_datasets_with_diffusion_distance(
     move_costs = shuffled_path["move_costs"]
     action_costs = shuffled_path["action_costs"].reshape((-1, 1))
     parent_indices = shuffled_path["parent_indices"]
+    trajectory_indices = shuffled_path["trajectory_indices"].reshape((-1,))
+    step_indices = shuffled_path["step_indices"].reshape((-1,))
 
     # Flatten strictly for compute_diffusion logic inside
     solve_configs_flat = solve_configs.reshape((-1,))
@@ -276,6 +287,9 @@ def _get_datasets_with_diffusion_distance(
         "target_q": target_q,
         "actions": trajectory_actions,
         "cost": zeros,
+        "path_actions": trajectory_actions,
+        "trajectory_indices": trajectory_indices,
+        "step_indices": step_indices,
     }
 
 
@@ -296,6 +310,9 @@ def _get_datasets_with_diffusion_distance_mixture(
     use_double_dqn: bool = False,
 ):
     trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
+    path_actions = shuffled_path["actions"].reshape((-1,))
+    trajectory_indices = shuffled_path["trajectory_indices"].reshape((-1,))
+    step_indices = shuffled_path["step_indices"].reshape((-1,))
     return_dict = _get_datasets_with_policy(
         puzzle,
         preproc_fn,
@@ -348,6 +365,9 @@ def _get_datasets_with_diffusion_distance_mixture(
         axis=1,
     )  # [dataset_size, 2]
     return_dict["actions"] = actions
+    return_dict["path_actions"] = path_actions
+    return_dict["trajectory_indices"] = trajectory_indices
+    return_dict["step_indices"] = step_indices
     return return_dict
 
 

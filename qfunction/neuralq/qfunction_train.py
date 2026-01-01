@@ -11,6 +11,7 @@ from train_util.sampling import minibatch_datasets
 from train_util.util import (
     apply_with_conditional_batch_stats,
     build_new_params_from_updates,
+    get_self_predictive_train_args,
 )
 
 
@@ -30,10 +31,13 @@ def qfunction_train_builder(
         states: chex.Array,
         actions: chex.Array,
         target_qs: chex.Array,
+        path_actions: chex.Array,
+        ema_latents: chex.Array,
+        same_trajectory_masks: chex.Array,
         weights: chex.Array,
     ):
         # Preprocess during training
-        preproc = jax.vmap(preproc_fn)(solveconfigs, states)
+        preproc = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)
         per_sample_loss, variable_updates = apply_with_conditional_batch_stats(
             q_fn.apply,
             q_params,
@@ -45,6 +49,9 @@ def qfunction_train_builder(
             method=q_fn.train_loss,
             loss_type=loss_type,
             loss_args=loss_args,
+            path_actions=path_actions,
+            ema_latents=ema_latents,
+            same_trajectory_masks=same_trajectory_masks,
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
         loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
@@ -54,6 +61,7 @@ def qfunction_train_builder(
         key: chex.PRNGKey,
         dataset: dict[str, chex.Array],
         q_params: Any,
+        target_q_params: Any,
         opt_state: optax.OptState,
     ):
         """Run one optimization epoch of neural Q-learning for the provided puzzle dataset."""
@@ -61,6 +69,9 @@ def qfunction_train_builder(
         states = dataset["states"]
         target_q = dataset["target_q"]
         actions = dataset["actions"]
+        path_actions = dataset["path_actions"]
+        trajectory_indices = dataset["trajectory_indices"]
+        step_indices = dataset["step_indices"]
         data_size = target_q.shape[0]
         batch_size = math.ceil(data_size / minibatch_size)
 
@@ -69,13 +80,32 @@ def qfunction_train_builder(
 
         def train_loop(carry, batched_dataset):
             q_params, opt_state = carry
-            solveconfigs, states, target_q, actions, weights = batched_dataset
+            (
+                solveconfigs,
+                states,
+                target_q,
+                actions,
+                path_actions,
+                trajectory_indices,
+                step_indices,
+                weights,
+            ) = batched_dataset
+            ema_next_state_latents, same_trajectory_masks = get_self_predictive_train_args(
+                q_fn,
+                target_q_params,
+                solveconfigs,
+                trajectory_indices,
+                step_indices,
+            )
             (loss, q_params), grads = jax.value_and_grad(qfunction_train_loss, has_aux=True)(
                 q_params,
                 solveconfigs,
                 states,
                 actions,
                 target_q,
+                path_actions,
+                ema_next_state_latents,
+                same_trajectory_masks,
                 weights,
             )
             if n_devices > 1:
@@ -92,12 +122,18 @@ def qfunction_train_builder(
                 batched_states,
                 batched_target_q,
                 batched_actions,
+                batched_path_actions,
+                batched_trajectory_indices,
+                batched_step_indices,
                 batched_weights,
             ) = minibatch_datasets(
                 solveconfigs,
                 states,
                 target_q,
                 actions,
+                path_actions,
+                trajectory_indices,
+                step_indices,
                 loss_weights,
                 data_size=data_size,
                 batch_size=batch_size,
@@ -113,6 +149,9 @@ def qfunction_train_builder(
                     batched_states,
                     batched_target_q,
                     batched_actions,
+                    batched_path_actions,
+                    batched_trajectory_indices,
+                    batched_step_indices,
                     batched_weights,
                 ),
             )

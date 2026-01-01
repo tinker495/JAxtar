@@ -235,7 +235,7 @@ def heuristic_train_command(
             heuristic_params,
             opt_state,
             loss,
-        ) = heuristic_train_fn(key, dataset, heuristic_params, opt_state)
+        ) = heuristic_train_fn(key, dataset, heuristic_params, target_heuristic_params, opt_state)
         eval_params = get_eval_params(opt_state, heuristic_params)
         lr = get_learning_rate(opt_state)
         pbar.set_description(
@@ -458,7 +458,7 @@ def qfunction_train_command(
             qfunc_params,
             opt_state,
             loss,
-        ) = qfunction_train_fn(key, dataset, qfunc_params, opt_state)
+        ) = qfunction_train_fn(key, dataset, qfunc_params, target_qfunc_params, opt_state)
         eval_params = get_eval_params(opt_state, qfunc_params)
         lr = get_learning_rate(opt_state)
         pbar.set_description(

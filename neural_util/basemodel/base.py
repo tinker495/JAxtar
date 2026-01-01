@@ -19,9 +19,9 @@ class DistanceModel(ABC, nn.Module):
     def train_loss(self, x, target, actions=None, loss_type="mse", loss_args=None, **kwargs):
         pred = self(x, training=True)
         if actions is not None:
-            pred = jnp.take_along_axis(pred, actions, axis=1)
+            pred = jnp.take_along_axis(pred, actions, axis=-1)
         else:
-            pred = pred.squeeze(1)
+            pred = pred.squeeze(-1)
 
         diff = target - pred
         return loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
@@ -66,11 +66,13 @@ class DistanceHLGModel(ABC, nn.Module):
             bin_probs = cdf_evals[1:] - cdf_evals[:-1]
             return bin_probs / z
 
-        target_probs = jax.vmap(f)(target)
+        target_probs = jax.vmap(jax.vmap(f))(target)
         logits_actions = self.get_logits(x, training=True)
         if actions is None:
-            logits = logits_actions.squeeze(1)
+            logits = logits_actions.squeeze(-2)
         else:
-            logits = jnp.take_along_axis(logits_actions, actions[:, jnp.newaxis], axis=1).squeeze(1)
-        sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size,)
+            logits = jnp.take_along_axis(
+                logits_actions, actions[..., jnp.newaxis], axis=-2
+            ).squeeze()
+        sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size, path_length)
         return sce

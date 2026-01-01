@@ -122,5 +122,5 @@ class HLGResMLPModel(DistanceHLGModel):
         else:
             x = self.final_dense(x, training)
 
-        x = x.reshape(x.shape[0], self.action_size, self.categorial_n)
+        x = x.reshape(x.shape[:-1] + (self.action_size, self.categorial_n))
         return x

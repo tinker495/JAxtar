@@ -3,6 +3,33 @@ from typing import Any, Callable
 import chex
 import jax
 import jax.numpy as jnp
+from flax import linen as nn
+
+
+def get_self_predictive_train_args(
+    model: nn.Module,
+    ema_target_heuristic_params: Any,
+    preprocessed_states: chex.Array,  # (batch_size, path_length, state_dim)
+    trajectory_indices: chex.Array,  # (batch_size, path_length)
+    step_indices: chex.Array,  # (batch_size, path_length)
+) -> tuple[Any, Any]:
+
+    if hasattr(model, "states_to_latents"):
+        next_preprocessed_states = preprocessed_states[
+            :, :-1
+        ]  # (batch_size, path_length - 1, state_dim)
+        ema_next_state_latents = model.apply(
+            ema_target_heuristic_params,
+            next_preprocessed_states,
+            training=True,
+            method=model.states_to_latents,
+        )  # (batch_size, path_length - 1, latent_dim)
+        same_trajectory_masks = (
+            trajectory_indices[:, :-1] == trajectory_indices[:, -1][:, jnp.newaxis]
+        )  # (batch_size, path_length - 1)
+        return ema_next_state_latents, same_trajectory_masks
+    else:
+        return None, None
 
 
 def round_through_gradient(x: chex.Array) -> chex.Array:

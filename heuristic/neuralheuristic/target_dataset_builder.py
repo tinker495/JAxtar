@@ -34,6 +34,9 @@ def _get_datasets(
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
+    path_actions = shuffled_path["actions"]
+    trajectory_indices = shuffled_path["trajectory_indices"]
+    step_indices = shuffled_path["step_indices"]
 
     minibatched_solve_configs = solve_configs.reshape((-1, minibatch_size))
     minibatched_states = states.reshape((-1, minibatch_size))
@@ -86,12 +89,17 @@ def _get_datasets(
     states = states.reshape((-1,))
     target_heuristic = target_heuristic.reshape((-1,))
     cost = cost.reshape((-1,))
+    trajectory_indices = trajectory_indices.reshape((-1,))
+    step_indices = step_indices.reshape((-1,))
 
     return {
         "solveconfigs": solve_configs,
         "states": states,
         "target_heuristic": target_heuristic,
         "cost": cost,
+        "path_actions": path_actions,
+        "trajectory_indices": trajectory_indices,
+        "step_indices": step_indices,
     }
 
 
@@ -150,11 +158,17 @@ def _get_datasets_with_diffusion_distance(
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
     action_costs = shuffled_path["action_costs"]
+    path_actions = shuffled_path["actions"]
+    trajectory_indices = shuffled_path["trajectory_indices"]
+    step_indices = shuffled_path["step_indices"]
 
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
     action_costs = action_costs.reshape((-1,))
+    path_actions = path_actions.reshape((-1,))
     parent_indices = shuffled_path["parent_indices"]
+    trajectory_indices = trajectory_indices.reshape((-1,))
+    step_indices = step_indices.reshape((-1,))
 
     is_solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True).reshape(
         (-1,)
@@ -178,6 +192,9 @@ def _get_datasets_with_diffusion_distance(
         "states": states,
         "target_heuristic": target_heuristic,
         "cost": cost,
+        "path_actions": path_actions,
+        "trajectory_indices": trajectory_indices,
+        "step_indices": step_indices,
     }
 
 
@@ -213,7 +230,7 @@ def _get_datasets_with_diffusion_distance_mixture(
     move_costs = shuffled_path["move_costs"]
     action_costs = shuffled_path["action_costs"]
     parent_indices = shuffled_path["parent_indices"]
-
+    path_actions = shuffled_path["actions"]
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
     action_costs = action_costs.reshape((-1,))
@@ -236,7 +253,7 @@ def _get_datasets_with_diffusion_distance_mixture(
     # Mixture: target_heuristic = max(target_heuristic, diffusion_heuristic * 0.8 - 2.0)
     target_heuristic = jnp.maximum(target_heuristic, diffusion_heuristic * 0.8 - 2.0)
     return_dict["target_heuristic"] = target_heuristic
-
+    return_dict["path_actions"] = path_actions
     return return_dict
 
 
