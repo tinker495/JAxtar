@@ -8,6 +8,8 @@ from qfunction.neuralq.model.rubikscube_neuralq import (
     RubiksCubeNeuralQ,
     RubiksCubeRandomHLGNeuralQ,
     RubiksCubeRandomNeuralQ,
+    RubiksCubeRandomSPLHLGNeuralQ,
+    RubiksCubeSPLHLGNeuralQ,
 )
 from qfunction.neuralq.model.slidepuzzle_neuralq import (
     SlidePuzzleConvNeuralQ,

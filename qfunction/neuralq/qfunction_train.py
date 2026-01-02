@@ -27,8 +27,7 @@ def qfunction_train_builder(
 ):
     def qfunction_train_loss(
         q_params: Any,
-        solveconfigs: chex.Array,
-        states: chex.Array,
+        preproc: chex.Array,
         actions: chex.Array,
         target_qs: chex.Array,
         path_actions: chex.Array,
@@ -37,7 +36,6 @@ def qfunction_train_builder(
         weights: chex.Array,
     ):
         # Preprocess during training
-        preproc = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)
         per_sample_loss, variable_updates = apply_with_conditional_batch_stats(
             q_fn.apply,
             q_params,
@@ -90,17 +88,17 @@ def qfunction_train_builder(
                 step_indices,
                 weights,
             ) = batched_dataset
+            preprocessed_states = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)
             ema_next_state_latents, same_trajectory_masks = get_self_predictive_train_args(
                 q_fn,
                 target_q_params,
-                solveconfigs,
+                preprocessed_states,
                 trajectory_indices,
                 step_indices,
             )
             (loss, q_params), grads = jax.value_and_grad(qfunction_train_loss, has_aux=True)(
                 q_params,
-                solveconfigs,
-                states,
+                preprocessed_states,
                 actions,
                 target_q,
                 path_actions,

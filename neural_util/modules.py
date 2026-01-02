@@ -73,6 +73,15 @@ NORM_FN_REGISTRY = {
 }
 
 
+class FunctionalNorm(nn.Module):
+    norm_fn: Callable
+    dtype: any = DTYPE
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        return self.norm_fn(x, training, dtype=self.dtype)
+
+
 def get_norm_fn(norm_name_or_fn=None):
     if norm_name_or_fn is None:
         return DEFAULT_NORM_FN

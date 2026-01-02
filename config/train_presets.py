@@ -16,6 +16,7 @@ _shared_diffusion_presets = {
         steps=1250,
         update_interval=16,
         use_diffusion_distance=True,
+        use_soft_update=True,
     ),
     "diffusion_distance_mixture": DistTrainOptions(
         dataset_batch_size=8192 * 8 * 256,
@@ -23,6 +24,7 @@ _shared_diffusion_presets = {
         steps=1250,
         update_interval=16,
         use_diffusion_distance_mixture=True,
+        use_soft_update=True,
     ),
 }
 
@@ -38,6 +40,7 @@ train_presets = {
             use_diffusion_distance=True,
             use_diffusion_distance_warmup=True,
             diffusion_distance_warmup_steps=500,
+            use_soft_update=True,
         ),
     },
     "qfunction_train": {
@@ -51,6 +54,7 @@ train_presets = {
             use_diffusion_distance=True,
             use_diffusion_distance_warmup=True,
             diffusion_distance_warmup_steps=500,
+            use_soft_update=True,
         ),
     },
 }

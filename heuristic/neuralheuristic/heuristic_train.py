@@ -27,8 +27,7 @@ def heuristic_train_builder(
 ):
     def heuristic_train_loss(
         heuristic_params: Any,
-        solveconfigs: chex.Array,
-        states: chex.Array,
+        preproc: chex.Array,
         target_heuristic: chex.Array,
         path_actions: chex.Array,
         ema_latents: chex.Array,
@@ -36,7 +35,6 @@ def heuristic_train_builder(
         weights: chex.Array,
     ):
         # Preprocess during training
-        preproc = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)
         per_sample_loss, variable_updates = apply_with_conditional_batch_stats(
             heuristic_model.apply,
             heuristic_params,
@@ -88,11 +86,12 @@ def heuristic_train_builder(
                 step_indices,
                 weights,
             ) = batched_dataset
+            preprocessed_states = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)
 
             ema_next_state_latents, same_trajectory_masks = get_self_predictive_train_args(
                 heuristic_model,
                 target_heuristic_params,
-                solveconfigs,
+                preprocessed_states,
                 trajectory_indices,
                 step_indices,
             )
@@ -100,8 +99,7 @@ def heuristic_train_builder(
                 heuristic_train_loss, has_aux=True
             )(
                 heuristic_params,
-                solveconfigs,
-                states,
+                preprocessed_states,
                 target_heuristic,
                 path_actions,
                 ema_next_state_latents,
