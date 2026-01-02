@@ -1,4 +1,3 @@
-import jax.numpy as jnp
 from flax import linen as nn
 
 from neural_util.basemodel.base import DistanceHLGModel
@@ -6,40 +5,12 @@ from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
     HEAD_DTYPE,
+    MLP,
     PreActivationResBlock,
     ResBlock,
     Swiglu,
+    preactivation_MLP,
 )
-
-
-class MLP(nn.Module):
-
-    hidden_dim: int = 1000
-    norm_fn: callable = DEFAULT_NORM_FN
-    activation: str = nn.relu
-
-    @nn.compact
-    def __call__(self, x, training=False):
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training, dtype=DTYPE)
-        x = self.activation(x)
-        return x
-
-
-class preactivation_MLP(nn.Module):
-    hidden_dim: int = 1000
-    norm_fn: callable = DEFAULT_NORM_FN
-    activation: str = nn.relu
-    dtype: any = jnp.float32
-
-    @nn.compact
-    def __call__(self, x, training=False):
-        x = self.norm_fn(x, training, dtype=self.dtype)
-        x = self.activation(x)
-        x = nn.Dense(
-            self.hidden_dim, dtype=self.dtype, kernel_init=nn.initializers.normal(stddev=0.01)
-        )(x)
-        return x
 
 
 class HLGResMLPModel(DistanceHLGModel):
@@ -47,7 +18,7 @@ class HLGResMLPModel(DistanceHLGModel):
     initial_dim: int = 5000
     hidden_N: int = 1
     hidden_dim: int = 1000
-    norm_fn: callable = DEFAULT_NORM_FN
+    norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: str = nn.relu
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False

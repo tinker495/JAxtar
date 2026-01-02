@@ -2,20 +2,20 @@ import chex
 import flax.linen as nn
 import jax.numpy as jnp
 
-from neural_util.modules import DTYPE, BatchNorm, ConvResBlock, get_norm_fn
+from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ConvResBlock, get_norm_fn
 
 from ..world_model_puzzle_base import WorldModelPuzzleBase
 
 
 class Encoder(nn.Module):
     latent_shape: tuple[int, ...]
-    norm_fn: callable = BatchNorm
+    norm_fn: nn.Module = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, data, training=False):
         x = ((data / 255.0) * 2.0 - 1.0).astype(DTYPE)
         x = nn.Conv(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 20, 20, 16)
-        x = self.norm_fn(x, training)
+        x = self.norm_fn()(x, training)
         x = nn.relu(x)
         x = nn.Conv(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 10, 10, 16)
         x = nn.relu(x)
@@ -27,14 +27,14 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     data_shape: tuple[int, ...]
-    norm_fn: callable = BatchNorm
+    norm_fn: nn.Module = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, latent, training=False):
         # batch
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.ConvTranspose(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 20, 20, 16)
-        x = self.norm_fn(x, training)
+        x = self.norm_fn()(x, training)
         x = nn.relu(x)
         x = nn.ConvTranspose(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 40, 40, 16)
         x = nn.relu(x)
@@ -46,7 +46,7 @@ class Decoder(nn.Module):
 class AutoEncoder(nn.Module):
     data_shape: tuple[int, ...]
     latent_shape: tuple[int, ...]
-    norm_fn: callable = BatchNorm
+    norm_fn: nn.Module = DEFAULT_NORM_FN
 
     def setup(self):
         self.encoder = Encoder(self.latent_shape, norm_fn=self.norm_fn)
@@ -61,7 +61,7 @@ class AutoEncoder(nn.Module):
 class WorldModel(nn.Module):
     latent_shape: tuple[int, ...]
     action_size: int
-    norm_fn: callable = BatchNorm
+    norm_fn: nn.Module = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, latent, training=False):
@@ -71,14 +71,14 @@ class WorldModel(nn.Module):
         )(
             x
         )  # (batch_size, 10, 10, 32)
-        x = self.norm_fn(x, training)
+        x = self.norm_fn()(x, training)
         x = nn.relu(x)
         x = nn.Conv(
             32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
         )(
             x
         )  # (batch_size, 10, 10, 32)
-        x = self.norm_fn(x, training)
+        x = self.norm_fn()(x, training)
         x = nn.relu(x)
         x = nn.Conv(
             self.latent_shape[-1] * self.action_size,
@@ -149,7 +149,7 @@ class SokobanWorldModel(WorldModelPuzzleBase):
 
 class EncoderOptimized(nn.Module):
     latent_shape: tuple[int, int, int]
-    norm_fn: callable = BatchNorm
+    norm_fn: nn.Module = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, data, training=False):
@@ -159,7 +159,7 @@ class EncoderOptimized(nn.Module):
         )(
             x
         )  # (batch_size, 10, 10, 16)
-        x = self.norm_fn(x, training)
+        x = self.norm_fn()(x, training)
         x = nn.relu(x)
         x = ConvResBlock(16, (1, 1), (1, 1), norm_fn=self.norm_fn)(x, training)
         logits = nn.Conv(
@@ -176,13 +176,13 @@ class EncoderOptimized(nn.Module):
 
 class DecoderOptimized(nn.Module):
     data_shape: tuple[int, int, int]
-    norm_fn: callable = BatchNorm
+    norm_fn: nn.Module = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, latent, training=False):
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.Conv(16, (1, 1), strides=(1, 1), dtype=DTYPE)(x)  # (batch_size, 10, 10, 16)
-        x = self.norm_fn(x, training)
+        x = self.norm_fn()(x, training)
         x = nn.relu(x)
         x = ConvResBlock(16, (1, 1), (1, 1), norm_fn=self.norm_fn)(x, training)
         x = nn.ConvTranspose(
@@ -202,7 +202,7 @@ class DecoderOptimized(nn.Module):
 class AutoEncoderOptimized(nn.Module):
     data_shape: tuple[int, int, int]
     latent_shape: tuple[int, int, int]
-    norm_fn: callable = BatchNorm
+    norm_fn: nn.Module = DEFAULT_NORM_FN
 
     def setup(self):
         self.encoder = EncoderOptimized(self.latent_shape, norm_fn=self.norm_fn)
