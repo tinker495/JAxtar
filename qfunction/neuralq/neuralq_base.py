@@ -54,9 +54,11 @@ class NeuralQFunctionBase(QFunction):
     def get_new_params(self):
         dummy_solve_config = self.puzzle.SolveConfig.default()
         dummy_current = self.puzzle.State.default()
+        init_method = getattr(self.model, "initialize_components", None)
         return self.model.init(
             jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
             jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
+            method=init_method,
         )
 
     def load_model(self):

@@ -5,6 +5,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
+import xtructure.numpy as xnp
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import minibatch_datasets
@@ -86,6 +87,16 @@ def heuristic_train_builder(
                 step_indices,
                 weights,
             ) = batched_dataset
+            # Ensure [batch, time, ...] layout for self-predictive training.
+            solveconfigs = xnp.swap_axes(solveconfigs, 0, 1)
+            states = xnp.swap_axes(states, 0, 1)
+            target_heuristic = jnp.swapaxes(target_heuristic, 0, 1)
+            path_actions = jnp.swapaxes(path_actions, 0, 1)
+            trajectory_indices = jnp.swapaxes(trajectory_indices, 0, 1)
+            step_indices = jnp.swapaxes(step_indices, 0, 1)
+            weights = jnp.swapaxes(weights, 0, 1)
+            if weights.ndim > 1:
+                weights = jnp.mean(weights, axis=-1)
             preprocessed_states = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)
 
             ema_next_state_latents, same_trajectory_masks = get_self_predictive_train_args(

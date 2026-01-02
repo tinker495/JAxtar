@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 from flax import linen as nn
 
 from neural_util.basemodel.base import DistanceModel
@@ -97,7 +98,8 @@ class ResMLPModel(DistanceModel):
 
 
 class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
-    Res_N: int = 4
+    embedding_Res_N: int = 3
+    distances_Res_N: int = 1
     initial_dim: int = 5000
     hidden_N: int = 1
     hidden_dim: int = 1000
@@ -124,7 +126,7 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
             if self.resblock_fn != PreActivationResBlock:
                 self.second_norm = self.norm_fn()
 
-        self.resblocks = [
+        self.embedding_resblocks = [
             self.resblock_fn(
                 self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
@@ -132,19 +134,17 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
             )
-            for _ in range(self.Res_N - self.tail_head_precision)
+            for _ in range(self.embedding_Res_N)
         ]
-        self.tail_head_resblocks = [
+        self.distances_resblocks = [
             self.resblock_fn(
                 self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
-                dtype=HEAD_DTYPE,
-                param_dtype=HEAD_DTYPE,
             )
-            for _ in range(self.tail_head_precision)
+            for _ in range(self.distances_Res_N)
         ]
         if self.resblock_fn == PreActivationResBlock:
             self.final_norm = self.norm_fn()
@@ -154,7 +154,8 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
         )
 
         # Transition components
-        self.action_embedding = nn.Embed(self.action_size, self.hidden_dim, dtype=DTYPE)
+        latent_dim = self.hidden_dim * self.hidden_node_multiplier
+        self.transition_dense = nn.Dense(latent_dim, dtype=DTYPE)
         self.transition_resblock = self.resblock_fn(
             self.hidden_dim * self.hidden_node_multiplier,
             norm_fn=self.norm_fn,
@@ -165,7 +166,6 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
         )
 
         # Projection and Predictor components
-        latent_dim = self.hidden_dim * self.hidden_node_multiplier
         self.proj_dense1 = nn.Dense(latent_dim, dtype=DTYPE)
         self.proj_norm1 = self.norm_fn()
         self.proj_dense2 = nn.Dense(latent_dim, dtype=DTYPE)
@@ -204,12 +204,12 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
                 x = self.second_norm(x, training)
                 x = self.activation(x)
 
-        for resblock in self.resblocks:
+        for resblock in self.embedding_resblocks:
             x = resblock(x, training)
         return x
 
     def latents_to_distances(self, x, training=False):
-        for resblock in self.tail_head_resblocks:
+        for resblock in self.distances_resblocks:
             x = resblock(x, training)
 
         if self.resblock_fn == PreActivationResBlock:
@@ -224,13 +224,8 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
         latents = self.states_to_latents(x, training)
         return self.latents_to_distances(latents, training)
 
-    def distance_and_latents(self, x, training=False):
-        latents = self.states_to_latents(x, training)
-        distances = self.latents_to_distances(latents, training)
-        return distances, latents
-
     def transition(self, latents, actions, training=False):
-        action_embed = self.action_embedding(actions)
-        x = latents + action_embed
+        x = jnp.concatenate([latents, actions], axis=-1)
+        x = self.transition_dense(x)
         x = self.transition_resblock(x, training=training)
         return x

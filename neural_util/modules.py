@@ -90,7 +90,7 @@ ACTIVATION_FN_REGISTRY = {
     "relu": nn.relu,
     "leaky_relu": nn.leaky_relu,
     "gelu": nn.gelu,
-    "swish": lambda x: Trueswish()(x),
+    "swish": Trueswish,
     "hard_swish": nn.hard_swish,
     "silu": nn.silu,
     "tanh": nn.tanh,
