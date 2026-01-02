@@ -82,10 +82,18 @@ class SelfPredictiveMixin(ABC, nn.Module):
         # Swap axes to make time axis 0 for scan
         # path_actions: (..., Time) -> (Time, ...)
         path_actions = jnp.moveaxis(path_actions, -1, 0)
+        path_actions = path_actions[1:]  # Remove the first action [1, 2, ..., k_max]
+        path_actions = path_actions[
+            ::-1
+        ]  # Reverse the path actions to start from the last action [k_max, ..., 2, 1]
         # ema_latents: (..., Time, Dim) -> (Time, ..., Dim)
         ema_latents = jnp.moveaxis(ema_latents, -2, 0)
+        ema_latents = ema_latents[::-1]  # Reverse the ema latents to start from the last latent
         if same_trajectory_masks is not None:
             same_trajectory_masks = jnp.moveaxis(same_trajectory_masks, -1, 0)
+            same_trajectory_masks = same_trajectory_masks[
+                ::-1
+            ]  # Reverse the same trajectory masks to start from the last mask
         last_latents = jnp.float32(last_latents)
 
         def body(last_latents, path_actions):
@@ -111,16 +119,6 @@ class SelfPredictiveMixin(ABC, nn.Module):
             predicted_next_latents, training=training
         )
         predicted_next_latents = self.predict_ema_latents(projected_next_latents, training=training)
-
-        # Truncate predicted_next_latents or ema_latents if sizes differ
-        time_axis = -2
-        min_len = min(predicted_next_latents.shape[time_axis], ema_latents.shape[time_axis])
-
-        predicted_next_latents = predicted_next_latents[..., :min_len, :]
-        ema_latents = ema_latents[..., :min_len, :]
-        if same_trajectory_masks is not None:
-            same_trajectory_masks = same_trajectory_masks[..., :min_len]
-
         cosine_similarity = optax.cosine_similarity(predicted_next_latents, ema_latents)
         loss = 1.0 - cosine_similarity
 
@@ -163,7 +161,7 @@ class SelfPredictiveDistanceModel(SelfPredictiveMixin):
             dist_loss = jnp.mean(dist_loss, axis=-1)
 
         if latents.ndim >= 3:
-            last_latents = latents[..., 0, :]
+            last_latents = latents[..., -1, :]
         else:
             last_latents = latents
         spr_loss = self.compute_self_predictive_loss(
@@ -245,7 +243,7 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
             dist_loss = jnp.mean(dist_loss, axis=-1)
 
         if latents.ndim >= 3:
-            last_latents = latents[..., 0, :]
+            last_latents = latents[..., -1, :]
         else:
             last_latents = latents
         spr_loss = self.compute_self_predictive_loss(
