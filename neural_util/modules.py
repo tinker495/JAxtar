@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from .norm import BatchReNorm, DyTan
 
-DTYPE = jnp.bfloat16
+DTYPE = jnp.float32
 # Use float32 for numerically sensitive heads / losses.
 HEAD_DTYPE = jnp.float32
 
