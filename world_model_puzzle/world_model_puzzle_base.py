@@ -246,8 +246,7 @@ class WorldModelPuzzleBase(Puzzle):
             )  # check if the params are compatible with the model
             return params
         except Exception as e:
-            print(f"Error loading model: {e}")
-            return self.get_new_params()
+            raise ValueError(f"Error loading WorldModelPuzzle model: {e}") from e
 
     def save_model(self, metadata: dict = None):
         if metadata is None:

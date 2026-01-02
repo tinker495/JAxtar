@@ -88,8 +88,7 @@ class NeuralQFunctionBase(QFunction):
             self._preloaded_params = None
             return params
         except Exception as e:
-            print(f"Error loading model: {e}")
-            return self.get_new_params()
+            raise ValueError(f"Error loading NeuralQFunction model: {e}") from e
 
     def save_model(self, path: str = None, metadata: dict = None):
         path = path or self.path
