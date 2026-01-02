@@ -127,7 +127,7 @@ class SelfPredictiveMixin(ABC, nn.Module):
             loss = loss * same_trajectory_masks
 
         # Mean over time axis (last axis of cosine_similarity result)
-        loss = jnp.mean(loss, axis=-1)
+        loss = jnp.sum(loss, axis=-1)
 
         return self.spr_loss_scale * loss
 
