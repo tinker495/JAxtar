@@ -168,11 +168,11 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
         # Projection and Predictor components
         self.proj_dense1 = nn.Dense(latent_dim, dtype=DTYPE)
         self.proj_norm1 = self.norm_fn()
-        self.proj_dense2 = nn.Dense(latent_dim, dtype=DTYPE)
+        self.proj_dense2 = nn.Dense(latent_dim, dtype=HEAD_DTYPE)
 
         self.pred_dense1 = nn.Dense(latent_dim, dtype=DTYPE)
         self.pred_norm1 = self.norm_fn()
-        self.pred_dense2 = nn.Dense(latent_dim, dtype=DTYPE)
+        self.pred_dense2 = nn.Dense(latent_dim, dtype=HEAD_DTYPE)
 
     def latents_to_projection(self, x, training=False):
         x = self.proj_dense1(x)
