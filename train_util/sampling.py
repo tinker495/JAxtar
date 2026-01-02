@@ -527,6 +527,15 @@ def create_target_shuffled_path(
     inv_actions = inverse_trajectory["actions"]
     action_costs = inverse_trajectory["action_costs"]
 
+    # Reverse along time axis (axis 0) to order from Start (far) to Target (close)
+    # This aligns with the Forward SPR logic (predicting i -> i+1)
+    # and ensures actions (Child -> Parent) align with the sequence flow (Start -> Target).
+    states = states[::-1, ...]
+    move_costs = move_costs[::-1, ...]
+    move_costs_tm1 = move_costs_tm1[::-1, ...]
+    inv_actions = inv_actions[::-1, ...]
+    action_costs = action_costs[::-1, ...]
+
     # Transpose to [shuffle_parallel, k_max, ...] to keep trajectories contiguous
     states = states.transpose((1, 0))
     move_costs = move_costs.transpose((1, 0))
@@ -545,22 +554,23 @@ def create_target_shuffled_path(
     )
 
     # step_indices: [shuffle_parallel, k_max] -> value k for k in 0..K-1
-    # For inverse trajectory, step 0 is closest to solved state (distance 0 or 1).
     step_indices = jnp.broadcast_to(
         jnp.arange(k_max, dtype=jnp.int32)[jnp.newaxis, :],
         (shuffle_parallel, k_max),
     )
 
     # Create parent indices
-    # Flattened order is (traj 0, step 0), (traj 0, step 1), ...
-    # Parent of step t is step t-1 (closer to solved state in inverse generation).
-    # Index I corresponds to (p, t). Parent I-1 corresponds to (p, t-1).
+    # Path is Start -> Target.
+    # Index i is state s_i. Index i+1 is s_{i+1}.
+    # s_{i+1} is closer to target (or is the next step).
+    # Bellman propagates from Target (End) to Start (Beginning).
+    # Value at s_i depends on s_{i+1}.
+    # So parent of i is i+1.
     indices = jnp.arange(k_max * shuffle_parallel, dtype=jnp.int32)
-    parent_indices = indices - 1
-    # Mask the first element of each trajectory (step 0 has no parent in this batch)
-    # reshaped: [shuffle_parallel, k_max]
+    parent_indices = indices + 1
+    # Mask the last element of each trajectory (Target has no parent in this batch)
     parent_indices = parent_indices.reshape(shuffle_parallel, k_max)
-    parent_indices = parent_indices.at[:, 0].set(-1)
+    parent_indices = parent_indices.at[:, -1].set(-1)
 
     return {
         "solve_configs": solve_configs.flatten(),
@@ -629,13 +639,6 @@ def create_hindsight_target_shuffled_path(
         move_costs_tm1 = move_costs[-1, ...] - move_costs_tm1[:-1, ...]  # [k_max, shuffle_parallel]
         move_costs_tm1 = move_costs_tm1.at[0, ...].set(0.0)
 
-    # Reverse along time axis (axis 0) to order from Target (close) to Start (far)
-    states = states[::-1, ...]
-    move_costs = move_costs[::-1, ...]
-    move_costs_tm1 = move_costs_tm1[::-1, ...]
-    actions = actions[::-1, ...]
-    action_costs = action_costs[::-1, ...]
-
     # Transpose to [shuffle_parallel, k_max, ...]
     states = states.transpose((1, 0))
     move_costs = move_costs.transpose((1, 0))
@@ -657,18 +660,17 @@ def create_hindsight_target_shuffled_path(
     )
 
     # Parent indices:
-    # After reversal, index 0 is Target (or closest to it). Index 1 is next step away.
-    # Parent of s_i is s_{i-1} (the one closer to target in this reversed view? No.)
-    # Original path: s_start -> ... -> s_target.
-    # Reversed: s_target -> ... -> s_start.
-    # In learning (Bellman), value at s_{t} depends on s_{t+1} (closer to target).
-    # Here, s_0 (Target) has value. s_1 (Target-1) depends on s_0.
-    # So parent of s_1 is s_0.
-    # Parent of index t is t-1.
+    # Path is Start -> Target.
+    # Index i is state s_i. Index i+1 is s_{i+1}.
+    # s_{i+1} is closer to target (or is the next step).
+    # Bellman propagates from Target (End) to Start (Beginning).
+    # Value at s_i depends on s_{i+1}.
+    # So parent of i is i+1.
     indices = jnp.arange(k_max * shuffle_parallel, dtype=jnp.int32)
-    parent_indices = indices - 1
+    parent_indices = indices + 1
     parent_indices = parent_indices.reshape(shuffle_parallel, k_max)
-    parent_indices = parent_indices.at[:, 0].set(-1)
+    # The last element (Target) has no parent (it is the source of value 0)
+    parent_indices = parent_indices.at[:, -1].set(-1)
 
     return {
         "solve_configs": solve_configs.flatten(),

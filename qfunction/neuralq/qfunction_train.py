@@ -89,15 +89,27 @@ def qfunction_train_builder(
                 step_indices,
                 weights,
             ) = batched_dataset
+
             # Ensure [batch, time, ...] layout for self-predictive training.
-            solveconfigs = xnp.swap_axes(solveconfigs, 0, 1)
-            states = xnp.swap_axes(states, 0, 1)
-            target_q = jnp.swapaxes(target_q, 0, 1)
-            actions = jnp.swapaxes(actions, 0, 1)
-            path_actions = jnp.swapaxes(path_actions, 0, 1)
-            trajectory_indices = jnp.swapaxes(trajectory_indices, 0, 1)
-            step_indices = jnp.swapaxes(step_indices, 0, 1)
-            weights = jnp.swapaxes(weights, 0, 1)
+            # minibatch_datasets returns (Batch, Time, MicroBatch, ...)
+            # We want (Batch*MicroBatch, Time, ...)
+            def align_batch_time(x):
+                if x.ndim >= 3:
+                    # (B, T, M, ...) -> (B, M, T, ...)
+                    x = xnp.swap_axes(x, 1, 2)
+                    # -> (B*M, T, ...)
+                    return x.reshape((-1, x.shape[2]) + x.shape[3:])
+                return x
+
+            solveconfigs = align_batch_time(solveconfigs)
+            states = align_batch_time(states)
+            target_q = align_batch_time(target_q)
+            actions = align_batch_time(actions)
+            path_actions = align_batch_time(path_actions)
+            trajectory_indices = align_batch_time(trajectory_indices)
+            step_indices = align_batch_time(step_indices)
+            weights = align_batch_time(weights)
+
             if weights.ndim > 1:
                 weights = jnp.mean(weights, axis=-1)
             preprocessed_states = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)

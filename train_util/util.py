@@ -16,7 +16,7 @@ def get_self_predictive_train_args(
 
     if hasattr(model, "states_to_latents"):
         next_preprocessed_states = preprocessed_states[
-            :, :-1
+            :, 1:
         ]  # (batch_size, path_length - 1, state_dim)
         ema_next_state_latents = model.apply(
             ema_target_heuristic_params,
@@ -32,7 +32,7 @@ def get_self_predictive_train_args(
         )  # (batch_size, path_length - 1, projection_dim)
         ema_next_state_projection = jnp.float32(ema_next_state_projection)
         same_trajectory_masks = (
-            trajectory_indices[:, :-1] == trajectory_indices[:, -1][:, jnp.newaxis]
+            trajectory_indices[:, 1:] == trajectory_indices[:, :-1]
         )  # (batch_size, path_length - 1)
         return ema_next_state_projection, same_trajectory_masks
     else:

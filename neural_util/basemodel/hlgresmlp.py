@@ -156,6 +156,8 @@ class SelfPredictiveHLGResMLPModel(HLGResMLPModel, SelfPredictiveDistanceHLGMode
 
     def transition(self, latents, actions, training=False):
         action_embed = self.action_embedding(actions)  # (..., hidden_dim)
+        if action_embed.ndim > latents.ndim:
+            action_embed = action_embed.squeeze(-2)
         x = latents + action_embed
         x = self.transition_resblock(x, training=training)
         return x

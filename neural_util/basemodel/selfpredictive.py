@@ -58,8 +58,8 @@ class SelfPredictiveMixin(ABC, nn.Module):
 
         # Initialize transition model
         batch_size = latents.shape[0]
-        action_size = getattr(self, "action_size", 1)
-        dummy_actions = jnp.zeros((batch_size, action_size), dtype=latents.dtype)
+        # Ensure dummy actions are int32 and shape (Batch, 1) for compatibility
+        dummy_actions = jnp.zeros((batch_size, 1), dtype=jnp.int32)
         _ = self.transition(latents, dummy_actions, training=training)
 
         # Initialize projection and prediction heads
@@ -74,59 +74,84 @@ class SelfPredictiveMixin(ABC, nn.Module):
         return dists
 
     def compute_self_predictive_loss(
-        self, last_latents, path_actions, ema_latents, same_trajectory_masks, training=True
+        self, latents, path_actions, ema_latents, same_trajectory_masks, training=True
     ):
         if ema_latents is None:
             return 0.0
 
-        # Swap axes to make time axis 0 for scan
-        # path_actions: (..., Time) -> (Time, ...)
-        path_actions = jnp.moveaxis(path_actions, -1, 0)
-        path_actions = path_actions[1:]  # Remove the first action [1, 2, ..., k_max]
-        path_actions = path_actions[
-            ::-1
-        ]  # Reverse the path actions to start from the last action [k_max, ..., 2, 1]
-        # ema_latents: (..., Time, Dim) -> (Time, ..., Dim)
-        ema_latents = jnp.moveaxis(ema_latents, -2, 0)
-        ema_latents = ema_latents[::-1]  # Reverse the ema latents to start from the last latent
+        # latents: (Batch, Time, Dim)
+        # path_actions: (Batch, Time) (or Time, Batch if transposed before?)
+        # We assume (Batch, Time) coming from the refactored training loop.
+
+        # Slicing:
+        # Start state z_0
+        start_latents = latents[:, 0]  # (Batch, Dim)
+
+        # Actions a_0 ... a_{K-2} (actions to transition z_0->z_1 ... z_{K-2}->z_{K-1})
+        # path_actions corresponds to actions taken at state t.
+        # So we want path_actions[:, 0:-1]
+        transition_actions = path_actions[:, :-1]  # (Batch, Time-1)
+
+        # Targets are ema_latents (projections of z_1 ... z_{K-1})
+        # passed in already sliced/computed by get_self_predictive_train_args
+        # ema_latents: (Batch, Time-1, Dim)
+
+        # Move Time to axis 0 for scan: (Time-1, Batch, ...)
+        transition_actions = jnp.swapaxes(transition_actions, 0, 1)
+        target_projections = jnp.swapaxes(ema_latents, 0, 1)
+
         if same_trajectory_masks is not None:
-            same_trajectory_masks = jnp.moveaxis(same_trajectory_masks, -1, 0)
-            same_trajectory_masks = same_trajectory_masks[
-                ::-1
-            ]  # Reverse the same trajectory masks to start from the last mask
-        last_latents = jnp.float32(last_latents)
+            # (Batch, Time-1) -> (Time-1, Batch)
+            same_trajectory_masks = jnp.swapaxes(same_trajectory_masks, 0, 1)
 
-        def body(last_latents, path_actions):
-            # path_actions from scan is (Batch, 1) or (1024, 1)
-            # path_actions need to be expanded to match (Batch, 1) for concatenation if needed,
-            # but usually it's already (Batch,) or (Batch, 1)
-            # here path_actions comes from scan over (Time, Batch), so it is (Batch,)
-            path_actions = path_actions[..., jnp.newaxis]  # (Batch, 1)
-            predicted_next_latents = self.transition(last_latents, path_actions, training=training)
-            # Ensure the output has the same dtype as the input carry (last_latents)
-            predicted_next_latents = predicted_next_latents.astype(last_latents.dtype)
-            return predicted_next_latents, predicted_next_latents
+        start_latents = jnp.float32(start_latents)
 
-        _, predicted_next_latents = jax.lax.scan(body, last_latents, path_actions)
+        def body(current_latents, inputs):
+            action, target_proj, mask = inputs
 
-        # Restore axes: (Time, ..., Dim) -> (..., Time, Dim)
-        predicted_next_latents = jnp.moveaxis(predicted_next_latents, 0, -2)
-        ema_latents = jnp.moveaxis(ema_latents, 0, -2)
-        if same_trajectory_masks is not None:
-            same_trajectory_masks = jnp.moveaxis(same_trajectory_masks, 0, -1)
+            # action: (Batch,)
+            action = action[..., jnp.newaxis]  # (Batch, 1)
 
-        projected_next_latents = self.latents_to_projection(
-            predicted_next_latents, training=training
+            # Predict next latent: z_{t+1} = Trans(z_t, a_t)
+            next_latents = self.transition(current_latents, action, training=training)
+            next_latents = next_latents.astype(current_latents.dtype)
+
+            # Predict projection: p_{t+1} = Pred(Proj(z_{t+1}))
+            # Wait, standard SPR is:
+            # y = Proj(z_{t+1})
+            # pred = Predictor(y)
+            # loss = - cosine(pred, target_ema_proj)
+
+            # In existing code:
+            # projected_next_latents = self.latents_to_projection(predicted_next_latents)
+            # predicted_next_latents = self.predict_ema_latents(projected_next_latents)
+
+            current_projection = self.latents_to_projection(next_latents, training=training)
+            prediction = self.predict_ema_latents(current_projection, training=training)
+
+            cosine_similarity = optax.cosine_similarity(prediction, target_proj)
+            step_loss = 1.0 - cosine_similarity
+
+            if mask is not None:
+                step_loss = step_loss * mask
+
+            return next_latents, step_loss
+
+        # Scan over time
+        # We need to bundle inputs for scan
+        # If same_trajectory_masks is None, we need to handle that.
+        if same_trajectory_masks is None:
+            # Create dummy mask of 1s or handle logic.
+            # Easier to just use None in tree_map if scan supports it,
+            # but explicit is better.
+            same_trajectory_masks = jnp.ones(transition_actions.shape[:2], dtype=jnp.float32)
+
+        _, losses = jax.lax.scan(
+            body, start_latents, (transition_actions, target_projections, same_trajectory_masks)
         )
-        predicted_next_latents = self.predict_ema_latents(projected_next_latents, training=training)
-        cosine_similarity = optax.cosine_similarity(predicted_next_latents, ema_latents)
-        loss = 1.0 - cosine_similarity
 
-        if same_trajectory_masks is not None:
-            loss = loss * same_trajectory_masks
-
-        # Mean over time axis (last axis of cosine_similarity result)
-        loss = jnp.sum(loss, axis=-1)
+        # losses is (Time-1, Batch)
+        loss = jnp.sum(losses, axis=0)  # Sum over time, resulting in (Batch,)
 
         return self.spr_loss_scale * loss
 
@@ -161,11 +186,13 @@ class SelfPredictiveDistanceModel(SelfPredictiveMixin):
             dist_loss = jnp.mean(dist_loss, axis=-1)
 
         if latents.ndim >= 3:
-            last_latents = latents[..., -1, :]
+            # We pass full latents to SPR loss for sequence handling
+            spr_latents = latents
         else:
-            last_latents = latents
+            spr_latents = latents
+
         spr_loss = self.compute_self_predictive_loss(
-            last_latents, path_actions, ema_latents, same_trajectory_masks, training=True
+            spr_latents, path_actions, ema_latents, same_trajectory_masks, training=True
         )  # [...,]
         spr_loss = jnp.nan_to_num(spr_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         return dist_loss + spr_loss  # [...,]
@@ -243,11 +270,13 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
             dist_loss = jnp.mean(dist_loss, axis=-1)
 
         if latents.ndim >= 3:
-            last_latents = latents[..., -1, :]
+            # We pass full latents to SPR loss for sequence handling
+            spr_latents = latents
         else:
-            last_latents = latents
+            spr_latents = latents
+
         spr_loss = self.compute_self_predictive_loss(
-            last_latents, path_actions, ema_latents, same_trajectory_masks, training=True
+            spr_latents, path_actions, ema_latents, same_trajectory_masks, training=True
         )  # [...,]
         spr_loss = jnp.nan_to_num(spr_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         return dist_loss + spr_loss  # [...,]
