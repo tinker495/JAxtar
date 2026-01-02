@@ -86,6 +86,7 @@ class SelfPredictiveMixin(ABC, nn.Module):
         ema_latents = jnp.moveaxis(ema_latents, -2, 0)
         if same_trajectory_masks is not None:
             same_trajectory_masks = jnp.moveaxis(same_trajectory_masks, -1, 0)
+        last_latents = jnp.float32(last_latents)
 
         def body(last_latents, path_actions):
             # path_actions from scan is (Batch, 1) or (1024, 1)
@@ -157,6 +158,7 @@ class SelfPredictiveDistanceModel(SelfPredictiveMixin):
 
         diff = target - dists  # [..., ]
         dist_loss = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)  # [...,]
+        dist_loss = jnp.nan_to_num(dist_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         if dist_loss.ndim > 1:
             dist_loss = jnp.mean(dist_loss, axis=-1)
 
@@ -167,6 +169,7 @@ class SelfPredictiveDistanceModel(SelfPredictiveMixin):
         spr_loss = self.compute_self_predictive_loss(
             last_latents, path_actions, ema_latents, same_trajectory_masks, training=True
         )  # [...,]
+        spr_loss = jnp.nan_to_num(spr_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         return dist_loss + spr_loss  # [...,]
 
 
@@ -237,6 +240,7 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
                 logits_actions, actions[..., jnp.newaxis], axis=-2
             ).squeeze()  # [..., categorial_n]
         dist_loss = optax.softmax_cross_entropy(logits, target_probs)  # [..., ]
+        dist_loss = jnp.nan_to_num(dist_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         if dist_loss.ndim > 1:
             dist_loss = jnp.mean(dist_loss, axis=-1)
 
@@ -247,4 +251,5 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
         spr_loss = self.compute_self_predictive_loss(
             last_latents, path_actions, ema_latents, same_trajectory_masks, training=True
         )  # [...,]
+        spr_loss = jnp.nan_to_num(spr_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         return dist_loss + spr_loss  # [...,]
