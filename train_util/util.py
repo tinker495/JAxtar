@@ -24,6 +24,7 @@ def get_self_predictive_train_args(
             training=True,
             method=model.states_to_latents,
         )  # (batch_size, path_length - 1, latent_dim)
+        ema_next_state_latents = jnp.float32(ema_next_state_latents)
         same_trajectory_masks = (
             trajectory_indices[:, :-1] == trajectory_indices[:, -1][:, jnp.newaxis]
         )  # (batch_size, path_length - 1)
