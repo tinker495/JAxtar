@@ -32,7 +32,7 @@ def get_self_predictive_train_args(
         )  # (batch_size, path_length - 1, projection_dim)
         ema_next_state_projection = jnp.float32(ema_next_state_projection)
         same_trajectory_masks = (
-            trajectory_indices[:, 1:] == trajectory_indices[:, -1][:, jnp.newaxis]
+            trajectory_indices[:, :-1] == trajectory_indices[:, -1][:, jnp.newaxis]
         )  # (batch_size, path_length - 1)
         return ema_next_state_projection, same_trajectory_masks
     else:
