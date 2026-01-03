@@ -252,8 +252,8 @@ class MHCHyperConnections(nn.Module):
         )
         inv_r = 1.0 / (r[..., 0, 0] + 1e-6)
 
-        h_pre_logits = alpha_pre * jnp.tanh(h_pre_dyn) * inv_r + b_pre
-        h_post_logits = alpha_post * jnp.tanh(h_post_dyn) * inv_r + b_post
+        h_pre_logits = alpha_pre * jnp.tanh(h_pre_dyn) * inv_r[:, None] + b_pre
+        h_post_logits = alpha_post * jnp.tanh(h_post_dyn) * inv_r[:, None] + b_post
         h_res_logits = alpha_res * jnp.tanh(h_res_dyn) * inv_r[:, None, None] + b_res
 
         h_pre = nn.sigmoid(h_pre_logits)

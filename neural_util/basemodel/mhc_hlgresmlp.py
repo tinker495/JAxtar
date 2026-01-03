@@ -49,9 +49,9 @@ class MHCHLGResMLPModel(DistanceHLGModel):
             else nn.Dense(self.hidden_dim, dtype=DTYPE)
         )
 
-        self.mhc_layers = []
+        mhc_layers = []
         for _ in range(self.Res_N - self.tail_head_precision):
-            self.mhc_layers.append(
+            mhc_layers.append(
                 MHCLayer(
                     self.hidden_dim * self.hidden_node_multiplier,
                     hidden_N=self.hidden_N,
@@ -65,7 +65,7 @@ class MHCHLGResMLPModel(DistanceHLGModel):
                 )
             )
         for _ in range(self.tail_head_precision):
-            self.mhc_layers.append(
+            mhc_layers.append(
                 MHCLayer(
                     self.hidden_dim * self.hidden_node_multiplier,
                     hidden_N=self.hidden_N,
@@ -80,6 +80,7 @@ class MHCHLGResMLPModel(DistanceHLGModel):
                     param_dtype=HEAD_DTYPE,
                 )
             )
+        self.mhc_layers = tuple(mhc_layers)
 
         self.final_dense = (
             preactivation_MLP(self.action_size * self.categorial_n, dtype=HEAD_DTYPE)
