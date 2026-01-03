@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from puxle import RubiksCube
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.basemodel import HLGResMLPModel
+from neural_util.basemodel import HLGResMLPModel, MHCHLGResMLPModel, MHCResMLPModel
 from neural_util.modules import DTYPE
 
 
@@ -95,6 +95,26 @@ class RubiksCubeHLGNeuralHeuristic(RubiksCubeNeuralHeuristic):
         super().__init__(puzzle, model=HLGResMLPModel, **kwargs)
 
 
+class RubiksCubeMHCNeuralHeuristic(RubiksCubeNeuralHeuristic):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=MHCResMLPModel, **kwargs)
+
+
+class RubiksCubeMHCHLGNeuralHeuristic(RubiksCubeNeuralHeuristic):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=MHCHLGResMLPModel, **kwargs)
+
+
 class RubiksCubeRandomHLGNeuralHeuristic(RubiksCubeRandomNeuralHeuristic):
     def __init__(self, puzzle: RubiksCube, **kwargs):
         super().__init__(puzzle, model=HLGResMLPModel, **kwargs)
+
+
+class RubiksCubeRandomMHCNeuralHeuristic(RubiksCubeRandomNeuralHeuristic):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=MHCResMLPModel, **kwargs)
+
+
+class RubiksCubeRandomMHCHLGNeuralHeuristic(RubiksCubeRandomNeuralHeuristic):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=MHCHLGResMLPModel, **kwargs)

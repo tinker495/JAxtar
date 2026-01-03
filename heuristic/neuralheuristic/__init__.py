@@ -7,8 +7,12 @@ from heuristic.neuralheuristic.model.pancake_neuralheuristic import (
 )
 from heuristic.neuralheuristic.model.rubikscube_neuralheuristic import (
     RubiksCubeHLGNeuralHeuristic,
+    RubiksCubeMHCHLGNeuralHeuristic,
+    RubiksCubeMHCNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
     RubiksCubeRandomHLGNeuralHeuristic,
+    RubiksCubeRandomMHCHLGNeuralHeuristic,
+    RubiksCubeRandomMHCNeuralHeuristic,
     RubiksCubeRandomNeuralHeuristic,
 )
 from heuristic.neuralheuristic.model.slidepuzzle_neuralheuristic import (

@@ -187,6 +187,151 @@ class ResBlock(nn.Module):
         return self.activation(x + x0_cast)
 
 
+def sinkhorn_knopp(logits, num_iters=20, eps=1e-6):
+    weights = jnp.exp(logits)
+    for _ in range(num_iters):
+        weights = weights / (jnp.sum(weights, axis=-1, keepdims=True) + eps)
+        weights = weights / (jnp.sum(weights, axis=-2, keepdims=True) + eps)
+    return weights
+
+
+class MHCHyperConnections(nn.Module):
+    n_streams: int = 4
+    sinkhorn_iters: int = 20
+    alpha_init: float = 0.01
+    rms_norm_epsilon: float = 1e-6
+    dtype: any = DTYPE
+    param_dtype: any = None
+
+    @nn.compact
+    def __call__(self, x_stream, training=False):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        n_streams = self.n_streams
+        x_cast = x_stream.astype(dtype)
+        x_norm = nn.RMSNorm(epsilon=self.rms_norm_epsilon, dtype=dtype)(x_cast)
+        feature_dim = x_stream.shape[-1]
+
+        theta_pre = self.param(
+            "theta_pre",
+            nn.initializers.normal(stddev=0.02),
+            (feature_dim,),
+            param_dtype,
+        )
+        theta_post = self.param(
+            "theta_post",
+            nn.initializers.normal(stddev=0.02),
+            (feature_dim,),
+            param_dtype,
+        )
+        theta_res = self.param(
+            "theta_res",
+            nn.initializers.normal(stddev=0.02),
+            (n_streams, feature_dim),
+            param_dtype,
+        )
+        b_pre = self.param("b_pre", nn.initializers.zeros, (n_streams,), param_dtype)
+        b_post = self.param("b_post", nn.initializers.zeros, (n_streams,), param_dtype)
+        b_res = self.param("b_res", nn.initializers.zeros, (n_streams, n_streams), param_dtype)
+        alpha_pre = self.param(
+            "alpha_pre", nn.initializers.constant(self.alpha_init), (1,), param_dtype
+        )
+        alpha_post = self.param(
+            "alpha_post", nn.initializers.constant(self.alpha_init), (1,), param_dtype
+        )
+        alpha_res = self.param(
+            "alpha_res", nn.initializers.constant(self.alpha_init), (1,), param_dtype
+        )
+
+        h_pre_dyn = jnp.einsum("c,bnc->bn", theta_pre, x_norm)
+        h_post_dyn = jnp.einsum("c,bnc->bn", theta_post, x_norm)
+        h_res_dyn = jnp.einsum("ic,bjc->bij", theta_res, x_norm)
+
+        r = jnp.linalg.norm(x_cast, axis=(-2, -1), keepdims=True) / jnp.sqrt(
+            n_streams * feature_dim
+        )
+        inv_r = 1.0 / (r[..., 0, 0] + 1e-6)
+
+        h_pre_logits = alpha_pre * jnp.tanh(h_pre_dyn) * inv_r + b_pre
+        h_post_logits = alpha_post * jnp.tanh(h_post_dyn) * inv_r + b_post
+        h_res_logits = alpha_res * jnp.tanh(h_res_dyn) * inv_r[:, None, None] + b_res
+
+        h_pre = nn.sigmoid(h_pre_logits)
+        h_post = 2.0 * nn.sigmoid(h_post_logits)
+        h_res = sinkhorn_knopp(h_res_logits, num_iters=self.sinkhorn_iters)
+        return h_pre, h_post, h_res
+
+
+class MHCMLPBlock(nn.Module):
+    node_size: int
+    hidden_N: int = 1
+    norm_fn: nn.Module = DEFAULT_NORM_FN
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    dtype: any = DTYPE
+    param_dtype: any = None
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        x = x.astype(dtype)
+        out_dim = x.shape[-1]
+        for _ in range(self.hidden_N):
+            if self.use_swiglu:
+                x = Swiglu(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                )(x, training)
+            else:
+                x = MLP(self.node_size, norm_fn=self.norm_fn, activation=self.activation)(
+                    x, training
+                )
+        x = nn.Dense(out_dim, dtype=dtype, param_dtype=param_dtype)(x)
+        x = self.norm_fn()(x, training)
+        return self.activation(x)
+
+
+class MHCLayer(nn.Module):
+    node_size: int
+    hidden_N: int = 1
+    norm_fn: nn.Module = DEFAULT_NORM_FN
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    n_streams: int = 4
+    sinkhorn_iters: int = 20
+    alpha_init: float = 0.01
+    rms_norm_epsilon: float = 1e-6
+    dtype: any = DTYPE
+    param_dtype: any = None
+
+    @nn.compact
+    def __call__(self, x_stream, training=False):
+        h_pre, h_post, h_res = MHCHyperConnections(
+            n_streams=self.n_streams,
+            sinkhorn_iters=self.sinkhorn_iters,
+            alpha_init=self.alpha_init,
+            rms_norm_epsilon=self.rms_norm_epsilon,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+        )(x_stream, training)
+        x_pre = jnp.einsum("bn,bnc->bc", h_pre, x_stream)
+        x_post = MHCMLPBlock(
+            self.node_size,
+            hidden_N=self.hidden_N,
+            norm_fn=self.norm_fn,
+            activation=self.activation,
+            use_swiglu=self.use_swiglu,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+        )(x_pre, training)
+        x_res = jnp.einsum("bij,bjc->bic", h_res, x_stream)
+        x_post_stream = jnp.einsum("bn,bc->bnc", h_post, x_post)
+        return x_res + x_post_stream
+
+
 # Pre-activation Residual Block (improved version)
 class PreActivationResBlock(nn.Module):
     node_size: int
