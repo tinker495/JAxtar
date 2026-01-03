@@ -10,9 +10,10 @@ def get_self_predictive_train_args(
     model: nn.Module,
     ema_target_heuristic_params: Any,
     preprocessed_states: chex.Array,  # (batch_size, path_length, state_dim)
+    raw_path_actions: chex.Array,  # (batch_size, path_length)
     trajectory_indices: chex.Array,  # (batch_size, path_length)
     step_indices: chex.Array,  # (batch_size, path_length)
-) -> tuple[Any, Any]:
+) -> tuple[Any, Any, Any]:
 
     if hasattr(model, "states_to_latents"):
         next_preprocessed_states = preprocessed_states[
@@ -21,22 +22,23 @@ def get_self_predictive_train_args(
         ema_next_state_latents = model.apply(
             ema_target_heuristic_params,
             next_preprocessed_states,
-            training=True,
+            training=False,
             method=model.states_to_latents,
         )  # (batch_size, path_length - 1, latent_dim)
         ema_next_state_projection = model.apply(
             ema_target_heuristic_params,
             ema_next_state_latents,
-            training=True,
+            training=False,
             method=model.latents_to_projection,
         )  # (batch_size, path_length - 1, projection_dim)
         ema_next_state_projection = jnp.float32(ema_next_state_projection)
         same_trajectory_masks = (
-            trajectory_indices[:, 1:] == trajectory_indices[:, :-1]
+            trajectory_indices[:, 0][..., jnp.newaxis] == trajectory_indices[:, 1:]
         )  # (batch_size, path_length - 1)
-        return ema_next_state_projection, same_trajectory_masks
+        path_actions = raw_path_actions[:, :-1]  # (batch_size, path_length - 1)
+        return ema_next_state_projection, path_actions, same_trajectory_masks
     else:
-        return None, None
+        return None, None, None
 
 
 def round_through_gradient(x: chex.Array) -> chex.Array:

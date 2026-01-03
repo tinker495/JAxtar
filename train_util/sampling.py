@@ -41,7 +41,6 @@ def minibatch_datasets(
     batch_indexs_replay = batch_indexs_replay.reshape(
         batch_size, minibatch_size // sample_path_length, sample_path_length
     )
-    batch_indexs_replay = jnp.swapaxes(batch_indexs_replay, 1, 2)
 
     batched_train_datasets = []
     for train_dataset in train_datasets:

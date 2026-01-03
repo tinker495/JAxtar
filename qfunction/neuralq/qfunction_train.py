@@ -5,7 +5,6 @@ import chex
 import jax
 import jax.numpy as jnp
 import optax
-import xtructure.numpy as xnp
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import minibatch_datasets
@@ -90,36 +89,20 @@ def qfunction_train_builder(
                 weights,
             ) = batched_dataset
 
-            # Ensure [batch, time, ...] layout for self-predictive training.
-            # minibatch_datasets returns (Batch, Time, MicroBatch, ...)
-            # We want (Batch*MicroBatch, Time, ...)
-            def align_batch_time(x):
-                if x.ndim >= 3:
-                    # (B, T, M, ...) -> (B, M, T, ...)
-                    x = xnp.swap_axes(x, 1, 2)
-                    # -> (B*M, T, ...)
-                    return x.reshape((-1, x.shape[2]) + x.shape[3:])
-                return x
-
-            solveconfigs = align_batch_time(solveconfigs)
-            states = align_batch_time(states)
-            target_q = align_batch_time(target_q)
-            actions = align_batch_time(actions)
-            path_actions = align_batch_time(path_actions)
-            trajectory_indices = align_batch_time(trajectory_indices)
-            step_indices = align_batch_time(step_indices)
-            weights = align_batch_time(weights)
-
-            if weights.ndim > 1:
-                weights = jnp.mean(weights, axis=-1)
             preprocessed_states = jax.vmap(jax.vmap(preproc_fn))(solveconfigs, states)
-            ema_next_state_latents, same_trajectory_masks = get_self_predictive_train_args(
+            (
+                ema_next_state_latents,
+                path_actions,
+                same_trajectory_masks,
+            ) = get_self_predictive_train_args(
                 q_fn,
                 target_q_params,
                 preprocessed_states,
+                path_actions,
                 trajectory_indices,
                 step_indices,
             )
+
             (loss, q_params), grads = jax.value_and_grad(qfunction_train_loss, has_aux=True)(
                 q_params,
                 preprocessed_states,
