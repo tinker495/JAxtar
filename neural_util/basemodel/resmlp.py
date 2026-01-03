@@ -111,6 +111,7 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
     use_swiglu: bool = False
     hidden_node_multiplier: int = 1
     tail_head_precision: int = 0
+    path_action_size: int = 12
 
     def setup(self):
         # Re-implementing using setup for cleaner separation.
@@ -215,7 +216,7 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
         return self.latents_to_distances(latents, training)
 
     def transition(self, latents, actions, training=False):
-        actions = jax.nn.one_hot(actions, self.action_size)
+        actions = jax.nn.one_hot(actions, self.path_action_size)
         x = jnp.concatenate([latents, actions], axis=-1)
         x = self.transition_dense(x)
         x = self.transition_resblock(x, training=training)

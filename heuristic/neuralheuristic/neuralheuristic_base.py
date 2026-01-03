@@ -9,6 +9,7 @@ from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
 from neural_util.basemodel import DistanceHLGModel, DistanceModel, ResMLPModel
+from neural_util.basemodel.selfpredictive import SelfPredictiveDistanceModel
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -28,6 +29,7 @@ class NeuralHeuristicBase(Heuristic):
     ):
         self.puzzle = puzzle
         self.is_fixed = puzzle.fixed_target
+        self.action_size = puzzle.action_size
         self.path = path
         self.metadata = {}
         self.nn_args_metadata = {}
@@ -39,7 +41,10 @@ class NeuralHeuristicBase(Heuristic):
 
         resolved_kwargs, nn_args = resolve_model_kwargs(kwargs, saved_metadata.get("nn_args"))
         self.nn_args_metadata = nn_args
-        self.model = model(**resolved_kwargs)
+        if issubclass(model, SelfPredictiveDistanceModel):
+            self.model = model(**resolved_kwargs, path_action_size=self.action_size)
+        else:
+            self.model = model(**resolved_kwargs)
 
         self.metadata = saved_metadata or {}
         self.metadata["nn_args"] = self.nn_args_metadata
