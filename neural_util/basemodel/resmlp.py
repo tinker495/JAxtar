@@ -164,7 +164,7 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
         self.transition_dense = nn.Dense(self.hidden_dim, dtype=DTYPE)
         self.transition_resblock = self.resblock_fn(
             self.hidden_dim,
-            norm_fn=self.norm_fn,
+            norm_fn=None,
             hidden_N=self.hidden_N,
             activation=self.activation,
             use_swiglu=self.use_swiglu,
@@ -172,10 +172,10 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
         )
 
         # Projection and Predictor components
-        self.proj_mlp = MLP(self.hidden_dim, norm_fn=self.norm_fn, activation=self.activation)
+        self.proj_mlp = MLP(self.hidden_dim, norm_fn=None, activation=self.activation)
         self.proj_dense = nn.Dense(self.projection_dim, dtype=HEAD_DTYPE)
 
-        self.pred_mlp = MLP(self.hidden_dim, norm_fn=self.norm_fn, activation=self.activation)
+        self.pred_mlp = MLP(self.hidden_dim, norm_fn=None, activation=self.activation)
         self.pred_dense = nn.Dense(self.projection_dim, dtype=HEAD_DTYPE)
 
     def latents_to_projection(self, x, training=False):
