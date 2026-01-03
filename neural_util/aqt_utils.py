@@ -5,6 +5,7 @@ import jax
 from aqt.jax.v2 import config as aqt_config
 from aqt.jax.v2.flax import aqt_flax
 from aqt.jax.v2.numerics import no_numerics
+from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 
 
 def get_aqt_cfg(aqt_cfg: str = "int8"):
@@ -136,7 +137,7 @@ def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
 
     # We run apply. The 'mutable' output will contain the updated variables including quant states.
     try:
-        _, converting_variables = convert_model.apply(
+        _, updated_vars = convert_model.apply(
             variables,
             sample_input,
             training=True,  # Often needed to activate stats collection if any
@@ -151,6 +152,16 @@ def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
                 "Please ensure hidden_dim and other dimensions are multiples of 32 or 128."
             ) from e
         raise e
+
+    # Merge the updated collections back into the original variables to preserve trained weights.
+    # Flax apply with mutable=True only returns collections that were actually modified.
+    if isinstance(variables, FrozenDict):
+        new_vars = unfreeze(variables)
+    else:
+        new_vars = dict(variables)
+
+    new_vars.update(updated_vars)
+    converting_variables = freeze(new_vars)
 
     # 3. Create Serving Model
     serve_kwargs = model_kwargs.copy()
