@@ -33,7 +33,7 @@ def heuristic_train_builder(
     ):
         # Preprocess during training
         preproc = jax.vmap(preproc_fn)(solveconfigs, states)
-        per_sample_loss, variable_updates = apply_with_conditional_batch_stats(
+        (per_sample_loss, aux), variable_updates = apply_with_conditional_batch_stats(
             heuristic_model.apply,
             heuristic_params,
             preproc,
@@ -46,7 +46,7 @@ def heuristic_train_builder(
         )
         new_params = build_new_params_from_updates(heuristic_params, variable_updates)
         loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
-        return loss_value, new_params
+        return loss_value, (new_params, aux)
 
     def heuristic_train(
         key: chex.PRNGKey,
@@ -69,7 +69,7 @@ def heuristic_train_builder(
         def train_loop(carry, batched_dataset):
             heuristic_params, opt_state = carry
             solveconfigs, states, target_heuristic, weights = batched_dataset
-            (loss, heuristic_params), grads = jax.value_and_grad(
+            (loss, (heuristic_params, aux)), grads = jax.value_and_grad(
                 heuristic_train_loss, has_aux=True
             )(
                 heuristic_params,
@@ -82,7 +82,7 @@ def heuristic_train_builder(
                 grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=heuristic_params)
             heuristic_params = optax.apply_updates(heuristic_params, updates)
-            return (heuristic_params, opt_state), loss
+            return (heuristic_params, opt_state), (loss, aux)
 
         # Repeat training loop for replay_ratio iterations with reshuffling
         def replay_loop(carry, replay_key):
@@ -104,7 +104,7 @@ def heuristic_train_builder(
                 key=replay_key,
             )
 
-            (heuristic_params, opt_state), losses = jax.lax.scan(
+            (heuristic_params, opt_state), (losses, auxs) = jax.lax.scan(
                 train_loop,
                 (heuristic_params, opt_state),
                 (
@@ -114,11 +114,11 @@ def heuristic_train_builder(
                     batched_weights_replay,
                 ),
             )
-            return (heuristic_params, opt_state), losses
+            return (heuristic_params, opt_state), (losses, auxs)
 
         # Generate keys for replay iterations
         replay_keys = jax.random.split(key, replay_ratio)
-        (heuristic_params, opt_state), losses = jax.lax.scan(
+        (heuristic_params, opt_state), (losses, auxs) = jax.lax.scan(
             replay_loop,
             (heuristic_params, opt_state),
             replay_keys,
@@ -128,13 +128,14 @@ def heuristic_train_builder(
             heuristic_params,
             opt_state,
             loss,
+            auxs,
         )
 
     if n_devices > 1:
 
         def pmap_heuristic_train(key, dataset, heuristic_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (heuristic_params, opt_state, loss,) = jax.pmap(
+            (heuristic_params, opt_state, loss, auxs,) = jax.pmap(
                 heuristic_train, in_axes=(0, 0, None, None), axis_name="devices"
             )(keys, dataset, heuristic_params, opt_state)
             heuristic_params = jax.tree_util.tree_map(lambda xs: xs[0], heuristic_params)
@@ -144,6 +145,7 @@ def heuristic_train_builder(
                 heuristic_params,
                 opt_state,
                 loss,
+                auxs,
             )
 
         return pmap_heuristic_train
