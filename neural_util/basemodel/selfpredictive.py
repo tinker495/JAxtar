@@ -86,12 +86,9 @@ class SelfPredictiveMixin(ABC, nn.Module):
 
         transition_actions = jnp.swapaxes(path_actions, 0, 1)  # (Time - 1, Batch)
 
-        # Avoid mutable BatchNorm/BatchReNorm updates inside lax.scan.
-        transition_training = False if training else training
-
         def body(current_latents, action):
             # Predict next latent: z_{t+1} = Trans(z_t, a_t)
-            next_latents = self.transition(current_latents, action, training=transition_training)
+            next_latents = self.transition(current_latents, action, training=training)
             return next_latents, next_latents
 
         _, next_latents = jax.lax.scan(body, start_latents, transition_actions)
