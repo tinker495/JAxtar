@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import jax
+from flax.core.frozen_dict import FrozenDict
+
+from .formatting import human_format
 
 
 def _format_bytes(num_bytes: int) -> str:
@@ -23,47 +26,101 @@ def _format_bytes(num_bytes: int) -> str:
     return f"{size:.2f}{units[unit_idx]}"
 
 
-def jax_param_stats(params: Any) -> Dict[str, Any]:
+def jax_param_stats(params: Any, aqt_cfg: str | None = None) -> Dict[str, Any]:
     """
     Compute basic parameter statistics from a JAX/Flax params pytree.
 
-    Returns a JSON-serializable dict (ints/strings only).
+    If aqt_cfg is provided (e.g., 'int8'), it estimates the quantized size
+    for multi-dimensional weights (ndim >= 2) in the 'params' collection.
+
+    Returns a JSON-serializable dict.
     """
-    leaves = jax.tree_util.tree_leaves(params)
-    total_params = 0
-    total_bytes = 0
-    dtype_params: Dict[str, int] = {}
 
-    for leaf in leaves:
-        if leaf is None:
-            continue
-        # JAX arrays / NumPy arrays / DeviceArrays generally have .size and .dtype
-        if not hasattr(leaf, "size") or not hasattr(leaf, "dtype"):
-            continue
+    def _get_raw_stats(params: Any, aqt_cfg: str | None = None) -> Dict[str, Any]:
+        # 1. Detect AQT structure: if it's a dict with 'params' and 'aqt' collections
+        is_aqt_structure = (
+            isinstance(params, (dict, FrozenDict)) and "params" in params and "aqt" in params
+        )
 
-        try:
-            n = int(leaf.size)
-        except Exception:
-            continue
+        if is_aqt_structure:
+            p_stats = _get_raw_stats(params["params"], aqt_cfg=aqt_cfg)
+            a_stats = _get_raw_stats(params["aqt"], aqt_cfg=None)
 
-        try:
+            total_params = p_stats["total_params"] + a_stats["total_params"]
+            total_bytes = p_stats["total_bytes"] + a_stats["total_bytes"]
+
+            res = {
+                "total_params": total_params,
+                "total_bytes": total_bytes,
+            }
+
+            if aqt_cfg:
+                orig_p_stats = _get_raw_stats(params["params"], aqt_cfg=None)
+                res["orig_total_params"] = orig_p_stats["total_params"]
+                res["orig_total_bytes"] = orig_p_stats["total_bytes"]
+
+            return res
+
+        # Standard Pytree leaf summation
+        leaves = jax.tree_util.tree_leaves(params)
+        total_params = 0
+        total_bytes = 0
+
+        quant_itemsize = None
+        if aqt_cfg:
+            if "int8" in aqt_cfg:
+                quant_itemsize = 1
+            elif "int4" in aqt_cfg:
+                quant_itemsize = 0.5
+
+        for leaf in leaves:
+            if leaf is None:
+                continue
+            if not hasattr(leaf, "size") or not hasattr(leaf, "dtype"):
+                continue
+
+            try:
+                n = int(leaf.size)
+            except Exception:
+                continue
+
             itemsize = int(getattr(leaf.dtype, "itemsize", 0))
-        except Exception:
-            itemsize = 0
+            effective_itemsize = itemsize
+            dtype_key = str(getattr(leaf, "dtype", "unknown"))
 
-        total_params += n
-        total_bytes += n * itemsize
+            if (
+                quant_itemsize is not None
+                and hasattr(leaf, "ndim")
+                and leaf.ndim >= 2
+                and ("float" in dtype_key or "bfloat" in dtype_key)
+            ):
+                effective_itemsize = quant_itemsize
 
-        dtype_key = str(getattr(leaf, "dtype", "unknown"))
-        dtype_params[dtype_key] = dtype_params.get(dtype_key, 0) + n
+            total_params += n
+            total_bytes += int(n * effective_itemsize)
 
-    return {
-        "total_params": int(total_params),
-        "total_bytes": int(total_bytes),
-        "total_size": _format_bytes(int(total_bytes)),
-        "dtype_params": dtype_params,
-        "num_leaves": int(len(leaves)),
-    }
+        return {
+            "total_params": int(total_params),
+            "total_bytes": int(total_bytes),
+        }
+
+    raw = _get_raw_stats(params, aqt_cfg)
+
+    # Format the results
+    if "orig_total_params" in raw:
+        # AQT case with original stats
+        return {
+            "total_params": human_format(raw["total_params"]),
+            "total_bytes": f"{human_format(raw['total_bytes'])} ({human_format(raw['orig_total_bytes'])})",
+            "total_size": f"{_format_bytes(raw['total_bytes'])} ({_format_bytes(raw['orig_total_bytes'])})",
+        }
+    else:
+        # Standard case
+        return {
+            "total_params": human_format(raw["total_params"]),
+            "total_bytes": human_format(raw["total_bytes"]),
+            "total_size": _format_bytes(raw["total_bytes"]),
+        }
 
 
 def attach_runtime_metadata(
@@ -95,10 +152,20 @@ def attach_runtime_metadata(
     if param_path is not None:
         runtime["param_path"] = param_path
 
+    # Check for aqt_cfg
+    aqt_cfg = getattr(component, "aqt_cfg", None)
+    if aqt_cfg is None:
+        aqt_cfg = md.get("aqt_cfg")
+    if aqt_cfg is None and extra:
+        aqt_cfg = extra.get("aqt_cfg")
+
+    if aqt_cfg:
+        runtime["aqt_cfg"] = aqt_cfg
+
     # Params can be large; we only compute small aggregated stats.
     if hasattr(component, "params"):
         try:
-            runtime["param_stats"] = jax_param_stats(getattr(component, "params"))
+            runtime["param_stats"] = jax_param_stats(getattr(component, "params"), aqt_cfg=aqt_cfg)
         except Exception:
             # Best-effort: don't break CLI for stats issues.
             runtime.setdefault("param_stats", {"error": "failed_to_compute"})
