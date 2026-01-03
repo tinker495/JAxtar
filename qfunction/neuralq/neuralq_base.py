@@ -8,6 +8,7 @@ import numpy as np
 from puxle import Puzzle
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel, ResMLPModel
+from neural_util.basemodel.selfpredictive import SelfPredictiveDistanceModel
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     load_params_with_metadata,
@@ -40,7 +41,12 @@ class NeuralQFunctionBase(QFunction):
 
         resolved_kwargs, nn_args = resolve_model_kwargs(kwargs, saved_metadata.get("nn_args"))
         self.nn_args_metadata = nn_args
-        self.model = model(self.action_size, **resolved_kwargs)
+        if issubclass(model, SelfPredictiveDistanceModel):
+            self.model = model(
+                self.action_size, **resolved_kwargs, path_action_size=self.action_size
+            )
+        else:
+            self.model = model(self.action_size, **resolved_kwargs)
         self.metadata = saved_metadata or {}
         self.metadata["nn_args"] = self.nn_args_metadata
         if path is not None:
