@@ -9,7 +9,7 @@ from puxle.utils.annotate import IMG_SIZE
 from xtructure import numpy as xnp
 
 from helpers.formatting import img_to_colored_str
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, get_norm_fn
+from neural_util.modules import DEFAULT_NORM_FN, DTYPE, apply_norm, get_norm_fn
 from neural_util.param_manager import (
     load_params_with_metadata,
     save_params_with_metadata,
@@ -33,7 +33,7 @@ class Encoder(nn.Module):
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
         x = nn.Dense(1000, dtype=DTYPE)(flatten)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         x = nn.Dense(latent_size, dtype=DTYPE)(x)
         logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
@@ -49,7 +49,7 @@ class Decoder(nn.Module):
         output_size = np.prod(self.data_shape)
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.Dense(1000, dtype=DTYPE)(x)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         x = nn.Dense(output_size, dtype=DTYPE)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
@@ -81,13 +81,13 @@ class WorldModel(nn.Module):
     def __call__(self, latent, training=False):
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         x = nn.Dense(500, dtype=DTYPE)(x)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
         logits = nn.Dense(latent_size * self.action_size, dtype=DTYPE)(x)

@@ -6,7 +6,13 @@ from puxle import SlidePuzzle
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.basemodel import DistanceModel
-from neural_util.modules import DEFAULT_NORM_FN, DTYPE, ConvResBlock, ResBlock
+from neural_util.modules import (
+    DEFAULT_NORM_FN,
+    DTYPE,
+    ConvResBlock,
+    ResBlock,
+    apply_norm,
+)
 
 
 class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
@@ -49,12 +55,12 @@ class Model(DistanceModel):
     def __call__(self, x, training=False):
         # [4, 4, 1] -> conv
         x = nn.Conv(256, (3, 3), strides=1, padding="SAME", dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         x = ConvResBlock(256, (3, 3), strides=1, norm_fn=self.norm_fn)(x, training)
         x = jnp.reshape(x, (x.shape[0], -1))
         x = nn.Dense(512, dtype=DTYPE)(x)
-        x = self.norm_fn(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         x = ResBlock(512, norm_fn=self.norm_fn)(x, training)
         x = nn.Dense(1, dtype=DTYPE)(x)

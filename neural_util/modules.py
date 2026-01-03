@@ -421,5 +421,5 @@ class ConvResBlock(nn.Module):
         x = nn.Conv(
             self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
         )(x)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         return self.activation(x + x0)
