@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Any, Callable
 
 import flax.linen as nn
 import jax.numpy as jnp
@@ -102,6 +102,7 @@ class Swiglu(nn.Module):
     norm_fn: Callable = None
     dtype: any = DTYPE
     param_dtype: any = None
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -116,7 +117,12 @@ class Swiglu(nn.Module):
         # SwiGLU params ~ d*(2*h) + h*d = 3*d*h  => h = (2/3)*H
         if self.param_size_equal:
             node_size = max(1, int(round(node_size * 2.0 / 3.0)))
-        x = nn.Dense(2 * node_size, dtype=dtype, param_dtype=param_dtype)(x)
+        x = nn.Dense(
+            2 * node_size,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
         x, gate = jnp.split(x, 2, axis=-1)
         if self.norm_fn is not None:
             gate = self.norm_fn(gate, training, dtype=dtype)
@@ -176,6 +182,7 @@ class ResBlock(nn.Module):
     use_swiglu: bool = False
     dtype: any = DTYPE
     param_dtype: any = None
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x0, training=False):
@@ -191,12 +198,23 @@ class ResBlock(nn.Module):
                     norm_fn=self.norm_fn,
                     dtype=dtype,
                     param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
                 )(x, training)
             else:
-                x = nn.Dense(self.node_size, dtype=dtype, param_dtype=param_dtype)(x)
+                x = nn.Dense(
+                    self.node_size,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                )(x)
                 x = self.norm_fn(x, training, dtype=dtype)
                 x = self.activation(x)
-        x = nn.Dense(out_dim, dtype=dtype, param_dtype=param_dtype)(x)
+        x = nn.Dense(
+            out_dim,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
         x = self.norm_fn(x, training, dtype=dtype)
         return self.activation(x + x0_cast)
 
@@ -211,6 +229,7 @@ class PreActivationResBlock(nn.Module):
     zero_init_last: bool = True
     dtype: any = DTYPE
     param_dtype: any = None
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -229,9 +248,15 @@ class PreActivationResBlock(nn.Module):
                     norm_fn=self.norm_fn,
                     dtype=dtype,
                     param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
                 )(residual, training)
             else:
-                residual = nn.Dense(self.node_size, dtype=dtype, param_dtype=param_dtype)(residual)
+                residual = nn.Dense(
+                    self.node_size,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                )(residual)
                 residual = self.norm_fn(residual, training, dtype=dtype)
                 residual = self.activation(residual)
 
@@ -241,9 +266,15 @@ class PreActivationResBlock(nn.Module):
                 dtype=dtype,
                 param_dtype=param_dtype,
                 kernel_init=nn.initializers.zeros,
+                dot_general_cls=self.dot_general_cls,
             )(residual)
         else:
-            residual = nn.Dense(out_dim, dtype=dtype, param_dtype=param_dtype)(residual)
+            residual = nn.Dense(
+                out_dim,
+                dtype=dtype,
+                param_dtype=param_dtype,
+                dot_general_cls=self.dot_general_cls,
+            )(residual)
         # Identity shortcut connection
         return x_cast + residual
 

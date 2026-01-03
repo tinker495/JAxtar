@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple
 
+from .aqt_utils import get_aqt_cfg
 from .modules import (
     ACTIVATION_FN_REGISTRY,
     NORM_FN_REGISTRY,
@@ -43,6 +44,8 @@ def prepare_model_kwargs(raw_kwargs: Dict[str, Any]) -> Dict[str, Any]:
         kwargs["resblock_fn"] = get_resblock_fn(kwargs["resblock_fn"])
     if "use_swiglu" in kwargs:
         kwargs["use_swiglu"] = bool(kwargs["use_swiglu"])
+    if "aqt_cfg" in kwargs:
+        kwargs["aqt_cfg"] = get_aqt_cfg(kwargs["aqt_cfg"])
     return kwargs
 
 
@@ -64,6 +67,8 @@ def serialize_nn_args(model_kwargs: Dict[str, Any]) -> Dict[str, Any]:
     """
     encoded = {}
     for key, value in model_kwargs.items():
+        if key in ["aqt_cfg", "quant_mode"]:
+            continue
         if key == "norm_fn":
             encoded[key] = _callable_to_key(value, NORM_FN_REGISTRY, "batch")
         elif key == "activation":
