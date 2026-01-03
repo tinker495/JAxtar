@@ -136,13 +136,22 @@ def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
     variables = params
 
     # We run apply. The 'mutable' output will contain the updated variables including quant states.
-    _, converting_variables = convert_model.apply(
-        variables,
-        sample_input,
-        training=True,  # Often needed to activate stats collection if any
-        mutable=True,
-        rngs={"params": jax.random.PRNGKey(0)},
-    )
+    try:
+        _, converting_variables = convert_model.apply(
+            variables,
+            sample_input,
+            training=True,  # Often needed to activate stats collection if any
+            mutable=True,
+            rngs={"params": jax.random.PRNGKey(0)},
+        )
+    except Exception as e:
+        if "INTERNAL: the requested functionality is not supported" in str(e):
+            raise RuntimeError(
+                "AQT Quantization failed. This is likely due to model dimensions not being aligned "
+                "with XLA requirements (e.g. using prime numbers for hidden dimensions). "
+                "Please ensure hidden_dim and other dimensions are multiples of 32 or 128."
+            ) from e
+        raise e
 
     # 3. Create Serving Model
     serve_kwargs = model_kwargs.copy()
