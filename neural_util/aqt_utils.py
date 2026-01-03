@@ -4,6 +4,7 @@ import inspect
 import jax
 from aqt.jax.v2 import config as aqt_config
 from aqt.jax.v2.flax import aqt_flax
+from aqt.jax.v2.numerics import no_numerics
 
 
 def get_aqt_cfg(aqt_cfg: str = "int8"):
@@ -39,12 +40,10 @@ def get_int4_weight_int8_act_config():
     """
     cfg = aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
     # RHS is typically weights in nn.Dense
-    if cfg.fwd.rhs.tensor is not None:
-        cfg.fwd.rhs.tensor.num_bits = 4
-    if cfg.dlhs.rhs.tensor is not None:
-        cfg.dlhs.rhs.tensor.num_bits = 4
-    if cfg.drhs.rhs.tensor is not None:
-        cfg.drhs.rhs.tensor.num_bits = 4
+    # Update bits in the quantizers
+    cfg.fwd.dg_quantizer.rhs.numerics = cfg.fwd.dg_quantizer.rhs.numerics.replace(bits=4)
+    cfg.dlhs.dg_quantizer.rhs.numerics = cfg.dlhs.dg_quantizer.rhs.numerics.replace(bits=4)
+    cfg.drhs.dg_quantizer.rhs.numerics = cfg.drhs.dg_quantizer.rhs.numerics.replace(bits=4)
     return cfg
 
 
@@ -52,9 +51,9 @@ def get_int8_weight_only_config():
     """Returns a configuration where only weights are quantized to 8-bit."""
     cfg = aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
     # LHS is activations, RHS is weights
-    cfg.fwd.lhs.tensor = None
-    cfg.dlhs.lhs.tensor = None
-    cfg.drhs.lhs.tensor = None
+    cfg.fwd.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
+    cfg.dlhs.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
+    cfg.drhs.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
     return cfg
 
 
