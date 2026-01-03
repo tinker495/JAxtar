@@ -239,24 +239,28 @@ def heuristic_train_command(
         ) = heuristic_train_fn(key, dataset, heuristic_params, opt_state)
         eval_params = get_eval_params(opt_state, heuristic_params)
         lr = get_learning_rate(opt_state)
+
+        # Log auxiliary metrics
+        aux_means = {}
+        for k, v in auxs.items():
+            mean_v = jnp.mean(v)
+            aux_means[k] = mean_v
+            logger.log_scalar(f"Aux/{k}", mean_v, i)
+            if i % 100 == 0:
+                logger.log_histogram(f"Aux/Dist_{k}", v, i)
+
         pbar.set_description(
             desc="Heuristic Training",
             desc_dict={
                 "lr": lr,
                 "loss": float(loss),
-                "target_heuristic": float(mean_target_heuristic),
+                "target": float(mean_target_heuristic),
+                **{k: float(v) for k, v in aux_means.items() if k != "loss"},
             },
         )
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-
-        # Log auxiliary metrics
-        for k, v in auxs.items():
-            mean_v = jnp.mean(v)
-            logger.log_scalar(f"Aux/{k}", mean_v, i)
-            if i % 100 == 0:
-                logger.log_histogram(f"Aux/Dist_{k}", v, i)
 
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_heuristic, i)
@@ -471,25 +475,29 @@ def qfunction_train_command(
         ) = qfunction_train_fn(key, dataset, qfunc_params, opt_state)
         eval_params = get_eval_params(opt_state, qfunc_params)
         lr = get_learning_rate(opt_state)
+
+        # Log auxiliary metrics
+        aux_means = {}
+        for k, v in auxs.items():
+            mean_v = jnp.mean(v)
+            aux_means[k] = mean_v
+            logger.log_scalar(f"Aux/{k}", mean_v, i)
+            if i % 100 == 0:
+                logger.log_histogram(f"Aux/Dist_{k}", v, i)
+
         pbar.set_description(
             desc="Q-Function Training",
             desc_dict={
                 "lr": lr,
                 "loss": float(loss),
-                "target_q": float(mean_target_q),
+                "target": float(mean_target_q),
+                **{k: float(v) for k, v in aux_means.items() if k != "loss"},
             },
         )
 
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
-
-        # Log auxiliary metrics
-        for k, v in auxs.items():
-            mean_v = jnp.mean(v)
-            logger.log_scalar(f"Aux/{k}", mean_v, i)
-            if i % 100 == 0:
-                logger.log_histogram(f"Aux/Dist_{k}", v, i)
 
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_q, i)
