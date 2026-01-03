@@ -141,7 +141,15 @@ class SelfPredictiveDistanceModel(SelfPredictiveMixin):
         spr_loss = self.compute_self_predictive_loss(
             latents[:, 0], path_actions, ema_latents, same_trajectory_masks, training=True
         )  # (Batch, 1)
-        return dist_loss + spr_loss  # [...,]
+        total_loss = dist_loss + spr_loss
+        aux = {
+            "pred": dists,
+            "diff": diff,
+            "loss": total_loss,
+            "dist_loss": dist_loss,
+            "spr_loss": spr_loss,
+        }
+        return total_loss, aux
 
 
 class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
@@ -203,15 +211,25 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
         logits_actions = self.latents_to_logits(
             latents, training=True
         )  # [..., action_size, categorial_n]
+        pred_actions = self.latents_to_values(logits_actions)
 
         if actions is None:
             logits = logits_actions.squeeze(-2)  # [..., categorial_n]
+            pred = pred_actions.squeeze(-1)
         else:
             logits = jnp.take_along_axis(
-                logits_actions, actions[..., jnp.newaxis], axis=-2
-            ).squeeze()  # [..., categorial_n]
+                logits_actions, actions[..., jnp.newaxis, jnp.newaxis], axis=-2
+            ).squeeze(
+                -2
+            )  # [..., categorial_n]
+            pred = jnp.take_along_axis(pred_actions, actions[..., jnp.newaxis], axis=-1).squeeze(-1)
+
         dist_loss = optax.softmax_cross_entropy(logits, target_probs)  # [..., ]
         dist_loss = jnp.nan_to_num(dist_loss, nan=0.0, posinf=1e6, neginf=-1e6)
+
+        # Keep original dist_loss for sce logging before any potential mean
+        sce = dist_loss
+
         if dist_loss.ndim > 1:
             dist_loss = jnp.mean(dist_loss, axis=-1)
 
@@ -225,4 +243,13 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
             spr_latents, path_actions, ema_latents, same_trajectory_masks, training=True
         )  # [...,]
         spr_loss = jnp.nan_to_num(spr_loss, nan=0.0, posinf=1e6, neginf=-1e6)
-        return dist_loss + spr_loss  # [...,]
+        total_loss = dist_loss + spr_loss
+        aux = {
+            "pred": pred,
+            "diff": target - pred,
+            "loss": total_loss,
+            "dist_loss": dist_loss,
+            "spr_loss": spr_loss,
+            "sce": sce,
+        }
+        return total_loss, aux

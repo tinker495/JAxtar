@@ -36,7 +36,7 @@ def qfunction_train_builder(
         weights: chex.Array,
     ):
         # Preprocess during training
-        per_sample_loss, variable_updates = apply_with_conditional_batch_stats(
+        (per_sample_loss, aux), variable_updates = apply_with_conditional_batch_stats(
             q_fn.apply,
             q_params,
             preproc,
@@ -53,7 +53,7 @@ def qfunction_train_builder(
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
         loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
-        return loss_value, new_params
+        return loss_value, (new_params, aux)
 
     def qfunction_train(
         key: chex.PRNGKey,
@@ -103,7 +103,7 @@ def qfunction_train_builder(
                 step_indices,
             )
 
-            (loss, q_params), grads = jax.value_and_grad(qfunction_train_loss, has_aux=True)(
+            (loss, (q_params, aux)), grads = jax.value_and_grad(qfunction_train_loss, has_aux=True)(
                 q_params,
                 preprocessed_states,
                 actions,
@@ -117,7 +117,7 @@ def qfunction_train_builder(
                 grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
-            return (q_params, opt_state), loss
+            return (q_params, opt_state), (loss, aux)
 
         def replay_loop(carry, replay_key):
             q_params, opt_state = carry
@@ -146,7 +146,7 @@ def qfunction_train_builder(
                 key=replay_key,
             )
 
-            (q_params, opt_state,), losses = jax.lax.scan(
+            (q_params, opt_state,), (losses, auxs) = jax.lax.scan(
                 train_loop,
                 (q_params, opt_state),
                 (
@@ -160,10 +160,10 @@ def qfunction_train_builder(
                     batched_weights,
                 ),
             )
-            return (q_params, opt_state), losses
+            return (q_params, opt_state), (losses, auxs)
 
         replay_keys = jax.random.split(key, replay_ratio)
-        (q_params, opt_state,), losses = jax.lax.scan(
+        (q_params, opt_state,), (losses, auxs) = jax.lax.scan(
             replay_loop,
             (q_params, opt_state),
             replay_keys,
@@ -173,15 +173,16 @@ def qfunction_train_builder(
             q_params,
             opt_state,
             loss,
+            auxs,
         )
 
     if n_devices > 1:
 
-        def pmap_qfunction_train(key, dataset, q_params, opt_state):
+        def pmap_qfunction_train(key, dataset, q_params, target_q_params, opt_state):
             keys = jax.random.split(key, n_devices)
-            (qfunc_params, opt_state, loss,) = jax.pmap(
-                qfunction_train, in_axes=(0, 0, None, None), axis_name="devices"
-            )(keys, dataset, q_params, opt_state)
+            (qfunc_params, opt_state, loss, auxs,) = jax.pmap(
+                qfunction_train, in_axes=(0, 0, None, None, None), axis_name="devices"
+            )(keys, dataset, q_params, target_q_params, opt_state)
             qfunc_params = jax.tree_util.tree_map(lambda xs: xs[0], qfunc_params)
             opt_state = jax.tree_util.tree_map(lambda xs: xs[0], opt_state)
             loss = jnp.mean(loss)
@@ -189,6 +190,7 @@ def qfunction_train_builder(
                 qfunc_params,
                 opt_state,
                 loss,
+                auxs,
             )
 
         return pmap_qfunction_train

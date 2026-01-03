@@ -24,7 +24,13 @@ class DistanceModel(ABC, nn.Module):
             pred = pred.squeeze(-1)
 
         diff = target - pred
-        return loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
+        loss = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
+        aux = {
+            "pred": pred,
+            "diff": diff,
+            "loss": loss,
+        }
+        return loss, aux
 
 
 class DistanceHLGModel(ABC, nn.Module):
@@ -49,12 +55,15 @@ class DistanceHLGModel(ABC, nn.Module):
     def get_logits(self, x, training=False):
         pass
 
-    def __call__(self, x, training=False):
-        logits = self.get_logits(x, training)
+    def logit_to_values(self, logits):
         softmax = jax.nn.softmax(logits, axis=-1)
         categorial_centers = self.categorial_centers
         x = jnp.sum(softmax * categorial_centers, axis=-1)  # (batch_size, action_size)
         return x
+
+    def __call__(self, x, training=False):
+        logits = self.get_logits(x, training)
+        return self.logit_to_values(logits)
 
     def train_loss(self, x, target, actions=None, **kwargs):
         categorial_bins, sigma = self.categorial_bins, self.sigma
@@ -68,11 +77,23 @@ class DistanceHLGModel(ABC, nn.Module):
 
         target_probs = jax.vmap(jax.vmap(f))(target)
         logits_actions = self.get_logits(x, training=True)
+
+        pred_actions = self.logit_to_values(logits_actions)
+
         if actions is None:
             logits = logits_actions.squeeze(-2)
+            pred = pred_actions.squeeze(-1)
         else:
             logits = jnp.take_along_axis(
-                logits_actions, actions[..., jnp.newaxis], axis=-2
-            ).squeeze()
+                logits_actions, actions[..., jnp.newaxis, jnp.newaxis], axis=-2
+            ).squeeze(-2)
+            pred = jnp.take_along_axis(pred_actions, actions[..., jnp.newaxis], axis=-1).squeeze(-1)
+
         sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size, path_length)
-        return sce
+        aux = {
+            "pred": pred,
+            "sce": sce,
+            "loss": sce,
+            "diff": target - pred,
+        }
+        return sce, aux
