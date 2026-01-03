@@ -27,7 +27,7 @@ class MHCResMLPModel(DistanceModel):
     hidden_node_multiplier: int = 1
     tail_head_precision: int = 0
     n_streams: int = 4
-    sinkhorn_iters: int = 20
+    sinkhorn_iters: int = 4
     alpha_init: float = 0.01
     rms_norm_epsilon: float = 1e-6
 

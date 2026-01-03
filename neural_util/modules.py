@@ -2,6 +2,7 @@ from functools import partial
 from typing import Callable
 
 import flax.linen as nn
+import jax
 import jax.numpy as jnp
 
 from .norm import BatchReNorm, DyTan
@@ -189,9 +190,13 @@ class ResBlock(nn.Module):
 
 def sinkhorn_knopp(logits, num_iters=20, eps=1e-6):
     weights = jnp.exp(logits)
-    for _ in range(num_iters):
-        weights = weights / (jnp.sum(weights, axis=-1, keepdims=True) + eps)
-        weights = weights / (jnp.sum(weights, axis=-2, keepdims=True) + eps)
+
+    def normalize_step(_, x):
+        x = x / (jnp.sum(x, axis=-1, keepdims=True) + eps)
+        x = x / (jnp.sum(x, axis=-2, keepdims=True) + eps)
+        return x
+
+    weights = jax.lax.fori_loop(0, num_iters, normalize_step, weights)
     return weights
 
 
