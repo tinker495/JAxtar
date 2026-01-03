@@ -13,6 +13,16 @@ HEAD_DTYPE = jnp.float32
 DEFAULT_NORM_FN = nn.BatchNorm
 
 
+# Norm application helper to handle BatchNorm/BatchReNorm running stats.
+def apply_norm(norm_fn, x, training):
+    if norm_fn is None:
+        return x
+    fn = norm_fn.func if isinstance(norm_fn, partial) else norm_fn
+    if isinstance(fn, type) and issubclass(fn, (nn.BatchNorm, BatchReNorm)):
+        return norm_fn()(x, use_running_average=not training)
+    return norm_fn()(x)
+
+
 # Norm function registry for config-driven selection
 NORM_FN_REGISTRY = {
     "batch": nn.BatchNorm,
@@ -82,7 +92,7 @@ class Swiglu(nn.Module):
         x = nn.Dense(2 * node_size, dtype=dtype, param_dtype=param_dtype)(x)
         x, gate = jnp.split(x, 2, axis=-1)
         if self.norm_fn is not None:
-            gate = self.norm_fn()(gate, training)
+            gate = apply_norm(self.norm_fn, gate, training)
         return x * Trueswish()(gate)
 
 
@@ -140,7 +150,7 @@ class MLP(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = self.activation(x)
         return x
 
@@ -154,7 +164,7 @@ class preactivation_MLP(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         x = self.activation(x)
         x = nn.Dense(
             self.hidden_dim, dtype=self.dtype, kernel_init=nn.initializers.normal(stddev=0.01)
@@ -192,7 +202,7 @@ class ResBlock(nn.Module):
                     x, training
                 )
         x = nn.Dense(out_dim, dtype=dtype, param_dtype=param_dtype)(x)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         return self.activation(x + x0_cast)
 
 
@@ -214,7 +224,7 @@ class PreActivationResBlock(nn.Module):
         x0_cast = x0.astype(dtype)
         out_dim = x0.shape[-1]
         # Pre-activation: Norm -> Activation -> Dense
-        x = self.norm_fn()(x0_cast, training)
+        x = apply_norm(self.norm_fn, x0_cast, training)
         x = self.activation(x)
         for _ in range(self.hidden_N):
             if self.use_swiglu:
@@ -265,10 +275,10 @@ class ConvResBlock(nn.Module):
             x = nn.Conv(
                 self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
             )(x)
-            x = self.norm_fn()(x, training)
+            x = apply_norm(self.norm_fn, x, training)
             x = self.activation(x)
         x = nn.Conv(
             self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
         )(x)
-        x = self.norm_fn()(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         return self.activation(x + x0)
