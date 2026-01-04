@@ -1,5 +1,6 @@
 import functools
 import inspect
+from typing import Any
 
 import jax
 from aqt.jax.v2 import config as aqt_config
@@ -8,11 +9,14 @@ from aqt.jax.v2.numerics import no_numerics
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 
 
-def get_aqt_cfg(aqt_cfg: str = "int8"):
+def get_aqt_cfg(aqt_cfg: Any = "int8"):
     """
     Returns an AQT configuration based on the provided string.
-    Supported: 'int8', 'int4', 'int4_w8a', 'int8_w_only'
+    If aqt_cfg is already a config object or None, it is returned as is.
+    Supported strings: 'int8', 'int4', 'int4_w8a', 'int8_w_only'
     """
+    if not isinstance(aqt_cfg, str):
+        return aqt_cfg
     if aqt_cfg == "int8":
         return get_int8_config()
     elif aqt_cfg == "int4":
