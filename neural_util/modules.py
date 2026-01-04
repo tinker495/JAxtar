@@ -1,7 +1,9 @@
+import math
 from functools import partial
 from typing import Any, Callable
 
 import flax.linen as nn
+import jax
 import jax.numpy as jnp
 
 from .norm import BatchReNorm, DyTan
@@ -273,6 +275,320 @@ class PreActivationResBlock(nn.Module):
             )(x)
         # Identity shortcut connection
         return x0_cast + x
+
+
+# Shared helpers for MoE blocks.
+def _moe_dense_gates(logits, router_temperature):
+    temp = jnp.maximum(router_temperature, 1e-6)
+    scaled_logits = logits.astype(jnp.float32) / temp
+    return jax.nn.softmax(scaled_logits, axis=-1)
+
+
+def _moe_topk_gates(logits, num_experts, top_k, router_temperature):
+    temp = jnp.maximum(router_temperature, 1e-6)
+    scaled_logits = logits.astype(jnp.float32) / temp
+    top_k = min(int(top_k), num_experts)
+    top_vals, top_idx = jax.lax.top_k(scaled_logits, top_k)
+    top_gates = jax.nn.softmax(top_vals, axis=-1)
+
+    # Use dense probabilities for the auxiliary loss to ensure gradients flow to all experts.
+    # This prevents the "dead expert" problem where unselected experts never get updated.
+    gate_probs = jax.nn.softmax(scaled_logits, axis=-1)
+    return top_idx, top_gates, gate_probs
+
+
+class MoEExpert(nn.Module):
+    node_size: int
+    out_dim: int
+    hidden_N: int = 1
+    norm_fn: nn.Module = nn.LayerNorm
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    dtype: any = DTYPE
+    param_dtype: any = None
+    dot_general_cls: Any = None
+    zero_init_last: bool = False
+    apply_final_norm: bool = True
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        for _ in range(self.hidden_N):
+            if self.use_swiglu:
+                x = Swiglu(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+            else:
+                x = MLP(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+        dense_kwargs = dict(
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )
+        if self.zero_init_last:
+            dense_kwargs["kernel_init"] = nn.initializers.zeros
+        x = nn.Dense(self.out_dim, **dense_kwargs)(x)
+        if self.apply_final_norm:
+            x = apply_norm(self.norm_fn, x, training)
+        return x
+
+
+# MoE Residual Block
+class MoEResBlock(nn.Module):
+    node_size: int
+    num_experts: int = 8
+    top_k: int = 2
+    capacity_factor: float = 1.0
+    min_capacity: int = 1
+    hidden_N: int = 1
+    norm_fn: nn.Module = nn.LayerNorm
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    dtype: any = DTYPE
+    param_dtype: any = None
+    dot_general_cls: Any = None
+    router_temperature: float = 1.0
+    router_noise_std: float = 0.0
+
+    @nn.compact
+    def __call__(self, x0, training=False, capture_aux=False):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        x0_cast = x0.astype(dtype)
+        out_dim = x0.shape[-1]
+
+        logits = nn.Dense(
+            self.num_experts,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x0_cast)
+        if training and self.router_noise_std > 0.0:
+            noise = jax.random.normal(self.make_rng("params"), logits.shape, dtype=logits.dtype)
+            logits = logits + noise * self.router_noise_std
+
+        use_sparse = self.top_k is not None and self.top_k > 0 and self.top_k < self.num_experts
+        if use_sparse:
+            top_idx, top_gates, gate_probs = _moe_topk_gates(
+                logits, self.num_experts, self.top_k, self.router_temperature
+            )
+            top_k = top_idx.shape[1]
+            batch_size = x0_cast.shape[0]
+            capacity = max(
+                self.min_capacity,
+                int(math.ceil(self.capacity_factor * batch_size * top_k / self.num_experts)),
+            )
+
+            if top_k == 1:
+                x_flat = x0_cast
+            else:
+                x_flat = jnp.repeat(x0_cast, top_k, axis=0)
+
+            expert_idx = top_idx.reshape(-1)
+            gate_flat = top_gates.reshape(-1).astype(dtype)
+            expert_one_hot = jax.nn.one_hot(expert_idx, self.num_experts, dtype=jnp.int32)
+            positions = jnp.cumsum(expert_one_hot, axis=0) - 1
+            pos = jnp.sum(positions * expert_one_hot, axis=1).astype(jnp.int32)
+            mask = (pos < capacity).astype(dtype)
+            pos_one_hot = jax.nn.one_hot(pos, capacity, dtype=dtype)
+
+            dispatch = expert_one_hot.astype(dtype)[:, :, None] * pos_one_hot[:, None, :]
+            dispatch = dispatch * mask[:, None, None]
+            expert_inputs = jnp.einsum("bec,bd->ecd", dispatch, x_flat)
+
+            expert_outputs = [
+                MoEExpert(
+                    self.node_size,
+                    out_dim,
+                    hidden_N=self.hidden_N,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    use_swiglu=self.use_swiglu,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                    apply_final_norm=True,
+                    name=f"expert_{i}",
+                )(expert_inputs[i], training)
+                for i in range(self.num_experts)
+            ]
+            experts = jnp.stack(expert_outputs, axis=0)
+            combine = dispatch * gate_flat[:, None, None]
+            y_flat = jnp.einsum("bec,ecd->bd", combine, experts)
+            mixture = y_flat.reshape(batch_size, top_k, out_dim).sum(axis=1)
+            out = self.activation(mixture + x0_cast)
+        else:
+            gate_probs = _moe_dense_gates(logits, self.router_temperature)
+            gate_probs_mix = gate_probs.astype(dtype)
+
+            expert_outputs = [
+                MoEExpert(
+                    self.node_size,
+                    out_dim,
+                    hidden_N=self.hidden_N,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    use_swiglu=self.use_swiglu,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                    apply_final_norm=True,
+                    name=f"expert_{i}",
+                )(x0_cast, training)
+                for i in range(self.num_experts)
+            ]
+            experts = jnp.stack(expert_outputs, axis=1)
+            mixture = jnp.sum(experts * gate_probs_mix[:, :, None], axis=1)
+            out = self.activation(mixture + x0_cast)
+
+        if not capture_aux:
+            return out
+
+        gate_mean = jnp.mean(gate_probs, axis=0)
+        uniform = jnp.ones_like(gate_mean) / self.num_experts
+        balance_loss = jnp.mean(jnp.square(gate_mean - uniform))
+        gate_entropy = -jnp.sum(gate_mean * jnp.log(gate_mean + 1e-8))
+        return out, {
+            "balance_loss": balance_loss,
+            "gate_entropy": gate_entropy,
+        }
+
+
+# MoE Pre-activation Residual Block
+class MoEPreActivationResBlock(nn.Module):
+    node_size: int
+    num_experts: int = 8
+    top_k: int = 2
+    capacity_factor: float = 1.0
+    min_capacity: int = 1
+    hidden_N: int = 1
+    norm_fn: nn.Module = nn.LayerNorm
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    zero_init_last: bool = True
+    dtype: any = DTYPE
+    param_dtype: any = None
+    dot_general_cls: Any = None
+    router_temperature: float = 1.0
+    router_noise_std: float = 0.0
+
+    @nn.compact
+    def __call__(self, x0, training=False, capture_aux=False):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        x0_cast = x0.astype(dtype)
+        out_dim = x0.shape[-1]
+
+        x = apply_norm(self.norm_fn, x0_cast, training)
+        x = self.activation(x)
+
+        logits = nn.Dense(
+            self.num_experts,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
+        if training and self.router_noise_std > 0.0:
+            noise = jax.random.normal(self.make_rng("params"), logits.shape, dtype=logits.dtype)
+            logits = logits + noise * self.router_noise_std
+
+        use_sparse = self.top_k is not None and self.top_k > 0 and self.top_k < self.num_experts
+        if use_sparse:
+            top_idx, top_gates, gate_probs = _moe_topk_gates(
+                logits, self.num_experts, self.top_k, self.router_temperature
+            )
+            top_k = top_idx.shape[1]
+            batch_size = x.shape[0]
+            capacity = max(
+                self.min_capacity,
+                int(math.ceil(self.capacity_factor * batch_size * top_k / self.num_experts)),
+            )
+
+            if top_k == 1:
+                x_flat = x
+            else:
+                x_flat = jnp.repeat(x, top_k, axis=0)
+
+            expert_idx = top_idx.reshape(-1)
+            gate_flat = top_gates.reshape(-1).astype(dtype)
+            expert_one_hot = jax.nn.one_hot(expert_idx, self.num_experts, dtype=jnp.int32)
+            positions = jnp.cumsum(expert_one_hot, axis=0) - 1
+            pos = jnp.sum(positions * expert_one_hot, axis=1).astype(jnp.int32)
+            mask = (pos < capacity).astype(dtype)
+            pos_one_hot = jax.nn.one_hot(pos, capacity, dtype=dtype)
+
+            dispatch = expert_one_hot.astype(dtype)[:, :, None] * pos_one_hot[:, None, :]
+            dispatch = dispatch * mask[:, None, None]
+            expert_inputs = jnp.einsum("bec,bd->ecd", dispatch, x_flat)
+
+            expert_outputs = [
+                MoEExpert(
+                    self.node_size,
+                    out_dim,
+                    hidden_N=self.hidden_N,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    use_swiglu=self.use_swiglu,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                    zero_init_last=self.zero_init_last,
+                    apply_final_norm=False,
+                    name=f"expert_{i}",
+                )(expert_inputs[i], training)
+                for i in range(self.num_experts)
+            ]
+            experts = jnp.stack(expert_outputs, axis=0)
+            combine = dispatch * gate_flat[:, None, None]
+            y_flat = jnp.einsum("bec,ecd->bd", combine, experts)
+            mixture = y_flat.reshape(batch_size, top_k, out_dim).sum(axis=1)
+            out = x0_cast + mixture
+        else:
+            gate_probs = _moe_dense_gates(logits, self.router_temperature)
+            gate_probs_mix = gate_probs.astype(dtype)
+
+            expert_outputs = [
+                MoEExpert(
+                    self.node_size,
+                    out_dim,
+                    hidden_N=self.hidden_N,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    use_swiglu=self.use_swiglu,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                    zero_init_last=self.zero_init_last,
+                    apply_final_norm=False,
+                    name=f"expert_{i}",
+                )(x, training)
+                for i in range(self.num_experts)
+            ]
+            experts = jnp.stack(expert_outputs, axis=1)
+            mixture = jnp.sum(experts * gate_probs_mix[:, :, None], axis=1)
+            out = x0_cast + mixture
+
+        if not capture_aux:
+            return out
+
+        gate_mean = jnp.mean(gate_probs, axis=0)
+        uniform = jnp.ones_like(gate_mean) / self.num_experts
+        balance_loss = jnp.mean(jnp.square(gate_mean - uniform))
+        gate_entropy = -jnp.sum(gate_mean * jnp.log(gate_mean + 1e-8))
+        return out, {
+            "balance_loss": balance_loss,
+            "gate_entropy": gate_entropy,
+        }
 
 
 # ResBlock type registry for config-driven selection

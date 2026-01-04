@@ -34,9 +34,13 @@ from heuristic.neuralheuristic import (
     LightsOutConvNeuralHeuristic,
     LightsOutNeuralHeuristic,
     PancakeNeuralHeuristic,
+    RubiksCubeHLGMoENeuralHeuristic,
     RubiksCubeHLGNeuralHeuristic,
+    RubiksCubeMoENeuralHeuristic,
     RubiksCubeNeuralHeuristic,
+    RubiksCubeRandomHLGMoENeuralHeuristic,
     RubiksCubeRandomHLGNeuralHeuristic,
+    RubiksCubeRandomMoENeuralHeuristic,
     RubiksCubeRandomNeuralHeuristic,
     SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
@@ -58,9 +62,13 @@ from qfunction.neuralq import (
     LightsOutConvNeuralQ,
     LightsOutNeuralQ,
     PancakeNeuralQ,
+    RubiksCubeHLGMoENeuralQ,
     RubiksCubeHLGNeuralQ,
+    RubiksCubeMoENeuralQ,
     RubiksCubeNeuralQ,
+    RubiksCubeRandomHLGMoENeuralQ,
     RubiksCubeRandomHLGNeuralQ,
+    RubiksCubeRandomMoENeuralQ,
     RubiksCubeRandomNeuralQ,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
@@ -190,6 +198,14 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_{size}.pkl",
             ),
+            "moe": NeuralCallableConfig(
+                callable=RubiksCubeMoENeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-moe_{size}.pkl",
+            ),
+            "moe-hlg": NeuralCallableConfig(
+                callable=RubiksCubeHLGMoENeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-moe-hlg_{size}.pkl",
+            ),
             "hlg": NeuralCallableConfig(
                 callable=RubiksCubeHLGNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-hlg_{size}.pkl",
@@ -199,6 +215,14 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube_{size}.pkl",
+            ),
+            "moe": NeuralCallableConfig(
+                callable=RubiksCubeMoENeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-moe_{size}.pkl",
+            ),
+            "moe-hlg": NeuralCallableConfig(
+                callable=RubiksCubeHLGMoENeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-moe-hlg_{size}.pkl",
             ),
             "hlg": NeuralCallableConfig(
                 callable=RubiksCubeHLGNeuralQ,
@@ -217,6 +241,18 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 callable=RubiksCubeRandomNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-random_{size}.pkl",
             ),
+            "moe": NeuralCallableConfig(
+                callable=RubiksCubeRandomMoENeuralHeuristic,
+                param_path=(
+                    "heuristic/neuralheuristic/model/params/rubikscube-random-moe_{size}.pkl"
+                ),
+            ),
+            "moe-hlg": NeuralCallableConfig(
+                callable=RubiksCubeRandomHLGMoENeuralHeuristic,
+                param_path=(
+                    "heuristic/neuralheuristic/model/params/rubikscube-random-moe-hlg_{size}.pkl"
+                ),
+            ),
             "hlg": NeuralCallableConfig(
                 callable=RubiksCubeRandomHLGNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-random-hlg_{size}.pkl",
@@ -226,6 +262,14 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeRandomNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-random_{size}.pkl",
+            ),
+            "moe": NeuralCallableConfig(
+                callable=RubiksCubeRandomMoENeuralQ,
+                param_path=("qfunction/neuralq/model/params/rubikscube-random-moe_{size}.pkl"),
+            ),
+            "moe-hlg": NeuralCallableConfig(
+                callable=RubiksCubeRandomHLGMoENeuralQ,
+                param_path=("qfunction/neuralq/model/params/rubikscube-random-moe-hlg_{size}.pkl"),
             ),
             "hlg": NeuralCallableConfig(
                 callable=RubiksCubeRandomHLGNeuralQ,
@@ -246,6 +290,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_{size}.pkl",
             ),
+            "moe": NeuralCallableConfig(
+                callable=RubiksCubeMoENeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-moe_{size}.pkl",
+            ),
+            "moe-hlg": NeuralCallableConfig(
+                callable=RubiksCubeHLGMoENeuralHeuristic,
+                param_path=(
+                    "heuristic/neuralheuristic/model/params/rubikscube-uqtm-moe-hlg_{size}.pkl"
+                ),
+            ),
             "hlg": NeuralCallableConfig(
                 callable=RubiksCubeHLGNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-hlg_{size}.pkl",
@@ -255,6 +309,14 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_{size}.pkl",
+            ),
+            "moe": NeuralCallableConfig(
+                callable=RubiksCubeMoENeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm-moe_{size}.pkl",
+            ),
+            "moe-hlg": NeuralCallableConfig(
+                callable=RubiksCubeHLGMoENeuralQ,
+                param_path=("qfunction/neuralq/model/params/rubikscube-uqtm-moe-hlg_{size}.pkl"),
             ),
             "hlg": NeuralCallableConfig(
                 callable=RubiksCubeHLGNeuralQ,
@@ -276,6 +338,18 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 callable=RubiksCubeRandomNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-random_{size}.pkl",
             ),
+            "moe": NeuralCallableConfig(
+                callable=RubiksCubeRandomMoENeuralHeuristic,
+                param_path=(
+                    "heuristic/neuralheuristic/model/params/rubikscube-uqtm-random-moe_{size}.pkl"
+                ),
+            ),
+            "moe-hlg": NeuralCallableConfig(
+                callable=RubiksCubeRandomHLGMoENeuralHeuristic,
+                param_path=(
+                    "heuristic/neuralheuristic/model/params/rubikscube-uqtm-random-moe-hlg_{size}.pkl"
+                ),
+            ),
             "hlg": NeuralCallableConfig(
                 callable=RubiksCubeRandomHLGNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-random-hlg_{size}.pkl",
@@ -285,6 +359,16 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             "default": NeuralCallableConfig(
                 callable=RubiksCubeRandomNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm-random_{size}.pkl",
+            ),
+            "moe": NeuralCallableConfig(
+                callable=RubiksCubeRandomMoENeuralQ,
+                param_path=("qfunction/neuralq/model/params/rubikscube-uqtm-random-moe_{size}.pkl"),
+            ),
+            "moe-hlg": NeuralCallableConfig(
+                callable=RubiksCubeRandomHLGMoENeuralQ,
+                param_path=(
+                    "qfunction/neuralq/model/params/rubikscube-uqtm-random-moe-hlg_{size}.pkl"
+                ),
             ),
             "hlg": NeuralCallableConfig(
                 callable=RubiksCubeRandomHLGNeuralQ,
