@@ -1,5 +1,9 @@
+from typing import Any
+
+from aqt.jax.v2.flax import aqt_flax
 from flax import linen as nn
 
+from neural_util.aqt_utils import build_aqt_dot_general
 from neural_util.basemodel.base import DistanceModel
 from neural_util.modules import (
     DEFAULT_NORM_FN,
@@ -22,20 +26,31 @@ class ResMLPModel(DistanceModel):
     use_swiglu: bool = False
     hidden_node_multiplier: int = 1
     tail_head_precision: int = 0
+    aqt_cfg: Any = None
+    quant_mode: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
+        aqt_dg = None
+        if self.aqt_cfg is not None:
+            mode = self.quant_mode if self.quant_mode is not None else aqt_flax.QuantMode.TRAIN
+            aqt_dg = build_aqt_dot_general(self.aqt_cfg, mode)
+
         if self.use_swiglu:
-            x = Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE)(x, training)
+            x = Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg)(
+                x, training
+            )
             if self.resblock_fn != PreActivationResBlock:
-                x = Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE)(x, training)
+                x = Swiglu(
+                    self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg
+                )(x, training)
             else:
-                x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+                x = nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=aqt_dg)(x)
         else:
-            x = nn.Dense(self.initial_dim, dtype=DTYPE)(x)
+            x = nn.Dense(self.initial_dim, dtype=DTYPE, dot_general_cls=aqt_dg)(x)
             x = self.norm_fn(x, training, dtype=DTYPE)
             x = self.activation(x)
-            x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+            x = nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=aqt_dg)(x)
             if self.resblock_fn != PreActivationResBlock:
                 x = self.norm_fn(x, training, dtype=DTYPE)
                 x = self.activation(x)
@@ -46,6 +61,7 @@ class ResMLPModel(DistanceModel):
                 hidden_N=self.hidden_N,
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
+                dot_general_cls=aqt_dg,
             )(x, training)
         for _ in range(self.tail_head_precision):
             x = self.resblock_fn(
@@ -56,12 +72,16 @@ class ResMLPModel(DistanceModel):
                 use_swiglu=self.use_swiglu,
                 dtype=HEAD_DTYPE,
                 param_dtype=HEAD_DTYPE,
+                dot_general_cls=aqt_dg,
             )(x, training)
         if self.resblock_fn == PreActivationResBlock:
             x = self.norm_fn(x, training, dtype=HEAD_DTYPE)
             x = self.activation(x)
         x = x.astype(HEAD_DTYPE)
         x = nn.Dense(
-            self.action_size, dtype=HEAD_DTYPE, kernel_init=nn.initializers.normal(stddev=0.01)
+            self.action_size,
+            dtype=HEAD_DTYPE,
+            kernel_init=nn.initializers.normal(stddev=0.01),
+            dot_general_cls=aqt_dg,
         )(x)
         return x

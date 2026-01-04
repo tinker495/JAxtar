@@ -11,6 +11,7 @@ chex
 dm_pix
 dm-haiku
 huggingface_hub
+aqtp
 flax
 optax @ git+https://github.com/tinker495/optax.git@feature/add-normuon
 termcolor
