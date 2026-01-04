@@ -7,11 +7,13 @@ import jax.numpy as jnp
 import numpy as np
 from puxle import Puzzle
 
+from neural_util.aqt_utils import convert_to_serving
 from neural_util.basemodel import DistanceHLGModel, DistanceModel, ResMLPModel
 from neural_util.basemodel.selfpredictive import SelfPredictiveDistanceModel
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     load_params_with_metadata,
+    merge_params,
     save_params_with_metadata,
 )
 from neural_util.util import download_model, is_model_downloaded
@@ -41,11 +43,20 @@ class NeuralQFunctionBase(QFunction):
 
         resolved_kwargs, nn_args = resolve_model_kwargs(kwargs, saved_metadata.get("nn_args"))
         self.nn_args_metadata = nn_args
+        self.aqt_cfg = kwargs.get("aqt_cfg")
+        self.model_cls = model
+
         if issubclass(model, SelfPredictiveDistanceModel):
+            self.model_kwargs = {
+                **resolved_kwargs,
+                "action_size": self.action_size,
+                "path_action_size": self.action_size,
+            }
             self.model = model(
                 self.action_size, **resolved_kwargs, path_action_size=self.action_size
             )
         else:
+            self.model_kwargs = {**resolved_kwargs, "action_size": self.action_size}
             self.model = model(self.action_size, **resolved_kwargs)
         self.metadata = saved_metadata or {}
         self.metadata["nn_args"] = self.nn_args_metadata
@@ -86,12 +97,34 @@ class NeuralQFunctionBase(QFunction):
             self.metadata = metadata or {}
             self.metadata["nn_args"] = self.nn_args_metadata
 
+            # Initialize full parameters for the current model configuration (includes AQT vars if any)
+            full_params = self.get_new_params()
+
+            # Merge old params into full params. This ensures AQT variables (if missing in old params) are present.
+            params = merge_params(full_params, params)
+
+            if self.aqt_cfg is not None:
+                print("Converting model to serving mode (AQT)...")
+                dummy_solve_config = self.puzzle.SolveConfig.default()
+                dummy_current = self.puzzle.State.default()
+                sample_input = jnp.expand_dims(
+                    self.pre_process(dummy_solve_config, dummy_current), axis=0
+                )
+
+                self.model, params = convert_to_serving(
+                    self.model_cls,
+                    params,
+                    sample_input,
+                    **self.model_kwargs,
+                )
+
             dummy_solve_config = self.puzzle.SolveConfig.default()
             dummy_current = self.puzzle.State.default()
             self.model.apply(
                 params,
                 jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
                 training=False,
+                rngs={"params": jax.random.PRNGKey(0)},
             )  # check if the params are compatible with the model
             self._preloaded_params = None
             return params
@@ -134,7 +167,7 @@ class NeuralQFunctionBase(QFunction):
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
         x = self.batched_pre_process(solve_config, current)
-        x = self.model.apply(params, x, training=False)
+        x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
         x = self.post_process(x)
         return x
 
@@ -155,7 +188,7 @@ class NeuralQFunctionBase(QFunction):
     ) -> chex.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
-        x = self.model.apply(params, x, training=False)
+        x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
         return self.post_process(x)
 
     @abstractmethod

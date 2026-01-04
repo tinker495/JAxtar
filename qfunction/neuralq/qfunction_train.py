@@ -34,6 +34,7 @@ def qfunction_train_builder(
         ema_latents: chex.Array,
         same_trajectory_masks: chex.Array,
         weights: chex.Array,
+        key: chex.PRNGKey,
     ):
         # Preprocess during training
         (per_sample_loss, aux), variable_updates = apply_with_conditional_batch_stats(
@@ -50,6 +51,7 @@ def qfunction_train_builder(
             path_actions=path_actions,
             ema_latents=ema_latents,
             same_trajectory_masks=same_trajectory_masks,
+            rngs={"params": key},
         )
         new_params = build_new_params_from_updates(q_params, variable_updates)
         loss_value = jnp.mean(per_sample_loss.squeeze() * weights)
@@ -77,7 +79,8 @@ def qfunction_train_builder(
         loss_weights = loss_weights / jnp.mean(loss_weights)
 
         def train_loop(carry, batched_dataset):
-            q_params, opt_state = carry
+            q_params, opt_state, key = carry
+            step_key, key = jax.random.split(key)
             (
                 solveconfigs,
                 states,
@@ -112,16 +115,18 @@ def qfunction_train_builder(
                 ema_next_state_latents,
                 same_trajectory_masks,
                 weights,
+                step_key,
             )
             if n_devices > 1:
                 grads = jax.lax.psum(grads, axis_name="devices")
             updates, opt_state = optimizer.update(grads, opt_state, params=q_params)
             q_params = optax.apply_updates(q_params, updates)
-            return (q_params, opt_state), (loss, aux)
+            return (q_params, opt_state, key), (loss, aux)
 
         def replay_loop(carry, replay_key):
             q_params, opt_state = carry
 
+            key_replay, key_train = jax.random.split(replay_key)
             (
                 batched_solveconfigs,
                 batched_states,
@@ -143,12 +148,12 @@ def qfunction_train_builder(
                 data_size=data_size,
                 batch_size=batch_size,
                 minibatch_size=minibatch_size,
-                key=replay_key,
+                key=key_replay,
             )
 
-            (q_params, opt_state,), (losses, auxs) = jax.lax.scan(
+            (q_params, opt_state, _), (losses, auxs) = jax.lax.scan(
                 train_loop,
-                (q_params, opt_state),
+                (q_params, opt_state, key_train),
                 (
                     batched_solveconfigs,
                     batched_states,
