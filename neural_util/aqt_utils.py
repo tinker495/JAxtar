@@ -128,9 +128,10 @@ def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
 
     convert_model = model_cls(**convert_kwargs)
 
-    # 2. Run forward pass with mutable=True to update quantization statistics
-    # We use training=True/False depending on how we want stats to be collected.
-    # Usually CONVERT mode expects to see data distribution.
+    # 2. Run forward pass with mutable=True to update quantization statistics.
+    # We use training=False to avoid corrupting trained normalization statistics (like batch_stats)
+    # with the dummy sample_input, while still allowing AQT to initialize its serving variables.
+    # Usually CONVERT mode expects to see some data to finalize its state.
     # We assume 'params' contains the trained weights.
     # We pass them as the initial variables.
 
@@ -144,7 +145,7 @@ def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
         _, updated_vars = convert_model.apply(
             variables,
             sample_input,
-            training=True,  # Often needed to activate stats collection if any
+            training=False,  # Use training=False to avoid corrupting batch_stats with dummy input
             mutable=True,
             rngs={"params": jax.random.PRNGKey(0)},
         )
