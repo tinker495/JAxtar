@@ -139,15 +139,18 @@ class MoEResMLPModel(DistanceModel):
 
         balance_losses = []
         gate_entropies = []
+        router_z_losses = []
         if capture_aux:
             for resblock in self.resblocks:
                 x, stats = resblock(x, training, capture_aux=True)
                 balance_losses.append(stats["balance_loss"])
                 gate_entropies.append(stats["gate_entropy"])
+                router_z_losses.append(stats["router_z_loss"])
             for resblock in self.tail_head_resblocks:
                 x, stats = resblock(x, training, capture_aux=True)
                 balance_losses.append(stats["balance_loss"])
                 gate_entropies.append(stats["gate_entropy"])
+                router_z_losses.append(stats["router_z_loss"])
         else:
             for resblock in self.resblocks:
                 x = resblock(x, training)
@@ -166,12 +169,15 @@ class MoEResMLPModel(DistanceModel):
         if balance_losses:
             moe_balance_loss = jnp.mean(jnp.stack(balance_losses))
             moe_gate_entropy = jnp.mean(jnp.stack(gate_entropies))
+            moe_router_z_loss = jnp.mean(jnp.stack(router_z_losses))
         else:
             moe_balance_loss = jnp.array(0.0, dtype=jnp.float32)
             moe_gate_entropy = jnp.array(0.0, dtype=jnp.float32)
+            moe_router_z_loss = jnp.array(0.0, dtype=jnp.float32)
         return x, {
             "moe_balance_loss": moe_balance_loss,
             "moe_gate_entropy": moe_gate_entropy,
+            "moe_router_z_loss": moe_router_z_loss,
         }
 
     def __call__(self, x, training=False):
@@ -188,7 +194,9 @@ class MoEResMLPModel(DistanceModel):
         diff = target - pred
         base_loss = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
         moe_balance_loss = moe_aux["moe_balance_loss"]
-        moe_aux_loss = moe_balance_loss * self.moe_aux_coef
+        # Include z-loss in auxiliary loss
+        moe_router_z_loss = moe_aux["moe_router_z_loss"]
+        moe_aux_loss = (moe_balance_loss + moe_router_z_loss) * self.moe_aux_coef
         loss = base_loss + moe_aux_loss
         aux = {
             "pred": pred,
@@ -196,6 +204,7 @@ class MoEResMLPModel(DistanceModel):
             "loss": loss,
             "moe_balance_loss": moe_balance_loss,
             "moe_gate_entropy": moe_aux["moe_gate_entropy"],
+            "moe_router_z_loss": moe_router_z_loss,
             "moe_aux_loss": moe_aux_loss,
         }
         return loss, aux

@@ -406,23 +406,31 @@ class MoEResBlock(nn.Module):
             dispatch = dispatch * mask[:, None, None]
             expert_inputs = jnp.einsum("bec,bd->ecd", dispatch, x_flat)
 
-            expert_outputs = [
-                MoEExpert(
-                    self.node_size,
-                    out_dim,
-                    hidden_N=self.hidden_N,
-                    norm_fn=self.norm_fn,
-                    activation=self.activation,
-                    use_swiglu=self.use_swiglu,
-                    dtype=dtype,
-                    param_dtype=param_dtype,
-                    dot_general_cls=self.dot_general_cls,
-                    apply_final_norm=True,
-                    name=f"expert_{i}",
-                )(expert_inputs[i], training)
-                for i in range(self.num_experts)
-            ]
-            experts = jnp.stack(expert_outputs, axis=0)
+            # Use nn.vmap to execute all experts in parallel (batched execution)
+            # This is much more efficient than a list comprehension on GPU.
+            experts = nn.vmap(
+                MoEExpert,
+                variable_axes={"params": 0},
+                split_rngs={"params": True},
+                in_axes=0,
+                out_axes=0,
+                axis_size=self.num_experts,
+            )(
+                self.node_size,
+                out_dim,
+                hidden_N=self.hidden_N,
+                norm_fn=self.norm_fn,
+                activation=self.activation,
+                use_swiglu=self.use_swiglu,
+                dtype=dtype,
+                param_dtype=param_dtype,
+                dot_general_cls=self.dot_general_cls,
+                apply_final_norm=True,
+                name="experts",
+            )(
+                expert_inputs, training
+            )
+
             combine = dispatch * gate_flat[:, None, None]
             y_flat = jnp.einsum("bec,ecd->bd", combine, experts)
             mixture = y_flat.reshape(batch_size, top_k, out_dim).sum(axis=1)
@@ -431,36 +439,98 @@ class MoEResBlock(nn.Module):
             gate_probs = _moe_dense_gates(logits, self.router_temperature)
             gate_probs_mix = gate_probs.astype(dtype)
 
-            expert_outputs = [
-                MoEExpert(
-                    self.node_size,
-                    out_dim,
-                    hidden_N=self.hidden_N,
-                    norm_fn=self.norm_fn,
-                    activation=self.activation,
-                    use_swiglu=self.use_swiglu,
-                    dtype=dtype,
-                    param_dtype=param_dtype,
-                    dot_general_cls=self.dot_general_cls,
-                    apply_final_norm=True,
-                    name=f"expert_{i}",
-                )(x0_cast, training)
-                for i in range(self.num_experts)
-            ]
-            experts = jnp.stack(expert_outputs, axis=1)
-            mixture = jnp.sum(experts * gate_probs_mix[:, :, None], axis=1)
+            experts = nn.vmap(
+                MoEExpert,
+                variable_axes={"params": 0},
+                split_rngs={"params": True},
+                in_axes=0,
+                out_axes=0,
+                axis_size=self.num_experts,
+            )(
+                self.node_size,
+                out_dim,
+                hidden_N=self.hidden_N,
+                norm_fn=self.norm_fn,
+                activation=self.activation,
+                use_swiglu=self.use_swiglu,
+                dtype=dtype,
+                param_dtype=param_dtype,
+                dot_general_cls=self.dot_general_cls,
+                apply_final_norm=True,
+                name="experts",
+            )(
+                x0_cast, training
+            )  # x0_cast is broadcasted or we should expand it?
+            # In dense mode, x0_cast is (batch, dim). We need (num_experts, batch, dim) if in_axes=0?
+            # Wait, if in_axes=None for inputs, it broadcasts.
+            # But MoEExpert takes (x, training).
+            # If we want to feed the SAME input to all experts, we can set in_axes=(None, None).
+            # BUT, we want parameters to be vectorized.
+
+            # Correction:
+            # If we use in_axes=None for the input argument, `nn.vmap` will pass the same input to all replicas.
+            # Let's verify `nn.vmap` behavior.
+            # Yes, in_axes corresponds to the arguments of __call__.
+            # __call__(self, x, training=False).
+            # So in_axes=(None, None) means x and training are shared.
+            # However, the previous implementation was:
+            # [MoEExpert(...)(x0_cast, training) for i in range(self.num_experts)]
+            # So yes, same input to all.
+
+            # Re-writing the dense part properly:
+            experts = nn.vmap(
+                MoEExpert,
+                variable_axes={"params": 0},
+                split_rngs={"params": True},
+                in_axes=(None, None),
+                out_axes=0,
+                axis_size=self.num_experts,
+            )(
+                self.node_size,
+                out_dim,
+                hidden_N=self.hidden_N,
+                norm_fn=self.norm_fn,
+                activation=self.activation,
+                use_swiglu=self.use_swiglu,
+                dtype=dtype,
+                param_dtype=param_dtype,
+                dot_general_cls=self.dot_general_cls,
+                apply_final_norm=True,
+                name="experts",
+            )(
+                x0_cast, training
+            )
+
+            # experts shape: (num_experts, batch, dim)
+            # mixture calc: sum(experts * gate_probs)
+            # experts: (E, B, D), gate_probs: (B, E)
+            # einsum: "ebd,be->bd"
+            mixture = jnp.einsum("ebd,be->bd", experts, gate_probs_mix)
             out = self.activation(mixture + x0_cast)
 
         if not capture_aux:
             return out
 
         gate_mean = jnp.mean(gate_probs, axis=0)
-        uniform = jnp.ones_like(gate_mean) / self.num_experts
-        balance_loss = jnp.mean(jnp.square(gate_mean - uniform))
+
+        # Standard load balancing loss: N * sum(importance * load)
+        # importance = gate_mean
+        # load = fraction of tokens assigned to each expert
+        expert_idx = top_idx.reshape(-1)
+        expert_one_hot = jax.nn.one_hot(expert_idx, self.num_experts, dtype=jnp.float32)
+        load = jnp.mean(expert_one_hot, axis=0)
+
+        balance_loss = self.num_experts * jnp.sum(gate_mean * load)
+
+        # Router z-loss for stability: mean(log(sum(exp(x)))^2)
+        log_sum_exp = jax.scipy.special.logsumexp(logits, axis=-1)
+        router_z_loss = jnp.mean(jnp.square(log_sum_exp))
+
         gate_entropy = -jnp.sum(gate_mean * jnp.log(gate_mean + 1e-8))
         return out, {
             "balance_loss": balance_loss,
             "gate_entropy": gate_entropy,
+            "router_z_loss": router_z_loss,
         }
 
 
@@ -531,24 +601,31 @@ class MoEPreActivationResBlock(nn.Module):
             dispatch = dispatch * mask[:, None, None]
             expert_inputs = jnp.einsum("bec,bd->ecd", dispatch, x_flat)
 
-            expert_outputs = [
-                MoEExpert(
-                    self.node_size,
-                    out_dim,
-                    hidden_N=self.hidden_N,
-                    norm_fn=self.norm_fn,
-                    activation=self.activation,
-                    use_swiglu=self.use_swiglu,
-                    dtype=dtype,
-                    param_dtype=param_dtype,
-                    dot_general_cls=self.dot_general_cls,
-                    zero_init_last=self.zero_init_last,
-                    apply_final_norm=False,
-                    name=f"expert_{i}",
-                )(expert_inputs[i], training)
-                for i in range(self.num_experts)
-            ]
-            experts = jnp.stack(expert_outputs, axis=0)
+            # Use nn.vmap to execute all experts in parallel
+            experts = nn.vmap(
+                MoEExpert,
+                variable_axes={"params": 0},
+                split_rngs={"params": True},
+                in_axes=0,
+                out_axes=0,
+                axis_size=self.num_experts,
+            )(
+                self.node_size,
+                out_dim,
+                hidden_N=self.hidden_N,
+                norm_fn=self.norm_fn,
+                activation=self.activation,
+                use_swiglu=self.use_swiglu,
+                dtype=dtype,
+                param_dtype=param_dtype,
+                dot_general_cls=self.dot_general_cls,
+                zero_init_last=self.zero_init_last,
+                apply_final_norm=False,
+                name="experts",
+            )(
+                expert_inputs, training
+            )
+
             combine = dispatch * gate_flat[:, None, None]
             y_flat = jnp.einsum("bec,ecd->bd", combine, experts)
             mixture = y_flat.reshape(batch_size, top_k, out_dim).sum(axis=1)
@@ -557,37 +634,58 @@ class MoEPreActivationResBlock(nn.Module):
             gate_probs = _moe_dense_gates(logits, self.router_temperature)
             gate_probs_mix = gate_probs.astype(dtype)
 
-            expert_outputs = [
-                MoEExpert(
-                    self.node_size,
-                    out_dim,
-                    hidden_N=self.hidden_N,
-                    norm_fn=self.norm_fn,
-                    activation=self.activation,
-                    use_swiglu=self.use_swiglu,
-                    dtype=dtype,
-                    param_dtype=param_dtype,
-                    dot_general_cls=self.dot_general_cls,
-                    zero_init_last=self.zero_init_last,
-                    apply_final_norm=False,
-                    name=f"expert_{i}",
-                )(x, training)
-                for i in range(self.num_experts)
-            ]
-            experts = jnp.stack(expert_outputs, axis=1)
-            mixture = jnp.sum(experts * gate_probs_mix[:, :, None], axis=1)
+            experts = nn.vmap(
+                MoEExpert,
+                variable_axes={"params": 0},
+                split_rngs={"params": True},
+                in_axes=(None, None),
+                out_axes=0,
+                axis_size=self.num_experts,
+            )(
+                self.node_size,
+                out_dim,
+                hidden_N=self.hidden_N,
+                norm_fn=self.norm_fn,
+                activation=self.activation,
+                use_swiglu=self.use_swiglu,
+                dtype=dtype,
+                param_dtype=param_dtype,
+                dot_general_cls=self.dot_general_cls,
+                zero_init_last=self.zero_init_last,
+                apply_final_norm=False,
+                name="experts",
+            )(
+                x, training
+            )
+
+            # experts: (E, B, D), gate_probs: (B, E)
+            # einsum: "ebd,be->bd"
+            mixture = jnp.einsum("ebd,be->bd", experts, gate_probs_mix)
             out = x0_cast + mixture
 
         if not capture_aux:
             return out
 
         gate_mean = jnp.mean(gate_probs, axis=0)
-        uniform = jnp.ones_like(gate_mean) / self.num_experts
-        balance_loss = jnp.mean(jnp.square(gate_mean - uniform))
+
+        # Standard load balancing loss: N * sum(importance * load)
+        # importance = gate_mean
+        # load = fraction of tokens assigned to each expert
+        expert_idx = top_idx.reshape(-1)
+        expert_one_hot = jax.nn.one_hot(expert_idx, self.num_experts, dtype=jnp.float32)
+        load = jnp.mean(expert_one_hot, axis=0)
+
+        balance_loss = self.num_experts * jnp.sum(gate_mean * load)
+
+        # Router z-loss for stability: mean(log(sum(exp(x)))^2)
+        log_sum_exp = jax.scipy.special.logsumexp(logits, axis=-1)
+        router_z_loss = jnp.mean(jnp.square(log_sum_exp))
+
         gate_entropy = -jnp.sum(gate_mean * jnp.log(gate_mean + 1e-8))
         return out, {
             "balance_loss": balance_loss,
             "gate_entropy": gate_entropy,
+            "router_z_loss": router_z_loss,
         }
 
 
