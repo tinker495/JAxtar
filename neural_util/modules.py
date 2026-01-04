@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable
+from typing import Any, Callable
 
 import flax.linen as nn
 import jax.numpy as jnp
@@ -66,6 +66,7 @@ class Swiglu(nn.Module):
     norm_fn: nn.Module = None
     dtype: any = DTYPE
     param_dtype: any = None
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
@@ -80,7 +81,12 @@ class Swiglu(nn.Module):
         # SwiGLU params ~ d*(2*h) + h*d = 3*d*h  => h = (2/3)*H
         if self.param_size_equal:
             node_size = max(1, int(round(node_size * 2.0 / 3.0)))
-        x = nn.Dense(2 * node_size, dtype=dtype, param_dtype=param_dtype)(x)
+        x = nn.Dense(
+            2 * node_size,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
         x, gate = jnp.split(x, 2, axis=-1)
         if self.norm_fn is not None:
             gate = apply_norm(self.norm_fn, gate, training)
@@ -137,10 +143,11 @@ class MLP(nn.Module):
     hidden_dim: int = 1000
     norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: str = nn.relu
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE)(x)
+        x = nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=self.dot_general_cls)(x)
         x = apply_norm(self.norm_fn, x, training)
         x = self.activation(x)
         return x
@@ -152,13 +159,17 @@ class preactivation_MLP(nn.Module):
     norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: str = nn.relu
     dtype: any = jnp.float32
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
         x = apply_norm(self.norm_fn, x, training)
         x = self.activation(x)
         x = nn.Dense(
-            self.hidden_dim, dtype=self.dtype, kernel_init=nn.initializers.normal(stddev=0.01)
+            self.hidden_dim,
+            dtype=self.dtype,
+            kernel_init=nn.initializers.normal(stddev=0.01),
+            dot_general_cls=self.dot_general_cls,
         )(x)
         return x
 
@@ -172,6 +183,7 @@ class ResBlock(nn.Module):
     use_swiglu: bool = False
     dtype: any = DTYPE
     param_dtype: any = None
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x0, training=False):
@@ -187,12 +199,21 @@ class ResBlock(nn.Module):
                     norm_fn=self.norm_fn,
                     dtype=dtype,
                     param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
                 )(x, training)
             else:
-                x = MLP(self.node_size, norm_fn=self.norm_fn, activation=self.activation)(
-                    x, training
-                )
-        x = nn.Dense(out_dim, dtype=dtype, param_dtype=param_dtype)(x)
+                x = MLP(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+        x = nn.Dense(
+            out_dim,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
         x = apply_norm(self.norm_fn, x, training)
         return self.activation(x + x0_cast)
 
@@ -207,6 +228,7 @@ class PreActivationResBlock(nn.Module):
     zero_init_last: bool = True
     dtype: any = DTYPE
     param_dtype: any = None
+    dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x0, training=False):
@@ -224,11 +246,15 @@ class PreActivationResBlock(nn.Module):
                     norm_fn=self.norm_fn,
                     dtype=dtype,
                     param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
                 )(x, training)
             else:
-                x = MLP(self.node_size, norm_fn=self.norm_fn, activation=self.activation)(
-                    x, training
-                )
+                x = MLP(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
 
         if self.zero_init_last:
             x = nn.Dense(
@@ -236,9 +262,15 @@ class PreActivationResBlock(nn.Module):
                 dtype=dtype,
                 param_dtype=param_dtype,
                 kernel_init=nn.initializers.zeros,
+                dot_general_cls=self.dot_general_cls,
             )(x)
         else:
-            x = nn.Dense(out_dim, dtype=dtype, param_dtype=param_dtype)(x)
+            x = nn.Dense(
+                out_dim,
+                dtype=dtype,
+                param_dtype=param_dtype,
+                dot_general_cls=self.dot_general_cls,
+            )(x)
         # Identity shortcut connection
         return x0_cast + x
 
