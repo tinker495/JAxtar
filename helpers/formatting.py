@@ -1,9 +1,45 @@
+import click
 import numpy as np
 from rich.text import Text
 
 
+class HumanIntParamType(click.ParamType):
+    name = "human_int"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, int):
+            return value
+        try:
+            return int(human_format_to_float(str(value)))
+        except (ValueError, TypeError):
+            self.fail(f"{value} is not a valid human-formatted integer", param, ctx)
+
+
+class HumanFloatParamType(click.ParamType):
+    name = "human_float"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, float):
+            return value
+        try:
+            return human_format_to_float(str(value))
+        except (ValueError, TypeError):
+            self.fail(f"{value} is not a valid human-formatted float", param, ctx)
+
+
+HUMAN_INT = HumanIntParamType()
+HUMAN_FLOAT = HumanFloatParamType()
+
+
 def human_format_to_float(num_str):
     num_str = num_str.upper()  # convert to uppercase
+    if "^" in num_str:
+        parts = num_str.split("^")
+        if len(parts) == 2:
+            try:
+                return float(parts[0]) ** float(parts[1])
+            except (ValueError, OverflowError):
+                pass
     num_str = num_str.replace("K", "e3").replace("M", "e6").replace("B", "e9").replace("T", "e12")
     return float(num_str)
 
@@ -16,6 +52,12 @@ def human_format(num):
 
     if not np.isfinite(num_float):
         return str(num_float)
+
+    # Check if exactly a power of 2
+    if num_float > 0 and num_float == int(num_float):
+        n = int(num_float)
+        if (n & (n - 1)) == 0:
+            return f"2^{n.bit_length() - 1}"
 
     suffixes = ["", "K", "M", "B", "T"]
     magnitude = 0
