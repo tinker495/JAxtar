@@ -30,7 +30,7 @@ class DistanceModel(ABC, nn.Module):
             "Metrics/pred": TrainLogInfo(pred),
             "Metrics/diff": TrainLogInfo(diff, log_mean=False),
             "Metrics/abs_diff": TrainLogInfo(jnp.abs(diff), log_mean=True, log_histogram=False),
-            "Metrics/mse": TrainLogInfo(jnp.mean(diff**2), log_histogram=False),
+            "Losses/mse": TrainLogInfo(jnp.mean(diff**2), log_histogram=False),
             "Losses/loss": TrainLogInfo(loss, log_histogram=False),
         }
         return loss, log_infos
