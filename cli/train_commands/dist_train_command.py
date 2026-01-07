@@ -251,7 +251,6 @@ def heuristic_train_command(
             desc_dict=discription_logs,
         )
         logger.log_scalar("Metrics/Learning Rate", lr, i)
-        logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
 
         # Log metrics
@@ -487,7 +486,6 @@ def qfunction_train_command(
         )
 
         logger.log_scalar("Metrics/Learning Rate", lr, i)
-        logger.log_scalar("Losses/Loss", loss, i)
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
 
         # Log metrics

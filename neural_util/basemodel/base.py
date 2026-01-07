@@ -28,8 +28,8 @@ class DistanceModel(ABC, nn.Module):
         loss = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
         log_infos = {
             "Metrics/pred": TrainLogInfo(pred),
-            "Metrics/diff": TrainLogInfo(diff, log_mean=False),
-            "Metrics/abs_diff": TrainLogInfo(jnp.abs(diff), log_mean=True, log_histogram=False),
+            "Losses/diff": TrainLogInfo(diff, log_mean=False),
+            "Losses/abs_diff": TrainLogInfo(jnp.abs(diff), log_mean=True, log_histogram=False),
             "Losses/mse": TrainLogInfo(jnp.mean(diff**2), log_histogram=False),
             "Losses/loss": TrainLogInfo(loss, log_histogram=False),
         }
