@@ -20,7 +20,7 @@ from config.pydantic_models import (
     WMTrainOptions,
     WorldModelPuzzleConfig,
 )
-from helpers.formatting import human_format_to_float
+from helpers.formatting import HUMAN_FLOAT, HUMAN_INT
 from helpers.param_stats import attach_runtime_metadata
 from helpers.util import map_kwargs_to_pydantic
 from heuristic.heuristic_base import Heuristic
@@ -265,27 +265,28 @@ wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle
 
 def search_options(func=None, *, variant: str = "default") -> callable:
     def decorator(func: callable) -> callable:
-        @click.option("-m", "--max_node_size", default=None, type=str, help="Size of the puzzle")
-        @click.option("-b", "--batch_size", default=None, type=int, help="Batch size for BGPQ")
         @click.option(
-            "-w", "--cost_weight", default=None, type=float, help="Weight for the A* search"
+            "-m", "--max_node_size", default=None, type=HUMAN_INT, help="Size of the puzzle"
+        )
+        @click.option(
+            "-b", "--batch_size", default=None, type=HUMAN_INT, help="Batch size for BGPQ"
+        )
+        @click.option(
+            "-w", "--cost_weight", default=None, type=HUMAN_FLOAT, help="Weight for the A* search"
         )
         @click.option(
             "-pr",
             "--pop_ratio",
             default=None,
-            type=float,
+            type=HUMAN_FLOAT,
             help="Ratio for popping nodes from the priority queue.",
         )
-        @click.option("-vm", "--vmap_size", default=None, type=int, help="Size for the vmap")
+        @click.option("-vm", "--vmap_size", default=None, type=HUMAN_INT, help="Size for the vmap")
         @click.option("--debug", is_flag=True, default=None, help="Debug mode")
         @click.option("--profile", is_flag=True, default=None, help="Profile mode")
         @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
         @wraps(func)
         def wrapper(*args, **kwargs):
-            if kwargs.get("max_node_size", None) is not None:
-                kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
-
             overrides = map_kwargs_to_pydantic(SearchOptions, kwargs)
 
             puzzle_bundle = kwargs["puzzle_bundle"]
@@ -315,17 +316,19 @@ def search_options(func=None, *, variant: str = "default") -> callable:
 
 def eval_options(func=None, *, variant: str = "default") -> callable:
     def decorator(func: callable) -> callable:
-        @click.option("-b", "--batch-size", type=int, default=None, help="Batch size for search.")
+        @click.option(
+            "-b", "--batch-size", type=HUMAN_INT, default=None, help="Batch size for search."
+        )
         @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
         @click.option(
             "-m",
             "--max-node-size",
-            type=str,
+            type=HUMAN_INT,
             default=None,
             help="Maximum number of nodes to search.",
         )
         @click.option(
-            "-w", "--cost-weight", type=float, default=None, help="Weight for cost in search."
+            "-w", "--cost-weight", type=HUMAN_FLOAT, default=None, help="Weight for cost in search."
         )
         @click.option(
             "-pr",
@@ -336,7 +339,7 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
             "'inf', or a comma-separated list (e.g., 'inf,0.4,0.3').",
         )
         @click.option(
-            "-ne", "--num-eval", type=int, default=None, help="Number of puzzles to evaluate."
+            "-ne", "--num-eval", type=HUMAN_INT, default=None, help="Number of puzzles to evaluate."
         )
         @click.option(
             "-rn", "--run-name", type=str, default=None, help="Name of the evaluation run."
@@ -349,21 +352,18 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
         )
         @click.option(
             "--early-stop-patience",
-            type=int,
+            type=HUMAN_INT,
             default=None,
             help="Number of samples to check before considering early stopping.",
         )
         @click.option(
             "--early-stop-threshold",
-            type=float,
+            type=HUMAN_FLOAT,
             default=None,
             help="Minimum success rate threshold for early stopping (0.0 to 1.0).",
         )
         @wraps(func)
         def wrapper(*args, **kwargs):
-            if kwargs.get("max_node_size", None) is not None:
-                kwargs["max_node_size"] = int(human_format_to_float(kwargs["max_node_size"]))
-
             overrides = map_kwargs_to_pydantic(EvalOptions, kwargs)
 
             puzzle_bundle = kwargs["puzzle_bundle"]
@@ -639,21 +639,21 @@ def dist_train_options(
         )
 
     def decorator(inner: callable) -> callable:
-        @click.option("-s", "--steps", type=int, default=None)
-        @click.option("-db", "--dataset_batch_size", type=int, default=None)
-        @click.option("-dmb", "--dataset_minibatch_size", type=int, default=None)
+        @click.option("-s", "--steps", type=HUMAN_INT, default=None)
+        @click.option("-db", "--dataset_batch_size", type=HUMAN_INT, default=None)
+        @click.option("-dmb", "--dataset_minibatch_size", type=HUMAN_INT, default=None)
         @click.option(
             "--sampling-non-backtracking-steps",
-            type=int,
+            type=HUMAN_INT,
             default=None,
             help="Number of previous states to avoid revisiting during dataset sampling.",
         )
-        @click.option("-tmb", "--train_minibatch_size", type=int, default=None)
+        @click.option("-tmb", "--train_minibatch_size", type=HUMAN_INT, default=None)
         @click.option("-k", "--key", type=int, default=None)
         @click.option("-r", "--reset", type=bool, default=None)
-        @click.option("-lt", "--loss_threshold", type=float, default=None)
-        @click.option("-ui", "--update_interval", type=int, default=None)
-        @click.option("-fui", "--force_update_interval", type=int, default=None)
+        @click.option("-lt", "--loss_threshold", type=HUMAN_FLOAT, default=None)
+        @click.option("-ui", "--update_interval", type=HUMAN_INT, default=None)
+        @click.option("-fui", "--force_update_interval", type=HUMAN_INT, default=None)
         @click.option("-su", "--use_soft_update", is_flag=True, default=None)
         @click.option(
             "-ddn",
@@ -686,33 +686,33 @@ def dist_train_options(
         )
         @click.option(
             "--diffusion_distance_warmup_steps",
-            type=int,
+            type=HUMAN_INT,
             default=None,
             help="Number of iterations to run before enabling diffusion distance features.",
         )
         @click.option(
             "-tp",
             "--temperature",
-            type=float,
+            type=HUMAN_FLOAT,
             default=None,
             help="Boltzmann temperature for action selection.",
         )
         @click.option("-d", "--debug", is_flag=True, default=None)
         @click.option("-md", "--multi_device", type=bool, default=None)
-        @click.option("-ri", "--reset_interval", type=int, default=None)
+        @click.option("-ri", "--reset_interval", type=HUMAN_INT, default=None)
         @click.option("-osr", "--opt_state_reset", type=bool, default=None)
-        @click.option("--tau", type=float, default=None)
+        @click.option("--tau", type=HUMAN_FLOAT, default=None)
         @click.option(
             "--optimizer",
             type=click.Choice(list(OPTIMIZERS.keys())),
             default="adam",
             help="Optimizer to use",
         )
-        @click.option("-lr", "--learning_rate", type=float, default=None)
+        @click.option("-lr", "--learning_rate", type=HUMAN_FLOAT, default=None)
         @click.option(
             "-wd",
             "--weight_decay_size",
-            type=float,
+            type=HUMAN_FLOAT,
             default=None,
             help="Weight decay size for regularization.",
         )
@@ -752,7 +752,7 @@ def dist_train_options(
         @click.option(
             "-km",
             "--k_max",
-            type=int,
+            type=HUMAN_INT,
             default=None,
             help="Override puzzle's default k_max (formerly shuffle_length).",
         )
@@ -986,8 +986,8 @@ def wm_get_world_model_options(func: callable) -> callable:
 
 
 def wm_train_options(func: callable) -> callable:
-    @click.option("--train_epochs", type=int, default=2000, help="Number of training steps")
-    @click.option("--mini_batch_size", type=int, default=1000, help="Batch size")
+    @click.option("--train_epochs", type=HUMAN_INT, default=2000, help="Number of training steps")
+    @click.option("--mini_batch_size", type=HUMAN_INT, default=1000, help="Batch size")
     @click.option(
         "--optimizer",
         type=click.Choice(list(OPTIMIZERS.keys())),
@@ -1005,9 +1005,9 @@ def wm_train_options(func: callable) -> callable:
 
 
 def wm_dataset_options(func: callable) -> callable:
-    @click.option("--dataset_size", type=int, default=300000)
-    @click.option("--dataset_minibatch_size", type=int, default=30000)
-    @click.option("--shuffle_length", type=int, default=30)
+    @click.option("--dataset_size", type=HUMAN_INT, default=300000)
+    @click.option("--dataset_minibatch_size", type=HUMAN_INT, default=30000)
+    @click.option("--shuffle_length", type=HUMAN_INT, default=30)
     @click.option("--img_size", nargs=2, type=click.Tuple([int, int]), default=(32, 32))
     @click.option("--key", type=int, default=0)
     @wraps(func)

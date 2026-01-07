@@ -22,16 +22,18 @@ def _is_single_level(config: dict) -> bool:
     return not any(isinstance(v, dict) for v in config.values())
 
 
-def _format_value(value):
+def _format_value(value, apply_human_format=True):
     """Recursively apply human-friendly formatting to numeric values."""
     if isinstance(value, bool):
         return value
     if isinstance(value, Number):
-        return human_format(value)
+        return human_format(value) if apply_human_format else value
     if isinstance(value, dict):
-        return {k: _format_value(v) for k, v in value.items()}
+        return {
+            k: _format_value(v, apply_human_format=apply_human_format) for k, v in value.items()
+        }
     if isinstance(value, (list, tuple, set)):
-        formatted = [_format_value(v) for v in value]
+        formatted = [_format_value(v, apply_human_format=False) for v in value]
         if isinstance(value, tuple):
             return tuple(formatted)
         if isinstance(value, set):
