@@ -275,10 +275,99 @@ class PreActivationResBlock(nn.Module):
         return x0_cast + x
 
 
+# Delta Residual Block (Deep Delta Learning)
+class DeltaResBlock(nn.Module):
+    node_size: int
+    hidden_N: int = 1
+    norm_fn: nn.Module = DEFAULT_NORM_FN
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    gate_hidden_dim: int = 128
+    eps_k: float = 1e-6
+    dtype: any = DTYPE
+    param_dtype: any = None
+    dot_general_cls: Any = None
+
+    def _branch_mlp(self, x, out_dim, training):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        for _ in range(self.hidden_N):
+            if self.use_swiglu:
+                x = Swiglu(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+            else:
+                x = MLP(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+        x = nn.Dense(
+            out_dim,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
+        return x
+
+    @nn.compact
+    def __call__(self, x0, training=False):
+        dtype = self.dtype
+        x = x0.astype(dtype)
+        if x.ndim == 2:
+            pool_d = x
+            pool_v = jnp.mean(x, axis=-1, keepdims=True)
+            dv = 1
+        elif x.ndim == 3:
+            pool_d = jnp.mean(x, axis=-1)
+            pool_v = jnp.mean(x, axis=-2)
+            dv = x.shape[-1]
+        else:
+            raise ValueError(f"DeltaResBlock expects 2D or 3D input, got shape {x.shape}")
+
+        k = self._branch_mlp(pool_d, x.shape[-2] if x.ndim == 3 else x.shape[-1], training)
+        k = k / (jnp.linalg.norm(k, axis=-1, keepdims=True) + self.eps_k)
+
+        v = self._branch_mlp(pool_v, dv, training)
+
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        beta_hidden = nn.Dense(
+            self.gate_hidden_dim,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(pool_d)
+        beta_hidden = jnp.tanh(beta_hidden)
+        beta = nn.Dense(
+            1,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(beta_hidden)
+        beta = 2.0 * nn.sigmoid(beta).squeeze(-1)
+
+        if x.ndim == 2:
+            proj = jnp.sum(k * x, axis=-1, keepdims=True)
+            update = k * (v - proj)
+            x = x + beta[:, None] * update
+        else:
+            proj = jnp.einsum("bd,bdv->bv", k, x)
+            update = k[:, :, None] * (v - proj)[:, None, :]
+            x = x + beta[:, None, None] * update
+
+        return self.activation(x)
+
+
 # ResBlock type registry for config-driven selection
 RESBLOCK_REGISTRY = {
     "standard": ResBlock,
     "preactivation": PreActivationResBlock,
+    "delta": DeltaResBlock,
 }
 
 
