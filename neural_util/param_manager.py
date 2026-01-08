@@ -46,7 +46,7 @@ def load_params_with_metadata(path: str) -> Tuple[Any, Dict[str, Any]]:
                 # If it's not a dict, or an empty dict, consider it invalid old format
                 print(f"Warning: Unrecognized or invalid old format for parameters in {path}.")
                 return None, {}
-    except Exception as e:
+    except (FileNotFoundError, pickle.PickleError, OSError, ValueError) as e:
         print(f"Warning: Failed to load parameters from {path}. Error: {e}")
         return None, {}
 

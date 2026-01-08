@@ -71,7 +71,14 @@ def _resolve_freezer_mode(quant_mode):
             if hasattr(freezer_mode, name):
                 return getattr(freezer_mode, name)
     if quant_mode == aqt_flax.QuantMode.SERVE:
-        for name in ("CALIBRATION_AND_VALUE", "FREEZE", "FROZEN", "READ", "SERVE", "INFERENCE"):
+        for name in (
+            "CALIBRATION_AND_VALUE",
+            "FREEZE",
+            "FROZEN",
+            "READ",
+            "SERVE",
+            "INFERENCE",
+        ):
             if hasattr(freezer_mode, name):
                 return getattr(freezer_mode, name)
     for name in ("NONE",):
@@ -149,14 +156,14 @@ def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
             mutable=True,
             rngs={"params": jax.random.PRNGKey(0)},
         )
-    except Exception as e:
-        if "INTERNAL: the requested functionality is not supported" in str(e):
+    except (RuntimeError, ValueError) as e:
+        if "INTERNAL: requested functionality is not supported" in str(e):
             raise RuntimeError(
                 "AQT Quantization failed. This is likely due to model dimensions not being aligned "
                 "with XLA requirements (e.g. using prime numbers for hidden dimensions). "
                 "Please ensure hidden_dim and other dimensions are multiples of 32 or 128."
             ) from e
-        raise e
+        raise
 
     # Merge the updated collections back into the original variables to preserve trained weights.
     # Flax apply with mutable=True only returns collections that were actually modified.

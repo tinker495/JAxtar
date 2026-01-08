@@ -81,7 +81,7 @@ def jax_param_stats(params: Any, aqt_cfg: str | None = None) -> Dict[str, Any]:
 
             try:
                 n = int(leaf.size)
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 continue
 
             itemsize = int(getattr(leaf.dtype, "itemsize", 0))
@@ -166,7 +166,7 @@ def attach_runtime_metadata(
     if hasattr(component, "params"):
         try:
             runtime["param_stats"] = jax_param_stats(getattr(component, "params"), aqt_cfg=aqt_cfg)
-        except Exception:
+        except (ValueError, RuntimeError, AttributeError, TypeError):
             # Best-effort: don't break CLI for stats issues.
             runtime.setdefault("param_stats", {"error": "failed_to_compute"})
 

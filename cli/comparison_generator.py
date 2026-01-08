@@ -92,7 +92,7 @@ class ComparisonGenerator:
                 try:
                     if config_df[col].apply(make_hashable).nunique() > 1:
                         differing_params.append(col)
-                except Exception as e:
+                except (ValueError, AttributeError, TypeError) as e:
                     self.console.print(f"Skipping column {col} due to error: {e}", style="dim red")
 
         if differing_params:

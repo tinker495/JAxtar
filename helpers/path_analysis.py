@@ -88,7 +88,7 @@ def extract_heuristic_accuracy_data(
                         action_lookup = {
                             str(puzzle.action_to_string(a)): a for a in range(action_size)
                         }
-                except Exception:
+                except (AttributeError, ValueError, TypeError):
                     pass
 
             for a in action_sequence:
@@ -156,7 +156,7 @@ def extract_heuristic_accuracy_data(
                         is_equal = False
                         try:
                             is_equal = np.array_equal(n_s, next_s)
-                        except Exception:
+                        except (ValueError, TypeError):
                             is_equal = n_s == next_s
 
                         if is_equal:
@@ -168,7 +168,7 @@ def extract_heuristic_accuracy_data(
                     if not found:
                         valid_path = False
                         break
-                except Exception:
+                except (KeyError, ValueError, AttributeError, IndexError, RuntimeError):
                     valid_path = False
                     break
 
@@ -233,5 +233,5 @@ def extract_heuristic_accuracy_data(
             "actions": actions_int,
         }
 
-    except Exception:
+    except (ValueError, RuntimeError, KeyError, AttributeError, TypeError):
         return None
