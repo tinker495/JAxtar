@@ -22,7 +22,7 @@ def convert_to_serializable_dict(obj: Any) -> Any:
     try:
         json.dumps(obj)
         return obj
-    except Exception:
+    except (TypeError, ValueError):
         return str(obj)
 
 
@@ -53,7 +53,7 @@ def display_value(val):
         loaded = json.loads(val)
         if isinstance(loaded, dict) or isinstance(loaded, list):
             return json.dumps(loaded, indent=2)
-    except Exception:
+    except json.JSONDecodeError:
         pass
     return str(val)
 

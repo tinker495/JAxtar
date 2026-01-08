@@ -52,7 +52,10 @@ class BaseLogger(ABC):
         imageio.imwrite(filepath, img_to_save)
 
     def _save_artifact_local(
-        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+        self,
+        artifact_path: str,
+        artifact_name: str = None,
+        artifact_type: str = "model",
     ) -> Optional[str]:
         if not os.path.exists(artifact_path):
             print(f"Warning: Artifact path {artifact_path} does not exist")
@@ -101,7 +104,10 @@ class BaseLogger(ABC):
 
     @abstractmethod
     def log_artifact(
-        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+        self,
+        artifact_path: str,
+        artifact_name: str = None,
+        artifact_type: str = "model",
     ):
         pass
 
@@ -144,7 +150,10 @@ class TensorboardLogger(BaseLogger):
         self.writer.add_figure(tag, figure, step)
 
     def log_artifact(
-        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+        self,
+        artifact_path: str,
+        artifact_name: str = None,
+        artifact_type: str = "model",
     ):
         dest_path = self._save_artifact_local(artifact_path, artifact_name, artifact_type)
         if dest_path:
@@ -164,7 +173,7 @@ class AimLogger(BaseLogger):
             self.aim_run = aim.Run(experiment=log_dir_base)
             print(f"Aim logging enabled. Repo: {self.aim_run.repo.path}")
             print(f"Aim run hash: {self.aim_run.hash}")
-        except Exception as e:
+        except (ImportError, ConnectionError, ValueError, RuntimeError) as e:
             print(f"Could not initialize Aim, disabling Aim logging. Error: {e}")
             self.aim_run = None
         self._log_hyperparameters()
@@ -220,7 +229,10 @@ class AimLogger(BaseLogger):
             self.aim_run.track(aim.Image(image_from_plot), name=tag, step=step)
 
     def log_artifact(
-        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+        self,
+        artifact_path: str,
+        artifact_name: str = None,
+        artifact_type: str = "model",
     ):
         dest_path = self._save_artifact_local(artifact_path, artifact_name, artifact_type)
 
@@ -265,7 +277,7 @@ class WandbLogger(BaseLogger):
             self.wandb_run = wandb.init(**init_kwargs)
             print(f"Wandb logging enabled. Project: {log_dir_base}")
             print(f"Wandb run URL: {self.wandb_run.url}")
-        except Exception as e:
+        except (ImportError, ConnectionError, ValueError, RuntimeError) as e:
             print(f"Could not initialize Wandb, disabling Wandb logging. Error: {e}")
             self.wandb_run = None
         self._log_hyperparameters()
@@ -366,7 +378,7 @@ class WandbLogger(BaseLogger):
                 f"Artifact '{artifact_name}' logged to Wandb successfully with aliases: {aliases}"
             )
 
-        except Exception as e:
+        except (AttributeError, ValueError, RuntimeError, ConnectionError) as e:
             print(f"Error logging artifact to Wandb: {e}")
             # Fallback: copy to local directory like other loggers
             self._save_artifact_local(artifact_path, artifact_name, artifact_type)
@@ -406,7 +418,10 @@ class NoOpLogger(BaseLogger):
         pass
 
     def log_artifact(
-        self, artifact_path: str, artifact_name: str = None, artifact_type: str = "model"
+        self,
+        artifact_path: str,
+        artifact_name: str = None,
+        artifact_type: str = "model",
     ):
         pass
 

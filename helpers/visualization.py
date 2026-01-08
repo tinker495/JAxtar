@@ -30,7 +30,7 @@ def _require_cv2():  # pragma: no cover
         ) from _CV2_IMPORT_ERROR
     try:
         import cv2 as cv2_mod  # type: ignore
-    except Exception as exc:
+    except (ImportError, ModuleNotFoundError, RuntimeError) as exc:
         _CV2_IMPORT_ERROR = exc
         raise ImportError(
             "OpenCV (cv2) is required for saving solution animations/frames. "
@@ -114,7 +114,7 @@ def build_human_play_layout(
         action_table.add_column("Index", justify="center")
         action_table.add_column("Action", justify="left")
         for i, action_str in enumerate(action_strs):
-            action_table.add_row(f"{i+1}", f"[bold cyan]{action_str}[/bold cyan]")
+            action_table.add_row(f"{i + 1}", f"[bold cyan]{action_str}[/bold cyan]")
 
     return Group(state_panel, cost_text, action_table)
 
@@ -287,7 +287,12 @@ def build_solution_path_panel(
     final_panel_content.add_row(Align.center("[bold green]Solved![/bold green]"))
     final_panel_content = Align.center(final_panel_content)
     solution_panels.append(
-        Panel(final_panel_content, title=final_state_title, border_style="green", expand=False)
+        Panel(
+            final_panel_content,
+            title=final_state_title,
+            border_style="green",
+            expand=False,
+        )
     )
 
     solution_path_group = []
@@ -325,7 +330,9 @@ def build_solution_path_panel(
         solution_path_group.append(row_grid)
 
     return Panel(
-        Group(*solution_path_group), title="[bold green]Solution Path[/bold green]", expand=False
+        Group(*solution_path_group),
+        title="[bold green]Solution Path[/bold green]",
+        expand=False,
     )
 
 
@@ -513,7 +520,7 @@ def build_vmapped_results_table_multi(
     table.add_row(
         "Search Time",
         f"{vmapped_search_time:6.2f}s "
-        f"(x{vmapped_search_time/total_search_times.sum()*vmap_size:.1f}/{vmap_size})",
+        f"(x{vmapped_search_time / total_search_times.sum() * vmap_size:.1f}/{vmap_size})",
     )
     table.add_row(
         "Total Search States",
@@ -521,10 +528,11 @@ def build_vmapped_results_table_multi(
     )
     table.add_row(
         "States per Second",
-        f"{vmapped_states_per_second:.2f} (x{vmapped_states_per_second/states_per_second:.1f} faster)",
+        f"{vmapped_states_per_second:.2f} (x{vmapped_states_per_second / states_per_second:.1f} faster)",
     )
     table.add_row(
-        "Solutions Found", f"{int(solved.sum())}/{len(solved)} ({float(solved.mean())*100:.2f}%)"
+        "Solutions Found",
+        f"{int(solved.sum())}/{len(solved)} ({float(solved.mean()) * 100:.2f}%)",
     )
     return table
 
@@ -543,12 +551,12 @@ def build_vmapped_results_table_single(
     table.add_column("Value", justify="right")
     table.add_row(
         "Search Time",
-        f"{vmapped_search_time:6.2f}s (x{vmapped_search_time/single_search_time:.1f}/{vmap_size})",
+        f"{vmapped_search_time:6.2f}s (x{vmapped_search_time / single_search_time:.1f}/{vmap_size})",
     )
     table.add_row(
         "Search States",
         f"{human_format(int(search_states))} ({human_format(vmapped_states_per_second)} states/s)",
     )
-    table.add_row("Speedup", f"x{vmapped_states_per_second/states_per_second:.1f}")
-    table.add_row("Solutions Found", f"{solved_mean*100:.2f}%")
+    table.add_row("Speedup", f"x{vmapped_states_per_second / states_per_second:.1f}")
+    table.add_row("Solutions Found", f"{solved_mean * 100:.2f}%")
     return table
