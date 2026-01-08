@@ -84,7 +84,7 @@ def setup_optimizer(
     if not in_schedule_free:
         decay_schedule = optax.schedules.exponential_decay(
             lr,
-            5000,
+            10000,
             0.995,
         )
         # Combine the schedules
