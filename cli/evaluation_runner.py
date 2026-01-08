@@ -742,7 +742,7 @@ class EvaluationRunner:
                 pickle.dumps(sample_job[2])
                 pickle.dumps(sample_job[3])
                 use_process_pool = True
-            except (pickle.PicklingError, TypeError):
+            except (pickle.PickleError, TypeError, AttributeError):
                 use_process_pool = False
 
             max_workers = min(len(verify_jobs), max(1, os.cpu_count() or 1))
