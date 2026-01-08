@@ -141,7 +141,7 @@ class DistTrainOptions(BaseModel):
     reset_interval: int = int(1e6)  # just large enough
     tau: float = 0.2
     learning_rate: float = 1e-2
-    weight_decay_size: Optional[float] = 0.01
+    weight_decay_size: Optional[float] = 0.003
     opt_state_reset: bool = False
     optimizer: str = "normuon"
     temperature: float = 0.33
