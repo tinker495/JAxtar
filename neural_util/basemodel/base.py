@@ -7,6 +7,7 @@ import optax
 from flax import linen as nn
 
 from train_util.losses import loss_from_diff
+from train_util.train_logs import TrainLogInfo
 
 
 class DistanceModel(ABC, nn.Module):
@@ -25,12 +26,14 @@ class DistanceModel(ABC, nn.Module):
 
         diff = target - pred
         loss = loss_from_diff(diff, loss=loss_type, loss_args=loss_args)
-        aux = {
-            "pred": pred,
-            "diff": diff,
-            "loss": loss,
+        log_infos = {
+            "Metrics/pred": TrainLogInfo(pred),
+            "Losses/diff": TrainLogInfo(diff, log_mean=False),
+            "Losses/abs_diff": TrainLogInfo(jnp.abs(diff), log_mean=True, log_histogram=False),
+            "Losses/mse": TrainLogInfo(jnp.mean(diff**2), log_histogram=False),
+            "Losses/loss": TrainLogInfo(loss, log_histogram=False),
         }
-        return loss, aux
+        return loss, log_infos
 
 
 class DistanceHLGModel(ABC, nn.Module):
@@ -89,11 +92,14 @@ class DistanceHLGModel(ABC, nn.Module):
             ).squeeze(-2)
             pred = jnp.take_along_axis(pred_actions, actions[..., jnp.newaxis], axis=-1).squeeze(-1)
 
-        sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size, path_length)
-        aux = {
-            "pred": pred,
-            "sce": sce,
-            "loss": sce,
-            "diff": target - pred,
+        sce = optax.softmax_cross_entropy(logits, target_probs)
+        log_infos = {
+            "Metrics/pred": TrainLogInfo(pred),
+            "Losses/sce": TrainLogInfo(sce, log_histogram=False),
+            "Losses/loss": TrainLogInfo(sce, log_histogram=False),
+            "Losses/diff": TrainLogInfo(target - pred, log_mean=False),
+            "Losses/abs_diff": TrainLogInfo(
+                jnp.abs(target - pred), log_mean=True, log_histogram=False
+            ),
         }
-        return sce, aux
+        return sce, log_infos

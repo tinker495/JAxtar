@@ -122,10 +122,12 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
         max_val = max(cost_df["benchmark_optimal_path_cost"].max(), cost_df["path_cost"].max())
         ax_cost.plot([min_val, max_val], [min_val, max_val], "--", color="#555555", linewidth=1)
         ax_cost.set_xlim(
-            min_val - 0.1 * abs(min_val), max_val + 0.1 * abs(max_val) if max_val else max_val + 1
+            min_val - 0.1 * abs(min_val),
+            max_val + 0.1 * abs(max_val) if max_val else max_val + 1,
         )
         ax_cost.set_ylim(
-            min_val - 0.1 * abs(min_val), max_val + 0.1 * abs(max_val) if max_val else max_val + 1
+            min_val - 0.1 * abs(min_val),
+            max_val + 0.1 * abs(max_val) if max_val else max_val + 1,
         )
     else:
         ax_cost.text(
@@ -879,7 +881,13 @@ def plot_search_tree_semantic(result_item: dict, max_points: int = 500000) -> pl
 
     if original_indices is None or parent_indices is None:
         fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No parent/index data for tree visualization.", ha="center", va="center")
+        ax.text(
+            0.5,
+            0.5,
+            "No parent/index data for tree visualization.",
+            ha="center",
+            va="center",
+        )
         return fig
 
     N = len(costs)
@@ -983,7 +991,7 @@ def plot_search_tree_semantic(result_item: dict, max_points: int = 500000) -> pl
                 lc = LineCollection(segments, colors="gray", alpha=0.05, linewidths=0.5)
                 ax.add_collection(lc)
 
-        except Exception as e:
+        except (ValueError, RuntimeError, AttributeError, IndexError) as e:
             print(f"Warning: Edge construction failed: {e}")
 
     # 3. Highlight Optimal Path
@@ -1029,7 +1037,7 @@ def plot_search_tree_semantic(result_item: dict, max_points: int = 500000) -> pl
         solved_index = analysis.get("solved_index")
         if solved_index is not None:
             path_indices = _trace_path_from_hash_index(solved_index)
-    except Exception as e:
+    except (KeyError, AttributeError, ValueError, TypeError) as e:
         print(f"Warning: Failed to trace path from solved index: {e}")
 
     # Fallback: use path analysis if we cannot trace through parent indices.
@@ -1078,7 +1086,7 @@ def plot_search_tree_semantic(result_item: dict, max_points: int = 500000) -> pl
                             zorder=20,
                         )
                         path_plotted = True
-        except Exception as e:
+        except (ValueError, RuntimeError, AttributeError, IndexError, KeyError) as e:
             print(f"Warning: Path plotting from analysis failed: {e}")
 
     # Final fallback: use minimum distance heuristic to infer a goal.
@@ -1087,7 +1095,7 @@ def plot_search_tree_semantic(result_item: dict, max_points: int = 500000) -> pl
             goal_node_idx = np.argmin(dists)
             if dists[goal_node_idx] < 1e-6:
                 path_indices = _trace_path_from_hash_index(original_indices[goal_node_idx])
-        except Exception as e:
+        except (KeyError, AttributeError, ValueError, TypeError) as e:
             print(f"Warning: Path tracing failed: {e}")
 
     if path_indices is not None and len(path_indices) > 0:

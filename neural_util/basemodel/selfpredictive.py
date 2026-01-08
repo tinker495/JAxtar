@@ -7,6 +7,7 @@ import optax
 from flax import linen as nn
 
 from train_util.losses import loss_from_diff
+from train_util.train_logs import TrainLogInfo
 
 
 class SelfPredictiveMixin(ABC, nn.Module):
@@ -142,14 +143,14 @@ class SelfPredictiveDistanceModel(SelfPredictiveMixin):
             latents[:, 0], path_actions, ema_latents, same_trajectory_masks, training=True
         )  # (Batch, 1)
         total_loss = dist_loss + spr_loss
-        aux = {
-            "pred": dists,
-            "diff": diff,
-            "loss": total_loss,
-            "dist_loss": dist_loss,
-            "spr_loss": spr_loss,
+        log_infos = {
+            "Metrics/pred": TrainLogInfo(dists),
+            "Losses/diff": TrainLogInfo(diff, log_mean=False),
+            "Losses/loss": TrainLogInfo(total_loss, log_histogram=False),
+            "Losses/dist_loss": TrainLogInfo(dist_loss, log_histogram=False),
+            "Losses/spr_loss": TrainLogInfo(spr_loss, log_histogram=False),
         }
-        return total_loss, aux
+        return total_loss, log_infos
 
 
 class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
@@ -244,12 +245,12 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
         )  # [...,]
         spr_loss = jnp.nan_to_num(spr_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         total_loss = dist_loss + spr_loss
-        aux = {
-            "pred": pred,
-            "diff": target - pred,
-            "loss": total_loss,
-            "dist_loss": dist_loss,
-            "spr_loss": spr_loss,
-            "sce": sce,
+        log_infos = {
+            "Metrics/pred": TrainLogInfo(pred),
+            "Losses/diff": TrainLogInfo(target - pred, log_mean=False),
+            "Losses/loss": TrainLogInfo(total_loss, log_histogram=False),
+            "Losses/dist_loss": TrainLogInfo(dist_loss, log_histogram=False),
+            "Losses/spr_loss": TrainLogInfo(spr_loss, log_histogram=False),
+            "Losses/sce": TrainLogInfo(sce, log_histogram=False),
         }
-        return total_loss, aux
+        return total_loss, log_infos

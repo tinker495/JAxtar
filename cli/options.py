@@ -705,7 +705,7 @@ def dist_train_options(
         @click.option(
             "--optimizer",
             type=click.Choice(list(OPTIMIZERS.keys())),
-            default="adam",
+            default="normuon",
             help="Optimizer to use",
         )
         @click.option("-lr", "--learning_rate", type=HUMAN_FLOAT, default=None)

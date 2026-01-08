@@ -1,3 +1,4 @@
+import pickle
 from abc import abstractmethod
 from typing import Any
 
@@ -128,7 +129,13 @@ class NeuralQFunctionBase(QFunction):
             )  # check if the params are compatible with the model
             self._preloaded_params = None
             return params
-        except Exception as e:
+        except (
+            FileNotFoundError,
+            pickle.PickleError,
+            ValueError,
+            RuntimeError,
+            OSError,
+        ) as e:
             raise ValueError(f"Error loading NeuralQFunction model: {e}") from e
 
     def save_model(self, path: str = None, metadata: dict = None):
@@ -212,6 +219,6 @@ class NeuralQFunctionBase(QFunction):
             if params is not None:
                 self._preloaded_params = params
             return metadata or {}
-        except Exception as e:
+        except (FileNotFoundError, pickle.PickleError, OSError, RuntimeError) as e:
             print(f"Error loading metadata from {self.path}: {e}")
             return {}

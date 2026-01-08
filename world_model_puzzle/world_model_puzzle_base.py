@@ -1,3 +1,5 @@
+import pickle
+
 import chex
 import jax
 import jax.numpy as jnp
@@ -96,7 +98,6 @@ class WorldModel(nn.Module):
 
 
 class WorldModelPuzzleBase(Puzzle):
-
     inits: jnp.ndarray
     targets: jnp.ndarray
     init_state_size: int = 0
@@ -245,7 +246,13 @@ class WorldModelPuzzleBase(Puzzle):
                 jnp.zeros((1, *self.data_shape)),
             )  # check if the params are compatible with the model
             return params
-        except Exception as e:
+        except (
+            FileNotFoundError,
+            pickle.PickleError,
+            ValueError,
+            RuntimeError,
+            OSError,
+        ) as e:
             raise ValueError(f"Error loading WorldModelPuzzle model: {e}") from e
 
     def save_model(self, metadata: dict = None):

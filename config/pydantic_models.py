@@ -140,10 +140,10 @@ class DistTrainOptions(BaseModel):
     multi_device: bool = True
     reset_interval: int = int(1e6)  # just large enough
     tau: float = 0.2
-    learning_rate: float = 1e-3
-    weight_decay_size: Optional[float] = 0.0
+    learning_rate: float = 3e-3
+    weight_decay_size: Optional[float] = 0.02
     opt_state_reset: bool = False
-    optimizer: str = "adam"
+    optimizer: str = "normuon"
     temperature: float = 0.33
     replay_ratio: int = Field(
         1, description="Number of gradient updates per generated dataset. Default is 1."
