@@ -1,10 +1,21 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from .constants import (
+    BENCHMARK_DIAGONAL_COLOR,
+    BENCHMARK_DIAGONAL_LINESTYLE,
+    BENCHMARK_DIAGONAL_LINEWIDTH,
+    BENCHMARK_MATCH_COLOR,
+    BENCHMARK_MISMATCH_COLOR,
+    GRID_ALPHA,
+    GRID_LINESTYLE,
+    WIDE_FIGSIZE,
+)
+
 
 def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
     """Compares solution costs and lengths against benchmark-optimal references."""
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    fig, axes = plt.subplots(1, 2, figsize=WIDE_FIGSIZE)
 
     # Cost comparison subplot
     ax_cost = axes[0]
@@ -13,7 +24,7 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
         matches = cost_df.get("matches_optimal_path")
         colors = None
         if matches is not None and not matches.isna().all():
-            colors = matches.map({True: "#2ca02c", False: "#d62728"})
+            colors = matches.map({True: BENCHMARK_MATCH_COLOR, False: BENCHMARK_MISMATCH_COLOR})
         ax_cost.scatter(
             cost_df["benchmark_optimal_path_cost"],
             cost_df["path_cost"],
@@ -23,7 +34,13 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
         )
         min_val = min(cost_df["benchmark_optimal_path_cost"].min(), cost_df["path_cost"].min())
         max_val = max(cost_df["benchmark_optimal_path_cost"].max(), cost_df["path_cost"].max())
-        ax_cost.plot([min_val, max_val], [min_val, max_val], "--", color="#555555", linewidth=1)
+        ax_cost.plot(
+            [min_val, max_val],
+            [min_val, max_val],
+            linestyle=BENCHMARK_DIAGONAL_LINESTYLE,
+            color=BENCHMARK_DIAGONAL_COLOR,
+            linewidth=BENCHMARK_DIAGONAL_LINEWIDTH,
+        )
         ax_cost.set_xlim(
             min_val - 0.1 * abs(min_val),
             max_val + 0.1 * abs(max_val) if max_val else max_val + 1,
@@ -45,7 +62,7 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
     ax_cost.set_title("Solution Cost vs. Optimal Cost")
     ax_cost.set_xlabel("Optimal Path Cost")
     ax_cost.set_ylabel("Solution Path Cost")
-    ax_cost.grid(True, linestyle="--", alpha=0.5)
+    ax_cost.grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
     # Path length comparison subplot
     ax_len = axes[1]
@@ -54,7 +71,7 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
         matches = length_df.get("matches_optimal_path")
         colors = None
         if matches is not None and not matches.isna().all():
-            colors = matches.map({True: "#2ca02c", False: "#d62728"})
+            colors = matches.map({True: BENCHMARK_MATCH_COLOR, False: BENCHMARK_MISMATCH_COLOR})
         ax_len.scatter(
             length_df["benchmark_optimal_action_count"],
             length_df["path_action_count"],
@@ -70,7 +87,13 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
             length_df["benchmark_optimal_action_count"].max(),
             length_df["path_action_count"].max(),
         )
-        ax_len.plot([min_val, max_val], [min_val, max_val], "--", color="#555555", linewidth=1)
+        ax_len.plot(
+            [min_val, max_val],
+            [min_val, max_val],
+            linestyle=BENCHMARK_DIAGONAL_LINESTYLE,
+            color=BENCHMARK_DIAGONAL_COLOR,
+            linewidth=BENCHMARK_DIAGONAL_LINEWIDTH,
+        )
         ax_len.set_xlim(min_val - 0.5, max_val + 0.5)
         ax_len.set_ylim(min_val - 0.5, max_val + 0.5)
     else:
@@ -86,7 +109,7 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
     ax_len.set_title("Solution Length vs. Optimal Length")
     ax_len.set_xlabel("Optimal Action Count")
     ax_len.set_ylabel("Solution Action Count")
-    ax_len.grid(True, linestyle="--", alpha=0.5)
+    ax_len.grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
     fig.suptitle("Benchmark Solution Quality", fontsize=16)
     fig.tight_layout(rect=[0, 0.03, 1, 0.95])

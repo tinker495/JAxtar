@@ -5,13 +5,14 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from .constants import COMPARISON_FIGSIZE, COMPARISON_SCATTER_MAX_POINTS
 from .utils import _plot_scatter_with_ellipses
 
 
 def plot_comparison_analysis(
     solved_df: pd.DataFrame,
     sorted_labels: list[str],
-    scatter_max_points: int = 2000,
+    scatter_max_points: int = COMPARISON_SCATTER_MAX_POINTS,
     varying_params: Optional[List[str]] = None,
 ) -> dict[str, plt.Figure]:
     """
@@ -31,7 +32,7 @@ def plot_comparison_analysis(
         """Helper to create simple, 2D, or faceted plots."""
         # 0 or 1 varying parameter
         if len(varying_params) <= 1:
-            fig, ax = plt.subplots(figsize=(12, 8))
+            fig, ax = plt.subplots(figsize=COMPARISON_FIGSIZE)
             x_var = "run_label" if not varying_params else varying_params[0]
             order = sorted_labels if x_var == "run_label" else None
 
@@ -115,7 +116,7 @@ def plot_comparison_analysis(
             g.set_titles(col_template="{col_name}")
             fig = g.fig
         else:  # 2 params
-            fig, ax = plt.subplots(figsize=(12, 8))
+            fig, ax = plt.subplots(figsize=COMPARISON_FIGSIZE)
             sns.boxplot(
                 data=plot_df,
                 x=p_x,

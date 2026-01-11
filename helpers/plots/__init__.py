@@ -6,5 +6,5 @@ from .basic import (
 )
 from .benchmark import plot_benchmark_path_comparison
 from .comparison import plot_comparison_analysis
-from .tree import plot_search_tree_semantic
+from .tree.plotting import plot_search_tree_semantic
 from .utils import _plot_scatter_with_ellipses
