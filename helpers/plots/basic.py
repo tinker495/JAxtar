@@ -3,10 +3,19 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from .constants import (
+    COLOR_MEDIAN,
+    COLOR_PRIMARY,
+    COLOR_WARNING,
+    DEFAULT_FIGSIZE,
+    GRID_ALPHA,
+    GRID_LINESTYLE,
+)
+
 
 def plot_path_cost_distribution(solved_df: pd.DataFrame) -> plt.Figure:
     """Plots the distribution of path costs for solved puzzles."""
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=DEFAULT_FIGSIZE)
     costs = solved_df["path_cost"].dropna().to_numpy()
     if costs.size == 0:
         ax.text(
@@ -33,19 +42,19 @@ def plot_path_cost_distribution(solved_df: pd.DataFrame) -> plt.Figure:
         costs,
         bins=bins,
         stat="count",
-        color="#4C72B0",
+        color=COLOR_PRIMARY,
         edgecolor="white",
         linewidth=0.6,
         ax=ax,
     )
     mean_val = float(np.mean(costs))
     median_val = float(np.median(costs))
-    ax.axvline(mean_val, color="#DD8452", linestyle="--", linewidth=1.2, label="Mean")
-    ax.axvline(median_val, color="#55A868", linestyle=":", linewidth=1.4, label="Median")
+    ax.axvline(mean_val, color=COLOR_WARNING, linestyle=GRID_LINESTYLE, linewidth=1.2, label="Mean")
+    ax.axvline(median_val, color=COLOR_MEDIAN, linestyle=":", linewidth=1.4, label="Median")
     ax.set_title("Path Cost Distribution")
     ax.set_xlabel("Path Cost")
     ax.set_ylabel("Count")
-    ax.grid(axis="y", linestyle="--", alpha=0.35)
+    ax.grid(axis="y", linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
     ax.legend(frameon=False)
     sns.despine(ax=ax)
     fig.tight_layout()
@@ -54,7 +63,7 @@ def plot_path_cost_distribution(solved_df: pd.DataFrame) -> plt.Figure:
 
 def plot_search_time_by_path_cost(solved_df: pd.DataFrame) -> plt.Figure:
     """Plots the distribution of search time by path cost."""
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=DEFAULT_FIGSIZE)
     sns.boxplot(data=solved_df, x="path_cost", y="search_time_s", ax=ax)
     sns.pointplot(
         data=solved_df,
@@ -75,7 +84,7 @@ def plot_search_time_by_path_cost(solved_df: pd.DataFrame) -> plt.Figure:
 
 def plot_nodes_generated_by_path_cost(solved_df: pd.DataFrame) -> plt.Figure:
     """Plots the distribution of generated nodes by path cost."""
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=DEFAULT_FIGSIZE)
     sns.boxplot(data=solved_df, x="path_cost", y="nodes_generated", ax=ax)
     sns.pointplot(
         data=solved_df,

@@ -7,6 +7,18 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.patches import Ellipse
 
+from .constants import (
+    COMPARISON_ELLIPSE_ALPHA,
+    COMPARISON_ELLIPSE_LINEWIDTH,
+    COMPARISON_FIGSIZE,
+    COMPARISON_SCATTER_MAX_POINTS,
+    GRID_ALPHA,
+    GRID_LINESTYLE,
+    GRID_LINEWIDTH,
+    PALETTE_TAB10,
+    SCATTER_ALPHA_HIGH,
+)
+
 
 def _plot_scatter_with_ellipses(
     solved_df: pd.DataFrame,
@@ -14,11 +26,11 @@ def _plot_scatter_with_ellipses(
     y_col: str,
     hue_col: str,
     sorted_labels: list[str],
-    scatter_max_points: int,
-    legend_title: str,
-    title: str,
-    x_log: bool,
-    y_log: bool,
+    scatter_max_points: int = COMPARISON_SCATTER_MAX_POINTS,
+    legend_title: str = "",
+    title: str = "",
+    x_log: bool = False,
+    y_log: bool = False,
     add_annotations: bool = False,
     varying_params: Optional[List[str]] = None,
 ) -> plt.Figure:
@@ -26,7 +38,7 @@ def _plot_scatter_with_ellipses(
     Internal function to generate a generic scatter plot with confidence ellipses.
     If varying_params are provided, it connects the centers of runs that share common parameters.
     """
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=COMPARISON_FIGSIZE)
 
     plot_df = solved_df.copy()
     if len(plot_df) > scatter_max_points:
@@ -38,8 +50,8 @@ def _plot_scatter_with_ellipses(
         y=y_col,
         hue=hue_col,
         hue_order=sorted_labels,
-        palette="tab10",
-        alpha=0.7,
+        palette=PALETTE_TAB10,
+        alpha=SCATTER_ALPHA_HIGH,
         edgecolor=None,
         ax=ax,
     )
@@ -73,7 +85,7 @@ def _plot_scatter_with_ellipses(
         ellipse.set_transform(transf + ax.transData)
         return ax.add_patch(ellipse)
 
-    palette = sns.color_palette("tab10")
+    palette = PALETTE_TAB10
     grouped = solved_df.groupby(hue_col)
 
     # Pre-calculate run means for centers and lines
@@ -108,8 +120,8 @@ def _plot_scatter_with_ellipses(
                 ax,
                 n_std=1.0,
                 edgecolor=color,
-                linewidth=2,
-                alpha=0.5,
+                linewidth=COMPARISON_ELLIPSE_LINEWIDTH,
+                alpha=COMPARISON_ELLIPSE_ALPHA,
             )
 
     # Connect centers if there are parameters to group by
@@ -193,6 +205,8 @@ def _plot_scatter_with_ellipses(
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.legend(title=legend_title, bbox_to_anchor=(1.05, 1), loc="upper left")
-    ax.grid(True, which="both", linestyle="--", linewidth=0.7, alpha=0.6)
+    ax.grid(
+        True, which="both", linestyle=GRID_LINESTYLE, linewidth=GRID_LINEWIDTH, alpha=GRID_ALPHA
+    )
     fig.tight_layout()
     return fig

@@ -5,8 +5,23 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from .constants import (
+    EXPANSION_COLORS,
+    EXPANSION_SCATTER_MAX_POINTS,
+    GRID_ALPHA,
+    GRID_LINESTYLE,
+    HEURISTIC_DIAGONAL_ALPHA,
+    HEURISTIC_DIAGONAL_COLOR,
+    HEURISTIC_DIAGONAL_LINESTYLE,
+    LARGE_FIGSIZE,
+    SCATTER_ALPHA_LOW,
+    TALL_FIGSIZE,
+)
 
-def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5000) -> plt.Figure:
+
+def plot_expansion_distribution(
+    results: list[dict], scatter_max_points: int = EXPANSION_SCATTER_MAX_POINTS
+) -> plt.Figure:
     """Plots the distribution of node costs, heuristics, and keys over expansion steps."""
     expansion_data = []
     for r in results:
@@ -22,7 +37,7 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
             df["seed"] = r["seed"]
             expansion_data.append(df)
 
-    fig, axes = plt.subplots(3, 1, figsize=(12, 18), sharex=True)
+    fig, axes = plt.subplots(3, 1, figsize=TALL_FIGSIZE, sharex=True)
 
     title = "Node Value Distribution over Expansion Steps"
     if len(results) == 1 and "seed" in results[0]:
@@ -55,7 +70,7 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
         x="pop_generation",
         y="cost",
         ax=axes[0],
-        color="blue",
+        color=EXPANSION_COLORS["cost"],
         label="Mean Cost",
         errorbar="sd",
     )
@@ -64,15 +79,15 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
         x="pop_generation",
         y="cost",
         ax=axes[0],
-        alpha=0.1,
-        color="blue",
+        alpha=SCATTER_ALPHA_LOW,
+        color=EXPANSION_COLORS["cost"],
         edgecolor=None,
         label="Expanded Nodes",
     )
     axes[0].set_title("Cost (g) Distribution")
     axes[0].set_ylabel("Cost")
     axes[0].legend()
-    axes[0].grid(True, linestyle="--", alpha=0.6)
+    axes[0].grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
     # Plot Heuristic (h) vs. Expansion Step
     sns.lineplot(
@@ -80,7 +95,7 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
         x="pop_generation",
         y="dist",
         ax=axes[1],
-        color="green",
+        color=EXPANSION_COLORS["heuristic"],
         label="Mean Heuristic",
         errorbar="sd",
     )
@@ -89,15 +104,15 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
         x="pop_generation",
         y="dist",
         ax=axes[1],
-        alpha=0.1,
-        color="green",
+        alpha=SCATTER_ALPHA_LOW,
+        color=EXPANSION_COLORS["heuristic"],
         edgecolor=None,
         label="Expanded Nodes",
     )
     axes[1].set_title("Heuristic (h) Distribution")
     axes[1].set_ylabel("Heuristic")
     axes[1].legend()
-    axes[1].grid(True, linestyle="--", alpha=0.6)
+    axes[1].grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
     # Plot Key (f) vs. Expansion Step
     sns.lineplot(
@@ -105,7 +120,7 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
         x="pop_generation",
         y="key",
         ax=axes[2],
-        color="red",
+        color=EXPANSION_COLORS["key"],
         label="Mean Key (f=g+h)",
         errorbar="sd",
     )
@@ -114,8 +129,8 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
         x="pop_generation",
         y="key",
         ax=axes[2],
-        alpha=0.1,
-        color="red",
+        alpha=SCATTER_ALPHA_LOW,
+        color=EXPANSION_COLORS["key"],
         edgecolor=None,
         label="Expanded Nodes",
     )
@@ -123,7 +138,7 @@ def plot_expansion_distribution(results: list[dict], scatter_max_points: int = 5
     axes[2].set_xlabel("Expansion Step (Pop Generation)")
     axes[2].set_ylabel("Key Value")
     axes[2].legend()
-    axes[2].grid(True, linestyle="--", alpha=0.6)
+    axes[2].grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     return fig
@@ -151,7 +166,7 @@ def plot_heuristic_accuracy(
                 all_actual_dists.extend(analysis_data["actual"])
                 all_estimated_dists.extend(analysis_data["estimated"])
 
-    fig, ax = plt.subplots(figsize=(12, 12))
+    fig, ax = plt.subplots(figsize=LARGE_FIGSIZE)
 
     # Adjust title based on data source
     # - Optimal Path: "Actual" is optimal remaining cost-to-go (benchmark reference).
@@ -196,7 +211,15 @@ def plot_heuristic_accuracy(
             if has_optimal_path_used
             else "y=x (Perfect if found path is optimal)"
         )
-        ax.plot([0, limit], [0, limit], "g--", alpha=0.75, zorder=0, label=diag_label)
+        ax.plot(
+            [0, limit],
+            [0, limit],
+            color=HEURISTIC_DIAGONAL_COLOR,
+            linestyle=HEURISTIC_DIAGONAL_LINESTYLE,
+            alpha=HEURISTIC_DIAGONAL_ALPHA,
+            zorder=0,
+            label=diag_label,
+        )
         ax.set_xlim(0, limit)
         ax.set_ylim(0, limit)
 
