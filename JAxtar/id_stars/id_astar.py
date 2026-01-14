@@ -1,7 +1,3 @@
-"""
-Iterative Deepening A* (IDA*) Search Implementation
-"""
-
 import time
 
 import jax
@@ -11,6 +7,7 @@ from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.id_stars.frontier import frontier_builder
 from JAxtar.id_stars.search_base import IDLoopState, IDSearchResult
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
@@ -32,6 +29,16 @@ def _id_astar_loop_builder(
         pad_value=jnp.inf,
     )
 
+    generate_frontier = frontier_builder(puzzle, heuristic, batch_size)
+
+    # Heuristic for the full frontier batch (size = batch_size)
+    frontier_heuristic_fn = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        max_batch_size=batch_size,
+        min_batch_size=MIN_BATCH_SIZE,
+        pad_value=jnp.inf,
+    )
+
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
         # Initialize Result
         search_result = IDSearchResult.build(
@@ -42,39 +49,86 @@ def _id_astar_loop_builder(
 
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
 
-        # Initial Heuristic
-        start_reshaped = xnp.expand_dims(start, axis=0)
-        start_dist = heuristic.batched_distance(
-            heuristic_parameters,
-            start_reshaped,
-        )[0]
-        start_cost = 0.0
-        start_f = (cost_weight * start_cost + start_dist).astype(KEY_DTYPE)
+        # ----------------------------------------------------------------------
+        # 1. Generate Frontier
+        # ----------------------------------------------------------------------
+        frontier = generate_frontier(solve_config, start, **kwargs)
 
-        # Initialize Bound
+        # Calculate F values for the frontier to determine initial bound
+        frontier_h = frontier_heuristic_fn(
+            heuristic_parameters, frontier.states, frontier.valid_mask
+        ).astype(KEY_DTYPE)
+        frontier_f = (cost_weight * frontier.costs + frontier_h).astype(KEY_DTYPE)
+
+        # Initial Bound = min(f) of valid frontier nodes
+        # Filter invalid/inf
+        valid_fs = jnp.where(frontier.valid_mask, frontier_f, jnp.inf)
+        start_bound = jnp.min(valid_fs).astype(KEY_DTYPE)
+
+        # Initialize IDSearchResult with this bound
+        # Also carry over solved status if frontier found solution
         search_result = search_result.replace(
-            bound=start_f,
+            bound=start_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
+            solved=frontier.solved,
+            solution_state=frontier.solution_state,
+            solution_cost=frontier.solution_cost,
+            solved_idx=jnp.where(frontier.solved, 0, -1),  # Dummy index
         )
 
-        # Helper to push start node
-        def _push_start(sr):
-            valid_mask = jnp.zeros((batch_size,), dtype=jnp.bool_).at[0].set(True)
-            states_batch = xnp.pad(start, (0, batch_size - 1))
-            costs_batch = jnp.zeros((batch_size,), dtype=KEY_DTYPE)
-            depths_batch = jnp.zeros((batch_size,), dtype=jnp.int32)
-            actions_batch = jnp.full((batch_size,), -1, dtype=jnp.int32)
-            return sr.push_batch(states_batch, costs_batch, depths_batch, actions_batch, valid_mask)
+        # ----------------------------------------------------------------------
+        # 2. Push Initial Frontier (Subset <= Bound)
+        # ----------------------------------------------------------------------
+        def _push_frontier(sr, bound):
+            # Re-calculate F (or could store it, but cheap to re-calc for batch_size)
+            # We access frontier from closure or arg?
+            # Passed as arg usually better for explicit dependency, but here we can close over 'frontier'
+            # if we are inside init. But outer_body needs it too.
+            # So we define a helper that takes 'frontier'.
+            pass
 
-        search_result = _push_start(search_result)
+        # We prefer a shared helper. Let's define it inside the builder scope or per-call.
+        # Since it depends on 'frontier' which is dynamic data (from loop_state),
+        # we define it to take frontier as input.
+
+        search_result = _push_frontier_to_stack(
+            search_result,
+            frontier,
+            frontier_heuristic_fn,
+            heuristic_parameters,
+            start_bound,
+            batch_size,
+            action_size,
+        )
 
         return IDLoopState(
             search_result=search_result,
             solve_config=solve_config,
             params=heuristic_parameters,
-            start_state=start,
-            start_cost=jnp.array(start_cost, dtype=KEY_DTYPE),
+            frontier=frontier,
         )
+
+    # Helper to push allowed frontier nodes to stack and update next_bound
+    def _push_frontier_to_stack(sr, frontier, h_fn, h_params, bound, batch_size, action_size):
+        # Calc F
+        hs = h_fn(h_params, frontier.states, frontier.valid_mask).astype(KEY_DTYPE)
+        fs = (cost_weight * frontier.costs + hs).astype(KEY_DTYPE)
+
+        # Determine what to push
+        keep_mask = jnp.logical_and(frontier.valid_mask, fs <= bound + 1e-6)
+
+        # Determine what to start next_bound with
+        prune_mask = jnp.logical_and(frontier.valid_mask, fs > bound + 1e-6)
+        pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
+        min_pruned = jnp.min(pruned_fs).astype(KEY_DTYPE)
+
+        new_next_bound = jnp.minimum(sr.next_bound, min_pruned).astype(KEY_DTYPE)
+        sr = sr.replace(next_bound=new_next_bound)
+
+        # We need to construct 'actions' array for the frontier (default -1)
+        actions = jnp.full((batch_size,), -1, dtype=jnp.int32)
+
+        return sr.push_batch(frontier.states, frontier.costs, frontier.depths, actions, keep_mask)
 
     # -----------------------------------------------------------------------
     # INNER LOOP: Standard Batched DFS with Pruning by Bound
@@ -99,17 +153,11 @@ def _id_astar_loop_builder(
         any_solved = jnp.any(is_solved_mask)
 
         # If solved, store the solution state.
-        # We find the first solved index in the batch.
-        first_solved_idx = jnp.argmax(is_solved_mask)  # Returns index of first True
-
-        # We need to extract this state.
+        first_solved_idx = jnp.argmax(is_solved_mask)
         solved_st = parents[first_solved_idx]
         solved_cost = parent_costs[first_solved_idx]
-
-        # Reshape to (1, ...) since solution_state is batch-1
         solved_st_batch = xnp.expand_dims(solved_st, axis=0)
 
-        # Only update if we actually found a solution in this step
         new_solution_state = jax.lax.cond(
             any_solved, lambda _: solved_st_batch, lambda _: sr.solution_state, None
         )
@@ -127,10 +175,8 @@ def _id_astar_loop_builder(
         # 3. Expand
         neighbours, step_costs = puzzle.batched_get_neighbours(solve_config, parents, valid_mask)
 
-        # neighbours: [action_size, batch_size] Xtructurable
-        # step_costs: [action_size, batch_size] array
-        child_costs = parent_costs[jnp.newaxis, :] + step_costs  # [action_size, batch_size]
-        child_depths = parent_depths + 1  # [batch_size]
+        child_costs = parent_costs[jnp.newaxis, :] + step_costs
+        child_depths = parent_depths + 1
 
         flat_size = action_size * batch_size
         flat_neighbours = xnp.reshape(neighbours, (flat_size,))
@@ -144,6 +190,17 @@ def _id_astar_loop_builder(
 
         flat_valid_parent = jnp.tile(valid_mask, (action_size,))
         flat_valid = jnp.logical_and(flat_valid_parent, jnp.isfinite(flat_g))
+
+        # --- Optimization: In-Batch Deduplication ---
+        # We perform uniqueness check on the generated flat batch.
+        # This prevents flooding the stack with redundant states from the same parent batch.
+        unique_mask = xnp.unique_mask(
+            flat_neighbours,
+            key=flat_g,  # Key: cost (keep lowest cost if duplicates)
+            filled=flat_valid,
+        )
+        flat_valid = jnp.logical_and(flat_valid, unique_mask)
+        # ----------------------------------------------------
 
         # 4. Heuristic & Pruning
         return_sr = jax.lax.cond(
@@ -165,35 +222,30 @@ def _id_astar_loop_builder(
         return loop_state.replace(search_result=return_sr)
 
     def _expand_step(sr, states, gs, depths, actions, valid, h_params, h_fn):
-        # Compact valid items to the front for efficient heuristic evaluation
-        # Sort so that valid items come first
-        sort_keys = jnp.where(valid, 0, 1)  # 0 for valid, 1 for invalid
+        # Compact valid items to the front
+        sort_keys = jnp.where(valid, 0, 1)
         perm = jnp.argsort(sort_keys)
 
         states_sorted = states[perm]
         gs_sorted = gs[perm]
         depths_sorted = depths[perm]
         actions_sorted = actions[perm]
-        valid_sorted = valid[perm]  # Now True values are at the front
+        valid_sorted = valid[perm]
 
-        # Call heuristic on sorted (compacted) states
         hs_sorted = h_fn(h_params, states_sorted, valid_sorted).astype(KEY_DTYPE)
         fs_sorted = (cost_weight * gs_sorted + hs_sorted).astype(KEY_DTYPE)
 
         active_bound = sr.bound
 
-        # Prune check (on sorted data)
         keep_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted <= active_bound + 1e-6)
         prune_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted > active_bound + 1e-6)
 
-        # Update next bound
         pruned_fs = jnp.where(prune_mask_sorted, fs_sorted, jnp.array(jnp.inf, dtype=KEY_DTYPE))
         min_pruned_f = jnp.min(pruned_fs).astype(KEY_DTYPE)
         new_next_bound = jnp.minimum(sr.next_bound, min_pruned_f).astype(KEY_DTYPE)
 
         sr_next = sr.replace(next_bound=new_next_bound)
 
-        # Push kept nodes (states are already sorted, so we can push directly)
         sr_final = sr_next.push_batch(
             states_sorted, gs_sorted, depths_sorted, actions_sorted, keep_mask_sorted
         )
@@ -204,7 +256,6 @@ def _id_astar_loop_builder(
     # -----------------------------------------------------------------------
     def outer_cond(loop_state: IDLoopState):
         sr = loop_state.search_result
-        # Stop if solved OR if active_bound is infinite (no paths exist)
         return jnp.logical_and(~sr.solved, jnp.isfinite(sr.bound))
 
     def outer_body(loop_state: IDLoopState):
@@ -214,13 +265,7 @@ def _id_astar_loop_builder(
         sr = loop_state.search_result
 
         # 2. Update Bound & Reset
-
-        # New Bound becomes Next Bound
         new_bound = sr.next_bound
-
-        # Reset Search Result for next iteration
-        # Clear Stack, Reset next_bound
-        # BUT keep 'solved' status (though if we are here, it wasn't solved)
 
         reset_sr = sr.replace(
             bound=new_bound,
@@ -228,20 +273,16 @@ def _id_astar_loop_builder(
             stack_ptr=jnp.array(0, dtype=jnp.int32),
         )
 
-        # Push Start Node again
-        def _push_start(sr, start):
-            valid_mask = jnp.zeros((batch_size,), dtype=jnp.bool_).at[0].set(True)
-            states_batch = xnp.pad(start, (0, batch_size - 1))
-            costs_batch = jnp.zeros((batch_size,), dtype=KEY_DTYPE)
-            depths_batch = jnp.zeros((batch_size,), dtype=jnp.int32)
-            actions_batch = jnp.full((batch_size,), -1, dtype=jnp.int32)
-            return sr.push_batch(states_batch, costs_batch, depths_batch, actions_batch, valid_mask)
-
-        # Only push start if we are continuing (i.e. not solved & new bound is valid)
-        # But loop condition handles the 'continue' logic.
-        # Here we just prepare the state.
-
-        reset_sr = _push_start(reset_sr, loop_state.start_state)
+        # Push Frontier again with new bound
+        reset_sr = _push_frontier_to_stack(
+            reset_sr,
+            loop_state.frontier,
+            frontier_heuristic_fn,
+            loop_state.params,
+            new_bound,
+            batch_size,
+            action_size,
+        )
 
         return loop_state.replace(search_result=reset_sr)
 
@@ -254,7 +295,7 @@ def id_astar_builder(
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
     cost_weight: float = 1.0,
-    pop_ratio: float = 1.0,  # Unused, compatibility
+    pop_ratio: float = 1.0,
     show_compile_time: bool = False,
 ):
     init_loop, cond, body = _id_astar_loop_builder(

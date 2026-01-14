@@ -14,6 +14,24 @@ from xtructure import Xtructurable, base_dataclass
 from JAxtar.annotate import KEY_DTYPE
 
 
+@base_dataclass
+class IDFrontier:
+    """
+    Data structure for the pre-computed frontier.
+    Used to restart IDA* from a deeper set of nodes.
+    """
+
+    states: Xtructurable  # [frontier_size, ...]
+    costs: chex.Array  # [frontier_size]
+    depths: chex.Array  # [frontier_size]
+    valid_mask: chex.Array  # [frontier_size]
+
+    # Solution info if found during frontier generation
+    solved: chex.Array  # bool scalar
+    solution_state: Xtructurable  # [1, state_shape]
+    solution_cost: chex.Array  # scalar
+
+
 @base_dataclass(static_fields=("params"))
 class IDLoopState:
     """
@@ -23,8 +41,7 @@ class IDLoopState:
     search_result: "IDSearchResult"
     solve_config: Puzzle.SolveConfig
     params: Any
-    start_state: Xtructurable
-    start_cost: chex.Array
+    frontier: IDFrontier
 
 
 @base_dataclass(static_fields=("capacity", "action_size"))
