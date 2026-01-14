@@ -202,7 +202,7 @@ class EvaluationRunner:
 
             if is_sweep:
                 self.console.rule(
-                    f"[bold cyan]Run {i+1}/{len(param_combinations)}: pr={pr}, cw={cw}, bs={bs}[/bold cyan]"
+                    f"[bold cyan]Run {i + 1}/{len(param_combinations)}: pr={pr}, cw={cw}, bs={bs}[/bold cyan]"
                 )
 
             config_title = f"{self.run_label.replace('_', ' ').title()} Evaluation Configuration"
@@ -248,10 +248,14 @@ class EvaluationRunner:
                     # Log metrics to artifact manager
                     if "avg_optimal_cost" in benchmark_metrics:
                         am.log_scalar(
-                            "benchmark/avg_optimal_cost", benchmark_metrics["avg_optimal_cost"]
+                            "benchmark/avg_optimal_cost",
+                            benchmark_metrics["avg_optimal_cost"],
                         )
                     if "avg_path_cost" in benchmark_metrics:
-                        am.log_scalar("benchmark/avg_path_cost", benchmark_metrics["avg_path_cost"])
+                        am.log_scalar(
+                            "benchmark/avg_path_cost",
+                            benchmark_metrics["avg_path_cost"],
+                        )
                     if "avg_cost_gap" in benchmark_metrics:
                         am.log_scalar("benchmark/avg_cost_gap", benchmark_metrics["avg_cost_gap"])
                     if "avg_optimal_actions" in benchmark_metrics:
@@ -261,11 +265,13 @@ class EvaluationRunner:
                         )
                     if "avg_path_actions" in benchmark_metrics:
                         am.log_scalar(
-                            "benchmark/avg_path_actions", benchmark_metrics["avg_path_actions"]
+                            "benchmark/avg_path_actions",
+                            benchmark_metrics["avg_path_actions"],
                         )
                     if "avg_action_gap" in benchmark_metrics:
                         am.log_scalar(
-                            "benchmark/avg_action_gap", benchmark_metrics["avg_action_gap"]
+                            "benchmark/avg_action_gap",
+                            benchmark_metrics["avg_action_gap"],
                         )
                     if "exact_optimal_path_rate" in benchmark_metrics:
                         am.log_scalar(
@@ -330,20 +336,23 @@ class EvaluationRunner:
                         [r], scatter_max_points=current_eval_opts.scatter_max_points
                     )
                     am.save_and_log_plot(
-                        f"expansion_dist_seed_{r['seed']}", fig, sub_dir="expansion_plots"
+                        f"expansion_dist_seed_{r['seed']}",
+                        fig,
+                        sub_dir="expansion_plots",
                     )
 
                     # New Semantic Search Tree Plot (g vs h)
                     try:
                         fig_tree = plot_search_tree_semantic(
-                            r, max_points=current_eval_opts.max_node_size  # Use a large limit
+                            r,
+                            max_points=current_eval_opts.max_node_size,  # Use a large limit
                         )
                         am.save_and_log_plot(
                             f"search_tree_semantic_seed_{r['seed']}",
                             fig_tree,
                             sub_dir="expansion_plots",
                         )
-                    except Exception as e:
+                    except (ValueError, RuntimeError, AttributeError, OSError) as e:
                         print(f"Warning: Failed to generate semantic search tree plot: {e}")
 
         if is_sweep:
@@ -634,10 +643,15 @@ class EvaluationRunner:
                                     )
                                 )
                                 analysis_data["solved_index"] = solved_hash
-                            except Exception as exc:
+                            except (
+                                AttributeError,
+                                KeyError,
+                                ValueError,
+                                TypeError,
+                            ) as exc:
                                 print(f"Warning: Could not extract solved index: {exc}")
 
-                    except Exception as e:
+                    except (AttributeError, KeyError, ValueError, TypeError) as e:
                         print(
                             f"Warning: Could not extract states/parents for expansion analysis: {e}"
                         )
@@ -728,7 +742,7 @@ class EvaluationRunner:
                 pickle.dumps(sample_job[2])
                 pickle.dumps(sample_job[3])
                 use_process_pool = True
-            except Exception:
+            except (pickle.PickleError, TypeError, AttributeError):
                 use_process_pool = False
 
             max_workers = min(len(verify_jobs), max(1, os.cpu_count() or 1))

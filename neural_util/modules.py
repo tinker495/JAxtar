@@ -314,6 +314,7 @@ class MoEExpert(nn.Module):
     def __call__(self, x, training=False):
         dtype = self.dtype
         param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+
         for _ in range(self.hidden_N):
             if self.use_swiglu:
                 x = Swiglu(
@@ -330,6 +331,7 @@ class MoEExpert(nn.Module):
                     activation=self.activation,
                     dot_general_cls=self.dot_general_cls,
                 )(x, training)
+
         dense_kwargs = dict(
             dtype=dtype,
             param_dtype=param_dtype,
@@ -341,6 +343,95 @@ class MoEExpert(nn.Module):
         if self.apply_final_norm:
             x = apply_norm(self.norm_fn, x, training)
         return x
+
+
+# Delta Residual Block (Deep Delta Learning)
+class DeltaResBlock(nn.Module):
+    node_size: int
+    hidden_N: int = 1
+    norm_fn: nn.Module = DEFAULT_NORM_FN
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    gate_hidden_dim: int = 128
+    eps_k: float = 1e-6
+    dtype: any = DTYPE
+    param_dtype: any = None
+    dot_general_cls: Any = None
+
+    def _branch_mlp(self, x, out_dim, training):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        for _ in range(self.hidden_N):
+            if self.use_swiglu:
+                x = Swiglu(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+            else:
+                x = MLP(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+
+        x = nn.Dense(
+            out_dim,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
+        return x
+
+    @nn.compact
+    def __call__(self, x0, training=False):
+        dtype = self.dtype
+        x = x0.astype(dtype)
+        if x.ndim == 2:
+            pool_d = x
+            pool_v = jnp.mean(x, axis=-1, keepdims=True)
+            dv = 1
+        elif x.ndim == 3:
+            pool_d = jnp.mean(x, axis=-1)
+            pool_v = jnp.mean(x, axis=-2)
+            dv = x.shape[-1]
+        else:
+            raise ValueError(f"DeltaResBlock expects 2D or 3D input, got shape {x.shape}")
+
+        k = self._branch_mlp(pool_d, x.shape[-2] if x.ndim == 3 else x.shape[-1], training)
+        k = k / (jnp.linalg.norm(k, axis=-1, keepdims=True) + self.eps_k)
+
+        v = self._branch_mlp(pool_v, dv, training)
+
+        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        beta_hidden = nn.Dense(
+            self.gate_hidden_dim,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(pool_d)
+        beta_hidden = jnp.tanh(beta_hidden)
+        beta = nn.Dense(
+            1,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(beta_hidden)
+        beta = 2.0 * nn.sigmoid(beta).squeeze(-1)
+
+        if x.ndim == 2:
+            proj = jnp.sum(k * x, axis=-1, keepdims=True)
+            update = k * (v - proj)
+            x = x + beta[:, None] * update
+        else:
+            proj = jnp.einsum("bd,bdv->bv", k, x)
+            update = k[:, :, None] * (v - proj)[:, None, :]
+            x = x + beta[:, None, None] * update
+
+        return self.activation(x)
 
 
 # MoE Residual Block
@@ -365,14 +456,23 @@ class MoEResBlock(nn.Module):
         dtype = self.dtype
         param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
         x0_cast = x0.astype(dtype)
-        out_dim = x0.shape[-1]
+
+        # Handle 3D input (Batch, Seq, Dim) by flattening to (Batch*Seq, Dim)
+        input_ndim = x0_cast.ndim
+        if input_ndim == 3:
+            B, S, D = x0_cast.shape
+            x_in = x0_cast.reshape(B * S, D)
+        else:
+            x_in = x0_cast
+
+        out_dim = x_in.shape[-1]
 
         logits = nn.Dense(
             self.num_experts,
             dtype=dtype,
             param_dtype=param_dtype,
             dot_general_cls=self.dot_general_cls,
-        )(x0_cast)
+        )(x_in)
         if training and self.router_noise_std > 0.0:
             noise = jax.random.normal(self.make_rng("params"), logits.shape, dtype=logits.dtype)
             logits = logits + noise * self.router_noise_std
@@ -383,16 +483,16 @@ class MoEResBlock(nn.Module):
                 logits, self.num_experts, self.top_k, self.router_temperature
             )
             top_k = top_idx.shape[1]
-            batch_size = x0_cast.shape[0]
+            batch_size = x_in.shape[0]
             capacity = max(
                 self.min_capacity,
                 int(math.ceil(self.capacity_factor * batch_size * top_k / self.num_experts)),
             )
 
             if top_k == 1:
-                x_flat = x0_cast
+                x_flat = x_in
             else:
-                x_flat = jnp.repeat(x0_cast, top_k, axis=0)
+                x_flat = jnp.repeat(x_in, top_k, axis=0)
 
             expert_idx = top_idx.reshape(-1)
             gate_flat = top_gates.reshape(-1).astype(dtype)
@@ -434,50 +534,11 @@ class MoEResBlock(nn.Module):
             combine = dispatch * gate_flat[:, None, None]
             y_flat = jnp.einsum("bec,ecd->bd", combine, experts)
             mixture = y_flat.reshape(batch_size, top_k, out_dim).sum(axis=1)
-            out = self.activation(mixture + x0_cast)
+            out = self.activation(mixture + x_in)
         else:
             gate_probs = _moe_dense_gates(logits, self.router_temperature)
             gate_probs_mix = gate_probs.astype(dtype)
 
-            experts = nn.vmap(
-                MoEExpert,
-                variable_axes={"params": 0},
-                split_rngs={"params": True},
-                in_axes=0,
-                out_axes=0,
-                axis_size=self.num_experts,
-            )(
-                self.node_size,
-                out_dim,
-                hidden_N=self.hidden_N,
-                norm_fn=self.norm_fn,
-                activation=self.activation,
-                use_swiglu=self.use_swiglu,
-                dtype=dtype,
-                param_dtype=param_dtype,
-                dot_general_cls=self.dot_general_cls,
-                apply_final_norm=True,
-                name="experts",
-            )(
-                x0_cast, training
-            )  # x0_cast is broadcasted or we should expand it?
-            # In dense mode, x0_cast is (batch, dim). We need (num_experts, batch, dim) if in_axes=0?
-            # Wait, if in_axes=None for inputs, it broadcasts.
-            # But MoEExpert takes (x, training).
-            # If we want to feed the SAME input to all experts, we can set in_axes=(None, None).
-            # BUT, we want parameters to be vectorized.
-
-            # Correction:
-            # If we use in_axes=None for the input argument, `nn.vmap` will pass the same input to all replicas.
-            # Let's verify `nn.vmap` behavior.
-            # Yes, in_axes corresponds to the arguments of __call__.
-            # __call__(self, x, training=False).
-            # So in_axes=(None, None) means x and training are shared.
-            # However, the previous implementation was:
-            # [MoEExpert(...)(x0_cast, training) for i in range(self.num_experts)]
-            # So yes, same input to all.
-
-            # Re-writing the dense part properly:
             experts = nn.vmap(
                 MoEExpert,
                 variable_axes={"params": 0},
@@ -498,15 +559,16 @@ class MoEResBlock(nn.Module):
                 apply_final_norm=True,
                 name="experts",
             )(
-                x0_cast, training
+                x_in, training
             )
 
-            # experts shape: (num_experts, batch, dim)
-            # mixture calc: sum(experts * gate_probs)
             # experts: (E, B, D), gate_probs: (B, E)
             # einsum: "ebd,be->bd"
             mixture = jnp.einsum("ebd,be->bd", experts, gate_probs_mix)
-            out = self.activation(mixture + x0_cast)
+            out = self.activation(mixture + x_in)
+
+        if input_ndim == 3:
+            out = out.reshape(B, S, D)
 
         if not capture_aux:
             return out
@@ -557,17 +619,40 @@ class MoEPreActivationResBlock(nn.Module):
         dtype = self.dtype
         param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
         x0_cast = x0.astype(dtype)
-        out_dim = x0.shape[-1]
 
-        x = apply_norm(self.norm_fn, x0_cast, training)
+        # Handle 3D input
+        input_ndim = x0_cast.ndim
+        if input_ndim == 3:
+            B, S, D = x0_cast.shape
+            x0_flat = x0_cast.reshape(B * S, D)
+        else:
+            x0_flat = x0_cast
+
+        # Norm and activation on flattened or original input
+        # Note: applying norm on (B*S, D) is often same as (B, S, D) for LayerNorm/RMSNorm but different for BatchNorm
+        # BatchNorm usually expects (B, S, D).
+        # But here we are making MoE experts work on tokens.
+        # If we use BatchNorm, we should probably apply it before flattening?
+        # PreActivation: Norm -> act -> Dense.
+        # Let's apply norm on valid shape first.
+
+        x = apply_norm(self.norm_fn, x0_flat, training)
         x = self.activation(x)
+
+        # Now flatten for MoE
+        if input_ndim == 3:
+            x_in = x.reshape(B * S, D)
+        else:
+            x_in = x
+
+        out_dim = x_in.shape[-1]
 
         logits = nn.Dense(
             self.num_experts,
             dtype=dtype,
             param_dtype=param_dtype,
             dot_general_cls=self.dot_general_cls,
-        )(x)
+        )(x_in)
         if training and self.router_noise_std > 0.0:
             noise = jax.random.normal(self.make_rng("params"), logits.shape, dtype=logits.dtype)
             logits = logits + noise * self.router_noise_std
@@ -578,16 +663,16 @@ class MoEPreActivationResBlock(nn.Module):
                 logits, self.num_experts, self.top_k, self.router_temperature
             )
             top_k = top_idx.shape[1]
-            batch_size = x.shape[0]
+            batch_size = x_in.shape[0]
             capacity = max(
                 self.min_capacity,
                 int(math.ceil(self.capacity_factor * batch_size * top_k / self.num_experts)),
             )
 
             if top_k == 1:
-                x_flat = x
+                x_flat = x_in
             else:
-                x_flat = jnp.repeat(x, top_k, axis=0)
+                x_flat = jnp.repeat(x_in, top_k, axis=0)
 
             expert_idx = top_idx.reshape(-1)
             gate_flat = top_gates.reshape(-1).astype(dtype)
@@ -629,6 +714,10 @@ class MoEPreActivationResBlock(nn.Module):
             combine = dispatch * gate_flat[:, None, None]
             y_flat = jnp.einsum("bec,ecd->bd", combine, experts)
             mixture = y_flat.reshape(batch_size, top_k, out_dim).sum(axis=1)
+
+            if input_ndim == 3:
+                mixture = mixture.reshape(B, S, D)
+
             out = x0_cast + mixture
         else:
             gate_probs = _moe_dense_gates(logits, self.router_temperature)
@@ -655,12 +744,16 @@ class MoEPreActivationResBlock(nn.Module):
                 apply_final_norm=False,
                 name="experts",
             )(
-                x, training
+                x_in, training
             )
 
             # experts: (E, B, D), gate_probs: (B, E)
             # einsum: "ebd,be->bd"
             mixture = jnp.einsum("ebd,be->bd", experts, gate_probs_mix)
+
+            if input_ndim == 3:
+                mixture = mixture.reshape(B, S, D)
+
             out = x0_cast + mixture
 
         if not capture_aux:
@@ -693,6 +786,9 @@ class MoEPreActivationResBlock(nn.Module):
 RESBLOCK_REGISTRY = {
     "standard": ResBlock,
     "preactivation": PreActivationResBlock,
+    "delta": DeltaResBlock,
+    "moe": MoEResBlock,
+    "moe_preactivation": MoEPreActivationResBlock,
 }
 
 

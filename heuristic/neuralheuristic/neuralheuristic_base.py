@@ -1,3 +1,4 @@
+import pickle
 from abc import abstractmethod
 from typing import Any
 
@@ -73,14 +74,7 @@ class NeuralHeuristicBase(Heuristic):
                 if not is_model_downloaded(self.path):
                     download_model(self.path)
                 params, metadata = load_params_with_metadata(self.path)
-            if params is None:
-                print(
-                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
-                    "Initializing new parameters."
-                )
-                self.metadata = {}
-                self.nn_args_metadata = {}
-                return self.get_new_params()
+            assert params is not None, f"Failed to load parameters from {self.path}"
             self.metadata = metadata or {}
             self.metadata["nn_args"] = self.nn_args_metadata
 
@@ -115,7 +109,13 @@ class NeuralHeuristicBase(Heuristic):
             )  # check if the params are compatible with the model
             self._preloaded_params = None
             return params
-        except Exception as e:
+        except (
+            FileNotFoundError,
+            pickle.PickleError,
+            ValueError,
+            RuntimeError,
+            OSError,
+        ) as e:
             raise ValueError(f"Error loading NeuralHeuristic model: {e}") from e
 
     def save_model(self, path: str = None, metadata: dict = None):
@@ -145,7 +145,9 @@ class NeuralHeuristicBase(Heuristic):
         return (params, solve_config)
 
     def batched_distance(
-        self, heuristic_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State
+        self,
+        heuristic_parameters: tuple[Any, Puzzle.SolveConfig],
+        current: Puzzle.State,
     ) -> chex.Array:
         params, solve_config = heuristic_parameters
         return self.batched_param_distance(params, solve_config, current)
@@ -164,7 +166,9 @@ class NeuralHeuristicBase(Heuristic):
         return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
 
     def distance(
-        self, heuristic_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State
+        self,
+        heuristic_parameters: tuple[Any, Puzzle.SolveConfig],
+        current: Puzzle.State,
     ) -> float:
         """
         This function should return the distance between the state and the target.
@@ -201,6 +205,6 @@ class NeuralHeuristicBase(Heuristic):
             if params is not None:
                 self._preloaded_params = params
             return metadata or {}
-        except Exception as e:
+        except (FileNotFoundError, pickle.PickleError, OSError, RuntimeError) as e:
             print(f"Error loading metadata from {self.path}: {e}")
             return {}

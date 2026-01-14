@@ -2,8 +2,8 @@ import jax.numpy as jnp
 import pytest
 from xtructure import FieldDescriptor, xtructure_dataclass
 
-from heuristic.neuralheuristic.heuristic_train import _compute_diffusion_distance
-from qfunction.neuralq.qfunction_train import _compute_diffusion_q
+from heuristic.neuralheuristic.target_dataset_builder import _compute_diffusion_distance
+from qfunction.neuralq.target_dataset_builder import _compute_diffusion_q
 from train_util.sampling import flatten_scanned_paths
 
 
@@ -33,10 +33,12 @@ def test_diffusion_distance_overwrites_duplicate_child_with_shorter_path():
     move_costs = jnp.array([100.0, 100.0, 100.0, 0.0], dtype=jnp.float32)
     action_costs = jnp.array([1.0, 1.0, 1.0, 0.0], dtype=jnp.float32)
     parent_indices = jnp.array([2, 3, -1, -1], dtype=jnp.int32)  # A->B2, B1->C
+    is_solved = jnp.array([False, False, False, True], dtype=bool)  # Only state C is at goal
 
     out = _compute_diffusion_distance(
         solve_configs=solve_configs,
         states=states,
+        is_solved=is_solved,
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -59,11 +61,13 @@ def test_diffusion_q_overwrites_duplicate_child_state_action_with_shorter_path()
     move_costs = jnp.array([100.0, 100.0, 100.0, 0.0], dtype=jnp.float32)
     action_costs = jnp.array([[1.0], [1.0], [1.0], [0.0]], dtype=jnp.float32)
     parent_indices = jnp.array([2, 3, -1, -1], dtype=jnp.int32)  # A->B2, B1->C
+    is_solved = jnp.array([False, False, False, True], dtype=bool)  # Only state C is at goal
 
     out = _compute_diffusion_q(
         solve_configs=solve_configs,
         states=states,
         trajectory_actions=trajectory_actions,
+        is_solved=is_solved,
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -94,6 +98,7 @@ def test_flatten_scanned_paths_offsets_parent_indices_to_prevent_cross_chunk_sho
         "move_costs": jnp.array([[2.0, 1.0, 0.0], [20.0, 10.0, 0.0]], dtype=jnp.float32),
         "action_costs": jnp.array([[1.0, 1.0, 0.0], [10.0, 10.0, 0.0]], dtype=jnp.float32),
         "parent_indices": jnp.array([[1, 2, -1], [1, 2, -1]], dtype=jnp.int32),
+        "is_solved": jnp.array([[False, False, True], [False, False, True]], dtype=bool),
     }
 
     # Old behavior: flatten without offsetting per-scan-step indices.
@@ -101,6 +106,7 @@ def test_flatten_scanned_paths_offsets_parent_indices_to_prevent_cross_chunk_sho
     out_naive = _compute_diffusion_distance(
         solve_configs=naive["solve_configs"],
         states=naive["states"],
+        is_solved=naive["is_solved"],
         move_costs=naive["move_costs"],
         action_costs=naive["action_costs"],
         parent_indices=naive["parent_indices"],
@@ -115,6 +121,7 @@ def test_flatten_scanned_paths_offsets_parent_indices_to_prevent_cross_chunk_sho
     out_fixed = _compute_diffusion_distance(
         solve_configs=fixed["solve_configs"],
         states=fixed["states"],
+        is_solved=fixed["is_solved"],
         move_costs=fixed["move_costs"],
         action_costs=fixed["action_costs"],
         parent_indices=fixed["parent_indices"],
@@ -136,12 +143,14 @@ def test_flatten_scanned_paths_offset_avoids_underestimating_diffusion_q():
         "actions": jnp.array([[0, 0, 0], [0, 0, 0]], dtype=jnp.uint8),
         "action_costs": jnp.array([[1.0, 1.0, 0.0], [10.0, 10.0, 0.0]], dtype=jnp.float32),
         "parent_indices": jnp.array([[1, 2, -1], [1, 2, -1]], dtype=jnp.int32),
+        "is_solved": jnp.array([[False, False, True], [False, False, True]], dtype=bool),
     }
 
     fixed = flatten_scanned_paths(paths, dataset_size)
     out = _compute_diffusion_q(
         solve_configs=fixed["solve_configs"],
         states=fixed["states"],
+        is_solved=fixed["is_solved"],
         trajectory_actions=fixed["actions"].reshape((-1, 1)),
         move_costs=fixed["move_costs"],
         action_costs=fixed["action_costs"].reshape((-1, 1)),
