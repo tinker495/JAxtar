@@ -69,6 +69,28 @@ def merge_params(new_params: Any, old_params: Any) -> Any:
     # but typically new_params is fresh.
     # We'll use a recursive update function.
 
+    def validate_structure(d1, d2, path=""):
+        is_d1_dict = isinstance(d1, dict)
+        is_d2_dict = isinstance(d2, dict)
+
+        if is_d1_dict != is_d2_dict:
+            raise ValueError(f"Structure mismatch at '{path}': Type mismatch (Dict vs Leaf).")
+
+        if is_d1_dict:
+            d1_keys = set(d1.keys())
+            d2_keys = set(d2.keys())
+            if d1_keys != d2_keys:
+                missing = d1_keys - d2_keys
+                extra = d2_keys - d1_keys
+                raise ValueError(
+                    f"Structure mismatch at '{path}': Keys do not match.",
+                    f"Missing in Old: {missing}, Extra in Old: {extra}",
+                )
+
+            for k in d1_keys:
+                new_path = f"{path}.{k}" if path else k
+                validate_structure(d1[k], d2[k], new_path)
+
     def recursive_update(d, u):
         for k, v in u.items():
             if isinstance(v, dict) and k in d and isinstance(d[k], dict):
@@ -79,6 +101,7 @@ def merge_params(new_params: Any, old_params: Any) -> Any:
 
     # We assume 'target' is a dictionary-like structure representing the full model
     if isinstance(target, dict) and isinstance(source, dict):
+        validate_structure(target, source)
         merged = recursive_update(target, source)
     else:
         # Fallback for non-dict (though params should be dicts)
