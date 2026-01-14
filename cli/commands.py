@@ -6,6 +6,8 @@ from helpers import heuristic_dist_format, qfunction_dist_format
 from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
+from JAxtar.id_stars.id_astar import id_astar_builder
+from JAxtar.id_stars.id_qstar import id_qstar_builder
 from JAxtar.stars.astar import astar_builder
 from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.qstar import qstar_builder
@@ -163,4 +165,62 @@ def qstar(
         qfunction.q_value,
         qfunction_dist_format,
         "Q* Search Configuration",
+    )
+
+
+@click.command()
+@puzzle_options
+@search_options
+@heuristic_options
+@visualize_options
+def id_astar(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    heuristic: Heuristic,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
+    run_search_command(
+        puzzle,
+        puzzle_name,
+        seeds,
+        search_options,
+        visualize_options,
+        id_astar_builder,
+        "heuristic",
+        heuristic,
+        heuristic.distance,
+        heuristic_dist_format,
+        "IDA* Search Configuration",
+    )
+
+
+@click.command()
+@puzzle_options
+@search_options
+@qfunction_options
+@visualize_options
+def id_qstar(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    qfunction: QFunction,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
+    run_search_command(
+        puzzle,
+        puzzle_name,
+        seeds,
+        search_options,
+        visualize_options,
+        id_qstar_builder,
+        "qfunction",
+        qfunction,
+        qfunction.q_value,
+        qfunction_dist_format,
+        "ID-Q* Search Configuration",
     )
