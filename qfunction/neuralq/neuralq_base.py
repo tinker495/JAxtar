@@ -73,14 +73,7 @@ class NeuralQFunctionBase(QFunction):
                 if not is_model_downloaded(self.path):
                     download_model(self.path)
                 params, metadata = load_params_with_metadata(self.path)
-            if params is None:
-                print(
-                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
-                    "Initializing new parameters."
-                )
-                self.metadata = {}
-                self.nn_args_metadata = {}
-                return self.get_new_params()
+            assert params is not None, f"Failed to load parameters from {self.path}"
             self.metadata = metadata or {}
             self.metadata["nn_args"] = self.nn_args_metadata
 
