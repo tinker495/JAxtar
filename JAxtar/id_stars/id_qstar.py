@@ -45,10 +45,7 @@ def _id_qstar_frontier_builder(
         start_reshaped = xnp.expand_dims(start, axis=0)
         root_solved = puzzle.batched_is_solved(solve_config, start_reshaped)[0]
 
-        start_padded = jax.tree_util.tree_map(
-            lambda x: jnp.pad(x, [(0, batch_size - 1)] + [(0, 0)] * (x.ndim - 1)),
-            start_reshaped,
-        )
+        start_padded = xnp.pad(start_reshaped, ((0, batch_size - 1),), mode="constant")
 
         costs_padded = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
         costs_padded = costs_padded.at[0].set(0.0)
@@ -390,7 +387,7 @@ def _id_qstar_loop_builder(
         reset_sr = sr.replace(
             bound=new_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
-            stack_ptr=jnp.array(0, dtype=jnp.int32),
+            stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
         )
 
         reset_sr = _push_frontier_to_stack(
