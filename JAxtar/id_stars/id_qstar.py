@@ -84,7 +84,11 @@ def _id_qstar_frontier_builder(
             within_limit = i < MAX_FRONTIER_STEPS
             not_solved = ~frontier.solved
             return jnp.logical_and(
-                not_solved, jnp.logical_and(within_limit, jnp.logical_and(has_capacity, has_nodes))
+                not_solved,
+                jnp.logical_and(
+                    within_limit,
+                    jnp.logical_and(has_capacity, has_nodes),
+                ),
             )
 
         def body_bounded(val: tuple[IDFrontier, jnp.int32]):
@@ -354,8 +358,23 @@ def _id_qstar_loop_builder(
         new_next_bound = jnp.minimum(sr.next_bound, min_pruned).astype(KEY_DTYPE)
         sr = sr.replace(next_bound=new_next_bound)
 
+        # Optimization: Sort valid children by f-value descending
+        # (Worst -> Best) such that valid nodes are first, then invalid.
+        f_key = jnp.where(keep_mask_sorted, -fs_sorted, jnp.inf)
+        perm_f = jnp.argsort(f_key)
+
+        states_ordered = states_sorted[perm_f]
+        gs_ordered = gs_sorted[perm_f]
+        depths_ordered = depths_sorted[perm_f]
+        actions_ordered = actions_sorted[perm_f]
+        keep_mask_ordered = keep_mask_sorted[perm_f]
+
         return sr.push_batch(
-            states_sorted, gs_sorted, depths_sorted, actions_sorted, keep_mask_sorted
+            states_ordered,
+            gs_ordered,
+            depths_ordered,
+            actions_ordered,
+            keep_mask_ordered,
         )
 
     def outer_cond(loop_state: IDLoopState):

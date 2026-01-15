@@ -399,8 +399,26 @@ def _id_astar_loop_builder(
 
         sr_next = sr.replace(next_bound=new_next_bound)
 
+        # Optimization: Sort valid children by f-value descending (Worst -> Best)
+        # We construct a key such that Valid items come first, and within Valid, sorted by F descending.
+        # Key Layout: [Valid items sorted by -F (Worst->Best), Invalid items (Inf)]
+        # F-values are positive. -F is negative.
+        # Worst (20) -> -20. Best (10) -> -10.
+        f_key = jnp.where(keep_mask_sorted, -fs_sorted, jnp.inf)
+        perm_f = jnp.argsort(f_key)
+
+        states_ordered = states_sorted[perm_f]
+        gs_ordered = gs_sorted[perm_f]
+        depths_ordered = depths_sorted[perm_f]
+        actions_ordered = actions_sorted[perm_f]
+        keep_mask_ordered = keep_mask_sorted[perm_f]
+
         sr_final = sr_next.push_batch(
-            states_sorted, gs_sorted, depths_sorted, actions_sorted, keep_mask_sorted
+            states_ordered,
+            gs_ordered,
+            depths_ordered,
+            actions_ordered,
+            keep_mask_ordered,
         )
         return sr_final
 
