@@ -335,43 +335,34 @@ def _id_qstar_loop_builder(
         return loop_state.replace(search_result=return_sr)
 
     def _expand_step(sr, states, gs, depths, actions, valid, fs):
-        sort_keys = jnp.where(valid, 0, 1)
-        perm = jnp.argsort(sort_keys)
-
-        states_sorted = states[perm]
-        gs_sorted = gs[perm]
-        depths_sorted = depths[perm]
-        actions_sorted = actions[perm]
-        valid_sorted = valid[perm]
-        fs_sorted = fs[perm]
-
         active_bound = sr.bound
-        keep_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted <= active_bound + 1e-6)
-        prune_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted > active_bound + 1e-6)
+        keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
 
-        pruned_fs = jnp.where(prune_mask_sorted, fs_sorted, jnp.inf)
+        # Optimization: Sort valid children by f-value descending (Worst -> Best)
+        # Key: -fs for kept items, inf for others (to push to end)
+        f_key = jnp.where(keep_mask, -fs, jnp.inf)
+        perm = jnp.argsort(f_key)
+
+        states_ordered = xnp.take(states, perm, axis=0)
+        gs_ordered = xnp.take(gs, perm, axis=0)
+        depths_ordered = xnp.take(depths, perm, axis=0)
+        actions_ordered = xnp.take(actions, perm, axis=0)
+
+        n_push = jnp.sum(keep_mask)
+
+        # Update next bound
+        prune_mask = jnp.logical_and(valid, fs > active_bound + 1e-6)
+        pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
         min_pruned = jnp.min(pruned_fs).astype(KEY_DTYPE)
-
         new_next_bound = jnp.minimum(sr.next_bound, min_pruned).astype(KEY_DTYPE)
         sr = sr.replace(next_bound=new_next_bound)
 
-        # Optimization: Sort valid children by f-value descending
-        # (Worst -> Best) such that valid nodes are first, then invalid.
-        f_key = jnp.where(keep_mask_sorted, -fs_sorted, jnp.inf)
-        perm_f = jnp.argsort(f_key)
-
-        states_ordered = states_sorted[perm_f]
-        gs_ordered = gs_sorted[perm_f]
-        depths_ordered = depths_sorted[perm_f]
-        actions_ordered = actions_sorted[perm_f]
-        keep_mask_ordered = keep_mask_sorted[perm_f]
-
-        return sr.push_batch(
+        return sr.push_packed_batch(
             states_ordered,
             gs_ordered,
             depths_ordered,
             actions_ordered,
-            keep_mask_ordered,
+            n_push,
         )
 
     def outer_cond(loop_state: IDLoopState):

@@ -217,3 +217,39 @@ class IDSearchResult:
             stack=new_stack,
             generated_count=new_generated_count,
         )
+
+    def push_packed_batch(
+        self,
+        states: Xtructurable,
+        costs: chex.Array,
+        depths: chex.Array,
+        actions: chex.Array,
+        n_push: chex.Array,
+    ) -> "IDSearchResult":
+        """
+        Push a pre-packed batch of items onto the stack.
+        Assumes the items are already sorted/packed such that the valid items
+        to be pushed are at the beginning of the arrays.
+        """
+        current_ptr = self.stack.size.astype(jnp.int32)
+        capacity = self.stack.max_size
+
+        safe_n_push = jnp.minimum(n_push.astype(jnp.int32), capacity - current_ptr)
+
+        items = self.ItemCls(state=states, cost=costs, depth=depths, action=actions)
+
+        def _update_leaf(stack_arr, update_arr):
+            start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)
+            return jax.lax.dynamic_update_slice(stack_arr, update_arr, start_indices)
+
+        new_val_store = jax.tree_util.tree_map(_update_leaf, self.stack.val_store, items)
+
+        new_ptr = (current_ptr + safe_n_push).astype(self.stack.size.dtype)
+        new_generated_count = self.generated_count + safe_n_push
+
+        new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
+
+        return self.replace(
+            stack=new_stack,
+            generated_count=new_generated_count,
+        )

@@ -377,11 +377,11 @@ def _id_astar_loop_builder(
         sort_keys = jnp.where(valid, 0, 1)
         perm = jnp.argsort(sort_keys)
 
-        states_sorted = states[perm]
-        gs_sorted = gs[perm]
-        depths_sorted = depths[perm]
-        actions_sorted = actions[perm]
-        valid_sorted = valid[perm]
+        states_sorted = xnp.take(states, perm, axis=0)
+        gs_sorted = xnp.take(gs, perm, axis=0)
+        depths_sorted = xnp.take(depths, perm, axis=0)
+        actions_sorted = xnp.take(actions, perm, axis=0)
+        valid_sorted = xnp.take(valid, perm, axis=0)
 
         hs_sorted = h_fn(h_params, states_sorted, valid_sorted).astype(KEY_DTYPE)
         fs_sorted = (cost_weight * gs_sorted + hs_sorted).astype(KEY_DTYPE)
@@ -389,36 +389,33 @@ def _id_astar_loop_builder(
         active_bound = sr.bound
 
         keep_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted <= active_bound + 1e-6)
-        prune_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted > active_bound + 1e-6)
 
-        pruned_fs = jnp.where(prune_mask_sorted, fs_sorted, jnp.array(jnp.inf, dtype=KEY_DTYPE))
+        # Optimization: Sort valid children by f-value descending (Worst -> Best)
+        # We construct a key such that Valid items come first, and within Valid, sorted by F descending.
+        f_key = jnp.where(keep_mask_sorted, -fs_sorted, jnp.inf)
+        perm_f = jnp.argsort(f_key)
+
+        states_ordered = xnp.take(states_sorted, perm_f, axis=0)
+        gs_ordered = xnp.take(gs_sorted, perm_f, axis=0)
+        depths_ordered = xnp.take(depths_sorted, perm_f, axis=0)
+        actions_ordered = xnp.take(actions_sorted, perm_f, axis=0)
+
+        n_push = jnp.sum(keep_mask_sorted)
+
+        prune_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted > active_bound + 1e-6)
+        pruned_fs = jnp.where(prune_mask_sorted, fs_sorted, jnp.inf)
         min_pruned_f = jnp.min(pruned_fs).astype(KEY_DTYPE)
         new_next_bound = jnp.minimum(sr.next_bound, min_pruned_f).astype(KEY_DTYPE)
 
         sr_next = sr.replace(next_bound=new_next_bound)
 
-        # Optimization: Sort valid children by f-value descending (Worst -> Best)
-        # We construct a key such that Valid items come first, and within Valid, sorted by F descending.
-        # Key Layout: [Valid items sorted by -F (Worst->Best), Invalid items (Inf)]
-        # F-values are positive. -F is negative.
-        # Worst (20) -> -20. Best (10) -> -10.
-        f_key = jnp.where(keep_mask_sorted, -fs_sorted, jnp.inf)
-        perm_f = jnp.argsort(f_key)
-
-        states_ordered = states_sorted[perm_f]
-        gs_ordered = gs_sorted[perm_f]
-        depths_ordered = depths_sorted[perm_f]
-        actions_ordered = actions_sorted[perm_f]
-        keep_mask_ordered = keep_mask_sorted[perm_f]
-
-        sr_final = sr_next.push_batch(
+        return sr_next.push_packed_batch(
             states_ordered,
             gs_ordered,
             depths_ordered,
             actions_ordered,
-            keep_mask_ordered,
+            n_push,
         )
-        return sr_final
 
     # -----------------------------------------------------------------------
     # OUTER LOOP: Iterative Deepening
