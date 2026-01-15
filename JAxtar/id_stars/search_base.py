@@ -8,6 +8,7 @@ from typing import Any
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 from xtructure.stack import Stack
@@ -26,11 +27,30 @@ class IDFrontier:
     costs: chex.Array  # [frontier_size]
     depths: chex.Array  # [frontier_size]
     valid_mask: chex.Array  # [frontier_size]
+    f_scores: chex.Array  # [frontier_size]
 
     # Solution info if found during frontier generation
     solved: chex.Array  # bool scalar
     solution_state: Xtructurable  # [1, state_shape]
     solution_cost: chex.Array  # scalar
+
+
+def compact_by_valid(
+    values: Any,
+    valid_mask: chex.Array,
+) -> tuple[Any, chex.Array, chex.Array, chex.Array]:
+    """
+    Pack valid entries to the front for use with variable_batch_switcher.
+
+    Returns:
+        Tuple of (packed_values, packed_valid_mask, valid_count, packed_indices).
+    """
+    flat_size = valid_mask.shape[0]
+    valid_idx = jnp.nonzero(valid_mask, size=flat_size, fill_value=0)[0].astype(jnp.int32)
+    valid_count = jnp.sum(valid_mask.astype(jnp.int32))
+    packed_values = xnp.take(values, valid_idx, axis=0)
+    packed_valid = jnp.arange(flat_size, dtype=jnp.int32) < valid_count
+    return packed_values, packed_valid, valid_count, valid_idx
 
 
 @base_dataclass(static_fields=("params"))

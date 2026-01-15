@@ -4,10 +4,16 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from xtructure import FieldDescriptor, xtructure_dataclass
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.id_stars.search_base import IDFrontier, IDLoopState, IDSearchResult
+from JAxtar.id_stars.search_base import (
+    IDFrontier,
+    IDLoopState,
+    IDSearchResult,
+    compact_by_valid,
+)
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -21,11 +27,18 @@ def _id_astar_frontier_builder(
     Uses Batched BFS with in-batch deduplication. (Inlined for ID-A*)
     """
     action_size = puzzle.action_size
-    max_children = batch_size * action_size
+    flat_size = action_size * batch_size
+    statecls = puzzle.State
+
+    @xtructure_dataclass
+    class FrontierFlatBatch:
+        state: FieldDescriptor.scalar(dtype=statecls)
+        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+        depth: FieldDescriptor.scalar(dtype=jnp.int32)
 
     variable_heuristic = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=max_children,
+        max_batch_size=action_size * batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
@@ -62,6 +75,7 @@ def _id_astar_frontier_builder(
             costs=costs_padded,
             depths=depths_padded,
             valid_mask=valid_padded,
+            f_scores=costs_padded,
             solved=root_solved,
             solution_state=solution_state,
             solution_cost=solution_cost,
@@ -93,12 +107,15 @@ def _id_astar_frontier_builder(
             child_g = (gs[jnp.newaxis, :] + step_costs).astype(KEY_DTYPE)
             child_depth = depth + 1
 
-            flat_size = action_size * batch_size
             flat_states = xnp.reshape(neighbours, (flat_size,))
             flat_g = child_g.reshape((flat_size,))
-            flat_depth = jnp.tile(child_depth, (action_size,)).reshape((flat_size,))
+            flat_depth = jnp.broadcast_to(child_depth, (action_size, batch_size)).reshape(
+                (flat_size,)
+            )
 
-            flat_parent_valid = jnp.tile(valid, (action_size,))
+            flat_parent_valid = jnp.broadcast_to(valid, (action_size, batch_size)).reshape(
+                (flat_size,)
+            )
             flat_valid = jnp.logical_and(flat_parent_valid, jnp.isfinite(flat_g))
 
             is_solved_mask = puzzle.batched_is_solved(solve_config, flat_states)
@@ -117,36 +134,38 @@ def _id_astar_frontier_builder(
                 any_solved, lambda _: found_sol_cost, lambda _: frontier.solution_cost, None
             )
 
-            sort_keys_pre = jnp.where(flat_valid, 0, 1)
-            perm_pre = jnp.argsort(sort_keys_pre)
+            unique_mask = xnp.unique_mask(flat_states, key=flat_g, filled=flat_valid)
+            flat_valid = jnp.logical_and(flat_valid, unique_mask)
 
-            states_pre = flat_states[perm_pre]
-            gs_pre = flat_g[perm_pre]
-            depths_pre = flat_depth[perm_pre]
-            valid_pre = flat_valid[perm_pre]
+            flat_batch = FrontierFlatBatch(state=flat_states, cost=flat_g, depth=flat_depth)
+            flat_batch, compact_valid, _, _ = compact_by_valid(flat_batch, flat_valid)
 
-            hs_pre = variable_heuristic(h_params, states_pre, valid_pre).astype(KEY_DTYPE)
-            fs_pre = gs_pre + hs_pre
+            hs_compact = variable_heuristic(
+                h_params,
+                flat_batch.state,
+                compact_valid,
+            ).astype(KEY_DTYPE)
+            fs_compact = (flat_batch.cost + hs_compact).astype(KEY_DTYPE)
+            f_safe = jnp.where(
+                compact_valid, jnp.nan_to_num(fs_compact, nan=1e5, posinf=1e5), jnp.inf
+            )
 
-            unique_mask_pre = xnp.unique_mask(states_pre, key=gs_pre, filled=valid_pre)
-            valid_after_dedup = jnp.logical_and(valid_pre, unique_mask_pre)
+            neg_f = -f_safe
+            top_vals, top_indices = jax.lax.top_k(neg_f, batch_size)
+            selected_f = -top_vals
+            selected_valid = jnp.isfinite(selected_f)
 
-            f_safe = jnp.nan_to_num(fs_pre, nan=1e5, posinf=1e5)
-            sort_keys_final = jnp.where(valid_after_dedup, f_safe, 1e6)
-            perm_final = jnp.argsort(sort_keys_final)
-
-            top_indices = perm_final[:batch_size]
-
-            new_states = states_pre[top_indices]
-            new_costs = gs_pre[top_indices]
-            new_depths = depths_pre[top_indices]
-            new_valid = valid_after_dedup[top_indices]
+            new_states = xnp.take(flat_batch.state, top_indices, axis=0)
+            new_costs = flat_batch.cost[top_indices]
+            new_depths = flat_batch.depth[top_indices]
+            new_valid = jnp.logical_and(selected_valid, compact_valid[top_indices])
 
             new_frontier = IDFrontier(
                 states=new_states,
                 costs=new_costs,
                 depths=new_depths,
                 valid_mask=new_valid,
+                f_scores=new_costs,
                 solved=new_solved,
                 solution_state=new_sol_state,
                 solution_cost=new_sol_cost,
@@ -172,10 +191,23 @@ def _id_astar_loop_builder(
 ):
     statecls = puzzle.State
     action_size = puzzle.action_size
+    flat_size = action_size * batch_size
+    action_ids = jnp.arange(action_size, dtype=jnp.int32)
+    flat_actions = jnp.broadcast_to(action_ids[:, None], (action_size, batch_size)).reshape(
+        (flat_size,)
+    )
+    frontier_actions = jnp.full((batch_size,), -1, dtype=jnp.int32)
+
+    @xtructure_dataclass
+    class ExpandFlatBatch:
+        state: FieldDescriptor.scalar(dtype=statecls)
+        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+        depth: FieldDescriptor.scalar(dtype=jnp.int32)
+        action: FieldDescriptor.scalar(dtype=jnp.int32)
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=batch_size * action_size,
+        max_batch_size=action_size * batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
@@ -203,17 +235,18 @@ def _id_astar_loop_builder(
         # ----------------------------------------------------------------------
         # 1. Generate Frontier
         # ----------------------------------------------------------------------
-        frontier = generate_frontier(solve_config, start, **kwargs)
+        frontier = generate_frontier(solve_config, start, h_params=heuristic_parameters, **kwargs)
 
         # Calculate F values for the frontier to determine initial bound
         frontier_h = frontier_heuristic_fn(
             heuristic_parameters, frontier.states, frontier.valid_mask
         ).astype(KEY_DTYPE)
         frontier_f = (cost_weight * frontier.costs + frontier_h).astype(KEY_DTYPE)
+        frontier = frontier.replace(f_scores=frontier_f)
 
         # Initial Bound = min(f) of valid frontier nodes
         # Filter invalid/inf
-        valid_fs = jnp.where(frontier.valid_mask, frontier_f, jnp.inf)
+        valid_fs = jnp.where(frontier.valid_mask, frontier.f_scores, jnp.inf)
         start_bound = jnp.min(valid_fs).astype(KEY_DTYPE)
 
         # Initialize IDSearchResult with this bound
@@ -230,27 +263,7 @@ def _id_astar_loop_builder(
         # ----------------------------------------------------------------------
         # 2. Push Initial Frontier (Subset <= Bound)
         # ----------------------------------------------------------------------
-        def _push_frontier(sr, bound):
-            # Re-calculate F (or could store it, but cheap to re-calc for batch_size)
-            # We access frontier from closure or arg?
-            # Passed as arg usually better for explicit dependency, but here we can close over 'frontier'
-            # if we are inside init. But outer_body needs it too.
-            # So we define a helper that takes 'frontier'.
-            pass
-
-        # We prefer a shared helper. Let's define it inside the builder scope or per-call.
-        # Since it depends on 'frontier' which is dynamic data (from loop_state),
-        # we define it to take frontier as input.
-
-        search_result = _push_frontier_to_stack(
-            search_result,
-            frontier,
-            frontier_heuristic_fn,
-            heuristic_parameters,
-            start_bound,
-            batch_size,
-            action_size,
-        )
+        search_result = _push_frontier_to_stack(search_result, frontier, start_bound)
 
         return IDLoopState(
             search_result=search_result,
@@ -260,12 +273,8 @@ def _id_astar_loop_builder(
         )
 
     # Helper to push allowed frontier nodes to stack and update next_bound
-    def _push_frontier_to_stack(sr, frontier, h_fn, h_params, bound, batch_size, action_size):
-        # Calc F
-        hs = h_fn(h_params, frontier.states, frontier.valid_mask).astype(KEY_DTYPE)
-        fs = (cost_weight * frontier.costs + hs).astype(KEY_DTYPE)
-
-        # Determine what to push
+    def _push_frontier_to_stack(sr, frontier, bound):
+        fs = frontier.f_scores
         keep_mask = jnp.logical_and(frontier.valid_mask, fs <= bound + 1e-6)
 
         # Determine what to start next_bound with
@@ -276,10 +285,9 @@ def _id_astar_loop_builder(
         new_next_bound = jnp.minimum(sr.next_bound, min_pruned).astype(KEY_DTYPE)
         sr = sr.replace(next_bound=new_next_bound)
 
-        # We need to construct 'actions' array for the frontier (default -1)
-        actions = jnp.full((batch_size,), -1, dtype=jnp.int32)
-
-        return sr.push_batch(frontier.states, frontier.costs, frontier.depths, actions, keep_mask)
+        return sr.push_batch(
+            frontier.states, frontier.costs, frontier.depths, frontier_actions, keep_mask
+        )
 
     # -----------------------------------------------------------------------
     # INNER LOOP: Standard Batched DFS with Pruning by Bound
@@ -329,17 +337,13 @@ def _id_astar_loop_builder(
         child_costs = parent_costs[jnp.newaxis, :] + step_costs
         child_depths = parent_depths + 1
 
-        flat_size = action_size * batch_size
         flat_neighbours = xnp.reshape(neighbours, (flat_size,))
         flat_g = child_costs.reshape((flat_size,))
-        flat_depth = jnp.tile(child_depths, (action_size,)).reshape((flat_size,))
+        flat_depth = jnp.broadcast_to(child_depths, (action_size, batch_size)).reshape((flat_size,))
 
-        actions_matrix = jnp.tile(
-            jnp.arange(action_size, dtype=jnp.int32)[:, None], (1, batch_size)
+        flat_valid_parent = jnp.broadcast_to(valid_mask, (action_size, batch_size)).reshape(
+            (flat_size,)
         )
-        flat_actions = actions_matrix.reshape((flat_size,))
-
-        flat_valid_parent = jnp.tile(valid_mask, (action_size,))
         flat_valid = jnp.logical_and(flat_valid_parent, jnp.isfinite(flat_g))
 
         # --- Optimization: In-Batch Deduplication ---
@@ -373,47 +377,39 @@ def _id_astar_loop_builder(
         return loop_state.replace(search_result=return_sr)
 
     def _expand_step(sr, states, gs, depths, actions, valid, h_params, h_fn):
-        # Compact valid items to the front
-        sort_keys = jnp.where(valid, 0, 1)
-        perm = jnp.argsort(sort_keys)
+        flat_batch = ExpandFlatBatch(state=states, cost=gs, depth=depths, action=actions)
+        flat_batch, compact_valid, _, _ = compact_by_valid(flat_batch, valid)
 
-        states_sorted = xnp.take(states, perm, axis=0)
-        gs_sorted = xnp.take(gs, perm, axis=0)
-        depths_sorted = xnp.take(depths, perm, axis=0)
-        actions_sorted = xnp.take(actions, perm, axis=0)
-        valid_sorted = xnp.take(valid, perm, axis=0)
-
-        hs_sorted = h_fn(h_params, states_sorted, valid_sorted).astype(KEY_DTYPE)
-        fs_sorted = (cost_weight * gs_sorted + hs_sorted).astype(KEY_DTYPE)
+        hs_compact = h_fn(
+            h_params,
+            flat_batch.state,
+            compact_valid,
+        ).astype(KEY_DTYPE)
+        fs_compact = (cost_weight * flat_batch.cost + hs_compact).astype(KEY_DTYPE)
 
         active_bound = sr.bound
+        keep_mask = jnp.logical_and(compact_valid, fs_compact <= active_bound + 1e-6)
 
-        keep_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted <= active_bound + 1e-6)
-
-        # Optimization: Sort valid children by f-value descending (Worst -> Best)
-        # We construct a key such that Valid items come first, and within Valid, sorted by F descending.
-        f_key = jnp.where(keep_mask_sorted, -fs_sorted, jnp.inf)
+        # Sort kept children by f-value descending (Worst -> Best) for LIFO stack order.
+        f_key = jnp.where(keep_mask, -fs_compact, jnp.inf)
         perm_f = jnp.argsort(f_key)
 
-        states_ordered = xnp.take(states_sorted, perm_f, axis=0)
-        gs_ordered = xnp.take(gs_sorted, perm_f, axis=0)
-        depths_ordered = xnp.take(depths_sorted, perm_f, axis=0)
-        actions_ordered = xnp.take(actions_sorted, perm_f, axis=0)
+        ordered = xnp.take(flat_batch, perm_f, axis=0)
 
-        n_push = jnp.sum(keep_mask_sorted)
+        n_push = jnp.sum(keep_mask)
 
-        prune_mask_sorted = jnp.logical_and(valid_sorted, fs_sorted > active_bound + 1e-6)
-        pruned_fs = jnp.where(prune_mask_sorted, fs_sorted, jnp.inf)
+        prune_mask = jnp.logical_and(compact_valid, fs_compact > active_bound + 1e-6)
+        pruned_fs = jnp.where(prune_mask, fs_compact, jnp.inf)
         min_pruned_f = jnp.min(pruned_fs).astype(KEY_DTYPE)
         new_next_bound = jnp.minimum(sr.next_bound, min_pruned_f).astype(KEY_DTYPE)
 
         sr_next = sr.replace(next_bound=new_next_bound)
 
         return sr_next.push_packed_batch(
-            states_ordered,
-            gs_ordered,
-            depths_ordered,
-            actions_ordered,
+            ordered.state,
+            ordered.cost,
+            ordered.depth,
+            ordered.action,
             n_push,
         )
 
@@ -440,15 +436,7 @@ def _id_astar_loop_builder(
         )
 
         # Push Frontier again with new bound
-        reset_sr = _push_frontier_to_stack(
-            reset_sr,
-            loop_state.frontier,
-            frontier_heuristic_fn,
-            loop_state.params,
-            new_bound,
-            batch_size,
-            action_size,
-        )
+        reset_sr = _push_frontier_to_stack(reset_sr, loop_state.frontier, new_bound)
 
         return loop_state.replace(search_result=reset_sr)
 
