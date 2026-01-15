@@ -28,6 +28,7 @@ class IDFrontier:
     depths: chex.Array  # [frontier_size]
     valid_mask: chex.Array  # [frontier_size]
     f_scores: chex.Array  # [frontier_size]
+    trail: Xtructurable  # [frontier_size, non_backtracking_steps]
 
     # Solution info if found during frontier generation
     solved: chex.Array  # bool scalar
@@ -91,22 +92,29 @@ class IDSearchResult:
     generated_count: chex.Array  # Scalar - count of generated nodes
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2))
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
     def build(
         statecls: Puzzle.State,
         capacity: int,
         action_size: int,
+        non_backtracking_steps: int = 0,
     ) -> "IDSearchResult":
         """
         Initialize the IDSearchResult with empty stack.
         """
         # Define dynamic Item class
+        if non_backtracking_steps < 0:
+            raise ValueError("non_backtracking_steps must be non-negative")
+
+        trail_shape = (int(non_backtracking_steps),)
+
         @xtructure_dataclass
         class IDStackItem:
             state: FieldDescriptor.scalar(dtype=statecls)
             cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
             depth: FieldDescriptor.scalar(dtype=jnp.int32)
             action: FieldDescriptor.scalar(dtype=jnp.int32)
+            trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
 
         bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
         next_bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
@@ -162,7 +170,15 @@ class IDSearchResult:
 
     def get_top_batch(
         self, batch_size: int
-    ) -> tuple["IDSearchResult", chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
+    ) -> tuple[
+        "IDSearchResult",
+        chex.Array,
+        chex.Array,
+        chex.Array,
+        Xtructurable,
+        chex.Array,
+        chex.Array,
+    ]:
         """
         Pop the top `batch_size` items from the stack.
         Returns (updated_self, states, costs, depths, valid_mask, indices)
@@ -183,12 +199,13 @@ class IDSearchResult:
         states = popped_items.state
         costs = popped_items.cost
         depths = popped_items.depth
+        trails = popped_items.trail
 
         indices = jnp.zeros(batch_size, dtype=jnp.int32)
 
         new_self = self.replace(stack=new_stack)
 
-        return new_self, states, costs, depths, valid_mask, indices
+        return new_self, states, costs, depths, trails, valid_mask, indices
 
     def push_batch(
         self,
@@ -196,6 +213,7 @@ class IDSearchResult:
         costs: chex.Array,
         depths: chex.Array,
         actions: chex.Array,
+        trails: Xtructurable,
         valid_mask: chex.Array,
     ) -> "IDSearchResult":
         """
@@ -207,7 +225,7 @@ class IDSearchResult:
         sort_keys = jnp.where(valid_mask, 0, 1)
         perm = jnp.argsort(sort_keys)
 
-        states_sorted = states[perm]
+        states_sorted = xnp.take(states, perm, axis=0)
         costs_sorted = costs[perm]
         depths_sorted = depths[perm]
         actions_sorted = actions[perm]
@@ -218,7 +236,11 @@ class IDSearchResult:
         safe_n_push = jnp.minimum(n_push, capacity - current_ptr)
 
         items_sorted = self.ItemCls(
-            state=states_sorted, cost=costs_sorted, depth=depths_sorted, action=actions_sorted
+            state=states_sorted,
+            cost=costs_sorted,
+            depth=depths_sorted,
+            action=actions_sorted,
+            trail=xnp.take(trails, perm, axis=0),
         )
 
         def _update_leaf(stack_arr, update_arr):
@@ -244,6 +266,7 @@ class IDSearchResult:
         costs: chex.Array,
         depths: chex.Array,
         actions: chex.Array,
+        trails: Xtructurable,
         n_push: chex.Array,
     ) -> "IDSearchResult":
         """
@@ -256,7 +279,7 @@ class IDSearchResult:
 
         safe_n_push = jnp.minimum(n_push.astype(jnp.int32), capacity - current_ptr)
 
-        items = self.ItemCls(state=states, cost=costs, depth=depths, action=actions)
+        items = self.ItemCls(state=states, cost=costs, depth=depths, action=actions, trail=trails)
 
         def _update_leaf(stack_arr, update_arr):
             start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)

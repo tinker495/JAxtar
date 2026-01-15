@@ -8,12 +8,8 @@ from xtructure import FieldDescriptor, xtructure_dataclass
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.id_stars.search_base import (
-    IDFrontier,
-    IDLoopState,
-    IDSearchResult,
-    compact_by_valid,
-)
+from JAxtar.id_stars.search_base import IDFrontier, IDLoopState, IDSearchResult
+from JAxtar.id_stars.utils import _apply_non_backtracking
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -21,6 +17,7 @@ def _id_astar_frontier_builder(
     puzzle: Puzzle,
     heuristic: Heuristic,
     batch_size: int = 1024,
+    non_backtracking_steps: int = 3,
 ):
     """
     Returns a function that generates an initial frontier starting from a single state.
@@ -29,19 +26,60 @@ def _id_astar_frontier_builder(
     action_size = puzzle.action_size
     flat_size = action_size * batch_size
     statecls = puzzle.State
+    empty_trail_flat = statecls.default((flat_size, 0))
+
+    if non_backtracking_steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    non_backtracking_steps = int(non_backtracking_steps)
 
     @xtructure_dataclass
     class FrontierFlatBatch:
         state: FieldDescriptor.scalar(dtype=statecls)
         cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
         depth: FieldDescriptor.scalar(dtype=jnp.int32)
+        trail: FieldDescriptor.tensor(dtype=statecls, shape=(non_backtracking_steps,))
 
     variable_heuristic = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=action_size * batch_size,
+        max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
+    flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
+    trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
+
+    def _chunked_heuristic_eval(
+        h_params: Puzzle.SolveConfig,
+        flat_states: Puzzle.State,
+        flat_valid: jnp.ndarray,
+    ) -> jnp.ndarray:
+        sort_key = jnp.logical_not(flat_valid).astype(jnp.int32)
+        _, sorted_idx = jax.lax.sort_key_val(sort_key, flat_indices, dimension=0, is_stable=True)
+        sorted_states = xnp.take(flat_states, sorted_idx, axis=0)
+        sorted_mask = flat_valid[sorted_idx]
+
+        chunk_states = xnp.reshape(sorted_states, (action_size, batch_size))
+        chunk_mask = sorted_mask.reshape((action_size, batch_size))
+
+        def _compute(_, inputs):
+            states_slice, mask_slice = inputs
+
+            def _calc(_):
+                vals = variable_heuristic(h_params, states_slice, mask_slice).astype(KEY_DTYPE)
+                return jnp.where(mask_slice, vals, jnp.inf)
+
+            return None, jax.lax.cond(
+                jnp.any(mask_slice),
+                _calc,
+                lambda _: jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE),
+                None,
+            )
+
+        _, chunk_vals = jax.lax.scan(_compute, None, (chunk_states, chunk_mask))
+        sorted_vals = chunk_vals.reshape((flat_size,))
+        flat_vals = jnp.full((flat_size,), jnp.inf, dtype=KEY_DTYPE)
+        flat_vals = flat_vals.at[sorted_idx].set(sorted_vals)
+        return flat_vals
 
     def generate_frontier(
         solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs
@@ -55,6 +93,7 @@ def _id_astar_frontier_builder(
         root_solved = puzzle.batched_is_solved(solve_config, start_reshaped)[0]
 
         start_padded = xnp.pad(start_reshaped, ((0, batch_size - 1),), mode="constant")
+        trail_padded = statecls.default((batch_size, non_backtracking_steps))
 
         costs_padded = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
         costs_padded = costs_padded.at[0].set(0.0)
@@ -76,6 +115,7 @@ def _id_astar_frontier_builder(
             depths=depths_padded,
             valid_mask=valid_padded,
             f_scores=costs_padded,
+            trail=trail_padded,
             solved=root_solved,
             solution_state=solution_state,
             solution_cost=solution_cost,
@@ -101,11 +141,21 @@ def _id_astar_frontier_builder(
             gs = frontier.costs
             depth = frontier.depths
             valid = frontier.valid_mask
+            trail = frontier.trail
 
             neighbours, step_costs = puzzle.batched_get_neighbours(solve_config, states, valid)
 
             child_g = (gs[jnp.newaxis, :] + step_costs).astype(KEY_DTYPE)
             child_depth = depth + 1
+            if non_backtracking_steps > 0:
+                parent_trail_tiled = xnp.stack([trail] * action_size, axis=0)
+                parent_states_tiled = xnp.stack([states] * action_size, axis=0)
+                parent_state_exp = xnp.expand_dims(parent_states_tiled, axis=2)
+                shifted_trail = parent_trail_tiled[:, :, :-1]
+                child_trail = xnp.concatenate((parent_state_exp, shifted_trail), axis=2)
+                flat_trail = xnp.reshape(child_trail, (flat_size, non_backtracking_steps))
+            else:
+                flat_trail = empty_trail_flat
 
             flat_states = xnp.reshape(neighbours, (flat_size,))
             flat_g = child_g.reshape((flat_size,))
@@ -137,35 +187,41 @@ def _id_astar_frontier_builder(
             unique_mask = xnp.unique_mask(flat_states, key=flat_g, filled=flat_valid)
             flat_valid = jnp.logical_and(flat_valid, unique_mask)
 
-            flat_batch = FrontierFlatBatch(state=flat_states, cost=flat_g, depth=flat_depth)
-            flat_batch, compact_valid, _, _ = compact_by_valid(flat_batch, flat_valid)
-
-            hs_compact = variable_heuristic(
-                h_params,
-                flat_batch.state,
-                compact_valid,
-            ).astype(KEY_DTYPE)
-            fs_compact = (flat_batch.cost + hs_compact).astype(KEY_DTYPE)
-            f_safe = jnp.where(
-                compact_valid, jnp.nan_to_num(fs_compact, nan=1e5, posinf=1e5), jnp.inf
+            flat_valid = _apply_non_backtracking(
+                flat_states,
+                states,
+                trail,
+                depth,
+                flat_valid,
+                non_backtracking_steps,
+                action_size,
+                flat_size,
+                trail_indices,
+                batch_size,
             )
+
+            flat_h = _chunked_heuristic_eval(h_params, flat_states, flat_valid)
+            flat_f = (flat_g + flat_h).astype(KEY_DTYPE)
+            f_safe = jnp.where(flat_valid, jnp.nan_to_num(flat_f, nan=1e5, posinf=1e5), jnp.inf)
 
             neg_f = -f_safe
             top_vals, top_indices = jax.lax.top_k(neg_f, batch_size)
-            selected_f = -top_vals
+            selected_f = (-top_vals).astype(KEY_DTYPE)
             selected_valid = jnp.isfinite(selected_f)
 
-            new_states = xnp.take(flat_batch.state, top_indices, axis=0)
-            new_costs = flat_batch.cost[top_indices]
-            new_depths = flat_batch.depth[top_indices]
-            new_valid = jnp.logical_and(selected_valid, compact_valid[top_indices])
+            flat_batch = FrontierFlatBatch(
+                state=flat_states, cost=flat_g, depth=flat_depth, trail=flat_trail
+            )
+            selected = xnp.take(flat_batch, top_indices, axis=0)
+            new_valid = jnp.logical_and(selected_valid, flat_valid[top_indices])
 
             new_frontier = IDFrontier(
-                states=new_states,
-                costs=new_costs,
-                depths=new_depths,
+                states=selected.state,
+                costs=selected.cost,
+                depths=selected.depth,
                 valid_mask=new_valid,
-                f_scores=new_costs,
+                f_scores=selected_f,
+                trail=selected.trail,
                 solved=new_solved,
                 solution_state=new_sol_state,
                 solution_cost=new_sol_cost,
@@ -188,10 +244,16 @@ def _id_astar_loop_builder(
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
     cost_weight: float = 1.0,
+    non_backtracking_steps: int = 0,
 ):
     statecls = puzzle.State
     action_size = puzzle.action_size
     flat_size = action_size * batch_size
+    empty_trail_flat = statecls.default((flat_size, 0))
+    if non_backtracking_steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    non_backtracking_steps = int(non_backtracking_steps)
+    trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
     action_ids = jnp.arange(action_size, dtype=jnp.int32)
     flat_actions = jnp.broadcast_to(action_ids[:, None], (action_size, batch_size)).reshape(
         (flat_size,)
@@ -204,15 +266,21 @@ def _id_astar_loop_builder(
         cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
         depth: FieldDescriptor.scalar(dtype=jnp.int32)
         action: FieldDescriptor.scalar(dtype=jnp.int32)
+        trail: FieldDescriptor.tensor(dtype=statecls, shape=(non_backtracking_steps,))
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=action_size * batch_size,
+        max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
-    generate_frontier = _id_astar_frontier_builder(puzzle, heuristic, batch_size)
+    generate_frontier = _id_astar_frontier_builder(
+        puzzle,
+        heuristic,
+        batch_size,
+        non_backtracking_steps=non_backtracking_steps,
+    )
 
     # Heuristic for the full frontier batch (size = batch_size)
     frontier_heuristic_fn = variable_batch_switcher_builder(
@@ -222,12 +290,50 @@ def _id_astar_loop_builder(
         pad_value=jnp.inf,
     )
 
+    flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
+
+    def _chunked_heuristic_eval(
+        h_params: Puzzle.SolveConfig,
+        flat_states: Puzzle.State,
+        flat_valid: jnp.ndarray,
+    ) -> jnp.ndarray:
+        sort_key = jnp.logical_not(flat_valid).astype(jnp.int32)
+        _, sorted_idx = jax.lax.sort_key_val(sort_key, flat_indices, dimension=0, is_stable=True)
+        sorted_states = xnp.take(flat_states, sorted_idx, axis=0)
+        sorted_mask = flat_valid[sorted_idx]
+
+        chunk_states = xnp.reshape(sorted_states, (action_size, batch_size))
+        chunk_mask = sorted_mask.reshape((action_size, batch_size))
+
+        def _compute(_, inputs):
+            states_slice, mask_slice = inputs
+
+            def _calc(_):
+                vals = variable_heuristic_batch_switcher(h_params, states_slice, mask_slice).astype(
+                    KEY_DTYPE
+                )
+                return jnp.where(mask_slice, vals, jnp.inf)
+
+            return None, jax.lax.cond(
+                jnp.any(mask_slice),
+                _calc,
+                lambda _: jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE),
+                None,
+            )
+
+        _, chunk_vals = jax.lax.scan(_compute, None, (chunk_states, chunk_mask))
+        sorted_vals = chunk_vals.reshape((flat_size,))
+        flat_vals = jnp.full((flat_size,), jnp.inf, dtype=KEY_DTYPE)
+        flat_vals = flat_vals.at[sorted_idx].set(sorted_vals)
+        return flat_vals
+
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
         # Initialize Result
         search_result = IDSearchResult.build(
             statecls,
             capacity=max_nodes,
             action_size=action_size,
+            non_backtracking_steps=non_backtracking_steps,
         )
 
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
@@ -286,7 +392,12 @@ def _id_astar_loop_builder(
         sr = sr.replace(next_bound=new_next_bound)
 
         return sr.push_batch(
-            frontier.states, frontier.costs, frontier.depths, frontier_actions, keep_mask
+            frontier.states,
+            frontier.costs,
+            frontier.depths,
+            frontier_actions,
+            frontier.trail,
+            keep_mask,
         )
 
     # -----------------------------------------------------------------------
@@ -304,7 +415,9 @@ def _id_astar_loop_builder(
         params = loop_state.params
 
         # 1. Pop Batch
-        sr, parents, parent_costs, parent_depths, valid_mask, _ = sr.get_top_batch(batch_size)
+        sr, parents, parent_costs, parent_depths, parent_trails, valid_mask, _ = sr.get_top_batch(
+            batch_size
+        )
 
         # 2. Check Solved
         is_solved_mask = puzzle.batched_is_solved(solve_config, parents)
@@ -336,6 +449,15 @@ def _id_astar_loop_builder(
 
         child_costs = parent_costs[jnp.newaxis, :] + step_costs
         child_depths = parent_depths + 1
+        if non_backtracking_steps > 0:
+            parent_trail_tiled = xnp.stack([parent_trails] * action_size, axis=0)
+            parent_states_tiled = xnp.stack([parents] * action_size, axis=0)
+            parent_state_exp = xnp.expand_dims(parent_states_tiled, axis=2)
+            shifted_trail = parent_trail_tiled[:, :, :-1]
+            child_trail = xnp.concatenate((parent_state_exp, shifted_trail), axis=2)
+            flat_trail = xnp.reshape(child_trail, (flat_size, non_backtracking_steps))
+        else:
+            flat_trail = empty_trail_flat
 
         flat_neighbours = xnp.reshape(neighbours, (flat_size,))
         flat_g = child_costs.reshape((flat_size,))
@@ -355,6 +477,18 @@ def _id_astar_loop_builder(
             filled=flat_valid,
         )
         flat_valid = jnp.logical_and(flat_valid, unique_mask)
+        flat_valid = _apply_non_backtracking(
+            flat_neighbours,
+            parents,
+            parent_trails,
+            parent_depths,
+            flat_valid,
+            non_backtracking_steps,
+            action_size,
+            flat_size,
+            trail_indices,
+            batch_size,
+        )
         # ----------------------------------------------------
 
         # 4. Heuristic & Pruning
@@ -367,39 +501,33 @@ def _id_astar_loop_builder(
                 flat_g,
                 flat_depth,
                 flat_actions,
+                flat_trail,
                 flat_valid,
                 params,
-                variable_heuristic_batch_switcher,
             ),
             sr_solved,
         )
 
         return loop_state.replace(search_result=return_sr)
 
-    def _expand_step(sr, states, gs, depths, actions, valid, h_params, h_fn):
-        flat_batch = ExpandFlatBatch(state=states, cost=gs, depth=depths, action=actions)
-        flat_batch, compact_valid, _, _ = compact_by_valid(flat_batch, valid)
-
-        hs_compact = h_fn(
-            h_params,
-            flat_batch.state,
-            compact_valid,
-        ).astype(KEY_DTYPE)
-        fs_compact = (cost_weight * flat_batch.cost + hs_compact).astype(KEY_DTYPE)
-
+    def _expand_step(sr, states, gs, depths, actions, trails, valid, h_params):
+        flat_h = _chunked_heuristic_eval(h_params, states, valid)
+        fs = (cost_weight * gs + flat_h).astype(KEY_DTYPE)
         active_bound = sr.bound
-        keep_mask = jnp.logical_and(compact_valid, fs_compact <= active_bound + 1e-6)
+        keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
 
         # Sort kept children by f-value descending (Worst -> Best) for LIFO stack order.
-        f_key = jnp.where(keep_mask, -fs_compact, jnp.inf)
+        f_key = jnp.where(keep_mask, -fs, jnp.inf)
         perm_f = jnp.argsort(f_key)
-
+        flat_batch = ExpandFlatBatch(
+            state=states, cost=gs, depth=depths, action=actions, trail=trails
+        )
         ordered = xnp.take(flat_batch, perm_f, axis=0)
 
         n_push = jnp.sum(keep_mask)
 
-        prune_mask = jnp.logical_and(compact_valid, fs_compact > active_bound + 1e-6)
-        pruned_fs = jnp.where(prune_mask, fs_compact, jnp.inf)
+        prune_mask = jnp.logical_and(valid, fs > active_bound + 1e-6)
+        pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
         min_pruned_f = jnp.min(pruned_fs).astype(KEY_DTYPE)
         new_next_bound = jnp.minimum(sr.next_bound, min_pruned_f).astype(KEY_DTYPE)
 
@@ -410,6 +538,7 @@ def _id_astar_loop_builder(
             ordered.cost,
             ordered.depth,
             ordered.action,
+            ordered.trail,
             n_push,
         )
 
@@ -450,10 +579,16 @@ def id_astar_builder(
     max_nodes: int = int(1e6),
     cost_weight: float = 1.0,
     pop_ratio: float = 1.0,
+    non_backtracking_steps: int = 0,
     show_compile_time: bool = False,
 ):
     init_loop, cond, body = _id_astar_loop_builder(
-        puzzle, heuristic, batch_size, max_nodes, cost_weight
+        puzzle,
+        heuristic,
+        batch_size,
+        max_nodes,
+        cost_weight,
+        non_backtracking_steps=non_backtracking_steps,
     )
 
     def id_astar(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):

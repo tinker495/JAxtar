@@ -11,12 +11,8 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.id_stars.search_base import (
-    IDFrontier,
-    IDLoopState,
-    IDSearchResult,
-    compact_by_valid,
-)
+from JAxtar.id_stars.search_base import IDFrontier, IDLoopState, IDSearchResult
+from JAxtar.id_stars.utils import _apply_non_backtracking
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
@@ -26,6 +22,7 @@ def _id_qstar_frontier_builder(
     q_fn: QFunction,
     batch_size: int = 1024,
     cost_weight: float = 1.0,
+    non_backtracking_steps: int = 3,
 ):
     """
     Q-optimized frontier builder for ID-Q*.
@@ -34,12 +31,19 @@ def _id_qstar_frontier_builder(
     action_size = puzzle.action_size
     flat_size = action_size * batch_size
     statecls = puzzle.State
+    empty_trail_flat = statecls.default((flat_size, 0))
+
+    if non_backtracking_steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    non_backtracking_steps = int(non_backtracking_steps)
+    trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
 
     @xtructure_dataclass
     class FrontierFlatBatch:
         state: FieldDescriptor.scalar(dtype=statecls)
         cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
         depth: FieldDescriptor.scalar(dtype=jnp.int32)
+        trail: FieldDescriptor.tensor(dtype=statecls, shape=(non_backtracking_steps,))
 
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
@@ -60,6 +64,7 @@ def _id_qstar_frontier_builder(
         root_solved = puzzle.batched_is_solved(solve_config, start_reshaped)[0]
 
         start_padded = xnp.pad(start_reshaped, ((0, batch_size - 1),), mode="constant")
+        trail_padded = statecls.default((batch_size, non_backtracking_steps))
 
         costs_padded = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
         costs_padded = costs_padded.at[0].set(0.0)
@@ -81,6 +86,7 @@ def _id_qstar_frontier_builder(
             depths=depths_padded,
             valid_mask=valid_padded,
             f_scores=costs_padded,
+            trail=trail_padded,
             solved=root_solved,
             solution_state=solution_state,
             solution_cost=solution_cost,
@@ -110,11 +116,21 @@ def _id_qstar_frontier_builder(
             gs = frontier.costs
             depth = frontier.depths
             valid = frontier.valid_mask
+            trail = frontier.trail
 
             neighbours, step_costs = puzzle.batched_get_neighbours(solve_config, states, valid)
 
             child_g = (gs[jnp.newaxis, :] + step_costs).astype(KEY_DTYPE)
             child_depth = depth + 1
+            if non_backtracking_steps > 0:
+                parent_trail_tiled = xnp.stack([trail] * action_size, axis=0)
+                parent_states_tiled = xnp.stack([states] * action_size, axis=0)
+                parent_state_exp = xnp.expand_dims(parent_states_tiled, axis=2)
+                shifted_trail = parent_trail_tiled[:, :, :-1]
+                child_trail = xnp.concatenate((parent_state_exp, shifted_trail), axis=2)
+                flat_trail = xnp.reshape(child_trail, (flat_size, non_backtracking_steps))
+            else:
+                flat_trail = empty_trail_flat
 
             flat_states = xnp.reshape(neighbours, (flat_size,))
             flat_g = child_g.reshape((flat_size,))
@@ -149,32 +165,55 @@ def _id_qstar_frontier_builder(
             f_vals = (cost_weight * gs[jnp.newaxis, :] + q_vals).astype(KEY_DTYPE)
             flat_f = f_vals.reshape((flat_size,))
 
-            unique_mask = xnp.unique_mask(flat_states, key=flat_g, filled=flat_valid)
-            flat_valid = jnp.logical_and(flat_valid, unique_mask)
-
-            flat_batch = FrontierFlatBatch(state=flat_states, cost=flat_g, depth=flat_depth)
-            flat_batch, compact_valid, _, compact_idx = compact_by_valid(flat_batch, flat_valid)
-            flat_f_compact = xnp.take(flat_f, compact_idx, axis=0)
-
-            f_safe = jnp.where(
-                compact_valid, jnp.nan_to_num(flat_f_compact, nan=1e5, posinf=1e5), jnp.inf
+            unique_mask, unique_idx = xnp.unique_mask(
+                flat_states,
+                key=flat_g,
+                filled=flat_valid,
+                return_index=True,
             )
+            unique_count = jnp.sum(unique_mask.astype(jnp.int32))
+            flat_valid = jnp.logical_and(flat_valid, unique_mask)
+            flat_valid = _apply_non_backtracking(
+                flat_states,
+                states,
+                trail,
+                depth,
+                flat_valid,
+                non_backtracking_steps,
+                action_size,
+                flat_size,
+                trail_indices,
+                batch_size,
+            )
+
+            flat_batch = FrontierFlatBatch(
+                state=flat_states,
+                cost=flat_g,
+                depth=flat_depth,
+                trail=flat_trail,
+            )
+            packed_batch = xnp.take(flat_batch, unique_idx, axis=0)
+            packed_f = xnp.take(flat_f, unique_idx, axis=0)
+            packed_valid = flat_valid[unique_idx]
+            packed_positions = jnp.arange(flat_size, dtype=jnp.int32) < unique_count
+            packed_valid = jnp.logical_and(packed_valid, packed_positions)
+
+            f_safe = jnp.where(packed_valid, jnp.nan_to_num(packed_f, nan=1e5, posinf=1e5), jnp.inf)
             neg_f = -f_safe
             top_vals, top_indices = jax.lax.top_k(neg_f, batch_size)
             selected_f = -top_vals
             selected_valid = jnp.isfinite(selected_f)
 
-            new_states = xnp.take(flat_batch.state, top_indices, axis=0)
-            new_costs = flat_batch.cost[top_indices]
-            new_depths = flat_batch.depth[top_indices]
-            new_valid = jnp.logical_and(selected_valid, compact_valid[top_indices])
+            selected = xnp.take(packed_batch, top_indices, axis=0)
+            new_valid = jnp.logical_and(selected_valid, packed_valid[top_indices])
 
             new_frontier = IDFrontier(
-                states=new_states,
-                costs=new_costs,
-                depths=new_depths,
+                states=selected.state,
+                costs=selected.cost,
+                depths=selected.depth,
                 valid_mask=new_valid,
-                f_scores=new_costs,
+                f_scores=selected_f,
+                trail=selected.trail,
                 solved=new_solved,
                 solution_state=new_sol_state,
                 solution_cost=new_sol_cost,
@@ -197,10 +236,16 @@ def _id_qstar_loop_builder(
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
     cost_weight: float = 1.0,
+    non_backtracking_steps: int = 0,
 ):
     statecls = puzzle.State
     action_size = puzzle.action_size
     flat_size = action_size * batch_size
+    empty_trail_flat = statecls.default((flat_size, 0))
+    if non_backtracking_steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    non_backtracking_steps = int(non_backtracking_steps)
+    trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
     action_ids = jnp.arange(action_size, dtype=jnp.int32)
     flat_actions = jnp.broadcast_to(action_ids[:, None], (action_size, batch_size)).reshape(
         (flat_size,)
@@ -213,6 +258,7 @@ def _id_qstar_loop_builder(
         cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
         depth: FieldDescriptor.scalar(dtype=jnp.int32)
         action: FieldDescriptor.scalar(dtype=jnp.int32)
+        trail: FieldDescriptor.tensor(dtype=statecls, shape=(non_backtracking_steps,))
 
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
@@ -231,6 +277,7 @@ def _id_qstar_loop_builder(
         q_fn,
         batch_size=batch_size,
         cost_weight=cost_weight,
+        non_backtracking_steps=non_backtracking_steps,
     )
 
     def _push_frontier_to_stack(sr, frontier, bound):
@@ -245,7 +292,12 @@ def _id_qstar_loop_builder(
         sr = sr.replace(next_bound=new_next_bound)
 
         return sr.push_batch(
-            frontier.states, frontier.costs, frontier.depths, frontier_actions, keep_mask
+            frontier.states,
+            frontier.costs,
+            frontier.depths,
+            frontier_actions,
+            frontier.trail,
+            keep_mask,
         )
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
@@ -253,6 +305,7 @@ def _id_qstar_loop_builder(
             statecls,
             capacity=max_nodes,
             action_size=action_size,
+            non_backtracking_steps=non_backtracking_steps,
         )
 
         q_parameters = q_fn.prepare_q_parameters(solve_config, **kwargs)
@@ -293,7 +346,9 @@ def _id_qstar_loop_builder(
         solve_config = loop_state.solve_config
         params = loop_state.params
 
-        sr, parents, parent_costs, parent_depths, valid_mask, _ = sr.get_top_batch(batch_size)
+        sr, parents, parent_costs, parent_depths, parent_trails, valid_mask, _ = sr.get_top_batch(
+            batch_size
+        )
 
         is_solved_mask = puzzle.batched_is_solved(solve_config, parents)
         is_solved_mask = jnp.logical_and(is_solved_mask, valid_mask)
@@ -320,6 +375,15 @@ def _id_qstar_loop_builder(
         neighbours, step_costs = puzzle.batched_get_neighbours(solve_config, parents, valid_mask)
         child_costs = parent_costs[jnp.newaxis, :] + step_costs
         child_depths = parent_depths + 1
+        if non_backtracking_steps > 0:
+            parent_trail_tiled = xnp.stack([parent_trails] * action_size, axis=0)
+            parent_states_tiled = xnp.stack([parents] * action_size, axis=0)
+            parent_state_exp = xnp.expand_dims(parent_states_tiled, axis=2)
+            shifted_trail = parent_trail_tiled[:, :, :-1]
+            child_trail = xnp.concatenate((parent_state_exp, shifted_trail), axis=2)
+            flat_trail = xnp.reshape(child_trail, (flat_size, non_backtracking_steps))
+        else:
+            flat_trail = empty_trail_flat
 
         flat_neighbours = xnp.reshape(neighbours, (flat_size,))
         flat_g = child_costs.reshape((flat_size,))
@@ -332,6 +396,18 @@ def _id_qstar_loop_builder(
 
         unique_mask = xnp.unique_mask(flat_neighbours, key=flat_g, filled=flat_valid)
         flat_valid = jnp.logical_and(flat_valid, unique_mask)
+        flat_valid = _apply_non_backtracking(
+            flat_neighbours,
+            parents,
+            parent_trails,
+            parent_depths,
+            flat_valid,
+            non_backtracking_steps,
+            action_size,
+            flat_size,
+            trail_indices,
+            batch_size,
+        )
 
         q_vals = variable_q_parent_switcher(params, parents, valid_mask).astype(KEY_DTYPE)
         q_vals = jnp.where(valid_mask[:, None], q_vals, jnp.inf)
@@ -348,6 +424,7 @@ def _id_qstar_loop_builder(
                 flat_g,
                 flat_depth,
                 flat_actions,
+                flat_trail,
                 flat_valid,
                 flat_f,
             ),
@@ -356,7 +433,7 @@ def _id_qstar_loop_builder(
 
         return loop_state.replace(search_result=return_sr)
 
-    def _expand_step(sr, states, gs, depths, actions, valid, fs):
+    def _expand_step(sr, states, gs, depths, actions, trails, valid, fs):
         active_bound = sr.bound
         keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
 
@@ -365,7 +442,9 @@ def _id_qstar_loop_builder(
         f_key = jnp.where(keep_mask, -fs, jnp.inf)
         perm = jnp.argsort(f_key)
 
-        flat_batch = ExpandFlatBatch(state=states, cost=gs, depth=depths, action=actions)
+        flat_batch = ExpandFlatBatch(
+            state=states, cost=gs, depth=depths, action=actions, trail=trails
+        )
         ordered = xnp.take(flat_batch, perm, axis=0)
 
         n_push = jnp.sum(keep_mask)
@@ -382,6 +461,7 @@ def _id_qstar_loop_builder(
             ordered.cost,
             ordered.depth,
             ordered.action,
+            ordered.trail,
             n_push,
         )
 
@@ -415,9 +495,17 @@ def id_qstar_builder(
     max_nodes: int = int(1e6),
     cost_weight: float = 1.0,
     pop_ratio: float = 1.0,
+    non_backtracking_steps: int = 0,
     show_compile_time: bool = False,
 ):
-    init_loop, cond, body = _id_qstar_loop_builder(puzzle, q_fn, batch_size, max_nodes, cost_weight)
+    init_loop, cond, body = _id_qstar_loop_builder(
+        puzzle,
+        q_fn,
+        batch_size,
+        max_nodes,
+        cost_weight,
+        non_backtracking_steps=non_backtracking_steps,
+    )
 
     def id_qstar(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
         loop_state = init_loop(solve_config, start, **kwargs)
