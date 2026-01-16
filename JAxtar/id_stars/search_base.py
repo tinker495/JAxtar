@@ -29,11 +29,13 @@ class IDFrontier:
     valid_mask: chex.Array  # [frontier_size]
     f_scores: chex.Array  # [frontier_size]
     trail: Xtructurable  # [frontier_size, non_backtracking_steps]
+    action_history: chex.Array  # [frontier_size, max_path_len]
 
     # Solution info if found during frontier generation
     solved: chex.Array  # bool scalar
     solution_state: Xtructurable  # [1, state_shape]
     solution_cost: chex.Array  # scalar
+    solution_actions_arr: chex.Array  # [max_path_len]
 
 
 def compact_by_valid(
@@ -90,14 +92,16 @@ class IDSearchResult:
     solution_state: Xtructurable  # Single state
     solution_cost: chex.Array  # Scalar - cost of solution
     generated_count: chex.Array  # Scalar - count of generated nodes
+    solution_actions_arr: chex.Array  # [max_path_len]
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
     def build(
         statecls: Puzzle.State,
         capacity: int,
         action_size: int,
         non_backtracking_steps: int = 0,
+        max_path_len: int = 256,
     ) -> "IDSearchResult":
         """
         Initialize the IDSearchResult with empty stack.
@@ -115,6 +119,7 @@ class IDSearchResult:
             depth: FieldDescriptor.scalar(dtype=jnp.int32)
             action: FieldDescriptor.scalar(dtype=jnp.int32)
             trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+            action_history: FieldDescriptor.tensor(dtype=jnp.int32, shape=(max_path_len,))
 
         bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
         next_bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
@@ -125,6 +130,7 @@ class IDSearchResult:
 
         solution_state = statecls.default((1,))  # Placeholder batch-1
         solution_cost = jnp.array(jnp.inf, dtype=KEY_DTYPE)
+        solution_actions = jnp.full((max_path_len,), -1, dtype=jnp.int32)
         generated_count = jnp.array(0, dtype=jnp.int32)
 
         return IDSearchResult(
@@ -138,6 +144,7 @@ class IDSearchResult:
             stack=stack,
             solution_state=solution_state,
             solution_cost=solution_cost,
+            solution_actions_arr=solution_actions,
             generated_count=generated_count,
         )
 
@@ -150,7 +157,17 @@ class IDSearchResult:
         Return the solved path.
         Current implementation only returns [solution_state].
         """
+        # If solution_actions are available (populated with non-negative values), we could reconstruct.
+        # But solution_actions() method handles that standard interface.
         return [self.solution_state[0]]
+
+    def solution_actions(self):
+        """
+        Return the list of actions to reach the solution.
+        """
+        # Filter out padding (-1)
+        valid_mask = self.solution_actions_arr >= 0
+        return self.solution_actions_arr[valid_mask]
 
     def get_generated_size(self):
         return self.generated_count
@@ -176,6 +193,7 @@ class IDSearchResult:
         chex.Array,
         chex.Array,
         Xtructurable,
+        chex.Array,
         chex.Array,
         chex.Array,
     ]:
@@ -205,7 +223,9 @@ class IDSearchResult:
 
         new_self = self.replace(stack=new_stack)
 
-        return new_self, states, costs, depths, trails, valid_mask, indices
+        action_histories = popped_items.action_history
+
+        return new_self, states, costs, depths, trails, action_histories, valid_mask, indices
 
     def push_batch(
         self,
@@ -214,6 +234,7 @@ class IDSearchResult:
         depths: chex.Array,
         actions: chex.Array,
         trails: Xtructurable,
+        action_histories: chex.Array,
         valid_mask: chex.Array,
     ) -> "IDSearchResult":
         """
@@ -241,6 +262,7 @@ class IDSearchResult:
             depth=depths_sorted,
             action=actions_sorted,
             trail=xnp.take(trails, perm, axis=0),
+            action_history=action_histories[perm],
         )
 
         def _update_leaf(stack_arr, update_arr):
@@ -267,6 +289,7 @@ class IDSearchResult:
         depths: chex.Array,
         actions: chex.Array,
         trails: Xtructurable,
+        action_histories: chex.Array,
         n_push: chex.Array,
     ) -> "IDSearchResult":
         """
@@ -279,7 +302,14 @@ class IDSearchResult:
 
         safe_n_push = jnp.minimum(n_push.astype(jnp.int32), capacity - current_ptr)
 
-        items = self.ItemCls(state=states, cost=costs, depth=depths, action=actions, trail=trails)
+        items = self.ItemCls(
+            state=states,
+            cost=costs,
+            depth=depths,
+            action=actions,
+            trail=trails,
+            action_history=action_histories,
+        )
 
         def _update_leaf(stack_arr, update_arr):
             start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)
