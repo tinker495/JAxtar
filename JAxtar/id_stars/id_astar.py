@@ -4,12 +4,16 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, xtructure_dataclass
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.id_stars.search_base import IDFrontier, IDLoopState, IDSearchResult
-from JAxtar.id_stars.utils import _apply_non_backtracking
+from JAxtar.id_stars.search_base import (
+    ACTION_PAD,
+    IDFrontier,
+    IDLoopState,
+    IDSearchResult,
+)
+from JAxtar.id_stars.utils import _apply_non_backtracking, build_id_node_batch
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -33,13 +37,7 @@ def _id_astar_frontier_builder(
         raise ValueError("non_backtracking_steps must be non-negative")
     non_backtracking_steps = int(non_backtracking_steps)
 
-    @xtructure_dataclass
-    class FrontierFlatBatch:
-        state: FieldDescriptor.scalar(dtype=statecls)
-        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-        depth: FieldDescriptor.scalar(dtype=jnp.int32)
-        trail: FieldDescriptor.tensor(dtype=statecls, shape=(non_backtracking_steps,))
-        action_history: FieldDescriptor.tensor(dtype=jnp.int32, shape=(max_path_len,))
+    IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
     variable_heuristic = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -68,6 +66,7 @@ def _id_astar_frontier_builder(
 
             def _calc(_):
                 vals = variable_heuristic(h_params, states_slice, mask_slice).astype(KEY_DTYPE)
+                vals = jnp.maximum(0.0, vals)  # Ensure non-negative heuristic
                 return jnp.where(mask_slice, vals, jnp.inf)
 
             return None, jax.lax.cond(
@@ -103,7 +102,7 @@ def _id_astar_frontier_builder(
         valid_padded = jnp.zeros((batch_size,), dtype=jnp.bool_)
         valid_padded = valid_padded.at[0].set(True)
 
-        action_history_padded = jnp.full((batch_size, max_path_len), -1, dtype=jnp.int32)
+        action_history_padded = jnp.full((batch_size, max_path_len), ACTION_PAD, dtype=jnp.int32)
         action_ids = jnp.arange(action_size, dtype=jnp.int32)
 
         solution_state = start_reshaped
@@ -113,7 +112,7 @@ def _id_astar_frontier_builder(
             lambda _: jnp.array(jnp.inf, dtype=KEY_DTYPE),
             None,
         )
-        solution_actions = jnp.full((max_path_len,), -1, dtype=jnp.int32)
+        solution_actions = jnp.full((max_path_len,), ACTION_PAD, dtype=jnp.int32)
 
         init_val = IDFrontier(
             states=start_padded,
@@ -232,6 +231,7 @@ def _id_astar_frontier_builder(
             )
 
             flat_h = _chunked_heuristic_eval(h_params, flat_states, flat_valid)
+            flat_h = jnp.maximum(0.0, flat_h)  # Ensure non-negative
             flat_f = (flat_g + flat_h).astype(KEY_DTYPE)
             f_safe = jnp.where(flat_valid, jnp.nan_to_num(flat_f, nan=1e5, posinf=1e5), jnp.inf)
 
@@ -240,12 +240,13 @@ def _id_astar_frontier_builder(
             selected_f = (-top_vals).astype(KEY_DTYPE)
             selected_valid = jnp.isfinite(selected_f)
 
-            flat_batch = FrontierFlatBatch(
+            flat_batch = IDNodeBatch(
                 state=flat_states,
                 cost=flat_g,
                 depth=flat_depth,
                 trail=flat_trail,
                 action_history=flat_action_history,
+                action=flat_actions,
             )
             selected = xnp.take(flat_batch, top_indices, axis=0)
             new_valid = jnp.logical_and(selected_valid, flat_valid[top_indices])
@@ -296,16 +297,9 @@ def _id_astar_loop_builder(
     flat_actions = jnp.broadcast_to(action_ids[:, None], (action_size, batch_size)).reshape(
         (flat_size,)
     )
-    frontier_actions = jnp.full((batch_size,), -1, dtype=jnp.int32)
+    frontier_actions = jnp.full((batch_size,), ACTION_PAD, dtype=jnp.int32)
 
-    @xtructure_dataclass
-    class ExpandFlatBatch:
-        state: FieldDescriptor.scalar(dtype=statecls)
-        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-        depth: FieldDescriptor.scalar(dtype=jnp.int32)
-        action: FieldDescriptor.scalar(dtype=jnp.int32)
-        trail: FieldDescriptor.tensor(dtype=statecls, shape=(non_backtracking_steps,))
-        action_history: FieldDescriptor.tensor(dtype=jnp.int32, shape=(max_path_len,))
+    IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -403,6 +397,7 @@ def _id_astar_loop_builder(
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             solved=frontier.solved,
             solution_state=frontier.solution_state,
+            start_state=xnp.expand_dims(start, 0),
             solution_cost=frontier.solution_cost,
             solution_actions_arr=frontier.solution_actions_arr,
             solved_idx=jnp.where(frontier.solved, 0, -1),  # Dummy index
@@ -539,15 +534,35 @@ def _id_astar_loop_builder(
         flat_valid = jnp.logical_and(flat_valid_parent, jnp.isfinite(flat_g))
         flat_valid = jnp.logical_and(flat_valid, flat_depth <= max_path_len)
 
+        flat_valid = jnp.logical_and(flat_valid, flat_depth <= max_path_len)
+
         # --- Optimization: In-Batch Deduplication ---
         # We perform uniqueness check on the generated flat batch.
-        # This prevents flooding the stack with redundant states from the same parent batch.
         unique_mask = xnp.unique_mask(
             flat_neighbours,
             key=flat_g,  # Key: cost (keep lowest cost if duplicates)
             filled=flat_valid,
         )
         flat_valid = jnp.logical_and(flat_valid, unique_mask)
+
+        # --- Optimization: Global Deduplication (Transposition Table) ---
+        (
+            new_hashtable,
+            is_new_mask,
+            is_optimal_mask,
+            hash_idx,
+        ) = sr.hashtable.parallel_insert(flat_neighbours, flat_valid, flat_g)
+
+        # Update hashtable in search result
+        sr = sr.replace(hashtable=new_hashtable)
+
+        # Update best known costs (g-value) in persistent storage
+        new_ht_cost = xnp.update_on_condition(sr.ht_cost, hash_idx.index, is_optimal_mask, flat_g)
+        sr = sr.replace(ht_cost=new_ht_cost)
+
+        # Prune states that are not optimal (i.e., we found a cheaper or equal path before)
+        flat_valid = jnp.logical_and(flat_valid, is_optimal_mask)
+
         flat_valid = _apply_non_backtracking(
             flat_neighbours,
             parents,
@@ -562,7 +577,29 @@ def _id_astar_loop_builder(
         )
         # ----------------------------------------------------
 
-        # 4. Heuristic & Pruning
+        # Heuristic Caching & Evaluation
+        # We only compute heuristic for NEW optimal states.
+        # For existing optimal states, we fetch the cached heuristic.
+
+        # Fetch cached heuristics
+        old_h = sr.ht_dist[hash_idx.index]
+
+        # Identify which heuristics need computation
+        needs_h_mask = jnp.logical_and(flat_valid, is_new_mask)
+
+        computed_h = _chunked_heuristic_eval(params, flat_neighbours, needs_h_mask)
+        computed_h = jnp.maximum(0.0, computed_h)
+
+        # Combine: use computed if new, else cached
+        flat_h = jnp.where(is_new_mask, computed_h, old_h)
+
+        # Cache new heuristics
+        new_ht_dist = xnp.update_on_condition(sr.ht_dist, hash_idx.index, needs_h_mask, computed_h)
+        sr = sr.replace(ht_dist=new_ht_dist)
+
+        flat_f = (cost_weight * flat_g + flat_h).astype(KEY_DTYPE)
+
+        # 4. Expansion
         return_sr = jax.lax.cond(
             any_solved,
             lambda s: s,
@@ -575,23 +612,21 @@ def _id_astar_loop_builder(
                 flat_trail,
                 flat_action_history,
                 flat_valid,
-                params,
+                flat_f,
             ),
             sr_solved,
         )
 
         return loop_state.replace(search_result=return_sr)
 
-    def _expand_step(sr, states, gs, depths, actions, trails, action_histories, valid, h_params):
-        flat_h = _chunked_heuristic_eval(h_params, states, valid)
-        fs = (cost_weight * gs + flat_h).astype(KEY_DTYPE)
+    def _expand_step(sr, states, gs, depths, actions, trails, action_histories, valid, fs):
         active_bound = sr.bound
         keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
 
         # Sort kept children by f-value descending (Worst -> Best) for LIFO stack order.
         f_key = jnp.where(keep_mask, -fs, jnp.inf)
         perm_f = jnp.argsort(f_key)
-        flat_batch = ExpandFlatBatch(
+        flat_batch = IDNodeBatch(
             state=states,
             cost=gs,
             depth=depths,
@@ -640,7 +675,7 @@ def _id_astar_loop_builder(
             bound=new_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
-        )
+        ).reset_tables(statecls)
 
         # Push Frontier again with new bound
         reset_sr = _push_frontier_to_stack(reset_sr, loop_state.frontier, new_bound)

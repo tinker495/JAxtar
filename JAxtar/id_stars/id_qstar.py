@@ -8,11 +8,15 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, xtructure_dataclass
 
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.id_stars.search_base import IDFrontier, IDLoopState, IDSearchResult
-from JAxtar.id_stars.utils import _apply_non_backtracking
+from JAxtar.id_stars.search_base import (
+    ACTION_PAD,
+    IDFrontier,
+    IDLoopState,
+    IDSearchResult,
+)
+from JAxtar.id_stars.utils import _apply_non_backtracking, build_id_node_batch
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
@@ -39,13 +43,7 @@ def _id_qstar_frontier_builder(
     non_backtracking_steps = int(non_backtracking_steps)
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
 
-    @xtructure_dataclass
-    class FrontierFlatBatch:
-        state: FieldDescriptor.scalar(dtype=statecls)
-        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-        depth: FieldDescriptor.scalar(dtype=jnp.int32)
-        trail: FieldDescriptor.tensor(dtype=statecls, shape=(non_backtracking_steps,))
-        action_history: FieldDescriptor.tensor(dtype=jnp.int32, shape=(max_path_len,))
+    IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
@@ -67,7 +65,7 @@ def _id_qstar_frontier_builder(
 
         start_padded = xnp.pad(start_reshaped, ((0, batch_size - 1),), mode="constant")
         trail_padded = statecls.default((batch_size, non_backtracking_steps))
-        action_history_padded = jnp.full((batch_size, max_path_len), -1, dtype=jnp.int32)
+        action_history_padded = jnp.full((batch_size, max_path_len), ACTION_PAD, dtype=jnp.int32)
         action_ids = jnp.arange(action_size, dtype=jnp.int32)
 
         costs_padded = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
@@ -83,7 +81,7 @@ def _id_qstar_frontier_builder(
             lambda _: jnp.array(jnp.inf, dtype=KEY_DTYPE),
             None,
         )
-        solution_actions = jnp.full((max_path_len,), -1, dtype=jnp.int32)
+        solution_actions = jnp.full((max_path_len,), ACTION_PAD, dtype=jnp.int32)
 
         init_val = IDFrontier(
             states=start_padded,
@@ -191,6 +189,7 @@ def _id_qstar_frontier_builder(
 
             q_vals = variable_q_parent_switcher(q_params, states, valid).astype(KEY_DTYPE)
             q_vals = jnp.where(valid[:, None], q_vals, jnp.inf)
+            q_vals = jnp.maximum(0.0, q_vals)  # Ensure non-negative Q-values
             q_vals = q_vals.transpose()
             f_vals = (cost_weight * gs[jnp.newaxis, :] + q_vals).astype(KEY_DTYPE)
             flat_f = f_vals.reshape((flat_size,))
@@ -216,12 +215,13 @@ def _id_qstar_frontier_builder(
                 batch_size,
             )
 
-            flat_batch = FrontierFlatBatch(
+            flat_batch = IDNodeBatch(
                 state=flat_states,
                 cost=flat_g,
                 depth=flat_depth,
                 trail=flat_trail,
                 action_history=flat_action_history,
+                action=flat_actions,
             )
             packed_batch = xnp.take(flat_batch, unique_idx, axis=0)
             packed_f = xnp.take(flat_f, unique_idx, axis=0)
@@ -284,16 +284,9 @@ def _id_qstar_loop_builder(
     flat_actions = jnp.broadcast_to(action_ids[:, None], (action_size, batch_size)).reshape(
         (flat_size,)
     )
-    frontier_actions = jnp.full((batch_size,), -1, dtype=jnp.int32)
+    frontier_actions = jnp.full((batch_size,), ACTION_PAD, dtype=jnp.int32)
 
-    @xtructure_dataclass
-    class ExpandFlatBatch:
-        state: FieldDescriptor.scalar(dtype=statecls)
-        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-        depth: FieldDescriptor.scalar(dtype=jnp.int32)
-        action: FieldDescriptor.scalar(dtype=jnp.int32)
-        trail: FieldDescriptor.tensor(dtype=statecls, shape=(non_backtracking_steps,))
-        action_history: FieldDescriptor.tensor(dtype=jnp.int32, shape=(max_path_len,))
+    IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
@@ -305,6 +298,7 @@ def _id_qstar_loop_builder(
     def _min_q(q_params, states, valid_mask):
         q_vals = variable_q_parent_switcher(q_params, states, valid_mask).astype(KEY_DTYPE)
         q_vals = jnp.where(valid_mask[:, None], q_vals, jnp.inf)
+        q_vals = jnp.maximum(0.0, q_vals)  # Ensure non-negative Q-values
         return jnp.min(q_vals, axis=-1)
 
     generate_frontier = _id_qstar_frontier_builder(
@@ -362,6 +356,7 @@ def _id_qstar_loop_builder(
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             solved=frontier.solved,
             solution_state=frontier.solution_state,
+            start_state=xnp.expand_dims(start, 0),
             solution_cost=frontier.solution_cost,
             solution_actions_arr=frontier.solution_actions_arr,
             solved_idx=jnp.where(frontier.solved, 0, -1),
@@ -463,8 +458,48 @@ def _id_qstar_loop_builder(
         flat_valid = jnp.logical_and(flat_valid_parent, jnp.isfinite(flat_g))
         flat_valid = jnp.logical_and(flat_valid, flat_depth <= max_path_len)
 
+        q_vals = variable_q_parent_switcher(params, parents, valid_mask).astype(KEY_DTYPE)
+        q_vals = jnp.where(valid_mask[:, None], q_vals, jnp.inf)
+        q_vals = jnp.maximum(0.0, q_vals)  # Ensure non-negative Q-values
+        q_vals = q_vals.transpose()
+        f_vals = (cost_weight * parent_costs[jnp.newaxis, :] + q_vals).astype(KEY_DTYPE)
+        flat_f = f_vals.reshape((flat_size,))
+
+        # --- Optimization: Pruning by Bound (f > bound) ---
+        # Since we have Q-values (and thus f) available cheaply from parents,
+        # we can prune invalid nodes BEFORE unique_mask and other heavy ops.
+        # This is safe and maintains optimal bound strictness (unlike g-pruning).
+        active_bound = sr.bound
+        f_prune_mask = flat_f > active_bound + 1e-6
+
+        valid_f_pruned = jnp.logical_and(flat_valid, f_prune_mask)
+        min_f_pruned = jnp.min(jnp.where(valid_f_pruned, flat_f, jnp.inf)).astype(KEY_DTYPE)
+
+        # Update next_bound in SR
+        new_next_bound_f = jnp.minimum(sr.next_bound, min_f_pruned).astype(KEY_DTYPE)
+        sr = sr.replace(next_bound=new_next_bound_f)
+        sr_solved = sr_solved.replace(next_bound=new_next_bound_f)
+
+        flat_valid = jnp.logical_and(flat_valid, flat_f <= active_bound + 1e-6)
+
         unique_mask = xnp.unique_mask(flat_neighbours, key=flat_g, filled=flat_valid)
         flat_valid = jnp.logical_and(flat_valid, unique_mask)
+
+        # --- Optimization: Global Deduplication (Transposition Table) ---
+        (
+            new_hashtable,
+            is_new_mask,
+            is_optimal_mask,
+            hash_idx,
+        ) = sr.hashtable.parallel_insert(flat_neighbours, flat_valid, flat_g)
+
+        sr = sr.replace(hashtable=new_hashtable)
+        new_ht_cost = xnp.update_on_condition(sr.ht_cost, hash_idx.index, is_optimal_mask, flat_g)
+        sr = sr.replace(ht_cost=new_ht_cost)
+
+        flat_valid = jnp.logical_and(flat_valid, is_optimal_mask)
+        # --------------------------------
+
         flat_valid = _apply_non_backtracking(
             flat_neighbours,
             parents,
@@ -477,12 +512,6 @@ def _id_qstar_loop_builder(
             trail_indices,
             batch_size,
         )
-
-        q_vals = variable_q_parent_switcher(params, parents, valid_mask).astype(KEY_DTYPE)
-        q_vals = jnp.where(valid_mask[:, None], q_vals, jnp.inf)
-        q_vals = q_vals.transpose()
-        f_vals = (cost_weight * parent_costs[jnp.newaxis, :] + q_vals).astype(KEY_DTYPE)
-        flat_f = f_vals.reshape((flat_size,))
 
         return_sr = jax.lax.cond(
             any_solved,
@@ -512,7 +541,7 @@ def _id_qstar_loop_builder(
         f_key = jnp.where(keep_mask, -fs, jnp.inf)
         perm = jnp.argsort(f_key)
 
-        flat_batch = ExpandFlatBatch(
+        flat_batch = IDNodeBatch(
             state=states,
             cost=gs,
             depth=depths,
@@ -523,13 +552,6 @@ def _id_qstar_loop_builder(
         ordered = xnp.take(flat_batch, perm, axis=0)
 
         n_push = jnp.sum(keep_mask)
-
-        # Update next bound
-        prune_mask = jnp.logical_and(valid, fs > active_bound + 1e-6)
-        pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
-        min_pruned = jnp.min(pruned_fs).astype(KEY_DTYPE)
-        new_next_bound = jnp.minimum(sr.next_bound, min_pruned).astype(KEY_DTYPE)
-        sr = sr.replace(next_bound=new_next_bound)
 
         return sr.push_packed_batch(
             ordered.state,
@@ -555,7 +577,7 @@ def _id_qstar_loop_builder(
             bound=new_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
-        )
+        ).reset_tables(statecls)
 
         reset_sr = _push_frontier_to_stack(reset_sr, loop_state.frontier, new_bound)
 

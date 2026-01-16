@@ -2,6 +2,37 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from xtructure import FieldDescriptor, xtructure_dataclass
+
+from JAxtar.annotate import KEY_DTYPE
+
+
+def build_id_node_batch(statecls, non_backtracking_steps: int, max_path_len: int):
+    """
+    Builds the IDNodeBatch dataclass with dynamic shapes/types.
+    """
+    trail_shape = (int(non_backtracking_steps),) if non_backtracking_steps > 0 else (0,)
+
+    @xtructure_dataclass
+    class IDNodeBatch:
+        state: FieldDescriptor.scalar(dtype=statecls)
+        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+        depth: FieldDescriptor.scalar(dtype=jnp.int32)
+        # action is useful for expanding, but trails might not be needed in all contexts?
+        # Standardizing fields:
+        trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+        action_history: FieldDescriptor.tensor(dtype=jnp.int32, shape=(max_path_len,))
+        # Optional fields can be problematic in batching if not consistent
+        # For now we include what was in FrontierFlatBatch/ExpandFlatBatch
+        # Note: ExpandFlatBatch had 'action', FrontierFlatBatch did not (or it was implicit/different)
+        # Let's check usage.
+        # FrontierFlatBatch in id_astar: state, cost, depth, trail, action_history
+        # ExpandFlatBatch in id_astar: state, cost, depth, action, trail, action_history
+        # We can add 'action' field. For Frontier it can be dummy or omitted if we define two classes?
+        # Or just one class with all fields.
+        action: FieldDescriptor.scalar(dtype=jnp.int32)
+
+    return IDNodeBatch
 
 
 def _batched_state_equal(lhs: Puzzle.State, rhs: Puzzle.State) -> jnp.ndarray:
