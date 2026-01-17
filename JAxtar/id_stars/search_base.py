@@ -2,6 +2,7 @@
 Search Base for Iterative Deepening Algorithms (IDA* / ID-Q*)
 """
 
+import time
 from functools import partial
 from typing import Any
 
@@ -25,67 +26,78 @@ from JAxtar.annotate import (
     HASH_SIZE_MULTIPLIER,
     KEY_DTYPE,
 )
+from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
 
-ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
+
+def _batched_state_equal(lhs: Puzzle.State, rhs: Puzzle.State) -> jnp.ndarray:
+    equality_tree = lhs == rhs
+    leaves, _ = jax.tree_util.tree_flatten(equality_tree)
+    if not leaves:
+        raise ValueError("State comparison received an empty tree")
+    result = leaves[0]
+    for leaf in leaves[1:]:
+        result = jnp.logical_and(result, leaf)
+    return result
+
+
+def apply_non_backtracking(
+    candidate_states: Puzzle.State,
+    parent_states: Puzzle.State,
+    parent_trail: Puzzle.State,
+    parent_depths: jnp.ndarray,
+    valid_mask: jnp.ndarray,
+    non_backtracking_steps: int,
+    action_size: int,
+    flat_size: int,
+    trail_indices: jnp.ndarray,
+    batch_size: int,
+) -> jnp.ndarray:
+    if non_backtracking_steps <= 0:
+        return valid_mask
+
+    parent_states_tiled = xnp.stack([parent_states] * action_size, axis=0)
+    flat_parent_states = xnp.reshape(parent_states_tiled, (flat_size,))
+    blocked = _batched_state_equal(candidate_states, flat_parent_states)
+    blocked = jnp.logical_and(blocked, valid_mask)
+
+    parent_trail_tiled = xnp.stack([parent_trail] * action_size, axis=0)
+    flat_trail = xnp.reshape(parent_trail_tiled, (flat_size, non_backtracking_steps))
+    flat_parent_depths = jnp.broadcast_to(parent_depths, (action_size, batch_size)).reshape(
+        (flat_size,)
+    )
+
+    def _loop(i, carry):
+        trail_state = xnp.take(flat_trail, trail_indices[i], axis=1)
+        matches = _batched_state_equal(candidate_states, trail_state)
+        valid_trail = trail_indices[i] < flat_parent_depths
+        matches = jnp.logical_and(matches, valid_trail)
+        return jnp.logical_or(carry, matches)
+
+    blocked = jax.lax.fori_loop(0, non_backtracking_steps, _loop, blocked)
+    return jnp.logical_and(valid_mask, jnp.logical_not(blocked))
 
 
 @base_dataclass
-class IDFrontier:
-    """
-    Data structure for the pre-computed frontier.
-    Used to restart IDA* from a deeper set of nodes.
-    """
-
-    states: Xtructurable  # [frontier_size, ...]
-    costs: chex.Array  # [frontier_size]
-    depths: chex.Array  # [frontier_size]
-    valid_mask: chex.Array  # [frontier_size]
-    f_scores: chex.Array  # [frontier_size]
-    trail: Xtructurable  # [frontier_size, non_backtracking_steps]
-    action_history: chex.Array  # [frontier_size, max_path_len]
-
-    # Solution info if found during frontier generation
-    solved: chex.Array  # bool scalar
-    solution_state: Xtructurable  # [1, state_shape]
-    solution_cost: chex.Array  # scalar
-    solution_actions_arr: chex.Array  # [max_path_len]
-
-
-def compact_by_valid(
-    values: Any,
-    valid_mask: chex.Array,
-) -> tuple[Any, chex.Array, chex.Array, chex.Array]:
-    """
-    Pack valid entries to the front for use with variable_batch_switcher.
-
-    Returns:
-        Tuple of (packed_values, packed_valid_mask, valid_count, packed_indices).
-    """
-    flat_size = valid_mask.shape[0]
-    valid_idx = jnp.nonzero(valid_mask, size=flat_size, fill_value=0)[0].astype(jnp.int32)
-    valid_count = jnp.sum(valid_mask.astype(jnp.int32))
-    packed_values = xnp.take(values, valid_idx, axis=0)
-    packed_valid = jnp.arange(flat_size, dtype=jnp.int32) < valid_count
-    return packed_values, packed_valid, valid_count, valid_idx
-
-
-@base_dataclass(static_fields=("params"))
 class IDLoopState:
     """
     Loop state for the inner DFS loop of IDA*.
     """
 
-    search_result: "IDSearchResult"
+    search_result: "IDSearchBase"
     solve_config: Puzzle.SolveConfig
     params: Any
     frontier: IDFrontier
 
 
 @base_dataclass(static_fields=("capacity", "action_size", "ItemCls"))
-class IDSearchResult:
+class IDSearchBase:
     """
     Data structure for Iterative Deepening Search.
     Maintains an explicit stack for Batched DFS.
+
+    Renamed from IDSearchResult for clarity:
+    - "Base" indicates this is the core search state container
+    - Methods handle stack operations and trace management
     """
 
     capacity: int
@@ -127,9 +139,9 @@ class IDSearchResult:
         non_backtracking_steps: int = 0,
         max_path_len: int = 256,
         seed: int = 42,
-    ) -> "IDSearchResult":
+    ) -> "IDSearchBase":
         """
-        Initialize the IDSearchResult with empty stack.
+        Initialize the IDSearchBase with empty stack.
         """
         # Define dynamic Item class
         if non_backtracking_steps < 0:
@@ -170,7 +182,7 @@ class IDSearchResult:
         trace_size = jnp.array(0, dtype=jnp.int32)
         frontier_action_history = jnp.full((1, max_path_len), ACTION_PAD, dtype=ACTION_DTYPE)
 
-        return IDSearchResult(
+        return IDSearchBase(
             capacity=capacity,
             action_size=action_size,
             ItemCls=IDStackItem,
@@ -308,11 +320,12 @@ class IDSearchResult:
     def get_top_batch(
         self, batch_size: int
     ) -> tuple[
-        "IDSearchResult",
+        "IDSearchBase",
+        Puzzle.State,
         chex.Array,
         chex.Array,
+        Puzzle.State,
         chex.Array,
-        Xtructurable,
         chex.Array,
         chex.Array,
         chex.Array,
@@ -356,7 +369,7 @@ class IDSearchResult:
             root_indices,
         )
 
-    def reset_tables(self, statecls: Puzzle.State, seed: int = 42) -> "IDSearchResult":
+    def reset_tables(self, statecls: Puzzle.State, seed: int = 42) -> "IDSearchBase":
         """
         Resets the hashtable and associated cost/dist arrays.
         Useful for Iterative Deepening to clear visited set between bounds.
@@ -367,6 +380,27 @@ class IDSearchResult:
         ht_cost = jnp.full_like(self.ht_cost, jnp.inf)
         ht_dist = jnp.full_like(self.ht_dist, jnp.inf)
         return self.replace(hashtable=hashtable, ht_cost=ht_cost, ht_dist=ht_dist)
+
+    def apply_deduplication(
+        self,
+        flat_neighbours: Xtructurable,
+        flat_valid: chex.Array,
+        flat_g: chex.Array,
+    ) -> tuple["IDSearchBase", chex.Array, chex.Array, chex.Array]:
+        (
+            new_hashtable,
+            is_new_mask,
+            is_optimal_mask,
+            hash_idx,
+        ) = self.hashtable.parallel_insert(flat_neighbours, flat_valid, flat_g)
+
+        sr = self.replace(hashtable=new_hashtable)
+        new_ht_cost = xnp.update_on_condition(sr.ht_cost, hash_idx.index, is_optimal_mask, flat_g)
+        sr = sr.replace(ht_cost=new_ht_cost)
+
+        flat_valid = jnp.logical_and(flat_valid, is_optimal_mask)
+
+        return sr, flat_valid, is_new_mask, hash_idx
 
     def push_batch(
         self,
@@ -379,7 +413,7 @@ class IDSearchResult:
         trails: Xtructurable,
         action_histories: chex.Array,
         valid_mask: chex.Array,
-    ) -> "IDSearchResult":
+    ) -> "IDSearchBase":
         """
         Push a batch of items onto the stack.
         Only pushes items where valid_mask is True.
@@ -471,7 +505,7 @@ class IDSearchResult:
         trails: Xtructurable,
         action_histories: chex.Array,
         n_push: chex.Array,
-    ) -> "IDSearchResult":
+    ) -> "IDSearchBase":
         """
         Push a pre-packed batch of items onto the stack.
         Assumes the items are already sorted/packed such that the valid items
@@ -533,3 +567,354 @@ class IDSearchResult:
             trace_root=new_trace_root,
             trace_size=new_trace_size,
         )
+
+    def push_frontier_to_stack(
+        self,
+        frontier: "IDFrontier",
+        bound: chex.Array,
+        frontier_actions: chex.Array,
+    ) -> "IDSearchBase":
+        """
+        Push allowed frontier nodes to stack and update next_bound.
+
+        Common logic extracted from both id_astar.py and id_qstar.py.
+        This method filters frontier nodes by bound, updates next_bound
+        with the minimum f-score of pruned nodes, and pushes valid nodes.
+
+        Args:
+            frontier: IDFrontier containing states to push
+            bound: Current cost bound (scalar)
+            frontier_actions: Placeholder actions for frontier nodes [batch_size]
+
+        Returns:
+            Updated IDSearchBase with nodes pushed and next_bound updated
+        """
+        fs = frontier.f_scores
+        batch_size = frontier.valid_mask.shape[0]
+
+        # Filter nodes within bound
+        keep_mask = jnp.logical_and(frontier.valid_mask, fs <= bound + 1e-6)
+
+        # Determine next_bound from pruned nodes
+        prune_mask = jnp.logical_and(frontier.valid_mask, fs > bound + 1e-6)
+        pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
+        min_pruned = jnp.min(pruned_fs).astype(KEY_DTYPE)
+
+        new_next_bound = jnp.minimum(self.next_bound, min_pruned).astype(KEY_DTYPE)
+        sr = self.replace(next_bound=new_next_bound)
+
+        # Prepare indices
+        parent_indices = jnp.full((batch_size,), -1, dtype=jnp.int32)
+        root_indices = jnp.where(frontier.valid_mask, jnp.arange(batch_size), -1)
+
+        return sr.push_batch(
+            frontier.states,
+            frontier.costs,
+            frontier.depths,
+            frontier_actions,
+            parent_indices,
+            root_indices,
+            frontier.trail,
+            frontier.action_history,
+            keep_mask,
+        )
+
+    def expand_and_push(
+        self,
+        node_batch: Xtructurable,
+        fs: chex.Array,
+        valid: chex.Array,
+        update_next_bound: bool = True,
+    ) -> "IDSearchBase":
+        """
+        Expand valid nodes and push to stack, sorted by f-value descending (LIFO).
+
+        Common logic extracted from _expand_step() in both id_astar.py and id_qstar.py.
+        This method:
+        1. Filters nodes within the current bound
+        2. Compacts and sorts by f-value (descending for LIFO)
+        3. Optionally updates next_bound from pruned nodes
+        4. Pushes to stack
+
+        Args:
+            node_batch: IDNodeBatch containing states, costs, depths, actions, etc.
+            fs: f-scores for each node [flat_size]
+            valid: validity mask for each node [flat_size]
+            update_next_bound: If True, update next_bound from pruned nodes (ID-A* needs this,
+                               ID-Q* updates next_bound earlier in inner_body)
+
+        Returns:
+            Updated IDSearchBase with nodes pushed to stack
+        """
+        active_bound = self.bound
+        keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
+
+        # Compact valid nodes
+        packed_batch, packed_valid, _, packed_idx = compact_by_valid(node_batch, keep_mask)
+        packed_fs = jnp.where(packed_valid, fs[packed_idx], jnp.inf)
+
+        # Sort by f-value descending (worst -> best) for LIFO stack order
+        f_key = jnp.where(packed_valid, -packed_fs, jnp.inf)
+        perm = jnp.argsort(f_key)
+        ordered = xnp.take(packed_batch, perm, axis=0)
+
+        n_push = jnp.sum(packed_valid)
+
+        # Optionally update next_bound from pruned nodes
+        sr = self
+        if update_next_bound:
+            prune_mask = jnp.logical_and(valid, fs > active_bound + 1e-6)
+            pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
+            min_pruned_f = jnp.min(pruned_fs).astype(KEY_DTYPE)
+            new_next_bound = jnp.minimum(self.next_bound, min_pruned_f).astype(KEY_DTYPE)
+            sr = self.replace(next_bound=new_next_bound)
+
+        return sr.push_packed_batch(
+            ordered.state,
+            ordered.cost,
+            ordered.depth,
+            ordered.action,
+            ordered.parent_index,
+            ordered.root_index,
+            ordered.trail,
+            ordered.action_history,
+            n_push,
+        )
+
+    def mark_solved(
+        self,
+        any_solved: chex.Array,
+        solved_state: Xtructurable,
+        solved_cost: chex.Array,
+        solved_actions: chex.Array,
+        solved_trace_idx: chex.Array,
+    ) -> "IDSearchBase":
+        """
+        Mark search as solved and store solution info.
+        """
+        new_solution_state = jax.lax.cond(
+            any_solved, lambda _: solved_state, lambda _: self.solution_state, None
+        )
+        new_solution_cost = jax.lax.cond(
+            any_solved, lambda _: solved_cost.astype(KEY_DTYPE), lambda _: self.solution_cost, None
+        )
+        new_solution_actions = jax.lax.cond(
+            any_solved, lambda _: solved_actions, lambda _: self.solution_actions_arr, None
+        )
+
+        return self.replace(
+            solved=jnp.logical_or(self.solved, any_solved),
+            solved_idx=jnp.where(any_solved, solved_trace_idx, -1),
+            solution_state=new_solution_state,
+            solution_cost=new_solution_cost,
+            solution_actions_arr=new_solution_actions,
+        )
+
+    def initialize_from_frontier(
+        self,
+        frontier: IDFrontier,
+        cost_weight: float,
+        eval_fn: callable,
+        params: Any,
+        frontier_actions: chex.Array,
+    ) -> "IDSearchBase":
+        """
+        Initialize bound and stack from a pre-computed frontier.
+        """
+        # Calculate F values for the frontier
+        frontier_h = eval_fn(params, frontier.states, frontier.valid_mask).astype(KEY_DTYPE)
+        frontier_f = (cost_weight * frontier.costs + frontier_h).astype(KEY_DTYPE)
+        frontier = frontier.replace(f_scores=frontier_f)
+
+        # Initial Bound = min(f) of valid frontier nodes
+        valid_fs = jnp.where(frontier.valid_mask, frontier.f_scores, jnp.inf)
+        start_bound = jnp.min(valid_fs).astype(KEY_DTYPE)
+
+        # Update search result with bound and solution from frontier
+        sr = self.replace(
+            bound=start_bound,
+            next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
+            solved=frontier.solved,
+            solution_state=frontier.solution_state,
+            solution_cost=frontier.solution_cost,
+            solution_actions_arr=frontier.solution_actions_arr,
+            solved_idx=jnp.where(frontier.solved, -1, -1),
+            frontier_action_history=frontier.action_history,
+        )
+
+        # Push frontier nodes within bound to stack
+        return sr.push_frontier_to_stack(frontier, start_bound, frontier_actions), frontier
+
+    @staticmethod
+    def detect_solution(
+        puzzle: Puzzle,
+        solve_config: Puzzle.SolveConfig,
+        states: Puzzle.State,
+        costs: chex.Array,
+        action_history: chex.Array,
+        valid_mask: chex.Array,
+    ):
+        is_solved_mask = puzzle.batched_is_solved(solve_config, states)
+        is_solved_mask = jnp.logical_and(is_solved_mask, valid_mask)
+        any_solved = jnp.any(is_solved_mask)
+
+        first_idx = jnp.argmax(is_solved_mask)
+        solved_state = xnp.take(states, first_idx[jnp.newaxis], axis=0)
+        solved_cost = costs[first_idx]
+        solved_actions = action_history[first_idx]
+
+        return any_solved, solved_state, solved_cost, solved_actions, first_idx
+
+    def prepare_for_expansion(
+        self,
+        puzzle: Puzzle,
+        solve_config: Puzzle.SolveConfig,
+        batch_size: int,
+    ):
+        """
+        Pop top batch, check for solution, and get neighbours.
+        """
+        (
+            sr,
+            parents,
+            parent_costs,
+            parent_depths,
+            parent_trails,
+            parent_action_histories,
+            valid_mask,
+            parent_trace_indices,
+            parent_root_indices,
+        ) = self.get_top_batch(batch_size)
+
+        any_solved, solved_state, solved_cost, solved_actions, first_idx = self.detect_solution(
+            puzzle, solve_config, parents, parent_costs, parent_action_histories, valid_mask
+        )
+        solved_trace_idx = parent_trace_indices[first_idx]
+
+        sr_solved = sr.mark_solved(
+            any_solved, solved_state, solved_cost, solved_actions, solved_trace_idx
+        )
+
+        neighbours, step_costs = puzzle.batched_get_neighbours(solve_config, parents, valid_mask)
+
+        return (
+            sr,
+            sr_solved,
+            any_solved,
+            parents,
+            parent_costs,
+            parent_depths,
+            parent_trails,
+            parent_action_histories,
+            valid_mask,
+            parent_trace_indices,
+            parent_root_indices,
+            neighbours,
+            step_costs,
+        )
+
+    def apply_standard_deduplication(
+        self,
+        flat_neighbours: Xtructurable,
+        flat_g: chex.Array,
+        flat_valid: chex.Array,
+        parents: Xtructurable,
+        parent_trails: Xtructurable,
+        parent_depths: chex.Array,
+        non_backtracking_steps: int,
+        action_size: int,
+        flat_size: int,
+        trail_indices: jnp.ndarray,
+        batch_size: int,
+    ) -> tuple["IDSearchBase", chex.Array, chex.Array, chex.Array]:
+        """
+        Apply in-batch deduplication, global deduplication, and non-backtracking.
+        """
+        unique_mask = xnp.unique_mask(
+            flat_neighbours,
+            key=flat_g,
+            filled=flat_valid,
+        )
+        flat_valid = jnp.logical_and(flat_valid, unique_mask)
+
+        sr, flat_valid, is_new_mask, hash_idx = self.apply_deduplication(
+            flat_neighbours, flat_valid, flat_g
+        )
+
+        flat_valid = apply_non_backtracking(
+            flat_neighbours,
+            parents,
+            parent_trails,
+            parent_depths,
+            flat_valid,
+            non_backtracking_steps,
+            action_size,
+            flat_size,
+            trail_indices,
+            batch_size,
+        )
+
+        return sr, flat_valid, is_new_mask, hash_idx
+
+
+def finalize_builder(
+    puzzle: Puzzle,
+    init_loop: callable,
+    cond: callable,
+    body: callable,
+    name: str = "ID-Search",
+    show_compile_time: bool = False,
+):
+    """
+    Finalize the search builder by JIT-compiling and optionally warming up.
+    """
+
+    def search_fn(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
+        loop_state = init_loop(solve_config, start, **kwargs)
+        loop_state = jax.lax.while_loop(cond, body, loop_state)
+        return loop_state.search_result
+
+    jitted_fn = jax.jit(search_fn)
+
+    if show_compile_time:
+        print(f"initializing jit for {name}")
+        start_t = time.time()
+
+    empty_solve_config = puzzle.SolveConfig.default()
+    empty_states = puzzle.State.default()
+    jitted_fn(empty_solve_config, empty_states)
+
+    if show_compile_time:
+        print(f"{name} JIT compile time: {time.time() - start_t:.2f}s")
+        print("JIT compiled\n\n")
+
+    return jitted_fn
+
+
+def build_outer_loop(
+    inner_cond,
+    inner_body,
+    statecls,
+    frontier_actions: jnp.ndarray,
+):
+    def outer_cond(loop_state: IDLoopState) -> jnp.ndarray:
+        sr = loop_state.search_result
+        return jnp.logical_and(~sr.solved, jnp.isfinite(sr.bound))
+
+    def outer_body(loop_state: IDLoopState) -> IDLoopState:
+        loop_state = jax.lax.while_loop(inner_cond, inner_body, loop_state)
+
+        sr = loop_state.search_result
+        new_bound = sr.next_bound
+
+        reset_sr = sr.replace(
+            bound=new_bound,
+            next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
+            stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
+        ).reset_tables(statecls)
+
+        reset_sr = reset_sr.push_frontier_to_stack(loop_state.frontier, new_bound, frontier_actions)
+
+        return loop_state.replace(search_result=reset_sr)
+
+    return outer_cond, outer_body
