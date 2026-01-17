@@ -112,6 +112,11 @@ class IDSearchResult:
     solution_cost: chex.Array  # Scalar - cost of solution
     generated_count: chex.Array  # Scalar - count of generated nodes
     solution_actions_arr: chex.Array  # [max_path_len]
+    trace_parent: chex.Array  # [capacity]
+    trace_action: chex.Array  # [capacity]
+    trace_root: chex.Array  # [capacity]
+    trace_size: chex.Array  # scalar
+    frontier_action_history: chex.Array  # [batch_size, max_path_len]
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
@@ -138,8 +143,11 @@ class IDSearchResult:
             cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
             depth: FieldDescriptor.scalar(dtype=jnp.int32)
             action: FieldDescriptor.scalar(dtype=jnp.int32)
+            parent_index: FieldDescriptor.scalar(dtype=jnp.int32)
+            root_index: FieldDescriptor.scalar(dtype=jnp.int32)
+            trace_index: FieldDescriptor.scalar(dtype=jnp.int32)
             trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
-            action_history: FieldDescriptor.tensor(dtype=jnp.int32, shape=(max_path_len,))
+            action_history: FieldDescriptor.tensor(dtype=ACTION_DTYPE, shape=(max_path_len,))
 
         bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
         next_bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
@@ -154,8 +162,13 @@ class IDSearchResult:
         solution_state = statecls.default((1,))  # Placeholder batch-1
         start_state = statecls.default((1,))  # Placeholder batch-1
         solution_cost = jnp.array(jnp.inf, dtype=KEY_DTYPE)
-        solution_actions = jnp.full((max_path_len,), ACTION_PAD, dtype=jnp.int32)
+        solution_actions = jnp.full((max_path_len,), ACTION_PAD, dtype=ACTION_DTYPE)
         generated_count = jnp.array(0, dtype=jnp.int32)
+        trace_parent = jnp.full((capacity,), -1, dtype=jnp.int32)
+        trace_action = jnp.full((capacity,), ACTION_PAD, dtype=ACTION_DTYPE)
+        trace_root = jnp.full((capacity,), -1, dtype=jnp.int32)
+        trace_size = jnp.array(0, dtype=jnp.int32)
+        frontier_action_history = jnp.full((1, max_path_len), ACTION_PAD, dtype=ACTION_DTYPE)
 
         return IDSearchResult(
             capacity=capacity,
@@ -173,6 +186,11 @@ class IDSearchResult:
             start_state=start_state,
             solution_cost=solution_cost,
             solution_actions_arr=solution_actions,
+            trace_parent=trace_parent,
+            trace_action=trace_action,
+            trace_root=trace_root,
+            trace_size=trace_size,
+            frontier_action_history=frontier_action_history,
             generated_count=generated_count,
         )
 
@@ -230,9 +248,46 @@ class IDSearchResult:
         """
         Return the list of actions to reach the solution.
         """
-        # Filter out padding (ACTION_PAD)
-        valid_mask = self.solution_actions_arr != ACTION_PAD
-        return self.solution_actions_arr[valid_mask]
+        solved_idx = int(jax.device_get(self.solved_idx))
+        if solved_idx < 0:
+            valid_mask = self.solution_actions_arr != ACTION_PAD
+            return self.solution_actions_arr[valid_mask]
+
+        max_steps = int(jax.device_get(self.trace_size))
+        if max_steps <= 0:
+            valid_mask = self.solution_actions_arr != ACTION_PAD
+            return self.solution_actions_arr[valid_mask]
+
+        actions_buf = jnp.full((max_steps,), ACTION_PAD, dtype=ACTION_DTYPE)
+
+        def _cond(carry):
+            idx, step, _ = carry
+            return jnp.logical_and(idx >= 0, step < max_steps)
+
+        def _body(carry):
+            idx, step, actions = carry
+            act = self.trace_action[idx]
+            actions = actions.at[step].set(act)
+            next_idx = self.trace_parent[idx]
+            return next_idx, step + 1, actions
+
+        init = (
+            jnp.array(solved_idx, dtype=jnp.int32),
+            jnp.array(0, dtype=jnp.int32),
+            actions_buf,
+        )
+        _, length, actions = jax.lax.while_loop(_cond, _body, init)
+        actions = actions[:length]
+        actions = actions[::-1]
+        actions = actions[actions != ACTION_PAD]
+
+        root_idx = int(jax.device_get(self.trace_root[solved_idx]))
+        if root_idx < 0:
+            return actions
+
+        prefix = self.frontier_action_history[root_idx]
+        prefix = prefix[prefix != ACTION_PAD]
+        return jnp.concatenate([prefix, actions])
 
     def get_generated_size(self):
         return self.generated_count
@@ -264,7 +319,7 @@ class IDSearchResult:
     ]:
         """
         Pop the top `batch_size` items from the stack.
-        Returns (updated_self, states, costs, depths, valid_mask, indices)
+        Returns (updated_self, states, costs, depths, trails, action_histories, valid_mask, indices)
         """
         # Ensure consistent index type for JAX
         current_size = self.stack.size.astype(jnp.int32)
@@ -283,14 +338,23 @@ class IDSearchResult:
         costs = popped_items.cost
         depths = popped_items.depth
         trails = popped_items.trail
-
-        indices = jnp.zeros(batch_size, dtype=jnp.int32)
+        action_histories = popped_items.action_history
+        trace_indices = popped_items.trace_index
+        root_indices = popped_items.root_index
 
         new_self = self.replace(stack=new_stack)
 
-        action_histories = popped_items.action_history
-
-        return new_self, states, costs, depths, trails, action_histories, valid_mask, indices
+        return (
+            new_self,
+            states,
+            costs,
+            depths,
+            trails,
+            action_histories,
+            valid_mask,
+            trace_indices,
+            root_indices,
+        )
 
     def reset_tables(self, statecls: Puzzle.State, seed: int = 42) -> "IDSearchResult":
         """
@@ -310,6 +374,8 @@ class IDSearchResult:
         costs: chex.Array,
         depths: chex.Array,
         actions: chex.Array,
+        parent_indices: chex.Array,
+        root_indices: chex.Array,
         trails: Xtructurable,
         action_histories: chex.Array,
         valid_mask: chex.Array,
@@ -327,20 +393,39 @@ class IDSearchResult:
         costs_sorted = costs[perm]
         depths_sorted = depths[perm]
         actions_sorted = actions[perm]
+        parent_indices_sorted = parent_indices[perm]
+        root_indices_sorted = root_indices[perm]
 
         current_ptr = self.stack.size.astype(jnp.int32)
         capacity = self.stack.max_size
 
         safe_n_push = jnp.minimum(n_push, capacity - current_ptr)
 
+        trace_base = self.trace_size
+        batch_len = valid_mask.shape[0]
+        trace_ids_sorted = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
+        valid_sorted = valid_mask[perm]
+        push_mask_sorted = jnp.logical_and(
+            valid_sorted, jnp.arange(batch_len, dtype=jnp.int32) < safe_n_push
+        )
+        trace_ids_sorted = jnp.where(push_mask_sorted, trace_ids_sorted, -1)
+
         items_sorted = self.ItemCls(
             state=states_sorted,
             cost=costs_sorted,
             depth=depths_sorted,
             action=actions_sorted,
+            parent_index=parent_indices_sorted,
+            root_index=root_indices_sorted,
+            trace_index=trace_ids_sorted,
             trail=xnp.take(trails, perm, axis=0),
             action_history=action_histories[perm],
         )
+
+        trace_parent_updates = parent_indices_sorted
+        trace_action_updates = actions_sorted
+        trace_root_updates = root_indices_sorted
+        trace_mask = trace_ids_sorted >= 0
 
         def _update_leaf(stack_arr, update_arr):
             # Explicitly use int32 indices
@@ -349,14 +434,30 @@ class IDSearchResult:
 
         new_val_store = jax.tree_util.tree_map(_update_leaf, self.stack.val_store, items_sorted)
 
+        trace_ids_dense = jnp.where(trace_mask, trace_ids_sorted, 0)
+        new_trace_parent = xnp.update_on_condition(
+            self.trace_parent, trace_ids_dense, trace_mask, trace_parent_updates
+        )
+        new_trace_action = xnp.update_on_condition(
+            self.trace_action, trace_ids_dense, trace_mask, trace_action_updates
+        )
+        new_trace_root = xnp.update_on_condition(
+            self.trace_root, trace_ids_dense, trace_mask, trace_root_updates
+        )
+
         new_ptr = (current_ptr + safe_n_push).astype(self.stack.size.dtype)
         new_generated_count = self.generated_count + safe_n_push
+        new_trace_size = self.trace_size + safe_n_push
 
         new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
 
         return self.replace(
             stack=new_stack,
             generated_count=new_generated_count,
+            trace_parent=new_trace_parent,
+            trace_action=new_trace_action,
+            trace_root=new_trace_root,
+            trace_size=new_trace_size,
         )
 
     def push_packed_batch(
@@ -365,6 +466,8 @@ class IDSearchResult:
         costs: chex.Array,
         depths: chex.Array,
         actions: chex.Array,
+        parent_indices: chex.Array,
+        root_indices: chex.Array,
         trails: Xtructurable,
         action_histories: chex.Array,
         n_push: chex.Array,
@@ -379,11 +482,21 @@ class IDSearchResult:
 
         safe_n_push = jnp.minimum(n_push.astype(jnp.int32), capacity - current_ptr)
 
+        trace_base = self.trace_size
+        batch_len = parent_indices.shape[0]
+        trace_ids = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
+        trace_ids = jnp.where(
+            jnp.arange(batch_len, dtype=jnp.int32) < n_push.astype(jnp.int32), trace_ids, -1
+        )
+
         items = self.ItemCls(
             state=states,
             cost=costs,
             depth=depths,
             action=actions,
+            parent_index=parent_indices,
+            root_index=root_indices,
+            trace_index=trace_ids,
             trail=trails,
             action_history=action_histories,
         )
@@ -394,12 +507,29 @@ class IDSearchResult:
 
         new_val_store = jax.tree_util.tree_map(_update_leaf, self.stack.val_store, items)
 
+        trace_mask = trace_ids >= 0
+        trace_ids_dense = jnp.where(trace_mask, trace_ids, 0)
+        new_trace_parent = xnp.update_on_condition(
+            self.trace_parent, trace_ids_dense, trace_mask, parent_indices
+        )
+        new_trace_action = xnp.update_on_condition(
+            self.trace_action, trace_ids_dense, trace_mask, actions
+        )
+        new_trace_root = xnp.update_on_condition(
+            self.trace_root, trace_ids_dense, trace_mask, root_indices
+        )
+
         new_ptr = (current_ptr + safe_n_push).astype(self.stack.size.dtype)
         new_generated_count = self.generated_count + safe_n_push
+        new_trace_size = self.trace_size + safe_n_push
 
         new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
 
         return self.replace(
             stack=new_stack,
             generated_count=new_generated_count,
+            trace_parent=new_trace_parent,
+            trace_action=new_trace_action,
+            trace_root=new_trace_root,
+            trace_size=new_trace_size,
         )

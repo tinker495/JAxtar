@@ -9,12 +9,13 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.id_stars.search_base import (
     ACTION_PAD,
     IDFrontier,
     IDLoopState,
     IDSearchResult,
+    compact_by_valid,
 )
 from JAxtar.id_stars.utils import _apply_non_backtracking, build_id_node_batch
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -65,7 +66,7 @@ def _id_qstar_frontier_builder(
 
         start_padded = xnp.pad(start_reshaped, ((0, batch_size - 1),), mode="constant")
         trail_padded = statecls.default((batch_size, non_backtracking_steps))
-        action_history_padded = jnp.full((batch_size, max_path_len), ACTION_PAD, dtype=jnp.int32)
+        action_history_padded = jnp.full((batch_size, max_path_len), ACTION_PAD, dtype=ACTION_DTYPE)
         action_ids = jnp.arange(action_size, dtype=jnp.int32)
 
         costs_padded = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
@@ -81,7 +82,7 @@ def _id_qstar_frontier_builder(
             lambda _: jnp.array(jnp.inf, dtype=KEY_DTYPE),
             None,
         )
-        solution_actions = jnp.full((max_path_len,), ACTION_PAD, dtype=jnp.int32)
+        solution_actions = jnp.full((max_path_len,), ACTION_PAD, dtype=ACTION_DTYPE)
 
         init_val = IDFrontier(
             states=start_padded,
@@ -139,19 +140,21 @@ def _id_qstar_frontier_builder(
                 flat_trail = empty_trail_flat
 
             flat_action_history = jnp.broadcast_to(
-                action_history[:, None, :], (batch_size, action_size, max_path_len)
+                action_history[None, :, :], (action_size, batch_size, max_path_len)
             )
             flat_action_history = flat_action_history.reshape((flat_size, max_path_len))
-            flat_actions = jnp.tile(action_ids, batch_size)
+            flat_actions = jnp.repeat(action_ids, batch_size)
 
             # Update history: insert action at current depth
             flat_depth_int = depth.astype(jnp.int32)  # batch_size
-            flat_depth_tiled = jnp.broadcast_to(flat_depth_int[:, None], (batch_size, action_size))
+            flat_depth_tiled = jnp.broadcast_to(flat_depth_int[None, :], (action_size, batch_size))
             flat_depth_flat = flat_depth_tiled.reshape((flat_size,))
 
-            flat_action_history = flat_action_history.at[
-                jnp.arange(flat_size), flat_depth_flat
-            ].set(flat_actions)
+            # Clamp depth to prevent out-of-bounds writes (nodes exceeding max_path_len are pruned later)
+            safe_depth = jnp.minimum(flat_depth_flat, max_path_len - 1)
+            flat_action_history = flat_action_history.at[jnp.arange(flat_size), safe_depth].set(
+                flat_actions.astype(ACTION_DTYPE)
+            )
 
             flat_states = xnp.reshape(neighbours, (flat_size,))
             flat_g = child_g.reshape((flat_size,))
@@ -164,12 +167,22 @@ def _id_qstar_frontier_builder(
             )
             flat_valid = jnp.logical_and(flat_parent_valid, jnp.isfinite(flat_g))
 
+            flat_parent_indices = jnp.tile(jnp.arange(batch_size, dtype=jnp.int32), action_size)
+            flat_parent_indices = jnp.where(flat_valid, flat_parent_indices, -1)
+            flat_root_indices = flat_parent_indices
+
+            flat_action_history = jnp.where(
+                flat_valid[:, None],
+                flat_action_history,
+                jnp.full_like(flat_action_history, ACTION_PAD),
+            )
+
             is_solved_mask = puzzle.batched_is_solved(solve_config, flat_states)
             is_solved_mask = jnp.logical_and(is_solved_mask, flat_valid)
             any_solved = jnp.any(is_solved_mask)
 
             first_idx = jnp.argmax(is_solved_mask)
-            found_sol_state = xnp.expand_dims(flat_states[first_idx], 0)
+            found_sol_state = xnp.take(flat_states, first_idx[jnp.newaxis], axis=0)
             found_sol_cost = flat_g[first_idx]
             found_sol_actions = flat_action_history[first_idx]
 
@@ -222,12 +235,17 @@ def _id_qstar_frontier_builder(
                 trail=flat_trail,
                 action_history=flat_action_history,
                 action=flat_actions,
+                parent_index=flat_parent_indices,
+                root_index=flat_root_indices,
             )
             packed_batch = xnp.take(flat_batch, unique_idx, axis=0)
             packed_f = xnp.take(flat_f, unique_idx, axis=0)
             packed_valid = flat_valid[unique_idx]
             packed_positions = jnp.arange(flat_size, dtype=jnp.int32) < unique_count
             packed_valid = jnp.logical_and(packed_valid, packed_positions)
+
+            packed_batch, packed_valid, _, packed_idx = compact_by_valid(packed_batch, packed_valid)
+            packed_f = packed_f[packed_idx]
 
             f_safe = jnp.where(packed_valid, jnp.nan_to_num(packed_f, nan=1e5, posinf=1e5), jnp.inf)
             neg_f = -f_safe
@@ -321,11 +339,15 @@ def _id_qstar_loop_builder(
         new_next_bound = jnp.minimum(sr.next_bound, min_pruned).astype(KEY_DTYPE)
         sr = sr.replace(next_bound=new_next_bound)
 
+        parent_indices = jnp.full((batch_size,), -1, dtype=jnp.int32)
+        root_indices = jnp.where(frontier.valid_mask, jnp.arange(batch_size), -1)
         return sr.push_batch(
             frontier.states,
             frontier.costs,
             frontier.depths,
             frontier_actions,
+            parent_indices,
+            root_indices,
             frontier.trail,
             frontier.action_history,
             keep_mask,
@@ -356,10 +378,10 @@ def _id_qstar_loop_builder(
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             solved=frontier.solved,
             solution_state=frontier.solution_state,
-            start_state=xnp.expand_dims(start, 0),
             solution_cost=frontier.solution_cost,
             solution_actions_arr=frontier.solution_actions_arr,
-            solved_idx=jnp.where(frontier.solved, 0, -1),
+            solved_idx=jnp.where(frontier.solved, -1, -1),
+            frontier_action_history=frontier.action_history,
         )
 
         search_result = _push_frontier_to_stack(search_result, frontier, start_bound)
@@ -388,7 +410,8 @@ def _id_qstar_loop_builder(
             parent_trails,
             parent_action_histories,
             valid_mask,
-            _,
+            parent_trace_indices,
+            parent_root_indices,
         ) = sr.get_top_batch(batch_size)
 
         is_solved_mask = puzzle.batched_is_solved(solve_config, parents)
@@ -396,13 +419,14 @@ def _id_qstar_loop_builder(
         any_solved = jnp.any(is_solved_mask)
 
         first_idx = jnp.argmax(is_solved_mask)
-        new_sol_state = xnp.expand_dims(parents[first_idx], 0)
+        new_sol_state = xnp.take(parents, first_idx[jnp.newaxis], axis=0)
         new_sol_cost = parent_costs[first_idx]
         new_sol_actions = parent_action_histories[first_idx]
 
+        solved_trace_idx = parent_trace_indices[first_idx]
         sr_solved = sr.replace(
             solved=jnp.logical_or(sr.solved, any_solved),
-            solved_idx=jnp.where(any_solved, 0, -1),
+            solved_idx=jnp.where(any_solved, solved_trace_idx, -1),
             solution_state=jax.lax.cond(
                 any_solved, lambda _: new_sol_state, lambda _: sr.solution_state, None
             ),
@@ -434,18 +458,18 @@ def _id_qstar_loop_builder(
             flat_trail = empty_trail_flat
 
         flat_action_history = jnp.broadcast_to(
-            parent_action_histories[:, None, :], (batch_size, action_size, max_path_len)
+            parent_action_histories[None, :, :], (action_size, batch_size, max_path_len)
         )
         flat_action_history = flat_action_history.reshape((flat_size, max_path_len))
 
         flat_depth_int = parent_depths.astype(jnp.int32)
-        flat_depth_tiled = jnp.broadcast_to(
-            flat_depth_int[:, None], (batch_size, action_size)
-        )  # [batch, action]
+        flat_depth_tiled = jnp.broadcast_to(flat_depth_int[None, :], (action_size, batch_size))
         flat_depth_flat = flat_depth_tiled.reshape((flat_size,))
 
-        flat_action_history = flat_action_history.at[jnp.arange(flat_size), flat_depth_flat].set(
-            flat_actions
+        # Clamp depth to prevent out-of-bounds writes (nodes exceeding max_path_len are pruned later)
+        safe_depth = jnp.minimum(flat_depth_flat, max_path_len - 1)
+        flat_action_history = flat_action_history.at[jnp.arange(flat_size), safe_depth].set(
+            flat_actions.astype(ACTION_DTYPE)
         )
 
         flat_neighbours = xnp.reshape(neighbours, (flat_size,))
@@ -457,6 +481,15 @@ def _id_qstar_loop_builder(
         )
         flat_valid = jnp.logical_and(flat_valid_parent, jnp.isfinite(flat_g))
         flat_valid = jnp.logical_and(flat_valid, flat_depth <= max_path_len)
+
+        flat_parent_indices = jnp.tile(parent_trace_indices, action_size)
+        flat_parent_indices = jnp.where(flat_valid, flat_parent_indices, -1)
+        flat_root_indices = jnp.tile(parent_root_indices, action_size)
+        flat_root_indices = jnp.where(flat_valid, flat_root_indices, -1)
+
+        flat_action_history = jnp.where(
+            flat_valid[:, None], flat_action_history, jnp.full_like(flat_action_history, ACTION_PAD)
+        )
 
         q_vals = variable_q_parent_switcher(params, parents, valid_mask).astype(KEY_DTYPE)
         q_vals = jnp.where(valid_mask[:, None], q_vals, jnp.inf)
@@ -485,6 +518,10 @@ def _id_qstar_loop_builder(
         unique_mask = xnp.unique_mask(flat_neighbours, key=flat_g, filled=flat_valid)
         flat_valid = jnp.logical_and(flat_valid, unique_mask)
 
+        flat_action_history = jnp.where(
+            flat_valid[:, None], flat_action_history, jnp.full_like(flat_action_history, ACTION_PAD)
+        )
+
         # --- Optimization: Global Deduplication (Transposition Table) ---
         (
             new_hashtable,
@@ -498,6 +535,10 @@ def _id_qstar_loop_builder(
         sr = sr.replace(ht_cost=new_ht_cost)
 
         flat_valid = jnp.logical_and(flat_valid, is_optimal_mask)
+
+        flat_action_history = jnp.where(
+            flat_valid[:, None], flat_action_history, jnp.full_like(flat_action_history, ACTION_PAD)
+        )
         # --------------------------------
 
         flat_valid = _apply_non_backtracking(
@@ -513,6 +554,10 @@ def _id_qstar_loop_builder(
             batch_size,
         )
 
+        flat_action_history = jnp.where(
+            flat_valid[:, None], flat_action_history, jnp.full_like(flat_action_history, ACTION_PAD)
+        )
+
         return_sr = jax.lax.cond(
             any_solved,
             lambda s: s,
@@ -526,21 +571,32 @@ def _id_qstar_loop_builder(
                 flat_action_history,
                 flat_valid,
                 flat_f,
+                flat_parent_indices,
+                flat_root_indices,
             ),
             sr_solved,
         )
 
         return loop_state.replace(search_result=return_sr)
 
-    def _expand_step(sr, states, gs, depths, actions, trails, action_histories, valid, fs):
+    def _expand_step(
+        sr,
+        states,
+        gs,
+        depths,
+        actions,
+        trails,
+        action_histories,
+        valid,
+        fs,
+        parent_indices,
+        root_indices,
+    ):
         active_bound = sr.bound
         keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
 
         # Optimization: Sort valid children by f-value descending (Worst -> Best)
         # Key: -fs for kept items, inf for others (to push to end)
-        f_key = jnp.where(keep_mask, -fs, jnp.inf)
-        perm = jnp.argsort(f_key)
-
         flat_batch = IDNodeBatch(
             state=states,
             cost=gs,
@@ -548,16 +604,26 @@ def _id_qstar_loop_builder(
             action=actions,
             trail=trails,
             action_history=action_histories,
+            parent_index=parent_indices,
+            root_index=root_indices,
         )
-        ordered = xnp.take(flat_batch, perm, axis=0)
 
-        n_push = jnp.sum(keep_mask)
+        packed_batch, packed_valid, _, packed_idx = compact_by_valid(flat_batch, keep_mask)
+        packed_fs = jnp.where(packed_valid, fs[packed_idx], jnp.inf)
+
+        f_key = jnp.where(packed_valid, -packed_fs, jnp.inf)
+        perm = jnp.argsort(f_key)
+        ordered = xnp.take(packed_batch, perm, axis=0)
+
+        n_push = jnp.sum(packed_valid)
 
         return sr.push_packed_batch(
             ordered.state,
             ordered.cost,
             ordered.depth,
             ordered.action,
+            ordered.parent_index,
+            ordered.root_index,
             ordered.trail,
             ordered.action_history,
             n_push,
