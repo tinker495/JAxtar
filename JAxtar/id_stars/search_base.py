@@ -219,26 +219,17 @@ class IDSearchBase:
             return []
 
         if puzzle is None or solve_config is None:
-            # Fallback for when puzzle is not provided (legacy/compat)
-            # Cannot reconstruct without transition model
-            # But the user requested a fix, so detailed reconstruction is the goal.
             return [self.solution_state[0]]
 
         # Reconstruct path
         path = [self.start_state[0]]
         actions = self.solution_actions()
 
-        # We need to run on host or jit? get_solved_path is typically host-side.
-        # But we need puzzle logic.
-        # We can use a small jitted function to step.
-
         curr = xnp.expand_dims(self.start_state[0], 0)  # (1, ...)
 
         # Prepare step function
         @jax.jit
         def step_fn(acc_state, action):
-            # batched_get_actions expects (solve_config, states, actions, valid)
-            # actions should be shape (batch_size,) i.e., (1,)
             act_batch = jnp.array([action], dtype=jnp.int32)
             valid_batch = jnp.array([True], dtype=jnp.bool_)
             next_states, _ = puzzle.batched_get_actions(
@@ -246,8 +237,7 @@ class IDSearchBase:
             )
             return next_states
 
-        # Iterate actions on host (safe since path length is small)
-        # Note: actions are JAX arrays. Move to cpu.
+        # Iterate actions on host
         actions_cpu = jax.device_get(actions)
         for i, act in enumerate(actions_cpu):
             curr = step_fn(curr, act)
@@ -260,46 +250,8 @@ class IDSearchBase:
         """
         Return the list of actions to reach the solution.
         """
-        solved_idx = int(jax.device_get(self.solved_idx))
-        if solved_idx < 0:
-            valid_mask = self.solution_actions_arr != ACTION_PAD
-            return self.solution_actions_arr[valid_mask]
-
-        max_steps = int(jax.device_get(self.trace_size))
-        if max_steps <= 0:
-            valid_mask = self.solution_actions_arr != ACTION_PAD
-            return self.solution_actions_arr[valid_mask]
-
-        actions_buf = jnp.full((max_steps,), ACTION_PAD, dtype=ACTION_DTYPE)
-
-        def _cond(carry):
-            idx, step, _ = carry
-            return jnp.logical_and(idx >= 0, step < max_steps)
-
-        def _body(carry):
-            idx, step, actions = carry
-            act = self.trace_action[idx]
-            actions = actions.at[step].set(act)
-            next_idx = self.trace_parent[idx]
-            return next_idx, step + 1, actions
-
-        init = (
-            jnp.array(solved_idx, dtype=jnp.int32),
-            jnp.array(0, dtype=jnp.int32),
-            actions_buf,
-        )
-        _, length, actions = jax.lax.while_loop(_cond, _body, init)
-        actions = actions[:length]
-        actions = actions[::-1]
-        actions = actions[actions != ACTION_PAD]
-
-        root_idx = int(jax.device_get(self.trace_root[solved_idx]))
-        if root_idx < 0:
-            return actions
-
-        prefix = self.frontier_action_history[root_idx]
-        prefix = prefix[prefix != ACTION_PAD]
-        return jnp.concatenate([prefix, actions])
+        valid_mask = self.solution_actions_arr != ACTION_PAD
+        return self.solution_actions_arr[valid_mask]
 
     def get_generated_size(self):
         return self.generated_count
