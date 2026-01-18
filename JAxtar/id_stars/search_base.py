@@ -784,6 +784,22 @@ def finalize_builder(
     return jitted_fn
 
 
+def build_inner_cond():
+    """
+    Build inner loop condition function for ID search algorithms.
+
+    Returns a function that checks if the DFS stack has items and search is not solved.
+    """
+
+    def inner_cond(loop_state: IDLoopState) -> jnp.ndarray:
+        sr = loop_state.search_result
+        has_items = sr.stack_ptr > 0
+        not_solved = ~sr.solved
+        return jnp.logical_and(has_items, not_solved)
+
+    return inner_cond
+
+
 def build_outer_loop(
     inner_cond,
     inner_body,
