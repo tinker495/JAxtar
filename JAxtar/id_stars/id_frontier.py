@@ -12,6 +12,24 @@ from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
 
 
+def validate_non_backtracking_steps(steps: int) -> int:
+    """
+    Validate and convert non_backtracking_steps parameter.
+
+    Args:
+        steps: Number of non-backtracking steps to validate
+
+    Returns:
+        Validated steps as integer
+
+    Raises:
+        ValueError: If steps is negative
+    """
+    if steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    return int(steps)
+
+
 @base_dataclass
 class IDFrontier:
     states: Xtructurable
