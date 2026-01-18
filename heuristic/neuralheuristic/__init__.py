@@ -6,8 +6,10 @@ from heuristic.neuralheuristic.model.pancake_neuralheuristic import (
     PancakeNeuralHeuristic,
 )
 from heuristic.neuralheuristic.model.rubikscube_neuralheuristic import (
+    RubiksCubeGroupDIRNeuralHeuristic,
     RubiksCubeHLGNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
+    RubiksCubeRandomGroupDIRNeuralHeuristic,
     RubiksCubeRandomHLGNeuralHeuristic,
     RubiksCubeRandomNeuralHeuristic,
 )
