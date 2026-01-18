@@ -825,6 +825,17 @@ def dist_train_options(
             # map_kwargs_to_pydantic handles popping
             overrides = map_kwargs_to_pydantic(DistTrainOptions, kwargs)
 
+            # Special handling for eval_options to support partial updates and defaults
+            if "eval_options" in overrides:
+                cli_eval = overrides["eval_options"]
+                # If CLI passed an EvalOptions object (from @eval_options decorator)
+                # and it's using the default num_eval (-1), revert to the preset's value.
+                if hasattr(cli_eval, "num_eval") and cli_eval.num_eval == -1:
+                    preset_eval_opts = getattr(preset, "eval_options", None)
+                    if preset_eval_opts:
+                        cli_eval.num_eval = preset_eval_opts.num_eval
+                overrides["eval_options"] = cli_eval
+
             # Cleanup None values remaining in kwargs that correspond to DistTrainOptions fields
             for key in list(kwargs.keys()):
                 if key in DistTrainOptions.model_fields and kwargs[key] is None:

@@ -45,7 +45,7 @@ class SearchOptions(BaseModel):
 
 class EvalOptions(BaseModel):
     batch_size: Union[int, List[int]] = Field(
-        10000, description="Batch size for search. Can be a single int or a list of ints."
+        default=[10000], description="Batch size for search. Can be a single int or a list of ints."
     )
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
     show_compile_time: bool = Field(False, description="Show compile time for search.")
@@ -86,11 +86,15 @@ class EvalOptions(BaseModel):
 
     def light_eval(self, max_eval: int = 20) -> "EvalOptions":
         capped_eval = min(max_eval, self.num_eval)
+
+        def get_first(v):
+            return v[0] if isinstance(v, list) else v
+
         return self.model_copy(
             update={
                 "num_eval": capped_eval,
-                "cost_weight": [self.cost_weight[0]],
-                "pop_ratio": [self.pop_ratio[0]],
+                "cost_weight": [get_first(self.cost_weight)],
+                "pop_ratio": [get_first(self.pop_ratio)],
             }
         )
 
@@ -159,8 +163,9 @@ class DistTrainOptions(BaseModel):
         default_factory=dict,
         description="Additional keyword arguments for the selected loss (JSON key/value).",
     )
-    eval_options: EvalOptions = EvalOptions(
-        num_eval=100,
+    eval_options: EvalOptions = Field(
+        EvalOptions(num_eval=100, cost_weight=[0.9, 0.6, 0.3], pop_ratio=[float("inf"), 0.3, 0.1]),
+        description="Options for evaluation during training.",
     )
     eval_search_metric: Optional[str] = Field(
         None,

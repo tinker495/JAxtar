@@ -35,7 +35,6 @@ from ..options import (
     dist_puzzle_options,
     dist_qfunction_options,
     dist_train_options,
-    eval_options,
 )
 
 
@@ -126,7 +125,6 @@ def _resolve_eval_search_components(
 
 @click.command()
 @dist_puzzle_options
-@eval_options
 @dist_train_options(preset_category="heuristic_train", default_preset="davi")
 @dist_heuristic_options
 def heuristic_train_command(
@@ -348,7 +346,6 @@ def heuristic_train_command(
 
 @click.command()
 @dist_puzzle_options
-@eval_options
 @dist_train_options(preset_category="qfunction_train", default_preset="qlearning")
 @dist_qfunction_options
 def qfunction_train_command(
