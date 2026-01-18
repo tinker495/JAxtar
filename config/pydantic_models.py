@@ -45,16 +45,16 @@ class SearchOptions(BaseModel):
 
 class EvalOptions(BaseModel):
     batch_size: Union[int, List[int]] = Field(
-        [10000], description="Batch size for search. Can be a single int or a list of ints."
+        10000, description="Batch size for search. Can be a single int or a list of ints."
     )
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
     show_compile_time: bool = Field(False, description="Show compile time for search.")
     cost_weight: Union[float, List[float]] = Field(
-        [0.9, 0.6, 0.3],
+        0.6,
         description="Weight for cost in search. Can be a single float or a list of floats.",
     )
     pop_ratio: Union[float, List[float]] = Field(
-        [float("inf"), 0.35, 0.2],
+        float("inf"),
         description=(
             "Controls the search beam width. Nodes are expanded if their cost is within `pop_ratio` "
             "percent of the best node's cost. For instance, 0.1 allows for a 10% margin. "
@@ -62,7 +62,7 @@ class EvalOptions(BaseModel):
             "Can be a single float or a list of floats for multiple evaluations."
         ),
     )
-    num_eval: int = Field(200, description="Number of puzzles to evaluate.")
+    num_eval: int = Field(-1, description="Number of puzzles to evaluate.")
     run_name: Optional[str] = Field(None, description="Name of the evaluation run.")
     scatter_max_points: int = Field(
         200, description="Maximum number of points to plot in scatter plots."
@@ -159,6 +159,9 @@ class DistTrainOptions(BaseModel):
         default_factory=dict,
         description="Additional keyword arguments for the selected loss (JSON key/value).",
     )
+    eval_options: EvalOptions = EvalOptions(
+        num_eval=100,
+    )
     eval_search_metric: Optional[str] = Field(
         None,
         description=(
@@ -242,24 +245,26 @@ class PuzzleBundle(BaseModel):
     q_function: Callable = EmptyQFunction
     q_function_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
     k_max: int = 50
-    eval_options: EvalOptions = Field(default_factory=EvalOptions)
-    search_options: SearchOptions = Field(default_factory=SearchOptions)
-    beam_eval_options: EvalOptions = Field(
-        default_factory=lambda: EvalOptions(
-            batch_size=[320000],
+    eval_options_configs: Dict[str, EvalOptions] = {
+        "default": EvalOptions(),
+        "small_batch": EvalOptions(
+            batch_size=128,
+        ),
+        "large_batch": EvalOptions(
+            batch_size=262144,
             max_node_size=int(2e8),
-            cost_weight=[1.0],
-            pop_ratio=[0.0],
-        )
-    )
-    beam_search_options: SearchOptions = Field(
-        default_factory=lambda: SearchOptions(
-            batch_size=320000,
+        ),
+    }
+    search_options_configs: Dict[str, SearchOptions] = {
+        "default": SearchOptions(),
+        "small_batch": SearchOptions(
+            batch_size=128,
+        ),
+        "large_batch": SearchOptions(
+            batch_size=262144,
             max_node_size=int(2e8),
-            cost_weight=1.0,
-            pop_ratio=0.0,
-        )
-    )
+        ),
+    }
 
     class Config:
         arbitrary_types_allowed = True
@@ -270,8 +275,26 @@ class BenchmarkBundle(BaseModel):
     benchmark_args: Dict[str, Any] = Field(default_factory=dict)
     heuristic_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
     q_function_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
-    eval_options: EvalOptions = Field(default_factory=EvalOptions)
-    beam_eval_options: Optional[EvalOptions] = None
+    eval_options_configs: Dict[str, EvalOptions] = {
+        "default": EvalOptions(),
+        "small_batch": EvalOptions(
+            batch_size=128,
+        ),
+        "large_batch": EvalOptions(
+            batch_size=262144,
+            max_node_size=int(2e8),
+        ),
+    }
+    search_options_configs: Dict[str, SearchOptions] = {
+        "default": SearchOptions(),
+        "small_batch": SearchOptions(
+            batch_size=128,
+        ),
+        "large_batch": SearchOptions(
+            batch_size=262144,
+            max_node_size=int(2e8),
+        ),
+    }
 
     class Config:
         arbitrary_types_allowed = True

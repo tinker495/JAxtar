@@ -10,7 +10,7 @@ from puxle import Puzzle
 
 from cli.evaluation_runner import run_evaluation_sweep
 from config import benchmark_bundles
-from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
+from config.pydantic_models import DistTrainOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
@@ -126,9 +126,9 @@ def _resolve_eval_search_components(
 
 @click.command()
 @dist_puzzle_options
+@eval_options
 @dist_train_options(preset_category="heuristic_train", default_preset="davi")
 @dist_heuristic_options
-@eval_options
 def heuristic_train_command(
     puzzle: Puzzle,
     puzzle_opts: PuzzleOptions,
@@ -137,10 +137,10 @@ def heuristic_train_command(
     puzzle_bundle,
     train_options: DistTrainOptions,
     k_max: int,
-    eval_options: EvalOptions,
     heuristic_config: Dict[str, Any],
     **kwargs,
 ):
+    eval_options = train_options.eval_options
     eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
         puzzle, puzzle_name, puzzle_opts, puzzle_bundle
     )
@@ -348,9 +348,9 @@ def heuristic_train_command(
 
 @click.command()
 @dist_puzzle_options
+@eval_options
 @dist_train_options(preset_category="qfunction_train", default_preset="qlearning")
 @dist_qfunction_options
-@eval_options
 def qfunction_train_command(
     puzzle: Puzzle,
     puzzle_opts: PuzzleOptions,
@@ -359,10 +359,10 @@ def qfunction_train_command(
     puzzle_bundle,
     train_options: DistTrainOptions,
     k_max: int,
-    eval_options: EvalOptions,
     q_config: Dict[str, Any],
     **kwargs,
 ):
+    eval_options = train_options.eval_options
     eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
         puzzle, puzzle_name, puzzle_opts, puzzle_bundle
     )
