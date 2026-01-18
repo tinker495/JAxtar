@@ -241,7 +241,7 @@ def heuristic_train_command(
         discription_logs = {
             "lr": lr,
             "target": float(mean_target_heuristic),
-            **{k.split("/")[-1]: float(v.mean) for k, v in log_infos.items() if v.log_mean},
+            **{v.short_name: float(v.mean) for v in log_infos if v.log_mean},
         }
 
         pbar.set_description(
@@ -252,10 +252,10 @@ def heuristic_train_command(
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
 
         # Log metrics
-        for k, v in log_infos.items():
-            logger.log_scalar(k, v.mean, i)
+        for v in log_infos:
+            logger.log_scalar(v.mean_name, v.mean, i)
             if v.log_histogram and i % 100 == 0:
-                logger.log_histogram(k, v.data, i)
+                logger.log_histogram(v.histogram_name, v.data, i)
 
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_heuristic, i)
@@ -474,7 +474,7 @@ def qfunction_train_command(
             "lr": lr,
             "loss": float(loss),
             "target": float(mean_target_q),
-            **{k.split("/")[-1]: float(v.mean) for k, v in log_infos.items() if v.log_mean},
+            **{v.short_name: float(v.mean) for v in log_infos if v.log_mean},
         }
 
         pbar.set_description(
@@ -486,10 +486,10 @@ def qfunction_train_command(
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
 
         # Log metrics
-        for k, v in log_infos.items():
-            logger.log_scalar(k, v.mean, i)
+        for v in log_infos:
+            logger.log_scalar(v.mean_name, v.mean, i)
             if v.log_histogram and i % 100 == 0:
-                logger.log_histogram(k, v.data, i)
+                logger.log_histogram(v.histogram_name, v.data, i)
 
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_q, i)
