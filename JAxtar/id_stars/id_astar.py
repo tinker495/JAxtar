@@ -10,11 +10,13 @@ from JAxtar.id_stars.id_frontier import (
     IDFrontier,
     build_flat_children,
     build_id_node_batch,
+    validate_non_backtracking_steps,
 )
 from JAxtar.id_stars.search_base import (
     IDLoopState,
     IDSearchBase,
     apply_non_backtracking,
+    build_inner_cond,
     build_outer_loop,
     finalize_builder,
 )
@@ -88,9 +90,7 @@ def _id_astar_frontier_builder(
     statecls = puzzle.State
     empty_trail_flat = statecls.default((flat_size, 0))
 
-    if non_backtracking_steps < 0:
-        raise ValueError("non_backtracking_steps must be non-negative")
-    non_backtracking_steps = int(non_backtracking_steps)
+    non_backtracking_steps = validate_non_backtracking_steps(non_backtracking_steps)
 
     IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
@@ -266,9 +266,7 @@ def _id_astar_loop_builder(
     action_size = puzzle.action_size
     flat_size = action_size * batch_size
     empty_trail_flat = statecls.default((flat_size, 0))
-    if non_backtracking_steps < 0:
-        raise ValueError("non_backtracking_steps must be non-negative")
-    non_backtracking_steps = int(non_backtracking_steps)
+    non_backtracking_steps = validate_non_backtracking_steps(non_backtracking_steps)
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
     action_ids = jnp.arange(action_size, dtype=jnp.int32)
     frontier_actions = jnp.full((batch_size,), ACTION_PAD, dtype=jnp.int32)
@@ -288,14 +286,6 @@ def _id_astar_loop_builder(
         batch_size,
         non_backtracking_steps=non_backtracking_steps,
         max_path_len=max_path_len,
-    )
-
-    # Heuristic for the full frontier batch (size = batch_size)
-    frontier_heuristic_fn = variable_batch_switcher_builder(
-        heuristic.batched_distance,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
-        pad_value=jnp.inf,
     )
 
     flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
@@ -319,7 +309,7 @@ def _id_astar_loop_builder(
         search_result, frontier = search_result.initialize_from_frontier(
             frontier,
             cost_weight,
-            frontier_heuristic_fn,
+            variable_heuristic_batch_switcher,
             heuristic_parameters,
             frontier_actions,
         )
@@ -334,11 +324,7 @@ def _id_astar_loop_builder(
     # -----------------------------------------------------------------------
     # INNER LOOP: Standard Batched DFS with Pruning by Bound
     # -----------------------------------------------------------------------
-    def inner_cond(loop_state: IDLoopState):
-        sr = loop_state.search_result
-        has_items = sr.stack_ptr > 0
-        not_solved = ~sr.solved
-        return jnp.logical_and(has_items, not_solved)
+    inner_cond = build_inner_cond()
 
     def inner_body(loop_state: IDLoopState):
         sr = loop_state.search_result
