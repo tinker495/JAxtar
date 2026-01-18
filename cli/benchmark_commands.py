@@ -7,7 +7,6 @@ import click
 from puxle import Puzzle
 
 from config.pydantic_models import EvalOptions, PuzzleOptions
-from helpers.param_stats import attach_runtime_metadata
 from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
@@ -17,117 +16,17 @@ from JAxtar.stars.qstar import qstar_builder
 from qfunction.q_base import QFunction
 
 from .evaluation_runner import run_evaluation_sweep
-from .options import benchmark_options, eval_options
+from .options import (
+    benchmark_options,
+    eval_options,
+    heuristic_options,
+    qfunction_options,
+)
 
 
 @click.group(name="benchmark")
 def benchmark() -> None:
     """Benchmark search strategies with registered configs."""
-
-
-def _resolve_param_path(template: str, puzzle: Puzzle, override: Optional[str]) -> str:
-    if override:
-        return override
-    if "{size}" in template:
-        size = getattr(puzzle, "size", None)
-        if size is None:
-            raise click.UsageError(
-                "Parameter path template requires 'size', but puzzle has no size attribute."
-            )
-        return template.format(size=size)
-    return template
-
-
-def _load_benchmark_heuristic(
-    puzzle: Puzzle,
-    benchmark_name: str,
-    benchmark_bundle,
-    param_path: Optional[str],
-    model_type: str = "default",
-    aqt_cfg: Optional[str] = None,
-) -> Heuristic:
-    heuristic_configs = benchmark_bundle.heuristic_nn_configs
-    if heuristic_configs is None:
-        raise click.UsageError(
-            f"Benchmark '{benchmark_name}' does not define a heuristic configuration."
-        )
-
-    heuristic_config = heuristic_configs.get(model_type)
-    if heuristic_config is None:
-        raise click.UsageError(
-            f"Benchmark '{benchmark_name}' heuristic config type '{model_type}' not available."
-        )
-
-    path_template = heuristic_config.param_path
-    if path_template is None:
-        raise click.UsageError(
-            f"Benchmark '{benchmark_name}' heuristic config '{model_type}' has no param path."
-        )
-
-    resolved_param_path = _resolve_param_path(path_template, puzzle, param_path)
-    neural_config = {}
-    if aqt_cfg:
-        neural_config["aqt_cfg"] = aqt_cfg
-
-    solver = heuristic_config.callable(
-        puzzle=puzzle,
-        path=resolved_param_path,
-        init_params=False,
-        **neural_config,
-    )
-    attach_runtime_metadata(
-        solver,
-        model_type=model_type,
-        param_path=resolved_param_path,
-        extra={"aqt_cfg": aqt_cfg},
-    )
-    return solver
-
-
-def _load_benchmark_qfunction(
-    puzzle: Puzzle,
-    benchmark_name: str,
-    benchmark_bundle,
-    param_path: Optional[str],
-    model_type: str = "default",
-    aqt_cfg: Optional[str] = None,
-) -> QFunction:
-    q_configs = benchmark_bundle.q_function_nn_configs
-    if q_configs is None:
-        raise click.UsageError(
-            f"Benchmark '{benchmark_name}' does not define a Q-function configuration."
-        )
-
-    q_config = q_configs.get(model_type)
-    if q_config is None:
-        raise click.UsageError(
-            f"Benchmark '{benchmark_name}' Q-function config type '{model_type}' not available."
-        )
-
-    path_template = q_config.param_path
-    if path_template is None:
-        raise click.UsageError(
-            f"Benchmark '{benchmark_name}' Q-function config '{model_type}' has no param path."
-        )
-
-    resolved_param_path = _resolve_param_path(path_template, puzzle, param_path)
-    neural_config = {}
-    if aqt_cfg:
-        neural_config["aqt_cfg"] = aqt_cfg
-
-    solver = q_config.callable(
-        puzzle=puzzle,
-        path=resolved_param_path,
-        init_params=False,
-        **neural_config,
-    )
-    attach_runtime_metadata(
-        solver,
-        model_type=model_type,
-        param_path=resolved_param_path,
-        extra={"aqt_cfg": aqt_cfg},
-    )
-    return solver
 
 
 def _run_benchmark(
@@ -170,31 +69,7 @@ def _run_benchmark(
 @benchmark.command(name="astar")
 @benchmark_options
 @eval_options
-@click.option(
-    "--param-path",
-    type=str,
-    default=None,
-    help="Optional override for the heuristic parameter file.",
-)
-@click.option(
-    "--model-type",
-    type=str,
-    default="default",
-    help="Type of the heuristic model (default: 'default').",
-)
-@click.option(
-    "-q",
-    "--use-quantize",
-    is_flag=True,
-    default=False,
-    help="Use quantization (defaults to int8).",
-)
-@click.option(
-    "--quant-type",
-    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
-    default="int8",
-    help="Specific AQT quantization configuration to use.",
-)
+@heuristic_options
 @click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
@@ -204,26 +79,19 @@ def _run_benchmark(
 def benchmark_astar(
     puzzle: Puzzle,
     eval_options: EvalOptions,
+    heuristic: Heuristic,
     benchmark,
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    param_path: Optional[str],
-    model_type: str,
-    use_quantize: bool,
-    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = quant_type if use_quantize else None
-    solver = _load_benchmark_heuristic(
-        puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
-    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
         puzzle_name=benchmark_name,
-        search_model=solver,
+        search_model=heuristic,
         search_model_name="heuristic",
         run_label="astar",
         search_builder_fn=astar_builder,
@@ -240,31 +108,7 @@ def benchmark_astar(
 @benchmark.command(name="astar_d")
 @benchmark_options
 @eval_options
-@click.option(
-    "--param-path",
-    type=str,
-    default=None,
-    help="Optional override for the heuristic parameter file.",
-)
-@click.option(
-    "--model-type",
-    type=str,
-    default="default",
-    help="Type of the heuristic model (default: 'default').",
-)
-@click.option(
-    "-q",
-    "--use-quantize",
-    is_flag=True,
-    default=False,
-    help="Use quantization (defaults to int8).",
-)
-@click.option(
-    "--quant-type",
-    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
-    default="int8",
-    help="Specific AQT quantization configuration to use.",
-)
+@heuristic_options
 @click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
@@ -274,26 +118,19 @@ def benchmark_astar(
 def benchmark_astar_d(
     puzzle: Puzzle,
     eval_options: EvalOptions,
+    heuristic: Heuristic,
     benchmark,
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    param_path: Optional[str],
-    model_type: str,
-    use_quantize: bool,
-    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = quant_type if use_quantize else None
-    solver = _load_benchmark_heuristic(
-        puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
-    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
         puzzle_name=benchmark_name,
-        search_model=solver,
+        search_model=heuristic,
         search_model_name="heuristic",
         run_label="astar_d",
         search_builder_fn=astar_d_builder,
@@ -310,31 +147,7 @@ def benchmark_astar_d(
 @benchmark.command(name="qstar")
 @benchmark_options
 @eval_options
-@click.option(
-    "--param-path",
-    type=str,
-    default=None,
-    help="Optional override for the Q-function parameter file.",
-)
-@click.option(
-    "--model-type",
-    type=str,
-    default="default",
-    help="Type of the Q-function model (default: 'default').",
-)
-@click.option(
-    "-q",
-    "--use-quantize",
-    is_flag=True,
-    default=False,
-    help="Use quantization (defaults to int8).",
-)
-@click.option(
-    "--quant-type",
-    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
-    default="int8",
-    help="Specific AQT quantization configuration to use.",
-)
+@qfunction_options
 @click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
@@ -344,26 +157,19 @@ def benchmark_astar_d(
 def benchmark_qstar(
     puzzle: Puzzle,
     eval_options: EvalOptions,
+    qfunction: QFunction,
     benchmark,
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    param_path: Optional[str],
-    model_type: str,
-    use_quantize: bool,
-    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = quant_type if use_quantize else None
-    solver = _load_benchmark_qfunction(
-        puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
-    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
         puzzle_name=benchmark_name,
-        search_model=solver,
+        search_model=qfunction,
         search_model_name="qfunction",
         run_label="qstar",
         search_builder_fn=qstar_builder,
@@ -380,31 +186,7 @@ def benchmark_qstar(
 @benchmark.command(name="beam")
 @benchmark_options
 @eval_options(variant="beam")
-@click.option(
-    "--param-path",
-    type=str,
-    default=None,
-    help="Optional override for the heuristic parameter file.",
-)
-@click.option(
-    "--model-type",
-    type=str,
-    default="default",
-    help="Type of the heuristic model (default: 'default').",
-)
-@click.option(
-    "-q",
-    "--use-quantize",
-    is_flag=True,
-    default=False,
-    help="Use quantization (defaults to int8).",
-)
-@click.option(
-    "--quant-type",
-    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
-    default="int8",
-    help="Specific AQT quantization configuration to use.",
-)
+@heuristic_options
 @click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
@@ -414,26 +196,19 @@ def benchmark_qstar(
 def benchmark_beam(
     puzzle: Puzzle,
     eval_options: EvalOptions,
+    heuristic: Heuristic,
     benchmark,
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    param_path: Optional[str],
-    model_type: str,
-    use_quantize: bool,
-    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = quant_type if use_quantize else None
-    solver = _load_benchmark_heuristic(
-        puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
-    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
         puzzle_name=benchmark_name,
-        search_model=solver,
+        search_model=heuristic,
         search_model_name="heuristic",
         run_label="beam",
         search_builder_fn=beam_builder,
@@ -450,31 +225,7 @@ def benchmark_beam(
 @benchmark.command(name="qbeam")
 @benchmark_options
 @eval_options(variant="beam")
-@click.option(
-    "--param-path",
-    type=str,
-    default=None,
-    help="Optional override for the Q-function parameter file.",
-)
-@click.option(
-    "--model-type",
-    type=str,
-    default="default",
-    help="Type of the Q-function model (default: 'default').",
-)
-@click.option(
-    "-q",
-    "--use-quantize",
-    is_flag=True,
-    default=False,
-    help="Use quantization (defaults to int8).",
-)
-@click.option(
-    "--quant-type",
-    type=click.Choice(["int8", "int4", "int4_w8a", "int8_w_only"]),
-    default="int8",
-    help="Specific AQT quantization configuration to use.",
-)
+@qfunction_options
 @click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
@@ -484,26 +235,19 @@ def benchmark_beam(
 def benchmark_qbeam(
     puzzle: Puzzle,
     eval_options: EvalOptions,
+    qfunction: QFunction,
     benchmark,
     benchmark_name: str,
     benchmark_bundle,
     benchmark_cli_options,
-    param_path: Optional[str],
-    model_type: str,
-    use_quantize: bool,
-    quant_type: str,
     output_dir: Optional[Path],
     **kwargs,
 ):
-    aqt_cfg = quant_type if use_quantize else None
-    solver = _load_benchmark_qfunction(
-        puzzle, benchmark_name, benchmark_bundle, param_path, model_type, aqt_cfg=aqt_cfg
-    )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
     _run_benchmark(
         puzzle=puzzle,
         puzzle_name=benchmark_name,
-        search_model=solver,
+        search_model=qfunction,
         search_model_name="qfunction",
         run_label="qbeam",
         search_builder_fn=qbeam_builder,

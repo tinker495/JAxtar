@@ -167,16 +167,20 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 param_path="qfunction/neuralq/model/params/lightsout-conv_{size}_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=1000,
-            cost_weight=0.2,
-            pop_ratio=float("inf"),
-        ),
-        search_options=SearchOptions(
-            cost_weight=0.2,
-            batch_size=1000,
-            pop_ratio=float("inf"),
-        ),
+        eval_options_configs={
+            "default": EvalOptions(
+                batch_size=1000,
+                cost_weight=0.2,
+                pop_ratio=float("inf"),
+            )
+        },
+        search_options_configs={
+            "default": SearchOptions(
+                cost_weight=0.2,
+                batch_size=1000,
+                pop_ratio=float("inf"),
+            )
+        },
         eval_benchmark="lightsout-deepcubea",
     ),
     "rubikscube": PuzzleBundle(

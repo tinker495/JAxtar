@@ -28,7 +28,7 @@ from qfunction.neuralq import (
     SlidePuzzleNeuralQ,
 )
 
-from .pydantic_models import BenchmarkBundle, EvalOptions, NeuralCallableConfig
+from .pydantic_models import BenchmarkBundle, NeuralCallableConfig
 
 benchmark_bundles: dict[str, BenchmarkBundle] = {
     "rubikscube-deepcubea": BenchmarkBundle(
@@ -53,14 +53,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube_3_4M_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "rubikscube-hard-deepcubea": BenchmarkBundle(
         benchmark=RubiksCubeDeepCubeAHardBenchmark,
@@ -84,14 +76,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube_3_4M_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "rubikscube-santa333": BenchmarkBundle(
         benchmark=RubiksCubeSanta333Benchmark,
@@ -115,14 +99,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_3_4M_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "rubikscube-santa444": BenchmarkBundle(
         benchmark=RubiksCubeSanta444Benchmark,
@@ -146,14 +122,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_4_4M_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "rubikscube-santa555": BenchmarkBundle(
         benchmark=RubiksCubeSanta555Benchmark,
@@ -177,14 +145,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_5_4M_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "rubikscube-santa666": BenchmarkBundle(
         benchmark=RubiksCubeSanta666Benchmark,
@@ -208,14 +168,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_6_4M_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "slide15-deepcubea": BenchmarkBundle(
         benchmark=SlidePuzzleDeepCubeABenchmark,
@@ -239,14 +191,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/n-puzzle-conv_4_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "slide15-hard-deepcubea": BenchmarkBundle(
         benchmark=SlidePuzzleDeepCubeA15HardBenchmark,
@@ -270,14 +214,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/n-puzzle-conv_4_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "slide24-deepcubea": BenchmarkBundle(
         benchmark=SlidePuzzleDeepCubeA24Benchmark,
@@ -293,14 +229,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/n-puzzle_5_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "slide35-deepcubea": BenchmarkBundle(
         benchmark=SlidePuzzleDeepCubeA35Benchmark,
@@ -316,14 +244,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/n-puzzle_6_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "slide48-deepcubea": BenchmarkBundle(
         benchmark=SlidePuzzleDeepCubeA48Benchmark,
@@ -339,14 +259,6 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/n-puzzle_7_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=10000,
-            cost_weight=0.6,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
     "lightsout-deepcubea": BenchmarkBundle(
         benchmark=LightsOutDeepCubeABenchmark,
@@ -370,13 +282,5 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 param_path="qfunction/neuralq/model/params/lightsout-conv_7_v2.pkl",
             ),
         },
-        eval_options=EvalOptions(
-            batch_size=1000,
-            cost_weight=0.2,
-            pop_ratio=float("inf"),
-            num_eval=-1,
-            early_stop_patience=10,
-            early_stop_threshold=0.1,
-        ),
     ),
 }
