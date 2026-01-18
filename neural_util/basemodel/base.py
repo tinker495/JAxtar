@@ -188,7 +188,7 @@ class DistanceGroupDIRModel(ABC, nn.Module):
             TrainLogInfo("Losses/regress", regress_losses, log_histogram=False),
             TrainLogInfo("Losses/loss", total_loss, log_histogram=False),
             TrainLogInfo("Losses/diff", diff, log_mean=False),
+            TrainLogInfo("Losses/mae", jnp.abs(diff), log_histogram=False),
             TrainLogInfo("Losses/mse", jnp.mean(diff**2), log_histogram=False),
-            TrainLogInfo("Losses/abs_diff", jnp.abs(diff), log_mean=True, log_histogram=False),
         )
         return total_loss, log_infos
