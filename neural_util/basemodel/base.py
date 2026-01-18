@@ -29,7 +29,7 @@ class DistanceModel(ABC, nn.Module):
         log_infos = (
             TrainLogInfo("Metrics/pred", pred),
             TrainLogInfo("Losses/diff", diff, log_mean=False),
-            TrainLogInfo("Losses/abs_diff", jnp.abs(diff), log_mean=True, log_histogram=False),
+            TrainLogInfo("Losses/mae", jnp.abs(diff), log_histogram=False),
             TrainLogInfo("Losses/mse", jnp.mean(diff**2), log_histogram=False),
             TrainLogInfo("Losses/loss", loss, log_histogram=False),
         )
@@ -91,14 +91,14 @@ class DistanceHLGModel(ABC, nn.Module):
             pred = jnp.take_along_axis(pred_actions, actions[:, jnp.newaxis], axis=1).squeeze(1)
 
         sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size,)
+        diff = target - pred
         log_infos = (
             TrainLogInfo("Metrics/pred", pred),
             TrainLogInfo("Losses/sce", sce, log_histogram=False),
             TrainLogInfo("Losses/loss", sce, log_histogram=False),
-            TrainLogInfo("Losses/diff", target - pred, log_mean=False),
-            TrainLogInfo(
-                "Losses/abs_diff", jnp.abs(target - pred), log_mean=True, log_histogram=False
-            ),
+            TrainLogInfo("Losses/diff", diff, log_mean=False),
+            TrainLogInfo("Losses/mae", jnp.abs(diff), log_histogram=False),
+            TrainLogInfo("Losses/mse", jnp.mean(diff**2), log_histogram=False),
         )
         return sce, log_infos
 
