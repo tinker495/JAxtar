@@ -253,7 +253,8 @@ def heuristic_train_command(
 
         # Log metrics
         for v in log_infos:
-            logger.log_scalar(v.mean_name, v.mean, i)
+            if v.log_mean:
+                logger.log_scalar(v.mean_name, v.mean, i)
             if v.log_histogram and i % 100 == 0:
                 logger.log_histogram(v.histogram_name, v.data, i)
 
@@ -487,7 +488,8 @@ def qfunction_train_command(
 
         # Log metrics
         for v in log_infos:
-            logger.log_scalar(v.mean_name, v.mean, i)
+            if v.log_mean:
+                logger.log_scalar(v.mean_name, v.mean, i)
             if v.log_histogram and i % 100 == 0:
                 logger.log_histogram(v.histogram_name, v.data, i)
 
