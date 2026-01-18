@@ -41,8 +41,8 @@ class DistanceHLGModel(ABC, nn.Module):
 
     categorial_n: int = 100
     vmin: float = -1.0
-    vmax: float = 30.0
-    _sigma: float = 0.75
+    vmax: float = 26.0
+    _sigma: float = 1.5
 
     def setup(self):
         self.categorial_bins = np.linspace(
