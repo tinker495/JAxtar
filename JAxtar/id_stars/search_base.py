@@ -11,21 +11,10 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import (
-    FieldDescriptor,
-    HashTable,
-    Xtructurable,
-    base_dataclass,
-    xtructure_dataclass,
-)
+from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 from xtructure.stack import Stack
 
-from JAxtar.annotate import (
-    ACTION_DTYPE,
-    CUCKOO_TABLE_N,
-    HASH_SIZE_MULTIPLIER,
-    KEY_DTYPE,
-)
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
 
 
@@ -112,12 +101,7 @@ class IDSearchBase:
 
     # Stack storage (Fixed size = capacity)
     # Allows LIFO access for DFS
-    # Stack storage (Fixed size = capacity)
-    # Allows LIFO access for DFS
     stack: Stack
-    hashtable: HashTable
-    ht_cost: chex.Array
-    ht_dist: chex.Array
 
     solution_state: Xtructurable  # Single state
     start_state: Xtructurable  # Single state (start)
@@ -167,9 +151,6 @@ class IDSearchBase:
         solved_idx = jnp.array(-1, dtype=jnp.int32)
 
         stack = Stack.build(capacity, IDStackItem)
-        hashtable = HashTable.build(statecls, seed, capacity, CUCKOO_TABLE_N, HASH_SIZE_MULTIPLIER)
-        ht_cost = jnp.full(hashtable.table.shape.batch, jnp.inf, dtype=KEY_DTYPE)
-        ht_dist = jnp.full(hashtable.table.shape.batch, jnp.inf, dtype=KEY_DTYPE)
 
         solution_state = statecls.default((1,))  # Placeholder batch-1
         start_state = statecls.default((1,))  # Placeholder batch-1
@@ -191,9 +172,6 @@ class IDSearchBase:
             solved=solved,
             solved_idx=solved_idx,
             stack=stack,
-            hashtable=hashtable,
-            ht_cost=ht_cost,
-            ht_dist=ht_dist,
             solution_state=solution_state,
             start_state=start_state,
             solution_cost=solution_cost,
@@ -320,39 +298,6 @@ class IDSearchBase:
             trace_indices,
             root_indices,
         )
-
-    def reset_tables(self, statecls: Puzzle.State, seed: int = 42) -> "IDSearchBase":
-        """
-        Resets the hashtable and associated cost/dist arrays.
-        Useful for Iterative Deepening to clear visited set between bounds.
-        """
-        hashtable = HashTable.build(
-            statecls, seed, self.capacity, CUCKOO_TABLE_N, HASH_SIZE_MULTIPLIER
-        )
-        ht_cost = jnp.full_like(self.ht_cost, jnp.inf)
-        ht_dist = jnp.full_like(self.ht_dist, jnp.inf)
-        return self.replace(hashtable=hashtable, ht_cost=ht_cost, ht_dist=ht_dist)
-
-    def apply_deduplication(
-        self,
-        flat_neighbours: Xtructurable,
-        flat_valid: chex.Array,
-        flat_g: chex.Array,
-    ) -> tuple["IDSearchBase", chex.Array, chex.Array, chex.Array]:
-        (
-            new_hashtable,
-            is_new_mask,
-            is_optimal_mask,
-            hash_idx,
-        ) = self.hashtable.parallel_insert(flat_neighbours, flat_valid, flat_g)
-
-        sr = self.replace(hashtable=new_hashtable)
-        new_ht_cost = xnp.update_on_condition(sr.ht_cost, hash_idx.index, is_optimal_mask, flat_g)
-        sr = sr.replace(ht_cost=new_ht_cost)
-
-        flat_valid = jnp.logical_and(flat_valid, is_optimal_mask)
-
-        return sr, flat_valid, is_new_mask, hash_idx
 
     def push_batch(
         self,
@@ -778,9 +723,9 @@ class IDSearchBase:
         flat_size: int,
         trail_indices: jnp.ndarray,
         batch_size: int,
-    ) -> tuple["IDSearchBase", chex.Array, chex.Array, chex.Array]:
+    ) -> tuple["IDSearchBase", chex.Array]:
         """
-        Apply in-batch deduplication, global deduplication, and non-backtracking.
+        Apply in-batch deduplication and non-backtracking.
         """
         unique_mask = xnp.unique_mask(
             flat_neighbours,
@@ -788,10 +733,6 @@ class IDSearchBase:
             filled=flat_valid,
         )
         flat_valid = jnp.logical_and(flat_valid, unique_mask)
-
-        sr, flat_valid, is_new_mask, hash_idx = self.apply_deduplication(
-            flat_neighbours, flat_valid, flat_g
-        )
 
         flat_valid = apply_non_backtracking(
             flat_neighbours,
@@ -806,7 +747,7 @@ class IDSearchBase:
             batch_size,
         )
 
-        return sr, flat_valid, is_new_mask, hash_idx
+        return self, flat_valid
 
 
 def finalize_builder(
@@ -863,7 +804,7 @@ def build_outer_loop(
             bound=new_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
-        ).reset_tables(statecls)
+        )
 
         reset_sr = reset_sr.push_frontier_to_stack(loop_state.frontier, new_bound, frontier_actions)
 

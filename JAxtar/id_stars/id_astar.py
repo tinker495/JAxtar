@@ -395,7 +395,7 @@ def _id_astar_loop_builder(
         flat_root_indices = jnp.where(flat_valid, flat_root_indices, -1)
 
         # --- Optimization: Deduplication ---
-        sr, flat_valid, is_new_mask, hash_idx = sr.apply_standard_deduplication(
+        sr, flat_valid = sr.apply_standard_deduplication(
             flat_neighbours,
             flat_g,
             flat_valid,
@@ -414,25 +414,9 @@ def _id_astar_loop_builder(
         )
         # ----------------------------------------------------
 
-        # Heuristic Caching & Evaluation
-        # We only compute heuristic for NEW optimal states.
-        # For existing optimal states, we fetch the cached heuristic.
-
-        # Fetch cached heuristics
-        old_h = sr.ht_dist[hash_idx.index]
-
-        # Identify which heuristics need computation
-        needs_h_mask = jnp.logical_and(flat_valid, is_new_mask)
-
-        computed_h = _chunked_heuristic_eval(params, flat_neighbours, needs_h_mask)
-        computed_h = jnp.maximum(0.0, computed_h)
-
-        # Combine: use computed if new, else cached
-        flat_h = jnp.where(is_new_mask, computed_h, old_h)
-
-        # Cache new heuristics
-        new_ht_dist = xnp.update_on_condition(sr.ht_dist, hash_idx.index, needs_h_mask, computed_h)
-        sr = sr.replace(ht_dist=new_ht_dist)
+        # Heuristic Evaluation (No Caching - Re-compute Always)
+        flat_h = _chunked_heuristic_eval(params, flat_neighbours, flat_valid)
+        flat_h = jnp.maximum(0.0, flat_h)
 
         flat_f = (cost_weight * flat_g + flat_h).astype(KEY_DTYPE)
 

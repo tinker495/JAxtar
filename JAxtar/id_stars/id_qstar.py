@@ -366,7 +366,7 @@ def _id_qstar_loop_builder(
         flat_valid = jnp.logical_and(flat_valid, flat_f <= active_bound + 1e-6)
 
         # --- Optimization: Deduplication ---
-        sr, flat_valid, is_new_mask, hash_idx = sr.apply_standard_deduplication(
+        sr, flat_valid = sr.apply_standard_deduplication(
             flat_neighbours,
             flat_g,
             flat_valid,
