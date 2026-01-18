@@ -384,23 +384,6 @@ def _id_qstar_loop_builder(
             flat_valid[:, None], flat_action_history, jnp.full_like(flat_action_history, ACTION_PAD)
         )
 
-        flat_valid = apply_non_backtracking(
-            flat_neighbours,
-            parents,
-            parent_trails,
-            parent_depths,
-            flat_valid,
-            non_backtracking_steps,
-            action_size,
-            flat_size,
-            trail_indices,
-            batch_size,
-        )
-
-        flat_action_history = jnp.where(
-            flat_valid[:, None], flat_action_history, jnp.full_like(flat_action_history, ACTION_PAD)
-        )
-
         return_sr = jax.lax.cond(
             any_solved,
             lambda s: s,
