@@ -29,6 +29,9 @@ class TrainLogInfo:
         if self.mean_name_override:
             return self.mean_name_override
 
+        if not self.log_histogram:
+            return self.name
+
         # Fallback: Metric/log -> Metric/mean_log
         parts = self.name.split("/")
         parts[-1] = "mean_" + parts[-1]
