@@ -106,7 +106,7 @@ class DistanceHLGModel(ABC, nn.Module):
 class DistanceGroupDIRModel(ABC, nn.Module):
     action_size: int = 1
 
-    categorial_n: int = 10
+    categorial_n: int = 100
     vmin: float = -1.0
     vmax: float = 26.0
     _sigma: float = 1.5
