@@ -3,7 +3,11 @@ import jax
 import jax.numpy as jnp
 from puxle import RubiksCube
 
-from neural_util.basemodel import HLGResMLPModel, SelfPredictiveResMLPModel
+from neural_util.basemodel import (
+    HLGResMLPModel,
+    SelfPredictiveHLGResMLPModel,
+    SelfPredictiveResMLPModel,
+)
 from neural_util.modules import DTYPE
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
@@ -109,3 +113,13 @@ class RubiksCubeSPLNeuralQ(RubiksCubeNeuralQ):
 class RubiksCubeRandomSPLNeuralQ(RubiksCubeRandomNeuralQ):
     def __init__(self, puzzle: RubiksCube, **kwargs):
         super().__init__(puzzle, model=SelfPredictiveResMLPModel, **kwargs)
+
+
+class RubiksCubeSPLHLGNeuralQ(RubiksCubeNeuralQ):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=SelfPredictiveHLGResMLPModel, **kwargs)
+
+
+class RubiksCubeRandomSPLHLGNeuralQ(RubiksCubeRandomNeuralQ):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=SelfPredictiveHLGResMLPModel, **kwargs)

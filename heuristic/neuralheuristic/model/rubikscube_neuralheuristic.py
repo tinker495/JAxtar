@@ -4,7 +4,11 @@ import jax.numpy as jnp
 from puxle import RubiksCube
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.basemodel import HLGResMLPModel, SelfPredictiveResMLPModel
+from neural_util.basemodel import (
+    HLGResMLPModel,
+    SelfPredictiveHLGResMLPModel,
+    SelfPredictiveResMLPModel,
+)
 from neural_util.modules import DTYPE
 
 
@@ -108,3 +112,13 @@ class RubiksCubeSPLNeuralHeuristic(RubiksCubeNeuralHeuristic):
 class RubiksCubeRandomSPLNeuralHeuristic(RubiksCubeRandomNeuralHeuristic):
     def __init__(self, puzzle: RubiksCube, **kwargs):
         super().__init__(puzzle, model=SelfPredictiveResMLPModel, **kwargs)
+
+
+class RubiksCubeSPLHLGNeuralHeuristic(RubiksCubeNeuralHeuristic):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=SelfPredictiveHLGResMLPModel, **kwargs)
+
+
+class RubiksCubeRandomSPLHLGNeuralHeuristic(RubiksCubeRandomNeuralHeuristic):
+    def __init__(self, puzzle: RubiksCube, **kwargs):
+        super().__init__(puzzle, model=SelfPredictiveHLGResMLPModel, **kwargs)

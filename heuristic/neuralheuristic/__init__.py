@@ -10,7 +10,9 @@ from heuristic.neuralheuristic.model.rubikscube_neuralheuristic import (
     RubiksCubeNeuralHeuristic,
     RubiksCubeRandomHLGNeuralHeuristic,
     RubiksCubeRandomNeuralHeuristic,
+    RubiksCubeRandomSPLHLGNeuralHeuristic,
     RubiksCubeRandomSPLNeuralHeuristic,
+    RubiksCubeSPLHLGNeuralHeuristic,
     RubiksCubeSPLNeuralHeuristic,
 )
 from heuristic.neuralheuristic.model.slidepuzzle_neuralheuristic import (

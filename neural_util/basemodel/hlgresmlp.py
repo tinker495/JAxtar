@@ -1,5 +1,7 @@
 from typing import Any
 
+import jax
+import jax.numpy as jnp
 from aqt.jax.v2.flax import aqt_flax
 from flax import linen as nn
 
@@ -14,6 +16,7 @@ from neural_util.modules import (
     PreActivationResBlock,
     ResBlock,
     Swiglu,
+    get_activation_fn,
     preactivation_MLP,
 )
 
@@ -34,6 +37,8 @@ class HLGResMLPModel(DistanceHLGModel):
 
     def setup(self):
         super().setup()
+        # Resolve activation to callable if it's a string
+        resolved_activation = get_activation_fn(self.activation)
 
         aqt_dg = None
         if self.aqt_cfg is not None:
@@ -46,7 +51,7 @@ class HLGResMLPModel(DistanceHLGModel):
             else MLP(
                 self.initial_dim,
                 norm_fn=self.norm_fn,
-                activation=self.activation,
+                activation=resolved_activation,
                 dot_general_cls=aqt_dg,
             )
         )
@@ -57,7 +62,7 @@ class HLGResMLPModel(DistanceHLGModel):
                 else MLP(
                     self.hidden_dim,
                     norm_fn=self.norm_fn,
-                    activation=self.activation,
+                    activation=resolved_activation,
                     dot_general_cls=aqt_dg,
                 )
             )
@@ -70,7 +75,7 @@ class HLGResMLPModel(DistanceHLGModel):
                 self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
-                activation=self.activation,
+                activation=resolved_activation,
                 use_swiglu=self.use_swiglu,
                 dot_general_cls=aqt_dg,
             )
@@ -81,7 +86,7 @@ class HLGResMLPModel(DistanceHLGModel):
                 self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
-                activation=self.activation,
+                activation=resolved_activation,
                 use_swiglu=self.use_swiglu,
                 dtype=HEAD_DTYPE,
                 param_dtype=HEAD_DTYPE,
@@ -124,28 +129,44 @@ class HLGResMLPModel(DistanceHLGModel):
         return x
 
 
-class SelfPredictiveHLGResMLPModel(HLGResMLPModel, SelfPredictiveDistanceHLGModel):
+class SelfPredictiveHLGResMLPModel(SelfPredictiveDistanceHLGModel):
+
+    embedding_Res_N: int = 3
+    distances_Res_N: int = 1
+    initial_dim: int = 5000
+    hidden_N: int = 1
+    hidden_dim: int = 1000
+    projection_dim: int = 128
+    norm_fn: callable = DEFAULT_NORM_FN
+    activation: str = nn.relu
+    resblock_fn: callable = ResBlock
+    use_swiglu: bool = False
+    hidden_node_multiplier: int = 1
+    tail_head_precision: int = 0
+    path_action_size: int = 12
+
     def setup(self):
         super().setup()
-        # Transition model components
-        self.action_embedding = nn.Embed(self.action_size, self.hidden_dim, dtype=DTYPE)
+        # Resolve activation to callable if it's a string
+        resolved_activation = get_activation_fn(self.activation)
+
+        # Transition components (following SelfPredictiveResMLPModel pattern)
+        self.transition_dense = nn.Dense(self.hidden_dim, dtype=DTYPE)
         self.transition_resblock = self.resblock_fn(
             self.hidden_dim * self.hidden_node_multiplier,
-            norm_fn=self.norm_fn,
+            norm_fn=None,
             hidden_N=self.hidden_N,
-            activation=self.activation,
+            activation=resolved_activation,
             use_swiglu=self.use_swiglu,
-            dtype=DTYPE,  # Keep in DTYPE (e.g. bfloat16/float32)
+            dtype=DTYPE,
         )
 
-        # Projection and Predictor components
-        latent_dim = self.hidden_dim * self.hidden_node_multiplier
-        self.proj_dense1 = nn.Dense(latent_dim, dtype=DTYPE)
-        self.proj_norm1 = self.norm_fn()
-        self.proj_dense2 = nn.Dense(latent_dim, dtype=DTYPE)
-        self.pred_dense1 = nn.Dense(latent_dim, dtype=DTYPE)
-        self.pred_norm1 = self.norm_fn()
-        self.pred_dense2 = nn.Dense(latent_dim, dtype=DTYPE)
+        # Projection and Predictor components (using MLP to avoid activation issues)
+        self.proj_mlp = MLP(self.hidden_dim, norm_fn=None, activation=resolved_activation)
+        self.proj_dense = nn.Dense(self.projection_dim, dtype=HEAD_DTYPE)
+
+        self.pred_mlp = MLP(self.hidden_dim, norm_fn=None, activation=resolved_activation)
+        self.pred_dense = nn.Dense(self.projection_dim, dtype=HEAD_DTYPE)
 
     def states_to_latents(self, x, training=False):
         x = self.initial_mlp(x, training)
@@ -181,23 +202,18 @@ class SelfPredictiveHLGResMLPModel(HLGResMLPModel, SelfPredictiveDistanceHLGMode
         return distances, latents
 
     def transition(self, latents, actions, training=False):
-        action_embed = self.action_embedding(actions)  # (..., hidden_dim)
-        if action_embed.ndim > latents.ndim:
-            action_embed = action_embed.squeeze(-2)
-        x = latents + action_embed
+        actions = jax.nn.one_hot(actions, self.path_action_size)
+        x = jnp.concatenate([latents, actions], axis=-1)
+        x = self.transition_dense(x)
         x = self.transition_resblock(x, training=training)
         return x
 
     def latents_to_projection(self, x, training=False):
-        x = self.proj_dense1(x)
-        x = self.proj_norm1(x, training)
-        x = self.activation(x)
-        x = self.proj_dense2(x)
+        x = self.proj_mlp(x, training)
+        x = self.proj_dense(x)
         return x
 
     def predict_ema_latents(self, x, training=False):
-        x = self.pred_dense1(x)
-        x = self.pred_norm1(x, training)
-        x = self.activation(x)
-        x = self.pred_dense2(x)
+        x = self.pred_mlp(x, training)
+        x = self.pred_dense(x)
         return x
