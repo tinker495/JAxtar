@@ -53,12 +53,10 @@ class NeuralQFunctionBase(QFunction):
                 "action_size": self.action_size,
                 "path_action_size": self.action_size,
             }
-            self.model = model(
-                self.action_size, **resolved_kwargs, path_action_size=self.action_size
-            )
+            self.model = model(**self.model_kwargs)
         else:
             self.model_kwargs = {**resolved_kwargs, "action_size": self.action_size}
-            self.model = model(self.action_size, **resolved_kwargs)
+            self.model = model(**self.model_kwargs)
         self.metadata = saved_metadata or {}
         self.metadata["nn_args"] = self.nn_args_metadata
         if path is not None:

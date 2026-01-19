@@ -132,7 +132,9 @@ class SelfPredictiveDistanceModel(SelfPredictiveMixin):
 
         dists = self.latents_to_distances(latents, training=True)  # [..., action_size]
         if actions is not None:
-            dists = jnp.take_along_axis(dists, actions, axis=-1)  # [..., 1]
+            dists = jnp.take_along_axis(dists, actions[..., None], axis=-1)  # [..., 1]
+            target = target.squeeze(-1)  # [...,]
+            dists = dists.squeeze(-1)  # [...,]
         else:
             dists = dists.squeeze(-1)  # [...,]
 

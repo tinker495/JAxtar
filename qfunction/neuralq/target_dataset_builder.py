@@ -285,9 +285,9 @@ def _get_datasets_with_diffusion_distance(
         "solveconfigs": solve_configs_flat,
         "states": states_flat,
         "target_q": target_q,
-        "actions": trajectory_actions,
+        "actions": trajectory_actions.squeeze(1),
         "cost": zeros,
-        "path_actions": trajectory_actions,
+        "path_actions": trajectory_actions.squeeze(1),
         "trajectory_indices": trajectory_indices,
         "step_indices": step_indices,
     }
