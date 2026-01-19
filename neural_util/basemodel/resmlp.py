@@ -16,6 +16,7 @@ from neural_util.modules import (
     PreActivationResBlock,
     ResBlock,
     Swiglu,
+    get_activation_fn,
     preactivation_MLP,
 )
 
@@ -138,17 +139,20 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
     path_action_size: int = 12
 
     def setup(self):
+        # Resolve activation to callable if it's a string
+        resolved_activation = get_activation_fn(self.activation)
+
         # Re-implementing using setup for cleaner separation.
         self.initial_mlp = (
             Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE)
             if self.use_swiglu
-            else MLP(self.initial_dim, norm_fn=self.norm_fn, activation=self.activation)
+            else MLP(self.initial_dim, norm_fn=self.norm_fn, activation=resolved_activation)
         )
         self.second_mlp = (
             (
                 Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE)
                 if self.use_swiglu
-                else MLP(self.hidden_dim, norm_fn=self.norm_fn, activation=self.activation)
+                else MLP(self.hidden_dim, norm_fn=self.norm_fn, activation=resolved_activation)
             )
             if self.resblock_fn != PreActivationResBlock
             else nn.Dense(self.hidden_dim, dtype=DTYPE)
@@ -159,7 +163,7 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
                 self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
-                activation=self.activation,
+                activation=resolved_activation,
                 use_swiglu=self.use_swiglu,
             )
             for _ in range(self.embedding_Res_N)
@@ -169,7 +173,7 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
                 self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
-                activation=self.activation,
+                activation=resolved_activation,
                 use_swiglu=self.use_swiglu,
             )
             for _ in range(self.distances_Res_N)
@@ -191,16 +195,16 @@ class SelfPredictiveResMLPModel(SelfPredictiveDistanceModel):
             self.hidden_dim,
             norm_fn=None,
             hidden_N=self.hidden_N,
-            activation=self.activation,
+            activation=resolved_activation,
             use_swiglu=self.use_swiglu,
             dtype=DTYPE,
         )
 
         # Projection and Predictor components
-        self.proj_mlp = MLP(self.hidden_dim, norm_fn=None, activation=self.activation)
+        self.proj_mlp = MLP(self.hidden_dim, norm_fn=None, activation=resolved_activation)
         self.proj_dense = nn.Dense(self.projection_dim, dtype=HEAD_DTYPE)
 
-        self.pred_mlp = MLP(self.hidden_dim, norm_fn=None, activation=self.activation)
+        self.pred_mlp = MLP(self.hidden_dim, norm_fn=None, activation=resolved_activation)
         self.pred_dense = nn.Dense(self.projection_dim, dtype=HEAD_DTYPE)
 
     def latents_to_projection(self, x, training=False):

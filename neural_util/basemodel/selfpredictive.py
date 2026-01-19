@@ -204,55 +204,67 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
         **kwargs
     ):
         categorial_bins, sigma = self.categorial_bins, self.sigma
-        # target: [batch, 1]
 
-        def f(target):
-            cdf_evals = jax.scipy.special.erf((categorial_bins - target) / (jnp.sqrt(2) * sigma))
+        def f(target_scalar):
+            cdf_evals = jax.scipy.special.erf(
+                (categorial_bins - target_scalar) / (jnp.sqrt(2) * sigma)
+            )
             z = cdf_evals[-1] - cdf_evals[0]
             bin_probs = cdf_evals[1:] - cdf_evals[:-1]
             return bin_probs / z
 
-        target_probs = jax.vmap(jax.vmap(f))(target)  # [..., action_size, categorial_n]
+        # Handle arbitrary input dimensions by flattening, applying f, then reshaping
+        original_shape = target.shape
+        target_flat = target.reshape(-1)  # Flatten all dimensions
+        target_probs_flat = jax.vmap(f)(target_flat)  # (total_elements, categorial_n)
+        target_probs = target_probs_flat.reshape(
+            original_shape + (self.categorial_n,)
+        )  # [..., categorial_n]
 
         latents = self.states_to_latents(x, training=True)  # [..., latent_dim]
 
         logits_actions = self.latents_to_logits(
             latents, training=True
         )  # [..., action_size, categorial_n]
-        pred_actions = self.logit_to_values(logits_actions)
+        pred_actions = self.logit_to_values(logits_actions)  # [..., action_size]
 
         if actions is None:
+            # Squeeze action_size=1 dimension from model outputs
             logits = logits_actions.squeeze(-2)  # [..., categorial_n]
-            pred = pred_actions.squeeze(-1)
+            pred = pred_actions.squeeze(-1)  # [...]
+            # target/target_probs may or may not have the action_size dimension
+            # If target has action_size dim, squeeze it; otherwise use as-is
+            if target.shape[-1] == 1:
+                target_squeezed = target.squeeze(-1)
+                target_probs = target_probs.squeeze(-2)
+            else:
+                # target is already [...] without action_size
+                target_squeezed = target
+                # target_probs is [..., categorial_n] which is correct
         else:
             logits = jnp.take_along_axis(
                 logits_actions, actions[..., jnp.newaxis, jnp.newaxis], axis=-2
-            ).squeeze(
-                -2
-            )  # [..., categorial_n]
+            ).squeeze(-2)
+            target_probs = jnp.take_along_axis(
+                target_probs, actions[..., jnp.newaxis, jnp.newaxis], axis=-2
+            ).squeeze(-2)
             pred = jnp.take_along_axis(pred_actions, actions[..., jnp.newaxis], axis=-1).squeeze(-1)
+            target_squeezed = jnp.take_along_axis(
+                target, actions[..., jnp.newaxis], axis=-1
+            ).squeeze(-1)
 
-        dist_loss = optax.softmax_cross_entropy(logits, target_probs)  # [..., ]
+        dist_loss = optax.softmax_cross_entropy(logits, target_probs)  # [...]
         dist_loss = jnp.nan_to_num(dist_loss, nan=0.0, posinf=1e6, neginf=-1e6)
 
         # Keep original dist_loss for sce logging before any potential mean
         sce = dist_loss
 
-        if dist_loss.ndim > 1:
-            dist_loss = jnp.mean(dist_loss, axis=-1)
-
-        if latents.ndim >= 3:
-            # We pass full latents to SPR loss for sequence handling
-            spr_latents = latents
-        else:
-            spr_latents = latents
-
         spr_loss = self.compute_self_predictive_loss(
-            spr_latents, path_actions, ema_latents, same_trajectory_masks, training=True
-        )  # [...,]
+            latents[:, 0], path_actions, ema_latents, same_trajectory_masks, training=True
+        )  # (Batch, 1)
         spr_loss = jnp.nan_to_num(spr_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         total_loss = dist_loss + spr_loss
-        diff = target - pred
+        diff = target_squeezed - pred
         log_infos = (
             TrainLogInfo("Metrics/pred", pred),
             TrainLogInfo("Losses/diff", diff, log_mean=False),

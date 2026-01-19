@@ -150,10 +150,61 @@ class SelfPredictiveHLGResMLPModel(SelfPredictiveDistanceHLGModel):
         # Resolve activation to callable if it's a string
         resolved_activation = get_activation_fn(self.activation)
 
-        # Transition components (following SelfPredictiveResMLPModel pattern)
+        # Initial and second MLP (following SelfPredictiveResMLPModel pattern)
+        self.initial_mlp = (
+            Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE)
+            if self.use_swiglu
+            else MLP(self.initial_dim, norm_fn=self.norm_fn, activation=resolved_activation)
+        )
+        self.second_mlp = (
+            (
+                Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE)
+                if self.use_swiglu
+                else MLP(self.hidden_dim, norm_fn=self.norm_fn, activation=resolved_activation)
+            )
+            if self.resblock_fn != PreActivationResBlock
+            else nn.Dense(self.hidden_dim, dtype=DTYPE)
+        )
+
+        # Embedding resblocks (states -> latents)
+        self.embedding_resblocks = [
+            self.resblock_fn(
+                self.hidden_dim * self.hidden_node_multiplier,
+                norm_fn=self.norm_fn,
+                hidden_N=self.hidden_N,
+                activation=resolved_activation,
+                use_swiglu=self.use_swiglu,
+            )
+            for _ in range(self.embedding_Res_N)
+        ]
+
+        # Distances resblocks (latents -> logits)
+        self.distances_resblocks = [
+            self.resblock_fn(
+                self.hidden_dim * self.hidden_node_multiplier,
+                norm_fn=self.norm_fn,
+                hidden_N=self.hidden_N,
+                activation=resolved_activation,
+                use_swiglu=self.use_swiglu,
+            )
+            for _ in range(self.distances_Res_N)
+        ]
+
+        # Final dense for HLG (outputs action_size * categorial_n)
+        self.final_dense = (
+            preactivation_MLP(self.action_size * self.categorial_n, dtype=HEAD_DTYPE)
+            if self.resblock_fn == PreActivationResBlock
+            else nn.Dense(
+                self.action_size * self.categorial_n,
+                dtype=HEAD_DTYPE,
+                kernel_init=nn.initializers.normal(stddev=0.01),
+            )
+        )
+
+        # Transition components
         self.transition_dense = nn.Dense(self.hidden_dim, dtype=DTYPE)
         self.transition_resblock = self.resblock_fn(
-            self.hidden_dim * self.hidden_node_multiplier,
+            self.hidden_dim,
             norm_fn=None,
             hidden_N=self.hidden_N,
             activation=resolved_activation,
@@ -161,7 +212,7 @@ class SelfPredictiveHLGResMLPModel(SelfPredictiveDistanceHLGModel):
             dtype=DTYPE,
         )
 
-        # Projection and Predictor components (using MLP to avoid activation issues)
+        # Projection and Predictor components
         self.proj_mlp = MLP(self.hidden_dim, norm_fn=None, activation=resolved_activation)
         self.proj_dense = nn.Dense(self.projection_dim, dtype=HEAD_DTYPE)
 
@@ -175,12 +226,12 @@ class SelfPredictiveHLGResMLPModel(SelfPredictiveDistanceHLGModel):
         else:
             x = self.second_mlp(x, training)
 
-        for resblock in self.resblocks:
+        for resblock in self.embedding_resblocks:
             x = resblock(x, training)
         return x
 
     def latents_to_logits(self, x, training=False):
-        for resblock in self.tail_head_resblocks:
+        for resblock in self.distances_resblocks:
             x = resblock(x, training)
 
         if isinstance(self.final_dense, nn.Dense):
