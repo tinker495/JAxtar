@@ -10,7 +10,7 @@ from puxle import Puzzle
 
 from cli.evaluation_runner import run_evaluation_sweep
 from config import benchmark_bundles
-from config.pydantic_models import DistTrainOptions, EvalOptions, PuzzleOptions
+from config.pydantic_models import DistTrainOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
@@ -35,7 +35,6 @@ from ..options import (
     dist_puzzle_options,
     dist_qfunction_options,
     dist_train_options,
-    eval_options,
 )
 
 
@@ -128,7 +127,6 @@ def _resolve_eval_search_components(
 @dist_puzzle_options
 @dist_train_options(preset_category="heuristic_train", default_preset="davi")
 @dist_heuristic_options
-@eval_options
 def heuristic_train_command(
     puzzle: Puzzle,
     puzzle_opts: PuzzleOptions,
@@ -137,10 +135,10 @@ def heuristic_train_command(
     puzzle_bundle,
     train_options: DistTrainOptions,
     k_max: int,
-    eval_options: EvalOptions,
     heuristic_config: Dict[str, Any],
     **kwargs,
 ):
+    eval_options = train_options.eval_options
     eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
         puzzle, puzzle_name, puzzle_opts, puzzle_bundle
     )
@@ -243,7 +241,7 @@ def heuristic_train_command(
         discription_logs = {
             "lr": lr,
             "target": float(mean_target_heuristic),
-            **{k.split("/")[-1]: float(v.mean) for k, v in log_infos.items() if v.log_mean},
+            **{v.short_name: float(v.mean) for v in log_infos if v.log_mean},
         }
 
         pbar.set_description(
@@ -254,10 +252,11 @@ def heuristic_train_command(
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
 
         # Log metrics
-        for k, v in log_infos.items():
-            logger.log_scalar(k, v.mean, i)
+        for v in log_infos:
+            if v.log_mean:
+                logger.log_scalar(v.mean_name, v.mean, i)
             if v.log_histogram and i % 100 == 0:
-                logger.log_histogram(k, v.data, i)
+                logger.log_histogram(v.histogram_name, v.data, i)
 
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_heuristic, i)
@@ -360,7 +359,6 @@ def heuristic_train_command(
 @dist_puzzle_options
 @dist_train_options(preset_category="qfunction_train", default_preset="qlearning")
 @dist_qfunction_options
-@eval_options
 def qfunction_train_command(
     puzzle: Puzzle,
     puzzle_opts: PuzzleOptions,
@@ -369,10 +367,10 @@ def qfunction_train_command(
     puzzle_bundle,
     train_options: DistTrainOptions,
     k_max: int,
-    eval_options: EvalOptions,
     q_config: Dict[str, Any],
     **kwargs,
 ):
+    eval_options = train_options.eval_options
     eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
         puzzle, puzzle_name, puzzle_opts, puzzle_bundle
     )
@@ -477,7 +475,7 @@ def qfunction_train_command(
             "lr": lr,
             "loss": float(loss),
             "target": float(mean_target_q),
-            **{k.split("/")[-1]: float(v.mean) for k, v in log_infos.items() if v.log_mean},
+            **{v.short_name: float(v.mean) for v in log_infos if v.log_mean},
         }
 
         pbar.set_description(
@@ -489,10 +487,11 @@ def qfunction_train_command(
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
 
         # Log metrics
-        for k, v in log_infos.items():
-            logger.log_scalar(k, v.mean, i)
+        for v in log_infos:
+            if v.log_mean:
+                logger.log_scalar(v.mean_name, v.mean, i)
             if v.log_histogram and i % 100 == 0:
-                logger.log_histogram(k, v.data, i)
+                logger.log_histogram(v.histogram_name, v.data, i)
 
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_q, i)

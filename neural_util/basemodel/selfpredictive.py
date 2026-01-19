@@ -143,13 +143,15 @@ class SelfPredictiveDistanceModel(SelfPredictiveMixin):
             latents[:, 0], path_actions, ema_latents, same_trajectory_masks, training=True
         )  # (Batch, 1)
         total_loss = dist_loss + spr_loss
-        log_infos = {
-            "Metrics/pred": TrainLogInfo(dists),
-            "Losses/diff": TrainLogInfo(diff, log_mean=False),
-            "Losses/loss": TrainLogInfo(total_loss, log_histogram=False),
-            "Losses/dist_loss": TrainLogInfo(dist_loss, log_histogram=False),
-            "Losses/spr_loss": TrainLogInfo(spr_loss, log_histogram=False),
-        }
+        log_infos = (
+            TrainLogInfo("Metrics/pred", dists),
+            TrainLogInfo("Losses/diff", diff, log_mean=False),
+            TrainLogInfo("Losses/loss", total_loss, log_histogram=False),
+            TrainLogInfo("Losses/dist_loss", dist_loss, log_histogram=False),
+            TrainLogInfo("Losses/spr_loss", spr_loss, log_histogram=False),
+            TrainLogInfo("Losses/mae", jnp.abs(diff), log_histogram=False),
+            TrainLogInfo("Losses/mse", jnp.mean(diff**2), log_histogram=False),
+        )
         return total_loss, log_infos
 
 
@@ -179,12 +181,15 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
         """
         pass
 
+    def logit_to_values(self, logits):
+        softmax = jax.nn.softmax(logits, axis=-1)
+        categorial_centers = self.categorial_centers
+        x = jnp.sum(softmax * categorial_centers, axis=-1)  # (batch_size, action_size)
+        return x
+
     def latents_to_distances(self, latents, training=False):
         logits = self.latents_to_logits(latents, training)  # [..., action_size, categorial_n]
-        softmax = jax.nn.softmax(logits, axis=-1)
-        categorial_centers = self.categorial_centers  # (1, 1, categorial_n)
-        x = jnp.sum(softmax * categorial_centers, axis=-1)  # [..., action_size]
-        return x
+        return self.logit_to_values(logits)
 
     def train_loss(
         self,
@@ -212,7 +217,7 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
         logits_actions = self.latents_to_logits(
             latents, training=True
         )  # [..., action_size, categorial_n]
-        pred_actions = self.latents_to_values(logits_actions)
+        pred_actions = self.logit_to_values(logits_actions)
 
         if actions is None:
             logits = logits_actions.squeeze(-2)  # [..., categorial_n]
@@ -245,12 +250,15 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
         )  # [...,]
         spr_loss = jnp.nan_to_num(spr_loss, nan=0.0, posinf=1e6, neginf=-1e6)
         total_loss = dist_loss + spr_loss
-        log_infos = {
-            "Metrics/pred": TrainLogInfo(pred),
-            "Losses/diff": TrainLogInfo(target - pred, log_mean=False),
-            "Losses/loss": TrainLogInfo(total_loss, log_histogram=False),
-            "Losses/dist_loss": TrainLogInfo(dist_loss, log_histogram=False),
-            "Losses/spr_loss": TrainLogInfo(spr_loss, log_histogram=False),
-            "Losses/sce": TrainLogInfo(sce, log_histogram=False),
-        }
+        diff = target - pred
+        log_infos = (
+            TrainLogInfo("Metrics/pred", pred),
+            TrainLogInfo("Losses/diff", diff, log_mean=False),
+            TrainLogInfo("Losses/loss", total_loss, log_histogram=False),
+            TrainLogInfo("Losses/dist_loss", dist_loss, log_histogram=False),
+            TrainLogInfo("Losses/spr_loss", spr_loss, log_histogram=False),
+            TrainLogInfo("Losses/sce", sce, log_histogram=False),
+            TrainLogInfo("Losses/mae", jnp.abs(diff), log_histogram=False),
+            TrainLogInfo("Losses/mse", jnp.mean(diff**2), log_histogram=False),
+        )
         return total_loss, log_infos

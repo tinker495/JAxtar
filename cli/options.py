@@ -285,20 +285,41 @@ def search_options(func=None, *, variant: str = "default") -> callable:
         @click.option("--debug", is_flag=True, default=None, help="Debug mode")
         @click.option("--profile", is_flag=True, default=None, help="Profile mode")
         @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
+        @click.option(
+            "--search-preset",
+            type=str,
+            default=None,
+            help="Name of the search preset to use.",
+        )
         @wraps(func)
         def wrapper(*args, **kwargs):
             overrides = map_kwargs_to_pydantic(SearchOptions, kwargs)
 
             puzzle_bundle = kwargs["puzzle_bundle"]
-            if variant == "beam":
-                base_search_options = puzzle_bundle.beam_search_options
+            search_preset = kwargs.pop("search_preset")
+
+            search_options_configs = getattr(puzzle_bundle, "search_options_configs", None)
+            if search_options_configs:
+                preset_key = search_preset or ("beam" if variant == "beam" else "default")
+                if preset_key in search_options_configs:
+                    base_search_options = search_options_configs[preset_key]
+                elif search_preset:
+                    puzzle_name = kwargs.get("puzzle_name") or "unknown"
+                    raise click.UsageError(
+                        f"Search preset '{search_preset}' not available for '{puzzle_name}'. "
+                        f"Available: {list(search_options_configs.keys())}"
+                    )
+                else:
+                    base_search_options = SearchOptions()
             else:
-                base_search_options = puzzle_bundle.search_options
+                base_search_options = SearchOptions()
 
             search_opts = base_search_options.model_copy(update=overrides)
 
             if search_opts.debug:
                 print("Disabling JIT")
+                import jax
+
                 jax.config.update("jax_disable_jit", True)
                 search_opts.max_node_size = 10000
                 search_opts.batch_size = 100
@@ -362,17 +383,36 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
             default=None,
             help="Minimum success rate threshold for early stopping (0.0 to 1.0).",
         )
+        @click.option(
+            "--eval-preset",
+            type=str,
+            default=None,
+            help="Name of the evaluation preset to use.",
+        )
         @wraps(func)
         def wrapper(*args, **kwargs):
             overrides = map_kwargs_to_pydantic(EvalOptions, kwargs)
 
             puzzle_bundle = kwargs["puzzle_bundle"]
-            if variant == "beam":
-                base_eval_options = getattr(puzzle_bundle, "beam_eval_options", None)
-                if base_eval_options is None:
-                    base_eval_options = puzzle_bundle.eval_options
+            eval_preset = kwargs.pop("eval_preset")
+
+            eval_options_configs = getattr(puzzle_bundle, "eval_options_configs", None)
+            if eval_options_configs:
+                preset_key = eval_preset or ("beam" if variant == "beam" else "default")
+                if preset_key in eval_options_configs:
+                    base_eval_options = eval_options_configs[preset_key]
+                elif eval_preset:
+                    puzzle_name = (
+                        kwargs.get("puzzle_name") or kwargs.get("benchmark_name") or "unknown"
+                    )
+                    raise click.UsageError(
+                        f"Eval preset '{eval_preset}' not available for '{puzzle_name}'. "
+                        f"Available: {list(eval_options_configs.keys())}"
+                    )
+                else:
+                    base_eval_options = EvalOptions()
             else:
-                base_eval_options = puzzle_bundle.eval_options
+                base_eval_options = EvalOptions()
 
             # pop_ratio special handling was done before map_kwargs_to_pydantic?
             # No, pop_ratio is in EvalOptions fields, so it's in 'overrides' now.
@@ -784,6 +824,17 @@ def dist_train_options(
             # Collect any user-provided options to override the preset
             # map_kwargs_to_pydantic handles popping
             overrides = map_kwargs_to_pydantic(DistTrainOptions, kwargs)
+
+            # Special handling for eval_options to support partial updates and defaults
+            if "eval_options" in overrides:
+                cli_eval = overrides["eval_options"]
+                # If CLI passed an EvalOptions object (from @eval_options decorator)
+                # and it's using the default num_eval (-1), revert to the preset's value.
+                if hasattr(cli_eval, "num_eval") and cli_eval.num_eval == -1:
+                    preset_eval_opts = getattr(preset, "eval_options", None)
+                    if preset_eval_opts:
+                        cli_eval.num_eval = preset_eval_opts.num_eval
+                overrides["eval_options"] = cli_eval
 
             # Cleanup None values remaining in kwargs that correspond to DistTrainOptions fields
             for key in list(kwargs.keys()):
