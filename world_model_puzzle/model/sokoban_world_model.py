@@ -2,6 +2,7 @@ import chex
 import flax.linen as nn
 import jax.numpy as jnp
 
+from neural_util.dtypes import PARAM_DTYPE
 from neural_util.modules import (
     DEFAULT_NORM_FN,
     DTYPE,
@@ -20,12 +21,22 @@ class Encoder(nn.Module):
     @nn.compact
     def __call__(self, data, training=False):
         x = ((data / 255.0) * 2.0 - 1.0).astype(DTYPE)
-        x = nn.Conv(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 20, 20, 16)
+        x = nn.Conv(16, (2, 2), strides=(2, 2), dtype=DTYPE, param_dtype=PARAM_DTYPE)(
+            x
+        )  # (batch_size, 20, 20, 16)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
-        x = nn.Conv(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 10, 10, 16)
+        x = nn.Conv(16, (2, 2), strides=(2, 2), dtype=DTYPE, param_dtype=PARAM_DTYPE)(
+            x
+        )  # (batch_size, 10, 10, 16)
         x = nn.relu(x)
-        logits = nn.Conv(self.latent_shape[-1], (1, 1), strides=(1, 1), dtype=DTYPE)(
+        logits = nn.Conv(
+            self.latent_shape[-1],
+            (1, 1),
+            strides=(1, 1),
+            dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
+        )(
             x
         )  # (batch_size, 10, 10, 16)
         return logits
@@ -39,12 +50,18 @@ class Decoder(nn.Module):
     def __call__(self, latent, training=False):
         # batch
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
-        x = nn.ConvTranspose(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 20, 20, 16)
+        x = nn.ConvTranspose(16, (2, 2), strides=(2, 2), dtype=DTYPE, param_dtype=PARAM_DTYPE)(
+            x
+        )  # (batch_size, 20, 20, 16)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
-        x = nn.ConvTranspose(16, (2, 2), strides=(2, 2), dtype=DTYPE)(x)  # (batch_size, 40, 40, 16)
+        x = nn.ConvTranspose(16, (2, 2), strides=(2, 2), dtype=DTYPE, param_dtype=PARAM_DTYPE)(
+            x
+        )  # (batch_size, 40, 40, 16)
         x = nn.relu(x)
-        x = nn.Conv(3, (1, 1), strides=(1, 1), dtype=DTYPE)(x)  # (batch_size, 40, 40, 3)
+        x = nn.Conv(3, (1, 1), strides=(1, 1), dtype=DTYPE, param_dtype=PARAM_DTYPE)(
+            x
+        )  # (batch_size, 40, 40, 3)
         return x
 
 
@@ -73,14 +90,24 @@ class WorldModel(nn.Module):
     def __call__(self, latent, training=False):
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
         x = nn.Conv(
-            32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+            32,
+            (3, 3),
+            strides=(1, 1),
+            kernel_init=nn.initializers.orthogonal(),
+            dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
         )(
             x
         )  # (batch_size, 10, 10, 32)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         x = nn.Conv(
-            32, (3, 3), strides=(1, 1), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+            32,
+            (3, 3),
+            strides=(1, 1),
+            kernel_init=nn.initializers.orthogonal(),
+            dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
         )(
             x
         )  # (batch_size, 10, 10, 32)
@@ -92,6 +119,7 @@ class WorldModel(nn.Module):
             strides=(1, 1),
             kernel_init=nn.initializers.orthogonal(),
             dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
         )(
             x
         )  # (batch_size, 10, 10, 16 * self.action_size)
@@ -161,7 +189,12 @@ class EncoderOptimized(nn.Module):
     def __call__(self, data, training=False):
         x = ((data / 255.0) * 2.0 - 1.0).astype(DTYPE)
         x = nn.Conv(
-            16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+            16,
+            (4, 4),
+            strides=(4, 4),
+            kernel_init=nn.initializers.orthogonal(),
+            dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
         )(
             x
         )  # (batch_size, 10, 10, 16)
@@ -174,6 +207,7 @@ class EncoderOptimized(nn.Module):
             strides=(1, 1),
             kernel_init=nn.initializers.orthogonal(),
             dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
         )(
             x
         )  # (batch_size, 10, 10, 2)
@@ -187,18 +221,30 @@ class DecoderOptimized(nn.Module):
     @nn.compact
     def __call__(self, latent, training=False):
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
-        x = nn.Conv(16, (1, 1), strides=(1, 1), dtype=DTYPE)(x)  # (batch_size, 10, 10, 16)
+        x = nn.Conv(16, (1, 1), strides=(1, 1), dtype=DTYPE, param_dtype=PARAM_DTYPE)(
+            x
+        )  # (batch_size, 10, 10, 16)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         x = ConvResBlock(16, (1, 1), (1, 1), norm_fn=self.norm_fn)(x, training)
         x = nn.ConvTranspose(
-            16, (4, 4), strides=(4, 4), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+            16,
+            (4, 4),
+            strides=(4, 4),
+            kernel_init=nn.initializers.orthogonal(),
+            dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
         )(
             x
         )  # (batch_size, 40, 40, 16)
         x = nn.relu(x)
         x = nn.Conv(
-            3, (1, 1), strides=(1, 1), kernel_init=nn.initializers.orthogonal(), dtype=DTYPE
+            3,
+            (1, 1),
+            strides=(1, 1),
+            kernel_init=nn.initializers.orthogonal(),
+            dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
         )(
             x
         )  # (batch_size, 40, 40, 3)

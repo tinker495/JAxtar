@@ -1,7 +1,7 @@
 import chex
 import jax.numpy as jnp
 
-from neural_util.modules import DTYPE
+from neural_util.dtypes import DTYPE
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from world_model_puzzle import WorldModelPuzzleBase
 

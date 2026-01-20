@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from puxle import Sokoban
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
-from neural_util.modules import DTYPE
+from neural_util.dtypes import DTYPE
 
 
 class SokobanNeuralHeuristic(NeuralHeuristicBase):
