@@ -163,6 +163,7 @@ class DistTrainOptions(BaseModel):
         default_factory=dict,
         description="Additional keyword arguments for the selected loss (JSON key/value).",
     )
+    eval_count: int = Field(5, description="Number of evaluations to perform during training.")
     eval_options: EvalOptions = Field(
         EvalOptions(num_eval=100, cost_weight=[0.9, 0.6, 0.3], pop_ratio=[float("inf"), 0.3, 0.1]),
         description="Options for evaluation during training.",
