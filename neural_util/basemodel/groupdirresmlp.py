@@ -1,6 +1,5 @@
 from typing import Any
 
-import jax.numpy as jnp
 from aqt.jax.v2.flax import aqt_flax
 from flax import linen as nn
 
@@ -27,7 +26,7 @@ class GroupDIRResMLPModel(DistanceGroupDIRModel):
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
     hidden_node_multiplier: int = 1
-    tail_head_precision: int = 0
+    head_res_N: int = 1
     aqt_cfg: Any = None
     quant_mode: Any = None
 
@@ -73,28 +72,50 @@ class GroupDIRResMLPModel(DistanceGroupDIRModel):
                 use_swiglu=self.use_swiglu,
                 dot_general_cls=aqt_dg,
             )
-            for _ in range(self.Res_N - self.tail_head_precision)
+            for _ in range(self.Res_N - self.head_res_N)
         ]
-        self.tail_head_resblocks = [
+        self.logit_head_resblocks = [
             self.resblock_fn(
                 self.hidden_dim * self.hidden_node_multiplier,
                 norm_fn=self.norm_fn,
                 hidden_N=self.hidden_N,
                 activation=self.activation,
                 use_swiglu=self.use_swiglu,
-                dtype=HEAD_DTYPE,
-                param_dtype=HEAD_DTYPE,
                 dot_general_cls=aqt_dg,
             )
-            for _ in range(self.tail_head_precision)
+            for _ in range(self.head_res_N)
         ]
-        self.final_dense = (
+        self.logit_dense = (
             preactivation_MLP(
-                self.action_size * self.categorial_n * 2, dtype=HEAD_DTYPE, dot_general_cls=aqt_dg
+                self.action_size * self.categorial_n, dtype=HEAD_DTYPE, dot_general_cls=aqt_dg
             )
             if self.resblock_fn == PreActivationResBlock
             else nn.Dense(
-                self.action_size * self.categorial_n * 2,
+                self.action_size * self.categorial_n,
+                dtype=HEAD_DTYPE,
+                kernel_init=nn.initializers.normal(stddev=0.01),
+                dot_general_cls=aqt_dg,
+            )
+        )
+
+        self.values_head_resblocks = [
+            self.resblock_fn(
+                self.hidden_dim * self.hidden_node_multiplier,
+                norm_fn=self.norm_fn,
+                hidden_N=self.hidden_N,
+                activation=self.activation,
+                use_swiglu=self.use_swiglu,
+                dot_general_cls=aqt_dg,
+            )
+            for _ in range(self.head_res_N)
+        ]
+        self.values_dense = (
+            preactivation_MLP(
+                self.action_size * self.categorial_n, dtype=HEAD_DTYPE, dot_general_cls=aqt_dg
+            )
+            if self.resblock_fn == PreActivationResBlock
+            else nn.Dense(
+                self.action_size * self.categorial_n,
                 dtype=HEAD_DTYPE,
                 kernel_init=nn.initializers.normal(stddev=0.01),
                 dot_general_cls=aqt_dg,
@@ -110,16 +131,29 @@ class GroupDIRResMLPModel(DistanceGroupDIRModel):
 
         for resblock in self.resblocks:
             x = resblock(x, training)
-        for resblock in self.tail_head_resblocks:
-            x = resblock(x, training)
 
-        if isinstance(self.final_dense, nn.Dense):
-            x = x.astype(HEAD_DTYPE)
-            x = self.final_dense(x)
+        x_logit = x
+        x_values = x
+        for logit_resblock in self.logit_head_resblocks:
+            x_logit = logit_resblock(x_logit, training)
+        for values_resblock in self.values_head_resblocks:
+            x_values = values_resblock(x_values, training)
+
+        if isinstance(self.logit_dense, nn.Dense):
+            x_logit = x_logit.astype(HEAD_DTYPE)
+            x_logit = self.logit_dense(x_logit)
         else:
-            x = self.final_dense(x, training)
+            x_logit = self.logit_dense(x_logit, training)
 
-        x = x.reshape(x.shape[0], self.action_size, self.categorial_n * 2)
-        logit, moe_values = jnp.split(x, [self.categorial_n], axis=-1)
-        moe_values = moe_values + self.categorial_centers
-        return logit, moe_values
+        if isinstance(self.values_dense, nn.Dense):
+            x_values = x_values.astype(HEAD_DTYPE)
+            x_values = self.values_dense(x_values)
+        else:
+            x_values = self.values_dense(x_values, training)
+
+        logits = x_logit.reshape(x_logit.shape[0], self.action_size, self.categorial_n)
+        values = (
+            x_values.reshape(x_values.shape[0], self.action_size, self.categorial_n)
+            + self.categorial_centers
+        )
+        return logits, values
