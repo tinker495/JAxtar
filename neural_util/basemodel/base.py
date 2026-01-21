@@ -41,7 +41,7 @@ class DistanceHLGModel(ABC, nn.Module):
 
     categorial_n: int = 100
     vmin: float = -1.0
-    vmax: float = 26.0
+    vmax: float = 27.0
     _sigma: float = 1.5
 
     def setup(self):
@@ -136,7 +136,7 @@ class DistanceGroupDIRModel(ABC, nn.Module):
 
     categorial_n: int = 100
     vmin: float = -1.0
-    vmax: float = 26.0
+    vmax: float = 27.0
     _sigma: float = 1.5
 
     def setup(self):
@@ -198,23 +198,21 @@ class DistanceGroupDIRModel(ABC, nn.Module):
             return bin_probs / z
 
         target_probs = jax.vmap(f)(target)
-        logits_actions, moe_values_actions = self.get_logits_and_moe_values(
+        logits_actions, values_actions = self.get_logits_and_moe_values(
             x, training=True
         )  # (batch_size, action_size, categorial_n), (batch_size, action_size, categorial_n)
 
-        pred_actions = self.logit_and_moe_values_to_values(logits_actions, moe_values_actions)
+        pred_actions = self.logit_and_moe_values_to_values(logits_actions, values_actions)
 
         if actions is None:
             logits = logits_actions.squeeze(1)  # (batch_size, categorial_n)
-            moe_values = moe_values_actions.squeeze(1)  # (batch_size, categorial_n)
+            values = values_actions.squeeze(1)  # (batch_size, categorial_n)
             pred = pred_actions.squeeze(1)  # (batch_size,)
         else:
             logits = jnp.take_along_axis(logits_actions, actions[:, jnp.newaxis], axis=1).squeeze(
                 1
             )  # (batch_size, categorial_n)
-            moe_values = jnp.take_along_axis(
-                moe_values_actions, actions[:, jnp.newaxis], axis=1
-            ).squeeze(
+            values = jnp.take_along_axis(values_actions, actions[:, jnp.newaxis], axis=1).squeeze(
                 1
             )  # (batch_size, categorial_n)
             pred = jnp.take_along_axis(pred_actions, actions[:, jnp.newaxis], axis=1).squeeze(
@@ -223,7 +221,7 @@ class DistanceGroupDIRModel(ABC, nn.Module):
 
         softmax = jax.nn.softmax(logits, axis=-1)  # (batch_size, categorial_n)
         sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size,)
-        diffes = target[:, jnp.newaxis] - moe_values  # (batch_size, categorial_n)
+        diffes = target[:, jnp.newaxis] - values  # (batch_size, categorial_n)
         moe_regress_losses = loss_from_diff(
             diffes, loss=loss_type, loss_args=loss_args
         )  # (batch_size, categorial_n)
