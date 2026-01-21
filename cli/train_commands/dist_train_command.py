@@ -146,14 +146,22 @@ def heuristic_train_command(
     )
     # Calculate derived parameters first for logging
     steps = train_options.steps // train_options.replay_ratio
-    update_interval = train_options.update_interval // train_options.replay_ratio
-    reset_interval = train_options.reset_interval // train_options.replay_ratio
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
 
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
-        update_interval = update_interval // n_devices
-        reset_interval = reset_interval // n_devices
+
+    # Convert External Step Intervals to Gradient Step Intervals
+    # If update_interval=1000 (External), and RR=10:
+    # We want update every 1000 External Steps = 10000 Gradient Steps.
+    update_interval_grad = update_interval * train_options.replay_ratio
+    reset_interval_grad = reset_interval * train_options.replay_ratio
+
+    if train_options.multi_device and n_devices > 1:
+        update_interval_grad = update_interval_grad // n_devices
+        reset_interval_grad = reset_interval_grad // n_devices
 
     config = {
         "puzzle_options": puzzle_opts,
@@ -164,8 +172,8 @@ def heuristic_train_command(
         "heuristic_config": heuristic_config,
         "derived_parameters": {
             "effective_steps": steps,
-            "effective_update_interval": update_interval,
-            "effective_reset_interval": reset_interval,
+            "effective_update_interval": update_interval_grad,
+            "effective_reset_interval": reset_interval_grad,
             "n_devices": n_devices,
         },
     }
@@ -209,7 +217,8 @@ def heuristic_train_command(
     state = state.replace(opt_state=opt_state)
 
     # Calculate soft update tau for use in train_builder
-    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
+    # Use update_interval_grad because logic inside JAX is per-gradient-step
+    soft_update_tau = 1.0 / update_interval_grad if train_options.use_soft_update else 0.0
 
     # Build training function
     heuristic_train_fn = heuristic_train_builder(
@@ -222,7 +231,7 @@ def heuristic_train_command(
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         use_soft_update=train_options.use_soft_update,
-        update_interval=update_interval,
+        update_interval=update_interval_grad,
         soft_update_tau=soft_update_tau,
     )
 
@@ -413,8 +422,14 @@ def qfunction_train_command(
 
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
-        update_interval = update_interval // n_devices
-        reset_interval = reset_interval // n_devices
+
+    # Convert External Step Intervals to Gradient Step Intervals
+    update_interval_grad = update_interval * train_options.replay_ratio
+    reset_interval_grad = reset_interval * train_options.replay_ratio
+
+    if train_options.multi_device and n_devices > 1:
+        update_interval_grad = update_interval_grad // n_devices
+        reset_interval_grad = reset_interval_grad // n_devices
 
     config = {
         "puzzle_options": puzzle_opts,
@@ -425,8 +440,8 @@ def qfunction_train_command(
         "q_config": q_config,
         "derived_parameters": {
             "effective_steps": steps,
-            "effective_update_interval": update_interval,
-            "effective_reset_interval": reset_interval,
+            "effective_update_interval": update_interval_grad,
+            "effective_reset_interval": reset_interval_grad,
             "n_devices": n_devices,
         },
     }
@@ -470,7 +485,7 @@ def qfunction_train_command(
     state = state.replace(opt_state=opt_state)
 
     # Calculate soft update tau for use in train_builder
-    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
+    soft_update_tau = 1.0 / update_interval_grad if train_options.use_soft_update else 0.0
 
     # Build training function
     qfunction_train_fn = qfunction_train_builder(
@@ -483,7 +498,7 @@ def qfunction_train_command(
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         use_soft_update=train_options.use_soft_update,
-        update_interval=update_interval,
+        update_interval=update_interval_grad,
         soft_update_tau=soft_update_tau,
     )
 
