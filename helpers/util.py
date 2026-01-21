@@ -50,9 +50,10 @@ def display_value(val):
     if isinstance(val, tuple):
         return str(list(val))
     try:
-        loaded = json.loads(val)
-        if isinstance(loaded, dict) or isinstance(loaded, list):
-            return json.dumps(loaded, indent=2)
+        if isinstance(val, str):
+            loaded = json.loads(val)
+            if isinstance(loaded, dict) or isinstance(loaded, list):
+                return json.dumps(loaded, indent=2)
     except json.JSONDecodeError:
         pass
     return str(val)
