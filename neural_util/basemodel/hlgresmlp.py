@@ -5,10 +5,9 @@ from flax import linen as nn
 
 from neural_util.aqt_utils import build_aqt_dot_general
 from neural_util.basemodel.base import DistanceHLGModel
+from neural_util.dtypes import DTYPE, HEAD_DTYPE, PARAM_DTYPE
 from neural_util.modules import (
     DEFAULT_NORM_FN,
-    DTYPE,
-    HEAD_DTYPE,
     MLP,
     PreActivationResBlock,
     ResBlock,
@@ -40,7 +39,13 @@ class HLGResMLPModel(DistanceHLGModel):
             aqt_dg = build_aqt_dot_general(self.aqt_cfg, mode)
 
         self.initial_mlp = (
-            Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg)
+            Swiglu(
+                self.initial_dim,
+                norm_fn=self.norm_fn,
+                dtype=DTYPE,
+                param_dtype=PARAM_DTYPE,
+                dot_general_cls=aqt_dg,
+            )
             if self.use_swiglu
             else MLP(
                 self.initial_dim,
@@ -51,7 +56,13 @@ class HLGResMLPModel(DistanceHLGModel):
         )
         self.second_mlp = (
             (
-                Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg)
+                Swiglu(
+                    self.hidden_dim,
+                    norm_fn=self.norm_fn,
+                    dtype=DTYPE,
+                    param_dtype=PARAM_DTYPE,
+                    dot_general_cls=aqt_dg,
+                )
                 if self.use_swiglu
                 else MLP(
                     self.hidden_dim,
@@ -61,7 +72,9 @@ class HLGResMLPModel(DistanceHLGModel):
                 )
             )
             if self.resblock_fn != PreActivationResBlock
-            else nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=aqt_dg)
+            else nn.Dense(
+                self.hidden_dim, dtype=DTYPE, param_dtype=PARAM_DTYPE, dot_general_cls=aqt_dg
+            )
         )
 
         self.resblocks = [

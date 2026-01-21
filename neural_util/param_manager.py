@@ -3,7 +3,11 @@ import pickle
 from datetime import datetime
 from typing import Any, Dict, Tuple
 
+import jax
+import jax.numpy as jnp
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
+
+from neural_util.dtypes import PARAM_DTYPE
 
 
 def save_params_with_metadata(path: str, params: Any, metadata: Dict[str, Any]):
@@ -108,3 +112,22 @@ def merge_params(new_params: Any, old_params: Any) -> Any:
         merged = source
 
     return freeze(merged)
+
+
+def align_params_dtype(params: Any, target_dtype: Any = PARAM_DTYPE) -> Any:
+    """
+    Recursively aligns the dtype of all leaf nodes in the params tree to target_dtype.
+    Useful when loading parameters saved in a different dtype (e.g. float32)
+    into a model expecting a specific dtype (e.g. bfloat16).
+    """
+    if params is None:
+        return None
+
+    def _cast_leaf(x):
+        if hasattr(x, "dtype") and x.dtype != target_dtype:
+            # Only cast floating point types, don't cast integers (e.g. step counters if any)
+            if jnp.issubdtype(x.dtype, jnp.floating):
+                return x.astype(target_dtype)
+        return x
+
+    return jax.tree_util.tree_map(_cast_leaf, params)

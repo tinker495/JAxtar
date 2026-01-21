@@ -6,10 +6,9 @@ from flax import linen as nn
 
 from neural_util.aqt_utils import build_aqt_dot_general
 from neural_util.basemodel.base import DistanceGroupDIRModel
+from neural_util.dtypes import DTYPE, HEAD_DTYPE
 from neural_util.modules import (
     DEFAULT_NORM_FN,
-    DTYPE,
-    HEAD_DTYPE,
     MLP,
     PreActivationResBlock,
     ResBlock,

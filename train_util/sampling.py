@@ -194,7 +194,22 @@ def wrap_dataset_runner(
     should_use_diffusion_fn: Callable[[int], bool],
     n_devices: int = 1,
 ):
-    """Wrap dataset extraction into a runner that handles pmap and diffusion warmup."""
+    """Wrap dataset extraction into a runner that handles pmap and diffusion warmup.
+
+    The returned function accepts a TrainStateExtended object and extracts:
+    - target_params from state.target_params (with batch_stats if present)
+    - eval_params from state.params (with batch_stats if present)
+    """
+    from train_util.train_state import TrainStateExtended
+
+    def _extract_params_from_state(state: TrainStateExtended) -> tuple[dict, dict]:
+        """Extract target_params and eval_params from TrainStateExtended."""
+        target_params = {"params": state.target_params}
+        eval_params = {"params": state.params}
+        if state.batch_stats is not None:
+            target_params["batch_stats"] = state.batch_stats
+            eval_params["batch_stats"] = state.batch_stats
+        return target_params, eval_params
 
     def build_runner(dataset_extractor: Callable):
         @jax.jit
@@ -218,16 +233,18 @@ def wrap_dataset_runner(
         pmap_default_runner = jax.pmap(default_runner, in_axes=(None, None, 0))
         pmap_diffusion_runner = jax.pmap(diffusion_runner, in_axes=(None, None, 0))
 
-        def get_datasets(target_params, params, key, step: int):
+        def get_datasets(state: TrainStateExtended, key: chex.PRNGKey, step: int):
+            target_params, eval_params = _extract_params_from_state(state)
             keys = jax.random.split(key, n_devices)
             runner = pmap_diffusion_runner if should_use_diffusion_fn(step) else pmap_default_runner
-            return runner(target_params, params, keys)
+            return runner(target_params, eval_params, keys)
 
         return get_datasets
 
-    def single_device_get_datasets(target_params, params, key, step: int):
+    def single_device_get_datasets(state: TrainStateExtended, key: chex.PRNGKey, step: int):
+        target_params, eval_params = _extract_params_from_state(state)
         runner = diffusion_runner if should_use_diffusion_fn(step) else default_runner
-        return runner(target_params, params, key)
+        return runner(target_params, eval_params, key)
 
     return single_device_get_datasets
 

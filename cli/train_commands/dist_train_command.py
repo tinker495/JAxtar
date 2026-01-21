@@ -26,8 +26,10 @@ from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qfunction_train import qfunction_train_builder
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
-from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer
-from train_util.target_update import scaled_by_reset, soft_update
+from train_util.optimizer import get_learning_rate, setup_optimizer
+from train_util.target_update import scaled_by_reset
+from train_util.train_logs import TrainLogInfo
+from train_util.train_state import TrainStateExtended
 
 from ..config_utils import enrich_config
 from ..options import (
@@ -175,14 +177,18 @@ def heuristic_train_command(
     key, subkey = jax.random.split(key)
 
     heuristic_model = heuristic.model
-    target_heuristic_params = heuristic.params
-    heuristic_params = target_heuristic_params
+    heuristic_params = heuristic.params
 
     if train_options.multi_device and n_devices > 1:
         print(f"Training with {n_devices} devices")
 
+    # Extract params and batch_stats for TrainState
+    params = heuristic_params.get("params", heuristic_params)
+    batch_stats = heuristic_params.get("batch_stats", None)
+
+    # Setup optimizer
     optimizer, opt_state = setup_optimizer(
-        heuristic_params,
+        params,
         n_devices,
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
@@ -190,6 +196,22 @@ def heuristic_train_command(
         lr_init=train_options.learning_rate,
         weight_decay_size=train_options.weight_decay_size,
     )
+
+    # Create TrainStateExtended
+    state = TrainStateExtended.create(
+        apply_fn=heuristic_model.apply,
+        params=params,
+        tx=optimizer,
+        batch_stats=batch_stats,
+        target_params=params,  # Initialize target with current params
+    )
+    # Replace opt_state with the one from setup_optimizer (has schedule info)
+    state = state.replace(opt_state=opt_state)
+
+    # Calculate soft update tau for use in train_builder
+    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
+
+    # Build training function
     heuristic_train_fn = heuristic_train_builder(
         train_options.train_minibatch_size,
         heuristic_model,
@@ -199,7 +221,11 @@ def heuristic_train_command(
         loss_type=train_options.loss,
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
+        use_soft_update=train_options.use_soft_update,
+        update_interval=update_interval,
+        soft_update_tau=soft_update_tau,
     )
+
     get_datasets = get_heuristic_dataset_builder(
         puzzle,
         heuristic.pre_process,
@@ -219,29 +245,31 @@ def heuristic_train_command(
     )
 
     pbar = trange(steps)
-    updated = False
     last_reset_time = 0
     last_update_step = -1  # Track last update step for force update
-    eval_params = get_eval_params(opt_state, heuristic_params)
+
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_heuristic_params, eval_params, subkey, i)
+
+        # Get dataset using TrainStateExtended directly
+        dataset = get_datasets(state, subkey, i)
         target_heuristic = dataset["target_heuristic"]
         mean_target_heuristic = jnp.mean(target_heuristic)
 
-        (
-            heuristic_params,
-            opt_state,
-            loss,
-            log_infos,
-        ) = heuristic_train_fn(key, dataset, heuristic_params, opt_state)
-        eval_params = get_eval_params(opt_state, heuristic_params)
-        lr = get_learning_rate(opt_state)
+        # Train step
+        state, loss, log_infos = heuristic_train_fn(key, dataset, state)
+
+        lr = get_learning_rate(state.opt_state)
+
+        # Cache tree_leaves to avoid duplicate calls
+        log_info_leaves = jax.tree_util.tree_leaves(
+            log_infos, is_leaf=lambda x: isinstance(x, TrainLogInfo)
+        )
 
         discription_logs = {
             "lr": lr,
             "target": float(mean_target_heuristic),
-            **{v.short_name: float(v.mean) for v in log_infos if v.log_mean},
+            **{v.short_name: float(v.mean) for v in log_info_leaves if v.log_mean},
         }
 
         pbar.set_description(
@@ -252,7 +280,7 @@ def heuristic_train_command(
         logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
 
         # Log metrics
-        for v in log_infos:
+        for v in log_info_leaves:
             if v.log_mean:
                 logger.log_scalar(v.mean_name, v.mean, i)
             if v.log_histogram and i % 100 == 0:
@@ -261,41 +289,43 @@ def heuristic_train_command(
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_heuristic, i)
 
-        target_updated = False
-        if train_options.use_soft_update:
-            target_heuristic_params = soft_update(
-                target_heuristic_params, eval_params, float(1 - 1.0 / update_interval)
-            )
-            updated = True
-            if i % update_interval == 0 and i != 0:
-                target_updated = True
-        elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
-            i - last_update_step >= train_options.force_update_interval
-        ):
-            target_heuristic_params = eval_params
-            updated = True
-            if train_options.opt_state_reset:
-                opt_state = optimizer.init(heuristic_params)
-            target_updated = True
-            last_update_step = i
+        # Note: Target update is now handled inside heuristic_train_fn
+        # We still need to handle force update and reset logic outside the compiled loop
 
+        # Track regular hard updates and force updates
+        if not train_options.use_soft_update:
+            # Track regular hard update intervals
+            if i % update_interval == 0 and i > 0:
+                last_update_step = i
+
+            # Force update check (interval-driven OR loss threshold)
+            if (i - last_update_step >= train_options.force_update_interval) or (
+                (i % update_interval == 0) and (i > 0) and (loss <= train_options.loss_threshold)
+            ):
+                state = state.update_target_params(state.params)
+                if train_options.opt_state_reset:
+                    state = state.replace(opt_state=optimizer.init(state.params))
+                last_update_step = i
+
+        # Reset logic (only if target was updated since last reset)
         if (
-            target_updated
-            and i - last_reset_time >= reset_interval
-            and updated
-            and i < steps * 2 / 3
+            (i - last_reset_time >= reset_interval)
+            and (i > 0)
+            and (i < steps * 2 / 3)
+            and (last_update_step >= last_reset_time)
         ):
             last_reset_time = i
-            heuristic_params = scaled_by_reset(
-                heuristic_params,
-                key,
-                train_options.tau,
+            reset_params = {"params": state.params}
+            if state.batch_stats is not None:
+                reset_params["batch_stats"] = state.batch_stats
+            reset_params = scaled_by_reset(reset_params, key, train_options.tau)
+            state = state.replace(
+                params=reset_params["params"],
+                opt_state=optimizer.init(reset_params["params"]),
             )
-            opt_state = optimizer.init(heuristic_params)
-            updated = False
 
         if i % (steps // 5) == 0 and i != 0:
-            heuristic.params = eval_params
+            heuristic.params = state.get_full_params()
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
             # Log model as artifact
@@ -322,7 +352,8 @@ def heuristic_train_command(
                         **eval_kwargs,
                         **kwargs,
                     )
-    heuristic.params = eval_params
+
+    heuristic.params = state.get_full_params()
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
     # Log final model as artifact
@@ -407,14 +438,18 @@ def qfunction_train_command(
     key, subkey = jax.random.split(key)
 
     qfunc_model = qfunction.model
-    target_qfunc_params = qfunction.params
-    qfunc_params = target_qfunc_params
+    qfunc_params = qfunction.params
 
     if train_options.multi_device and n_devices > 1:
         print(f"Training with {n_devices} devices")
 
+    # Extract params and batch_stats for TrainState
+    params = qfunc_params.get("params", qfunc_params)
+    batch_stats = qfunc_params.get("batch_stats", None)
+
+    # Setup optimizer
     optimizer, opt_state = setup_optimizer(
-        qfunc_params,
+        params,
         n_devices,
         steps,
         train_options.dataset_batch_size // train_options.train_minibatch_size,
@@ -422,6 +457,22 @@ def qfunction_train_command(
         lr_init=train_options.learning_rate,
         weight_decay_size=train_options.weight_decay_size,
     )
+
+    # Create TrainStateExtended
+    state = TrainStateExtended.create(
+        apply_fn=qfunc_model.apply,
+        params=params,
+        tx=optimizer,
+        batch_stats=batch_stats,
+        target_params=params,  # Initialize target with current params
+    )
+    # Replace opt_state with the one from setup_optimizer (has schedule info)
+    state = state.replace(opt_state=opt_state)
+
+    # Calculate soft update tau for use in train_builder
+    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
+
+    # Build training function
     qfunction_train_fn = qfunction_train_builder(
         train_options.train_minibatch_size,
         qfunc_model,
@@ -431,7 +482,11 @@ def qfunction_train_command(
         loss_type=train_options.loss,
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
+        use_soft_update=train_options.use_soft_update,
+        update_interval=update_interval,
+        soft_update_tau=soft_update_tau,
     )
+
     get_datasets = get_qfunction_dataset_builder(
         puzzle,
         qfunction.pre_process,
@@ -452,30 +507,32 @@ def qfunction_train_command(
     )
 
     pbar = trange(steps)
-    updated = False
     last_reset_time = 0
     last_update_step = -1  # Track last update step for force update
-    eval_params = get_eval_params(opt_state, qfunc_params)
+
     for i in pbar:
         key, subkey = jax.random.split(key)
-        dataset = get_datasets(target_qfunc_params, eval_params, subkey, i)
+
+        # Get dataset using TrainStateExtended directly
+        dataset = get_datasets(state, subkey, i)
         target_q = dataset["target_q"]
         mean_target_q = jnp.mean(target_q)
 
-        (
-            qfunc_params,
-            opt_state,
-            loss,
-            log_infos,
-        ) = qfunction_train_fn(key, dataset, qfunc_params, opt_state)
-        eval_params = get_eval_params(opt_state, qfunc_params)
-        lr = get_learning_rate(opt_state)
+        # Train step
+        state, loss, log_infos = qfunction_train_fn(key, dataset, state)
+
+        lr = get_learning_rate(state.opt_state)
+
+        # Cache tree_leaves to avoid duplicate calls
+        log_info_leaves = jax.tree_util.tree_leaves(
+            log_infos, is_leaf=lambda x: isinstance(x, TrainLogInfo)
+        )
 
         discription_logs = {
             "lr": lr,
             "loss": float(loss),
             "target": float(mean_target_q),
-            **{v.short_name: float(v.mean) for v in log_infos if v.log_mean},
+            **{v.short_name: float(v.mean) for v in log_info_leaves if v.log_mean},
         }
 
         pbar.set_description(
@@ -487,7 +544,7 @@ def qfunction_train_command(
         logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
 
         # Log metrics
-        for v in log_infos:
+        for v in log_info_leaves:
             if v.log_mean:
                 logger.log_scalar(v.mean_name, v.mean, i)
             if v.log_histogram and i % 100 == 0:
@@ -496,41 +553,43 @@ def qfunction_train_command(
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_q, i)
 
-        target_updated = False
-        if train_options.use_soft_update:
-            target_qfunc_params = soft_update(
-                target_qfunc_params, eval_params, float(1 - 1.0 / update_interval)
-            )
-            updated = True
-            if i % update_interval == 0 and i != 0:
-                target_updated = True
-        elif ((i % update_interval == 0 and i != 0) and loss <= train_options.loss_threshold) or (
-            i - last_update_step >= train_options.force_update_interval
-        ):
-            target_qfunc_params = eval_params
-            updated = True
-            if train_options.opt_state_reset:
-                opt_state = optimizer.init(qfunc_params)
-            target_updated = True
-            last_update_step = i
+        # Note: Target update is now handled inside qfunction_train_fn
+        # We still need to handle force update and reset logic outside the compiled loop
 
+        # Track regular hard updates and force updates
+        if not train_options.use_soft_update:
+            # Track regular hard update intervals
+            if i % update_interval == 0 and i > 0:
+                last_update_step = i
+
+            # Force update check (interval-driven OR loss threshold)
+            if (i - last_update_step >= train_options.force_update_interval) or (
+                (i % update_interval == 0) and (i > 0) and (loss <= train_options.loss_threshold)
+            ):
+                state = state.update_target_params(state.params)
+                if train_options.opt_state_reset:
+                    state = state.replace(opt_state=optimizer.init(state.params))
+                last_update_step = i
+
+        # Reset logic (only if target was updated since last reset)
         if (
-            target_updated
-            and i - last_reset_time >= reset_interval
-            and updated
-            and i < steps * 2 / 3
+            (i - last_reset_time >= reset_interval)
+            and (i > 0)
+            and (i < steps * 2 / 3)
+            and (last_update_step >= last_reset_time)
         ):
             last_reset_time = i
-            qfunc_params = scaled_by_reset(
-                qfunc_params,
-                key,
-                train_options.tau,
+            reset_params = {"params": state.params}
+            if state.batch_stats is not None:
+                reset_params["batch_stats"] = state.batch_stats
+            reset_params = scaled_by_reset(reset_params, key, train_options.tau)
+            state = state.replace(
+                params=reset_params["params"],
+                opt_state=optimizer.init(reset_params["params"]),
             )
-            opt_state = optimizer.init(qfunc_params)
-            updated = False
 
         if i % (steps // 5) == 0 and i != 0:
-            qfunction.params = eval_params
+            qfunction.params = state.get_full_params()
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
             # Log model as artifact
@@ -557,7 +616,8 @@ def qfunction_train_command(
                         **eval_kwargs,
                         **kwargs,
                     )
-    qfunction.params = eval_params
+
+    qfunction.params = state.get_full_params()
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
     # Log final model as artifact

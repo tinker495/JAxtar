@@ -5,7 +5,7 @@ from puxle import RubiksCube
 
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.basemodel import GroupDIRResMLPModel, HLGResMLPModel
-from neural_util.modules import DTYPE
+from neural_util.dtypes import DTYPE
 
 
 def _remove_face_centers(flatten_face: chex.Array, n: int) -> chex.Array:
