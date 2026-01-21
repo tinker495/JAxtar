@@ -9,7 +9,7 @@ from neural_util.basemodel import (
     SelfPredictiveHLGResMLPModel,
     SelfPredictiveResMLPModel,
 )
-from neural_util.modules import DTYPE
+from neural_util.dtypes import DTYPE
 
 
 def _remove_face_centers(flatten_face: chex.Array, n: int) -> chex.Array:

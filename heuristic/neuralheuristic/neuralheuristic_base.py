@@ -12,8 +12,10 @@ from heuristic.heuristic_base import Heuristic
 from neural_util.aqt_utils import convert_to_serving
 from neural_util.basemodel import DistanceHLGModel, DistanceModel, ResMLPModel
 from neural_util.basemodel.selfpredictive import SelfPredictiveDistanceModel
+from neural_util.dtypes import PARAM_DTYPE
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
+    align_params_dtype,
     load_params_with_metadata,
     merge_params,
     save_params_with_metadata,
@@ -89,6 +91,9 @@ class NeuralHeuristicBase(Heuristic):
             assert params is not None, f"Failed to load parameters from {self.path}"
             self.metadata = metadata or {}
             self.metadata["nn_args"] = self.nn_args_metadata
+
+            # Align loaded params to the model's expected dtype (e.g. bf16)
+            params = align_params_dtype(params, PARAM_DTYPE)
 
             # Initialize full parameters for the current model configuration (includes AQT vars if any)
             full_params = self.get_new_params()

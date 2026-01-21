@@ -11,8 +11,10 @@ from puxle.utils.annotate import IMG_SIZE
 from xtructure import numpy as xnp
 
 from helpers.formatting import img_to_colored_str
+from neural_util.dtypes import PARAM_DTYPE
 from neural_util.modules import DEFAULT_NORM_FN, DTYPE, apply_norm, get_norm_fn
 from neural_util.param_manager import (
+    align_params_dtype,
     load_params_with_metadata,
     save_params_with_metadata,
 )
@@ -34,10 +36,10 @@ class Encoder(nn.Module):
         data = ((data / 255.0) * 2.0 - 1.0).astype(DTYPE)
         flatten = jnp.reshape(data, shape=(shape[0], -1))
         latent_size = np.prod(self.latent_shape)
-        x = nn.Dense(1000, dtype=DTYPE)(flatten)
+        x = nn.Dense(1000, dtype=DTYPE, param_dtype=PARAM_DTYPE)(flatten)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
-        x = nn.Dense(latent_size, dtype=DTYPE)(x)
+        x = nn.Dense(latent_size, dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
         logits = jnp.reshape(x, shape=(-1, *self.latent_shape))
         return logits
 
@@ -50,10 +52,10 @@ class Decoder(nn.Module):
     def __call__(self, latent, training=False):
         output_size = np.prod(self.data_shape)
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
-        x = nn.Dense(1000, dtype=DTYPE)(x)
+        x = nn.Dense(1000, dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
-        x = nn.Dense(output_size, dtype=DTYPE)(x)
+        x = nn.Dense(output_size, dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
         output = jnp.reshape(x, (-1, *self.data_shape))
         return output.astype(DTYPE)
 
@@ -82,17 +84,17 @@ class WorldModel(nn.Module):
     @nn.compact
     def __call__(self, latent, training=False):
         x = ((latent - 0.5) * 2.0).astype(DTYPE)
-        x = nn.Dense(500, dtype=DTYPE)(x)
+        x = nn.Dense(500, dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
-        x = nn.Dense(500, dtype=DTYPE)(x)
+        x = nn.Dense(500, dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
-        x = nn.Dense(500, dtype=DTYPE)(x)
+        x = nn.Dense(500, dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
-        logits = nn.Dense(latent_size * self.action_size, dtype=DTYPE)(x)
+        logits = nn.Dense(latent_size * self.action_size, dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
         logits = jnp.reshape(logits, shape=(x.shape[0], self.action_size) + self.latent_shape)
         return logits
 
@@ -241,6 +243,7 @@ class WorldModelPuzzleBase(Puzzle):
                 self.metadata = {}
                 return self.get_new_params()
             self.metadata = metadata
+            params = align_params_dtype(params, PARAM_DTYPE)
             self.model.apply(
                 params,
                 jnp.zeros((1, *self.data_shape)),

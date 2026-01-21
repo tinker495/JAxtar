@@ -4,13 +4,10 @@ from typing import Any, Callable
 import flax.linen as nn
 import jax.numpy as jnp
 
+from .dtypes import DTYPE, PARAM_DTYPE
 from .norm import BatchReNorm, DyTan
 
-DTYPE = jnp.float32
-# Use float32 for numerically sensitive heads / losses.
-HEAD_DTYPE = jnp.float32
-
-DEFAULT_NORM_FN = nn.BatchNorm
+DEFAULT_NORM_FN = partial(nn.BatchNorm, param_dtype=PARAM_DTYPE)
 
 
 # Norm application helper to handle BatchNorm/BatchReNorm running stats.
@@ -25,15 +22,15 @@ def apply_norm(norm_fn, x, training):
 
 # Norm function registry for config-driven selection
 NORM_FN_REGISTRY = {
-    "batch": nn.BatchNorm,
-    "batch0999": partial(nn.BatchNorm, momentum=0.999),
-    "batchrenorm": BatchReNorm,
-    "batchrenorm0999": partial(BatchReNorm, momentum=0.999),
-    "instance": nn.InstanceNorm,
-    "layer": nn.LayerNorm,
-    "group": nn.GroupNorm,
-    "rms": nn.RMSNorm,
-    "dytan": DyTan,
+    "batch": partial(nn.BatchNorm, param_dtype=PARAM_DTYPE),
+    "batch0999": partial(nn.BatchNorm, momentum=0.999, param_dtype=PARAM_DTYPE),
+    "batchrenorm": partial(BatchReNorm, param_dtype=PARAM_DTYPE),
+    "batchrenorm0999": partial(BatchReNorm, momentum=0.999, param_dtype=PARAM_DTYPE),
+    "instance": partial(nn.InstanceNorm, param_dtype=PARAM_DTYPE),
+    "layer": partial(nn.LayerNorm, param_dtype=PARAM_DTYPE),
+    "group": partial(nn.GroupNorm, param_dtype=PARAM_DTYPE),
+    "rms": partial(nn.RMSNorm, param_dtype=PARAM_DTYPE),
+    "dytan": partial(DyTan, param_dtype=PARAM_DTYPE),
 }
 
 
@@ -80,7 +77,7 @@ class Swiglu(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         dtype = self.dtype
-        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
         if self.node_size is None:
             node_size = x.shape[-1]
         else:
@@ -152,11 +149,17 @@ class MLP(nn.Module):
     hidden_dim: int = 1000
     norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: str = nn.relu
+    param_dtype: any = PARAM_DTYPE
     dot_general_cls: Any = None
 
     @nn.compact
     def __call__(self, x, training=False):
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=self.dot_general_cls)(x)
+        x = nn.Dense(
+            self.hidden_dim,
+            dtype=DTYPE,
+            param_dtype=self.param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
         x = apply_norm(self.norm_fn, x, training)
         x = self.activation(x)
         return x
@@ -197,7 +200,7 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0, training=False):
         dtype = self.dtype
-        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
         x0_cast = x0.astype(dtype)
         x = x0_cast
         out_dim = x0.shape[-1]
@@ -242,7 +245,7 @@ class PreActivationResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0, training=False):
         dtype = self.dtype
-        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
         x0_cast = x0.astype(dtype)
         out_dim = x0.shape[-1]
         # Pre-activation: Norm -> Activation -> Dense
@@ -299,7 +302,7 @@ class DeltaResBlock(nn.Module):
 
     def _branch_mlp(self, x, out_dim, training):
         dtype = self.dtype
-        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
         for _ in range(self.hidden_N):
             if self.use_swiglu:
                 x = Swiglu(
@@ -344,7 +347,7 @@ class DeltaResBlock(nn.Module):
 
         v = self._branch_mlp(pool_v, dv, training)
 
-        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
         beta_hidden = nn.Dense(
             self.gate_hidden_dim,
             dtype=dtype,
@@ -388,18 +391,29 @@ class ConvResBlock(nn.Module):
     hidden_N: int = 1
     norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: str = nn.relu
+    param_dtype: any = PARAM_DTYPE
 
     @nn.compact
     def __call__(self, x0, training=False):
         x = x0
         for _ in range(self.hidden_N):
             x = nn.Conv(
-                self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
+                self.filters,
+                self.kernel_size,
+                strides=self.strides,
+                padding="SAME",
+                dtype=DTYPE,
+                param_dtype=self.param_dtype,
             )(x)
             x = apply_norm(self.norm_fn, x, training)
             x = self.activation(x)
         x = nn.Conv(
-            self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
+            self.filters,
+            self.kernel_size,
+            strides=self.strides,
+            padding="SAME",
+            dtype=DTYPE,
+            param_dtype=self.param_dtype,
         )(x)
         x = apply_norm(self.norm_fn, x, training)
         return self.activation(x + x0)

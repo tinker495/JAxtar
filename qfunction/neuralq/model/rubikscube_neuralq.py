@@ -8,7 +8,7 @@ from neural_util.basemodel import (
     SelfPredictiveHLGResMLPModel,
     SelfPredictiveResMLPModel,
 )
-from neural_util.modules import DTYPE
+from neural_util.dtypes import DTYPE
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
