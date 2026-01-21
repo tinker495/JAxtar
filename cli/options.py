@@ -781,6 +781,13 @@ def dist_train_options(
             ),
         )
         @click.option(
+            "-ec",
+            "--eval_count",
+            type=HUMAN_INT,
+            default=None,
+            help="Number of evaluations to perform during training (default: 5).",
+        )
+        @click.option(
             "--eval-search-metric",
             type=click.Choice(["astar", "astar_d", "beam", "qstar", "qbeam"]),
             default=None,

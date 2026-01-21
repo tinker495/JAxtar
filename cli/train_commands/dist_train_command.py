@@ -324,7 +324,7 @@ def heuristic_train_command(
                 opt_state=optimizer.init(reset_params["params"]),
             )
 
-        if i % (steps // 5) == 0 and i != 0:
+        if train_options.eval_count > 0 and i % (steps // train_options.eval_count) == 0 and i != 0:
             heuristic.params = state.get_full_params()
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
@@ -360,7 +360,7 @@ def heuristic_train_command(
     logger.log_artifact(backup_path, "heuristic_final", "model")
 
     # Evaluation
-    if eval_options.num_eval > 0:
+    if eval_options.num_eval > 0 and train_options.eval_count > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_components(
             train_options=train_options, search_model_name="heuristic"
@@ -588,7 +588,7 @@ def qfunction_train_command(
                 opt_state=optimizer.init(reset_params["params"]),
             )
 
-        if i % (steps // 5) == 0 and i != 0:
+        if train_options.eval_count > 0 and i % (steps // train_options.eval_count) == 0 and i != 0:
             qfunction.params = state.get_full_params()
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
@@ -624,7 +624,7 @@ def qfunction_train_command(
     logger.log_artifact(backup_path, "qfunction_final", "model")
 
     # Evaluation
-    if eval_options.num_eval > 0:
+    if eval_options.num_eval > 0 and train_options.eval_count > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
         run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_components(
             train_options=train_options, search_model_name="qfunction"
