@@ -121,4 +121,5 @@ class GroupDIRResMLPModel(DistanceGroupDIRModel):
 
         x = x.reshape(x.shape[0], self.action_size, self.categorial_n * 2)
         logit, moe_values = jnp.split(x, [self.categorial_n], axis=-1)
+        moe_values = moe_values + self.categorial_centers
         return logit, moe_values
