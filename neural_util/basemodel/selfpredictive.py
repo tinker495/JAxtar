@@ -163,7 +163,7 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
     categorial_n: int = 100
     vmin: float = -1.0
     vmax: float = 30.0
-    _sigma: float = 0.75
+    _sigma: float = 1.5
 
     def setup(self):
         self.categorial_bins = np.linspace(
@@ -204,11 +204,38 @@ class SelfPredictiveDistanceHLGModel(SelfPredictiveMixin):
         **kwargs
     ):
         categorial_bins, sigma = self.categorial_bins, self.sigma
+        # target: [batch, 1]
 
-        def f(target_scalar):
-            cdf_evals = jax.scipy.special.erf(
-                (categorial_bins - target_scalar) / (jnp.sqrt(2) * sigma)
-            )
+        categorial_centers = self.categorial_centers
+
+        def f(target):
+            # 1. Clamp target to reachable range
+            min_center = categorial_centers[0, 0, 0]
+            max_center = categorial_centers[0, 0, -1]
+            # Use small epsilon for stability against numerical noise at boundaries
+            target = jnp.clip(target, min_center + 1e-4, max_center - 1e-4)
+
+            # 2. Define expectation function
+            def get_expectation(mu):
+                cdf_evals = jax.scipy.special.erf((categorial_bins - mu) / (jnp.sqrt(2) * sigma))
+                z = cdf_evals[-1] - cdf_evals[0]
+                bin_probs = (cdf_evals[1:] - cdf_evals[:-1]) / z
+                return jnp.sum(bin_probs * categorial_centers)
+
+            # 3. One-step Newton-Raphson correction
+            # mu_0 = target
+            exp = get_expectation(target)
+            diff = exp - target
+            grad = jax.grad(get_expectation)(target)
+
+            # Avoid division by zero or extremely small gradients
+            grad = jnp.where(jnp.abs(grad) < 1e-6, 1.0, grad)
+
+            # Update mu
+            mu_new = target - diff / grad
+
+            # 4. Generate final distribution
+            cdf_evals = jax.scipy.special.erf((categorial_bins - mu_new) / (jnp.sqrt(2) * sigma))
             z = cdf_evals[-1] - cdf_evals[0]
             bin_probs = cdf_evals[1:] - cdf_evals[:-1]
             return bin_probs / z
