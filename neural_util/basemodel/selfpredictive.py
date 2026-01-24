@@ -90,6 +90,7 @@ class SelfPredictiveMixin(ABC, nn.Module):
         def body(current_latents, action):
             # Predict next latent: z_{t+1} = Trans(z_t, a_t)
             next_latents = self.transition(current_latents, action, training=training)
+            next_latents = next_latents.astype(current_latents.dtype)
             return next_latents, next_latents
 
         _, next_latents = jax.lax.scan(body, start_latents, transition_actions)
