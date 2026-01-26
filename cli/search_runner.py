@@ -116,12 +116,29 @@ def search_samples(
 
         start = time.time()
         search_result = search_fn(solve_config, state)
-        solved = search_result.solved.block_until_ready()
+        is_bidirectional = (
+            hasattr(search_result, "meeting")
+            and hasattr(search_result, "forward")
+            and hasattr(search_result, "backward")
+        )
+
+        if is_bidirectional:
+            solved = search_result.meeting.found.block_until_ready()
+            generated_size = search_result.total_generated
+            solved_cost = (
+                search_result.meeting.total_cost
+                if bool(jax.device_get(search_result.meeting.found))
+                else None
+            )
+        else:
+            solved = search_result.solved.block_until_ready()
+            generated_size = search_result.generated_size
+            solved_cost = search_result.get_cost(search_result.solved_idx) if solved else None
         end = time.time()
         single_search_time = end - start
-        states_per_second = search_result.generated_size / single_search_time
+        states_per_second = generated_size / single_search_time
 
-        if not has_target and solved:
+        if (not has_target) and solved and (not is_bidirectional):
             solved_st = search_result.get_state(search_result.solved_idx)
             console.print(
                 Panel(
@@ -132,34 +149,43 @@ def search_samples(
             )
 
         total_search_times.append(single_search_time)
-        total_states.append(search_result.generated_size)
+        total_states.append(generated_size)
         total_solved.append(solved)
         states_per_sec_list.append(states_per_second)
 
         if search_options.profile:
             jax.profiler.stop_trace()
 
-        solved_cost = None
-        if solved:
-            solved_cost = search_result.get_cost(search_result.solved_idx)
-
         result_table = build_result_table(
             solved=solved,
             single_search_time=single_search_time,
-            generated_size=search_result.generated_size,
+            generated_size=generated_size,
             states_per_second=states_per_second,
-            solved_cost=solved_cost,
+            solved_cost=solved_cost if solved_cost is None else float(solved_cost),
             seed=seed,
         )
         console.print(result_table)
 
         if solved:
-            solved_idx = search_result.solved_idx
-            solved_cost = search_result.get_cost(solved_idx)
-            total_costs.append(solved_cost)
+            total_costs.append(float(solved_cost) if solved_cost is not None else 0.0)
 
             if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
-                if hasattr(search_result, "solution_trace"):
+                if is_bidirectional:
+                    from JAxtar.bi_stars.bi_astar import reconstruct_bidirectional_path
+
+                    bi_pairs = reconstruct_bidirectional_path(search_result, puzzle)
+                    actions = [a for a, _ in bi_pairs[1:]]
+                    states_trace = [s for _, s in bi_pairs]
+                    path_steps = build_path_steps_from_actions(
+                        puzzle=puzzle,
+                        solve_config=solve_config,
+                        initial_state=state,
+                        actions=actions,
+                        heuristic=heuristic,
+                        q_fn=qfunction,
+                        states=states_trace,
+                    )
+                elif hasattr(search_result, "solution_trace"):
                     (
                         states_trace,
                         costs_trace,

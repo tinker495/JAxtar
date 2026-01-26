@@ -6,6 +6,9 @@ from helpers import heuristic_dist_format, qfunction_dist_format
 from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
+from JAxtar.bi_stars.bi_astar import bi_astar_builder
+from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
+from JAxtar.bi_stars.bi_qstar import bi_qstar_builder
 from JAxtar.id_stars.id_astar import id_astar_builder
 from JAxtar.id_stars.id_qstar import id_qstar_builder
 from JAxtar.stars.astar import astar_builder
@@ -78,6 +81,64 @@ def astar_d(
         heuristic.distance,
         heuristic_dist_format,
         "A* Deferred Search Configuration",
+    )
+
+
+@click.command()
+@puzzle_options
+@search_options
+@heuristic_options
+@visualize_options
+def bi_astar(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    heuristic: Heuristic,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
+    run_search_command(
+        puzzle,
+        puzzle_name,
+        seeds,
+        search_options,
+        visualize_options,
+        bi_astar_builder,
+        "heuristic",
+        heuristic,
+        heuristic.distance,
+        heuristic_dist_format,
+        "Bidirectional A* Search Configuration",
+    )
+
+
+@click.command()
+@puzzle_options
+@search_options
+@heuristic_options
+@visualize_options
+def bi_astar_d(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    heuristic: Heuristic,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
+    run_search_command(
+        puzzle,
+        puzzle_name,
+        seeds,
+        search_options,
+        visualize_options,
+        bi_astar_d_builder,
+        "heuristic",
+        heuristic,
+        heuristic.distance,
+        heuristic_dist_format,
+        "Bidirectional A* Deferred Search Configuration",
     )
 
 
@@ -165,6 +226,35 @@ def qstar(
         qfunction.q_value,
         qfunction_dist_format,
         "Q* Search Configuration",
+    )
+
+
+@click.command()
+@puzzle_options
+@search_options
+@qfunction_options
+@visualize_options
+def bi_qstar(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    seeds: list[int],
+    search_options: SearchOptions,
+    qfunction: QFunction,
+    visualize_options: VisualizeOptions,
+    **kwargs,
+):
+    run_search_command(
+        puzzle,
+        puzzle_name,
+        seeds,
+        search_options,
+        visualize_options,
+        bi_qstar_builder,
+        "qfunction",
+        qfunction,
+        qfunction.q_value,
+        qfunction_dist_format,
+        "Bidirectional Q* Search Configuration",
     )
 
 

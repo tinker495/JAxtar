@@ -10,6 +10,9 @@ from config.pydantic_models import EvalOptions, PuzzleOptions
 from heuristic.heuristic_base import Heuristic
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
+from JAxtar.bi_stars.bi_astar import bi_astar_builder
+from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
+from JAxtar.bi_stars.bi_qstar import bi_qstar_builder
 from JAxtar.id_stars.id_astar import id_astar_builder
 from JAxtar.id_stars.id_qstar import id_qstar_builder
 from JAxtar.stars.astar import astar_builder
@@ -87,6 +90,58 @@ def eval_astar_d(
     )
 
 
+@evaluation.command(name="bi_astar")
+@eval_puzzle_options
+@eval_options
+@heuristic_options
+def eval_bi_astar(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    heuristic: Heuristic,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    **kwargs,
+):
+    """Evaluate a heuristic-driven bidirectional A* search with optional parameter sweeps."""
+    run_evaluation_sweep(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=heuristic,
+        search_model_name="heuristic",
+        run_label="bi_astar",
+        search_builder_fn=bi_astar_builder,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        **kwargs,
+    )
+
+
+@evaluation.command(name="bi_astar_d")
+@eval_puzzle_options
+@eval_options
+@heuristic_options
+def eval_bi_astar_d(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    heuristic: Heuristic,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    **kwargs,
+):
+    """Evaluate a heuristic-driven bidirectional A* deferred search with optional parameter sweeps."""
+    run_evaluation_sweep(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=heuristic,
+        search_model_name="heuristic",
+        run_label="bi_astar_d",
+        search_builder_fn=bi_astar_d_builder,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        **kwargs,
+    )
+
+
 @evaluation.command(name="beam")
 @eval_puzzle_options
 @eval_options(variant="beam")
@@ -134,6 +189,32 @@ def eval_qstar(
         search_model_name="qfunction",
         run_label="qstar",
         search_builder_fn=qstar_builder,
+        eval_options=eval_options,
+        puzzle_opts=puzzle_opts,
+        **kwargs,
+    )
+
+
+@evaluation.command(name="bi_qstar")
+@eval_puzzle_options
+@eval_options
+@qfunction_options
+def eval_bi_qstar(
+    puzzle: Puzzle,
+    puzzle_name: str,
+    qfunction: QFunction,
+    eval_options: EvalOptions,
+    puzzle_opts: PuzzleOptions,
+    **kwargs,
+):
+    """Evaluate a bidirectional Q* search with optional parameter sweeps."""
+    run_evaluation_sweep(
+        puzzle=puzzle,
+        puzzle_name=puzzle_name,
+        search_model=qfunction,
+        search_model_name="qfunction",
+        run_label="bi_qstar",
+        search_builder_fn=bi_qstar_builder,
         eval_options=eval_options,
         puzzle_opts=puzzle_opts,
         **kwargs,

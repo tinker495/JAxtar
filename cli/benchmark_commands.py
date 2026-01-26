@@ -10,6 +10,9 @@ from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers.param_stats import attach_runtime_metadata
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
+from JAxtar.bi_stars.bi_astar import bi_astar_builder
+from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
+from JAxtar.bi_stars.bi_qstar import bi_qstar_builder
 from JAxtar.id_stars.id_astar import id_astar_builder
 from JAxtar.id_stars.id_qstar import id_qstar_builder
 from JAxtar.stars.astar import astar_builder
@@ -238,6 +241,32 @@ def benchmark_astar_d(**kwargs):
     )
 
 
+@benchmark.command(name="bi_astar")
+@benchmark_options
+@eval_options
+@_benchmark_model_options
+def benchmark_bi_astar(**kwargs):
+    _execute_benchmark_command(
+        search_builder_fn=bi_astar_builder,
+        search_model_name="heuristic",
+        run_label="bi_astar",
+        **kwargs,
+    )
+
+
+@benchmark.command(name="bi_astar_d")
+@benchmark_options
+@eval_options
+@_benchmark_model_options
+def benchmark_bi_astar_d(**kwargs):
+    _execute_benchmark_command(
+        search_builder_fn=bi_astar_d_builder,
+        search_model_name="heuristic",
+        run_label="bi_astar_d",
+        **kwargs,
+    )
+
+
 @benchmark.command(name="qstar")
 @benchmark_options
 @eval_options
@@ -247,6 +276,19 @@ def benchmark_qstar(**kwargs):
         search_builder_fn=qstar_builder,
         search_model_name="qfunction",
         run_label="qstar",
+        **kwargs,
+    )
+
+
+@benchmark.command(name="bi_qstar")
+@benchmark_options
+@eval_options
+@_benchmark_model_options
+def benchmark_bi_qstar(**kwargs):
+    _execute_benchmark_command(
+        search_builder_fn=bi_qstar_builder,
+        search_model_name="qfunction",
+        run_label="bi_qstar",
         **kwargs,
     )
 
@@ -307,7 +349,10 @@ __all__ = [
     "benchmark",
     "benchmark_astar",
     "benchmark_astar_d",
+    "benchmark_bi_astar",
+    "benchmark_bi_astar_d",
     "benchmark_qstar",
+    "benchmark_bi_qstar",
     "benchmark_beam",
     "benchmark_qbeam",
     "benchmark_id_astar",
