@@ -29,7 +29,9 @@ from JAxtar.bi_stars.bi_search_base import (
     build_bi_search_result,
     check_intersection,
     get_min_f_value,
+    materialize_meeting_point_hashidxs,
     update_meeting_point,
+    update_meeting_point_best_only_deferred,
 )
 from JAxtar.stars.search_base import Current, Parant_with_Costs, Parent, SearchResult
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -44,6 +46,7 @@ def _bi_qstar_loop_builder(
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
+    use_backward_q: bool = True,
 ):
     """
     Build the loop components for bidirectional Q* search.
@@ -106,6 +109,9 @@ def _bi_qstar_loop_builder(
         start_in_bwd_idx, start_in_bwd_found = bi_result.backward.hashtable.lookup(start)
         is_same = jnp.logical_and(start_in_bwd_found, start_in_bwd_idx.index == bwd_hash_idx.index)
 
+        dummy_hashidx = fwd_hash_idx
+        dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
+
         bi_result.meeting = jax.lax.cond(
             is_same,
             lambda _: MeetingPoint(
@@ -115,6 +121,12 @@ def _bi_qstar_loop_builder(
                 bwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
                 total_cost=jnp.array(0.0, dtype=KEY_DTYPE),
                 found=jnp.array(True),
+                fwd_has_hashidx=jnp.array(True),
+                bwd_has_hashidx=jnp.array(True),
+                fwd_parent_hashidx=dummy_hashidx,
+                fwd_parent_action=dummy_action,
+                bwd_parent_hashidx=dummy_hashidx,
+                bwd_parent_action=dummy_action,
             ),
             lambda _: bi_result.meeting,
             None,
@@ -140,12 +152,16 @@ def _bi_qstar_loop_builder(
         # Check if queues have nodes
         fwd_has_nodes = loop_state.filled_forward.any()
         bwd_has_nodes = loop_state.filled_backward.any()
-        has_nodes = jnp.logical_or(fwd_has_nodes, bwd_has_nodes)
 
-        # Check hash table capacity
+        # Check hash table capacity per direction.
+        # If one direction is full, we can still expand the other direction and
+        # potentially intersect with the already-built frontier.
         fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
         bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
-        not_full = jnp.logical_and(fwd_not_full, bwd_not_full)
+        has_work = jnp.logical_or(
+            jnp.logical_and(fwd_has_nodes, fwd_not_full),
+            jnp.logical_and(bwd_has_nodes, bwd_not_full),
+        )
 
         # Check termination condition
         fwd_min_f = get_min_f_value(
@@ -157,10 +173,7 @@ def _bi_qstar_loop_builder(
 
         should_terminate = bi_termination_condition(bi_result, fwd_min_f, bwd_min_f, cost_weight)
 
-        return jnp.logical_and(
-            jnp.logical_and(has_nodes, not_full),
-            ~should_terminate,
-        )
+        return jnp.logical_and(has_work, ~should_terminate)
 
     def _expand_direction_q(
         bi_result: BiDirectionalSearchResult,
@@ -170,6 +183,7 @@ def _bi_qstar_loop_builder(
         states: Puzzle.State,
         filled: chex.Array,
         is_forward: bool,
+        use_q: bool,
     ) -> tuple[BiDirectionalSearchResult, Current, Puzzle.State, chex.Array]:
         """
         Expand one direction using Q-function evaluation.
@@ -199,56 +213,142 @@ def _bi_qstar_loop_builder(
         costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))
         filled_tiles = jnp.tile(filled[jnp.newaxis, :], (action_size, 1))
 
-        # Compute Q-values for parent states (not neighbors)
-        # Q(s, a) for all actions from parent states
-        q_vals = variable_q_batch_switcher(q_params, states, filled)
-        q_vals = q_vals.transpose().astype(KEY_DTYPE)  # [action_size, batch_size]
+        # For backward direction, action indices refer to inverse neighbours.
+        # Action-dependent Q(s, a) on the backward "parent" state is not semantically aligned.
+        # Instead, when Q is available (retargetable), we derive a state-value heuristic on the
+        # predecessor states and run a deferred A*-style ordering in the backward direction.
+        use_value_heuristic = (not is_forward) and use_q
+        use_heuristic_in_pop = use_value_heuristic
 
-        neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
-        neighbour_keys = jnp.where(filled_tiles, neighbour_keys, jnp.inf)
+        need_neighbours = look_ahead_pruning or (not use_q) or use_value_heuristic
+        if need_neighbours:
+            neighbour_look_a_head, ncosts = get_neighbours_fn(solve_config, states, filled)
+            look_a_head_costs = (costs + ncosts).astype(KEY_DTYPE)
 
         flattened_filled_tiles = filled_tiles.flatten()
-        flattened_keys = neighbour_keys.flatten()
-        dists = q_vals.flatten()
 
-        if look_ahead_pruning:
-            # Look-ahead: compute neighbors and filter before inserting
-            neighbour_look_a_head, ncosts = get_neighbours_fn(solve_config, states, filled)
-            look_a_head_costs = costs + ncosts
-
+        if use_value_heuristic:
+            # Heuristic on predecessor states: v(s) = min_a Q(s, a)
             flattened_neighbour_look_head = neighbour_look_a_head.flatten()
-            flattened_look_a_head_costs = look_a_head_costs.flatten()
+            flattened_look_a_head_costs = look_a_head_costs.flatten().astype(KEY_DTYPE)
 
-            # Prioritize min cost, then check pessimistic/optimistic Q
-            distinct_score = flattened_look_a_head_costs + dist_sign * 1e-5 * dists
+            q_child = q_fn.batched_q_value(
+                q_params, flattened_neighbour_look_head
+            )  # [flat, action]
+            v_child = jnp.min(q_child, axis=-1).astype(KEY_DTYPE)  # [flat]
+            heuristic_vals = v_child.reshape(action_size, sr_batch_size)
+            heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
 
-            unique_mask = xnp.unique_mask(
-                flattened_neighbour_look_head,
-                distinct_score,
-                flattened_filled_tiles,
-            )
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head, unique_mask
-            )
-            old_costs = search_result.get_cost(current_hash_idxs)
-            old_dists = search_result.get_dist(current_hash_idxs)
+            neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
+            neighbour_keys = jnp.where(filled_tiles, neighbour_keys, jnp.inf)
 
-            # Update Q-values: use max (pessimistic) or min (optimistic)
-            if pessimistic_update:
-                safe_old_dists = jnp.where(found, old_dists, -jnp.inf)
-                dists = jnp.maximum(dists, safe_old_dists)
+            flattened_keys = neighbour_keys.flatten()
+            dists = heuristic_vals.flatten()
+
+            if look_ahead_pruning:
+                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head, flattened_filled_tiles
+                )
+                old_costs = search_result.get_cost(current_hash_idxs)
+                candidate_mask = jnp.logical_or(
+                    ~found, jnp.less(flattened_look_a_head_costs, old_costs)
+                )
+                candidate_mask = candidate_mask & flattened_filled_tiles
+                unique_mask = xnp.unique_mask(
+                    flattened_neighbour_look_head,
+                    flattened_look_a_head_costs,
+                    candidate_mask,
+                )
+                optimal_mask = unique_mask & candidate_mask
             else:
-                safe_old_dists = jnp.where(found, old_dists, jnp.inf)
-                dists = jnp.minimum(dists, safe_old_dists)
+                optimal_mask = flattened_filled_tiles
 
-            # Only consider nodes that are new or have better cost
-            better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
-            optimal_mask = unique_mask & (jnp.logical_or(~found, better_cost_mask))
+            # Best-only early meeting update without HT insertion.
+            # Ensure we have this-direction lookup info for meeting accounting.
+            this_hashidx_all, this_found_all = search_result.hashtable.lookup_parallel(
+                flattened_neighbour_look_head, flattened_filled_tiles
+            )
+            this_old_costs_all = search_result.get_cost(this_hashidx_all)
+            bi_result.meeting = update_meeting_point_best_only_deferred(
+                bi_result.meeting,
+                this_sr=search_result,
+                opposite_sr=opposite_sr,
+                candidate_states=flattened_neighbour_look_head,
+                candidate_costs=flattened_look_a_head_costs,
+                candidate_mask=optimal_mask,
+                this_found=this_found_all,
+                this_hashidx=this_hashidx_all,
+                this_old_costs=this_old_costs_all,
+                this_parent_hashidx=idx_tiles.flatten(),
+                this_parent_action=action.flatten(),
+                is_forward=is_forward,
+            )
 
-            # Note: Meeting point check is done after pop_full_with_actions() where
-            # states are actually inserted into HT and hashidx is valid.
         else:
-            optimal_mask = flattened_filled_tiles
+            if use_q:
+                # Forward direction: Q(s, a) on parent states.
+                q_vals = variable_q_batch_switcher(q_params, states, filled)
+                q_vals = q_vals.transpose().astype(KEY_DTYPE)  # [action_size, batch_size]
+            else:
+                # Fallback: use true step costs so pop maps dist -> 0 via (step_cost - step_cost).
+                q_vals = ncosts.astype(KEY_DTYPE)
+
+            neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
+            neighbour_keys = jnp.where(filled_tiles, neighbour_keys, jnp.inf)
+
+            flattened_keys = neighbour_keys.flatten()
+            raw_q_flat = q_vals.flatten()
+            dists = raw_q_flat
+
+            if look_ahead_pruning:
+                flattened_neighbour_look_head = neighbour_look_a_head.flatten()
+                flattened_look_a_head_costs = look_a_head_costs.flatten().astype(KEY_DTYPE)
+
+                distinct_score = flattened_look_a_head_costs + dist_sign * 1e-5 * dists
+
+                unique_mask = xnp.unique_mask(
+                    flattened_neighbour_look_head,
+                    distinct_score,
+                    flattened_filled_tiles,
+                )
+                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head, unique_mask
+                )
+                old_costs = search_result.get_cost(current_hash_idxs)
+                old_dists = search_result.get_dist(current_hash_idxs)
+
+                if use_q:
+                    if pessimistic_update:
+                        safe_old_dists = jnp.where(found, old_dists, -jnp.inf)
+                        dists = jnp.maximum(dists, safe_old_dists)
+                    else:
+                        safe_old_dists = jnp.where(found, old_dists, jnp.inf)
+                        dists = jnp.minimum(dists, safe_old_dists)
+
+                better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
+                optimal_mask = unique_mask & (jnp.logical_or(~found, better_cost_mask))
+
+                # Best-only early meeting update without HT insertion.
+                this_hashidx_all, this_found_all = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head, flattened_filled_tiles
+                )
+                this_old_costs_all = search_result.get_cost(this_hashidx_all)
+                bi_result.meeting = update_meeting_point_best_only_deferred(
+                    bi_result.meeting,
+                    this_sr=search_result,
+                    opposite_sr=opposite_sr,
+                    candidate_states=flattened_neighbour_look_head,
+                    candidate_costs=flattened_look_a_head_costs,
+                    candidate_mask=optimal_mask,
+                    this_found=this_found_all,
+                    this_hashidx=this_hashidx_all,
+                    this_old_costs=this_old_costs_all,
+                    this_parent_hashidx=idx_tiles.flatten(),
+                    this_parent_action=action.flatten(),
+                    is_forward=is_forward,
+                )
+            else:
+                optimal_mask = flattened_filled_tiles
 
         # Create values for priority queue
         flattened_vals = Parant_with_Costs(
@@ -296,6 +396,8 @@ def _bi_qstar_loop_builder(
         search_result, new_current, new_states, new_filled = search_result.pop_full_with_actions(
             puzzle=puzzle,
             solve_config=solve_config,
+            use_heuristic=use_heuristic_in_pop,
+            is_backward=not is_forward,
         )
 
         # Update bi_result
@@ -336,6 +438,9 @@ def _bi_qstar_loop_builder(
         bi_result = loop_state.bi_result
         solve_config = loop_state.solve_config
 
+        fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
+        bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
+
         def _expand_forward(bi_result):
             return _expand_direction_q(
                 bi_result,
@@ -345,6 +450,7 @@ def _bi_qstar_loop_builder(
                 loop_state.states_forward,
                 loop_state.filled_forward,
                 is_forward=True,
+                use_q=True,
             )
 
         def _expand_backward(bi_result):
@@ -356,11 +462,12 @@ def _bi_qstar_loop_builder(
                 loop_state.states_backward,
                 loop_state.filled_backward,
                 is_forward=False,
+                use_q=use_backward_q,
             )
 
         # Expand both directions
         bi_result, new_fwd_current, new_fwd_states, new_fwd_filled = jax.lax.cond(
-            loop_state.filled_forward.any(),
+            jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
             _expand_forward,
             lambda br: (
                 br,
@@ -372,7 +479,7 @@ def _bi_qstar_loop_builder(
         )
 
         bi_result, new_bwd_current, new_bwd_states, new_bwd_filled = jax.lax.cond(
-            loop_state.filled_backward.any(),
+            jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
             _expand_backward,
             lambda br: (
                 br,
@@ -446,6 +553,7 @@ def bi_qstar_builder(
         parant_with_costs=True,
     )
 
+    use_backward_q = not q_fn.is_fixed
     init_loop_state, loop_condition, loop_body = _bi_qstar_loop_builder(
         puzzle,
         q_fn,
@@ -454,6 +562,7 @@ def bi_qstar_builder(
         cost_weight,
         look_ahead_pruning,
         pessimistic_update,
+        use_backward_q=use_backward_q,
     )
 
     def bi_qstar(
@@ -466,10 +575,13 @@ def bi_qstar_builder(
         q_params_forward = q_fn.prepare_q_parameters(solve_config, **kwargs)
         # Build a backward solve config that treats `start` as the target.
         # Prefer puzzle-level normalization via hindsight_transform.
-        backward_solve_config = puzzle.hindsight_transform(
-            solve_config.replace(TargetState=solve_config.TargetState), start
-        )
-        q_params_backward = q_fn.prepare_q_parameters(backward_solve_config, **kwargs)
+        if use_backward_q:
+            backward_solve_config = puzzle.hindsight_transform(
+                solve_config.replace(TargetState=solve_config.TargetState), start
+            )
+            q_params_backward = q_fn.prepare_q_parameters(backward_solve_config, **kwargs)
+        else:
+            q_params_backward = q_params_forward
 
         loop_state = init_loop_state(
             bi_result_template,
@@ -481,6 +593,9 @@ def bi_qstar_builder(
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 
         bi_result = loop_state.bi_result
+
+        # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
+        bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, solve_config)
 
         # Mark as solved if meeting point was found
         bi_result.forward.solved = bi_result.meeting.found

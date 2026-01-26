@@ -42,6 +42,7 @@ def _bi_astar_loop_builder(
     bi_result_template: BiDirectionalSearchResult,
     batch_size: int = 1024,
     cost_weight: float = 1.0 - 1e-6,
+    use_backward_heuristic: bool = True,
 ):
     """
     Build the loop components for bidirectional A* search.
@@ -99,6 +100,9 @@ def _bi_astar_loop_builder(
         start_in_bwd_idx, start_in_bwd_found = bi_result.backward.hashtable.lookup(start)
         is_same = jnp.logical_and(start_in_bwd_found, start_in_bwd_idx.index == bwd_hash_idx.index)
 
+        dummy_hashidx = fwd_hash_idx
+        dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
+
         # Update meeting point if start == goal
         bi_result.meeting = jax.lax.cond(
             is_same,
@@ -109,6 +113,12 @@ def _bi_astar_loop_builder(
                 bwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
                 total_cost=jnp.array(0.0, dtype=KEY_DTYPE),
                 found=jnp.array(True),
+                fwd_has_hashidx=jnp.array(True),
+                bwd_has_hashidx=jnp.array(True),
+                fwd_parent_hashidx=dummy_hashidx,
+                fwd_parent_action=dummy_action,
+                bwd_parent_hashidx=dummy_hashidx,
+                bwd_parent_action=dummy_action,
             ),
             lambda _: bi_result.meeting,
             None,
@@ -130,21 +140,24 @@ def _bi_astar_loop_builder(
         Check if search should continue.
 
         Continues while:
-        1. At least one queue has nodes to expand
-        2. Neither hash table is full
-        3. Termination condition not met (lower_bound < upper_bound)
+        1. At least one direction can still expand nodes (has frontier AND hashtable capacity)
+        2. Termination condition not met (lower_bound < upper_bound)
         """
         bi_result = loop_state.bi_result
 
         # Check if queues have nodes
         fwd_has_nodes = loop_state.filled_forward.any()
         bwd_has_nodes = loop_state.filled_backward.any()
-        has_nodes = jnp.logical_or(fwd_has_nodes, bwd_has_nodes)
 
-        # Check hash table capacity
+        # Check hash table capacity per direction.
+        # If one direction is full, we can still expand the other direction and
+        # potentially intersect with the already-built frontier.
         fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
         bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
-        not_full = jnp.logical_and(fwd_not_full, bwd_not_full)
+        has_work = jnp.logical_or(
+            jnp.logical_and(fwd_has_nodes, fwd_not_full),
+            jnp.logical_and(bwd_has_nodes, bwd_not_full),
+        )
 
         # Check termination condition
         fwd_min_f = get_min_f_value(
@@ -156,10 +169,7 @@ def _bi_astar_loop_builder(
 
         should_terminate = bi_termination_condition(bi_result, fwd_min_f, bwd_min_f, cost_weight)
 
-        return jnp.logical_and(
-            jnp.logical_and(has_nodes, not_full),
-            ~should_terminate,
-        )
+        return jnp.logical_and(has_work, ~should_terminate)
 
     def _expand_direction(
         bi_result: BiDirectionalSearchResult,
@@ -168,6 +178,7 @@ def _bi_astar_loop_builder(
         current: Current,
         filled: chex.Array,
         is_forward: bool,
+        use_heuristic: bool,
     ) -> tuple[BiDirectionalSearchResult, Current, chex.Array]:
         """
         Expand one direction (forward or backward).
@@ -299,9 +310,12 @@ def _bi_astar_loop_builder(
 
         # Compute heuristic and insert into priority queue
         def _new_states(sr: SearchResult, vals, neighbour, new_states_mask):
-            neighbour_heur = variable_heuristic_batch_switcher(
-                heuristic_params, neighbour, new_states_mask
-            ).astype(KEY_DTYPE)
+            if use_heuristic:
+                neighbour_heur = variable_heuristic_batch_switcher(
+                    heuristic_params, neighbour, new_states_mask
+                ).astype(KEY_DTYPE)
+            else:
+                neighbour_heur = jnp.zeros_like(vals.cost, dtype=KEY_DTYPE)
             sr.dist = xnp.update_on_condition(
                 sr.dist,
                 vals.hashidx.index,
@@ -366,6 +380,9 @@ def _bi_astar_loop_builder(
         bi_result = loop_state.bi_result
         solve_config = loop_state.solve_config
 
+        fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
+        bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
+
         def _expand_forward(bi_result):
             return _expand_direction(
                 bi_result,
@@ -374,6 +391,7 @@ def _bi_astar_loop_builder(
                 loop_state.current_forward,
                 loop_state.filled_forward,
                 is_forward=True,
+                use_heuristic=True,
             )
 
         def _expand_backward(bi_result):
@@ -384,18 +402,19 @@ def _bi_astar_loop_builder(
                 loop_state.current_backward,
                 loop_state.filled_backward,
                 is_forward=False,
+                use_heuristic=use_backward_heuristic,
             )
 
         # Expand both directions
         bi_result, new_fwd_current, new_fwd_filled = jax.lax.cond(
-            loop_state.filled_forward.any(),
+            jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
             _expand_forward,
             lambda br: (br, loop_state.current_forward, loop_state.filled_forward),
             bi_result,
         )
 
         bi_result, new_bwd_current, new_bwd_filled = jax.lax.cond(
-            loop_state.filled_backward.any(),
+            jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
             _expand_backward,
             lambda br: (br, loop_state.current_backward, loop_state.filled_backward),
             bi_result,
@@ -482,8 +501,14 @@ def bi_astar_builder(
         parant_with_costs=False,
     )
 
+    use_backward_heuristic = not heuristic.is_fixed
     init_loop_state, loop_condition, loop_body = _bi_astar_loop_builder(
-        puzzle, heuristic, bi_result_template, batch_size, cost_weight
+        puzzle,
+        heuristic,
+        bi_result_template,
+        batch_size,
+        cost_weight,
+        use_backward_heuristic=use_backward_heuristic,
     )
 
     def bi_astar(
@@ -505,12 +530,15 @@ def bi_astar_builder(
         heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
         # Build a backward solve config that treats `start` as the target.
         # Prefer puzzle-level normalization via hindsight_transform.
-        backward_solve_config = puzzle.hindsight_transform(
-            solve_config.replace(TargetState=solve_config.TargetState), start
-        )
-        heuristic_params_backward = heuristic.prepare_heuristic_parameters(
-            backward_solve_config, **kwargs
-        )
+        if use_backward_heuristic:
+            backward_solve_config = puzzle.hindsight_transform(
+                solve_config.replace(TargetState=solve_config.TargetState), start
+            )
+            heuristic_params_backward = heuristic.prepare_heuristic_parameters(
+                backward_solve_config, **kwargs
+            )
+        else:
+            heuristic_params_backward = heuristic_params_forward
 
         loop_state = init_loop_state(
             bi_result_template,
