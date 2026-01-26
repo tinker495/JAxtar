@@ -576,9 +576,7 @@ def bi_qstar_builder(
         # Build a backward solve config that treats `start` as the target.
         # Prefer puzzle-level normalization via hindsight_transform.
         if use_backward_q:
-            backward_solve_config = puzzle.hindsight_transform(
-                solve_config.replace(TargetState=solve_config.TargetState), start
-            )
+            backward_solve_config = puzzle.hindsight_transform(solve_config, start)
             q_params_backward = q_fn.prepare_q_parameters(backward_solve_config, **kwargs)
         else:
             q_params_backward = q_params_forward

@@ -618,9 +618,7 @@ def bi_astar_d_builder(
         # Build a backward solve config that treats `start` as the target.
         # Prefer puzzle-level normalization via hindsight_transform.
         if use_backward_heuristic:
-            backward_solve_config = puzzle.hindsight_transform(
-                solve_config.replace(TargetState=solve_config.TargetState), start
-            )
+            backward_solve_config = puzzle.hindsight_transform(solve_config, start)
             heuristic_params_backward = heuristic.prepare_heuristic_parameters(
                 backward_solve_config, **kwargs
             )
