@@ -299,6 +299,7 @@ class SearchResult:
         puzzle: Puzzle,
         solve_config: Puzzle.SolveConfig,
         use_heuristic: bool = False,
+        is_backward: bool = False,
         **kwargs,
     ) -> tuple["SearchResult", Current, Puzzle.State, chex.Array]:
         """
@@ -320,6 +321,7 @@ class SearchResult:
             solve_config=solve_config,
             use_heuristic=use_heuristic,
             return_states=True,
+            is_backward=is_backward,
             **kwargs,
         )
 
@@ -426,6 +428,7 @@ class SearchResult:
         solve_config: Puzzle.SolveConfig,
         use_heuristic: bool = False,
         return_states: bool = False,
+        is_backward: bool = False,
         **kwargs,
     ) -> tuple["SearchResult", Current, chex.Array] | tuple[
         "SearchResult", Current, Puzzle.State, chex.Array
@@ -459,9 +462,22 @@ class SearchResult:
             parent_actions = val.parent.action  # [batch_size]
             parent_costs = search_result.get_cost(val.parent)
 
-            current_states, ncosts = puzzle.batched_get_actions(
-                solve_config, parent_states, parent_actions, filled
-            )  # [batch_size] [action_size, batch_size]
+            if is_backward:
+                # In bidirectional deferred search, backward expansion stores action indices
+                # that refer to the i-th inverse neighbour. Child generation must therefore
+                # use inverse neighbours and gather by action index.
+                all_inv_neighbors, all_inv_costs = puzzle.batched_get_inverse_neighbours(
+                    solve_config, parent_states, filled
+                )  # [action, batch, ...], [action, batch]
+
+                parent_actions_i32 = parent_actions.astype(jnp.int32)
+                batch_indices = jnp.arange(parent_actions_i32.shape[0], dtype=jnp.int32)
+                current_states = all_inv_neighbors[parent_actions_i32, batch_indices]
+                ncosts = all_inv_costs[parent_actions_i32, batch_indices]
+            else:
+                current_states, ncosts = puzzle.batched_get_actions(
+                    solve_config, parent_states, parent_actions, filled
+                )  # [batch_size]
 
             current_costs = parent_costs + ncosts
             current_dists = val.dist if use_heuristic else (val.dist - ncosts)

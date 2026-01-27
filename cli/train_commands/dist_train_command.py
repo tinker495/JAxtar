@@ -102,24 +102,36 @@ def _resolve_eval_search_components(
             return "astar", astar_builder, extra_kwargs
         if metric == "astar_d":
             return "astar_d", astar_d_builder, extra_kwargs
+        if metric == "bi_astar":
+            from JAxtar.bi_stars.bi_astar import bi_astar_builder
+
+            return "bi_astar", bi_astar_builder, extra_kwargs
+        if metric == "bi_astar_d":
+            from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
+
+            return "bi_astar_d", bi_astar_d_builder, extra_kwargs
         if metric == "beam":
             extra_kwargs["node_metric_label"] = "Beam Slots"
             return "beam", beam_builder, extra_kwargs
         raise click.UsageError(
             f"Invalid --eval-search-metric '{metric}' for heuristic training. "
-            "Choose one of: astar, astar_d, beam."
+            "Choose one of: astar, astar_d, bi_astar, bi_astar_d, beam."
         )
 
     if search_model_name == "qfunction":
         metric = metric or "qstar"
         if metric == "qstar":
             return "qstar", qstar_builder, extra_kwargs
+        if metric == "bi_qstar":
+            from JAxtar.bi_stars.bi_qstar import bi_qstar_builder
+
+            return "bi_qstar", bi_qstar_builder, extra_kwargs
         if metric == "qbeam":
             extra_kwargs["node_metric_label"] = "Beam Slots"
             return "qbeam", qbeam_builder, extra_kwargs
         raise click.UsageError(
             f"Invalid --eval-search-metric '{metric}' for qfunction training. "
-            "Choose one of: qstar, qbeam."
+            "Choose one of: qstar, bi_qstar, qbeam."
         )
 
     raise click.UsageError(f"Unknown search model name '{search_model_name}'.")

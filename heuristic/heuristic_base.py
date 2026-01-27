@@ -8,6 +8,10 @@ from puxle import Puzzle
 
 class Heuristic(ABC):
     puzzle: Puzzle  # The puzzle rule object
+    is_fixed: bool = (
+        False  # True if this heuristic is only valid for a fixed target (i.e. it does not
+    )
+    # support arbitrary solve_config targets / retargeting).
 
     def __init__(self, puzzle: Puzzle):
         self.puzzle = puzzle

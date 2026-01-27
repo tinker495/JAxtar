@@ -424,11 +424,22 @@ class EvaluationRunner:
 
         start_time = time.time()
         search_result = search_fn(solve_config, state)
-        solved = bool(search_result.solved.block_until_ready())
+        is_bidirectional = (
+            hasattr(search_result, "meeting")
+            and hasattr(search_result, "forward")
+            and hasattr(search_result, "backward")
+        )
+        if is_bidirectional:
+            solved = bool(search_result.meeting.found.block_until_ready())
+        else:
+            solved = bool(search_result.solved.block_until_ready())
         end_time = time.time()
 
         search_time = end_time - start_time
-        generated_nodes = int(search_result.generated_size)
+        if is_bidirectional:
+            generated_nodes = int(jax.device_get(search_result.total_generated))
+        else:
+            generated_nodes = int(search_result.generated_size)
 
         result_item = {
             "seed": run_identifier,
@@ -484,7 +495,22 @@ class EvaluationRunner:
             "benchmark_sample": benchmark_sample,
         }
         if solved:
-            if hasattr(search_result, "solution_trace"):
+            if is_bidirectional:
+                from JAxtar.bi_stars.bi_astar import reconstruct_bidirectional_path
+
+                bi_pairs = reconstruct_bidirectional_path(search_result, self.puzzle)
+                actions = [a for a, _ in bi_pairs[1:]]
+                states_trace = [s for _, s in bi_pairs]
+                path_steps = build_path_steps_from_actions(
+                    puzzle=self.puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    actions=actions,
+                    heuristic=heuristic_model,
+                    q_fn=qfunction_model,
+                    states=states_trace,
+                )
+            elif hasattr(search_result, "solution_trace"):
                 (
                     states_trace,
                     costs_trace,
