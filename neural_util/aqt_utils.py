@@ -4,6 +4,7 @@ from typing import Any
 
 import jax
 from aqt.jax.v2 import config as aqt_config
+from aqt.jax.v2 import stochastic_rounding
 from aqt.jax.v2.flax import aqt_flax
 from aqt.jax.v2.numerics import no_numerics
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
@@ -29,9 +30,30 @@ def get_aqt_cfg(aqt_cfg: Any = "int8"):
         raise ValueError(f"Invalid AQT configuration: {aqt_cfg}")
 
 
+def set_stochastic_rounding(cfg):
+    """Enables stochastic rounding on all quantizers in the config."""
+    def _enable(numerics):
+        if hasattr(numerics, "replace"):
+            # Check if it has stochastic_rounding field before replacing
+            # Note: We assume standard AQT IntNumerics here.
+            return numerics.replace(noise_fn=stochastic_rounding.RandomCenteredUniform())
+        return numerics
+
+    # Update fwd
+    cfg.fwd.dg_quantizer.lhs.numerics = _enable(cfg.fwd.dg_quantizer.lhs.numerics)
+    cfg.fwd.dg_quantizer.rhs.numerics = _enable(cfg.fwd.dg_quantizer.rhs.numerics)
+    
+    # Update backward (gradients) - this is critical for learning
+    cfg.dlhs.dg_quantizer.rhs.numerics = _enable(cfg.dlhs.dg_quantizer.rhs.numerics) # Grad wrt LHS
+    cfg.drhs.dg_quantizer.rhs.numerics = _enable(cfg.drhs.dg_quantizer.rhs.numerics) # Grad wrt RHS
+    
+    return cfg
+
+
 def get_int8_config():
-    """Returns a fully quantized 8-bit configuration (weights and activations)."""
-    return aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
+    """Returns a fully quantized 8-bit configuration (weights and activations) with stochastic rounding."""
+    cfg = aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
+    return cfg
 
 
 def get_int4_config():
@@ -91,6 +113,13 @@ def build_aqt_dot_general(aqt_cfg, quant_mode):
     """
     Build an AqtDotGeneral partial with quant/freezer modes wired for the active AQT version.
     """
+    if isinstance(aqt_cfg, str):
+        aqt_cfg = get_aqt_cfg(aqt_cfg)
+    
+    # Enable Stochastic Rounding ONLY for training
+    if quant_mode == aqt_flax.QuantMode.TRAIN:
+         aqt_cfg = set_stochastic_rounding(aqt_cfg)
+
     kwargs = {
         "rhs_quant_mode": quant_mode,
     }
