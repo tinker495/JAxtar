@@ -1,54 +1,19 @@
 from typing import Any
 
-import jax.numpy as jnp
 from aqt.jax.v2.flax import aqt_flax
 from flax import linen as nn
 
 from neural_util.aqt_utils import build_aqt_dot_general
 from neural_util.basemodel.base import DistanceHLGModel
+from neural_util.dtypes import DTYPE, HEAD_DTYPE, PARAM_DTYPE
 from neural_util.modules import (
     DEFAULT_NORM_FN,
-    DTYPE,
-    HEAD_DTYPE,
+    MLP,
     PreActivationResBlock,
     ResBlock,
     Swiglu,
+    preactivation_MLP,
 )
-
-
-class MLP(nn.Module):
-
-    hidden_dim: int = 1000
-    norm_fn: callable = DEFAULT_NORM_FN
-    activation: str = nn.relu
-    dot_general_cls: Any = None
-
-    @nn.compact
-    def __call__(self, x, training=False):
-        x = nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=self.dot_general_cls)(x)
-        x = self.norm_fn(x, training, dtype=DTYPE)
-        x = self.activation(x)
-        return x
-
-
-class preactivation_MLP(nn.Module):
-    hidden_dim: int = 1000
-    norm_fn: callable = DEFAULT_NORM_FN
-    activation: str = nn.relu
-    dtype: any = jnp.float32
-    dot_general_cls: Any = None
-
-    @nn.compact
-    def __call__(self, x, training=False):
-        x = self.norm_fn(x, training, dtype=self.dtype)
-        x = self.activation(x)
-        x = nn.Dense(
-            self.hidden_dim,
-            dtype=self.dtype,
-            kernel_init=nn.initializers.normal(stddev=0.01),
-            dot_general_cls=self.dot_general_cls,
-        )(x)
-        return x
 
 
 class HLGResMLPModel(DistanceHLGModel):
@@ -56,7 +21,7 @@ class HLGResMLPModel(DistanceHLGModel):
     initial_dim: int = 5000
     hidden_N: int = 1
     hidden_dim: int = 1000
-    norm_fn: callable = DEFAULT_NORM_FN
+    norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: str = nn.relu
     resblock_fn: callable = ResBlock
     use_swiglu: bool = False
@@ -74,7 +39,13 @@ class HLGResMLPModel(DistanceHLGModel):
             aqt_dg = build_aqt_dot_general(self.aqt_cfg, mode)
 
         self.initial_mlp = (
-            Swiglu(self.initial_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg)
+            Swiglu(
+                self.initial_dim,
+                norm_fn=self.norm_fn,
+                dtype=DTYPE,
+                param_dtype=PARAM_DTYPE,
+                dot_general_cls=aqt_dg,
+            )
             if self.use_swiglu
             else MLP(
                 self.initial_dim,
@@ -85,7 +56,13 @@ class HLGResMLPModel(DistanceHLGModel):
         )
         self.second_mlp = (
             (
-                Swiglu(self.hidden_dim, norm_fn=self.norm_fn, dtype=DTYPE, dot_general_cls=aqt_dg)
+                Swiglu(
+                    self.hidden_dim,
+                    norm_fn=self.norm_fn,
+                    dtype=DTYPE,
+                    param_dtype=PARAM_DTYPE,
+                    dot_general_cls=aqt_dg,
+                )
                 if self.use_swiglu
                 else MLP(
                     self.hidden_dim,
@@ -95,7 +72,9 @@ class HLGResMLPModel(DistanceHLGModel):
                 )
             )
             if self.resblock_fn != PreActivationResBlock
-            else nn.Dense(self.hidden_dim, dtype=DTYPE, dot_general_cls=aqt_dg)
+            else nn.Dense(
+                self.hidden_dim, dtype=DTYPE, param_dtype=PARAM_DTYPE, dot_general_cls=aqt_dg
+            )
         )
 
         self.resblocks = [
@@ -135,6 +114,11 @@ class HLGResMLPModel(DistanceHLGModel):
             )
         )
 
+        # Learnable Logit Scale (Temperature Adjustment)
+        self.logit_scale = self.param(
+            "logit_scale", nn.initializers.constant(1.0), (1,), HEAD_DTYPE
+        )
+
     def get_logits(self, x, training=False):
         x = self.initial_mlp(x, training)
         if isinstance(self.second_mlp, nn.Dense):
@@ -154,4 +138,8 @@ class HLGResMLPModel(DistanceHLGModel):
             x = self.final_dense(x, training)
 
         x = x.reshape(x.shape[0], self.action_size, self.categorial_n)
+
+        # Apply Logit Scale
+        x = x * self.logit_scale
+
         return x

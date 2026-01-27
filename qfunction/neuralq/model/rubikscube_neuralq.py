@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from puxle import RubiksCube
 
 from neural_util.basemodel import HLGResMLPModel
-from neural_util.modules import DTYPE
+from neural_util.dtypes import DTYPE
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 

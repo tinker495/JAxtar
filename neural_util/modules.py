@@ -1,75 +1,36 @@
+from functools import partial
 from typing import Any, Callable
 
 import flax.linen as nn
 import jax.numpy as jnp
 
-from .norm import BatchReNorm as BatchReNorm_
-from .norm import DyTan as DyTan_
+from .dtypes import DTYPE, PARAM_DTYPE
+from .norm import BatchReNorm, DyTan
 
-DTYPE = jnp.bfloat16
-# Use float32 for numerically sensitive heads / losses.
-HEAD_DTYPE = jnp.float32
+DEFAULT_NORM_FN = partial(nn.BatchNorm, param_dtype=PARAM_DTYPE)
 
 
-def BatchNorm(x, training, dtype=DTYPE):
-    y = nn.BatchNorm(momentum=0.99, dtype=dtype)(x, use_running_average=not training)
-    return y.astype(dtype)
-
-
-def BatchNorm0999(x, training, dtype=DTYPE):
-    y = nn.BatchNorm(momentum=0.999, dtype=dtype)(x, use_running_average=not training)
-    return y.astype(dtype)
-
-
-def BatchReNorm(x, training, dtype=DTYPE):
-    y = BatchReNorm_(momentum=0.99, dtype=dtype)(x, use_running_average=not training)
-    return y.astype(dtype)
-
-
-def BatchReNorm0999(x, training, dtype=DTYPE):
-    y = BatchReNorm_(momentum=0.999, dtype=dtype)(x, use_running_average=not training)
-    return y.astype(dtype)
-
-
-def InstanceNorm(x, training, dtype=DTYPE):
-    y = nn.InstanceNorm(dtype=dtype)(x)
-    return y.astype(dtype)
-
-
-def LayerNorm(x, training, dtype=DTYPE):
-    y = nn.LayerNorm(dtype=dtype)(x)
-    return y.astype(dtype)
-
-
-def GroupNorm(x, training, dtype=DTYPE):
-    y = nn.GroupNorm(num_groups=10, dtype=dtype)(x)
-    return y.astype(dtype)
-
-
-def RMSNorm(x, training, dtype=DTYPE):
-    y = nn.RMSNorm(dtype=dtype)(x)
-    return y.astype(dtype)
-
-
-def DyTan(x, training, dtype=DTYPE):
-    y = DyTan_(dtype=dtype)(x)
-    return y.astype(dtype)
-
-
-DEFAULT_NORM_FN = BatchNorm
+# Norm application helper to handle BatchNorm/BatchReNorm running stats.
+def apply_norm(norm_fn, x, training):
+    if norm_fn is None:
+        return x
+    fn = norm_fn.func if isinstance(norm_fn, partial) else norm_fn
+    if isinstance(fn, type) and issubclass(fn, (nn.BatchNorm, BatchReNorm)):
+        return norm_fn()(x, use_running_average=not training)
+    return norm_fn()(x)
 
 
 # Norm function registry for config-driven selection
 NORM_FN_REGISTRY = {
-    "batch": BatchNorm,
-    "batch0999": BatchNorm0999,
-    "batchrenorm": BatchReNorm,
-    "batchrenorm0999": BatchReNorm0999,
-    "instance": InstanceNorm,
-    "layer": LayerNorm,
-    "group": GroupNorm,
-    "rms": RMSNorm,
-    "dytan": DyTan,
+    "batch": partial(nn.BatchNorm, param_dtype=PARAM_DTYPE),
+    "batch0999": partial(nn.BatchNorm, momentum=0.999, param_dtype=PARAM_DTYPE),
+    "batchrenorm": partial(BatchReNorm, param_dtype=PARAM_DTYPE),
+    "batchrenorm0999": partial(BatchReNorm, momentum=0.999, param_dtype=PARAM_DTYPE),
+    "instance": partial(nn.InstanceNorm, param_dtype=PARAM_DTYPE),
+    "layer": partial(nn.LayerNorm, param_dtype=PARAM_DTYPE),
+    "group": partial(nn.GroupNorm, param_dtype=PARAM_DTYPE),
+    "rms": partial(nn.RMSNorm, param_dtype=PARAM_DTYPE),
+    "dytan": partial(DyTan, param_dtype=PARAM_DTYPE),
 }
 
 
@@ -99,7 +60,7 @@ class Trueswish(nn.Module):
 class Swiglu(nn.Module):
     node_size: int = None
     param_size_equal: bool = True
-    norm_fn: Callable = None
+    norm_fn: nn.Module = None
     dtype: any = DTYPE
     param_dtype: any = None
     dot_general_cls: Any = None
@@ -107,7 +68,7 @@ class Swiglu(nn.Module):
     @nn.compact
     def __call__(self, x, training=False):
         dtype = self.dtype
-        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
         if self.node_size is None:
             node_size = x.shape[-1]
         else:
@@ -125,7 +86,7 @@ class Swiglu(nn.Module):
         )(x)
         x, gate = jnp.split(x, 2, axis=-1)
         if self.norm_fn is not None:
-            gate = self.norm_fn(gate, training, dtype=dtype)
+            gate = apply_norm(self.norm_fn, gate, training)
         return x * Trueswish()(gate)
 
 
@@ -173,11 +134,54 @@ def get_resblock_fn(resblock_name_or_fn=None):
     raise TypeError(f"resblock_fn must be a string or callable, got {type(resblock_name_or_fn)}")
 
 
+# Multi-layer Perceptron
+class MLP(nn.Module):
+
+    hidden_dim: int = 1000
+    norm_fn: nn.Module = DEFAULT_NORM_FN
+    activation: str = nn.relu
+    param_dtype: any = PARAM_DTYPE
+    dot_general_cls: Any = None
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        x = nn.Dense(
+            self.hidden_dim,
+            dtype=DTYPE,
+            param_dtype=self.param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
+        x = apply_norm(self.norm_fn, x, training)
+        x = self.activation(x)
+        return x
+
+
+# Pre-activation Multi-layer Perceptron
+class preactivation_MLP(nn.Module):
+    hidden_dim: int = 1000
+    norm_fn: nn.Module = DEFAULT_NORM_FN
+    activation: str = nn.relu
+    dtype: any = jnp.float32
+    dot_general_cls: Any = None
+
+    @nn.compact
+    def __call__(self, x, training=False):
+        x = apply_norm(self.norm_fn, x, training)
+        x = self.activation(x)
+        x = nn.Dense(
+            self.hidden_dim,
+            dtype=self.dtype,
+            kernel_init=nn.initializers.normal(stddev=0.01),
+            dot_general_cls=self.dot_general_cls,
+        )(x)
+        return x
+
+
 # Residual Block
 class ResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
-    norm_fn: Callable = DEFAULT_NORM_FN
+    norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: str = nn.relu
     use_swiglu: bool = False
     dtype: any = DTYPE
@@ -187,7 +191,7 @@ class ResBlock(nn.Module):
     @nn.compact
     def __call__(self, x0, training=False):
         dtype = self.dtype
-        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
         x0_cast = x0.astype(dtype)
         x = x0_cast
         out_dim = x0.shape[-1]
@@ -201,21 +205,19 @@ class ResBlock(nn.Module):
                     dot_general_cls=self.dot_general_cls,
                 )(x, training)
             else:
-                x = nn.Dense(
+                x = MLP(
                     self.node_size,
-                    dtype=dtype,
-                    param_dtype=param_dtype,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
                     dot_general_cls=self.dot_general_cls,
-                )(x)
-                x = self.norm_fn(x, training, dtype=dtype)
-                x = self.activation(x)
+                )(x, training)
         x = nn.Dense(
             out_dim,
             dtype=dtype,
             param_dtype=param_dtype,
             dot_general_cls=self.dot_general_cls,
         )(x)
-        x = self.norm_fn(x, training, dtype=dtype)
+        x = apply_norm(self.norm_fn, x, training)
         return self.activation(x + x0_cast)
 
 
@@ -223,7 +225,7 @@ class ResBlock(nn.Module):
 class PreActivationResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
-    norm_fn: Callable = DEFAULT_NORM_FN
+    norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: Callable = nn.relu
     use_swiglu: bool = False
     zero_init_last: bool = True
@@ -232,57 +234,143 @@ class PreActivationResBlock(nn.Module):
     dot_general_cls: Any = None
 
     @nn.compact
-    def __call__(self, x, training=False):
+    def __call__(self, x0, training=False):
         dtype = self.dtype
-        param_dtype = self.param_dtype if self.param_dtype is not None else HEAD_DTYPE
-        x_cast = x.astype(dtype)
-        residual = x_cast
-        out_dim = x.shape[-1]
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
+        x0_cast = x0.astype(dtype)
+        out_dim = x0.shape[-1]
         # Pre-activation: Norm -> Activation -> Dense
-        residual = self.norm_fn(residual, training, dtype=dtype)
-        residual = self.activation(residual)
+        x = apply_norm(self.norm_fn, x0_cast, training)
+        x = self.activation(x)
         for _ in range(self.hidden_N):
             if self.use_swiglu:
-                residual = Swiglu(
+                x = Swiglu(
                     self.node_size,
                     norm_fn=self.norm_fn,
                     dtype=dtype,
                     param_dtype=param_dtype,
                     dot_general_cls=self.dot_general_cls,
-                )(residual, training)
+                )(x, training)
             else:
-                residual = nn.Dense(
+                x = MLP(
                     self.node_size,
-                    dtype=dtype,
-                    param_dtype=param_dtype,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
                     dot_general_cls=self.dot_general_cls,
-                )(residual)
-                residual = self.norm_fn(residual, training, dtype=dtype)
-                residual = self.activation(residual)
+                )(x, training)
 
         if self.zero_init_last:
-            residual = nn.Dense(
+            x = nn.Dense(
                 out_dim,
                 dtype=dtype,
                 param_dtype=param_dtype,
                 kernel_init=nn.initializers.zeros,
                 dot_general_cls=self.dot_general_cls,
-            )(residual)
+            )(x)
         else:
-            residual = nn.Dense(
+            x = nn.Dense(
                 out_dim,
                 dtype=dtype,
                 param_dtype=param_dtype,
                 dot_general_cls=self.dot_general_cls,
-            )(residual)
+            )(x)
         # Identity shortcut connection
-        return x_cast + residual
+        return x0_cast + x
+
+
+# Delta Residual Block (Deep Delta Learning)
+class DeltaResBlock(nn.Module):
+    node_size: int
+    hidden_N: int = 1
+    norm_fn: nn.Module = DEFAULT_NORM_FN
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    gate_hidden_dim: int = 128
+    eps_k: float = 1e-6
+    dtype: any = DTYPE
+    param_dtype: any = None
+    dot_general_cls: Any = None
+
+    def _branch_mlp(self, x, out_dim, training):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
+        for _ in range(self.hidden_N):
+            if self.use_swiglu:
+                x = Swiglu(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    dtype=dtype,
+                    param_dtype=param_dtype,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+            else:
+                x = MLP(
+                    self.node_size,
+                    norm_fn=self.norm_fn,
+                    activation=self.activation,
+                    dot_general_cls=self.dot_general_cls,
+                )(x, training)
+        x = nn.Dense(
+            out_dim,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(x)
+        return x
+
+    @nn.compact
+    def __call__(self, x0, training=False):
+        dtype = self.dtype
+        x = x0.astype(dtype)
+        if x.ndim == 2:
+            pool_d = x
+            pool_v = jnp.mean(x, axis=-1, keepdims=True)
+            dv = 1
+        elif x.ndim == 3:
+            pool_d = jnp.mean(x, axis=-1)
+            pool_v = jnp.mean(x, axis=-2)
+            dv = x.shape[-1]
+        else:
+            raise ValueError(f"DeltaResBlock expects 2D or 3D input, got shape {x.shape}")
+
+        k = self._branch_mlp(pool_d, x.shape[-2] if x.ndim == 3 else x.shape[-1], training)
+        k = k / (jnp.linalg.norm(k, axis=-1, keepdims=True) + self.eps_k)
+
+        v = self._branch_mlp(pool_v, dv, training)
+
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
+        beta_hidden = nn.Dense(
+            self.gate_hidden_dim,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(pool_d)
+        beta_hidden = jnp.tanh(beta_hidden)
+        beta = nn.Dense(
+            1,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            dot_general_cls=self.dot_general_cls,
+        )(beta_hidden)
+        beta = 2.0 * nn.sigmoid(beta).squeeze(-1)
+
+        if x.ndim == 2:
+            proj = jnp.sum(k * x, axis=-1, keepdims=True)
+            update = k * (v - proj)
+            x = x + beta[:, None] * update
+        else:
+            proj = jnp.einsum("bd,bdv->bv", k, x)
+            update = k[:, :, None] * (v - proj)[:, None, :]
+            x = x + beta[:, None, None] * update
+
+        return self.activation(x)
 
 
 # ResBlock type registry for config-driven selection
 RESBLOCK_REGISTRY = {
     "standard": ResBlock,
     "preactivation": PreActivationResBlock,
+    "delta": DeltaResBlock,
 }
 
 
@@ -292,20 +380,31 @@ class ConvResBlock(nn.Module):
     kernel_size: int
     strides: int
     hidden_N: int = 1
-    norm_fn: Callable = DEFAULT_NORM_FN
+    norm_fn: nn.Module = DEFAULT_NORM_FN
     activation: str = nn.relu
+    param_dtype: any = PARAM_DTYPE
 
     @nn.compact
     def __call__(self, x0, training=False):
         x = x0
         for _ in range(self.hidden_N):
             x = nn.Conv(
-                self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
+                self.filters,
+                self.kernel_size,
+                strides=self.strides,
+                padding="SAME",
+                dtype=DTYPE,
+                param_dtype=self.param_dtype,
             )(x)
-            x = self.norm_fn(x, training)
+            x = apply_norm(self.norm_fn, x, training)
             x = self.activation(x)
         x = nn.Conv(
-            self.filters, self.kernel_size, strides=self.strides, padding="SAME", dtype=DTYPE
+            self.filters,
+            self.kernel_size,
+            strides=self.strides,
+            padding="SAME",
+            dtype=DTYPE,
+            param_dtype=self.param_dtype,
         )(x)
-        x = self.norm_fn(x, training)
+        x = apply_norm(self.norm_fn, x, training)
         return self.activation(x + x0)

@@ -745,7 +745,7 @@ def dist_train_options(
         @click.option(
             "--optimizer",
             type=click.Choice(list(OPTIMIZERS.keys())),
-            default="adam",
+            default="normuon",
             help="Optimizer to use",
         )
         @click.option("-lr", "--learning_rate", type=HUMAN_FLOAT, default=None)
@@ -779,6 +779,13 @@ def dist_train_options(
                 "JSON object of additional keyword arguments for the selected loss, "
                 'e.g. \'{"huber_delta":0.2,"asymmetric_tau":0.1}\'.'
             ),
+        )
+        @click.option(
+            "-ec",
+            "--eval_count",
+            type=HUMAN_INT,
+            default=None,
+            help="Number of evaluations to perform during training (default: 5).",
         )
         @click.option(
             "--eval-search-metric",
