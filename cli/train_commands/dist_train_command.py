@@ -321,12 +321,14 @@ def heuristic_train_command(
         # Track regular hard updates and force updates
         if not train_options.use_soft_update:
             # Track regular hard update intervals
-            if i % update_interval == 0 and i > 0:
+            if i % update_interval_grad == 0 and i > 0:
                 last_update_step = i
 
             # Force update check (interval-driven OR loss threshold)
             if (i - last_update_step >= train_options.force_update_interval) or (
-                (i % update_interval == 0) and (i > 0) and (loss <= train_options.loss_threshold)
+                (i % update_interval_grad == 0)
+                and (i > 0)
+                and (loss <= train_options.loss_threshold)
             ):
                 state = state.update_target_params(state.get_full_eval_params()["params"])
                 if train_options.opt_state_reset:
@@ -335,7 +337,7 @@ def heuristic_train_command(
 
         # Reset logic (only if target was updated since last reset)
         if (
-            (i - last_reset_time >= reset_interval)
+            (i - last_reset_time >= reset_interval_grad)
             and (i > 0)
             and (i < steps * 2 / 3)
             and (last_update_step >= last_reset_time)
@@ -596,12 +598,14 @@ def qfunction_train_command(
         # Track regular hard updates and force updates
         if not train_options.use_soft_update:
             # Track regular hard update intervals
-            if i % update_interval == 0 and i > 0:
+            if i % update_interval_grad == 0 and i > 0:
                 last_update_step = i
 
             # Force update check (interval-driven OR loss threshold)
             if (i - last_update_step >= train_options.force_update_interval) or (
-                (i % update_interval == 0) and (i > 0) and (loss <= train_options.loss_threshold)
+                (i % update_interval_grad == 0)
+                and (i > 0)
+                and (loss <= train_options.loss_threshold)
             ):
                 state = state.update_target_params(state.get_full_eval_params()["params"])
                 if train_options.opt_state_reset:
@@ -610,7 +614,7 @@ def qfunction_train_command(
 
         # Reset logic (only if target was updated since last reset)
         if (
-            (i - last_reset_time >= reset_interval)
+            (i - last_reset_time >= reset_interval_grad)
             and (i > 0)
             and (i < steps * 2 / 3)
             and (last_update_step >= last_reset_time)

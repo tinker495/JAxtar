@@ -200,14 +200,14 @@ def wrap_dataset_runner(
     - target_params from state.target_params (with batch_stats if present)
     - eval_params from state.params (with batch_stats if present)
     """
-    from train_util.train_state import TrainStateExtended
     from train_util.optimizer import get_eval_params
+    from train_util.train_state import TrainStateExtended
 
     def _extract_params_from_state(state: TrainStateExtended) -> tuple[dict, dict]:
         """Extract target_params and eval_params from TrainStateExtended."""
         target_params = {"params": state.target_params}
         eval_params = {"params": get_eval_params(state.opt_state, state.params)}
-        
+
         if state.batch_stats is not None:
             target_params["batch_stats"] = eval_params["batch_stats"] = state.batch_stats
         return target_params, eval_params

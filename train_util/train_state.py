@@ -122,9 +122,12 @@ def soft_update_target(state: TrainStateExtended, tau: float) -> TrainStateExten
     Returns:
         Updated TrainStateExtended.
     """
+    from train_util.optimizer import get_eval_params
+
+    eval_params = get_eval_params(state.opt_state, state.params)
     new_target_params = jax.tree_util.tree_map(
         lambda p, tp: tau * p + (1 - tau) * tp,
-        state.params,
+        eval_params,
         state.target_params,
     )
     return state.update_target_params(new_target_params)
@@ -140,4 +143,7 @@ def hard_update_target(state: TrainStateExtended) -> TrainStateExtended:
     Returns:
         Updated TrainStateExtended.
     """
-    return state.update_target_params(state.params)
+    from train_util.optimizer import get_eval_params
+
+    eval_params = get_eval_params(state.opt_state, state.params)
+    return state.update_target_params(eval_params)

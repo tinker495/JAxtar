@@ -32,6 +32,7 @@ def get_aqt_cfg(aqt_cfg: Any = "int8"):
 
 def set_stochastic_rounding(cfg):
     """Enables stochastic rounding on all quantizers in the config."""
+
     def _enable(numerics):
         if hasattr(numerics, "replace"):
             # Check if it has stochastic_rounding field before replacing
@@ -42,11 +43,11 @@ def set_stochastic_rounding(cfg):
     # Update fwd
     cfg.fwd.dg_quantizer.lhs.numerics = _enable(cfg.fwd.dg_quantizer.lhs.numerics)
     cfg.fwd.dg_quantizer.rhs.numerics = _enable(cfg.fwd.dg_quantizer.rhs.numerics)
-    
+
     # Update backward (gradients) - this is critical for learning
-    cfg.dlhs.dg_quantizer.rhs.numerics = _enable(cfg.dlhs.dg_quantizer.rhs.numerics) # Grad wrt LHS
-    cfg.drhs.dg_quantizer.rhs.numerics = _enable(cfg.drhs.dg_quantizer.rhs.numerics) # Grad wrt RHS
-    
+    cfg.dlhs.dg_quantizer.rhs.numerics = _enable(cfg.dlhs.dg_quantizer.rhs.numerics)  # Grad wrt LHS
+    cfg.drhs.dg_quantizer.rhs.numerics = _enable(cfg.drhs.dg_quantizer.rhs.numerics)  # Grad wrt RHS
+
     return cfg
 
 
@@ -115,10 +116,10 @@ def build_aqt_dot_general(aqt_cfg, quant_mode):
     """
     if isinstance(aqt_cfg, str):
         aqt_cfg = get_aqt_cfg(aqt_cfg)
-    
+
     # Enable Stochastic Rounding ONLY for training
     if quant_mode == aqt_flax.QuantMode.TRAIN:
-         aqt_cfg = set_stochastic_rounding(aqt_cfg)
+        aqt_cfg = set_stochastic_rounding(aqt_cfg)
 
     kwargs = {
         "rhs_quant_mode": quant_mode,
