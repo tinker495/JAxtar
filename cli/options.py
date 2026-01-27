@@ -782,11 +782,23 @@ def dist_train_options(
         )
         @click.option(
             "--eval-search-metric",
-            type=click.Choice(["astar", "astar_d", "beam", "qstar", "qbeam"]),
+            type=click.Choice(
+                [
+                    "astar",
+                    "astar_d",
+                    "bi_astar",
+                    "bi_astar_d",
+                    "beam",
+                    "qstar",
+                    "bi_qstar",
+                    "qbeam",
+                ]
+            ),
             default=None,
             help=(
                 "Search algorithm to use for evaluation during training "
-                "(heuristic: astar/astar_d/beam, qfunction: qstar/qbeam)."
+                "(heuristic: astar/astar_d/bi_astar/bi_astar_d/beam, "
+                "qfunction: qstar/bi_qstar/qbeam)."
             ),
         )
         @click.option(
