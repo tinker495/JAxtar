@@ -265,6 +265,11 @@ def heuristic_train_command(
         non_backtracking_steps=train_options.sampling_non_backtracking_steps,
     )
 
+    # Calculate eval interval safely
+    eval_interval = steps
+    if train_options.eval_count > 0:
+        eval_interval = max(1, steps // train_options.eval_count)
+
     pbar = trange(steps)
     last_reset_time = 0
     last_update_step = -1  # Track last update step for force update
@@ -345,7 +350,7 @@ def heuristic_train_command(
                 opt_state=optimizer.init(reset_params["params"]),
             )
 
-        if train_options.eval_count > 0 and i % (steps // train_options.eval_count) == 0 and i != 0:
+        if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
             heuristic.params = state.get_full_params()
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
@@ -533,6 +538,11 @@ def qfunction_train_command(
         non_backtracking_steps=train_options.sampling_non_backtracking_steps,
     )
 
+    # Calculate eval interval safely
+    eval_interval = steps
+    if train_options.eval_count > 0:
+        eval_interval = max(1, steps // train_options.eval_count)
+
     pbar = trange(steps)
     last_reset_time = 0
     last_update_step = -1  # Track last update step for force update
@@ -615,7 +625,7 @@ def qfunction_train_command(
                 opt_state=optimizer.init(reset_params["params"]),
             )
 
-        if train_options.eval_count > 0 and i % (steps // train_options.eval_count) == 0 and i != 0:
+        if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
             qfunction.params = state.get_full_params()
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
