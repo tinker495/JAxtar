@@ -328,7 +328,7 @@ def heuristic_train_command(
             if (i - last_update_step >= train_options.force_update_interval) or (
                 (i % update_interval == 0) and (i > 0) and (loss <= train_options.loss_threshold)
             ):
-                state = state.update_target_params(state.params)
+                state = state.update_target_params(state.get_full_eval_params()["params"])
                 if train_options.opt_state_reset:
                     state = state.replace(opt_state=optimizer.init(state.params))
                 last_update_step = i
@@ -351,7 +351,7 @@ def heuristic_train_command(
             )
 
         if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
-            heuristic.params = state.get_full_params()
+            heuristic.params = state.get_full_eval_params()
             backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
             heuristic.save_model(path=backup_path)
             # Log model as artifact
@@ -379,7 +379,7 @@ def heuristic_train_command(
                         **kwargs,
                     )
 
-    heuristic.params = state.get_full_params()
+    heuristic.params = state.get_full_eval_params()
     backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
     heuristic.save_model(path=backup_path)
     # Log final model as artifact
@@ -603,7 +603,7 @@ def qfunction_train_command(
             if (i - last_update_step >= train_options.force_update_interval) or (
                 (i % update_interval == 0) and (i > 0) and (loss <= train_options.loss_threshold)
             ):
-                state = state.update_target_params(state.params)
+                state = state.update_target_params(state.get_full_eval_params()["params"])
                 if train_options.opt_state_reset:
                     state = state.replace(opt_state=optimizer.init(state.params))
                 last_update_step = i
@@ -626,7 +626,7 @@ def qfunction_train_command(
             )
 
         if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
-            qfunction.params = state.get_full_params()
+            qfunction.params = state.get_full_eval_params()
             backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
             qfunction.save_model(path=backup_path)
             # Log model as artifact
@@ -654,7 +654,7 @@ def qfunction_train_command(
                         **kwargs,
                     )
 
-    qfunction.params = state.get_full_params()
+    qfunction.params = state.get_full_eval_params()
     backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
     qfunction.save_model(path=backup_path)
     # Log final model as artifact

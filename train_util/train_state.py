@@ -73,6 +73,23 @@ class TrainStateExtended(train_state.TrainState):
             full_params["batch_stats"] = self.batch_stats
         return full_params
 
+    def get_full_eval_params(self) -> dict:
+        """
+        Returns a dictionary combining eval params and batch_stats for saving/evaluating.
+        For schedule-free optimizers, this returns the evaluation parameters.
+        For standard optimizers, this returns the same as get_full_params.
+
+        Returns:
+            Dictionary in the form {'params': ..., 'batch_stats': ...}.
+        """
+        from train_util.optimizer import get_eval_params
+
+        eval_params = get_eval_params(self.opt_state, self.params)
+        full_params = {"params": eval_params}
+        if self.batch_stats is not None:
+            full_params["batch_stats"] = self.batch_stats
+        return full_params
+
     def apply_gradients(self, *, grads, **kwargs):
         """
         Returns the new state after applying gradients.
