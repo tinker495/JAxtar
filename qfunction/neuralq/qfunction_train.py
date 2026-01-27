@@ -35,6 +35,7 @@ def qfunction_train_builder(
     use_soft_update: bool = False,
     update_interval: int = 100,
     soft_update_tau: float = 0.005,
+    enable_jit_hard_update: bool = True,
 ):
     """
     Build a Q-function training function that operates on TrainStateExtended.
@@ -49,8 +50,9 @@ def qfunction_train_builder(
         loss_args: Additional loss function arguments.
         replay_ratio: Number of replay iterations per dataset.
         use_soft_update: Whether to use soft (Polyak) target update.
-        update_interval: Steps between hard target updates (if not using soft update).
+        update_interval: Steps (gradient updates) between hard target updates (if not using soft update).
         soft_update_tau: Tau for soft update (ignored if use_soft_update is False).
+        enable_jit_hard_update: If False, disables hard updates inside JIT loop (for external control).
 
     Returns:
         A training function that takes (key, dataset, state) and returns (new_state, loss, log_infos).
@@ -149,7 +151,7 @@ def qfunction_train_builder(
 
             if use_soft_update:
                 new_state = soft_update_target(new_state, soft_update_tau)
-            else:
+            elif enable_jit_hard_update:
                 should_update = (new_state.step % update_interval == 0) & (new_state.step > 0)
                 new_state = jax.lax.cond(
                     should_update,

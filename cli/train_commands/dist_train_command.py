@@ -157,23 +157,15 @@ def heuristic_train_command(
         puzzle, puzzle_name, puzzle_opts, puzzle_bundle
     )
     # Calculate derived parameters first for logging
+    # steps is total training loop iterations (each does replay_ratio gradient updates)
     steps = train_options.steps // train_options.replay_ratio
+    # Intervals are in gradient-step units (matching state.step counter)
     update_interval = train_options.update_interval
     reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
 
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
-
-    # Convert External Step Intervals to Gradient Step Intervals
-    # If update_interval=1000 (External), and RR=10:
-    # We want update every 1000 External Steps = 10000 Gradient Steps.
-    update_interval_grad = update_interval * train_options.replay_ratio
-    reset_interval_grad = reset_interval * train_options.replay_ratio
-
-    if train_options.multi_device and n_devices > 1:
-        update_interval_grad = update_interval_grad // n_devices
-        reset_interval_grad = reset_interval_grad // n_devices
 
     config = {
         "puzzle_options": puzzle_opts,
@@ -183,9 +175,14 @@ def heuristic_train_command(
         "eval_options": eval_options,
         "heuristic_config": heuristic_config,
         "derived_parameters": {
-            "effective_steps": steps,
-            "effective_update_interval": update_interval_grad,
-            "effective_reset_interval": reset_interval_grad,
+            "training_loop_iterations": steps,
+            "total_gradient_updates": (
+                steps * train_options.replay_ratio * n_devices
+                if train_options.multi_device
+                else steps * train_options.replay_ratio
+            ),
+            "update_interval_gradient_steps": update_interval,
+            "reset_interval_gradient_steps": reset_interval,
             "n_devices": n_devices,
         },
     }
@@ -229,8 +226,13 @@ def heuristic_train_command(
     state = state.replace(opt_state=opt_state)
 
     # Calculate soft update tau for use in train_builder
-    # Use update_interval_grad because logic inside JAX is per-gradient-step
-    soft_update_tau = 1.0 / update_interval_grad if train_options.use_soft_update else 0.0
+    # Intervals are in gradient-step units, matching state.step counter
+    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
+
+    # Disable JIT hard updates when loss_threshold is used (handled externally)
+    enable_jit_hard_update = (
+        not train_options.use_soft_update and train_options.loss_threshold == float("inf")
+    )
 
     # Build training function
     heuristic_train_fn = heuristic_train_builder(
@@ -243,8 +245,9 @@ def heuristic_train_command(
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         use_soft_update=train_options.use_soft_update,
-        update_interval=update_interval_grad,
+        update_interval=update_interval,
         soft_update_tau=soft_update_tau,
+        enable_jit_hard_update=enable_jit_hard_update,
     )
 
     get_datasets = get_heuristic_dataset_builder(
@@ -315,34 +318,42 @@ def heuristic_train_command(
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_heuristic, i)
 
-        # Note: Target update is now handled inside heuristic_train_fn
-        # We still need to handle force update and reset logic outside the compiled loop
+        # Handle target updates outside JIT when loss_threshold or force_update is used
+        # (When enable_jit_hard_update=True, updates are handled inside JIT)
+        if not train_options.use_soft_update and not enable_jit_hard_update:
+            current_step = int(state.step)
 
-        # Track regular hard updates and force updates
-        if not train_options.use_soft_update:
-            # Track regular hard update intervals
-            if i % update_interval_grad == 0 and i > 0:
-                last_update_step = i
+            # Track when regular interval-based update would occur
+            is_regular_update_step = (current_step % update_interval == 0) and (current_step > 0)
 
-            # Force update check (interval-driven OR loss threshold)
-            if (i - last_update_step >= train_options.force_update_interval) or (
-                (i % update_interval_grad == 0)
-                and (i > 0)
-                and (loss <= train_options.loss_threshold)
-            ):
+            # Update conditions:
+            # 1. Force update interval exceeded, OR
+            # 2. Regular update interval + loss below threshold
+            should_force_update = (
+                current_step - last_update_step >= train_options.force_update_interval
+            )
+            should_regular_update = is_regular_update_step and (
+                loss <= train_options.loss_threshold
+            )
+
+            if should_force_update or should_regular_update:
                 state = state.update_target_params(state.get_full_eval_params()["params"])
                 if train_options.opt_state_reset:
                     state = state.replace(opt_state=optimizer.init(state.params))
-                last_update_step = i
+                last_update_step = current_step
 
         # Reset logic (only if target was updated since last reset)
+        current_step = int(state.step)
+        total_gradient_steps = (
+            steps * train_options.replay_ratio * (n_devices if train_options.multi_device else 1)
+        )
         if (
-            (i - last_reset_time >= reset_interval_grad)
-            and (i > 0)
-            and (i < steps * 2 / 3)
+            (current_step - last_reset_time >= reset_interval)
+            and (current_step > 0)
+            and (current_step < total_gradient_steps * 2 / 3)
             and (last_update_step >= last_reset_time)
         ):
-            last_reset_time = i
+            last_reset_time = current_step
             reset_params = {"params": state.params}
             if state.batch_stats is not None:
                 reset_params["batch_stats"] = state.batch_stats
@@ -434,21 +445,15 @@ def qfunction_train_command(
         puzzle, puzzle_name, puzzle_opts, puzzle_bundle
     )
     # Calculate derived parameters first for logging
+    # Note: For qfunction, steps is already total gradient updates (no division by replay_ratio)
     steps = train_options.steps
+    # Intervals are in gradient-step units (matching state.step counter)
     update_interval = train_options.update_interval
     reset_interval = train_options.reset_interval
     n_devices = jax.device_count()
 
     if train_options.multi_device and n_devices > 1:
         steps = steps // n_devices
-
-    # Convert External Step Intervals to Gradient Step Intervals
-    update_interval_grad = update_interval * train_options.replay_ratio
-    reset_interval_grad = reset_interval * train_options.replay_ratio
-
-    if train_options.multi_device and n_devices > 1:
-        update_interval_grad = update_interval_grad // n_devices
-        reset_interval_grad = reset_interval_grad // n_devices
 
     config = {
         "puzzle_options": puzzle_opts,
@@ -458,9 +463,10 @@ def qfunction_train_command(
         "eval_options": eval_options,
         "q_config": q_config,
         "derived_parameters": {
-            "effective_steps": steps,
-            "effective_update_interval": update_interval_grad,
-            "effective_reset_interval": reset_interval_grad,
+            "training_loop_iterations": steps,
+            "total_gradient_updates": steps * n_devices if train_options.multi_device else steps,
+            "update_interval_gradient_steps": update_interval,
+            "reset_interval_gradient_steps": reset_interval,
             "n_devices": n_devices,
         },
     }
@@ -504,7 +510,13 @@ def qfunction_train_command(
     state = state.replace(opt_state=opt_state)
 
     # Calculate soft update tau for use in train_builder
-    soft_update_tau = 1.0 / update_interval_grad if train_options.use_soft_update else 0.0
+    # Intervals are in gradient-step units, matching state.step counter
+    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
+
+    # Disable JIT hard updates when loss_threshold is used (handled externally)
+    enable_jit_hard_update = (
+        not train_options.use_soft_update and train_options.loss_threshold == float("inf")
+    )
 
     # Build training function
     qfunction_train_fn = qfunction_train_builder(
@@ -517,8 +529,9 @@ def qfunction_train_command(
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
         use_soft_update=train_options.use_soft_update,
-        update_interval=update_interval_grad,
+        update_interval=update_interval,
         soft_update_tau=soft_update_tau,
+        enable_jit_hard_update=enable_jit_hard_update,
     )
 
     get_datasets = get_qfunction_dataset_builder(
@@ -592,34 +605,40 @@ def qfunction_train_command(
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target_q, i)
 
-        # Note: Target update is now handled inside qfunction_train_fn
-        # We still need to handle force update and reset logic outside the compiled loop
+        # Handle target updates outside JIT when loss_threshold or force_update is used
+        # (When enable_jit_hard_update=True, updates are handled inside JIT)
+        if not train_options.use_soft_update and not enable_jit_hard_update:
+            current_step = int(state.step)
 
-        # Track regular hard updates and force updates
-        if not train_options.use_soft_update:
-            # Track regular hard update intervals
-            if i % update_interval_grad == 0 and i > 0:
-                last_update_step = i
+            # Track when regular interval-based update would occur
+            is_regular_update_step = (current_step % update_interval == 0) and (current_step > 0)
 
-            # Force update check (interval-driven OR loss threshold)
-            if (i - last_update_step >= train_options.force_update_interval) or (
-                (i % update_interval_grad == 0)
-                and (i > 0)
-                and (loss <= train_options.loss_threshold)
-            ):
+            # Update conditions:
+            # 1. Force update interval exceeded, OR
+            # 2. Regular update interval + loss below threshold
+            should_force_update = (
+                current_step - last_update_step >= train_options.force_update_interval
+            )
+            should_regular_update = is_regular_update_step and (
+                loss <= train_options.loss_threshold
+            )
+
+            if should_force_update or should_regular_update:
                 state = state.update_target_params(state.get_full_eval_params()["params"])
                 if train_options.opt_state_reset:
                     state = state.replace(opt_state=optimizer.init(state.params))
-                last_update_step = i
+                last_update_step = current_step
 
         # Reset logic (only if target was updated since last reset)
+        current_step = int(state.step)
+        total_gradient_steps = steps * (n_devices if train_options.multi_device else 1)
         if (
-            (i - last_reset_time >= reset_interval_grad)
-            and (i > 0)
-            and (i < steps * 2 / 3)
+            (current_step - last_reset_time >= reset_interval)
+            and (current_step > 0)
+            and (current_step < total_gradient_steps * 2 / 3)
             and (last_update_step >= last_reset_time)
         ):
-            last_reset_time = i
+            last_reset_time = current_step
             reset_params = {"params": state.params}
             if state.batch_stats is not None:
                 reset_params["batch_stats"] = state.batch_stats
