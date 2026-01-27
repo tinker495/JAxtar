@@ -820,6 +820,7 @@ def build_outer_loop(
             bound=new_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
+            trace_size=jnp.array(0, dtype=jnp.int32),
         )
 
         reset_sr = reset_sr.push_frontier_to_stack(loop_state.frontier, new_bound, frontier_actions)
