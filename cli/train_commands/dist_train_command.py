@@ -320,9 +320,12 @@ def heuristic_train_command(
 
         # Handle target updates outside JIT when loss_threshold or force_update is used
         # (When enable_jit_hard_update=True, updates are handled inside JIT)
-        if not train_options.use_soft_update and not enable_jit_hard_update:
-            current_step = int(state.step)
-
+        current_step = int(state.step)
+        if train_options.use_soft_update:
+            # Soft updates happen every step inside JIT
+            last_update_step = current_step
+        elif not enable_jit_hard_update:
+            # Non-JIT hard updates with optional loss threshold / force update
             # Track when regular interval-based update would occur
             is_regular_update_step = (current_step % update_interval == 0) and (current_step > 0)
 
@@ -341,9 +344,13 @@ def heuristic_train_command(
                 if train_options.opt_state_reset:
                     state = state.replace(opt_state=optimizer.init(state.params))
                 last_update_step = current_step
+        else:
+            # JIT hard updates: compute last update step from the step counter
+            # Updates happen at exact intervals inside JIT, so we can calculate when they occurred
+            if current_step > 0:
+                last_update_step = (current_step // update_interval) * update_interval
 
         # Reset logic (only if target was updated since last reset)
-        current_step = int(state.step)
         total_gradient_steps = (
             steps * train_options.replay_ratio * (n_devices if train_options.multi_device else 1)
         )
@@ -607,9 +614,12 @@ def qfunction_train_command(
 
         # Handle target updates outside JIT when loss_threshold or force_update is used
         # (When enable_jit_hard_update=True, updates are handled inside JIT)
-        if not train_options.use_soft_update and not enable_jit_hard_update:
-            current_step = int(state.step)
-
+        current_step = int(state.step)
+        if train_options.use_soft_update:
+            # Soft updates happen every step inside JIT
+            last_update_step = current_step
+        elif not enable_jit_hard_update:
+            # Non-JIT hard updates with optional loss threshold / force update
             # Track when regular interval-based update would occur
             is_regular_update_step = (current_step % update_interval == 0) and (current_step > 0)
 
@@ -628,9 +638,13 @@ def qfunction_train_command(
                 if train_options.opt_state_reset:
                     state = state.replace(opt_state=optimizer.init(state.params))
                 last_update_step = current_step
+        else:
+            # JIT hard updates: compute last update step from the step counter
+            # Updates happen at exact intervals inside JIT, so we can calculate when they occurred
+            if current_step > 0:
+                last_update_step = (current_step // update_interval) * update_interval
 
         # Reset logic (only if target was updated since last reset)
-        current_step = int(state.step)
         total_gradient_steps = steps * (n_devices if train_options.multi_device else 1)
         if (
             (current_step - last_reset_time >= reset_interval)
