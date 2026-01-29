@@ -24,11 +24,10 @@ from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
-    MeetingPoint,
-    bi_termination_condition,
     build_bi_search_result,
     check_intersection,
-    get_min_f_value,
+    common_bi_loop_condition,
+    initialize_bi_loop_common,
     materialize_meeting_point_hashidxs,
     update_meeting_point,
     update_meeting_point_best_only_deferred,
@@ -47,6 +46,7 @@ def _bi_qstar_loop_builder(
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
     use_backward_q: bool = True,
+    terminate_on_first_solution: bool = False,
 ):
     """
     Build the loop components for bidirectional Q* search.
@@ -84,54 +84,14 @@ def _bi_qstar_loop_builder(
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional Q* search from start and goal states."""
 
-        sr_batch_size = bi_result.batch_size
-
-        # Initialize forward search (from start)
-        bi_result.forward.hashtable, _, fwd_hash_idx = bi_result.forward.hashtable.insert(start)
-        bi_result.forward.cost = bi_result.forward.cost.at[fwd_hash_idx.index].set(0)
-
-        fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
-        fwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
-        fwd_states = xnp.pad(start, (0, sr_batch_size - 1))
-        fwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
-
-        # Initialize backward search (from goal)
-        # Use puzzle-level transform to obtain a concrete goal state.
-        goal = puzzle.solve_config_to_state_transform(solve_config, key=jax.random.PRNGKey(0))
-        bi_result.backward.hashtable, _, bwd_hash_idx = bi_result.backward.hashtable.insert(goal)
-        bi_result.backward.cost = bi_result.backward.cost.at[bwd_hash_idx.index].set(0)
-
-        bwd_hash_idxs = xnp.pad(bwd_hash_idx, (0, sr_batch_size - 1))
-        bwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
-        bwd_states = xnp.pad(goal, (0, sr_batch_size - 1))
-        bwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
-
-        # Check if start == goal (cost = 0 case)
-        start_in_bwd_idx, start_in_bwd_found = bi_result.backward.hashtable.lookup(start)
-        is_same = jnp.logical_and(start_in_bwd_found, start_in_bwd_idx.index == bwd_hash_idx.index)
-
-        dummy_hashidx = fwd_hash_idx
-        dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
-
-        bi_result.meeting = jax.lax.cond(
-            is_same,
-            lambda _: MeetingPoint(
-                fwd_hashidx=fwd_hash_idx,
-                bwd_hashidx=bwd_hash_idx,
-                fwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
-                bwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
-                total_cost=jnp.array(0.0, dtype=KEY_DTYPE),
-                found=jnp.array(True),
-                fwd_has_hashidx=jnp.array(True),
-                bwd_has_hashidx=jnp.array(True),
-                fwd_parent_hashidx=dummy_hashidx,
-                fwd_parent_action=dummy_action,
-                bwd_parent_hashidx=dummy_hashidx,
-                bwd_parent_action=dummy_action,
-            ),
-            lambda _: bi_result.meeting,
-            None,
-        )
+        (
+            fwd_filled,
+            fwd_current,
+            fwd_states,
+            bwd_filled,
+            bwd_current,
+            bwd_states,
+        ) = initialize_bi_loop_common(bi_result, puzzle, solve_config, start)
 
         return BiLoopStateWithStates(
             bi_result=bi_result,
@@ -139,8 +99,8 @@ def _bi_qstar_loop_builder(
             inverse_solveconfig=inverse_solveconfig,
             params_forward=q_params_forward,
             params_backward=q_params_backward,
-            current_forward=Current(hashidx=fwd_hash_idxs, cost=fwd_costs),
-            current_backward=Current(hashidx=bwd_hash_idxs, cost=bwd_costs),
+            current_forward=fwd_current,
+            current_backward=bwd_current,
             states_forward=fwd_states,
             states_backward=bwd_states,
             filled_forward=fwd_filled,
@@ -149,33 +109,15 @@ def _bi_qstar_loop_builder(
 
     def loop_condition(loop_state: BiLoopStateWithStates) -> chex.Array:
         """Check if search should continue."""
-        bi_result = loop_state.bi_result
-
-        # Check if queues have nodes
-        fwd_has_nodes = loop_state.filled_forward.any()
-        bwd_has_nodes = loop_state.filled_backward.any()
-
-        # Check hash table capacity per direction.
-        # If one direction is full, we can still expand the other direction and
-        # potentially intersect with the already-built frontier.
-        fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
-        bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
-        has_work = jnp.logical_or(
-            jnp.logical_and(fwd_has_nodes, fwd_not_full),
-            jnp.logical_and(bwd_has_nodes, bwd_not_full),
+        return common_bi_loop_condition(
+            loop_state.bi_result,
+            loop_state.filled_forward,
+            loop_state.filled_backward,
+            loop_state.current_forward,
+            loop_state.current_backward,
+            cost_weight,
+            terminate_on_first_solution,
         )
-
-        # Check termination condition
-        fwd_min_f = get_min_f_value(
-            bi_result.forward, loop_state.current_forward, loop_state.filled_forward, cost_weight
-        )
-        bwd_min_f = get_min_f_value(
-            bi_result.backward, loop_state.current_backward, loop_state.filled_backward, cost_weight
-        )
-
-        should_terminate = bi_termination_condition(bi_result, fwd_min_f, bwd_min_f, cost_weight)
-
-        return jnp.logical_and(has_work, ~should_terminate)
 
     def _expand_direction_q(
         bi_result: BiDirectionalSearchResult,
@@ -553,6 +495,7 @@ def bi_qstar_builder(
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
+    terminate_on_first_solution: bool = True,
 ):
     """
     Builds and returns a JAX-accelerated bidirectional Q* search function.
@@ -600,6 +543,7 @@ def bi_qstar_builder(
         look_ahead_pruning,
         pessimistic_update,
         use_backward_q=use_backward_q,
+        terminate_on_first_solution=terminate_on_first_solution,
     )
 
     def bi_qstar(

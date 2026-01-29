@@ -12,6 +12,7 @@ from typing import Any
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, HashIdx, base_dataclass, xtructure_dataclass
 
@@ -681,6 +682,7 @@ def bi_termination_condition(
     fwd_min_f: chex.Array,
     bwd_min_f: chex.Array,
     cost_weight: float = 1.0,
+    terminate_on_first_solution: bool = True,
 ) -> chex.Array:
     """
     Check the termination condition for bidirectional search.
@@ -699,10 +701,14 @@ def bi_termination_condition(
         fwd_min_f: Minimum f-value (cost_weight * g + h) in forward direction
         bwd_min_f: Minimum f-value (cost_weight * g + h) in backward direction
         cost_weight: Weight for path cost, must match PQ ordering
+        terminate_on_first_solution: If True, terminate as soon as any path is found
 
     Returns:
         Boolean indicating whether the search should terminate
     """
+    if terminate_on_first_solution:
+        return bi_result.meeting.found
+
     # Best known path through meeting point (weighted for comparison with PQ keys)
     meeting_cost_weighted = cost_weight * bi_result.meeting.total_cost
 
@@ -753,3 +759,205 @@ def get_min_f_value(
     f_values = jnp.where(filled, f_values, jnp.inf)
 
     return jnp.min(f_values)
+
+
+def common_bi_loop_condition(
+    bi_result: BiDirectionalSearchResult,
+    filled_forward: chex.Array,
+    filled_backward: chex.Array,
+    current_forward: Current,
+    current_backward: Current,
+    cost_weight: float,
+    terminate_on_first_solution: bool,
+) -> chex.Array:
+    """
+    Common loop condition for bidirectional search.
+
+    Continues while:
+    1. At least one direction can still expand nodes (has frontier AND hashtable capacity)
+    2. Termination condition not met (lower_bound < upper_bound)
+    """
+    # Check if queues have nodes
+    fwd_has_nodes = filled_forward.any()
+    bwd_has_nodes = filled_backward.any()
+
+    # Check hash table capacity per direction.
+    # If one direction is full, we can still expand the other direction and
+    # potentially intersect with the already-built frontier.
+    fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
+    bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
+    has_work = jnp.logical_or(
+        jnp.logical_and(fwd_has_nodes, fwd_not_full),
+        jnp.logical_and(bwd_has_nodes, bwd_not_full),
+    )
+
+    # Check termination condition
+    fwd_min_f = get_min_f_value(bi_result.forward, current_forward, filled_forward, cost_weight)
+    bwd_min_f = get_min_f_value(bi_result.backward, current_backward, filled_backward, cost_weight)
+
+    should_terminate = bi_termination_condition(
+        bi_result, fwd_min_f, bwd_min_f, cost_weight, terminate_on_first_solution
+    )
+
+    return jnp.logical_and(has_work, ~should_terminate)
+
+
+def initialize_bi_loop_common(
+    bi_result: BiDirectionalSearchResult,
+    puzzle: Puzzle,
+    solve_config: Puzzle.SolveConfig,
+    start: Puzzle.State,
+) -> tuple[chex.Array, Current, Puzzle.State, chex.Array, Current, Puzzle.State]:
+    """
+    Common initialization logic for bidirectional search loop state.
+    Initializes forward (from start) and backward (from goal) frontiers.
+
+    Returns:
+       (fwd_filled, fwd_current, fwd_states, bwd_filled, bwd_current, bwd_states)
+    """
+    sr_batch_size = bi_result.batch_size
+
+    # Initialize forward search (from start)
+    bi_result.forward.hashtable, _, fwd_hash_idx = bi_result.forward.hashtable.insert(start)
+    bi_result.forward.cost = bi_result.forward.cost.at[fwd_hash_idx.index].set(0)
+
+    fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
+    fwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    fwd_states = xnp.pad(start, (0, sr_batch_size - 1))
+    fwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
+    fwd_current = Current(hashidx=fwd_hash_idxs, cost=fwd_costs)
+
+    # Initialize backward search (from goal)
+    # Use puzzle-level transform to obtain a concrete goal state.
+    goal = puzzle.solve_config_to_state_transform(solve_config, key=jax.random.PRNGKey(0))
+    bi_result.backward.hashtable, _, bwd_hash_idx = bi_result.backward.hashtable.insert(goal)
+    bi_result.backward.cost = bi_result.backward.cost.at[bwd_hash_idx.index].set(0)
+
+    bwd_hash_idxs = xnp.pad(bwd_hash_idx, (0, sr_batch_size - 1))
+    bwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    bwd_states = xnp.pad(goal, (0, sr_batch_size - 1))
+    bwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
+    bwd_current = Current(hashidx=bwd_hash_idxs, cost=bwd_costs)
+
+    # Check if start == goal (cost = 0 case)
+    start_in_bwd_idx, start_in_bwd_found = bi_result.backward.hashtable.lookup(start)
+    is_same = jnp.logical_and(start_in_bwd_found, start_in_bwd_idx.index == bwd_hash_idx.index)
+
+    dummy_hashidx = fwd_hash_idx
+    dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
+
+    bi_result.meeting = jax.lax.cond(
+        is_same,
+        lambda _: MeetingPoint(
+            fwd_hashidx=fwd_hash_idx,
+            bwd_hashidx=bwd_hash_idx,
+            fwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
+            bwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
+            total_cost=jnp.array(0.0, dtype=KEY_DTYPE),
+            found=jnp.array(True),
+            fwd_has_hashidx=jnp.array(True),
+            bwd_has_hashidx=jnp.array(True),
+            fwd_parent_hashidx=dummy_hashidx,
+            fwd_parent_action=dummy_action,
+            bwd_parent_hashidx=dummy_hashidx,
+            bwd_parent_action=dummy_action,
+        ),
+        lambda _: bi_result.meeting,
+        None,
+    )
+
+    return fwd_filled, fwd_current, fwd_states, bwd_filled, bwd_current, bwd_states
+
+
+def reconstruct_bidirectional_path(
+    bi_result: BiDirectionalSearchResult,
+    puzzle: Puzzle,
+) -> list[tuple[int, Puzzle.State]]:
+    """
+    Reconstruct the full path from start to goal using the meeting point.
+
+    The return value is a sequence of (action, state) pairs along the solution.
+    The first element corresponds to the start state and uses action = -1.
+    For i >= 1, `action` is the forward action taken to reach `state` from the
+    previous state.
+
+    Args:
+        bi_result: BiDirectionalSearchResult from bidirectional search
+        puzzle: Puzzle instance
+
+    Returns:
+        List of (action, state) pairs from start to goal.
+    """
+    if not bi_result.meeting.found:
+        return []
+
+    def _u32_max() -> int:
+        # Sentinel used by xtructure for "-1" index (uint32 max).
+        return (1 << 32) - 1
+
+    def _trace_root_to_target(sr: SearchResult, target: HashIdx) -> tuple[list[int], list[int]]:
+        """Return (indices, actions) where indices are root->target inclusive."""
+        idx = int(jax.device_get(target.index))
+        max_steps = max(1, int(jax.device_get(sr.generated_size)) + 1)
+        indices_rev: list[int] = [idx]
+        actions_rev: list[int] = []
+        for _ in range(max_steps):
+            parent = sr.parent[idx]
+            parent_idx = int(jax.device_get(parent.hashidx.index))
+            if parent_idx == _u32_max():
+                break
+            actions_rev.append(int(jax.device_get(parent.action)))
+            idx = parent_idx
+            indices_rev.append(idx)
+        else:
+            raise RuntimeError(
+                "Path reconstruction exceeded max_steps (cycle/corruption suspected)"
+            )
+        return list(reversed(indices_rev)), list(reversed(actions_rev))
+
+    def _trace_target_to_root(sr: SearchResult, start_idx: HashIdx) -> tuple[list[int], list[int]]:
+        """Return (indices, actions) where indices are start->root inclusive."""
+        idx = int(jax.device_get(start_idx.index))
+        max_steps = max(1, int(jax.device_get(sr.generated_size)) + 1)
+        indices: list[int] = [idx]
+        actions: list[int] = []
+        for _ in range(max_steps):
+            parent = sr.parent[idx]
+            parent_idx = int(jax.device_get(parent.hashidx.index))
+            if parent_idx == _u32_max():
+                break
+            actions.append(int(jax.device_get(parent.action)))
+            idx = parent_idx
+            indices.append(idx)
+        else:
+            raise RuntimeError(
+                "Path reconstruction exceeded max_steps (cycle/corruption suspected)"
+            )
+        return indices, actions
+
+    # Forward half: start -> meeting
+    fwd_indices, fwd_actions = _trace_root_to_target(
+        bi_result.forward, bi_result.meeting.fwd_hashidx
+    )
+    fwd_states = [bi_result.forward.hashtable[HashIdx(index=jnp.uint32(i))] for i in fwd_indices]
+
+    # Backward half: meeting -> goal (follow parent pointers toward the backward root)
+    # NOTE: puxle's `get_inverse_neighbours` uses the convention that the i-th inverse neighbour is a
+    # predecessor state from which applying forward action i reaches the current state.
+    # With that convention, the stored actions are already forward actions (no inversion needed).
+    bwd_indices, bwd_actions = _trace_target_to_root(
+        bi_result.backward, bi_result.meeting.bwd_hashidx
+    )
+    bwd_states = [bi_result.backward.hashtable[HashIdx(index=jnp.uint32(i))] for i in bwd_indices]
+
+    # Merge, dropping the duplicated meeting state in the backward half.
+    states = fwd_states + bwd_states[1:]
+    actions = fwd_actions + bwd_actions
+
+    if len(states) == 0:
+        return []
+
+    path: list[tuple[int, Puzzle.State]] = [(-1, states[0])]
+    for a, s in zip(actions, states[1:]):
+        path.append((int(a), s))
+    return path

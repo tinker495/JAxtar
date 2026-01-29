@@ -24,7 +24,7 @@ def __getattr__(name: str) -> Any:
 
         return bi_qstar_builder
     if name == "reconstruct_bidirectional_path":
-        from .bi_astar import reconstruct_bidirectional_path
+        from .bi_search_base import reconstruct_bidirectional_path
 
         return reconstruct_bidirectional_path
 
