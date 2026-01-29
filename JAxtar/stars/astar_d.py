@@ -15,6 +15,7 @@ from JAxtar.stars.search_base import (
     Parent,
     SearchResult,
 )
+from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -156,10 +157,12 @@ def _astar_d_loop_builder(
             flat_need_compute = need_compute.flatten()
 
             n = flat_size
-            indices = jnp.arange(n, dtype=jnp.int32)
+            n = flat_size
             # Stable sort so `need_compute=True` comes first (key False), preserving order.
-            sort_key = jnp.logical_not(flat_need_compute).astype(jnp.int32)
-            _, sorted_indices = jax.lax.sort_key_val(sort_key, indices, dimension=0, is_stable=True)
+            # Stable sort so `need_compute=True` comes first (key False), preserving order.
+            sorted_indices = stable_partition_three(
+                flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
+            )
 
             sorted_states = flat_states[sorted_indices]
             sorted_mask = flat_need_compute[sorted_indices]

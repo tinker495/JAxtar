@@ -20,6 +20,7 @@ from JAxtar.id_stars.search_base import (
     build_outer_loop,
     finalize_builder,
 )
+from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -42,8 +43,7 @@ def _build_chunked_heuristic_eval(
         flat_states: Puzzle.State,
         flat_valid: jnp.ndarray,
     ) -> jnp.ndarray:
-        sort_key = jnp.logical_not(flat_valid).astype(jnp.int32)
-        _, sorted_idx = jax.lax.sort_key_val(sort_key, flat_indices, dimension=0, is_stable=True)
+        sorted_idx = stable_partition_three(flat_valid, jnp.zeros_like(flat_valid, dtype=jnp.bool_))
         sorted_states = xnp.take(flat_states, sorted_idx, axis=0)
         sorted_mask = flat_valid[sorted_idx]
 

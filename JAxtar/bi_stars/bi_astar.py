@@ -33,6 +33,7 @@ from JAxtar.bi_stars.bi_search_base import (
     update_meeting_point,
 )
 from JAxtar.stars.search_base import Current, Parent, SearchResult
+from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -296,7 +297,7 @@ def _bi_astar_loop_builder(
         )
 
         # Stable partition for efficiency
-        invperm = _stable_partition_three(flatten_new_states_mask, final_process_mask)
+        invperm = stable_partition_three(flatten_new_states_mask, final_process_mask)
         flatten_final_process_mask = final_process_mask[invperm]
         flatten_new_states_mask = flatten_new_states_mask[invperm]
         flatten_neighbours = flatten_neighbours[invperm]
@@ -432,28 +433,6 @@ def _bi_astar_loop_builder(
         )
 
     return init_loop_state, loop_condition, loop_body
-
-
-def _stable_partition_three(mask2: chex.Array, mask1: chex.Array) -> chex.Array:
-    """
-    Compute a stable 3-way partition inverse permutation.
-
-    Categories:
-    - 2 (mask2): first block
-    - 1 (mask1 & ~mask2): second block
-    - 0 (else): last block
-
-    Returns indices for gathering arrays to achieve [2..., 1..., 0...] ordering.
-    """
-    flat2 = mask2.reshape(-1)
-    flat1 = jnp.logical_and(mask1.reshape(-1), jnp.logical_not(flat2))
-
-    cat = jnp.where(flat2, 2, jnp.where(flat1, 1, 0)).astype(jnp.int32)
-    n = cat.shape[0]
-    indices = jnp.arange(n, dtype=jnp.int32)
-
-    _, invperm = jax.lax.sort_key_val(-cat, indices, dimension=0, is_stable=True)
-    return invperm
 
 
 def bi_astar_builder(

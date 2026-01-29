@@ -17,6 +17,7 @@ from JAxtar.beamsearch.search_base import (
     non_backtracking_mask,
     select_beam,
 )
+from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -145,18 +146,11 @@ def _heuristic_beam_loop_builder(
             jnp.arange(sr_beam_width, dtype=jnp.int32), (sr_action_size, sr_beam_width)
         )
 
-        perm_keys = jnp.where(child_valid, 0, 1).astype(jnp.int32)
-        perm = jnp.argsort(perm_keys, axis=1)
-
-        neighbours = xnp.take_along_axis(neighbours, perm, axis=1)
-        child_costs = jnp.take_along_axis(child_costs, perm, axis=1)
-        child_valid = jnp.take_along_axis(child_valid, perm, axis=1)
-        parent_matrix = jnp.take_along_axis(parent_matrix, perm, axis=1)
-
         flat_states_tree = neighbours.reshape((flat_count,))
         flat_valid = child_valid.reshape(flat_count)
-        global_perm_keys = jnp.where(flat_valid, 0, 1).astype(jnp.int32)
-        global_perm = jnp.argsort(global_perm_keys, axis=0)
+        global_perm = stable_partition_three(
+            flat_valid, jnp.zeros_like(flat_valid, dtype=jnp.bool_)
+        )
         ordered_states_tree = xnp.take(flat_states_tree, global_perm, axis=0)
         ordered_valid = jnp.take(flat_valid, global_perm, axis=0)
 

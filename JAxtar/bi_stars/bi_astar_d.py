@@ -35,6 +35,7 @@ from JAxtar.bi_stars.bi_search_base import (
     update_meeting_point_best_only_deferred,
 )
 from JAxtar.stars.search_base import Current, Parant_with_Costs, Parent, SearchResult
+from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -255,10 +256,9 @@ def _bi_astar_d_loop_builder(
                 flat_need_compute = need_compute.flatten()
 
                 n = flat_size
-                indices = jnp.arange(n, dtype=jnp.int32)
-                sort_key = jnp.logical_not(flat_need_compute).astype(jnp.int32)
-                _, sorted_indices = jax.lax.sort_key_val(
-                    sort_key, indices, dimension=0, is_stable=True
+                n = flat_size
+                sorted_indices = stable_partition_three(
+                    flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
                 )
 
                 sorted_states = flat_states[sorted_indices]

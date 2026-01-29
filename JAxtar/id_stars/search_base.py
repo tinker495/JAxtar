@@ -16,6 +16,7 @@ from xtructure.stack import Stack
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
+from JAxtar.utils.array_ops import stable_partition_three
 
 
 def _batched_state_equal(lhs: Puzzle.State, rhs: Puzzle.State) -> jnp.ndarray:
@@ -317,8 +318,7 @@ class IDSearchBase:
         """
         n_push = jnp.sum(valid_mask.astype(jnp.int32))
 
-        sort_keys = jnp.where(valid_mask, 0, 1)
-        perm = jnp.argsort(sort_keys)
+        perm = stable_partition_three(valid_mask, jnp.zeros_like(valid_mask, dtype=jnp.bool_))
 
         states_sorted = xnp.take(states, perm, axis=0)
         costs_sorted = costs[perm]
