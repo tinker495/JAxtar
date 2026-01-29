@@ -76,6 +76,7 @@ def _bi_astar_d_loop_builder(
     def init_loop_state(
         bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
+        inverse_solveconfig: Puzzle.SolveConfig,
         start: Puzzle.State,
         heuristic_params_forward: Any,
         heuristic_params_backward: Any,
@@ -135,6 +136,7 @@ def _bi_astar_d_loop_builder(
         return BiLoopStateWithStates(
             bi_result=bi_result,
             solve_config=solve_config,
+            inverse_solveconfig=inverse_solveconfig,
             params_forward=heuristic_params_forward,
             params_backward=heuristic_params_backward,
             current_forward=Current(hashidx=fwd_hash_idxs, cost=fwd_costs),
@@ -178,6 +180,7 @@ def _bi_astar_d_loop_builder(
     def _expand_direction_deferred(
         bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
+        inverse_solveconfig: Puzzle.SolveConfig,
         heuristic_params: Any,
         current: Current,
         states: Puzzle.State,
@@ -194,10 +197,12 @@ def _bi_astar_d_loop_builder(
         if is_forward:
             search_result = bi_result.forward
             opposite_sr = bi_result.backward
+            current_solve_config = solve_config
             get_neighbours_fn = puzzle.batched_get_neighbours
         else:
             search_result = bi_result.backward
             opposite_sr = bi_result.forward
+            current_solve_config = inverse_solveconfig
             get_neighbours_fn = puzzle.batched_get_inverse_neighbours
 
         sr_batch_size = search_result.batch_size
@@ -218,7 +223,7 @@ def _bi_astar_d_loop_builder(
 
         if look_ahead_pruning:
             # Look-ahead: compute neighbors and filter before inserting into PQ
-            neighbour_look_a_head, ncosts = get_neighbours_fn(solve_config, states, filled)
+            neighbour_look_a_head, ncosts = get_neighbours_fn(current_solve_config, states, filled)
             look_a_head_costs = (costs + ncosts).astype(KEY_DTYPE)
 
             flattened_neighbour_look_head = neighbour_look_a_head.flatten()
@@ -230,6 +235,7 @@ def _bi_astar_d_loop_builder(
 
             old_costs = search_result.get_cost(current_hash_idxs)
 
+            # PQ insertion mask: Must improve cost or be new in THIS direction's HT
             candidate_mask = jnp.logical_or(
                 ~found, jnp.less(flattened_look_a_head_costs, old_costs)
             )
@@ -240,6 +246,19 @@ def _bi_astar_d_loop_builder(
                     flattened_neighbour_look_head, flattened_look_a_head_costs, candidate_mask
                 )
                 & candidate_mask
+            )
+
+            # Meeting update mask: Just needs to be unique (min cost) among current batch
+            # We DON'T filter by improvement against THIS direction's HT, because
+            # we want to update the meeting point even if we haven't improved our own path,
+            # as long as the total path (fwd + bwd) might be optimal.
+            meeting_mask = (
+                xnp.unique_mask(
+                    flattened_neighbour_look_head,
+                    flattened_look_a_head_costs,
+                    flattened_filled_tiles,
+                )
+                & flattened_filled_tiles
             )
 
             if use_heuristic:
@@ -354,7 +373,7 @@ def _bi_astar_d_loop_builder(
                 opposite_sr=opposite_sr,
                 candidate_states=flattened_neighbour_look_head,
                 candidate_costs=flattened_look_a_head_costs,
-                candidate_mask=optimal_mask,
+                candidate_mask=meeting_mask,
                 this_found=found,
                 this_hashidx=current_hash_idxs,
                 this_old_costs=old_costs,
@@ -467,6 +486,7 @@ def _bi_astar_d_loop_builder(
         """Main loop body for bidirectional A* deferred."""
         bi_result = loop_state.bi_result
         solve_config = loop_state.solve_config
+        inverse_solveconfig = loop_state.inverse_solveconfig
 
         fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
         bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
@@ -475,6 +495,7 @@ def _bi_astar_d_loop_builder(
             return _expand_direction_deferred(
                 bi_result,
                 solve_config,
+                inverse_solveconfig,
                 loop_state.params_forward,
                 loop_state.current_forward,
                 loop_state.states_forward,
@@ -487,6 +508,7 @@ def _bi_astar_d_loop_builder(
             return _expand_direction_deferred(
                 bi_result,
                 solve_config,
+                inverse_solveconfig,
                 loop_state.params_backward,
                 loop_state.current_backward,
                 loop_state.states_backward,
@@ -523,6 +545,7 @@ def _bi_astar_d_loop_builder(
         return BiLoopStateWithStates(
             bi_result=bi_result,
             solve_config=solve_config,
+            inverse_solveconfig=inverse_solveconfig,
             params_forward=loop_state.params_forward,
             params_backward=loop_state.params_backward,
             current_forward=new_fwd_current,
@@ -617,8 +640,10 @@ def bi_astar_d_builder(
         heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
         # Build a backward solve config that treats `start` as the target.
         # Prefer puzzle-level normalization via hindsight_transform.
+        inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
+
         if use_backward_heuristic:
-            backward_solve_config = puzzle.hindsight_transform(solve_config, start)
+            backward_solve_config = inverse_solveconfig
             heuristic_params_backward = heuristic.prepare_heuristic_parameters(
                 backward_solve_config, **kwargs
             )
@@ -628,6 +653,7 @@ def bi_astar_d_builder(
         loop_state = init_loop_state(
             bi_result_template,
             solve_config,
+            inverse_solveconfig,
             start,
             heuristic_params_forward,
             heuristic_params_backward,

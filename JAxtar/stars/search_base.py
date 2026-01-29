@@ -469,6 +469,7 @@ class SearchResult:
                 if hasattr(puzzle, "inverse_action_map"):
                     inv_map = puzzle.inverse_action_map  # [action_size]
                     inv_actions = inv_map[parent_actions.astype(jnp.int32)]
+                    # Use batched_get_actions for efficient O(batch) expansion
                     current_states, ncosts = puzzle.batched_get_actions(
                         solve_config, parent_states, inv_actions, filled
                     )

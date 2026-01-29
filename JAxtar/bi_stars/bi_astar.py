@@ -70,6 +70,7 @@ def _bi_astar_loop_builder(
     def init_loop_state(
         bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
+        inverse_solveconfig: Puzzle.SolveConfig,
         start: Puzzle.State,
         heuristic_params_forward: Any,
         heuristic_params_backward: Any,
@@ -128,6 +129,7 @@ def _bi_astar_loop_builder(
         return BiLoopState(
             bi_result=bi_result,
             solve_config=solve_config,
+            inverse_solveconfig=inverse_solveconfig,
             params_forward=heuristic_params_forward,
             params_backward=heuristic_params_backward,
             current_forward=Current(hashidx=fwd_hash_idxs, cost=fwd_costs),
@@ -175,6 +177,7 @@ def _bi_astar_loop_builder(
     def _expand_direction(
         bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
+        inverse_solveconfig: Puzzle.SolveConfig,
         heuristic_params: Any,
         current: Current,
         filled: chex.Array,
@@ -198,10 +201,12 @@ def _bi_astar_loop_builder(
         if is_forward:
             search_result = bi_result.forward
             opposite_sr = bi_result.backward
+            current_solve_config = solve_config
             get_neighbours_fn = puzzle.batched_get_neighbours
         else:
             search_result = bi_result.backward
             opposite_sr = bi_result.forward
+            current_solve_config = inverse_solveconfig
             get_neighbours_fn = puzzle.batched_get_inverse_neighbours
 
         sr_batch_size = search_result.batch_size
@@ -210,7 +215,7 @@ def _bi_astar_loop_builder(
         states = search_result.get_state(current)
 
         # Get neighbors
-        neighbours, ncost = get_neighbours_fn(solve_config, states, filled)
+        neighbours, ncost = get_neighbours_fn(current_solve_config, states, filled)
         # neighbours: [action_size, batch_size]
         # ncost: [action_size, batch_size]
 
@@ -380,6 +385,7 @@ def _bi_astar_loop_builder(
         """
         bi_result = loop_state.bi_result
         solve_config = loop_state.solve_config
+        inverse_solveconfig = loop_state.inverse_solveconfig
 
         fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
         bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
@@ -388,6 +394,7 @@ def _bi_astar_loop_builder(
             return _expand_direction(
                 bi_result,
                 solve_config,
+                inverse_solveconfig,
                 loop_state.params_forward,
                 loop_state.current_forward,
                 loop_state.filled_forward,
@@ -399,6 +406,7 @@ def _bi_astar_loop_builder(
             return _expand_direction(
                 bi_result,
                 solve_config,
+                inverse_solveconfig,
                 loop_state.params_backward,
                 loop_state.current_backward,
                 loop_state.filled_backward,
@@ -424,6 +432,7 @@ def _bi_astar_loop_builder(
         return BiLoopState(
             bi_result=bi_result,
             solve_config=solve_config,
+            inverse_solveconfig=inverse_solveconfig,
             params_forward=loop_state.params_forward,
             params_backward=loop_state.params_backward,
             current_forward=new_fwd_current,
@@ -509,8 +518,10 @@ def bi_astar_builder(
         heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
         # Build a backward solve config that treats `start` as the target.
         # Prefer puzzle-level normalization via hindsight_transform.
+        inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
+
         if use_backward_heuristic:
-            backward_solve_config = puzzle.hindsight_transform(solve_config, start)
+            backward_solve_config = inverse_solveconfig
             heuristic_params_backward = heuristic.prepare_heuristic_parameters(
                 backward_solve_config, **kwargs
             )
@@ -520,6 +531,7 @@ def bi_astar_builder(
         loop_state = init_loop_state(
             bi_result_template,
             solve_config,
+            inverse_solveconfig,
             start,
             heuristic_params_forward,
             heuristic_params_backward,

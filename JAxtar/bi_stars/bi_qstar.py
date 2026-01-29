@@ -77,6 +77,7 @@ def _bi_qstar_loop_builder(
     def init_loop_state(
         bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
+        inverse_solveconfig: Puzzle.SolveConfig,
         start: Puzzle.State,
         q_params_forward: Any,
         q_params_backward: Any,
@@ -135,6 +136,7 @@ def _bi_qstar_loop_builder(
         return BiLoopStateWithStates(
             bi_result=bi_result,
             solve_config=solve_config,
+            inverse_solveconfig=inverse_solveconfig,
             params_forward=q_params_forward,
             params_backward=q_params_backward,
             current_forward=Current(hashidx=fwd_hash_idxs, cost=fwd_costs),
@@ -178,6 +180,7 @@ def _bi_qstar_loop_builder(
     def _expand_direction_q(
         bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
+        inverse_solveconfig: Puzzle.SolveConfig,
         q_params: Any,
         current: Current,
         states: Puzzle.State,
@@ -193,10 +196,12 @@ def _bi_qstar_loop_builder(
         if is_forward:
             search_result = bi_result.forward
             opposite_sr = bi_result.backward
+            current_solve_config = solve_config
             get_neighbours_fn = puzzle.batched_get_neighbours
         else:
             search_result = bi_result.backward
             opposite_sr = bi_result.forward
+            current_solve_config = inverse_solveconfig
             get_neighbours_fn = puzzle.batched_get_inverse_neighbours
 
         sr_batch_size = search_result.batch_size
@@ -215,14 +220,16 @@ def _bi_qstar_loop_builder(
 
         # For backward direction, action indices refer to inverse neighbours.
         # Action-dependent Q(s, a) on the backward "parent" state is not semantically aligned.
-        # Instead, when Q is available (retargetable), we derive a state-value heuristic on the
-        # predecessor states and run a deferred A*-style ordering in the backward direction.
-        use_value_heuristic = (not is_forward) and use_q
+        # However, if inverse_action_map is available, we can map inverse action indices
+        # to the corresponding forward actions effectively allowing us to use Q(s, a)
+        # as a heuristic for the edge (s, s').
+        can_optimize_bwd = (not is_forward) and use_q and hasattr(puzzle, "inverse_action_map")
+        use_value_heuristic = (not is_forward) and use_q and (not can_optimize_bwd)
         use_heuristic_in_pop = use_value_heuristic
 
-        need_neighbours = look_ahead_pruning or (not use_q) or use_value_heuristic
+        need_neighbours = look_ahead_pruning or use_value_heuristic
         if need_neighbours:
-            neighbour_look_a_head, ncosts = get_neighbours_fn(solve_config, states, filled)
+            neighbour_look_a_head, ncosts = get_neighbours_fn(current_solve_config, states, filled)
             look_a_head_costs = (costs + ncosts).astype(KEY_DTYPE)
 
         flattened_filled_tiles = filled_tiles.flatten()
@@ -263,6 +270,17 @@ def _bi_qstar_loop_builder(
             else:
                 optimal_mask = flattened_filled_tiles
 
+            # Meeting mask for value heuristic branch
+            # Relaxed mask for meeting usage: unique state with best cost in this batch.
+            meeting_mask = (
+                xnp.unique_mask(
+                    flattened_neighbour_look_head,
+                    flattened_look_a_head_costs,
+                    flattened_filled_tiles,
+                )
+                & flattened_filled_tiles
+            )
+
             # Best-only early meeting update without HT insertion.
             # Ensure we have this-direction lookup info for meeting accounting.
             this_hashidx_all, this_found_all = search_result.hashtable.lookup_parallel(
@@ -275,7 +293,7 @@ def _bi_qstar_loop_builder(
                 opposite_sr=opposite_sr,
                 candidate_states=flattened_neighbour_look_head,
                 candidate_costs=flattened_look_a_head_costs,
-                candidate_mask=optimal_mask,
+                candidate_mask=meeting_mask,  # Use relaxed mask
                 this_found=this_found_all,
                 this_hashidx=this_hashidx_all,
                 this_old_costs=this_old_costs_all,
@@ -289,6 +307,10 @@ def _bi_qstar_loop_builder(
                 # Forward direction: Q(s, a) on parent states.
                 q_vals = variable_q_batch_switcher(q_params, states, filled)
                 q_vals = q_vals.transpose().astype(KEY_DTYPE)  # [action_size, batch_size]
+
+                if can_optimize_bwd:
+                    inv_map = puzzle.inverse_action_map
+                    q_vals = q_vals[inv_map, :]
             else:
                 # Fallback: use true step costs so pop maps dist -> 0 via (step_cost - step_cost).
                 q_vals = ncosts.astype(KEY_DTYPE)
@@ -328,6 +350,17 @@ def _bi_qstar_loop_builder(
                 better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
                 optimal_mask = unique_mask & (jnp.logical_or(~found, better_cost_mask))
 
+                # Meeting mask for regular Q branch with look ahead
+                # Relaxed mask for meeting usage: unique state with best cost in this batch.
+                meeting_mask = (
+                    xnp.unique_mask(
+                        flattened_neighbour_look_head,
+                        flattened_look_a_head_costs,
+                        flattened_filled_tiles,
+                    )
+                    & flattened_filled_tiles
+                )
+
                 # Best-only early meeting update without HT insertion.
                 this_hashidx_all, this_found_all = search_result.hashtable.lookup_parallel(
                     flattened_neighbour_look_head, flattened_filled_tiles
@@ -339,7 +372,7 @@ def _bi_qstar_loop_builder(
                     opposite_sr=opposite_sr,
                     candidate_states=flattened_neighbour_look_head,
                     candidate_costs=flattened_look_a_head_costs,
-                    candidate_mask=optimal_mask,
+                    candidate_mask=meeting_mask,  # Use relaxed mask
                     this_found=this_found_all,
                     this_hashidx=this_hashidx_all,
                     this_old_costs=this_old_costs_all,
@@ -437,6 +470,7 @@ def _bi_qstar_loop_builder(
         """Main loop body for bidirectional Q*."""
         bi_result = loop_state.bi_result
         solve_config = loop_state.solve_config
+        inverse_solveconfig = loop_state.inverse_solveconfig
 
         fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
         bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
@@ -445,6 +479,7 @@ def _bi_qstar_loop_builder(
             return _expand_direction_q(
                 bi_result,
                 solve_config,
+                inverse_solveconfig,
                 loop_state.params_forward,
                 loop_state.current_forward,
                 loop_state.states_forward,
@@ -457,6 +492,7 @@ def _bi_qstar_loop_builder(
             return _expand_direction_q(
                 bi_result,
                 solve_config,
+                inverse_solveconfig,
                 loop_state.params_backward,
                 loop_state.current_backward,
                 loop_state.states_backward,
@@ -493,6 +529,7 @@ def _bi_qstar_loop_builder(
         return BiLoopStateWithStates(
             bi_result=bi_result,
             solve_config=solve_config,
+            inverse_solveconfig=inverse_solveconfig,
             params_forward=loop_state.params_forward,
             params_backward=loop_state.params_backward,
             current_forward=new_fwd_current,
@@ -575,15 +612,17 @@ def bi_qstar_builder(
         q_params_forward = q_fn.prepare_q_parameters(solve_config, **kwargs)
         # Build a backward solve config that treats `start` as the target.
         # Prefer puzzle-level normalization via hindsight_transform.
+        inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
+
         if use_backward_q:
-            backward_solve_config = puzzle.hindsight_transform(solve_config, start)
-            q_params_backward = q_fn.prepare_q_parameters(backward_solve_config, **kwargs)
+            q_params_backward = q_fn.prepare_q_parameters(inverse_solveconfig, **kwargs)
         else:
             q_params_backward = q_params_forward
 
         loop_state = init_loop_state(
             bi_result_template,
             solve_config,
+            inverse_solveconfig,
             start,
             q_params_forward,
             q_params_backward,

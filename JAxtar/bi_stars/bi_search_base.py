@@ -175,7 +175,8 @@ class BiLoopState:
 
     Attributes:
         bi_result: BiDirectionalSearchResult containing both search trees
-        solve_config: Puzzle solve configuration
+        solve_config: Puzzle solve configuration (for forward search)
+        inverse_solveconfig: Puzzle solve configuration (for backward search)
         params_forward: Heuristic/Q-function parameters for forward direction
         params_backward: Heuristic/Q-function parameters for backward direction
         current_forward: Current batch of nodes being processed (forward)
@@ -186,6 +187,7 @@ class BiLoopState:
 
     bi_result: BiDirectionalSearchResult
     solve_config: Puzzle.SolveConfig
+    inverse_solveconfig: Puzzle.SolveConfig
     params_forward: Any
     params_backward: Any
     current_forward: Current
@@ -204,7 +206,8 @@ class BiLoopStateWithStates:
 
     Attributes:
         bi_result: BiDirectionalSearchResult containing both search trees
-        solve_config: Puzzle solve configuration
+        solve_config: Puzzle solve configuration (for forward search)
+        inverse_solveconfig: Puzzle solve configuration (for backward search)
         params_forward: Heuristic/Q-function parameters for forward direction
         params_backward: Heuristic/Q-function parameters for backward direction
         current_forward: Current batch indices/costs (forward)
@@ -217,6 +220,7 @@ class BiLoopStateWithStates:
 
     bi_result: BiDirectionalSearchResult
     solve_config: Puzzle.SolveConfig
+    inverse_solveconfig: Puzzle.SolveConfig
     params_forward: Any
     params_backward: Any
     current_forward: Current
