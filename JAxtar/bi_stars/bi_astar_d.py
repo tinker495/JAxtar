@@ -643,9 +643,8 @@ def bi_astar_d_builder(
         inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
 
         if use_backward_heuristic:
-            backward_solve_config = inverse_solveconfig
             heuristic_params_backward = heuristic.prepare_heuristic_parameters(
-                backward_solve_config, **kwargs
+                inverse_solveconfig, **kwargs
             )
         else:
             heuristic_params_backward = heuristic_params_forward
