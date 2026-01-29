@@ -466,14 +466,21 @@ class SearchResult:
                 # In bidirectional deferred search, backward expansion stores action indices
                 # that refer to the i-th inverse neighbour. Child generation must therefore
                 # use inverse neighbours and gather by action index.
-                all_inv_neighbors, all_inv_costs = puzzle.batched_get_inverse_neighbours(
-                    solve_config, parent_states, filled
-                )  # [action, batch, ...], [action, batch]
+                if hasattr(puzzle, "inverse_action_map"):
+                    inv_map = puzzle.inverse_action_map  # [action_size]
+                    inv_actions = inv_map[parent_actions.astype(jnp.int32)]
+                    current_states, ncosts = puzzle.batched_get_actions(
+                        solve_config, parent_states, inv_actions, filled
+                    )
+                else:
+                    all_inv_neighbors, all_inv_costs = puzzle.batched_get_inverse_neighbours(
+                        solve_config, parent_states, filled
+                    )  # [action, batch, ...], [action, batch]
 
-                parent_actions_i32 = parent_actions.astype(jnp.int32)
-                batch_indices = jnp.arange(parent_actions_i32.shape[0], dtype=jnp.int32)
-                current_states = all_inv_neighbors[parent_actions_i32, batch_indices]
-                ncosts = all_inv_costs[parent_actions_i32, batch_indices]
+                    parent_actions_i32 = parent_actions.astype(jnp.int32)
+                    batch_indices = jnp.arange(parent_actions_i32.shape[0], dtype=jnp.int32)
+                    current_states = all_inv_neighbors[parent_actions_i32, batch_indices]
+                    ncosts = all_inv_costs[parent_actions_i32, batch_indices]
             else:
                 current_states, ncosts = puzzle.batched_get_actions(
                     solve_config, parent_states, parent_actions, filled
