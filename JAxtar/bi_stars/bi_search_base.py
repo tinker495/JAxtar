@@ -732,12 +732,22 @@ def get_min_f_value(
     filled: chex.Array,
     cost_weight: float = 1.0,
 ) -> chex.Array:
-    """
-    Get the minimum f-value from the current batch.
+    """Get the minimum f-value from the current batch.
 
-    For bidirectional search, we need to know the minimum f-value in each
-    direction to check the termination condition. The f-value must match
-    the PQ ordering: f = cost_weight * g + h.
+    For bidirectional search, we need a per-direction lower bound consistent with
+    the priority queue ordering. This function assumes the PQ key is of the form:
+
+        f = cost_weight * g + dist
+
+    where:
+    - `g` is `Current.cost` (the path cost stored in the hashtable for the popped state).
+    - `dist` is `sr.get_dist(current)`.
+
+    Important contract: `dist` must be in the same units as `g` and must be the
+    *same quantity* that was used to order the PQ for this algorithm.
+    - A*/A* variants: dist is typically the heuristic h(state).
+    - Q* deferred variants: `SearchResult` stores a heuristic-like value for popped
+      states (commonly h(state) = Q(parent, action) - step_cost(parent->state)).
 
     Args:
         sr: SearchResult containing cost and dist arrays
@@ -942,9 +952,10 @@ def reconstruct_bidirectional_path(
     fwd_states = [bi_result.forward.hashtable[HashIdx(index=jnp.uint32(i))] for i in fwd_indices]
 
     # Backward half: meeting -> goal (follow parent pointers toward the backward root)
-    # NOTE: puxle's `get_inverse_neighbours` uses the convention that the i-th inverse neighbour is a
-    # predecessor state from which applying forward action i reaches the current state.
+    # Contract (puxle convention): the i-th inverse neighbour is a predecessor state from which
+    # applying *forward* action i reaches the current state.
     # With that convention, the stored actions are already forward actions (no inversion needed).
+    # If a puzzle violates this convention, reconstructed action sequences will be incorrect.
     bwd_indices, bwd_actions = _trace_target_to_root(
         bi_result.backward, bi_result.meeting.bwd_hashidx
     )

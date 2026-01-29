@@ -33,6 +33,7 @@ from JAxtar.bi_stars.bi_search_base import (
     update_meeting_point_best_only_deferred,
 )
 from JAxtar.stars.search_base import Current, Parant_with_Costs, Parent, SearchResult
+from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
@@ -46,6 +47,7 @@ def _bi_qstar_loop_builder(
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
     use_backward_q: bool = True,
+    backward_mode: str = "auto",
     terminate_on_first_solution: bool = False,
 ):
     """
@@ -165,11 +167,35 @@ def _bi_qstar_loop_builder(
         # However, if inverse_action_map is available, we can map inverse action indices
         # to the corresponding forward actions effectively allowing us to use Q(s, a)
         # as a heuristic for the edge (s, s').
-        can_optimize_bwd = (not is_forward) and use_q and hasattr(puzzle, "inverse_action_map")
-        use_value_heuristic = (not is_forward) and use_q and (not can_optimize_bwd)
+        # Backward Q semantics are domain-dependent.
+        # - edge_q: use Q(parent, a) for backward edges by remapping actions via inverse_action_map.
+        # - value_v: use V(s)=min_a Q(s,a) as a heuristic on predecessor states (q-guided A*).
+        # - auto: edge_q if inverse_action_map exists, else value_v.
+        if (not is_forward) and use_q:
+            if backward_mode == "auto":
+                can_optimize_bwd = hasattr(puzzle, "inverse_action_map")
+                use_value_heuristic = not can_optimize_bwd
+            elif backward_mode == "edge_q":
+                can_optimize_bwd = hasattr(puzzle, "inverse_action_map")
+                use_value_heuristic = False
+            elif backward_mode == "value_v":
+                can_optimize_bwd = False
+                use_value_heuristic = True
+            else:
+                # backward_mode == "dijkstra" should be implemented by calling this function
+                # with use_q=False for the backward direction.
+                can_optimize_bwd = False
+                use_value_heuristic = False
+        else:
+            can_optimize_bwd = False
+            use_value_heuristic = False
         use_heuristic_in_pop = use_value_heuristic
 
-        need_neighbours = look_ahead_pruning or use_value_heuristic
+        # We need neighbor generation when:
+        # - look-ahead pruning is enabled, or
+        # - backward uses value-heuristic (V(child)), or
+        # - Q is disabled (we need step costs to score edges / build a Dijkstra fallback).
+        need_neighbours = look_ahead_pruning or use_value_heuristic or (not use_q)
         if need_neighbours:
             neighbour_look_a_head, ncosts = get_neighbours_fn(current_solve_config, states, filled)
             look_a_head_costs = (costs + ncosts).astype(KEY_DTYPE)
@@ -181,11 +207,36 @@ def _bi_qstar_loop_builder(
             flattened_neighbour_look_head = neighbour_look_a_head.flatten()
             flattened_look_a_head_costs = look_a_head_costs.flatten().astype(KEY_DTYPE)
 
-            q_child = q_fn.batched_q_value(
-                q_params, flattened_neighbour_look_head
-            )  # [flat, action]
-            v_child = jnp.min(q_child, axis=-1).astype(KEY_DTYPE)  # [flat]
-            heuristic_vals = v_child.reshape(action_size, sr_batch_size)
+            # Compute V(child)=min_a Q(child,a) in a packed+chunked way to avoid
+            # calling the Q-function with leading dim = action_size * batch_size.
+            flat_states = flattened_neighbour_look_head
+            flat_mask = flattened_filled_tiles
+
+            n = flat_size
+            # Pack valid entries first (stable) for better effective batch size.
+            invperm = stable_partition_three(flat_mask, jnp.zeros_like(flat_mask, dtype=jnp.bool_))
+            sorted_states = flat_states[invperm]
+            sorted_mask = flat_mask[invperm]
+
+            sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
+            sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
+
+            def _calc_v_chunk(carry, input_slice):
+                states_slice, compute_mask = input_slice
+                q_vals = variable_q_batch_switcher(q_params, states_slice, compute_mask)  # [b, a]
+                v_vals = jnp.min(q_vals, axis=-1)
+                return carry, v_vals
+
+            _, v_chunks = jax.lax.scan(
+                _calc_v_chunk,
+                None,
+                (sorted_states_chunked, sorted_mask_chunked),
+            )  # [action_size, batch_size]
+
+            v_sorted = v_chunks.reshape(-1).astype(KEY_DTYPE)  # [flat]
+            v_flat = jnp.empty((n,), dtype=v_sorted.dtype).at[invperm].set(v_sorted)
+
+            heuristic_vals = v_flat.reshape(action_size, sr_batch_size)
             heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
 
             neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
@@ -282,26 +333,19 @@ def _bi_qstar_loop_builder(
                 old_dists = search_result.get_dist(current_hash_idxs)
 
                 if use_q:
-                    # Fix: old_dists is stored as (Q - cost), roughly h.
-                    # dists is current Q, roughly (cost + h).
-                    # We must add ncosts to old_dists to compare apples-to-apples (Q vs Q).
-                    # Note: This comparison assumes ncosts doesn't change significantly between paths,
-                    # which is true for unweighted graphs or consistent edge costs.
-                    safe_old_dists = jnp.where(found, old_dists, jnp.inf)  # Use inf as sentinel
-
-                    # Reconstruct Q from stored value: Q_old = stored_dist + step_cost
-                    # We utilize the current ncosts as the step cost provided validation
-                    # Note: ncosts must be flattened to match safe_old_dists (flat_size)
-                    q_old_reconstructed = safe_old_dists + ncosts.flatten().astype(KEY_DTYPE)
-
+                    # `old_dists` is stored for the *state* after pop.
+                    # In deferred Q*, pop stores: dist(state) = Q(parent, action) - step_cost.
+                    # To compare/update in Q-space we reconstruct:
+                    #   Q_old(parent->child) = old_dist(child) + step_cost(parent->child)
+                    q_old_reconstructed = old_dists.astype(KEY_DTYPE) + ncosts.flatten().astype(
+                        KEY_DTYPE
+                    )
                     if pessimistic_update:
                         # Max over Q-values
-                        # If not found (inf), we want to ignore it, so use -inf for max logic
                         q_old_for_max = jnp.where(found, q_old_reconstructed, -jnp.inf)
                         dists = jnp.maximum(dists, q_old_for_max)
                     else:
                         # Min over Q-values
-                        # If not found (inf), we want to ignore it, so use inf for min logic
                         q_old_for_min = jnp.where(found, q_old_reconstructed, jnp.inf)
                         dists = jnp.minimum(dists, q_old_for_min)
 
@@ -511,6 +555,7 @@ def bi_qstar_builder(
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
+    backward_mode: str = "auto",
     terminate_on_first_solution: bool = True,
 ):
     """
@@ -529,6 +574,12 @@ def bi_qstar_builder(
         show_compile_time: If True, displays compilation time
         look_ahead_pruning: Enable look-ahead pruning optimization
         pessimistic_update: Use max Q-value for duplicates (True) or min (False)
+        backward_mode: Backward-direction scoring mode:
+            - "auto": use "edge_q" if puzzle.inverse_action_map exists, else "value_v".
+            - "edge_q": use Q(parent, a) for backward edges via inverse_action_map.
+            - "value_v": use V(s)=min_a Q(s,a) as a heuristic on predecessor states.
+            - "dijkstra": ignore Q in backward direction and use true step costs.
+        terminate_on_first_solution: If True, stop as soon as any meeting is found.
 
     Returns:
         A JIT-compiled function that performs bidirectional Q* search
@@ -549,7 +600,33 @@ def bi_qstar_builder(
         parant_with_costs=True,
     )
 
-    use_backward_q = not q_fn.is_fixed
+    import warnings
+
+    backward_mode = backward_mode.strip().lower()
+    valid_backward_modes = {"auto", "edge_q", "value_v", "dijkstra"}
+    if backward_mode not in valid_backward_modes:
+        raise ValueError(
+            f"Invalid backward_mode={backward_mode!r}. Expected one of {sorted(valid_backward_modes)}"
+        )
+
+    has_inverse_action_map = hasattr(puzzle, "inverse_action_map")
+    if backward_mode == "edge_q" and (not has_inverse_action_map):
+        warnings.warn(
+            "bi_qstar backward_mode='edge_q' requires puzzle.inverse_action_map; "
+            "falling back to backward_mode='value_v'.",
+            UserWarning,
+        )
+        backward_mode = "value_v"
+
+    if (not terminate_on_first_solution) and backward_mode != "dijkstra":
+        warnings.warn(
+            "bi_qstar with terminate_on_first_solution=False requires an admissible lower bound "
+            "consistent with PQ keys. This is generally NOT guaranteed for learned/approximate Q. "
+            "Use with care or prefer terminate_on_first_solution=True.",
+            UserWarning,
+        )
+
+    use_backward_q = (not q_fn.is_fixed) and backward_mode != "dijkstra"
     init_loop_state, loop_condition, loop_body = _bi_qstar_loop_builder(
         puzzle,
         q_fn,
@@ -559,6 +636,7 @@ def bi_qstar_builder(
         look_ahead_pruning,
         pessimistic_update,
         use_backward_q=use_backward_q,
+        backward_mode=backward_mode,
         terminate_on_first_solution=terminate_on_first_solution,
     )
 

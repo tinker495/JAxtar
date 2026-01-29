@@ -174,11 +174,19 @@ def _qstar_loop_builder(
 
             # Update Q-values: use max (pessimistic) or min (optimistic) of new and existing
             if pessimistic_update:
-                safe_old_dists = jnp.where(found, old_dists, -jnp.inf)
-                dists = jnp.maximum(dists, safe_old_dists)
+                # `old_dists` is stored for the *state* after pop.
+                # In deferred Q*, pop stores: dist(state) = Q(parent, action) - step_cost.
+                # To compare/update in Q-space we reconstruct:
+                #   Q_old(parent->child) = old_dist(child) + step_cost(parent->child)
+                step_cost = ncosts.flatten().astype(KEY_DTYPE)
+                q_old = old_dists.astype(KEY_DTYPE) + step_cost
+                q_old_for_max = jnp.where(found, q_old, -jnp.inf)
+                dists = jnp.maximum(dists, q_old_for_max)
             else:
-                safe_old_dists = jnp.where(found, old_dists, jnp.inf)
-                dists = jnp.minimum(dists, safe_old_dists)
+                step_cost = ncosts.flatten().astype(KEY_DTYPE)
+                q_old = old_dists.astype(KEY_DTYPE) + step_cost
+                q_old_for_min = jnp.where(found, q_old, jnp.inf)
+                dists = jnp.minimum(dists, q_old_for_min)
 
             # Only consider nodes that are either:
             # 1. Not found in the hash table (new nodes), or

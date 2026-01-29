@@ -1,9 +1,15 @@
-"""
-JAxtar Bidirectional A* Search Implementation
+"""JAxtar Bidirectional A* Search Implementation.
 
 This module implements bidirectional A* search, which explores from both start
-and goal states simultaneously. When the two search frontiers meet, the search
-terminates with an optimal path.
+and goal states simultaneously.
+
+Notes on optimality:
+- By default (`terminate_on_first_solution=True` in `bi_astar_builder()`), the
+  loop terminates as soon as *any* meeting point is found. This is fast, but it
+  is not an optimality proof.
+- If you need an optimality proof, set `terminate_on_first_solution=False` and
+  ensure the heuristic semantics used in PQ keys satisfy the usual A* conditions
+  for the chosen domain.
 
 Key Benefits:
 - Reduces search space from O(b^d) to approximately O(b^(d/2))
