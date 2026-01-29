@@ -12,8 +12,13 @@ These commands are used to solve puzzles using different search algorithms.
 
 -   [**`astar`**](./astar.md): Solves a puzzle using the A\* search algorithm.
 -   [**`astar_d`**](./astar_d.md): Solves a puzzle using the A\* Deferred search algorithm.
+-   [**`bi_astar`**](./bi_astar.md): Solves a puzzle using the Bidirectional A\* search algorithm.
+-   [**`bi_astar_d`**](./bi_astar_d.md): Solves a puzzle using the Bidirectional A\* Deferred search algorithm.
+-   [**`id_astar`**](./id_astar.md): Solves a puzzle using the Iterative Deepening A\* search algorithm.
 -   [**`beam`**](./beam.md): Solves a puzzle using Beam Search.
 -   [**`qstar`**](./qstar.md): Solves a puzzle using the Q\* search algorithm, guided by a Q-function.
+-   [**`bi_qstar`**](./bi_qstar.md): Solves a puzzle using the Bidirectional Q\* search algorithm.
+-   [**`id_qstar`**](./id_qstar.md): Solves a puzzle using the Iterative Deepening Q\* search algorithm.
 -   [**`qbeam`**](./qbeam.md): Solves a puzzle using the Q-Beam search algorithm.
 
 ### Interactive Commands

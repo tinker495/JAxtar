@@ -7,6 +7,18 @@
 JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizable a A\* & Q\* solver for neural heuristic search research.
 This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from Google DeepMind. If MCTS can be implemented entirely in pure JAX, why not A\*?
 
+This project provides the following algorithms:
+- **A\***: Standard A* Search
+- **A\* Deferred**: A* Search with deferred node expansion (for heavy expansion costs)
+- **Bi-A\***: Bidirectional A* Search
+- **Bi-A\* Deferred**: Bidirectional A* Search with deferred node expansion
+- **ID-A\***: Iterative Deepening A* Search
+- **Beam Search**: Standard Beam Search
+- **Q\***: Q* Search (A* with learned Q-values)
+- **Bi-Q\***: Bidirectional Q* Search
+- **ID-Q\***: Iterative Deepening Q* Search (Experimental)
+- **Q-Beam**: Beam Search with learned Q-values
+
 MCTS, or tree search, is used in many RL algorithmic techniques, starting with AlphaGo, but graph search (not tree search) doesn't seem to have received much attention. Nevertheless, there are puzzle‐solving algorithms that use neural heuristics like [DeepcubeA](https://github.com/forestagostinelli/DeepCubeA) with A\* or [Q\*](https://arxiv.org/abs/2102.04518)(graph search).
 
 However, the most frustrating aspect of [my brief research (MSc)](https://drive.google.com/file/d/1clo8OmuXvIHhJzOUhH__0ZWzAamgVK84/view?usp=drive_link) in this area is the time it takes to pass information back and forth between the GPU and CPU.
