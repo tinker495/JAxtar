@@ -282,12 +282,28 @@ def _bi_qstar_loop_builder(
                 old_dists = search_result.get_dist(current_hash_idxs)
 
                 if use_q:
+                    # Fix: old_dists is stored as (Q - cost), roughly h.
+                    # dists is current Q, roughly (cost + h).
+                    # We must add ncosts to old_dists to compare apples-to-apples (Q vs Q).
+                    # Note: This comparison assumes ncosts doesn't change significantly between paths,
+                    # which is true for unweighted graphs or consistent edge costs.
+                    safe_old_dists = jnp.where(found, old_dists, jnp.inf)  # Use inf as sentinel
+
+                    # Reconstruct Q from stored value: Q_old = stored_dist + step_cost
+                    # We utilize the current ncosts as the step cost provided validation
+                    # Note: ncosts must be flattened to match safe_old_dists (flat_size)
+                    q_old_reconstructed = safe_old_dists + ncosts.flatten().astype(KEY_DTYPE)
+
                     if pessimistic_update:
-                        safe_old_dists = jnp.where(found, old_dists, -jnp.inf)
-                        dists = jnp.maximum(dists, safe_old_dists)
+                        # Max over Q-values
+                        # If not found (inf), we want to ignore it, so use -inf for max logic
+                        q_old_for_max = jnp.where(found, q_old_reconstructed, -jnp.inf)
+                        dists = jnp.maximum(dists, q_old_for_max)
                     else:
-                        safe_old_dists = jnp.where(found, old_dists, jnp.inf)
-                        dists = jnp.minimum(dists, safe_old_dists)
+                        # Min over Q-values
+                        # If not found (inf), we want to ignore it, so use inf for min logic
+                        q_old_for_min = jnp.where(found, q_old_reconstructed, jnp.inf)
+                        dists = jnp.minimum(dists, q_old_for_min)
 
                 better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
                 optimal_mask = unique_mask & (jnp.logical_or(~found, better_cost_mask))
