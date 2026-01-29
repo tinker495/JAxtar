@@ -391,16 +391,22 @@ def update_meeting_point_best_only_deferred(
     dummy_hashidx = HashIdx.default(())
     dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
 
-    opposite_hashidx, opposite_found = opposite_sr.hashtable.lookup_parallel(
-        candidate_states, candidate_mask
-    )
-    opposite_costs = opposite_sr.get_cost(opposite_hashidx)
-
     this_best_costs = jnp.where(
         this_found,
         jnp.minimum(this_old_costs, candidate_costs),
         candidate_costs,
     ).astype(KEY_DTYPE)
+
+    # Fast pruning: once we have a finite upper bound, skip candidates that cannot
+    # possibly improve it. With non-negative path costs, we have
+    #   total_cost = this_cost + opposite_cost >= this_cost.
+    # So if this_cost >= current_best_total, the candidate cannot win.
+    candidate_mask = jnp.logical_and(candidate_mask, this_best_costs < meeting.total_cost)
+
+    opposite_hashidx, opposite_found = opposite_sr.hashtable.lookup_parallel(
+        candidate_states, candidate_mask
+    )
+    opposite_costs = opposite_sr.get_cost(opposite_hashidx)
     total_costs = (this_best_costs + opposite_costs).astype(KEY_DTYPE)
 
     meeting_candidate_mask = jnp.logical_and(opposite_found, candidate_mask)

@@ -170,29 +170,9 @@ def _bi_astar_d_loop_builder(
             flattened_neighbour_look_head = neighbour_look_a_head.flatten()
             flattened_look_a_head_costs = look_a_head_costs.flatten().astype(KEY_DTYPE)
 
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head, flattened_filled_tiles
-            )
-
-            old_costs = search_result.get_cost(current_hash_idxs)
-
-            # PQ insertion mask: Must improve cost or be new in THIS direction's HT
-            candidate_mask = jnp.logical_or(
-                ~found, jnp.less(flattened_look_a_head_costs, old_costs)
-            )
-            candidate_mask = candidate_mask & flattened_filled_tiles
-
-            optimal_mask = (
-                xnp.unique_mask(
-                    flattened_neighbour_look_head, flattened_look_a_head_costs, candidate_mask
-                )
-                & candidate_mask
-            )
-
-            # Meeting update mask: Just needs to be unique (min cost) among current batch
-            # We DON'T filter by improvement against THIS direction's HT, because
-            # we want to update the meeting point even if we haven't improved our own path,
-            # as long as the total path (fwd + bwd) might be optimal.
+            # Meeting update mask: unique (min cost) among current batch.
+            # We compute this first so we can restrict hash-table lookups to one
+            # representative per state.
             meeting_mask = (
                 xnp.unique_mask(
                     flattened_neighbour_look_head,
@@ -201,6 +181,20 @@ def _bi_astar_d_loop_builder(
                 )
                 & flattened_filled_tiles
             )
+
+            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                flattened_neighbour_look_head, meeting_mask
+            )
+
+            old_costs = search_result.get_cost(current_hash_idxs)
+
+            # PQ insertion mask: Must improve cost or be new in THIS direction's HT
+            candidate_mask = meeting_mask & jnp.logical_or(
+                ~found, jnp.less(flattened_look_a_head_costs, old_costs)
+            )
+
+            # `meeting_mask` is already unique-by-cost, so `candidate_mask` is unique as well.
+            optimal_mask = candidate_mask
 
             if use_heuristic:
                 found_reshaped = found.reshape(action_size, sr_batch_size)

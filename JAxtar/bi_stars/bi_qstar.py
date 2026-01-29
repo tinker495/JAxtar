@@ -245,24 +245,6 @@ def _bi_qstar_loop_builder(
             flattened_keys = neighbour_keys.flatten()
             dists = heuristic_vals.flatten()
 
-            if look_ahead_pruning:
-                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                    flattened_neighbour_look_head, flattened_filled_tiles
-                )
-                old_costs = search_result.get_cost(current_hash_idxs)
-                candidate_mask = jnp.logical_or(
-                    ~found, jnp.less(flattened_look_a_head_costs, old_costs)
-                )
-                candidate_mask = candidate_mask & flattened_filled_tiles
-                unique_mask = xnp.unique_mask(
-                    flattened_neighbour_look_head,
-                    flattened_look_a_head_costs,
-                    candidate_mask,
-                )
-                optimal_mask = unique_mask & candidate_mask
-            else:
-                optimal_mask = flattened_filled_tiles
-
             # Meeting mask for value heuristic branch
             # Relaxed mask for meeting usage: unique state with best cost in this batch.
             meeting_mask = (
@@ -274,12 +256,33 @@ def _bi_qstar_loop_builder(
                 & flattened_filled_tiles
             )
 
+            if look_ahead_pruning:
+                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head, meeting_mask
+                )
+                old_costs = search_result.get_cost(current_hash_idxs)
+                candidate_mask = meeting_mask & jnp.logical_or(
+                    ~found, jnp.less(flattened_look_a_head_costs, old_costs)
+                )
+
+                # `meeting_mask` is already unique-by-cost, so `candidate_mask` is unique as well.
+                optimal_mask = candidate_mask
+            else:
+                optimal_mask = flattened_filled_tiles
+
             # Best-only early meeting update without HT insertion.
-            # Ensure we have this-direction lookup info for meeting accounting.
-            this_hashidx_all, this_found_all = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head, flattened_filled_tiles
-            )
-            this_old_costs_all = search_result.get_cost(this_hashidx_all)
+            # Reuse this-direction lookup results when available.
+            if look_ahead_pruning:
+                this_hashidx_all, this_found_all, this_old_costs_all = (
+                    current_hash_idxs,
+                    found,
+                    old_costs,
+                )
+            else:
+                this_hashidx_all, this_found_all = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head, meeting_mask
+                )
+                this_old_costs_all = search_result.get_cost(this_hashidx_all)
             bi_result.meeting = update_meeting_point_best_only_deferred(
                 bi_result.meeting,
                 this_sr=search_result,
@@ -365,7 +368,7 @@ def _bi_qstar_loop_builder(
 
                 # Best-only early meeting update without HT insertion.
                 this_hashidx_all, this_found_all = search_result.hashtable.lookup_parallel(
-                    flattened_neighbour_look_head, flattened_filled_tiles
+                    flattened_neighbour_look_head, meeting_mask
                 )
                 this_old_costs_all = search_result.get_cost(this_hashidx_all)
                 bi_result.meeting = update_meeting_point_best_only_deferred(
