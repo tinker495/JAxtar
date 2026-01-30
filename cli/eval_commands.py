@@ -64,7 +64,7 @@ def eval_astar(
     )
 
 
-@evaluation.command(name="astar_d")
+@evaluation.command(name="astar-d")
 @eval_puzzle_options
 @eval_options
 @heuristic_options
@@ -90,7 +90,7 @@ def eval_astar_d(
     )
 
 
-@evaluation.command(name="bi_astar")
+@evaluation.command(name="bi-astar")
 @eval_puzzle_options
 @eval_options
 @heuristic_options
@@ -116,7 +116,7 @@ def eval_bi_astar(
     )
 
 
-@evaluation.command(name="bi_astar_d")
+@evaluation.command(name="bi-astar-d")
 @eval_puzzle_options
 @eval_options
 @heuristic_options
@@ -195,7 +195,7 @@ def eval_qstar(
     )
 
 
-@evaluation.command(name="bi_qstar")
+@evaluation.command(name="bi-qstar")
 @eval_puzzle_options
 @eval_options
 @qfunction_options
@@ -248,7 +248,7 @@ def eval_qbeam(
     )
 
 
-@evaluation.command(name="id_astar")
+@evaluation.command(name="id-astar")
 @eval_puzzle_options
 @eval_options
 @heuristic_options
@@ -274,7 +274,7 @@ def eval_id_astar(
     )
 
 
-@evaluation.command(name="id_qstar")
+@evaluation.command(name="id-qstar")
 @eval_puzzle_options
 @eval_options
 @qfunction_options

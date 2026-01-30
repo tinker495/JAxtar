@@ -228,7 +228,7 @@ def benchmark_astar(**kwargs):
     )
 
 
-@benchmark.command(name="astar_d")
+@benchmark.command(name="astar-d")
 @benchmark_options
 @eval_options
 @_benchmark_model_options
@@ -241,7 +241,7 @@ def benchmark_astar_d(**kwargs):
     )
 
 
-@benchmark.command(name="bi_astar")
+@benchmark.command(name="bi-astar")
 @benchmark_options
 @eval_options
 @_benchmark_model_options
@@ -254,7 +254,7 @@ def benchmark_bi_astar(**kwargs):
     )
 
 
-@benchmark.command(name="bi_astar_d")
+@benchmark.command(name="bi-astar-d")
 @benchmark_options
 @eval_options
 @_benchmark_model_options
@@ -280,7 +280,7 @@ def benchmark_qstar(**kwargs):
     )
 
 
-@benchmark.command(name="bi_qstar")
+@benchmark.command(name="bi-qstar")
 @benchmark_options
 @eval_options
 @_benchmark_model_options
@@ -319,7 +319,7 @@ def benchmark_qbeam(**kwargs):
     )
 
 
-@benchmark.command(name="id_astar")
+@benchmark.command(name="id-astar")
 @benchmark_options
 @eval_options
 @_benchmark_model_options
@@ -332,7 +332,7 @@ def benchmark_id_astar(**kwargs):
     )
 
 
-@benchmark.command(name="id_qstar")
+@benchmark.command(name="id-qstar")
 @benchmark_options
 @eval_options
 @_benchmark_model_options
