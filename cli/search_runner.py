@@ -171,7 +171,7 @@ def search_samples(
 
             if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
                 if is_bidirectional:
-                    from JAxtar.bi_stars.bi_astar import reconstruct_bidirectional_path
+                    from JAxtar.bi_stars.bi_search_base import reconstruct_bidirectional_path
 
                     bi_pairs = reconstruct_bidirectional_path(search_result, puzzle)
                     actions = [a for a, _ in bi_pairs[1:]]
