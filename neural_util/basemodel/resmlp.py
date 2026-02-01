@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Any
 
 from aqt.jax.v2.flax import aqt_flax
@@ -9,6 +10,7 @@ from neural_util.dtypes import DTYPE, HEAD_DTYPE, PARAM_DTYPE
 from neural_util.modules import (
     DEFAULT_NORM_FN,
     MLP,
+    KeelResBlock,
     PreActivationResBlock,
     ResBlock,
     Swiglu,
@@ -77,30 +79,55 @@ class ResMLPModel(DistanceModel):
             )
         )
 
-        self.resblocks = [
-            self.resblock_fn(
-                self.hidden_dim * self.hidden_node_multiplier,
-                norm_fn=self.norm_fn,
-                hidden_N=self.hidden_N,
-                activation=self.activation,
-                use_swiglu=self.use_swiglu,
-                dot_general_cls=aqt_dg,
+        # Prepare resblocks
+        # Prepare resblocks
+        resblocks_list = []
+        for i in range(self.Res_N - self.tail_head_precision):
+            kwargs = {}
+            fn = self.resblock_fn
+            if isinstance(fn, partial):
+                fn = fn.func
+            if isinstance(fn, type) and issubclass(fn, KeelResBlock):
+                kwargs["total_layers"] = self.Res_N
+                # layer_index removed as per simplification
+
+            resblocks_list.append(
+                self.resblock_fn(
+                    self.hidden_dim * self.hidden_node_multiplier,
+                    norm_fn=self.norm_fn,
+                    hidden_N=self.hidden_N,
+                    activation=self.activation,
+                    use_swiglu=self.use_swiglu,
+                    dot_general_cls=aqt_dg,
+                    **kwargs,
+                )
             )
-            for _ in range(self.Res_N - self.tail_head_precision)
-        ]
-        self.tail_head_resblocks = [
-            self.resblock_fn(
-                self.hidden_dim * self.hidden_node_multiplier,
-                norm_fn=self.norm_fn,
-                hidden_N=self.hidden_N,
-                activation=self.activation,
-                use_swiglu=self.use_swiglu,
-                dtype=HEAD_DTYPE,
-                param_dtype=HEAD_DTYPE,
-                dot_general_cls=aqt_dg,
+        self.resblocks = resblocks_list
+
+        tail_head_resblocks_list = []
+        for i in range(self.tail_head_precision):
+            kwargs = {}
+            fn = self.resblock_fn
+            if isinstance(fn, partial):
+                fn = fn.func
+            if isinstance(fn, type) and issubclass(fn, KeelResBlock):
+                kwargs["total_layers"] = self.Res_N
+                # layer_index removed as per simplification
+
+            tail_head_resblocks_list.append(
+                self.resblock_fn(
+                    self.hidden_dim * self.hidden_node_multiplier,
+                    norm_fn=self.norm_fn,
+                    hidden_N=self.hidden_N,
+                    activation=self.activation,
+                    use_swiglu=self.use_swiglu,
+                    dtype=HEAD_DTYPE,
+                    param_dtype=HEAD_DTYPE,
+                    dot_general_cls=aqt_dg,
+                    **kwargs,
+                )
             )
-            for _ in range(self.tail_head_precision)
-        ]
+        self.tail_head_resblocks = tail_head_resblocks_list
         self.final_dense = (
             preactivation_MLP(self.action_size, dtype=HEAD_DTYPE, dot_general_cls=aqt_dg)
             if self.resblock_fn == PreActivationResBlock
