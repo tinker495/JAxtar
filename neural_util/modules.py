@@ -366,11 +366,78 @@ class DeltaResBlock(nn.Module):
         return self.activation(x)
 
 
+# Keel Residual Block (Post-LayerNorm Is Back: Stable, ExpressivE, and Deep)
+class KeelResBlock(nn.Module):
+    node_size: int
+    hidden_N: int = 1
+    norm_fn: nn.Module = DEFAULT_NORM_FN
+    activation: Callable = nn.relu
+    use_swiglu: bool = False
+    dtype: any = DTYPE
+    param_dtype: any = None
+    dot_general_cls: Any = None
+
+    # Keel specific arguments
+    total_layers: int = 1
+
+    @nn.compact
+    def __call__(self, x0, training=False):
+        dtype = self.dtype
+        param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
+        x0_cast = x0.astype(dtype)
+        out_dim = x0.shape[-1]
+
+        # Branch function F(x)
+        # In Keel, input to F is always LN(x) (Residual Branch Normalization)
+        def branch_fn(x):
+            for _ in range(self.hidden_N):
+                if self.use_swiglu:
+                    x = Swiglu(
+                        self.node_size,
+                        norm_fn=self.norm_fn,
+                        dtype=dtype,
+                        param_dtype=param_dtype,
+                        dot_general_cls=self.dot_general_cls,
+                    )(x, training)
+                else:
+                    x = MLP(
+                        self.node_size,
+                        norm_fn=self.norm_fn,
+                        activation=self.activation,
+                        dot_general_cls=self.dot_general_cls,
+                    )(x, training)
+
+            x = nn.Dense(
+                out_dim,
+                dtype=dtype,
+                param_dtype=param_dtype,
+                dot_general_cls=self.dot_general_cls,
+            )(x)
+            return x
+
+        # Standard Keel sub-layer logic (Simplified: applied to ALL layers)
+        # x_{l+1} = LN_out(alpha * x_l + F(LN_in(x_l)))
+
+        # 1. LN_in
+        x_norm = apply_norm(self.norm_fn, x0_cast, training)
+
+        # 2. F(LN_in(x))
+        fx = branch_fn(x_norm)
+
+        # 3. alpha * x + F
+        alpha = self.total_layers
+        x_combined = alpha * x0_cast + fx
+
+        # 4. LN_out
+        return apply_norm(self.norm_fn, x_combined, training)
+
+
 # ResBlock type registry for config-driven selection
 RESBLOCK_REGISTRY = {
     "standard": ResBlock,
     "preactivation": PreActivationResBlock,
     "delta": DeltaResBlock,
+    "keel": KeelResBlock,
 }
 
 
