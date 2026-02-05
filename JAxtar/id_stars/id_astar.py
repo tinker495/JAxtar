@@ -469,6 +469,7 @@ def id_astar_builder(
     non_backtracking_steps: int = 0,
     show_compile_time: bool = False,
     max_path_len: int = 256,
+    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     init_loop, cond, body = _id_astar_loop_builder(
         puzzle,
@@ -481,5 +482,11 @@ def id_astar_builder(
     )
 
     return finalize_builder(
-        puzzle, init_loop, cond, body, name="ID-A*", show_compile_time=show_compile_time
+        puzzle,
+        init_loop,
+        cond,
+        body,
+        name="ID-A*",
+        show_compile_time=show_compile_time,
+        warmup_inputs=warmup_inputs,
     )

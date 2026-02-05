@@ -12,6 +12,7 @@ from cli.evaluation_runner import run_evaluation_sweep
 from config import benchmark_bundles
 from config.pydantic_models import DistTrainOptions, PuzzleOptions
 from helpers.config_printer import print_config
+from helpers.jax_compile import compile_with_example
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from heuristic.neuralheuristic.heuristic_train import heuristic_train_builder
@@ -267,6 +268,12 @@ def heuristic_train_command(
         diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
         non_backtracking_steps=train_options.sampling_non_backtracking_steps,
     )
+
+    print("warming up dataset + train function")
+    warmup_key = jax.random.PRNGKey(0)
+    dataset_key, train_key = jax.random.split(warmup_key)
+    warmup_dataset = get_datasets(state, dataset_key, 0)
+    compile_with_example(heuristic_train_fn, train_key, warmup_dataset, state)
 
     # Calculate eval interval safely
     eval_interval = steps
@@ -559,6 +566,12 @@ def qfunction_train_command(
         diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
         non_backtracking_steps=train_options.sampling_non_backtracking_steps,
     )
+
+    print("warming up dataset + train function")
+    warmup_key = jax.random.PRNGKey(0)
+    dataset_key, train_key = jax.random.split(warmup_key)
+    warmup_dataset = get_datasets(state, dataset_key, 0)
+    compile_with_example(qfunction_train_fn, train_key, warmup_dataset, state)
 
     # Calculate eval interval safely
     eval_interval = steps

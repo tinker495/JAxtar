@@ -25,6 +25,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
+from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
@@ -400,6 +401,7 @@ def bi_astar_builder(
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     terminate_on_first_solution: bool = True,
+    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
     Builds and returns a JAX-accelerated bidirectional A* search function.
@@ -503,15 +505,17 @@ def bi_astar_builder(
         return bi_result
 
     bi_astar_fn = jax.jit(bi_astar)
-    empty_solve_config = puzzle.SolveConfig.default()
-    empty_states = puzzle.State.default()
-
     if show_compile_time:
         print("Initializing JIT for bidirectional A*...")
         start_time = time.time()
 
-    # Pre-compile with empty data
-    bi_astar_fn(empty_solve_config, empty_states)
+    if warmup_inputs is None:
+        empty_solve_config = puzzle.SolveConfig.default()
+        empty_states = puzzle.State.default()
+        # Pre-compile with empty data
+        bi_astar_fn(empty_solve_config, empty_states)
+    else:
+        compile_with_example(bi_astar_fn, *warmup_inputs)
 
     if show_compile_time:
         end_time = time.time()

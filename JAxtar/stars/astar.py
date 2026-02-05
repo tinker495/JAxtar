@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
+from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import Current, LoopState, Parent, SearchResult
@@ -243,6 +244,7 @@ def astar_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
+    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
     Builds and returns a JAX-accelerated A* search function.
@@ -285,18 +287,20 @@ def astar_builder(
         return search_result
 
     astar_fn = jax.jit(astar)
-    empty_solve_config = puzzle.SolveConfig.default()
-    empty_states = puzzle.State.default()
-
     if show_compile_time:
         print("initializing jit")
         start = time.time()
 
-    # Pass empty states and target to JIT-compile the function with simple data.
-    # Using actual puzzles would cause extremely long compilation times due to
-    # tracing all possible functions. Empty inputs allow JAX to specialize the
-    # compiled code without processing complex puzzle structures.
-    astar_fn(empty_solve_config, empty_states)
+    if warmup_inputs is None:
+        empty_solve_config = puzzle.SolveConfig.default()
+        empty_states = puzzle.State.default()
+        # Pass empty states and target to JIT-compile the function with simple data.
+        # Using actual puzzles would cause extremely long compilation times due to
+        # tracing all possible functions. Empty inputs allow JAX to specialize the
+        # compiled code without processing complex puzzle structures.
+        astar_fn(empty_solve_config, empty_states)
+    else:
+        compile_with_example(astar_fn, *warmup_inputs)
 
     if show_compile_time:
         end = time.time()
