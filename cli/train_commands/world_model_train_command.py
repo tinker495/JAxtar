@@ -6,6 +6,7 @@ import jax.numpy as jnp
 
 from config.pydantic_models import WMTrainOptions
 from helpers.config_printer import print_config
+from helpers.jax_compile import compile_with_example
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
 from train_util.optimizer import get_eval_params, get_learning_rate, setup_optimizer
@@ -98,6 +99,18 @@ def train(
         train_info_fn,
         wm_train_options.mini_batch_size,
     )
+
+    print("warming up train/eval functions")
+    warmup_key = jax.random.PRNGKey(0)
+    compile_with_example(
+        train_fn,
+        warmup_key,
+        (datas, next_datas, actions),
+        params,
+        opt_state,
+        0,
+    )
+    compile_with_example(eval_fn, params, eval_trajectory)
 
     print("initializing key")
     key = jax.random.PRNGKey(0)

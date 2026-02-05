@@ -171,7 +171,9 @@ def search_samples(
 
             if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
                 if is_bidirectional:
-                    from JAxtar.bi_stars.bi_search_base import reconstruct_bidirectional_path
+                    from JAxtar.bi_stars.bi_search_base import (
+                        reconstruct_bidirectional_path,
+                    )
 
                     bi_pairs = reconstruct_bidirectional_path(search_result, puzzle)
                     actions = [a for a, _ in bi_pairs[1:]]
@@ -351,6 +353,9 @@ def run_search_command(
     }
     print_config(config_title, enrich_config(config))
 
+    warmup_seed = seeds[0] if seeds else 0
+    warmup_config, warmup_state = puzzle.get_inits(jax.random.PRNGKey(warmup_seed))
+
     search_fn = builder_fn(
         puzzle,
         component,
@@ -359,6 +364,7 @@ def run_search_command(
         pop_ratio=search_options.pop_ratio,
         cost_weight=search_options.cost_weight,
         show_compile_time=search_options.show_compile_time,
+        warmup_inputs=(warmup_config, warmup_state),
     )
 
     total_search_times, states_per_second, single_search_time = search_samples(

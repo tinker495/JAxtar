@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
+from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
@@ -292,6 +293,7 @@ def astar_d_builder(
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
+    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
     Builds and returns a JAX-accelerated A* with deferred node evaluation (A* deferred).
@@ -352,18 +354,20 @@ def astar_d_builder(
         return search_result
 
     astar_d_fn = jax.jit(astar_d)
-    empty_solve_config = puzzle.SolveConfig.default()
-    empty_states = puzzle.State.default()
-
     if show_compile_time:
         print("initializing jit")
         start = time.time()
 
-    # Pass empty states and target to JIT-compile the function with simple data.
-    # Using actual puzzles would cause extremely long compilation times due to
-    # tracing all possible functions. Empty inputs allow JAX to specialize the
-    # compiled code without processing complex puzzle structures.
-    astar_d_fn(empty_solve_config, empty_states)
+    if warmup_inputs is None:
+        empty_solve_config = puzzle.SolveConfig.default()
+        empty_states = puzzle.State.default()
+        # Pass empty states and target to JIT-compile the function with simple data.
+        # Using actual puzzles would cause extremely long compilation times due to
+        # tracing all possible functions. Empty inputs allow JAX to specialize the
+        # compiled code without processing complex puzzle structures.
+        astar_d_fn(empty_solve_config, empty_states)
+    else:
+        compile_with_example(astar_d_fn, *warmup_inputs)
 
     if show_compile_time:
         end = time.time()

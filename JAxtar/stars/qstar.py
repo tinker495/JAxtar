@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
+from helpers.jax_compile import compile_with_example
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
     Current,
@@ -268,6 +269,7 @@ def qstar_builder(
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
+    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -322,18 +324,20 @@ def qstar_builder(
         return search_result
 
     qstar_fn = jax.jit(qstar)
-    empty_solve_config = puzzle.SolveConfig.default()
-    empty_states = puzzle.State.default()
-
     if show_compile_time:
         print("initializing jit")
         start = time.time()
 
-    # Pass empty states and target to JIT-compile the function with simple data.
-    # Using actual puzzles would cause extremely long compilation times due to
-    # tracing all possible functions. Empty inputs allow JAX to specialize the
-    # compiled code without processing complex puzzle structures.
-    qstar_fn(empty_solve_config, empty_states)
+    if warmup_inputs is None:
+        empty_solve_config = puzzle.SolveConfig.default()
+        empty_states = puzzle.State.default()
+        # Pass empty states and target to JIT-compile the function with simple data.
+        # Using actual puzzles would cause extremely long compilation times due to
+        # tracing all possible functions. Empty inputs allow JAX to specialize the
+        # compiled code without processing complex puzzle structures.
+        qstar_fn(empty_solve_config, empty_states)
+    else:
+        compile_with_example(qstar_fn, *warmup_inputs)
 
     if show_compile_time:
         end = time.time()

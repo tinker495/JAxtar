@@ -14,6 +14,7 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 from xtructure.stack import Stack
 
+from helpers.jax_compile import compile_with_example
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
 from JAxtar.utils.array_ops import stable_partition_three
@@ -757,6 +758,7 @@ def finalize_builder(
     body: callable,
     name: str = "ID-Search",
     show_compile_time: bool = False,
+    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
     Finalize the search builder by JIT-compiling and optionally warming up.
@@ -773,9 +775,12 @@ def finalize_builder(
         print(f"initializing jit for {name}")
         start_t = time.time()
 
-    empty_solve_config = puzzle.SolveConfig.default()
-    empty_states = puzzle.State.default()
-    jitted_fn(empty_solve_config, empty_states)
+    if warmup_inputs is None:
+        empty_solve_config = puzzle.SolveConfig.default()
+        empty_states = puzzle.State.default()
+        jitted_fn(empty_solve_config, empty_states)
+    else:
+        compile_with_example(jitted_fn, *warmup_inputs)
 
     if show_compile_time:
         print(f"{name} JIT compile time: {time.time() - start_t:.2f}s")
