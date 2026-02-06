@@ -22,7 +22,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
@@ -69,8 +69,6 @@ def _bi_astar_d_loop_builder(
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
@@ -219,23 +217,10 @@ def _bi_astar_d_loop_builder(
                 sorted_states = flat_states[sorted_indices]
                 sorted_mask = flat_need_compute[sorted_indices]
 
-                sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-                sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-                def _calc_heuristic_chunk(carry, input_slice):
-                    states_slice, compute_mask = input_slice
-                    h_val = variable_heuristic_batch_switcher(
-                        heuristic_params, states_slice, compute_mask
-                    )
-                    return carry, h_val
-
-                _, h_val_chunks = jax.lax.scan(
-                    _calc_heuristic_chunk,
-                    None,
-                    (sorted_states_chunked, sorted_mask_chunked),
+                # Automated batch processing
+                h_val_sorted = variable_heuristic_batch_switcher(
+                    heuristic_params, sorted_states, sorted_mask
                 )
-
-                h_val_sorted = h_val_chunks.reshape(-1)
                 flat_h_val = (
                     jnp.empty((n,), dtype=h_val_sorted.dtype).at[sorted_indices].set(h_val_sorted)
                 )
@@ -281,15 +266,27 @@ def _bi_astar_d_loop_builder(
                     solve_config, sel_states, sel_valid
                 )  # [action, k], [action, k]
 
-                def _scan_backup(carry, inputs):
-                    succ_slice, cost_slice = inputs
-                    h_succ = variable_heuristic_batch_switcher(
-                        heuristic_params, succ_slice, sel_valid
-                    ).astype(KEY_DTYPE)
-                    q_est = h_succ + cost_slice.astype(KEY_DTYPE)
-                    return carry, q_est
+                tiled_valid = jnp.tile(sel_valid[jnp.newaxis, :], (action_size, 1))
+                flat_valid = tiled_valid.flatten()
+                flat_succ_states = succ_states.flatten()
+                flat_succ_costs = succ_costs.flatten()
 
-                _, q_chunks = jax.lax.scan(_scan_backup, None, (succ_states, succ_costs))
+                # Pack valid entries to front for correct batch_switcher behavior
+                pack_perm = stable_partition_three(
+                    flat_valid, jnp.zeros_like(flat_valid, dtype=jnp.bool_)
+                )
+                packed_states = flat_succ_states[pack_perm]
+                packed_valid = flat_valid[pack_perm]
+
+                packed_h_succ = variable_heuristic_batch_switcher(
+                    heuristic_params, packed_states, packed_valid
+                ).astype(KEY_DTYPE)
+
+                # Unpack results back to original order
+                flat_h_succ = jnp.empty_like(packed_h_succ).at[pack_perm].set(packed_h_succ)
+
+                q_chunks_flat = flat_h_succ + flat_succ_costs.astype(KEY_DTYPE)
+                q_chunks = q_chunks_flat.reshape(action_size, k)
                 v_sel = jnp.min(q_chunks, axis=0).astype(KEY_DTYPE)
 
                 heur_flat = heuristic_vals.flatten()
@@ -544,7 +541,7 @@ def bi_astar_d_builder(
     statecls = puzzle.State
     action_size = puzzle.action_size
     denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    min_pop = max(1, MIN_BATCH_UNIT // denom)
 
     # Pre-build the search result OUTSIDE of JIT context
     bi_result_template = build_bi_search_result(

@@ -6,7 +6,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.beamsearch.search_base import (
     ACTION_PAD,
     TRACE_INDEX_DTYPE,
@@ -38,8 +38,6 @@ def _qbeam_loop_builder(
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
-        max_batch_size=beam_width,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 

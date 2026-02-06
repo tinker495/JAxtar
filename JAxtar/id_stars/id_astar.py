@@ -4,7 +4,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE
 from JAxtar.id_stars.id_frontier import (
     ACTION_PAD,
     IDFrontier,
@@ -47,26 +47,11 @@ def _build_chunked_heuristic_eval(
         sorted_states = xnp.take(flat_states, sorted_idx, axis=0)
         sorted_mask = flat_valid[sorted_idx]
 
-        chunk_states = xnp.reshape(sorted_states, (action_size, batch_size))
-        chunk_mask = sorted_mask.reshape((action_size, batch_size))
+        # Consolidated call replacing manual chunking/scan
+        sorted_vals = variable_heuristic_fn(h_params, sorted_states, sorted_mask).astype(KEY_DTYPE)
+        sorted_vals = jnp.maximum(0.0, sorted_vals)
+        sorted_vals = jnp.where(sorted_mask, sorted_vals, jnp.inf)
 
-        def _compute(_, inputs):
-            states_slice, mask_slice = inputs
-
-            def _calc(_):
-                vals = variable_heuristic_fn(h_params, states_slice, mask_slice).astype(KEY_DTYPE)
-                vals = jnp.maximum(0.0, vals)  # Ensure non-negative heuristic
-                return jnp.where(mask_slice, vals, jnp.inf)
-
-            return None, jax.lax.cond(
-                jnp.any(mask_slice),
-                _calc,
-                lambda _: jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE),
-                None,
-            )
-
-        _, chunk_vals = jax.lax.scan(_compute, None, (chunk_states, chunk_mask))
-        sorted_vals = chunk_vals.reshape((flat_size,))
         flat_vals = jnp.full((flat_size,), jnp.inf, dtype=KEY_DTYPE)
         flat_vals = flat_vals.at[sorted_idx].set(sorted_vals)
         return flat_vals
@@ -96,8 +81,6 @@ def _id_astar_frontier_builder(
 
     variable_heuristic = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
     flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
@@ -275,8 +258,6 @@ def _id_astar_loop_builder(
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 

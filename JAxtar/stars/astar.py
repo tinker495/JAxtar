@@ -8,7 +8,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.stars.search_base import Current, LoopState, Parent, SearchResult
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -30,12 +30,10 @@ def _astar_loop_builder(
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
     denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    min_pop = max(1, MIN_BATCH_UNIT // denom)
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
         search_result: SearchResult = SearchResult.build(

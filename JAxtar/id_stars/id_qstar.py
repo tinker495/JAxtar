@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE
 from JAxtar.id_stars.id_frontier import (
     ACTION_PAD,
     IDFrontier,
@@ -51,8 +51,6 @@ def _id_qstar_frontier_builder(
 
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
@@ -236,8 +234,6 @@ def _id_qstar_loop_builder(
 
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 

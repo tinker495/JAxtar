@@ -27,7 +27,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopState,
@@ -68,8 +68,6 @@ def _bi_astar_loop_builder(
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
@@ -426,7 +424,7 @@ def bi_astar_builder(
     statecls = puzzle.State
     action_size = puzzle.action_size
     denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    min_pop = max(1, MIN_BATCH_UNIT // denom)
 
     # Pre-build the search result OUTSIDE of JIT context
     bi_result_template = build_bi_search_result(

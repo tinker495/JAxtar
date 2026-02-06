@@ -21,7 +21,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
@@ -72,8 +72,6 @@ def _bi_qstar_loop_builder(
 
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
@@ -219,22 +217,9 @@ def _bi_qstar_loop_builder(
             sorted_states = flat_states[invperm]
             sorted_mask = flat_mask[invperm]
 
-            sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-            sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-            def _calc_v_chunk(carry, input_slice):
-                states_slice, compute_mask = input_slice
-                q_vals = variable_q_batch_switcher(q_params, states_slice, compute_mask)  # [b, a]
-                v_vals = jnp.min(q_vals, axis=-1)
-                return carry, v_vals
-
-            _, v_chunks = jax.lax.scan(
-                _calc_v_chunk,
-                None,
-                (sorted_states_chunked, sorted_mask_chunked),
-            )  # [action_size, batch_size]
-
-            v_sorted = v_chunks.reshape(-1).astype(KEY_DTYPE)  # [flat]
+            # Automated batch processing
+            q_vals = variable_q_batch_switcher(q_params, sorted_states, sorted_mask)
+            v_sorted = jnp.min(q_vals, axis=-1).astype(KEY_DTYPE)
             v_flat = jnp.empty((n,), dtype=v_sorted.dtype).at[invperm].set(v_sorted)
 
             heuristic_vals = v_flat.reshape(action_size, sr_batch_size)
@@ -592,7 +577,7 @@ def bi_qstar_builder(
     statecls = puzzle.State
     action_size = puzzle.action_size
     denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    min_pop = max(1, MIN_BATCH_UNIT // denom)
 
     # Pre-build the search result OUTSIDE of JIT context
     bi_result_template = build_bi_search_result(

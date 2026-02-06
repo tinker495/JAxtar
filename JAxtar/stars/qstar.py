@@ -7,7 +7,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.stars.search_base import (
     Current,
     LoopStateWithStates,
@@ -37,7 +37,7 @@ def _qstar_loop_builder(
 
     dist_sign = -1.0 if pessimistic_update else 1.0
     denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    min_pop = max(1, MIN_BATCH_UNIT // denom)
 
     # min_pop determines the minimum number of states to pop from the priority queue in each batch.
     # This value is set to optimize the efficiency of batched operations.
@@ -48,8 +48,6 @@ def _qstar_loop_builder(
     # so that each batch is filled as evenly as possible and computational resources are used efficiently.
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
