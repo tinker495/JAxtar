@@ -4,7 +4,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import KEY_DTYPE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.id_stars.id_frontier import (
     ACTION_PAD,
     IDFrontier,
@@ -21,7 +21,10 @@ from JAxtar.id_stars.search_base import (
     finalize_builder,
 )
 from JAxtar.utils.array_ops import stable_partition_three
-from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 
 
 def _build_chunked_heuristic_eval(
@@ -79,9 +82,12 @@ def _id_astar_frontier_builder(
 
     IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
+    heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
     variable_heuristic = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
+        batch_sizes=heuristic_batch_sizes,
+        partition_mode="flat",
     )
     flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
@@ -256,9 +262,12 @@ def _id_astar_loop_builder(
 
     IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
+    heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
+        batch_sizes=heuristic_batch_sizes,
+        partition_mode="flat",
     )
 
     generate_frontier = _id_astar_frontier_builder(

@@ -16,7 +16,10 @@ from JAxtar.beamsearch.search_base import (
     non_backtracking_mask,
     select_beam,
 )
-from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 from qfunction.q_base import QFunction
 
 
@@ -36,9 +39,12 @@ def _qbeam_loop_builder(
     min_keep = max(1, beam_width // denom)
     pop_ratio = float(pop_ratio)
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
+    q_batch_sizes = build_batch_sizes_for_cap(beam_width)
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
         pad_value=jnp.inf,
+        batch_sizes=q_batch_sizes,
+        partition_mode="flat",
     )
 
     if non_backtracking_steps < 0:
@@ -282,7 +288,8 @@ def qbeam_builder(
 
     if show_compile_time:
         end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
+        compile_time = end - start
+        print("Compile Time: {:6.2f} seconds".format(compile_time))
         print("JIT compiled\n\n")
 
     return qbeam_fn

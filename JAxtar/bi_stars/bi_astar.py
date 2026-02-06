@@ -39,7 +39,10 @@ from JAxtar.bi_stars.bi_search_base import (
 )
 from JAxtar.stars.search_base import Current, Parent, SearchResult
 from JAxtar.utils.array_ops import stable_partition_three
-from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 
 
 def _bi_astar_loop_builder(
@@ -65,10 +68,13 @@ def _bi_astar_loop_builder(
         Tuple of (init_loop_state, loop_condition, loop_body) functions
     """
     action_size = puzzle.action_size
+    heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
+        batch_sizes=heuristic_batch_sizes,
+        partition_mode="flat",
     )
 
     def init_loop_state(
@@ -517,7 +523,8 @@ def bi_astar_builder(
 
     if show_compile_time:
         end_time = time.time()
-        print(f"Compile Time: {end_time - start_time:6.2f} seconds")
+        compile_time = end_time - start_time
+        print("Compile Time: {:6.2f} seconds".format(compile_time))
         print("JIT compiled\n")
 
     return bi_astar_fn

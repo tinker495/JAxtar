@@ -18,7 +18,10 @@ from JAxtar.beamsearch.search_base import (
     non_backtracking_mask,
     select_beam,
 )
-from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 
 
 def _heuristic_beam_loop_builder(
@@ -38,13 +41,7 @@ def _heuristic_beam_loop_builder(
     min_keep = max(1, beam_width // denom)
     pop_ratio = float(pop_ratio)
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
-    heuristic_batch_sizes = [beam_width]
-    curr_size = beam_width // 2
-    while curr_size >= MIN_BATCH_UNIT and curr_size > 0:
-        heuristic_batch_sizes.append(curr_size)
-        curr_size //= 2
-    if MIN_BATCH_UNIT <= beam_width:
-        heuristic_batch_sizes.append(MIN_BATCH_UNIT)
+    heuristic_batch_sizes = build_batch_sizes_for_cap(beam_width, min_batch_unit=MIN_BATCH_UNIT)
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,

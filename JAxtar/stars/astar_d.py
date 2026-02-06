@@ -17,7 +17,10 @@ from JAxtar.stars.search_base import (
     SearchResult,
 )
 from JAxtar.utils.array_ops import stable_partition_three
-from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 
 
 def _astar_d_loop_builder(
@@ -34,10 +37,13 @@ def _astar_d_loop_builder(
     # duplicating the search wiring or triggering extra traces.
     statecls = puzzle.State
     action_size = puzzle.action_size
+    heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
+        batch_sizes=heuristic_batch_sizes,
+        partition_mode="flat",
     )
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_UNIT // denom)
@@ -351,7 +357,8 @@ def astar_d_builder(
 
     if show_compile_time:
         end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
+        compile_time = end - start
+        print("Compile Time: {:6.2f} seconds".format(compile_time))
         print("JIT compiled\n\n")
 
     return astar_d_fn

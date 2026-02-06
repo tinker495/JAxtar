@@ -15,7 +15,10 @@ from JAxtar.stars.search_base import (
     Parent,
     SearchResult,
 )
-from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 from qfunction.q_base import QFunction
 
 
@@ -38,6 +41,7 @@ def _qstar_loop_builder(
     dist_sign = -1.0 if pessimistic_update else 1.0
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_UNIT // denom)
+    q_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
 
     # min_pop determines the minimum number of states to pop from the priority queue in each batch.
     # This value is set to optimize the efficiency of batched operations.
@@ -49,6 +53,8 @@ def _qstar_loop_builder(
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
         pad_value=jnp.inf,
+        batch_sizes=q_batch_sizes,
+        partition_mode="flat",
     )
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
@@ -339,7 +345,8 @@ def qstar_builder(
 
     if show_compile_time:
         end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
+        compile_time = end - start
+        print("Compile Time: {:6.2f} seconds".format(compile_time))
         print("JIT compiled\n\n")
 
     return qstar_fn

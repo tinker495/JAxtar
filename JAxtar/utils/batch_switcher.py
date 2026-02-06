@@ -74,6 +74,31 @@ def _build_batch_sizes(
     return sorted({int(bs) for bs in generated_sizes if 0 <= int(bs) <= limit_batch_size})
 
 
+def build_batch_sizes_for_cap(
+    cap: int,
+    *,
+    min_batch_unit: int | None = None,
+) -> list[int]:
+    """Build power-of-two branch sizes from cap down to min_batch_unit."""
+    cap = int(cap)
+    if cap <= 0:
+        raise ValueError("cap must be positive")
+
+    if min_batch_unit is None:
+        min_batch_unit = annotate.MIN_BATCH_UNIT
+    min_batch_unit = max(1, int(min_batch_unit))
+
+    sizes = [cap]
+    curr = cap // 2
+    while curr >= min_batch_unit and curr > 0:
+        sizes.append(curr)
+        curr //= 2
+    if min_batch_unit <= cap:
+        sizes.append(min_batch_unit)
+
+    return sorted(set(sizes))
+
+
 def _flatten_batched_current(current: Any, filled_shape: tuple[int, ...]) -> Any:
     n_leading = len(filled_shape)
     n_total = prod(filled_shape)
@@ -208,22 +233,51 @@ def variable_batch_switcher_builder(
     def _run_chunk(distance_fn_parameters, current_chunk, filled_chunk):
         filled_count = jnp.sum(filled_chunk, dtype=jnp.int32)
         filled_count = jnp.clip(filled_count, 0, limit_batch_size)
-        idx = jnp.searchsorted(batch_sizes_array, filled_count, side="left")
-        idx = jnp.clip(idx, 0, max_branch_idx)
-        is_limit_branch = idx == max_branch_idx
 
-        def _run_dense(_):
-            return jax.lax.switch(idx, branch_fns, distance_fn_parameters, current_chunk)
+        def _run_zero(_):
+            if expected_output_shape is not None:
+                out_dtype = _infer_pad_dtype(pad_value, expected_output_dtype)
+                return jnp.full(
+                    (limit_batch_size, *expected_output_shape), pad_value, dtype=out_dtype
+                )
+            empty_current = jax.tree_util.tree_map(lambda x: x[:0], current_chunk)
+            empty_values = eval_fn(distance_fn_parameters, empty_current)
+            return _pad_leading_axis(empty_values, limit_batch_size, pad_value)
 
-        def _run_sparse(_):
-            sort_indices = stable_partition_three(
-                filled_chunk.reshape(-1), jnp.zeros_like(filled_chunk.reshape(-1), dtype=jnp.bool_)
-            )
-            sorted_current = jax.tree_util.tree_map(lambda x: x[sort_indices], current_chunk)
-            sorted_res = jax.lax.switch(idx, branch_fns, distance_fn_parameters, sorted_current)
-            return jnp.zeros_like(sorted_res).at[sort_indices].set(sorted_res)
+        def _run_nonzero(_):
+            idx = jnp.searchsorted(batch_sizes_array, filled_count, side="left")
+            idx = jnp.clip(idx, 0, max_branch_idx)
+            is_limit_branch = idx == max_branch_idx
 
-        return jax.lax.cond(is_limit_branch, _run_dense, _run_sparse, operand=None)
+            def _run_dense(__):
+                return jax.lax.switch(idx, branch_fns, distance_fn_parameters, current_chunk)
+
+            def _run_sparse(__):
+                # If valid entries are already packed at prefix, skip reorder/scatter overhead.
+                seen_false = jnp.cumsum((~filled_chunk).astype(jnp.int32), axis=0) > 0
+                is_prefix_packed = ~jnp.any(jnp.logical_and(filled_chunk, seen_false))
+
+                def _run_packed(___):
+                    return jax.lax.switch(idx, branch_fns, distance_fn_parameters, current_chunk)
+
+                def _run_unpack(___):
+                    sort_indices = stable_partition_three(
+                        filled_chunk.reshape(-1),
+                        jnp.zeros_like(filled_chunk.reshape(-1), dtype=jnp.bool_),
+                    )
+                    sorted_current = jax.tree_util.tree_map(
+                        lambda x: x[sort_indices], current_chunk
+                    )
+                    sorted_res = jax.lax.switch(
+                        idx, branch_fns, distance_fn_parameters, sorted_current
+                    )
+                    return jnp.zeros_like(sorted_res).at[sort_indices].set(sorted_res)
+
+                return jax.lax.cond(is_prefix_packed, _run_packed, _run_unpack, operand=None)
+
+            return jax.lax.cond(is_limit_branch, _run_dense, _run_sparse, operand=None)
+
+        return jax.lax.cond(filled_count == 0, _run_zero, _run_nonzero, operand=None)
 
     def _run_flat(distance_fn_parameters, current_flat, filled_flat):
         n_total = filled_flat.shape[0]
@@ -321,4 +375,4 @@ def variable_batch_switcher_builder(
     return variable_batch_switcher
 
 
-__all__ = ["variable_batch_switcher_builder"]
+__all__ = ["build_batch_sizes_for_cap", "variable_batch_switcher_builder"]

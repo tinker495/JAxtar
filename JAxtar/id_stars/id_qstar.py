@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from JAxtar.annotate import KEY_DTYPE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.id_stars.id_frontier import (
     ACTION_PAD,
     IDFrontier,
@@ -23,7 +23,10 @@ from JAxtar.id_stars.search_base import (
     build_outer_loop,
     finalize_builder,
 )
-from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 from qfunction.q_base import QFunction
 
 
@@ -48,10 +51,13 @@ def _id_qstar_frontier_builder(
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
 
     IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
+    q_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
 
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
         pad_value=jnp.inf,
+        batch_sizes=q_batch_sizes,
+        partition_mode="flat",
     )
 
     def generate_frontier(
@@ -231,10 +237,13 @@ def _id_qstar_loop_builder(
     frontier_actions = jnp.full((batch_size,), ACTION_PAD, dtype=jnp.int32)
 
     IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
+    q_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
 
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
         pad_value=jnp.inf,
+        batch_sizes=q_batch_sizes,
+        partition_mode="flat",
     )
 
     def _min_q(q_params, states, valid_mask):
