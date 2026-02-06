@@ -5,7 +5,10 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 
 
 class MockState(NamedTuple):
@@ -99,7 +102,39 @@ def test_non_batched_leaf_raises():
         assert "leading batch dims" in str(e)
 
 
+def test_build_batch_sizes_for_cap():
+    sizes = build_batch_sizes_for_cap(1024, min_batch_unit=128)
+    assert sizes == [128, 256, 512, 1024]
+
+    sizes_small = build_batch_sizes_for_cap(100, min_batch_unit=128)
+    assert sizes_small == [100]
+
+
+def test_all_invalid_returns_pad_values():
+    def eval_fn(params, state):
+        return jnp.sum(state.data, axis=-1, keepdims=True) + params
+
+    switcher = variable_batch_switcher_builder(
+        eval_fn,
+        pad_value=-9.0,
+        batch_sizes=[8, 16],
+        partition_mode="flat",
+        expected_output_shape=(1,),
+        expected_output_dtype=jnp.float32,
+    )
+
+    state = MockState(
+        data=jnp.arange(8 * 4, dtype=jnp.float32).reshape(8, 4), extra=jnp.zeros((8,))
+    )
+    filled = jnp.zeros((8,), dtype=jnp.bool_)
+    out = jax.jit(switcher)(3.0, state, filled)
+    assert out.shape == (8, 1)
+    assert jnp.allclose(out, -9.0)
+
+
 if __name__ == "__main__":
     test_variable_batch_switcher()
     test_non_batched_leaf_raises()
+    test_build_batch_sizes_for_cap()
+    test_all_invalid_returns_pad_values()
     print("All tests passed!")
