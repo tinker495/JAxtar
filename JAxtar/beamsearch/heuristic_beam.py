@@ -8,7 +8,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.beamsearch.search_base import (
     ACTION_PAD,
     TRACE_INDEX_DTYPE,
@@ -18,7 +18,6 @@ from JAxtar.beamsearch.search_base import (
     non_backtracking_mask,
     select_beam,
 )
-from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -39,11 +38,19 @@ def _heuristic_beam_loop_builder(
     min_keep = max(1, beam_width // denom)
     pop_ratio = float(pop_ratio)
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
+    heuristic_batch_sizes = [beam_width]
+    curr_size = beam_width // 2
+    while curr_size >= MIN_BATCH_UNIT and curr_size > 0:
+        heuristic_batch_sizes.append(curr_size)
+        curr_size //= 2
+    if MIN_BATCH_UNIT <= beam_width:
+        heuristic_batch_sizes.append(MIN_BATCH_UNIT)
+
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
-        max_batch_size=beam_width,
-        min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
+        batch_sizes=heuristic_batch_sizes,
+        partition_mode="auto",
     )
 
     if non_backtracking_steps < 0:
@@ -147,45 +154,13 @@ def _heuristic_beam_loop_builder(
             jnp.arange(sr_beam_width, dtype=jnp.int32), (sr_action_size, sr_beam_width)
         )
 
-        flat_states_tree = neighbours.reshape((flat_count,))
-        flat_valid = child_valid.reshape(flat_count)
-        global_perm = stable_partition_three(
-            flat_valid, jnp.zeros_like(flat_valid, dtype=jnp.bool_)
-        )
-        ordered_states_tree = xnp.take(flat_states_tree, global_perm, axis=0)
-        ordered_valid = jnp.take(flat_valid, global_perm, axis=0)
-
-        num_chunks = sr_action_size
-        chunk_states_tree = ordered_states_tree.reshape((num_chunks, sr_beam_width))
-        chunk_valid = ordered_valid.reshape((num_chunks, sr_beam_width))
-
-        chunk_dists = jnp.full((num_chunks, sr_beam_width), jnp.inf, dtype=KEY_DTYPE)
-
-        def _compute_chunk(i, acc):
-            row_mask = chunk_valid[i]
-
-            def _calc(_):
-                chunk_states = chunk_states_tree[i]
-                dist_row = variable_heuristic_batch_switcher(
-                    heuristic_parameters,
-                    chunk_states,
-                    row_mask,
-                ).astype(KEY_DTYPE)
-                return jnp.where(row_mask, dist_row, jnp.inf)
-
-            dist_row = jax.lax.cond(
-                jnp.any(row_mask),
-                _calc,
-                lambda _: acc[i],
-                None,
-            )
-            return acc.at[i].set(dist_row)
-
-        dists_compacted = jax.lax.fori_loop(0, num_chunks, _compute_chunk, chunk_dists)
-        ordered_dists = dists_compacted.reshape((flat_count,))
-        flat_dists = jnp.full(flat_count, jnp.inf, dtype=KEY_DTYPE)
-        flat_dists = flat_dists.at[global_perm].set(ordered_dists)
-        dists = flat_dists.reshape(child_shape)
+        # Keep (action, batch) layout so row-partition skip can avoid empty action rows.
+        dists = variable_heuristic_batch_switcher(
+            heuristic_parameters,
+            neighbours,
+            child_valid,
+        ).astype(KEY_DTYPE)
+        dists = jnp.where(child_valid, dists, jnp.inf)
 
         scores = (cost_weight * child_costs + dists).astype(KEY_DTYPE)
         scores = jnp.where(child_valid, scores, jnp.inf)
@@ -336,7 +311,8 @@ def beam_builder(
 
     if show_compile_time:
         end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
+        compile_time = end - start
+        print("Compile Time: {:6.2f} seconds".format(compile_time))
         print("JIT compiled\n\n")
 
     return beam_fn
