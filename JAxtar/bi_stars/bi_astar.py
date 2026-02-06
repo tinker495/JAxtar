@@ -27,7 +27,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
+from JAxtar.annotate import ACTION_DTYPE, BATCH_SPLIT_UNIT, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopState,
@@ -68,14 +68,15 @@ def _bi_astar_loop_builder(
         Tuple of (init_loop_state, loop_condition, loop_body) functions
     """
     action_size = puzzle.action_size
-    heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
+    flat_eval_cap = min(action_size * batch_size, BATCH_SPLIT_UNIT)
+    heuristic_batch_sizes = build_batch_sizes_for_cap(flat_eval_cap, min_batch_unit=MIN_BATCH_UNIT)
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
-        max_batch_size=batch_size,
+        max_batch_size=flat_eval_cap,
         batch_sizes=heuristic_batch_sizes,
-        partition_mode="flat",
+        partition_mode="auto",
     )
 
     def init_loop_state(
@@ -267,25 +268,21 @@ def _bi_astar_loop_builder(
         new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
         final_process_mask_reshaped = flatten_final_process_mask.reshape(unflatten_shape)
 
-        # Compute heuristic and insert into priority queue
-        def _new_states(sr: SearchResult, vals, neighbour, new_states_mask):
-            if use_heuristic:
-                neighbour_heur = variable_heuristic_batch_switcher(
-                    heuristic_params, neighbour, new_states_mask
-                ).astype(KEY_DTYPE)
-            else:
-                neighbour_heur = jnp.zeros_like(vals.cost, dtype=KEY_DTYPE)
-            sr.dist = xnp.update_on_condition(
-                sr.dist,
-                vals.hashidx.index,
-                new_states_mask,
-                neighbour_heur,
-            )
-            return sr, neighbour_heur
-
-        def _old_states(sr: SearchResult, vals, neighbour, new_states_mask):
-            neighbour_heur = sr.dist[vals.hashidx.index]
-            return sr, neighbour_heur
+        # Compute heuristic once for the full (action, batch) block.
+        if use_heuristic:
+            new_neighbour_heur = variable_heuristic_batch_switcher(
+                heuristic_params, neighbours_reshaped, new_states_mask
+            ).astype(KEY_DTYPE)
+        else:
+            new_neighbour_heur = jnp.zeros_like(vals.cost, dtype=KEY_DTYPE)
+        cached_neighbour_heur = search_result.dist[hash_idx.index].reshape(unflatten_shape)
+        neighbour_heur_all = jnp.where(new_states_mask, new_neighbour_heur, cached_neighbour_heur)
+        search_result.dist = xnp.update_on_condition(
+            search_result.dist,
+            hash_idx.index,
+            flatten_new_states_mask,
+            new_neighbour_heur.reshape(-1),
+        )
 
         def _inserted(sr: SearchResult, vals, neighbour_heur):
             neighbour_key = (cost_weight * vals.cost + neighbour_heur).astype(KEY_DTYPE)
@@ -293,16 +290,7 @@ def _bi_astar_loop_builder(
             return sr
 
         def _scan(sr: SearchResult, val):
-            vals, neighbour, new_states_mask, final_process_mask = val
-            sr, neighbour_heur = jax.lax.cond(
-                jnp.any(new_states_mask),
-                _new_states,
-                _old_states,
-                sr,
-                vals,
-                neighbour,
-                new_states_mask,
-            )
+            vals, neighbour_heur, final_process_mask = val
             sr = jax.lax.cond(
                 jnp.any(final_process_mask),
                 _inserted,
@@ -316,7 +304,7 @@ def _bi_astar_loop_builder(
         search_result, _ = jax.lax.scan(
             _scan,
             search_result,
-            (vals, neighbours_reshaped, new_states_mask, final_process_mask_reshaped),
+            (vals, neighbour_heur_all, final_process_mask_reshaped),
         )
 
         # Pop next batch

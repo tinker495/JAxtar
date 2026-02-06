@@ -69,3 +69,30 @@ def test_auto_partition_matches_flat_on_valid_entries():
 
     # Row 1 is fully empty and should become pure pad in auto(row_scan) mode.
     assert jnp.allclose(out_auto[1], -5.0)
+
+
+def test_auto_partition_sparse_multirow_within_cap():
+    switcher = variable_batch_switcher_builder(
+        _eval_fn,
+        pad_value=-9.0,
+        max_batch_size=8,
+        batch_sizes=[1, 2, 4, 8],
+        partition_mode="auto",
+        expected_output_shape=(1,),
+        expected_output_dtype=jnp.float32,
+    )
+
+    state = jnp.arange(4 * 8 * 3, dtype=jnp.float32).reshape(4, 8, 3)
+    filled = jnp.zeros((4, 8), dtype=jnp.bool_)
+    filled = filled.at[0, 0].set(True)
+    filled = filled.at[1, 2].set(True)
+    filled = filled.at[2, 4].set(True)
+    filled = filled.at[3, 1].set(True)
+    filled = filled.at[3, 6].set(True)
+
+    out = jax.jit(switcher)(2.0, state, filled)
+    expected = _eval_fn(2.0, state)
+
+    valid_mask = filled[..., None]
+    assert out.shape == (4, 8, 1)
+    assert jnp.allclose(jnp.where(valid_mask, out, 0.0), jnp.where(valid_mask, expected, 0.0))

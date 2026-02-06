@@ -43,6 +43,7 @@ def _qbeam_loop_builder(
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
         pad_value=jnp.inf,
+        max_batch_size=beam_width,
         batch_sizes=q_batch_sizes,
         partition_mode="flat",
     )

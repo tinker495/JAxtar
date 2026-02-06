@@ -121,7 +121,7 @@ def _build_batch_sizes(
         unique_sizes = sorted({int(bs) for bs in batch_sizes if 0 <= int(bs) <= limit_batch_size})
         if not unique_sizes:
             raise ValueError(
-                "batch_sizes must contain at least one integer in [0, annotate.BATCH_SPLIT_UNIT]"
+                f"batch_sizes must contain at least one integer in [0, {limit_batch_size}]"
             )
         if unique_sizes[-1] < limit_batch_size:
             unique_sizes.append(limit_batch_size)
@@ -259,12 +259,17 @@ def variable_batch_switcher_builder(
             f"Unknown partition_mode: {partition_mode}. Expected one of {sorted(_PARTITION_MODES)}"
         )
 
+    split_cap = int(annotate.BATCH_SPLIT_UNIT)
+    if split_cap <= 0:
+        raise ValueError("annotate.BATCH_SPLIT_UNIT must be positive")
+
     if max_batch_size is None:
-        limit_batch_size = int(annotate.BATCH_SPLIT_UNIT)
+        limit_batch_size = split_cap
     else:
-        limit_batch_size = int(max_batch_size)
-    if limit_batch_size <= 0:
-        raise ValueError("max_batch_size must be positive")
+        requested_batch_cap = int(max_batch_size)
+        if requested_batch_cap <= 0:
+            raise ValueError("max_batch_size must be positive")
+        limit_batch_size = min(requested_batch_cap, split_cap)
 
     if min_batch_size is None:
         min_batch_size = annotate.MIN_BATCH_UNIT
@@ -315,8 +320,6 @@ def variable_batch_switcher_builder(
             if assume_prefix_packed:
                 return jax.lax.switch(idx, branch_fns, distance_fn_parameters, current_chunk)
 
-            is_limit_branch = idx == max_branch_idx
-
             def _run_dense(__):
                 return jax.lax.switch(idx, branch_fns, distance_fn_parameters, current_chunk)
 
@@ -342,13 +345,15 @@ def variable_batch_switcher_builder(
 
                 return jax.lax.cond(is_prefix_packed, _run_packed, _run_unpack, operand=None)
 
-            return jax.lax.cond(is_limit_branch, _run_dense, _run_sparse, operand=None)
+            return jax.lax.cond(
+                filled_count == limit_batch_size, _run_dense, _run_sparse, operand=None
+            )
 
         if needs_zero_guard:
             return jax.lax.cond(filled_count == 0, _run_zero, _run_nonzero, operand=None)
         return _run_nonzero(None)
 
-    def _run_flat(distance_fn_parameters, current_flat, filled_flat):
+    def _run_flat_chunked(distance_fn_parameters, current_flat, filled_flat):
         n_total = filled_flat.shape[0]
         if n_total <= limit_batch_size:
             pad_len = limit_batch_size - n_total
@@ -390,6 +395,57 @@ def variable_batch_switcher_builder(
         _, result_chunks = jax.lax.scan(scan_body, None, (current_chunks, filled_chunks))
         result_flat = result_chunks.reshape((target_len, *result_chunks.shape[2:]))
         return result_flat[:n_total]
+
+    def _run_packed_once(distance_fn_parameters, packed_current, packed_filled):
+        n_total = packed_filled.shape[0]
+        if n_total <= limit_batch_size:
+            pad_len = limit_batch_size - n_total
+            if pad_len == 0:
+                return _run_chunk(distance_fn_parameters, packed_current, packed_filled)
+
+            filled_chunk = jnp.pad(packed_filled, (0, pad_len), constant_values=False)
+            current_chunk = jax.tree_util.tree_map(
+                lambda x: jnp.pad(x, ((0, pad_len),) + ((0, 0),) * (x.ndim - 1)),
+                packed_current,
+            )
+            return _run_chunk(distance_fn_parameters, current_chunk, filled_chunk)[:n_total]
+
+        current_head = jax.tree_util.tree_map(lambda x: x[:limit_batch_size], packed_current)
+        filled_head = packed_filled[:limit_batch_size]
+        head_res = _run_chunk(distance_fn_parameters, current_head, filled_head)
+        return _pad_leading_axis(head_res, n_total - limit_batch_size, pad_value)
+
+    def _run_flat_globally_packed(distance_fn_parameters, current_flat, filled_flat):
+        def _run_prefix(_):
+            return _run_packed_once(distance_fn_parameters, current_flat, filled_flat)
+
+        def _run_partitioned(_):
+            sort_indices = stable_partition_three(
+                filled_flat,
+                jnp.zeros_like(filled_flat, dtype=jnp.bool_),
+            )
+            sorted_current = jax.tree_util.tree_map(lambda x: x[sort_indices], current_flat)
+            sorted_filled = filled_flat[sort_indices]
+            sorted_res = _run_packed_once(distance_fn_parameters, sorted_current, sorted_filled)
+            return jnp.zeros_like(sorted_res).at[sort_indices].set(sorted_res)
+
+        if assume_prefix_packed:
+            return _run_prefix(None)
+
+        seen_false = jnp.cumsum((~filled_flat).astype(jnp.int32), axis=0) > 0
+        is_prefix = ~jnp.any(jnp.logical_and(filled_flat, seen_false))
+        return jax.lax.cond(is_prefix, _run_prefix, _run_partitioned, operand=None)
+
+    def _run_flat(distance_fn_parameters, current_flat, filled_flat):
+        n_total = filled_flat.shape[0]
+        total_valid = jnp.sum(filled_flat, dtype=jnp.int32)
+        can_pack_once = jnp.logical_and(total_valid <= limit_batch_size, total_valid < n_total)
+        return jax.lax.cond(
+            can_pack_once,
+            lambda _: _run_flat_globally_packed(distance_fn_parameters, current_flat, filled_flat),
+            lambda _: _run_flat_chunked(distance_fn_parameters, current_flat, filled_flat),
+            operand=None,
+        )
 
     def _run_with_leading(distance_fn_parameters, current, filled):
         filled_shape = tuple(filled.shape)
@@ -453,12 +509,18 @@ def variable_batch_switcher_builder(
         current: chex.Array,
         filled: chex.Array,
     ):
-        use_row_scan = partition_mode == "row_scan" or (
-            partition_mode == "auto" and filled.ndim >= 2
-        )
-        if use_row_scan:
+        if partition_mode == "row_scan":
             return _run_row_scan(distance_fn_parameters, current, filled)
-        return _run_with_leading(distance_fn_parameters, current, filled)
+        if partition_mode == "flat" or filled.ndim < 2:
+            return _run_with_leading(distance_fn_parameters, current, filled)
+
+        total_valid = jnp.sum(filled, dtype=jnp.int32)
+        return jax.lax.cond(
+            total_valid <= limit_batch_size,
+            lambda _: _run_with_leading(distance_fn_parameters, current, filled),
+            lambda _: _run_row_scan(distance_fn_parameters, current, filled),
+            operand=None,
+        )
 
     return variable_batch_switcher
 

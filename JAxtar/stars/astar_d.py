@@ -8,7 +8,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
+from JAxtar.annotate import ACTION_DTYPE, BATCH_SPLIT_UNIT, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.stars.search_base import (
     Current,
     LoopStateWithStates,
@@ -37,7 +37,11 @@ def _astar_d_loop_builder(
     # duplicating the search wiring or triggering extra traces.
     statecls = puzzle.State
     action_size = puzzle.action_size
+    flat_eval_cap = min(action_size * batch_size, BATCH_SPLIT_UNIT)
     heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
+    flat_heuristic_batch_sizes = build_batch_sizes_for_cap(
+        flat_eval_cap, min_batch_unit=MIN_BATCH_UNIT
+    )
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -45,6 +49,14 @@ def _astar_d_loop_builder(
         max_batch_size=batch_size,
         batch_sizes=heuristic_batch_sizes,
         partition_mode="flat",
+    )
+    packed_heuristic_batch_switcher = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        pad_value=jnp.inf,
+        max_batch_size=flat_eval_cap,
+        batch_sizes=flat_heuristic_batch_sizes,
+        partition_mode="flat",
+        assume_prefix_packed=True,
     )
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_UNIT // denom)
@@ -163,8 +175,6 @@ def _astar_d_loop_builder(
             flat_need_compute = need_compute.flatten()
 
             n = flat_size
-            n = flat_size
-            # Stable sort so `need_compute=True` comes first (key False), preserving order.
             # Stable sort so `need_compute=True` comes first (key False), preserving order.
             sorted_indices = stable_partition_three(
                 flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
@@ -173,9 +183,7 @@ def _astar_d_loop_builder(
             sorted_states = flat_states[sorted_indices]
             sorted_mask = flat_need_compute[sorted_indices]
 
-            # `variable_heuristic_batch_switcher` now handles large batches automatically.
-            # We just pass the flattened inputs directly.
-            h_val_sorted = variable_heuristic_batch_switcher(
+            h_val_sorted = packed_heuristic_batch_switcher(
                 heuristic_parameters, sorted_states, sorted_mask
             )
             flat_h_val = (

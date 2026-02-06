@@ -56,6 +56,7 @@ def _id_qstar_frontier_builder(
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
         pad_value=jnp.inf,
+        max_batch_size=batch_size,
         batch_sizes=q_batch_sizes,
         partition_mode="flat",
     )
@@ -242,6 +243,7 @@ def _id_qstar_loop_builder(
     variable_q_parent_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
         pad_value=jnp.inf,
+        max_batch_size=batch_size,
         batch_sizes=q_batch_sizes,
         partition_mode="flat",
     )

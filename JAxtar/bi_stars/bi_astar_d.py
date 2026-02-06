@@ -22,7 +22,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
+from JAxtar.annotate import ACTION_DTYPE, BATCH_SPLIT_UNIT, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
@@ -69,7 +69,11 @@ def _bi_astar_d_loop_builder(
         Tuple of (init_loop_state, loop_condition, loop_body) functions
     """
     action_size = puzzle.action_size
+    flat_eval_cap = min(action_size * batch_size, BATCH_SPLIT_UNIT)
     heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
+    flat_heuristic_batch_sizes = build_batch_sizes_for_cap(
+        flat_eval_cap, min_batch_unit=MIN_BATCH_UNIT
+    )
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -77,6 +81,14 @@ def _bi_astar_d_loop_builder(
         max_batch_size=batch_size,
         batch_sizes=heuristic_batch_sizes,
         partition_mode="flat",
+    )
+    packed_heuristic_batch_switcher = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        pad_value=jnp.inf,
+        max_batch_size=flat_eval_cap,
+        batch_sizes=flat_heuristic_batch_sizes,
+        partition_mode="flat",
+        assume_prefix_packed=True,
     )
 
     def init_loop_state(
@@ -216,7 +228,6 @@ def _bi_astar_d_loop_builder(
                 flat_need_compute = need_compute.flatten()
 
                 n = flat_size
-                n = flat_size
                 sorted_indices = stable_partition_three(
                     flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
                 )
@@ -225,7 +236,7 @@ def _bi_astar_d_loop_builder(
                 sorted_mask = flat_need_compute[sorted_indices]
 
                 # Automated batch processing
-                h_val_sorted = variable_heuristic_batch_switcher(
+                h_val_sorted = packed_heuristic_batch_switcher(
                     heuristic_params, sorted_states, sorted_mask
                 )
                 flat_h_val = (
@@ -262,8 +273,7 @@ def _bi_astar_d_loop_builder(
                     if backward_value_lookahead_k is None
                     else backward_value_lookahead_k
                 )
-                # `variable_heuristic_batch_switcher` is built with max_batch_size=batch_size,
-                # so keep the backup batch <= sr_batch_size.
+                # Keep lookahead backup bounded by the parent-batch width.
                 k = min(k, sr_batch_size, flat_size)
                 sel_idx = sorted_idx[:k]
                 sel_valid = jnp.isfinite(sorted_keys[:k])
@@ -285,7 +295,7 @@ def _bi_astar_d_loop_builder(
                 packed_states = flat_succ_states[pack_perm]
                 packed_valid = flat_valid[pack_perm]
 
-                packed_h_succ = variable_heuristic_batch_switcher(
+                packed_h_succ = packed_heuristic_batch_switcher(
                     heuristic_params, packed_states, packed_valid
                 ).astype(KEY_DTYPE)
 

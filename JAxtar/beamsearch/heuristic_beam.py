@@ -8,7 +8,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
+from JAxtar.annotate import ACTION_DTYPE, BATCH_SPLIT_UNIT, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.beamsearch.search_base import (
     ACTION_PAD,
     TRACE_INDEX_DTYPE,
@@ -37,16 +37,26 @@ def _heuristic_beam_loop_builder(
     statecls = puzzle.State
     action_size = puzzle.action_size
     beam_width = batch_size
+    child_eval_cap = min(action_size * beam_width, BATCH_SPLIT_UNIT)
     denom = max(1, action_size // 2)
     min_keep = max(1, beam_width // denom)
     pop_ratio = float(pop_ratio)
     max_depth = max(1, (max_nodes + beam_width - 1) // beam_width)
-    heuristic_batch_sizes = build_batch_sizes_for_cap(beam_width, min_batch_unit=MIN_BATCH_UNIT)
+    parent_batch_sizes = build_batch_sizes_for_cap(beam_width, min_batch_unit=MIN_BATCH_UNIT)
+    child_batch_sizes = build_batch_sizes_for_cap(child_eval_cap, min_batch_unit=MIN_BATCH_UNIT)
 
-    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+    parent_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
-        batch_sizes=heuristic_batch_sizes,
+        max_batch_size=beam_width,
+        batch_sizes=parent_batch_sizes,
+        partition_mode="flat",
+    )
+    child_heuristic_batch_switcher = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        pad_value=jnp.inf,
+        max_batch_size=child_eval_cap,
+        batch_sizes=child_batch_sizes,
         partition_mode="auto",
     )
 
@@ -67,7 +77,7 @@ def _heuristic_beam_loop_builder(
         result.beam = result.beam.at[0].set(start)
         result.cost = result.cost.at[0].set(0)
         init_filled = jnp.zeros(beam_width, dtype=jnp.bool_).at[0].set(True)
-        start_dist = variable_heuristic_batch_switcher(
+        start_dist = parent_heuristic_batch_switcher(
             heuristic_parameters, result.beam, init_filled
         ).astype(KEY_DTYPE)[0]
         start_score = (cost_weight * result.cost[0] + start_dist).astype(KEY_DTYPE)
@@ -152,7 +162,7 @@ def _heuristic_beam_loop_builder(
         )
 
         # Keep (action, batch) layout so row-partition skip can avoid empty action rows.
-        dists = variable_heuristic_batch_switcher(
+        dists = child_heuristic_batch_switcher(
             heuristic_parameters,
             neighbours,
             child_valid,

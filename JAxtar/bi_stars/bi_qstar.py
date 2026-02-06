@@ -21,7 +21,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
+from JAxtar.annotate import ACTION_DTYPE, BATCH_SPLIT_UNIT, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
@@ -70,9 +70,11 @@ def _bi_qstar_loop_builder(
         Tuple of (init_loop_state, loop_condition, loop_body) functions
     """
     action_size = puzzle.action_size
+    flat_eval_cap = min(action_size * batch_size, BATCH_SPLIT_UNIT)
 
     dist_sign = -1.0 if pessimistic_update else 1.0
     q_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
+    flat_q_batch_sizes = build_batch_sizes_for_cap(flat_eval_cap, min_batch_unit=MIN_BATCH_UNIT)
 
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
@@ -80,6 +82,14 @@ def _bi_qstar_loop_builder(
         max_batch_size=batch_size,
         batch_sizes=q_batch_sizes,
         partition_mode="flat",
+    )
+    packed_q_batch_switcher = variable_batch_switcher_builder(
+        q_fn.batched_q_value,
+        pad_value=jnp.inf,
+        max_batch_size=flat_eval_cap,
+        batch_sizes=flat_q_batch_sizes,
+        partition_mode="flat",
+        assume_prefix_packed=True,
     )
 
     def init_loop_state(
@@ -225,7 +235,7 @@ def _bi_qstar_loop_builder(
             sorted_mask = flat_mask[invperm]
 
             # Automated batch processing
-            q_vals = variable_q_batch_switcher(q_params, sorted_states, sorted_mask)
+            q_vals = packed_q_batch_switcher(q_params, sorted_states, sorted_mask)
             v_sorted = jnp.min(q_vals, axis=-1).astype(KEY_DTYPE)
             v_flat = jnp.empty((n,), dtype=v_sorted.dtype).at[invperm].set(v_sorted)
 

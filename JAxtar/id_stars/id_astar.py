@@ -4,7 +4,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_UNIT
+from JAxtar.annotate import BATCH_SPLIT_UNIT, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.id_stars.id_frontier import (
     ACTION_PAD,
     IDFrontier,
@@ -75,6 +75,7 @@ def _id_astar_frontier_builder(
     """
     action_size = puzzle.action_size
     flat_size = action_size * batch_size
+    flat_eval_cap = min(flat_size, BATCH_SPLIT_UNIT)
     statecls = puzzle.State
     empty_trail_flat = statecls.default((flat_size, 0))
 
@@ -82,12 +83,14 @@ def _id_astar_frontier_builder(
 
     IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
-    heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
+    heuristic_batch_sizes = build_batch_sizes_for_cap(flat_eval_cap, min_batch_unit=MIN_BATCH_UNIT)
     variable_heuristic = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
+        max_batch_size=flat_eval_cap,
         batch_sizes=heuristic_batch_sizes,
         partition_mode="flat",
+        assume_prefix_packed=True,
     )
     flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
@@ -254,6 +257,7 @@ def _id_astar_loop_builder(
     statecls = puzzle.State
     action_size = puzzle.action_size
     flat_size = action_size * batch_size
+    flat_eval_cap = min(flat_size, BATCH_SPLIT_UNIT)
     empty_trail_flat = statecls.default((flat_size, 0))
     non_backtracking_steps = validate_non_backtracking_steps(non_backtracking_steps)
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
@@ -263,11 +267,23 @@ def _id_astar_loop_builder(
     IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
 
     heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
+    flat_heuristic_batch_sizes = build_batch_sizes_for_cap(
+        flat_eval_cap, min_batch_unit=MIN_BATCH_UNIT
+    )
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
+        max_batch_size=batch_size,
         batch_sizes=heuristic_batch_sizes,
         partition_mode="flat",
+    )
+    packed_heuristic_batch_switcher = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        pad_value=jnp.inf,
+        max_batch_size=flat_eval_cap,
+        batch_sizes=flat_heuristic_batch_sizes,
+        partition_mode="flat",
+        assume_prefix_packed=True,
     )
 
     generate_frontier = _id_astar_frontier_builder(
@@ -281,7 +297,7 @@ def _id_astar_loop_builder(
     flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
 
     _chunked_heuristic_eval = _build_chunked_heuristic_eval(
-        variable_heuristic_batch_switcher, flat_indices, action_size, batch_size, flat_size
+        packed_heuristic_batch_switcher, flat_indices, action_size, batch_size, flat_size
     )
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):

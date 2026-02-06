@@ -8,10 +8,13 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
+from JAxtar.annotate import ACTION_DTYPE, BATCH_SPLIT_UNIT, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.stars.search_base import Current, LoopState, Parent, SearchResult
 from JAxtar.utils.array_ops import stable_partition_three
-from JAxtar.utils.batch_switcher import prefix_batch_switcher_builder
+from JAxtar.utils.batch_switcher import (
+    build_batch_sizes_for_cap,
+    variable_batch_switcher_builder,
+)
 
 
 def _astar_loop_builder(
@@ -27,11 +30,14 @@ def _astar_loop_builder(
     # without retracing or reassembling the search plumbing each time.
     statecls = puzzle.State
     action_size = puzzle.action_size
-    variable_heuristic_batch_switcher = prefix_batch_switcher_builder(
+    flat_eval_cap = min(action_size * batch_size, BATCH_SPLIT_UNIT)
+    heuristic_batch_sizes = build_batch_sizes_for_cap(flat_eval_cap, min_batch_unit=MIN_BATCH_UNIT)
+    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_UNIT,
+        max_batch_size=flat_eval_cap,
+        batch_sizes=heuristic_batch_sizes,
+        partition_mode="auto",
     )
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_UNIT // denom)
@@ -165,22 +171,17 @@ def _astar_loop_builder(
         new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
         final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
-        def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
-            neighbour_heur = variable_heuristic_batch_switcher(
-                heuristic_parameters, neighbour, new_states_mask
-            ).astype(KEY_DTYPE)
-            # cache the heuristic value
-            search_result.dist = xnp.update_on_condition(
-                search_result.dist,
-                vals.hashidx.index,
-                new_states_mask,
-                neighbour_heur,
-            )
-            return search_result, neighbour_heur
-
-        def _old_states(search_result: SearchResult, vals, neighbour, new_states_mask):
-            neighbour_heur = search_result.dist[vals.hashidx.index]
-            return search_result, neighbour_heur
+        new_neighbour_heur = variable_heuristic_batch_switcher(
+            heuristic_parameters, neighbours, new_states_mask
+        ).astype(KEY_DTYPE)
+        cached_neighbour_heur = search_result.dist[hash_idx.index].reshape(unflatten_shape)
+        neighbour_heur_all = jnp.where(new_states_mask, new_neighbour_heur, cached_neighbour_heur)
+        search_result.dist = xnp.update_on_condition(
+            search_result.dist,
+            hash_idx.index,
+            flatten_new_states_mask,
+            new_neighbour_heur.reshape(-1),
+        )
 
         def _inserted(
             search_result: SearchResult,
@@ -196,18 +197,7 @@ def _astar_loop_builder(
             return search_result
 
         def _scan(search_result: SearchResult, val):
-            vals, neighbour, new_states_mask, final_process_mask = val
-
-            search_result, neighbour_heur = jax.lax.cond(
-                jnp.any(new_states_mask),
-                _new_states,
-                _old_states,
-                search_result,
-                vals,
-                neighbour,
-                new_states_mask,
-            )
-
+            vals, neighbour_heur, final_process_mask = val
             search_result = jax.lax.cond(
                 jnp.any(final_process_mask),
                 _inserted,
@@ -221,7 +211,7 @@ def _astar_loop_builder(
         search_result, _ = jax.lax.scan(
             _scan,
             search_result,
-            (vals, neighbours, new_states_mask, final_process_mask),
+            (vals, neighbour_heur_all, final_process_mask),
         )
         search_result, current, filled = search_result.pop_full()
         return LoopState(

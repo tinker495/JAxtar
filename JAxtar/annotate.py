@@ -11,4 +11,4 @@ DEDUPE_MODE = os.environ.get(
 )
 os.environ["XTRUCTURE_HASHTABLE_DEDUPE_MODE"] = DEDUPE_MODE
 MIN_BATCH_UNIT = int(os.environ.get("JAXTAR_MIN_BATCH_UNIT", "128"))
-BATCH_SPLIT_UNIT = int(os.environ.get("JAXTAR_BATCH_SPLIT_UNIT", "4096"))
+BATCH_SPLIT_UNIT = int(os.environ.get("JAXTAR_BATCH_SPLIT_UNIT", "65536"))
