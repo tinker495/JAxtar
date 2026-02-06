@@ -18,7 +18,8 @@ def _pad_leading_axis(values: chex.Array, pad_width: int, pad_value: Any) -> che
     if pad_width <= 0:
         return values
     pad_spec = [(0, pad_width)] + [(0, 0)] * (values.ndim - 1)
-    return jnp.pad(values, pad_spec, constant_values=pad_value)
+    pad_constant = jnp.asarray(pad_value, dtype=values.dtype)
+    return jnp.pad(values, pad_spec, constant_values=pad_constant)
 
 
 def _infer_pad_dtype(pad_value: Any, expected_output_dtype: jnp.dtype | None) -> jnp.dtype:
@@ -29,10 +30,6 @@ def _infer_pad_dtype(pad_value: Any, expected_output_dtype: jnp.dtype | None) ->
 
 def _slice_tree(current: Any, n: int) -> Any:
     return jax.tree_util.tree_map(lambda x: x[:n], current)
-
-
-def _slice_direct(current: Any, n: int) -> Any:
-    return current[:n]
 
 
 def _zero_output(
@@ -111,28 +108,6 @@ def _build_branches(
             )
         )
     return tuple(branches)
-
-
-def _build_halving_sizes(max_batch_size: int, min_batch_size: int) -> list[int]:
-    sizes: list[int] = []
-    curr = max_batch_size
-    while True:
-        sizes.append(curr)
-        if curr == 0:
-            break
-        if curr <= min_batch_size:
-            if min_batch_size == 0:
-                curr = 0
-                continue
-            break
-        nxt = max(curr >> 1, min_batch_size)
-        if nxt == curr:
-            if min_batch_size == 0:
-                curr = 0
-                continue
-            break
-        curr = nxt
-    return sizes
 
 
 def _build_batch_sizes(
@@ -504,16 +479,54 @@ def prefix_batch_switcher_builder(
     min_batch_size = int(min_batch_size)
     min_batch_size = max(0, min(min_batch_size, max_batch_size))
 
-    batch_sizes = _build_halving_sizes(max_batch_size, min_batch_size)
+    branches: list[Callable[[Any, Any], chex.Array]] = []
+    batch_sizes: list[int] = []
+
+    current_batch = max_batch_size
+    while True:
+        if current_batch == 0:
+            batch_sizes.append(0)
+
+            def zero_branch(distance_fn_parameters, current):
+                sliced_current = current[:0]
+                values = eval_fn(distance_fn_parameters, sliced_current)
+                return _pad_leading_axis(values, max_batch_size, pad_value)
+
+            branches.append(zero_branch)
+            break
+
+        batch_sizes.append(current_batch)
+
+        pad_width = max_batch_size - current_batch
+
+        def make_branch(batch_size: int, branch_pad_width: int):
+            def branch(distance_fn_parameters, current):
+                sliced_current = current[:batch_size]
+                values = eval_fn(distance_fn_parameters, sliced_current)
+                return _pad_leading_axis(values, branch_pad_width, pad_value)
+
+            return branch
+
+        branches.append(make_branch(current_batch, pad_width))
+
+        if current_batch <= min_batch_size:
+            if min_batch_size == 0 and current_batch > 0:
+                pass
+            else:
+                break
+
+        next_batch = max(current_batch >> 1, min_batch_size)
+        if next_batch == current_batch:
+            if min_batch_size == 0 and current_batch > 0:
+                next_batch = 0
+            else:
+                break
+
+        current_batch = next_batch
+
     batch_sizes_array = jnp.asarray(batch_sizes, dtype=jnp.int32)
-    branch_tuple = _build_branches(
-        eval_fn,
-        batch_sizes=batch_sizes,
-        limit_batch_size=max_batch_size,
-        pad_value=pad_value,
-        slicer=_slice_direct,
-    )
-    num_branches = len(branch_tuple)
+    num_branches = len(branches)
+    branch_tuple = tuple(branches)
 
     def prefix_batch_switcher(distance_fn_parameters, current, filled: chex.Array):
         filled_count = jnp.sum(filled.astype(jnp.int32), axis=0)
