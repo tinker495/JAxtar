@@ -73,6 +73,7 @@ def _bi_astar_loop_builder(
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
+        max_batch_size=batch_size,
         batch_sizes=heuristic_batch_sizes,
         partition_mode="flat",
     )

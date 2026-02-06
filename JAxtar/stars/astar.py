@@ -11,10 +11,7 @@ from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_UNIT
 from JAxtar.stars.search_base import Current, LoopState, Parent, SearchResult
 from JAxtar.utils.array_ops import stable_partition_three
-from JAxtar.utils.batch_switcher import (
-    build_batch_sizes_for_cap,
-    variable_batch_switcher_builder,
-)
+from JAxtar.utils.batch_switcher import prefix_batch_switcher_builder
 
 
 def _astar_loop_builder(
@@ -30,13 +27,11 @@ def _astar_loop_builder(
     # without retracing or reassembling the search plumbing each time.
     statecls = puzzle.State
     action_size = puzzle.action_size
-    heuristic_batch_sizes = build_batch_sizes_for_cap(batch_size, min_batch_unit=MIN_BATCH_UNIT)
-
-    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+    variable_heuristic_batch_switcher = prefix_batch_switcher_builder(
         heuristic.batched_distance,
         pad_value=jnp.inf,
-        batch_sizes=heuristic_batch_sizes,
-        partition_mode="flat",
+        max_batch_size=batch_size,
+        min_batch_size=MIN_BATCH_UNIT,
     )
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_UNIT // denom)

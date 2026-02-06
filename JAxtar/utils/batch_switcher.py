@@ -120,6 +120,20 @@ def _flatten_batched_current(current: Any, filled_shape: tuple[int, ...]) -> Any
     return jax.tree_util.tree_map(_reshape_leaf, current)
 
 
+def _validate_single_leading_axis_current(current: Any, batch_size: int) -> None:
+    for leaf in jax.tree_util.tree_leaves(current):
+        if leaf.ndim < 1:
+            raise ValueError(
+                "All Pytree leaves must have at least 1 leading batch dims. "
+                f"Got leaf with ndim={leaf.ndim}, shape={leaf.shape}."
+            )
+        if leaf.shape[0] != batch_size:
+            raise ValueError(
+                "Leading batch dims of all leaves must match filled.shape. "
+                f"filled.shape=({batch_size},), leaf.shape={leaf.shape}."
+            )
+
+
 def _reshape_current_to_rows(
     current: Any, filled_shape: tuple[int, ...], num_rows: int, row_width: int
 ) -> Any:
@@ -146,10 +160,12 @@ def variable_batch_switcher_builder(
     eval_fn: Callable[[Any, Any], chex.Array],
     *,
     pad_value: Any,
+    max_batch_size: int | None = None,
     min_batch_size: int | None = None,
     batch_sizes: Sequence[int] | None = None,
     batch_size_policy: str = "dense_pref",
     partition_mode: str = "auto",
+    assume_prefix_packed: bool = False,
     expected_output_shape: tuple[int, ...] | None = None,
     expected_output_dtype: jnp.dtype | None = None,
 ):
@@ -163,12 +179,17 @@ def variable_batch_switcher_builder(
         eval_fn: Callable taking ``(distance_fn_parameters, current_states)`` and returning
             an array whose leading dimension corresponds to the batch size.
         pad_value: Value used when padding evaluated results.
+        max_batch_size: Maximum branch/chunk size used inside the switcher. Defaults to
+            ``annotate.BATCH_SPLIT_UNIT``.
         min_batch_size: Minimum branch size (inclusive). Defaults to ``annotate.MIN_BATCH_UNIT``.
         batch_sizes: Optional explicit branch sizes. If provided, overrides ``batch_size_policy``.
         batch_size_policy: Preset policy used when ``batch_sizes`` is None.
             Supported: ``dense_pref`` (default), ``balanced``, ``sparse_pref``.
         partition_mode: ``auto`` (default), ``flat``, or ``row_scan``.
             In ``auto``, row-scan is used when ``filled.ndim >= 2``.
+        assume_prefix_packed: If True, assumes valid entries in each processed batch are
+            already prefix-packed (all True values before False values), so sparse reordering
+            checks are skipped for lower overhead.
         expected_output_shape: Trailing output shape (excluding batch dim), used for zero-branch
             and row-skip pad synthesis when provided.
         expected_output_dtype: Output dtype for synthesized pad outputs.
@@ -179,9 +200,12 @@ def variable_batch_switcher_builder(
             f"Unknown partition_mode: {partition_mode}. Expected one of {sorted(_PARTITION_MODES)}"
         )
 
-    limit_batch_size = int(annotate.BATCH_SPLIT_UNIT)
+    if max_batch_size is None:
+        limit_batch_size = int(annotate.BATCH_SPLIT_UNIT)
+    else:
+        limit_batch_size = int(max_batch_size)
     if limit_batch_size <= 0:
-        raise ValueError("annotate.BATCH_SPLIT_UNIT must be positive")
+        raise ValueError("max_batch_size must be positive")
 
     if min_batch_size is None:
         min_batch_size = annotate.MIN_BATCH_UNIT
@@ -229,6 +253,8 @@ def variable_batch_switcher_builder(
     branch_fns = tuple(branch_fns)
     batch_sizes_array = jnp.asarray(unique_sizes, dtype=jnp.int32)
     max_branch_idx = len(unique_sizes) - 1
+    has_zero_branch = unique_sizes[0] == 0
+    needs_zero_guard = has_zero_branch or expected_output_shape is not None
 
     def _run_chunk(distance_fn_parameters, current_chunk, filled_chunk):
         filled_count = jnp.sum(filled_chunk, dtype=jnp.int32)
@@ -247,6 +273,9 @@ def variable_batch_switcher_builder(
         def _run_nonzero(_):
             idx = jnp.searchsorted(batch_sizes_array, filled_count, side="left")
             idx = jnp.clip(idx, 0, max_branch_idx)
+            if assume_prefix_packed:
+                return jax.lax.switch(idx, branch_fns, distance_fn_parameters, current_chunk)
+
             is_limit_branch = idx == max_branch_idx
 
             def _run_dense(__):
@@ -277,10 +306,25 @@ def variable_batch_switcher_builder(
 
             return jax.lax.cond(is_limit_branch, _run_dense, _run_sparse, operand=None)
 
-        return jax.lax.cond(filled_count == 0, _run_zero, _run_nonzero, operand=None)
+        if needs_zero_guard:
+            return jax.lax.cond(filled_count == 0, _run_zero, _run_nonzero, operand=None)
+        return _run_nonzero(None)
 
     def _run_flat(distance_fn_parameters, current_flat, filled_flat):
         n_total = filled_flat.shape[0]
+        if n_total <= limit_batch_size:
+            pad_len = limit_batch_size - n_total
+            if pad_len == 0:
+                return _run_chunk(distance_fn_parameters, current_flat, filled_flat)
+
+            filled_chunk = jnp.pad(filled_flat, (0, pad_len), constant_values=False)
+
+            def _pad_to_chunk(leaf: chex.Array) -> chex.Array:
+                return jnp.pad(leaf, ((0, pad_len),) + ((0, 0),) * (leaf.ndim - 1))
+
+            current_chunk = jax.tree_util.tree_map(_pad_to_chunk, current_flat)
+            return _run_chunk(distance_fn_parameters, current_chunk, filled_chunk)[:n_total]
+
         remainder = n_total % limit_batch_size
         pad_len = (limit_batch_size - remainder) % limit_batch_size
         target_len = n_total + pad_len
@@ -311,7 +355,13 @@ def variable_batch_switcher_builder(
 
     def _run_with_leading(distance_fn_parameters, current, filled):
         filled_shape = tuple(filled.shape)
-        current_flat = _flatten_batched_current(current, filled_shape)
+        if len(filled_shape) == 1:
+            _validate_single_leading_axis_current(current, filled_shape[0])
+            if filled_shape[0] == limit_batch_size:
+                return _run_chunk(distance_fn_parameters, current, filled)
+            current_flat = current
+        else:
+            current_flat = _flatten_batched_current(current, filled_shape)
         filled_flat = filled.reshape(-1)
         result_flat = _run_flat(distance_fn_parameters, current_flat, filled_flat)
         return result_flat.reshape((*filled_shape, *result_flat.shape[1:]))
@@ -375,4 +425,87 @@ def variable_batch_switcher_builder(
     return variable_batch_switcher
 
 
-__all__ = ["build_batch_sizes_for_cap", "variable_batch_switcher_builder"]
+def prefix_batch_switcher_builder(
+    eval_fn: Callable[[Any, Any], chex.Array],
+    *,
+    max_batch_size: int,
+    min_batch_size: int,
+    pad_value: Any,
+):
+    """Low-overhead 1D batch switcher assuming valid entries are prefix-packed.
+
+    Notes:
+        ``current`` must support first-axis slicing via ``current[:n]``.
+    """
+
+    max_batch_size = int(max_batch_size)
+    if max_batch_size <= 0:
+        raise ValueError("max_batch_size must be positive")
+
+    min_batch_size = int(min_batch_size)
+    min_batch_size = max(0, min(min_batch_size, max_batch_size))
+
+    branches: list[Callable[[Any, Any], chex.Array]] = []
+    batch_sizes: list[int] = []
+
+    current_batch = max_batch_size
+    while True:
+        if current_batch == 0:
+            batch_sizes.append(0)
+
+            def zero_branch(distance_fn_parameters, current):
+                sliced_current = current[:0]
+                values = eval_fn(distance_fn_parameters, sliced_current)
+                return _pad_leading_axis(values, max_batch_size, pad_value)
+
+            branches.append(zero_branch)
+            break
+
+        batch_sizes.append(current_batch)
+        pad_width = max_batch_size - current_batch
+
+        def make_branch(batch_size: int, branch_pad_width: int):
+            def branch(distance_fn_parameters, current):
+                sliced_current = current[:batch_size]
+                values = eval_fn(distance_fn_parameters, sliced_current)
+                return _pad_leading_axis(values, branch_pad_width, pad_value)
+
+            return branch
+
+        branches.append(make_branch(current_batch, pad_width))
+
+        if current_batch <= min_batch_size:
+            if min_batch_size == 0 and current_batch > 0:
+                pass
+            else:
+                break
+
+        next_batch = max(current_batch >> 1, min_batch_size)
+        if next_batch == current_batch:
+            if min_batch_size == 0 and current_batch > 0:
+                next_batch = 0
+            else:
+                break
+
+        current_batch = next_batch
+
+    batch_sizes_array = jnp.asarray(batch_sizes, dtype=jnp.int32)
+    num_branches = len(branches)
+    branch_tuple = tuple(branches)
+
+    def prefix_batch_switcher(distance_fn_parameters, current, filled: chex.Array):
+        filled_count = jnp.sum(filled.astype(jnp.int32), axis=0)
+        filled_count = jnp.clip(filled_count, 0, max_batch_size)
+        eligible = filled_count <= batch_sizes_array
+        num_eligible = jnp.sum(eligible.astype(jnp.int32))
+        branch_index = jnp.clip(num_eligible - 1, 0, num_branches - 1)
+        return jax.lax.switch(branch_index, branch_tuple, distance_fn_parameters, current)
+
+    return prefix_batch_switcher
+
+
+__all__ = [
+    "build_batch_sizes_for_cap",
+    "prefix_batch_switcher_builder",
+    "variable_batch_switcher_builder",
+]

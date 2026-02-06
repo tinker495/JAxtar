@@ -7,6 +7,7 @@ import jax.numpy as jnp
 
 from JAxtar.utils.batch_switcher import (
     build_batch_sizes_for_cap,
+    prefix_batch_switcher_builder,
     variable_batch_switcher_builder,
 )
 
@@ -132,9 +133,88 @@ def test_all_invalid_returns_pad_values():
     assert jnp.allclose(out, -9.0)
 
 
+def test_assume_prefix_packed_matches_default_for_prefix_mask():
+    def eval_fn(params, state):
+        return jnp.sum(state.data, axis=-1, keepdims=True) + params
+
+    base_switcher = variable_batch_switcher_builder(
+        eval_fn,
+        pad_value=-3.0,
+        batch_sizes=[2, 4, 8],
+        partition_mode="flat",
+    )
+    fast_switcher = variable_batch_switcher_builder(
+        eval_fn,
+        pad_value=-3.0,
+        batch_sizes=[2, 4, 8],
+        partition_mode="flat",
+        assume_prefix_packed=True,
+    )
+
+    state = MockState(
+        data=jnp.arange(8 * 3, dtype=jnp.float32).reshape(8, 3),
+        extra=jnp.zeros((8,), dtype=jnp.float32),
+    )
+    filled = jnp.zeros((8,), dtype=jnp.bool_).at[:5].set(True)
+
+    out_base = jax.jit(base_switcher)(1.5, state, filled)
+    out_fast = jax.jit(fast_switcher)(1.5, state, filled)
+    assert out_base.shape == out_fast.shape == (8, 1)
+    assert jnp.allclose(out_fast[filled], out_base[filled])
+
+
+def test_max_batch_size_override_handles_split_input():
+    def eval_fn(params, state):
+        return jnp.sum(state.data, axis=-1, keepdims=True) + params
+
+    switcher = variable_batch_switcher_builder(
+        eval_fn,
+        pad_value=-1.0,
+        max_batch_size=16,
+        batch_sizes=[4, 8, 16],
+        partition_mode="flat",
+    )
+
+    n = 32
+    state = MockState(
+        data=jnp.arange(n * 2, dtype=jnp.float32).reshape(n, 2),
+        extra=jnp.zeros((n,), dtype=jnp.float32),
+    )
+    valid_indices = jnp.array([1, 5, 17, 20], dtype=jnp.int32)
+    filled = jnp.zeros((n,), dtype=jnp.bool_).at[valid_indices].set(True)
+
+    out = jax.jit(switcher)(2.0, state, filled)
+    expected = eval_fn(2.0, state)
+    assert out.shape == (n, 1)
+    assert jnp.allclose(out[valid_indices], expected[valid_indices])
+
+
+def test_prefix_batch_switcher_builder_prefix_mask():
+    def eval_fn(params, state):
+        return jnp.sum(state, axis=-1, keepdims=True) + params
+
+    switcher = prefix_batch_switcher_builder(
+        eval_fn,
+        max_batch_size=16,
+        min_batch_size=4,
+        pad_value=-1.0,
+    )
+
+    state = jnp.arange(16 * 2, dtype=jnp.float32).reshape(16, 2)
+    filled = jnp.zeros((16,), dtype=jnp.bool_).at[:6].set(True)
+
+    out = jax.jit(switcher)(1.0, state, filled)
+    expected = eval_fn(1.0, state)
+    assert out.shape == (16, 1)
+    assert jnp.allclose(out[:6], expected[:6])
+
+
 if __name__ == "__main__":
     test_variable_batch_switcher()
     test_non_batched_leaf_raises()
     test_build_batch_sizes_for_cap()
     test_all_invalid_returns_pad_values()
+    test_assume_prefix_packed_matches_default_for_prefix_mask()
+    test_max_batch_size_override_handles_split_input()
+    test_prefix_batch_switcher_builder_prefix_mask()
     print("All tests passed!")
