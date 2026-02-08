@@ -36,6 +36,20 @@ from JAxtar.annotate import (
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
 
+def _compute_pop_process_mask(
+    key: chex.Array,
+    pop_ratio: float,
+    min_pop: int,
+) -> chex.Array:
+    """Compute which popped entries are processed now vs. re-queued."""
+    filled = jnp.isfinite(key)
+    threshold = key[0] * pop_ratio + 1e-6
+    process_mask = jnp.less_equal(key, threshold)
+    base_process_mask = jnp.logical_and(filled, process_mask)
+    min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= min_pop, filled)
+    return jnp.logical_or(base_process_mask, min_pop_mask)
+
+
 def print_states(states: Xtructurable, costs: chex.Array, dists: chex.Array, key: chex.Array):
     print(states)
     print(f"costs: {costs}")
@@ -394,19 +408,11 @@ class SearchResult:
         )
 
         # 3. Apply pop_ratio to the full batch
-        filled = jnp.isfinite(min_key)
-        # Add a small epsilon for floating point comparisons
-        threshold = min_key[0] * search_result.pop_ratio + 1e-6
-
-        # Identify nodes to process now vs. nodes to return to PQ
-        process_mask = jnp.less_equal(min_key, threshold)
-        base_process_mask = jnp.logical_and(filled, process_mask)
-
-        # Enforce min_pop: ensure that we pop at least min_pop nodes if they are available.
-        min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= search_result.min_pop, filled)
-
-        # The final mask includes nodes within the threshold OR nodes to meet min_pop.
-        final_process_mask = jnp.logical_or(base_process_mask, min_pop_mask)
+        final_process_mask = _compute_pop_process_mask(
+            min_key,
+            pop_ratio=search_result.pop_ratio,
+            min_pop=search_result.min_pop,
+        )
 
         # Separate the nodes to be returned and re-insert them into the PQ
         return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
@@ -618,23 +624,15 @@ class SearchResult:
             lambda: search_result.priority_queue,
         )
 
-        # 3. Apply pop_ratio to the full batch
-        filled = jnp.isfinite(final_key)
-        # Add a small epsilon for floating point comparisons
-        threshold = min_key[0] * search_result.pop_ratio + 1e-6
-
-        # Identify nodes to process now vs. nodes to return to PQ
-        process_mask = jnp.less_equal(min_key, threshold)
-        base_process_mask = jnp.logical_and(filled, process_mask)
-
-        # Enforce min_pop: ensure that we pop at least min_pop nodes if they are available.
-        min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= search_result.min_pop, filled)
-
-        # The final mask includes nodes within the threshold OR nodes to meet min_pop.
-        final_process_mask = jnp.logical_or(base_process_mask, min_pop_mask)
+        # 3. Apply pop_ratio to the merged/sorted final batch.
+        final_process_mask = _compute_pop_process_mask(
+            final_key,
+            pop_ratio=search_result.pop_ratio,
+            min_pop=search_result.min_pop,
+        )
 
         # Separate the nodes to be returned and re-insert them into the PQ
-        return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
+        return_keys = jnp.where(final_process_mask, jnp.inf, final_key)
         final_costs = jnp.where(final_process_mask, final_costs, jnp.inf)
         search_result.priority_queue = search_result.priority_queue.insert(return_keys, final_val)
 
