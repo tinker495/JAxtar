@@ -7,17 +7,18 @@ from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
     Current,
     LoopState,
     Parent,
     SearchResult,
+    build_action_major_parent_layout,
     finalize_search_result,
     insert_priority_queue_batches,
     loop_continue_if_not_solved,
+    partition_and_pack_frontier_candidates,
 )
-from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -93,30 +94,23 @@ def _astar_loop_builder(
         neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
         action_size = search_result.action_size
         sr_batch_size = search_result.batch_size
-        parent_action = jnp.tile(
-            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, sr_batch_size),
-        )  # [n_neighbours, batch_size]
+        flat_parent_indices, flat_parent_actions, _ = build_action_major_parent_layout(
+            action_size, sr_batch_size
+        )
         nextcosts = (current.cost[jnp.newaxis, :] + ncost).astype(
             KEY_DTYPE
         )  # [n_neighbours, batch_size]
         filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
-        # Use int32 for indexing; ACTION_DTYPE (uint8) overflows when batch_size > 255.
-        parent_index = jnp.tile(
-            jnp.arange(sr_batch_size, dtype=jnp.int32)[jnp.newaxis, :],
-            (action_size, 1),
-        )  # [n_neighbours, batch_size]
-        unflatten_shape = (action_size, sr_batch_size)
 
         parent = Parent(
-            hashidx=current.hashidx[parent_index],
-            action=parent_action,
+            hashidx=current.hashidx[flat_parent_indices],
+            action=flat_parent_actions,
         )
 
         flatten_neighbours = neighbours.flatten()
         flatten_filleds = filleds.flatten()
         flatten_nextcosts = nextcosts.flatten()
-        flatten_parents = parent.flatten()
+        flatten_parents = parent
 
         (
             search_result.hashtable,
@@ -151,20 +145,20 @@ def _astar_loop_builder(
         # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
         # and updating the insertion flag. This ensures they are ignored in subsequent steps.
         flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
-        # Stable partition to group useful entries first.
-        # Improves computational efficiency by gathering only batches with samples that need updates.
-        invperm = stable_partition_three(flatten_new_states_mask, final_process_mask)
-
-        flatten_final_process_mask = final_process_mask[invperm]
-        flatten_new_states_mask = flatten_new_states_mask[invperm]
-        flatten_neighbours = flatten_neighbours[invperm]
-        flatten_nextcosts = flatten_nextcosts[invperm]
-
-        hash_idx = hash_idx[invperm]
-        vals = Current(hashidx=hash_idx, cost=flatten_nextcosts).reshape(unflatten_shape)
-        neighbours = flatten_neighbours.reshape(unflatten_shape)
-        new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
-        final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
+        (
+            vals,
+            neighbours,
+            new_states_mask,
+            final_process_mask,
+        ) = partition_and_pack_frontier_candidates(
+            flatten_new_states_mask,
+            final_process_mask,
+            flatten_neighbours,
+            flatten_nextcosts,
+            hash_idx,
+            action_size,
+            sr_batch_size,
+        )
 
         def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
             neighbour_heur = variable_heuristic_batch_switcher(

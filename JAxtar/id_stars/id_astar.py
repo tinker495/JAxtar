@@ -15,11 +15,13 @@ from JAxtar.id_stars.id_frontier import (
 from JAxtar.id_stars.search_base import (
     IDLoopState,
     IDSearchBase,
+    apply_dedup_and_mask_actions,
     apply_non_backtracking,
     build_inner_cond,
     build_outer_loop,
     expand_and_push_flat_batch,
     finalize_builder,
+    prepare_flat_expansion_inputs,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -117,7 +119,12 @@ def _id_astar_frontier_builder(
             h_params = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
 
         init_val = IDFrontier.initialize_from_start(
-            puzzle, solve_config, start, batch_size, non_backtracking_steps, max_path_len
+            puzzle,
+            solve_config,
+            start,
+            batch_size,
+            non_backtracking_steps,
+            max_path_len,
         )
 
         MAX_FRONTIER_STEPS = 100
@@ -130,7 +137,8 @@ def _id_astar_frontier_builder(
             within_limit = i < MAX_FRONTIER_STEPS
             not_solved = ~frontier.solved
             return jnp.logical_and(
-                not_solved, jnp.logical_and(within_limit, jnp.logical_and(has_capacity, has_nodes))
+                not_solved,
+                jnp.logical_and(within_limit, jnp.logical_and(has_capacity, has_nodes)),
             )
 
         action_ids = jnp.arange(action_size, dtype=jnp.int32)
@@ -180,15 +188,26 @@ def _id_astar_frontier_builder(
                 found_sol_actions,
                 _,
             ) = IDSearchBase.detect_solution(
-                puzzle, solve_config, flat_states, flat_g, flat_action_history, flat_valid
+                puzzle,
+                solve_config,
+                flat_states,
+                flat_g,
+                flat_action_history,
+                flat_valid,
             )
 
             new_solved = jnp.logical_or(frontier.solved, any_solved)
             new_sol_state = jax.lax.cond(
-                any_solved, lambda _: found_sol_state, lambda _: frontier.solution_state, None
+                any_solved,
+                lambda _: found_sol_state,
+                lambda _: frontier.solution_state,
+                None,
             )
             new_sol_cost = jax.lax.cond(
-                any_solved, lambda _: found_sol_cost, lambda _: frontier.solution_cost, None
+                any_solved,
+                lambda _: found_sol_cost,
+                lambda _: frontier.solution_cost,
+                None,
             )
             new_sol_actions = jax.lax.cond(
                 any_solved,
@@ -292,7 +311,11 @@ def _id_astar_loop_builder(
     flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
 
     _chunked_heuristic_eval = _build_chunked_heuristic_eval(
-        variable_heuristic_batch_switcher, flat_indices, action_size, batch_size, flat_size
+        variable_heuristic_batch_switcher,
+        flat_indices,
+        action_size,
+        batch_size,
+        flat_size,
     )
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
@@ -340,15 +363,8 @@ def _id_astar_loop_builder(
             parent_costs,
             parent_depths,
             parent_trails,
-            parent_action_histories,
+            _parent_action_histories,
             valid_mask,
-            parent_trace_indices,
-            parent_root_indices,
-            neighbours,
-            step_costs,
-        ) = sr.prepare_for_expansion(puzzle, solve_config, batch_size)
-
-        (
             flat_neighbours,
             flat_g,
             flat_depth,
@@ -356,48 +372,36 @@ def _id_astar_loop_builder(
             flat_action_history,
             flat_actions,
             flat_valid,
-        ) = build_flat_children(
-            neighbours,
-            step_costs,
-            parent_costs,
-            parent_depths,
-            parents,
-            parent_trails,
-            parent_action_histories,
-            action_ids,
-            action_size,
-            batch_size,
-            flat_size,
-            non_backtracking_steps,
-            max_path_len,
-            empty_trail_flat,
-            valid_mask,
+            flat_parent_indices,
+            flat_root_indices,
+        ) = prepare_flat_expansion_inputs(
+            sr,
+            puzzle,
+            solve_config,
+            batch_size=batch_size,
+            action_ids=action_ids,
+            action_size=action_size,
+            flat_size=flat_size,
+            non_backtracking_steps=non_backtracking_steps,
+            max_path_len=max_path_len,
+            empty_trail_flat=empty_trail_flat,
         )
 
-        flat_valid = jnp.logical_and(flat_valid, flat_depth <= max_path_len)
-
-        flat_parent_indices = jnp.tile(parent_trace_indices, action_size)
-        flat_parent_indices = jnp.where(flat_valid, flat_parent_indices, -1)
-        flat_root_indices = jnp.tile(parent_root_indices, action_size)
-        flat_root_indices = jnp.where(flat_valid, flat_root_indices, -1)
-
         # --- Optimization: Deduplication ---
-        sr, flat_valid = sr.apply_standard_deduplication(
+        sr, flat_valid, flat_action_history = apply_dedup_and_mask_actions(
+            sr,
             flat_neighbours,
             flat_g,
             flat_valid,
             parents,
             parent_trails,
             parent_depths,
-            non_backtracking_steps,
-            action_size,
-            flat_size,
-            trail_indices,
-            batch_size,
-        )
-
-        flat_action_history = jnp.where(
-            flat_valid[:, None], flat_action_history, jnp.full_like(flat_action_history, ACTION_PAD)
+            non_backtracking_steps=non_backtracking_steps,
+            action_size=action_size,
+            flat_size=flat_size,
+            trail_indices=trail_indices,
+            batch_size=batch_size,
+            flat_action_history=flat_action_history,
         )
         # ----------------------------------------------------
 

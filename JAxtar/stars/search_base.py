@@ -158,6 +158,32 @@ def sort_and_pack_action_candidates(
     )
 
 
+def partition_and_pack_frontier_candidates(
+    flat_new_states_mask: chex.Array,
+    flat_process_mask: chex.Array,
+    flat_neighbours: Puzzle.State,
+    flat_costs: chex.Array,
+    flat_hashidx: HashIdx,
+    action_size: int,
+    batch_size: int,
+) -> tuple["Current", Puzzle.State, chex.Array, chex.Array]:
+    """Stable-partition flat candidates, then reshape into action-major batches."""
+    invperm = stable_partition_three(flat_new_states_mask, flat_process_mask)
+    shape = (action_size, batch_size)
+
+    sorted_process_mask = flat_process_mask[invperm]
+    sorted_new_states_mask = flat_new_states_mask[invperm]
+    sorted_neighbours = flat_neighbours[invperm]
+    sorted_costs = flat_costs[invperm]
+    sorted_hashidx = flat_hashidx[invperm]
+
+    vals = Current(hashidx=sorted_hashidx, cost=sorted_costs).reshape(shape)
+    neighbours = sorted_neighbours.reshape(shape)
+    new_states_mask = sorted_new_states_mask.reshape(shape)
+    process_mask = sorted_process_mask.reshape(shape)
+    return vals, neighbours, new_states_mask, process_mask
+
+
 def packed_masked_state_eval(
     flat_states: Puzzle.State,
     flat_compute_mask: chex.Array,
@@ -204,6 +230,35 @@ def packed_masked_state_eval(
         _empty,
         operand=None,
     )
+
+
+def build_action_major_parent_layout(
+    action_size: int,
+    batch_size: int,
+) -> tuple[chex.Array, chex.Array, tuple[int, int]]:
+    """Build flat parent-index/action vectors for action-major flattened tensors."""
+    flat_size = action_size * batch_size
+    flat_positions = jnp.arange(flat_size, dtype=jnp.int32)
+    flat_parent_indices = flat_positions % batch_size
+    flat_actions = (flat_positions // batch_size).astype(ACTION_DTYPE)
+    return flat_parent_indices, flat_actions, (action_size, batch_size)
+
+
+def build_action_major_parent_context(
+    hash_idx: HashIdx,
+    cost: chex.Array,
+    filled: chex.Array,
+    action_size: int,
+    batch_size: int,
+) -> tuple[HashIdx, chex.Array, chex.Array, chex.Array, tuple[int, int]]:
+    """Build common action-major parent/action refs and broadcasted cost/fill tensors."""
+    flat_parent_indices, flat_actions, shape = build_action_major_parent_layout(
+        action_size, batch_size
+    )
+    flat_parent_hashidx = hash_idx[flat_parent_indices]
+    costs = jnp.broadcast_to(cost[jnp.newaxis, :], shape)
+    filled_tiles = jnp.broadcast_to(filled[jnp.newaxis, :], shape)
+    return flat_parent_hashidx, flat_actions, costs, filled_tiles, shape
 
 
 def loop_continue_if_not_solved(

@@ -6,13 +6,14 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
     Current,
     LoopStateWithStates,
     Parant_with_Costs,
     Parent,
     SearchResult,
+    build_action_major_parent_context,
     finalize_search_result,
     insert_priority_queue_batches,
     loop_continue_if_not_solved,
@@ -109,15 +110,19 @@ def _qstar_loop_builder(
 
         action_size = search_result.action_size
         sr_batch_size = search_result.batch_size
-        idx_tiles = xnp.tile(hash_idx, (action_size, 1))  # [action_size, batch_size, ...]
-        action = jnp.tile(
-            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, sr_batch_size),
-        )  # [n_neighbours, batch_size]
-        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))  # [action_size, batch_size]
-        filled_tiles = jnp.tile(
-            filled[jnp.newaxis, :], (action_size, 1)
-        )  # [action_size, batch_size]
+        (
+            flat_parent_hashidx,
+            flat_actions,
+            costs,
+            filled_tiles,
+            _,
+        ) = build_action_major_parent_context(
+            hash_idx,
+            cost,
+            filled,
+            action_size,
+            sr_batch_size,
+        )
 
         # Compute Q-values for parent states (not neighbors)
         # This gives us Q(s, a) for all actions from parent states
@@ -194,7 +199,7 @@ def _qstar_loop_builder(
             optimal_mask = flattened_filled_tiles
 
         flattened_vals = Parant_with_Costs(
-            parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
+            parent=Parent(hashidx=flat_parent_hashidx, action=flat_actions),
             cost=costs.flatten(),
             dist=dists,
         )

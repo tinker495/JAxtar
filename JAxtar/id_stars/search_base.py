@@ -15,7 +15,12 @@ from xtructure.stack import Stack
 
 from helpers.jax_compile import jit_with_warmup
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
+from JAxtar.id_stars.id_frontier import (
+    ACTION_PAD,
+    IDFrontier,
+    build_flat_children,
+    compact_by_valid,
+)
 from JAxtar.utils.array_ops import stable_partition_three
 
 
@@ -417,7 +422,9 @@ class IDSearchBase:
         batch_len = parent_indices.shape[0]
         trace_ids = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
         trace_ids = jnp.where(
-            jnp.arange(batch_len, dtype=jnp.int32) < n_push.astype(jnp.int32), trace_ids, -1
+            jnp.arange(batch_len, dtype=jnp.int32) < n_push.astype(jnp.int32),
+            trace_ids,
+            -1,
         )
 
         items = self.ItemCls(
@@ -593,10 +600,16 @@ class IDSearchBase:
             any_solved, lambda _: solved_state, lambda _: self.solution_state, None
         )
         new_solution_cost = jax.lax.cond(
-            any_solved, lambda _: solved_cost.astype(KEY_DTYPE), lambda _: self.solution_cost, None
+            any_solved,
+            lambda _: solved_cost.astype(KEY_DTYPE),
+            lambda _: self.solution_cost,
+            None,
         )
         new_solution_actions = jax.lax.cond(
-            any_solved, lambda _: solved_actions, lambda _: self.solution_actions_arr, None
+            any_solved,
+            lambda _: solved_actions,
+            lambda _: self.solution_actions_arr,
+            None,
         )
 
         return self.replace(
@@ -640,7 +653,10 @@ class IDSearchBase:
         )
 
         # Push frontier nodes within bound to stack
-        return sr.push_frontier_to_stack(frontier, start_bound, frontier_actions), frontier
+        return (
+            sr.push_frontier_to_stack(frontier, start_bound, frontier_actions),
+            frontier,
+        )
 
     @staticmethod
     def detect_solution(
@@ -684,7 +700,12 @@ class IDSearchBase:
         ) = self.get_top_batch(batch_size)
 
         any_solved, solved_state, solved_cost, solved_actions, first_idx = self.detect_solution(
-            puzzle, solve_config, parents, parent_costs, parent_action_histories, valid_mask
+            puzzle,
+            solve_config,
+            parents,
+            parent_costs,
+            parent_action_histories,
+            valid_mask,
         )
         solved_trace_idx = parent_trace_indices[first_idx]
 
@@ -806,6 +827,128 @@ def expand_and_push_flat_batch(
         root_index=root_indices,
     )
     return search_result.expand_and_push(flat_batch, fs, valid, update_next_bound=update_next_bound)
+
+
+def prepare_flat_expansion_inputs(
+    search_result: IDSearchBase,
+    puzzle: Puzzle,
+    solve_config: Puzzle.SolveConfig,
+    *,
+    batch_size: int,
+    action_ids: chex.Array,
+    action_size: int,
+    flat_size: int,
+    non_backtracking_steps: int,
+    max_path_len: int,
+    empty_trail_flat: Puzzle.State,
+):
+    """Prepare common flat child tensors for ID-A*/ID-Q* inner loops."""
+    (
+        sr,
+        sr_solved,
+        any_solved,
+        parents,
+        parent_costs,
+        parent_depths,
+        parent_trails,
+        parent_action_histories,
+        valid_mask,
+        parent_trace_indices,
+        parent_root_indices,
+        neighbours,
+        step_costs,
+    ) = search_result.prepare_for_expansion(puzzle, solve_config, batch_size)
+
+    (
+        flat_neighbours,
+        flat_g,
+        flat_depth,
+        flat_trail,
+        flat_action_history,
+        flat_actions,
+        flat_valid,
+    ) = build_flat_children(
+        neighbours,
+        step_costs,
+        parent_costs,
+        parent_depths,
+        parents,
+        parent_trails,
+        parent_action_histories,
+        action_ids,
+        action_size,
+        batch_size,
+        flat_size,
+        non_backtracking_steps,
+        max_path_len,
+        empty_trail_flat,
+        valid_mask,
+    )
+
+    flat_valid = jnp.logical_and(flat_valid, flat_depth <= max_path_len)
+
+    flat_parent_indices = jnp.tile(parent_trace_indices, action_size)
+    flat_parent_indices = jnp.where(flat_valid, flat_parent_indices, -1)
+    flat_root_indices = jnp.tile(parent_root_indices, action_size)
+    flat_root_indices = jnp.where(flat_valid, flat_root_indices, -1)
+
+    return (
+        sr,
+        sr_solved,
+        any_solved,
+        parents,
+        parent_costs,
+        parent_depths,
+        parent_trails,
+        parent_action_histories,
+        valid_mask,
+        flat_neighbours,
+        flat_g,
+        flat_depth,
+        flat_trail,
+        flat_action_history,
+        flat_actions,
+        flat_valid,
+        flat_parent_indices,
+        flat_root_indices,
+    )
+
+
+def apply_dedup_and_mask_actions(
+    search_result: IDSearchBase,
+    flat_neighbours: Xtructurable,
+    flat_g: chex.Array,
+    flat_valid: chex.Array,
+    parents: Xtructurable,
+    parent_trails: Xtructurable,
+    parent_depths: chex.Array,
+    non_backtracking_steps: int,
+    action_size: int,
+    flat_size: int,
+    trail_indices: jnp.ndarray,
+    batch_size: int,
+    flat_action_history: chex.Array,
+) -> tuple[IDSearchBase, chex.Array, chex.Array]:
+    """Apply standard deduplication and mask invalid action histories."""
+    search_result, flat_valid = search_result.apply_standard_deduplication(
+        flat_neighbours,
+        flat_g,
+        flat_valid,
+        parents,
+        parent_trails,
+        parent_depths,
+        non_backtracking_steps,
+        action_size,
+        flat_size,
+        trail_indices,
+        batch_size,
+    )
+    flat_action_history = jnp.where(
+        flat_valid[:, None],
+        flat_action_history,
+        jnp.full_like(flat_action_history, ACTION_PAD),
+    )
+    return search_result, flat_valid, flat_action_history
 
 
 def build_inner_cond():

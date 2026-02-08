@@ -33,6 +33,7 @@ def test_diffusion_distance_inverse_parent_uses_parent_indexed_action_costs():
     solve_configs = jnp.array([0, 0, 0, 0], dtype=jnp.int32)
     states = jnp.array([10, 11, 12, 13], dtype=jnp.int32)
     parent_indices = jnp.array([-1, 0, 1, 2], dtype=jnp.int32)
+    is_solved = jnp.array([True, False, False, False], dtype=jnp.bool_)
 
     # Parent-aligned edge costs (note: last entry is unused)
     action_costs = jnp.array([5.0, 1.0, 1.0, 999.0], dtype=jnp.float32)
@@ -41,6 +42,7 @@ def test_diffusion_distance_inverse_parent_uses_parent_indexed_action_costs():
     out = _compute_diffusion_distance(
         solve_configs=solve_configs,
         states=states,
+        is_solved=is_solved,
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -60,12 +62,14 @@ def test_diffusion_distance_hindsight_parent_uses_child_aligned_action_costs():
     solve_configs = jnp.array([0, 0, 0, 0], dtype=jnp.int32)
     states = jnp.array([20, 21, 22, 23], dtype=jnp.int32)
     parent_indices = jnp.array([1, 2, 3, -1], dtype=jnp.int32)
+    is_solved = jnp.array([False, False, False, True], dtype=jnp.bool_)
     action_costs = jnp.array([2.0, 1.0, 4.0, 999.0], dtype=jnp.float32)
     move_costs = jnp.array([100.0, 100.0, 100.0, 0.0], dtype=jnp.float32)
 
     out = _compute_diffusion_distance(
         solve_configs=solve_configs,
         states=states,
+        is_solved=is_solved,
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -80,12 +84,14 @@ def test_diffusion_q_inverse_parent_uses_parent_indexed_action_costs():
     states = jnp.array([30, 31, 32, 33], dtype=jnp.int32)
     actions = jnp.array([[0], [0], [0], [0]], dtype=jnp.uint8)
     parent_indices = jnp.array([-1, 0, 1, 2], dtype=jnp.int32)
+    is_solved = jnp.array([True, False, False, False], dtype=jnp.bool_)
     action_costs = jnp.array([[5.0], [1.0], [1.0], [999.0]], dtype=jnp.float32)
     move_costs = jnp.array([0.0, 100.0, 100.0, 100.0], dtype=jnp.float32)
 
     out = _compute_diffusion_q(
         solve_configs=solve_configs,
         states=states,
+        is_solved=is_solved,
         trajectory_actions=actions,
         move_costs=move_costs,
         action_costs=action_costs,
@@ -109,6 +115,7 @@ def test_diffusion_distance_inverse_parent_supports_child_aligned_action_costs_w
     solve_configs = jnp.array([0, 0, 0, 0], dtype=jnp.int32)
     states = jnp.array([1, 1, 2, 3], dtype=jnp.int32)  # A1, A2(dup), B, C
     parent_indices = jnp.array([-1, -1, 1, 2], dtype=jnp.int32)
+    is_solved = jnp.array([False, False, False, False], dtype=jnp.bool_)
 
     # Child-aligned edge costs to the parent.
     action_costs = jnp.array([1.0, 50.0, 100.0, 1.0], dtype=jnp.float32)
@@ -118,6 +125,7 @@ def test_diffusion_distance_inverse_parent_supports_child_aligned_action_costs_w
     out = _compute_diffusion_distance(
         solve_configs=solve_configs,
         states=states,
+        is_solved=is_solved,
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -132,12 +140,14 @@ def test_diffusion_q_inverse_parent_supports_child_aligned_action_costs_when_goa
     states = jnp.array([1, 1, 2, 3], dtype=jnp.int32)
     actions = jnp.array([[0], [0], [0], [0]], dtype=jnp.uint8)
     parent_indices = jnp.array([-1, -1, 1, 2], dtype=jnp.int32)
+    is_solved = jnp.array([False, False, False, False], dtype=jnp.bool_)
     action_costs = jnp.array([[1.0], [50.0], [100.0], [1.0]], dtype=jnp.float32)
     move_costs = jnp.array([1.0, 50.0, 150.0, 151.0], dtype=jnp.float32)
 
     out = _compute_diffusion_q(
         solve_configs=solve_configs,
         states=states,
+        is_solved=is_solved,
         trajectory_actions=actions,
         move_costs=move_costs,
         action_costs=action_costs,

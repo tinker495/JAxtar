@@ -26,7 +26,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopState,
@@ -41,9 +41,10 @@ from JAxtar.stars.search_base import (
     Current,
     Parent,
     SearchResult,
+    build_action_major_parent_layout,
     insert_priority_queue_batches,
+    partition_and_pack_frontier_candidates,
 )
-from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -173,21 +174,16 @@ def _bi_astar_loop_builder(
         # ncost: [action_size, batch_size]
 
         # Prepare parent information
-        parent_action = jnp.tile(
-            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, sr_batch_size),
-        )  # [action_size, batch_size]
+        flat_parent_indices, flat_parent_actions, _ = build_action_major_parent_layout(
+            action_size, sr_batch_size
+        )
+        flat_parent_hashidx = current.hashidx[flat_parent_indices]
         nextcosts = (current.cost[jnp.newaxis, :] + ncost).astype(KEY_DTYPE)
         filleds = jnp.isfinite(nextcosts)  # [action_size, batch_size]
-        parent_index = jnp.tile(
-            jnp.arange(sr_batch_size, dtype=jnp.int32)[jnp.newaxis, :],
-            (action_size, 1),
-        )
-        unflatten_shape = (action_size, sr_batch_size)
 
         parent = Parent(
-            hashidx=current.hashidx[parent_index],
-            action=parent_action,
+            hashidx=flat_parent_hashidx,
+            action=flat_parent_actions,
         )
 
         # Flatten for batch processing
@@ -254,18 +250,21 @@ def _bi_astar_loop_builder(
             is_forward,
         )
 
-        # Stable partition for efficiency
-        invperm = stable_partition_three(flatten_new_states_mask, final_process_mask)
-        flatten_final_process_mask = final_process_mask[invperm]
-        flatten_new_states_mask = flatten_new_states_mask[invperm]
-        flatten_neighbours = flatten_neighbours[invperm]
-        flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)[invperm]
-        hash_idx = hash_idx[invperm]
-
-        vals = Current(hashidx=hash_idx, cost=flatten_nextcosts).reshape(unflatten_shape)
-        neighbours_reshaped = flatten_neighbours.reshape(unflatten_shape)
-        new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
-        final_process_mask_reshaped = flatten_final_process_mask.reshape(unflatten_shape)
+        masked_flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
+        (
+            vals,
+            neighbours_reshaped,
+            new_states_mask,
+            final_process_mask_reshaped,
+        ) = partition_and_pack_frontier_candidates(
+            flatten_new_states_mask,
+            final_process_mask,
+            flatten_neighbours,
+            masked_flatten_nextcosts,
+            hash_idx,
+            action_size,
+            sr_batch_size,
+        )
 
         # Compute heuristic and insert into priority queue
         def _new_states(sr: SearchResult, vals, neighbour, new_states_mask):

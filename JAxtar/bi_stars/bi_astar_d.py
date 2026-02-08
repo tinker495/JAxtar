@@ -21,7 +21,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
@@ -38,6 +38,7 @@ from JAxtar.stars.search_base import (
     Current,
     Parant_with_Costs,
     Parent,
+    build_action_major_parent_context,
     insert_priority_queue_batches,
     packed_masked_state_eval,
     sort_and_pack_action_candidates,
@@ -157,13 +158,19 @@ def _bi_astar_d_loop_builder(
         cost = current.cost
         hash_idx = current.hashidx
 
-        idx_tiles = xnp.tile(hash_idx, (action_size, 1))
-        action = jnp.tile(
-            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, sr_batch_size),
+        (
+            flat_parent_hashidx,
+            flat_actions,
+            costs,
+            filled_tiles,
+            unflatten_shape,
+        ) = build_action_major_parent_context(
+            hash_idx,
+            cost,
+            filled,
+            action_size,
+            sr_batch_size,
         )
-        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))
-        filled_tiles = jnp.tile(filled[jnp.newaxis, :], (action_size, 1))
 
         flattened_filled_tiles = filled_tiles.flatten()
 
@@ -303,8 +310,8 @@ def _bi_astar_d_loop_builder(
                 this_found=found,
                 this_hashidx=current_hash_idxs,
                 this_old_costs=old_costs,
-                this_parent_hashidx=idx_tiles.flatten(),
-                this_parent_action=action.flatten(),
+                this_parent_hashidx=flat_parent_hashidx,
+                this_parent_action=flat_actions,
                 is_forward=is_forward,
             )
 
@@ -313,9 +320,9 @@ def _bi_astar_d_loop_builder(
             if use_heuristic:
                 heuristic_vals = variable_heuristic_batch_switcher(heuristic_params, states, filled)
                 heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)
-                heuristic_vals = jnp.tile(heuristic_vals[jnp.newaxis, :], (action_size, 1)).astype(
-                    KEY_DTYPE
-                )
+                heuristic_vals = jnp.broadcast_to(
+                    heuristic_vals[jnp.newaxis, :], unflatten_shape
+                ).astype(KEY_DTYPE)
             else:
                 heuristic_vals = jnp.zeros_like(costs, dtype=KEY_DTYPE)
                 heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
@@ -325,7 +332,7 @@ def _bi_astar_d_loop_builder(
 
         # Create values for priority queue
         vals = Parant_with_Costs(
-            parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
+            parent=Parent(hashidx=flat_parent_hashidx, action=flat_actions),
             cost=costs.flatten(),
             dist=heuristic_vals.flatten(),
         )

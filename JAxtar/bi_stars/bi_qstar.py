@@ -20,7 +20,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
@@ -37,10 +37,11 @@ from JAxtar.stars.search_base import (
     Current,
     Parant_with_Costs,
     Parent,
+    build_action_major_parent_context,
     insert_priority_queue_batches,
+    packed_masked_state_eval,
     sort_and_pack_action_candidates,
 )
-from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
@@ -156,18 +157,23 @@ def _bi_qstar_loop_builder(
             get_neighbours_fn = puzzle.batched_get_inverse_neighbours
 
         sr_batch_size = search_result.batch_size
-        flat_size = action_size * sr_batch_size
 
         cost = current.cost
         hash_idx = current.hashidx
 
-        idx_tiles = xnp.tile(hash_idx, (action_size, 1))
-        action = jnp.tile(
-            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, sr_batch_size),
+        (
+            flat_parent_hashidx,
+            flat_actions,
+            costs,
+            filled_tiles,
+            unflatten_shape,
+        ) = build_action_major_parent_context(
+            hash_idx,
+            cost,
+            filled,
+            action_size,
+            sr_batch_size,
         )
-        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))
-        filled_tiles = jnp.tile(filled[jnp.newaxis, :], (action_size, 1))
 
         # For backward direction, action indices refer to inverse neighbours.
         # Action-dependent Q(s, a) on the backward "parent" state is not semantically aligned.
@@ -218,32 +224,17 @@ def _bi_qstar_loop_builder(
             # calling the Q-function with leading dim = action_size * batch_size.
             flat_states = flattened_neighbour_look_head
             flat_mask = flattened_filled_tiles
-
-            n = flat_size
-            # Pack valid entries first (stable) for better effective batch size.
-            invperm = stable_partition_three(flat_mask, jnp.zeros_like(flat_mask, dtype=jnp.bool_))
-            sorted_states = flat_states[invperm]
-            sorted_mask = flat_mask[invperm]
-
-            sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-            sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-            def _calc_v_chunk(carry, input_slice):
-                states_slice, compute_mask = input_slice
-                q_vals = variable_q_batch_switcher(q_params, states_slice, compute_mask)  # [b, a]
-                v_vals = jnp.min(q_vals, axis=-1)
-                return carry, v_vals
-
-            _, v_chunks = jax.lax.scan(
-                _calc_v_chunk,
-                None,
-                (sorted_states_chunked, sorted_mask_chunked),
-            )  # [action_size, batch_size]
-
-            v_sorted = v_chunks.reshape(-1).astype(KEY_DTYPE)  # [flat]
-            v_flat = jnp.empty((n,), dtype=v_sorted.dtype).at[invperm].set(v_sorted)
-
-            heuristic_vals = v_flat.reshape(action_size, sr_batch_size)
+            heuristic_vals = packed_masked_state_eval(
+                flat_states,
+                flat_mask,
+                action_size,
+                sr_batch_size,
+                lambda states_slice, compute_mask: jnp.min(
+                    variable_q_batch_switcher(q_params, states_slice, compute_mask),
+                    axis=-1,
+                ),
+                dtype=KEY_DTYPE,
+            )
             heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
 
             neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
@@ -300,8 +291,8 @@ def _bi_qstar_loop_builder(
                 this_found=this_found_all,
                 this_hashidx=this_hashidx_all,
                 this_old_costs=this_old_costs_all,
-                this_parent_hashidx=idx_tiles.flatten(),
-                this_parent_action=action.flatten(),
+                this_parent_hashidx=flat_parent_hashidx,
+                this_parent_action=flat_actions,
                 is_forward=is_forward,
             )
 
@@ -388,8 +379,8 @@ def _bi_qstar_loop_builder(
                     this_found=this_found_all,
                     this_hashidx=this_hashidx_all,
                     this_old_costs=this_old_costs_all,
-                    this_parent_hashidx=idx_tiles.flatten(),
-                    this_parent_action=action.flatten(),
+                    this_parent_hashidx=flat_parent_hashidx,
+                    this_parent_action=flat_actions,
                     is_forward=is_forward,
                 )
             else:
@@ -397,7 +388,7 @@ def _bi_qstar_loop_builder(
 
         # Create values for priority queue
         flattened_vals = Parant_with_Costs(
-            parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
+            parent=Parent(hashidx=flat_parent_hashidx, action=flat_actions),
             cost=costs.flatten(),
             dist=dists,
         )

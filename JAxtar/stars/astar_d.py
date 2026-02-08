@@ -7,13 +7,14 @@ from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
     Current,
     LoopStateWithStates,
     Parant_with_Costs,
     Parent,
     SearchResult,
+    build_action_major_parent_context,
     finalize_search_result,
     insert_priority_queue_batches,
     loop_continue_if_not_solved,
@@ -99,15 +100,19 @@ def _astar_d_loop_builder(
 
         action_size = search_result.action_size
         sr_batch_size = search_result.batch_size
-        idx_tiles = xnp.tile(hash_idx, (action_size, 1))  # [action_size, batch_size, ...]
-        action = jnp.tile(
-            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, sr_batch_size),
-        )  # [n_neighbours, batch_size]
-        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))  # [action_size, batch_size]
-        filled_tiles = jnp.tile(
-            filled[jnp.newaxis, :], (action_size, 1)
-        )  # [action_size, batch_size]
+        (
+            flat_parent_hashidx,
+            flat_actions,
+            costs,
+            filled_tiles,
+            unflatten_shape,
+        ) = build_action_major_parent_context(
+            hash_idx,
+            cost,
+            filled,
+            action_size,
+            sr_batch_size,
+        )
 
         flattened_filled_tiles = filled_tiles.flatten()
 
@@ -178,7 +183,9 @@ def _astar_d_loop_builder(
                 heuristic_parameters, states, filled
             )  # [batch_size]
             heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)  # [batch_size]
-            heuristic_vals = jnp.tile(heuristic_vals[jnp.newaxis, :], (action_size, 1)).astype(
+            heuristic_vals = jnp.broadcast_to(
+                heuristic_vals[jnp.newaxis, :], unflatten_shape
+            ).astype(
                 KEY_DTYPE
             )  # [action_size, batch_size]
 
@@ -187,7 +194,7 @@ def _astar_d_loop_builder(
             neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
 
         vals = Parant_with_Costs(
-            parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
+            parent=Parent(hashidx=flat_parent_hashidx, action=flat_actions),
             cost=costs.flatten(),
             dist=heuristic_vals.flatten(),
         )
