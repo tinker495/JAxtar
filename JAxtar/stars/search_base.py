@@ -115,6 +115,48 @@ def insert_priority_queue_batches(
     return search_result
 
 
+def sort_and_pack_action_candidates(
+    flat_keys: chex.Array,
+    flat_vals,
+    flat_mask: chex.Array,
+    action_size: int,
+    batch_size: int,
+) -> tuple[chex.Array, Any, chex.Array]:
+    """Sort action-major candidates by masked key and pack into 2D batches.
+
+    This helper keeps deferred variants consistent and skips global sorting when
+    there are no valid candidates in the flattened action-major batch.
+    """
+
+    def _sort(_):
+        masked_flat_keys = jnp.where(flat_mask, flat_keys, jnp.inf)
+        sorted_keys, sorted_idx = jax.lax.sort_key_val(
+            masked_flat_keys,
+            jnp.arange(flat_mask.shape[0], dtype=jnp.int32),
+        )
+        sorted_vals = flat_vals[sorted_idx]
+        sorted_mask = flat_mask[sorted_idx]
+        return (
+            sorted_keys.reshape((action_size, batch_size)),
+            sorted_vals.reshape((action_size, batch_size)),
+            sorted_mask.reshape((action_size, batch_size)),
+        )
+
+    def _empty(_):
+        return (
+            jnp.full((action_size, batch_size), jnp.inf, dtype=flat_keys.dtype),
+            flat_vals.reshape((action_size, batch_size)),
+            flat_mask.reshape((action_size, batch_size)),
+        )
+
+    return jax.lax.cond(
+        jnp.any(flat_mask),
+        _sort,
+        _empty,
+        operand=None,
+    )
+
+
 def loop_continue_if_not_solved(
     search_result: "SearchResult",
     puzzle: Puzzle,

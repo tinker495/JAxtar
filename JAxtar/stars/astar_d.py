@@ -17,6 +17,7 @@ from JAxtar.stars.search_base import (
     finalize_search_result,
     insert_priority_queue_batches,
     loop_continue_if_not_solved,
+    sort_and_pack_action_candidates,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -221,18 +222,13 @@ def _astar_d_loop_builder(
         flattened_vals = vals.flatten()
         flattened_keys = neighbour_keys.flatten()
 
-        flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)
-
-        # Sort to keep best candidates
-        sorted_key, sorted_idx = jax.lax.sort_key_val(
-            flattened_neighbour_keys, jnp.arange(flat_size)
+        neighbour_keys, vals, optimal_unique_mask = sort_and_pack_action_candidates(
+            flattened_keys,
+            flattened_vals,
+            optimal_mask,
+            action_size,
+            sr_batch_size,
         )
-        sorted_vals = flattened_vals[sorted_idx]
-        sorted_optimal_unique_mask = optimal_mask[sorted_idx]
-
-        neighbour_keys = sorted_key.reshape(action_size, sr_batch_size)
-        vals = sorted_vals.reshape((action_size, sr_batch_size))
-        optimal_unique_mask = sorted_optimal_unique_mask.reshape(action_size, sr_batch_size)
 
         search_result = insert_priority_queue_batches(
             search_result,
