@@ -2,7 +2,6 @@
 Search Base for Iterative Deepening Algorithms (IDA* / ID-Q*)
 """
 
-import time
 from functools import partial
 from typing import Any
 
@@ -14,7 +13,7 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 from xtructure.stack import Stack
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import jit_with_warmup
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
 from JAxtar.utils.array_ops import stable_partition_three
@@ -769,24 +768,44 @@ def finalize_builder(
         loop_state = jax.lax.while_loop(cond, body, loop_state)
         return loop_state.search_result
 
-    jitted_fn = jax.jit(search_fn)
+    return jit_with_warmup(
+        search_fn,
+        puzzle=puzzle,
+        show_compile_time=show_compile_time,
+        warmup_inputs=warmup_inputs,
+        init_message=f"initializing jit for {name}",
+        elapsed_message=f"{name} JIT compile time: {{elapsed:.2f}}s",
+    )
 
-    if show_compile_time:
-        print(f"initializing jit for {name}")
-        start_t = time.time()
 
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        jitted_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(jitted_fn, *warmup_inputs)
-
-    if show_compile_time:
-        print(f"{name} JIT compile time: {time.time() - start_t:.2f}s")
-        print("JIT compiled\n\n")
-
-    return jitted_fn
+def expand_and_push_flat_batch(
+    search_result: IDSearchBase,
+    node_batch_cls: type,
+    states: Puzzle.State,
+    gs: chex.Array,
+    depths: chex.Array,
+    actions: chex.Array,
+    trails: Puzzle.State,
+    action_histories: chex.Array,
+    valid: chex.Array,
+    fs: chex.Array,
+    parent_indices: chex.Array,
+    root_indices: chex.Array,
+    *,
+    update_next_bound: bool,
+) -> IDSearchBase:
+    """Build a flat node batch and push it into the search stack."""
+    flat_batch = node_batch_cls(
+        state=states,
+        cost=gs,
+        depth=depths,
+        action=actions,
+        trail=trails,
+        action_history=action_histories,
+        parent_index=parent_indices,
+        root_index=root_indices,
+    )
+    return search_result.expand_and_push(flat_batch, fs, valid, update_next_bound=update_next_bound)
 
 
 def build_inner_cond():

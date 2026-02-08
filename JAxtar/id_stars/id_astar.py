@@ -18,6 +18,7 @@ from JAxtar.id_stars.search_base import (
     apply_non_backtracking,
     build_inner_cond,
     build_outer_loop,
+    expand_and_push_flat_batch,
     finalize_builder,
 )
 from JAxtar.utils.array_ops import stable_partition_three
@@ -410,8 +411,9 @@ def _id_astar_loop_builder(
         return_sr = jax.lax.cond(
             any_solved,
             lambda s: s,
-            lambda s: _expand_step(
+            lambda s: expand_and_push_flat_batch(
                 s,
+                IDNodeBatch,
                 flat_neighbours,
                 flat_g,
                 flat_depth,
@@ -422,37 +424,12 @@ def _id_astar_loop_builder(
                 flat_f,
                 flat_parent_indices,
                 flat_root_indices,
+                update_next_bound=True,
             ),
             sr_solved,
         )
 
         return loop_state.replace(search_result=return_sr)
-
-    def _expand_step(
-        sr,
-        states,
-        gs,
-        depths,
-        actions,
-        trails,
-        action_histories,
-        valid,
-        fs,
-        parent_indices,
-        root_indices,
-    ):
-        flat_batch = IDNodeBatch(
-            state=states,
-            cost=gs,
-            depth=depths,
-            action=actions,
-            trail=trails,
-            action_history=action_histories,
-            parent_index=parent_indices,
-            root_index=root_indices,
-        )
-
-        return sr.expand_and_push(flat_batch, fs, valid, update_next_bound=True)
 
     outer_cond, outer_body = build_outer_loop(inner_cond, inner_body, statecls, frontier_actions)
 

@@ -1,4 +1,3 @@
-import time
 from typing import Any
 
 import jax
@@ -6,7 +5,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
@@ -14,7 +13,9 @@ from JAxtar.stars.search_base import (
     LoopState,
     Parent,
     SearchResult,
+    finalize_search_result,
     insert_priority_queue_batches,
+    loop_continue_if_not_solved,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -79,14 +80,7 @@ def _astar_loop_builder(
         solve_config = loop_state.solve_config
         states = search_result.get_state(loop_state.current)
         filled = loop_state.filled
-        hash_size = search_result.generated_size
-        size_cond1 = filled.any()  # queue is not empty
-        size_cond2 = hash_size < search_result.capacity  # hash table is not full
-        size_cond = jnp.logical_and(size_cond1, size_cond2)
-
-        solved = puzzle.batched_is_solved(solve_config, states)
-        solved = jnp.logical_and(solved, filled)
-        return jnp.logical_and(size_cond, ~solved.any())
+        return loop_continue_if_not_solved(search_result, puzzle, solve_config, states, filled)
 
     def loop_body(loop_state: LoopState):
         search_result = loop_state.search_result
@@ -272,31 +266,12 @@ def astar_builder(
         current = loop_state.current
         filled = loop_state.filled
         states = search_result.get_state(current)
-        solved = puzzle.batched_is_solved(solve_config, states)
-        solved = jnp.logical_and(solved, filled)
-        search_result.solved = solved.any()
-        search_result.solved_idx = current[jnp.argmax(solved)]
-        return search_result
+        solved_mask = jnp.logical_and(puzzle.batched_is_solved(solve_config, states), filled)
+        return finalize_search_result(search_result, current, solved_mask)
 
-    astar_fn = jax.jit(astar)
-    if show_compile_time:
-        print("initializing jit")
-        start = time.time()
-
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        # Pass empty states and target to JIT-compile the function with simple data.
-        # Using actual puzzles would cause extremely long compilation times due to
-        # tracing all possible functions. Empty inputs allow JAX to specialize the
-        # compiled code without processing complex puzzle structures.
-        astar_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(astar_fn, *warmup_inputs)
-
-    if show_compile_time:
-        end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
-        print("JIT compiled\n\n")
-
-    return astar_fn
+    return jit_with_warmup(
+        astar,
+        puzzle=puzzle,
+        show_compile_time=show_compile_time,
+        warmup_inputs=warmup_inputs,
+    )

@@ -11,7 +11,6 @@ Key Benefits:
 - Efficient for domains where Q-learning has been applied
 """
 
-import time
 from typing import Any
 
 import chex
@@ -20,7 +19,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import jit_with_warmup
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
@@ -28,6 +27,7 @@ from JAxtar.bi_stars.bi_search_base import (
     build_bi_search_result,
     check_intersection,
     common_bi_loop_condition,
+    finalize_bidirectional_result,
     initialize_bi_loop_common,
     materialize_meeting_point_hashidxs,
     update_meeting_point,
@@ -667,35 +667,13 @@ def bi_qstar_builder(
         # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
         bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, solve_config)
 
-        # Mark as solved if meeting point was found
-        bi_result.forward.solved = bi_result.meeting.found
-        bi_result.forward.solved_idx = Current(
-            hashidx=bi_result.meeting.fwd_hashidx,
-            cost=bi_result.meeting.fwd_cost,
-        )
-        bi_result.backward.solved = bi_result.meeting.found
-        bi_result.backward.solved_idx = Current(
-            hashidx=bi_result.meeting.bwd_hashidx,
-            cost=bi_result.meeting.bwd_cost,
-        )
+        return finalize_bidirectional_result(bi_result)
 
-        return bi_result
-
-    bi_qstar_fn = jax.jit(bi_qstar)
-    if show_compile_time:
-        print("Initializing JIT for bidirectional Q*...")
-        start_time = time.time()
-
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        bi_qstar_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(bi_qstar_fn, *warmup_inputs)
-
-    if show_compile_time:
-        end_time = time.time()
-        print(f"Compile Time: {end_time - start_time:6.2f} seconds")
-        print("JIT compiled\n")
-
-    return bi_qstar_fn
+    return jit_with_warmup(
+        bi_qstar,
+        puzzle=puzzle,
+        show_compile_time=show_compile_time,
+        warmup_inputs=warmup_inputs,
+        init_message="Initializing JIT for bidirectional Q*...",
+        completion_message="JIT compiled\n",
+    )

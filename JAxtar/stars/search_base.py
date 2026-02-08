@@ -115,6 +115,31 @@ def insert_priority_queue_batches(
     return search_result
 
 
+def loop_continue_if_not_solved(
+    search_result: "SearchResult",
+    puzzle: Puzzle,
+    solve_config: Puzzle.SolveConfig,
+    states: Puzzle.State,
+    filled: chex.Array,
+) -> chex.Array:
+    """Shared loop continuation condition for A*/Q* style searches."""
+    has_work = jnp.logical_and(filled.any(), search_result.generated_size < search_result.capacity)
+    solved = jnp.logical_and(puzzle.batched_is_solved(solve_config, states), filled)
+    return jnp.logical_and(has_work, ~solved.any())
+
+
+def finalize_search_result(
+    search_result: "SearchResult",
+    current: "Current",
+    solved_mask: chex.Array,
+) -> "SearchResult":
+    """Fill solved flags/index from a boolean solved mask on the current batch."""
+    solved_mask = solved_mask.astype(jnp.bool_)
+    search_result.solved = solved_mask.any()
+    search_result.solved_idx = current[jnp.argmax(solved_mask)]
+    return search_result
+
+
 def print_states(states: Xtructurable, costs: chex.Array, dists: chex.Array, key: chex.Array):
     print(states)
     print(f"costs: {costs}")

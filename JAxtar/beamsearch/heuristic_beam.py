@@ -1,4 +1,3 @@
-import time
 from typing import Any
 
 import jax
@@ -6,7 +5,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.beamsearch.search_base import (
@@ -320,23 +319,9 @@ def beam_builder(
         search_result.solved_idx = solved_idx
         return search_result
 
-    beam_fn = jax.jit(beam)
-    if show_compile_time:
-        print("initializing jit")
-        start = time.time()
-
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        # Compile ahead of time to surface potential tracer issues early. This uses
-        # empty defaults, mirroring the A*/Q* builders.
-        beam_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(beam_fn, *warmup_inputs)
-
-    if show_compile_time:
-        end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
-        print("JIT compiled\n\n")
-
-    return beam_fn
+    return jit_with_warmup(
+        beam,
+        puzzle=puzzle,
+        show_compile_time=show_compile_time,
+        warmup_inputs=warmup_inputs,
+    )

@@ -1,4 +1,3 @@
-import time
 from typing import Any
 
 import jax
@@ -6,7 +5,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
@@ -15,7 +14,9 @@ from JAxtar.stars.search_base import (
     Parant_with_Costs,
     Parent,
     SearchResult,
+    finalize_search_result,
     insert_priority_queue_batches,
+    loop_continue_if_not_solved,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -84,14 +85,7 @@ def _astar_d_loop_builder(
         solve_config = loop_state.solve_config
         states = loop_state.states
         filled = loop_state.filled
-        hash_size = search_result.generated_size
-        size_cond1 = filled.any()  # queue is not empty
-        size_cond2 = hash_size < search_result.capacity  # hash table is not full
-        size_cond = jnp.logical_and(size_cond1, size_cond2)
-
-        solved = puzzle.batched_is_solved(solve_config, states)
-        solved = jnp.logical_and(solved, filled)
-        return jnp.logical_and(size_cond, ~solved.any())
+        return loop_continue_if_not_solved(search_result, puzzle, solve_config, states, filled)
 
     def loop_body(loop_state: LoopStateWithStates):
         search_result = loop_state.search_result
@@ -158,44 +152,43 @@ def _astar_d_loop_builder(
             flat_states = neighbour_look_a_head.flatten()
             flat_need_compute = need_compute.flatten()
 
-            n = flat_size
-            n = flat_size
-            # Stable sort so `need_compute=True` comes first (key False), preserving order.
-            # Stable sort so `need_compute=True` comes first (key False), preserving order.
-            sorted_indices = stable_partition_three(
-                flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
-            )
-
-            sorted_states = flat_states[sorted_indices]
-            sorted_mask = flat_need_compute[sorted_indices]
-
-            # `variable_heuristic_batch_switcher` is built with max_batch_size=batch_size,
-            # so we must not call it with a larger leading dimension than `batch_size`.
-            # Reshape the globally-packed vector into `action_size` chunks of `batch_size`
-            # and compute per-chunk via scan.
-            # `sorted_states` is a (flattened) Puzzle.State pytree (xtructure),
-            # so reshape expects just the leading batch shape.
-            sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-            sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-            def _calc_heuristic_chunk(carry, input_slice):
-                states_slice, compute_mask = input_slice
-                h_val = variable_heuristic_batch_switcher(
-                    heuristic_parameters, states_slice, compute_mask
+            def _compute_new_heuristics(_):
+                # Stable sort so `need_compute=True` comes first (key False), preserving order.
+                sorted_indices = stable_partition_three(
+                    flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
                 )
-                return carry, h_val
+                sorted_states = flat_states[sorted_indices]
+                sorted_mask = flat_need_compute[sorted_indices]
 
-            _, h_val_chunks = jax.lax.scan(
-                _calc_heuristic_chunk,
-                None,
-                (sorted_states_chunked, sorted_mask_chunked),
-            )  # [action_size, batch_size]
+                # `variable_heuristic_batch_switcher` uses max_batch_size=batch_size,
+                # so evaluate in action-major chunks of `batch_size`.
+                sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
+                sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
 
-            h_val_sorted = h_val_chunks.reshape(-1)  # [action_size * batch_size]
-            flat_h_val = (
-                jnp.empty((n,), dtype=h_val_sorted.dtype).at[sorted_indices].set(h_val_sorted)
+                def _calc_heuristic_chunk(carry, input_slice):
+                    states_slice, compute_mask = input_slice
+                    h_val = variable_heuristic_batch_switcher(
+                        heuristic_parameters, states_slice, compute_mask
+                    )
+                    return carry, h_val
+
+                _, h_val_chunks = jax.lax.scan(
+                    _calc_heuristic_chunk,
+                    None,
+                    (sorted_states_chunked, sorted_mask_chunked),
+                )  # [action_size, batch_size]
+
+                h_val_sorted = h_val_chunks.reshape(-1)  # [action_size * batch_size]
+                flat_h_val = jnp.empty((flat_size,), dtype=h_val_sorted.dtype)
+                flat_h_val = flat_h_val.at[sorted_indices].set(h_val_sorted)
+                return flat_h_val.reshape(action_size, sr_batch_size).astype(KEY_DTYPE)
+
+            computed_heuristic_vals = jax.lax.cond(
+                jnp.any(flat_need_compute),
+                _compute_new_heuristics,
+                lambda _: jnp.zeros((action_size, sr_batch_size), dtype=KEY_DTYPE),
+                operand=None,
             )
-            computed_heuristic_vals = flat_h_val.reshape(action_size, sr_batch_size)
 
             heuristic_vals = jnp.where(
                 found_reshaped,
@@ -328,31 +321,12 @@ def astar_d_builder(
         current = loop_state.current
         states = loop_state.states
         filled = loop_state.filled
-        solved = puzzle.batched_is_solved(solve_config, states)
-        solved = jnp.logical_and(solved, filled)
-        search_result.solved = solved.any()
-        search_result.solved_idx = current[jnp.argmax(solved)]
-        return search_result
+        solved_mask = jnp.logical_and(puzzle.batched_is_solved(solve_config, states), filled)
+        return finalize_search_result(search_result, current, solved_mask)
 
-    astar_d_fn = jax.jit(astar_d)
-    if show_compile_time:
-        print("initializing jit")
-        start = time.time()
-
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        # Pass empty states and target to JIT-compile the function with simple data.
-        # Using actual puzzles would cause extremely long compilation times due to
-        # tracing all possible functions. Empty inputs allow JAX to specialize the
-        # compiled code without processing complex puzzle structures.
-        astar_d_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(astar_d_fn, *warmup_inputs)
-
-    if show_compile_time:
-        end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
-        print("JIT compiled\n\n")
-
-    return astar_d_fn
+    return jit_with_warmup(
+        astar_d,
+        puzzle=puzzle,
+        show_compile_time=show_compile_time,
+        warmup_inputs=warmup_inputs,
+    )

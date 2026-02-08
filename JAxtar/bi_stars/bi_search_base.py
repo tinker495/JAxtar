@@ -683,6 +683,23 @@ def materialize_meeting_point_hashidxs(
     return jax.lax.cond(bi_result.meeting.found, _materialize_if_needed, lambda x: x, bi_result)
 
 
+def finalize_bidirectional_result(
+    bi_result: BiDirectionalSearchResult,
+) -> BiDirectionalSearchResult:
+    """Set solved flags and solved indices from the final meeting point."""
+    bi_result.forward.solved = bi_result.meeting.found
+    bi_result.forward.solved_idx = Current(
+        hashidx=bi_result.meeting.fwd_hashidx,
+        cost=bi_result.meeting.fwd_cost,
+    )
+    bi_result.backward.solved = bi_result.meeting.found
+    bi_result.backward.solved_idx = Current(
+        hashidx=bi_result.meeting.bwd_hashidx,
+        cost=bi_result.meeting.bwd_cost,
+    )
+    return bi_result
+
+
 def bi_termination_condition(
     bi_result: BiDirectionalSearchResult,
     fwd_min_f: chex.Array,
