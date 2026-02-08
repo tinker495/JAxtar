@@ -15,6 +15,7 @@ from JAxtar.stars.search_base import (
     Parant_with_Costs,
     Parent,
     SearchResult,
+    insert_priority_queue_batches,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -240,31 +241,11 @@ def _astar_d_loop_builder(
         vals = sorted_vals.reshape((action_size, sr_batch_size))
         optimal_unique_mask = sorted_optimal_unique_mask.reshape(action_size, sr_batch_size)
 
-        def _insert(search_result: SearchResult, neighbour_keys, vals):
-
-            search_result.priority_queue = search_result.priority_queue.insert(
-                neighbour_keys,
-                vals,
-            )
-            return search_result
-
-        def _scan(search_result: SearchResult, val):
-            neighbour_keys, vals, mask = val
-
-            search_result = jax.lax.cond(
-                jnp.any(mask),
-                _insert,
-                lambda search_result, *args: search_result,
-                search_result,
-                neighbour_keys,
-                vals,
-            )
-            return search_result, None
-
-        search_result, _ = jax.lax.scan(
-            _scan,
+        search_result = insert_priority_queue_batches(
             search_result,
-            (neighbour_keys, vals, optimal_unique_mask),
+            neighbour_keys,
+            vals,
+            optimal_unique_mask,
         )
         search_result, min_val, next_states, filled = search_result.pop_full_with_actions(
             puzzle=puzzle,

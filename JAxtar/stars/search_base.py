@@ -36,6 +36,85 @@ from JAxtar.annotate import (
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
 
+def _find_first_cost_drop(costs: list[float]) -> int | None:
+    for idx in range(1, len(costs)):
+        if costs[idx] < costs[idx - 1]:
+            return idx
+    return None
+
+
+def _build_path_reconstruction_diagnostic_message(
+    *,
+    loop_detected: bool,
+    loop_idx: int,
+    corruption_detected: bool,
+    costs: list[float] | None = None,
+    dists: list[float] | None = None,
+) -> str:
+    parts = ["PATH_RECONSTRUCTION_DIAGNOSTIC"]
+    parts.append(f"loop_detected={loop_detected}")
+    parts.append(f"loop_idx={loop_idx}")
+    parts.append(f"corruption_detected={corruption_detected}")
+
+    if corruption_detected and costs is not None:
+        first_drop_idx = _find_first_cost_drop(costs)
+        parts.append(f"first_cost_drop_idx={first_drop_idx}")
+        if first_drop_idx is not None:
+            parts.append(f"prev_cost={costs[first_drop_idx - 1]}")
+            parts.append(f"next_cost={costs[first_drop_idx]}")
+        parts.append(f"costs={costs}")
+        if dists is not None:
+            parts.append(f"dists={dists}")
+
+    return " | ".join(parts)
+
+
+def _compute_pop_process_mask(
+    key: chex.Array,
+    pop_ratio: float,
+    min_pop: int,
+) -> chex.Array:
+    """Compute which popped entries are processed now vs. re-queued."""
+    filled = jnp.isfinite(key)
+    threshold = key[0] * pop_ratio + 1e-6
+    process_mask = jnp.less_equal(key, threshold)
+    base_process_mask = jnp.logical_and(filled, process_mask)
+    min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= min_pop, filled)
+    return jnp.logical_or(base_process_mask, min_pop_mask)
+
+
+def insert_priority_queue_batches(
+    search_result: "SearchResult",
+    keys,
+    vals,
+    masks: chex.Array,
+) -> "SearchResult":
+    """Insert action-major candidate batches into the priority queue.
+
+    This is shared by deferred variants (single and bidirectional) to keep
+    insertion semantics identical before calling `pop_full_with_actions`.
+    """
+
+    def _insert(sr: "SearchResult", key_row, val_row):
+        sr.priority_queue = sr.priority_queue.insert(key_row, val_row)
+        return sr
+
+    def _scan(sr: "SearchResult", row):
+        key_row, val_row, mask_row = row
+        sr = jax.lax.cond(
+            jnp.any(mask_row),
+            _insert,
+            lambda current_sr, *args: current_sr,
+            sr,
+            key_row,
+            val_row,
+        )
+        return sr, None
+
+    search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
+    return search_result
+
+
 def print_states(states: Xtructurable, costs: chex.Array, dists: chex.Array, key: chex.Array):
     print(states)
     print(f"costs: {costs}")
@@ -394,19 +473,11 @@ class SearchResult:
         )
 
         # 3. Apply pop_ratio to the full batch
-        filled = jnp.isfinite(min_key)
-        # Add a small epsilon for floating point comparisons
-        threshold = min_key[0] * search_result.pop_ratio + 1e-6
-
-        # Identify nodes to process now vs. nodes to return to PQ
-        process_mask = jnp.less_equal(min_key, threshold)
-        base_process_mask = jnp.logical_and(filled, process_mask)
-
-        # Enforce min_pop: ensure that we pop at least min_pop nodes if they are available.
-        min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= search_result.min_pop, filled)
-
-        # The final mask includes nodes within the threshold OR nodes to meet min_pop.
-        final_process_mask = jnp.logical_or(base_process_mask, min_pop_mask)
+        final_process_mask = _compute_pop_process_mask(
+            min_key,
+            pop_ratio=search_result.pop_ratio,
+            min_pop=search_result.min_pop,
+        )
 
         # Separate the nodes to be returned and re-insert them into the PQ
         return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
@@ -618,23 +689,15 @@ class SearchResult:
             lambda: search_result.priority_queue,
         )
 
-        # 3. Apply pop_ratio to the full batch
-        filled = jnp.isfinite(final_key)
-        # Add a small epsilon for floating point comparisons
-        threshold = min_key[0] * search_result.pop_ratio + 1e-6
-
-        # Identify nodes to process now vs. nodes to return to PQ
-        process_mask = jnp.less_equal(min_key, threshold)
-        base_process_mask = jnp.logical_and(filled, process_mask)
-
-        # Enforce min_pop: ensure that we pop at least min_pop nodes if they are available.
-        min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= search_result.min_pop, filled)
-
-        # The final mask includes nodes within the threshold OR nodes to meet min_pop.
-        final_process_mask = jnp.logical_or(base_process_mask, min_pop_mask)
+        # 3. Apply pop_ratio to the merged/sorted final batch.
+        final_process_mask = _compute_pop_process_mask(
+            final_key,
+            pop_ratio=search_result.pop_ratio,
+            min_pop=search_result.min_pop,
+        )
 
         # Separate the nodes to be returned and re-insert them into the PQ
-        return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
+        return_keys = jnp.where(final_process_mask, jnp.inf, final_key)
         final_costs = jnp.where(final_process_mask, final_costs, jnp.inf)
         search_result.priority_queue = search_result.priority_queue.insert(return_keys, final_val)
 
@@ -714,9 +777,15 @@ class SearchResult:
 
         path.reverse()
 
+        loop_idx = int(path_idx[length - 1]) if length > 0 else -1
         if loop_detected:
-            loop_idx = int(path_idx[length - 1]) if length > 0 else -1
-            print(f"Loop detected in path reconstruction at index {loop_idx}")
+            print(
+                _build_path_reconstruction_diagnostic_message(
+                    loop_detected=True,
+                    loop_idx=loop_idx,
+                    corruption_detected=False,
+                )
+            )
 
         # Check that costs are monotonically increasing to prevent path corruption
         if corruption_detected:
@@ -727,15 +796,15 @@ class SearchResult:
             dists = [float(val) for val in path_dists[:used_len]]
             costs.reverse()
             dists.reverse()
-            print("ERROR: Path corruption detected - costs are not monotonically increasing!")
-            print(f"costs: {costs}")
-            print(f"dists: {dists}")
-            for i in range(1, len(costs)):
-                if costs[i] < costs[i - 1]:
-                    raise AssertionError(
-                        "Path corruption: costs are not monotonically increasing at index "
-                        f"{i}: {costs[i-1]} > {costs[i]}"
-                    )
+            raise AssertionError(
+                _build_path_reconstruction_diagnostic_message(
+                    loop_detected=loop_detected,
+                    loop_idx=loop_idx,
+                    corruption_detected=True,
+                    costs=costs,
+                    dists=dists,
+                )
+            )
 
         return path
 

@@ -9,7 +9,13 @@ from puxle import Puzzle
 from helpers.jax_compile import compile_with_example
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.stars.search_base import Current, LoopState, Parent, SearchResult
+from JAxtar.stars.search_base import (
+    Current,
+    LoopState,
+    Parent,
+    SearchResult,
+    insert_priority_queue_batches,
+)
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
@@ -183,21 +189,8 @@ def _astar_loop_builder(
             neighbour_heur = search_result.dist[vals.hashidx.index]
             return search_result, neighbour_heur
 
-        def _inserted(
-            search_result: SearchResult,
-            vals,
-            neighbour_heur,
-        ):
-            neighbour_key = (cost_weight * vals.cost + neighbour_heur).astype(KEY_DTYPE)
-
-            search_result.priority_queue = search_result.priority_queue.insert(
-                neighbour_key,
-                vals,
-            )
-            return search_result
-
         def _scan(search_result: SearchResult, val):
-            vals, neighbour, new_states_mask, final_process_mask = val
+            vals, neighbour, new_states_mask = val
 
             search_result, neighbour_heur = jax.lax.cond(
                 jnp.any(new_states_mask),
@@ -209,20 +202,19 @@ def _astar_loop_builder(
                 new_states_mask,
             )
 
-            search_result = jax.lax.cond(
-                jnp.any(final_process_mask),
-                _inserted,
-                lambda search_result, *args: search_result,
-                search_result,
-                vals,
-                neighbour_heur,
-            )
-            return search_result, None
+            neighbour_key = (cost_weight * vals.cost + neighbour_heur).astype(KEY_DTYPE)
+            return search_result, neighbour_key
 
-        search_result, _ = jax.lax.scan(
+        search_result, neighbour_keys = jax.lax.scan(
             _scan,
             search_result,
-            (vals, neighbours, new_states_mask, final_process_mask),
+            (vals, neighbours, new_states_mask),
+        )
+        search_result = insert_priority_queue_batches(
+            search_result,
+            neighbour_keys,
+            vals,
+            final_process_mask,
         )
         search_result, current, filled = search_result.pop_full()
         return LoopState(
