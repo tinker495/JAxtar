@@ -2,6 +2,12 @@
 
 The `bi_astar_d` command solves a puzzle using the Bidirectional A\* Deferred search algorithm. This combines bidirectional search (forward and backward) with deferred node expansion. It is useful for reducing the search space in complex problems where node expansion is costly.
 
+## Search Correctness Notes
+
+- Both directions use the same action-major batch insertion helper before deferred popping.
+- Deferred pop selection is based on the merged final key batch, so `pop_ratio` and `min_pop` apply to the actual post-merge frontier.
+- Path reconstruction diagnostics are standardized via `PATH_RECONSTRUCTION_DIAGNOSTIC` payloads.
+
 ## Usage
 
 The basic syntax for the `bi_astar_d` command is:

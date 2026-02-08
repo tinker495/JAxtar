@@ -2,6 +2,12 @@
 
 The `qstar` command solves a puzzle using the Q\* search algorithm. Q\* is a variation of A\* that is particularly useful in reinforcement learning contexts, where a Q-function is learned to estimate the cost-to-go. This implementation is fully JIT-compiled with JAX for high performance on accelerators.
 
+## Search Correctness Notes
+
+- Deferred-style Q* queueing paths use a shared action-major batch insertion helper for consistent PQ insertion behavior across single and bidirectional variants.
+- Deferred pop selection applies `pop_ratio`/`min_pop` to the final merged key batch.
+- Path reconstruction consistency checks raise a structured diagnostic payload when monotonic-cost assumptions are violated.
+
 ## Usage
 
 The basic syntax for the `qstar` command is:

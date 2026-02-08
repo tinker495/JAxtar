@@ -2,6 +2,12 @@
 
 The `astar_d` command solves a puzzle using the A\* Deferred search algorithm. This is a variation of A\* where node expansion is deferred, which can be beneficial in certain search spaces or when using specific types of heuristics (e.g., heavy heuristics). It maintains the optimality guarantees of A\* under consistent heuristics.
 
+## Search Correctness Notes
+
+- Deferred pop selection is computed from the merged final key batch, not from the pre-merge pop batch.
+- Candidate insertion into the priority queue uses a shared action-major batch helper so deferred variants follow identical insertion semantics.
+- Path reconstruction failures raise a structured diagnostic message (`PATH_RECONSTRUCTION_DIAGNOSTIC`) with loop/cost-drop details.
+
 ## Usage
 
 The basic syntax for the `astar_d` command is:

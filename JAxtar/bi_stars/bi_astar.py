@@ -37,7 +37,12 @@ from JAxtar.bi_stars.bi_search_base import (
     initialize_bi_loop_common,
     update_meeting_point,
 )
-from JAxtar.stars.search_base import Current, Parent, SearchResult
+from JAxtar.stars.search_base import (
+    Current,
+    Parent,
+    SearchResult,
+    insert_priority_queue_batches,
+)
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
@@ -282,13 +287,8 @@ def _bi_astar_loop_builder(
             neighbour_heur = sr.dist[vals.hashidx.index]
             return sr, neighbour_heur
 
-        def _inserted(sr: SearchResult, vals, neighbour_heur):
-            neighbour_key = (cost_weight * vals.cost + neighbour_heur).astype(KEY_DTYPE)
-            sr.priority_queue = sr.priority_queue.insert(neighbour_key, vals)
-            return sr
-
         def _scan(sr: SearchResult, val):
-            vals, neighbour, new_states_mask, final_process_mask = val
+            vals, neighbour, new_states_mask = val
             sr, neighbour_heur = jax.lax.cond(
                 jnp.any(new_states_mask),
                 _new_states,
@@ -298,20 +298,19 @@ def _bi_astar_loop_builder(
                 neighbour,
                 new_states_mask,
             )
-            sr = jax.lax.cond(
-                jnp.any(final_process_mask),
-                _inserted,
-                lambda sr, *args: sr,
-                sr,
-                vals,
-                neighbour_heur,
-            )
-            return sr, None
+            neighbour_key = (cost_weight * vals.cost + neighbour_heur).astype(KEY_DTYPE)
+            return sr, neighbour_key
 
-        search_result, _ = jax.lax.scan(
+        search_result, neighbour_keys = jax.lax.scan(
             _scan,
             search_result,
-            (vals, neighbours_reshaped, new_states_mask, final_process_mask_reshaped),
+            (vals, neighbours_reshaped, new_states_mask),
+        )
+        search_result = insert_priority_queue_batches(
+            search_result,
+            neighbour_keys,
+            vals,
+            final_process_mask_reshaped,
         )
 
         # Pop next batch
