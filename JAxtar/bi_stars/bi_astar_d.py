@@ -262,25 +262,33 @@ def _bi_astar_d_loop_builder(
                 sel_idx = sorted_idx[:k]
                 sel_valid = jnp.isfinite(sorted_keys[:k])
 
-                sel_states = flattened_neighbour_look_head[sel_idx]
-                succ_states, succ_costs = puzzle.batched_get_neighbours(
-                    solve_config, sel_states, sel_valid
-                )  # [action, k], [action, k]
-
-                def _scan_backup(carry, inputs):
-                    succ_slice, cost_slice = inputs
-                    h_succ = variable_heuristic_batch_switcher(
-                        heuristic_params, succ_slice, sel_valid
-                    ).astype(KEY_DTYPE)
-                    q_est = h_succ + cost_slice.astype(KEY_DTYPE)
-                    return carry, q_est
-
-                _, q_chunks = jax.lax.scan(_scan_backup, None, (succ_states, succ_costs))
-                v_sel = jnp.min(q_chunks, axis=0).astype(KEY_DTYPE)
-
                 heur_flat = heuristic_vals.flatten()
-                updated = jnp.where(sel_valid, v_sel, heur_flat[sel_idx])
-                heur_flat = heur_flat.at[sel_idx].set(updated)
+
+                def _apply_backup(hflat):
+                    sel_states = flattened_neighbour_look_head[sel_idx]
+                    succ_states, succ_costs = puzzle.batched_get_neighbours(
+                        solve_config, sel_states, sel_valid
+                    )  # [action, k], [action, k]
+
+                    def _scan_backup(carry, inputs):
+                        succ_slice, cost_slice = inputs
+                        h_succ = variable_heuristic_batch_switcher(
+                            heuristic_params, succ_slice, sel_valid
+                        ).astype(KEY_DTYPE)
+                        q_est = h_succ + cost_slice.astype(KEY_DTYPE)
+                        return carry, q_est
+
+                    _, q_chunks = jax.lax.scan(_scan_backup, None, (succ_states, succ_costs))
+                    v_sel = jnp.min(q_chunks, axis=0).astype(KEY_DTYPE)
+                    updated = jnp.where(sel_valid, v_sel, hflat[sel_idx])
+                    return hflat.at[sel_idx].set(updated)
+
+                heur_flat = jax.lax.cond(
+                    jnp.any(sel_valid),
+                    _apply_backup,
+                    lambda hflat: hflat,
+                    heur_flat,
+                )
                 heuristic_vals = heur_flat.reshape((action_size, sr_batch_size))
 
             neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
