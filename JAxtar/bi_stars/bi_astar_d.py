@@ -48,7 +48,6 @@ from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 def _bi_astar_d_loop_builder(
     puzzle: Puzzle,
     heuristic: Heuristic,
-    bi_result_template: BiDirectionalSearchResult,
     batch_size: int = 1024,
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
@@ -63,7 +62,6 @@ def _bi_astar_d_loop_builder(
     Args:
         puzzle: Puzzle instance
         heuristic: Heuristic instance (used for both directions)
-        bi_result_template: Pre-built BiDirectionalSearchResult template
         batch_size: Batch size for parallel processing
         cost_weight: Weight for path cost in f = cost_weight * g + h
         look_ahead_pruning: Enable look-ahead pruning optimization
@@ -248,9 +246,6 @@ def _bi_astar_d_loop_builder(
                 flat_keys = base_keys.flatten()
                 masked_flat_keys = jnp.where(optimal_mask, flat_keys, jnp.inf)
 
-                sort_idx = jnp.arange(flat_size, dtype=jnp.int32)
-                sorted_keys, sorted_idx = jax.lax.sort_key_val(masked_flat_keys, sort_idx)
-
                 k = (
                     sr_batch_size
                     if backward_value_lookahead_k is None
@@ -259,8 +254,9 @@ def _bi_astar_d_loop_builder(
                 # `variable_heuristic_batch_switcher` is built with max_batch_size=batch_size,
                 # so keep the backup batch <= sr_batch_size.
                 k = min(k, sr_batch_size, flat_size)
-                sel_idx = sorted_idx[:k]
-                sel_valid = jnp.isfinite(sorted_keys[:k])
+                # Select only k best (smallest) keys without globally sorting all candidates.
+                topk_neg_keys, sel_idx = jax.lax.top_k(-masked_flat_keys, k)
+                sel_valid = jnp.isfinite(topk_neg_keys)
 
                 heur_flat = heuristic_vals.flatten()
 
@@ -524,22 +520,10 @@ def bi_astar_d_builder(
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_SIZE // denom)
 
-    # Pre-build the search result OUTSIDE of JIT context
-    bi_result_template = build_bi_search_result(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio=pop_ratio,
-        min_pop=min_pop,
-        parant_with_costs=True,
-    )
-
     use_backward_heuristic = not heuristic.is_fixed
     init_loop_state, loop_condition, loop_body = _bi_astar_d_loop_builder(
         puzzle,
         heuristic,
-        bi_result_template,
         batch_size,
         cost_weight,
         look_ahead_pruning,
@@ -566,8 +550,20 @@ def bi_astar_d_builder(
         else:
             heuristic_params_backward = heuristic_params_forward
 
+        # Build per-call search storage inside the jitted function to avoid
+        # capturing very large templates as compile-time constants.
+        bi_result = build_bi_search_result(
+            statecls,
+            batch_size,
+            max_nodes,
+            action_size,
+            pop_ratio=pop_ratio,
+            min_pop=min_pop,
+            parant_with_costs=True,
+        )
+
         loop_state = init_loop_state(
-            bi_result_template,
+            bi_result,
             solve_config,
             inverse_solveconfig,
             start,
