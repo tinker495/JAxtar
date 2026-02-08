@@ -32,6 +32,7 @@ from JAxtar.annotate import (
     HASH_SIZE_MULTIPLIER,
     KEY_DTYPE,
 )
+from JAxtar.utils.array_ops import stable_partition_three
 
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
@@ -152,6 +153,54 @@ def sort_and_pack_action_candidates(
     return jax.lax.cond(
         jnp.any(flat_mask),
         _sort,
+        _empty,
+        operand=None,
+    )
+
+
+def packed_masked_state_eval(
+    flat_states: Puzzle.State,
+    flat_compute_mask: chex.Array,
+    action_size: int,
+    batch_size: int,
+    eval_chunk_fn,
+    *,
+    dtype=KEY_DTYPE,
+) -> chex.Array:
+    """Evaluate only masked states via packed chunks and restore original order."""
+    flat_size = flat_compute_mask.shape[0]
+
+    def _compute(_):
+        sorted_indices = stable_partition_three(
+            flat_compute_mask,
+            jnp.zeros_like(flat_compute_mask, dtype=jnp.bool_),
+        )
+        sorted_states = flat_states[sorted_indices]
+        sorted_mask = flat_compute_mask[sorted_indices]
+        sorted_states_chunked = sorted_states.reshape((action_size, batch_size))
+        sorted_mask_chunked = sorted_mask.reshape((action_size, batch_size))
+
+        def _scan(carry, inputs):
+            states_slice, compute_mask = inputs
+            values = eval_chunk_fn(states_slice, compute_mask)
+            return carry, values
+
+        _, val_chunks = jax.lax.scan(
+            _scan,
+            None,
+            (sorted_states_chunked, sorted_mask_chunked),
+        )
+
+        sorted_vals = val_chunks.reshape((flat_size,)).astype(dtype)
+        flat_vals = jnp.empty((flat_size,), dtype=dtype).at[sorted_indices].set(sorted_vals)
+        return flat_vals.reshape((action_size, batch_size))
+
+    def _empty(_):
+        return jnp.zeros((action_size, batch_size), dtype=dtype)
+
+    return jax.lax.cond(
+        jnp.any(flat_compute_mask),
+        _compute,
         _empty,
         operand=None,
     )

@@ -17,9 +17,9 @@ from JAxtar.stars.search_base import (
     finalize_search_result,
     insert_priority_queue_batches,
     loop_continue_if_not_solved,
+    packed_masked_state_eval,
     sort_and_pack_action_candidates,
 )
-from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
@@ -99,7 +99,6 @@ def _astar_d_loop_builder(
 
         action_size = search_result.action_size
         sr_batch_size = search_result.batch_size
-        flat_size = action_size * sr_batch_size
         idx_tiles = xnp.tile(hash_idx, (action_size, 1))  # [action_size, batch_size, ...]
         action = jnp.tile(
             jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
@@ -153,42 +152,15 @@ def _astar_d_loop_builder(
             flat_states = neighbour_look_a_head.flatten()
             flat_need_compute = need_compute.flatten()
 
-            def _compute_new_heuristics(_):
-                # Stable sort so `need_compute=True` comes first (key False), preserving order.
-                sorted_indices = stable_partition_three(
-                    flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
-                )
-                sorted_states = flat_states[sorted_indices]
-                sorted_mask = flat_need_compute[sorted_indices]
-
-                # `variable_heuristic_batch_switcher` uses max_batch_size=batch_size,
-                # so evaluate in action-major chunks of `batch_size`.
-                sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-                sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-                def _calc_heuristic_chunk(carry, input_slice):
-                    states_slice, compute_mask = input_slice
-                    h_val = variable_heuristic_batch_switcher(
-                        heuristic_parameters, states_slice, compute_mask
-                    )
-                    return carry, h_val
-
-                _, h_val_chunks = jax.lax.scan(
-                    _calc_heuristic_chunk,
-                    None,
-                    (sorted_states_chunked, sorted_mask_chunked),
-                )  # [action_size, batch_size]
-
-                h_val_sorted = h_val_chunks.reshape(-1)  # [action_size * batch_size]
-                flat_h_val = jnp.empty((flat_size,), dtype=h_val_sorted.dtype)
-                flat_h_val = flat_h_val.at[sorted_indices].set(h_val_sorted)
-                return flat_h_val.reshape(action_size, sr_batch_size).astype(KEY_DTYPE)
-
-            computed_heuristic_vals = jax.lax.cond(
-                jnp.any(flat_need_compute),
-                _compute_new_heuristics,
-                lambda _: jnp.zeros((action_size, sr_batch_size), dtype=KEY_DTYPE),
-                operand=None,
+            computed_heuristic_vals = packed_masked_state_eval(
+                flat_states,
+                flat_need_compute,
+                action_size,
+                sr_batch_size,
+                lambda states_slice, compute_mask: variable_heuristic_batch_switcher(
+                    heuristic_parameters, states_slice, compute_mask
+                ),
+                dtype=KEY_DTYPE,
             )
 
             heuristic_vals = jnp.where(
