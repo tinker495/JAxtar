@@ -479,6 +479,7 @@ def bi_astar_d_builder(
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
     terminate_on_first_solution: bool = True,
+    split_node_budget: bool = True,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
@@ -491,7 +492,8 @@ def bi_astar_d_builder(
         puzzle: Puzzle instance (must support batched_get_inverse_neighbours)
         heuristic: Heuristic instance
         batch_size: Number of states to process in parallel per direction
-        max_nodes: Maximum number of nodes to explore per direction
+        max_nodes: Maximum node budget for the search.
+            If `split_node_budget=True`, this budget is split across forward/backward.
         pop_ratio: Ratio controlling beam width
         cost_weight: Weight for path cost in f = cost_weight * g + h
         show_compile_time: If True, displays compilation time
@@ -499,6 +501,8 @@ def bi_astar_d_builder(
             Note: Bidirectional deferred search requires look_ahead_pruning=True
             for correct termination condition. If False is passed, it will be
             forced to True with a warning.
+        split_node_budget: If True, split `max_nodes` equally across two directions
+            to reduce peak memory usage and avoid OOM in large-node settings.
 
     Returns:
         A JIT-compiled function that performs bidirectional A* deferred search
@@ -555,7 +559,7 @@ def bi_astar_d_builder(
         bi_result = build_bi_search_result(
             statecls,
             batch_size,
-            max_nodes,
+            max(1, max_nodes // 2) if split_node_budget else max_nodes,
             action_size,
             pop_ratio=pop_ratio,
             min_pop=min_pop,
