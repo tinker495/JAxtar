@@ -34,7 +34,12 @@ from JAxtar.bi_stars.bi_search_base import (
     update_meeting_point,
     update_meeting_point_best_only_deferred,
 )
-from JAxtar.stars.search_base import Current, Parant_with_Costs, Parent, SearchResult
+from JAxtar.stars.search_base import (
+    Current,
+    Parant_with_Costs,
+    Parent,
+    insert_priority_queue_batches,
+)
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
@@ -355,26 +360,11 @@ def _bi_astar_d_loop_builder(
         vals_reshaped = sorted_vals.reshape((action_size, sr_batch_size))
         optimal_mask_reshaped = sorted_optimal_mask.reshape(action_size, sr_batch_size)
 
-        def _insert(sr: SearchResult, keys, vals):
-            sr.priority_queue = sr.priority_queue.insert(keys, vals)
-            return sr
-
-        def _scan(sr: SearchResult, val):
-            keys, vals, mask = val
-            sr = jax.lax.cond(
-                jnp.any(mask),
-                _insert,
-                lambda sr, *args: sr,
-                sr,
-                keys,
-                vals,
-            )
-            return sr, None
-
-        search_result, _ = jax.lax.scan(
-            _scan,
+        search_result = insert_priority_queue_batches(
             search_result,
-            (neighbour_keys_reshaped, vals_reshaped, optimal_mask_reshaped),
+            neighbour_keys_reshaped,
+            vals_reshaped,
+            optimal_mask_reshaped,
         )
 
         # Pop next batch with states

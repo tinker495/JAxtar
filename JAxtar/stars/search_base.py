@@ -83,6 +83,38 @@ def _compute_pop_process_mask(
     return jnp.logical_or(base_process_mask, min_pop_mask)
 
 
+def insert_priority_queue_batches(
+    search_result: "SearchResult",
+    keys,
+    vals,
+    masks: chex.Array,
+) -> "SearchResult":
+    """Insert action-major candidate batches into the priority queue.
+
+    This is shared by deferred variants (single and bidirectional) to keep
+    insertion semantics identical before calling `pop_full_with_actions`.
+    """
+
+    def _insert(sr: "SearchResult", key_row, val_row):
+        sr.priority_queue = sr.priority_queue.insert(key_row, val_row)
+        return sr
+
+    def _scan(sr: "SearchResult", row):
+        key_row, val_row, mask_row = row
+        sr = jax.lax.cond(
+            jnp.any(mask_row),
+            _insert,
+            lambda current_sr, *args: current_sr,
+            sr,
+            key_row,
+            val_row,
+        )
+        return sr, None
+
+    search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
+    return search_result
+
+
 def print_states(states: Xtructurable, costs: chex.Array, dists: chex.Array, key: chex.Array):
     print(states)
     print(f"costs: {costs}")
