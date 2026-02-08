@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -44,6 +44,8 @@ class SearchOptions(BaseModel):
 
 
 class EvalOptions(BaseModel):
+    DEFAULT_NUM_EVAL_WITHOUT_BENCHMARK: ClassVar[int] = 200
+
     batch_size: Union[int, List[int]] = Field(
         default=[10000], description="Batch size for search. Can be a single int or a list of ints."
     )
@@ -83,6 +85,12 @@ class EvalOptions(BaseModel):
 
     def get_max_node_size(self, batch_size: int) -> int:
         return self.max_node_size // batch_size * batch_size
+
+    def resolve_for_eval_setup(self, *, has_benchmark: bool) -> "EvalOptions":
+        """Apply context-dependent defaults before evaluation setup."""
+        if has_benchmark or self.num_eval >= 0:
+            return self
+        return self.model_copy(update={"num_eval": self.DEFAULT_NUM_EVAL_WITHOUT_BENCHMARK})
 
     def light_eval(self, max_eval: int = 20) -> "EvalOptions":
         capped_eval = min(max_eval, self.num_eval)

@@ -443,7 +443,9 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
                         else:
                             raise click.BadParameter(f"Invalid pop_ratio value: {pop_ratio_str}")
 
-            eval_opts = base_eval_options.model_copy(update=overrides)
+            eval_opts = base_eval_options.model_copy(update=overrides).resolve_for_eval_setup(
+                has_benchmark=kwargs.get("benchmark") is not None
+            )
             kwargs["eval_options"] = eval_opts
             return func(*args, **kwargs)
 
