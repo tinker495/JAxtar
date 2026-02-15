@@ -323,77 +323,99 @@ class IDSearchBase:
         """
         n_push = jnp.sum(valid_mask.astype(jnp.int32))
 
-        perm = stable_partition_three(valid_mask, jnp.zeros_like(valid_mask, dtype=jnp.bool_))
+        def _empty(sr: "IDSearchBase") -> "IDSearchBase":
+            return sr
 
-        states_sorted = xnp.take(states, perm, axis=0)
-        costs_sorted = costs[perm]
-        depths_sorted = depths[perm]
-        actions_sorted = actions[perm]
-        parent_indices_sorted = parent_indices[perm]
-        root_indices_sorted = root_indices[perm]
+        def _dense(sr: "IDSearchBase") -> "IDSearchBase":
+            return sr.push_packed_batch(
+                states=states,
+                costs=costs,
+                depths=depths,
+                actions=actions,
+                parent_indices=parent_indices,
+                root_indices=root_indices,
+                trails=trails,
+                action_histories=action_histories,
+                n_push=n_push,
+            )
 
-        current_ptr = self.stack.size.astype(jnp.int32)
-        capacity = self.stack.max_size
+        def _sparse(sr: "IDSearchBase") -> "IDSearchBase":
+            perm = stable_partition_three(valid_mask, jnp.zeros_like(valid_mask, dtype=jnp.bool_))
 
-        safe_n_push = jnp.minimum(n_push, capacity - current_ptr)
+            states_sorted = xnp.take(states, perm, axis=0)
+            costs_sorted = costs[perm]
+            depths_sorted = depths[perm]
+            actions_sorted = actions[perm]
+            parent_indices_sorted = parent_indices[perm]
+            root_indices_sorted = root_indices[perm]
 
-        trace_base = self.trace_size
-        batch_len = valid_mask.shape[0]
-        trace_ids_sorted = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
-        valid_sorted = valid_mask[perm]
-        push_mask_sorted = jnp.logical_and(
-            valid_sorted, jnp.arange(batch_len, dtype=jnp.int32) < safe_n_push
-        )
-        trace_ids_sorted = jnp.where(push_mask_sorted, trace_ids_sorted, -1)
+            current_ptr = sr.stack.size.astype(jnp.int32)
+            capacity = sr.stack.max_size
+            safe_n_push = jnp.minimum(n_push, capacity - current_ptr)
 
-        items_sorted = self.ItemCls(
-            state=states_sorted,
-            cost=costs_sorted,
-            depth=depths_sorted,
-            action=actions_sorted,
-            parent_index=parent_indices_sorted,
-            root_index=root_indices_sorted,
-            trace_index=trace_ids_sorted,
-            trail=xnp.take(trails, perm, axis=0),
-            action_history=action_histories[perm],
-        )
+            trace_base = sr.trace_size
+            batch_len = valid_mask.shape[0]
+            trace_ids_sorted = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
+            valid_sorted = valid_mask[perm]
+            push_mask_sorted = jnp.logical_and(
+                valid_sorted, jnp.arange(batch_len, dtype=jnp.int32) < safe_n_push
+            )
+            trace_ids_sorted = jnp.where(push_mask_sorted, trace_ids_sorted, -1)
 
-        trace_parent_updates = parent_indices_sorted
-        trace_action_updates = actions_sorted
-        trace_root_updates = root_indices_sorted
-        trace_mask = trace_ids_sorted >= 0
+            items_sorted = sr.ItemCls(
+                state=states_sorted,
+                cost=costs_sorted,
+                depth=depths_sorted,
+                action=actions_sorted,
+                parent_index=parent_indices_sorted,
+                root_index=root_indices_sorted,
+                trace_index=trace_ids_sorted,
+                trail=xnp.take(trails, perm, axis=0),
+                action_history=action_histories[perm],
+            )
 
-        def _update_leaf(stack_arr, update_arr):
-            # Explicitly use int32 indices
-            start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)
-            return jax.lax.dynamic_update_slice(stack_arr, update_arr, start_indices)
+            trace_parent_updates = parent_indices_sorted
+            trace_action_updates = actions_sorted
+            trace_root_updates = root_indices_sorted
+            trace_mask = trace_ids_sorted >= 0
 
-        new_val_store = jax.tree_util.tree_map(_update_leaf, self.stack.val_store, items_sorted)
+            def _update_leaf(stack_arr, update_arr):
+                # Explicitly use int32 indices
+                start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)
+                return jax.lax.dynamic_update_slice(stack_arr, update_arr, start_indices)
 
-        trace_ids_dense = jnp.where(trace_mask, trace_ids_sorted, 0)
-        new_trace_parent = xnp.update_on_condition(
-            self.trace_parent, trace_ids_dense, trace_mask, trace_parent_updates
-        )
-        new_trace_action = xnp.update_on_condition(
-            self.trace_action, trace_ids_dense, trace_mask, trace_action_updates
-        )
-        new_trace_root = xnp.update_on_condition(
-            self.trace_root, trace_ids_dense, trace_mask, trace_root_updates
-        )
+            new_val_store = jax.tree_util.tree_map(_update_leaf, sr.stack.val_store, items_sorted)
 
-        new_ptr = (current_ptr + safe_n_push).astype(self.stack.size.dtype)
-        new_generated_count = self.generated_count + safe_n_push
-        new_trace_size = self.trace_size + safe_n_push
+            trace_ids_dense = jnp.where(trace_mask, trace_ids_sorted, 0)
+            new_trace_parent = xnp.update_on_condition(
+                sr.trace_parent, trace_ids_dense, trace_mask, trace_parent_updates
+            )
+            new_trace_action = xnp.update_on_condition(
+                sr.trace_action, trace_ids_dense, trace_mask, trace_action_updates
+            )
+            new_trace_root = xnp.update_on_condition(
+                sr.trace_root, trace_ids_dense, trace_mask, trace_root_updates
+            )
 
-        new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
+            new_ptr = (current_ptr + safe_n_push).astype(sr.stack.size.dtype)
+            new_generated_count = sr.generated_count + safe_n_push
+            new_trace_size = sr.trace_size + safe_n_push
+            new_stack = sr.stack.replace(val_store=new_val_store, size=new_ptr)
 
-        return self.replace(
-            stack=new_stack,
-            generated_count=new_generated_count,
-            trace_parent=new_trace_parent,
-            trace_action=new_trace_action,
-            trace_root=new_trace_root,
-            trace_size=new_trace_size,
+            return sr.replace(
+                stack=new_stack,
+                generated_count=new_generated_count,
+                trace_parent=new_trace_parent,
+                trace_action=new_trace_action,
+                trace_root=new_trace_root,
+                trace_size=new_trace_size,
+            )
+
+        return jax.lax.cond(
+            n_push > 0,
+            lambda sr: jax.lax.cond(jnp.all(valid_mask), _dense, _sparse, sr),
+            _empty,
+            self,
         )
 
     def push_packed_batch(
@@ -553,17 +575,6 @@ class IDSearchBase:
         active_bound = self.bound
         keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
 
-        # Compact valid nodes
-        packed_batch, packed_valid, _, packed_idx = compact_by_valid(node_batch, keep_mask)
-        packed_fs = jnp.where(packed_valid, fs[packed_idx], jnp.inf)
-
-        # Sort by f-value descending (worst -> best) for LIFO stack order
-        f_key = jnp.where(packed_valid, -packed_fs, jnp.inf)
-        perm = jnp.argsort(f_key)
-        ordered = xnp.take(packed_batch, perm, axis=0)
-
-        n_push = jnp.sum(packed_valid)
-
         # Optionally update next_bound from pruned nodes
         sr = self
         if update_next_bound:
@@ -573,16 +584,39 @@ class IDSearchBase:
             new_next_bound = jnp.minimum(self.next_bound, min_pruned_f).astype(KEY_DTYPE)
             sr = self.replace(next_bound=new_next_bound)
 
-        return sr.push_packed_batch(
-            ordered.state,
-            ordered.cost,
-            ordered.depth,
-            ordered.action,
-            ordered.parent_index,
-            ordered.root_index,
-            ordered.trail,
-            ordered.action_history,
-            n_push,
+        def _push_nonempty(sr_curr: "IDSearchBase") -> "IDSearchBase":
+            # Compact valid nodes
+            packed_batch, packed_valid, _, packed_idx = compact_by_valid(node_batch, keep_mask)
+            packed_fs = jax.lax.cond(
+                jnp.all(keep_mask),
+                lambda _: fs,
+                lambda _: jnp.where(packed_valid, fs[packed_idx], jnp.inf),
+                operand=None,
+            )
+
+            # Sort by f-value descending (worst -> best) for LIFO stack order
+            f_key = jnp.where(packed_valid, -packed_fs, jnp.inf)
+            perm = jnp.argsort(f_key)
+            ordered = xnp.take(packed_batch, perm, axis=0)
+            n_push = jnp.sum(packed_valid)
+
+            return sr_curr.push_packed_batch(
+                ordered.state,
+                ordered.cost,
+                ordered.depth,
+                ordered.action,
+                ordered.parent_index,
+                ordered.root_index,
+                ordered.trail,
+                ordered.action_history,
+                n_push,
+            )
+
+        return jax.lax.cond(
+            jnp.any(keep_mask),
+            _push_nonempty,
+            lambda sr_curr: sr_curr,
+            sr,
         )
 
     def mark_solved(
