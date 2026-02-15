@@ -16,7 +16,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, HashIdx, base_dataclass, xtructure_dataclass
 
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.annotate import ACTION_DTYPE, HASH_SIZE_MULTIPLIER, KEY_DTYPE
 from JAxtar.stars.search_base import Current, Parent, SearchResult
 
 
@@ -98,13 +98,17 @@ def build_bi_search_result(
     pop_ratio: float = jnp.inf,
     min_pop: int = 1,
     parant_with_costs: bool = False,
+    hash_size_multiplier: int = HASH_SIZE_MULTIPLIER,
 ) -> BiDirectionalSearchResult:
     """
     Creates a new BiDirectionalSearchResult with initialized forward and backward
     SearchResult instances.
 
-    NOTE: This function should be called OUTSIDE of JIT-traced context,
-    typically in the builder function before creating the JIT-compiled search.
+    NOTE:
+    - This helper can be called from a builder before JIT and also from inside
+      a jitted search function, depending on memory/constant-capture tradeoffs.
+    - Bidirectional builders may construct this per-call to avoid capturing large
+      templates as compile-time constants.
 
     Args:
         statecls: The state class for the puzzle
@@ -114,6 +118,7 @@ def build_bi_search_result(
         pop_ratio: Controls beam width
         min_pop: Minimum nodes to pop per batch
         parant_with_costs: Whether to use Parant_with_Costs for PQ values
+        hash_size_multiplier: Hashtable size multiplier for each direction
 
     Returns:
         BiDirectionalSearchResult with initialized data structures
@@ -129,6 +134,7 @@ def build_bi_search_result(
         pop_ratio,
         min_pop,
         parant_with_costs=parant_with_costs,
+        hash_size_multiplier=hash_size_multiplier,
     )
     backward = SearchResult.build(
         statecls,
@@ -138,6 +144,7 @@ def build_bi_search_result(
         pop_ratio,
         min_pop,
         parant_with_costs=parant_with_costs,
+        hash_size_multiplier=hash_size_multiplier,
     )
 
     # Initialize meeting point as not found with infinite cost

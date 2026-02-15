@@ -45,11 +45,12 @@ from JAxtar.stars.search_base import (
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
+Q_EVAL_CHUNK_SIZE = 2048
+
 
 def _bi_qstar_loop_builder(
     puzzle: Puzzle,
     q_fn: QFunction,
-    bi_result_template: BiDirectionalSearchResult,
     batch_size: int = 1024,
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
@@ -64,7 +65,6 @@ def _bi_qstar_loop_builder(
     Args:
         puzzle: Puzzle instance
         q_fn: QFunction instance (used for both directions)
-        bi_result_template: Pre-built BiDirectionalSearchResult template
         batch_size: Batch size for parallel processing
         cost_weight: Weight for path cost in f = cost_weight * g + Q(s,a)
         look_ahead_pruning: Enable look-ahead pruning optimization
@@ -77,12 +77,36 @@ def _bi_qstar_loop_builder(
 
     dist_sign = -1.0 if pessimistic_update else 1.0
 
+    q_eval_chunk_size = min(batch_size, Q_EVAL_CHUNK_SIZE)
+    q_eval_min_batch = min(MIN_BATCH_SIZE, q_eval_chunk_size)
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
+        max_batch_size=q_eval_chunk_size,
+        min_batch_size=q_eval_min_batch,
         pad_value=jnp.inf,
     )
+    q_eval_num_chunks = (batch_size + q_eval_chunk_size - 1) // q_eval_chunk_size
+    q_eval_padded_size = q_eval_num_chunks * q_eval_chunk_size
+
+    def _batched_q_eval(q_params: Any, states: Puzzle.State, filled: chex.Array) -> chex.Array:
+        """Evaluate Q-values in fixed chunks to limit peak memory."""
+        if q_eval_chunk_size == batch_size:
+            return variable_q_batch_switcher(q_params, states, filled)
+
+        pad_size = q_eval_padded_size - batch_size
+        padded_states = xnp.pad(states, (0, pad_size))
+        padded_filled = jnp.pad(filled, (0, pad_size), constant_values=False)
+        states_chunked = padded_states.reshape((q_eval_num_chunks, q_eval_chunk_size))
+        filled_chunked = padded_filled.reshape((q_eval_num_chunks, q_eval_chunk_size))
+
+        def _scan(_, inputs):
+            states_slice, compute_mask = inputs
+            q_vals = variable_q_batch_switcher(q_params, states_slice, compute_mask)
+            return None, q_vals
+
+        _, q_chunks = jax.lax.scan(_scan, None, (states_chunked, filled_chunked))
+        q_vals = q_chunks.reshape((q_eval_padded_size, action_size))
+        return q_vals[:batch_size]
 
     def init_loop_state(
         bi_result: BiDirectionalSearchResult,
@@ -230,7 +254,7 @@ def _bi_qstar_loop_builder(
                 action_size,
                 sr_batch_size,
                 lambda states_slice, compute_mask: jnp.min(
-                    variable_q_batch_switcher(q_params, states_slice, compute_mask),
+                    _batched_q_eval(q_params, states_slice, compute_mask),
                     axis=-1,
                 ),
                 dtype=KEY_DTYPE,
@@ -299,7 +323,7 @@ def _bi_qstar_loop_builder(
         else:
             if use_q:
                 # Forward direction: Q(s, a) on parent states.
-                q_vals = variable_q_batch_switcher(q_params, states, filled)
+                q_vals = _batched_q_eval(q_params, states, filled)
                 q_vals = q_vals.transpose().astype(KEY_DTYPE)  # [action_size, batch_size]
 
                 if can_optimize_bwd:
@@ -575,17 +599,6 @@ def bi_qstar_builder(
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_SIZE // denom)
 
-    # Pre-build the search result OUTSIDE of JIT context
-    bi_result_template = build_bi_search_result(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio=pop_ratio,
-        min_pop=min_pop,
-        parant_with_costs=True,
-    )
-
     import warnings
 
     backward_mode = backward_mode.strip().lower()
@@ -616,7 +629,6 @@ def bi_qstar_builder(
     init_loop_state, loop_condition, loop_body = _bi_qstar_loop_builder(
         puzzle,
         q_fn,
-        bi_result_template,
         batch_size,
         cost_weight,
         look_ahead_pruning,
@@ -643,8 +655,23 @@ def bi_qstar_builder(
         else:
             q_params_backward = q_params_forward
 
+        # Build per-call search storage inside the jitted function to avoid
+        # capturing large templates as compile-time constants.
+        bi_result = build_bi_search_result(
+            statecls,
+            batch_size,
+            max_nodes,
+            action_size,
+            pop_ratio=pop_ratio,
+            min_pop=min_pop,
+            parant_with_costs=True,
+            # Q* keeps larger deferred queues; a tighter hash-table multiplier
+            # lowers peak memory without changing the per-direction max_nodes budget.
+            hash_size_multiplier=1,
+        )
+
         loop_state = init_loop_state(
-            bi_result_template,
+            bi_result,
             solve_config,
             inverse_solveconfig,
             start,

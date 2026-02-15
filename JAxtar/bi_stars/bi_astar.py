@@ -51,7 +51,6 @@ from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 def _bi_astar_loop_builder(
     puzzle: Puzzle,
     heuristic: Heuristic,
-    bi_result_template: BiDirectionalSearchResult,
     batch_size: int = 1024,
     cost_weight: float = 1.0 - 1e-6,
     use_backward_heuristic: bool = True,
@@ -63,7 +62,6 @@ def _bi_astar_loop_builder(
     Args:
         puzzle: Puzzle instance
         heuristic: Heuristic instance (used for both directions)
-        bi_result_template: Pre-built BiDirectionalSearchResult template
         batch_size: Batch size for parallel processing
         cost_weight: Weight for path cost in f = cost_weight * g + h
 
@@ -426,22 +424,10 @@ def bi_astar_builder(
     denom = max(1, puzzle.action_size // 2)
     min_pop = max(1, MIN_BATCH_SIZE // denom)
 
-    # Pre-build the search result OUTSIDE of JIT context
-    bi_result_template = build_bi_search_result(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio=pop_ratio,
-        min_pop=min_pop,
-        parant_with_costs=False,
-    )
-
     use_backward_heuristic = not heuristic.is_fixed
     init_loop_state, loop_condition, loop_body = _bi_astar_loop_builder(
         puzzle,
         heuristic,
-        bi_result_template,
         batch_size,
         cost_weight,
         use_backward_heuristic=use_backward_heuristic,
@@ -476,8 +462,20 @@ def bi_astar_builder(
         else:
             heuristic_params_backward = heuristic_params_forward
 
+        # Build per-call search storage inside the jitted function to avoid
+        # capturing large templates as compile-time constants.
+        bi_result = build_bi_search_result(
+            statecls,
+            batch_size,
+            max_nodes,
+            action_size,
+            pop_ratio=pop_ratio,
+            min_pop=min_pop,
+            parant_with_costs=False,
+        )
+
         loop_state = init_loop_state(
-            bi_result_template,
+            bi_result,
             solve_config,
             inverse_solveconfig,
             start,

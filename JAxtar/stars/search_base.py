@@ -453,7 +453,11 @@ class SearchResult:
     pop_count: chex.Array  # counter for pop_full calls
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3), static_argnames=("parant_with_costs",))
+    @partial(
+        jax.jit,
+        static_argnums=(0, 1, 2, 3),
+        static_argnames=("parant_with_costs", "hash_size_multiplier"),
+    )
     def build(
         statecls: Puzzle.State,
         batch_size: int,
@@ -463,6 +467,7 @@ class SearchResult:
         min_pop: int = 1,
         seed=42,
         parant_with_costs: bool = False,
+        hash_size_multiplier: int = HASH_SIZE_MULTIPLIER,
     ):
         """
         Creates a new instance of SearchResult with initialized data structures.
@@ -482,13 +487,15 @@ class SearchResult:
                                  available nodes in the batch.
             min_pop (int): Minimum number of nodes to pop from the priority queue.
             seed (int): Random seed for hash function initialization
+            hash_size_multiplier (int): Hashtable size multiplier controlling
+                over-allocation factor for collision handling.
 
         Returns:
             SearchResult: A new instance with initialized data structures
         """
         # Initialize the hash table for state storage
         hashtable: HashTable = HashTable.build(
-            statecls, seed, max_nodes, CUCKOO_TABLE_N, HASH_SIZE_MULTIPLIER
+            statecls, seed, max_nodes, CUCKOO_TABLE_N, hash_size_multiplier
         )
 
         if parant_with_costs:
