@@ -329,14 +329,7 @@ def apply_selected_candidates(
     sr_max_depth = search_result.max_depth
 
     parent_trace_ids = search_result.active_trace[selected_parents]
-
-    selected_costs = jnp.where(selected_valid, selected_costs, jnp.inf)
-    selected_dists = jnp.where(selected_valid, selected_dists, jnp.inf)
-    selected_scores = jnp.where(selected_valid, selected_scores, jnp.inf)
     selected_actions = selected_actions.astype(ACTION_DTYPE)
-
-    invalid_parent = jnp.full_like(parent_trace_ids, TRACE_INVALID)
-    parent_trace_ids = jnp.where(selected_valid, parent_trace_ids, invalid_parent)
 
     next_depth_idx = jnp.minimum(search_result.depth + 1, sr_max_depth)
     trace_offset = next_depth_idx.astype(TRACE_INDEX_DTYPE) * jnp.asarray(
@@ -345,14 +338,67 @@ def apply_selected_candidates(
     slot_indices = jnp.arange(sr_beam_width, dtype=TRACE_INDEX_DTYPE)
     next_trace_ids = trace_offset + slot_indices
 
-    trace_actions = jnp.where(
-        selected_valid,
-        selected_actions,
-        jnp.full_like(selected_actions, ACTION_PAD),
-    )
-    depth_fill = jnp.full((sr_beam_width,), next_depth_idx, dtype=jnp.int32)
-    depth_default = -jnp.ones((sr_beam_width,), dtype=jnp.int32)
-    trace_depths = jnp.where(selected_valid, depth_fill, depth_default)
+    all_valid = jnp.all(selected_valid)
+
+    def _dense(_):
+        depth_fill = jnp.full((sr_beam_width,), next_depth_idx, dtype=jnp.int32)
+        generated_delta = jnp.asarray(sr_beam_width, dtype=jnp.int32)
+        return (
+            selected_costs,
+            selected_dists,
+            selected_scores,
+            parent_trace_ids,
+            selected_actions,
+            depth_fill,
+            next_trace_ids,
+            selected_parents,
+            generated_delta,
+        )
+
+    def _sparse(_):
+        masked_costs = jnp.where(selected_valid, selected_costs, jnp.inf)
+        masked_dists = jnp.where(selected_valid, selected_dists, jnp.inf)
+        masked_scores = jnp.where(selected_valid, selected_scores, jnp.inf)
+
+        invalid_parent = jnp.full_like(parent_trace_ids, TRACE_INVALID)
+        masked_parent_trace = jnp.where(selected_valid, parent_trace_ids, invalid_parent)
+
+        trace_actions = jnp.where(
+            selected_valid,
+            selected_actions,
+            jnp.full_like(selected_actions, ACTION_PAD),
+        )
+        depth_fill = jnp.full((sr_beam_width,), next_depth_idx, dtype=jnp.int32)
+        depth_default = -jnp.ones((sr_beam_width,), dtype=jnp.int32)
+        trace_depths = jnp.where(selected_valid, depth_fill, depth_default)
+
+        invalid_trace = jnp.full_like(next_trace_ids, TRACE_INVALID)
+        next_active_trace = jnp.where(selected_valid, next_trace_ids, invalid_trace)
+        parent_index = jnp.where(selected_valid, selected_parents, -jnp.ones_like(selected_parents))
+        generated_delta = selected_valid.astype(jnp.int32).sum()
+        return (
+            masked_costs,
+            masked_dists,
+            masked_scores,
+            masked_parent_trace,
+            trace_actions,
+            trace_depths,
+            next_active_trace,
+            parent_index,
+            generated_delta,
+        )
+
+    (
+        selected_costs,
+        selected_dists,
+        selected_scores,
+        parent_trace_ids,
+        trace_actions,
+        trace_depths,
+        next_active_trace,
+        parent_index,
+        selected_count,
+    ) = jax.lax.cond(all_valid, _dense, _sparse, operand=None)
 
     search_result.trace_parent = search_result.trace_parent.at[next_trace_ids].set(parent_trace_ids)
     search_result.trace_action = search_result.trace_action.at[next_trace_ids].set(trace_actions)
@@ -361,18 +407,12 @@ def apply_selected_candidates(
     search_result.trace_depth = search_result.trace_depth.at[next_trace_ids].set(trace_depths)
     search_result.trace_state = search_result.trace_state.at[next_trace_ids].set(selected_states)
 
-    invalid_trace = jnp.full_like(next_trace_ids, TRACE_INVALID)
-    next_active_trace = jnp.where(selected_valid, next_trace_ids, invalid_trace)
-
     search_result.beam = selected_states
     search_result.cost = selected_costs
     search_result.dist = selected_dists
     search_result.scores = selected_scores
-    search_result.parent_index = jnp.where(
-        selected_valid, selected_parents, -jnp.ones_like(selected_parents)
-    )
+    search_result.parent_index = parent_index
     search_result.active_trace = next_active_trace
-    selected_count = selected_valid.astype(jnp.int32).sum()
     search_result.generated_size = search_result.generated_size + selected_count
     search_result.depth = search_result.depth + 1
 

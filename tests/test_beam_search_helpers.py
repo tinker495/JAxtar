@@ -101,3 +101,44 @@ def test_apply_selected_candidates_updates_trace_and_masks_invalid_slots():
 
     assert jax.device_get(updated.cost).tolist() == [3.0, jnp.inf, 5.0]
     assert jax.device_get(updated.parent_index).tolist() == [1, -1, 1]
+
+
+def test_apply_selected_candidates_dense_valid_preserves_dense_outputs():
+    result = _DummyBeamResult(
+        depth=1,
+        max_depth=4,
+        beam=[10, 11, 12],
+        cost=[1.0, 2.0, 3.0],
+    )
+    result.generated_size = jnp.array(5, dtype=jnp.int32)
+    result.active_trace = jnp.array([3, 4, 5], dtype=jnp.uint32)
+
+    trace_capacity = (result.max_depth + 1) * result.beam.shape[0]
+    result.trace_parent = jnp.full((trace_capacity,), TRACE_INVALID, dtype=jnp.uint32)
+    result.trace_action = jnp.full((trace_capacity,), 255, dtype=jnp.uint8)
+    result.trace_cost = jnp.full((trace_capacity,), jnp.inf, dtype=jnp.float32)
+    result.trace_dist = jnp.full((trace_capacity,), jnp.inf, dtype=jnp.float32)
+    result.trace_depth = jnp.full((trace_capacity,), -1, dtype=jnp.int32)
+    result.trace_state = jnp.full((trace_capacity,), -1, dtype=jnp.int32)
+
+    updated = apply_selected_candidates(
+        result,
+        selected_states=jnp.array([30, 31, 32], dtype=jnp.int32),
+        selected_costs=jnp.array([6.0, 7.0, 8.0], dtype=jnp.float32),
+        selected_dists=jnp.array([2.0, 3.0, 4.0], dtype=jnp.float32),
+        selected_scores=jnp.array([8.0, 10.0, 12.0], dtype=jnp.float32),
+        selected_actions=jnp.array([1, 2, 3], dtype=jnp.uint8),
+        selected_parents=jnp.array([1, 0, 1], dtype=jnp.int32),
+        selected_valid=jnp.array([True, True, True]),
+    )
+
+    assert int(jax.device_get(updated.depth)) == 2
+    assert int(jax.device_get(updated.generated_size)) == 8
+    assert jax.device_get(updated.cost).tolist() == [6.0, 7.0, 8.0]
+    assert jax.device_get(updated.parent_index).tolist() == [1, 0, 1]
+    assert jax.device_get(updated.active_trace).tolist() == [6, 7, 8]
+
+    trace_parent = jax.device_get(updated.trace_parent)
+    assert int(trace_parent[6]) == 4
+    assert int(trace_parent[7]) == 3
+    assert int(trace_parent[8]) == 4

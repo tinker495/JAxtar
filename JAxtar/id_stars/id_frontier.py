@@ -102,29 +102,66 @@ class IDFrontier:
         new_sol_cost: chex.Array,
         new_sol_actions: chex.Array,
     ) -> "IDFrontier":
-        packed_batch, packed_valid, _, packed_idx = compact_by_valid(flat_batch, flat_valid)
-        packed_f = jnp.where(packed_valid, f_safe[packed_idx], jnp.inf)
+        flat_size = flat_valid.shape[0]
+        valid_count = jnp.sum(flat_valid.astype(jnp.int32))
 
-        neg_f = -packed_f
-        top_vals, top_indices = jax.lax.top_k(neg_f, batch_size)
-        selected_f = (-top_vals).astype(KEY_DTYPE)
-        selected_valid = jnp.isfinite(selected_f)
+        def _empty_frontier(_):
+            # Keep existing storage layout but mark all entries invalid.
+            return IDFrontier(
+                states=self.states,
+                costs=self.costs,
+                depths=self.depths,
+                valid_mask=jnp.zeros((batch_size,), dtype=jnp.bool_),
+                f_scores=jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE),
+                trail=self.trail,
+                solved=new_solved,
+                solution_state=new_sol_state,
+                solution_cost=new_sol_cost,
+                solution_actions_arr=new_sol_actions,
+                action_history=self.action_history,
+            )
 
-        selected = xnp.take(packed_batch, top_indices, axis=0)
-        selected_valid = jnp.logical_and(selected_valid, packed_valid[top_indices])
+        def _select_from_candidates(_):
+            packed_batch, packed_valid, _, packed_idx = compact_by_valid(flat_batch, flat_valid)
+            packed_f = jax.lax.cond(
+                valid_count == flat_size,
+                lambda __: f_safe,
+                lambda __: jnp.where(packed_valid, f_safe[packed_idx], jnp.inf),
+                operand=None,
+            )
 
-        return IDFrontier(
-            states=selected.state,
-            costs=selected.cost,
-            depths=selected.depth,
-            valid_mask=selected_valid,
-            f_scores=selected_f,
-            trail=selected.trail,
-            solved=new_solved,
-            solution_state=new_sol_state,
-            solution_cost=new_sol_cost,
-            solution_actions_arr=new_sol_actions,
-            action_history=selected.action_history,
+            neg_f = -packed_f
+            top_vals, top_indices = jax.lax.top_k(neg_f, batch_size)
+            selected_f = (-top_vals).astype(KEY_DTYPE)
+            selected_valid = jnp.isfinite(selected_f)
+
+            selected = xnp.take(packed_batch, top_indices, axis=0)
+            selected_valid = jax.lax.cond(
+                valid_count == flat_size,
+                lambda __: selected_valid,
+                lambda __: jnp.logical_and(selected_valid, packed_valid[top_indices]),
+                operand=None,
+            )
+
+            return IDFrontier(
+                states=selected.state,
+                costs=selected.cost,
+                depths=selected.depth,
+                valid_mask=selected_valid,
+                f_scores=selected_f,
+                trail=selected.trail,
+                solved=new_solved,
+                solution_state=new_sol_state,
+                solution_cost=new_sol_cost,
+                solution_actions_arr=new_sol_actions,
+                action_history=selected.action_history,
+            )
+
+        return jax.lax.cond(
+            valid_count > 0,
+            _select_from_candidates,
+            _empty_frontier,
+            operand=None,
         )
 
 
