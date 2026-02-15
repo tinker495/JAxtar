@@ -133,11 +133,32 @@ def compact_by_valid(
     valid_mask: chex.Array,
 ):
     flat_size = valid_mask.shape[0]
-    valid_idx = jnp.nonzero(valid_mask, size=flat_size, fill_value=0)[0].astype(jnp.int32)
-    valid_count = jnp.sum(valid_mask.astype(jnp.int32))
-    packed_values = xnp.take(values, valid_idx, axis=0)
-    packed_valid = jnp.arange(flat_size, dtype=jnp.int32) < valid_count
-    return packed_values, packed_valid, valid_count, valid_idx
+    row_indices = jnp.arange(flat_size, dtype=jnp.int32)
+
+    def _dense(_):
+        packed_valid = jnp.ones((flat_size,), dtype=jnp.bool_)
+        valid_count = jnp.array(flat_size, dtype=jnp.int32)
+        return values, packed_valid, valid_count, row_indices
+
+    def _sparse(_):
+        valid_idx = jnp.nonzero(valid_mask, size=flat_size, fill_value=0)[0].astype(jnp.int32)
+        valid_count = jnp.sum(valid_mask.astype(jnp.int32))
+        packed_values = xnp.take(values, valid_idx, axis=0)
+        packed_valid = row_indices < valid_count
+        return packed_values, packed_valid, valid_count, valid_idx
+
+    def _empty(_):
+        packed_valid = jnp.zeros((flat_size,), dtype=jnp.bool_)
+        valid_count = jnp.array(0, dtype=jnp.int32)
+        zero_idx = jnp.zeros((flat_size,), dtype=jnp.int32)
+        return values, packed_valid, valid_count, zero_idx
+
+    return jax.lax.cond(
+        jnp.any(valid_mask),
+        lambda _: jax.lax.cond(jnp.all(valid_mask), _dense, _sparse, operand=None),
+        _empty,
+        operand=None,
+    )
 
 
 def build_id_node_batch(statecls, non_backtracking_steps: int, max_path_len: int):
