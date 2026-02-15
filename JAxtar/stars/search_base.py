@@ -127,32 +127,53 @@ def sort_and_pack_action_candidates(
 
     This helper keeps deferred variants consistent and skips global sorting when
     there are no valid candidates in the flattened action-major batch.
+    It also fast-paths the dense case where all entries are valid.
     """
+    shape = (action_size, batch_size)
+    flat_size = flat_mask.shape[0]
+    sort_idx_seed = jnp.arange(flat_size, dtype=jnp.int32)
 
-    def _sort(_):
+    def _sort_sparse(_):
         masked_flat_keys = jnp.where(flat_mask, flat_keys, jnp.inf)
         sorted_keys, sorted_idx = jax.lax.sort_key_val(
             masked_flat_keys,
-            jnp.arange(flat_mask.shape[0], dtype=jnp.int32),
+            sort_idx_seed,
         )
         sorted_vals = flat_vals[sorted_idx]
         sorted_mask = flat_mask[sorted_idx]
         return (
-            sorted_keys.reshape((action_size, batch_size)),
-            sorted_vals.reshape((action_size, batch_size)),
-            sorted_mask.reshape((action_size, batch_size)),
+            sorted_keys.reshape(shape),
+            sorted_vals.reshape(shape),
+            sorted_mask.reshape(shape),
+        )
+
+    def _sort_dense(_):
+        sorted_keys, sorted_idx = jax.lax.sort_key_val(flat_keys, sort_idx_seed)
+        sorted_vals = flat_vals[sorted_idx]
+        return (
+            sorted_keys.reshape(shape),
+            sorted_vals.reshape(shape),
+            jnp.ones(shape, dtype=jnp.bool_),
+        )
+
+    def _sort_nonempty(_):
+        return jax.lax.cond(
+            jnp.all(flat_mask),
+            _sort_dense,
+            _sort_sparse,
+            operand=None,
         )
 
     def _empty(_):
         return (
-            jnp.full((action_size, batch_size), jnp.inf, dtype=flat_keys.dtype),
-            flat_vals.reshape((action_size, batch_size)),
-            flat_mask.reshape((action_size, batch_size)),
+            jnp.full(shape, jnp.inf, dtype=flat_keys.dtype),
+            flat_vals.reshape(shape),
+            flat_mask.reshape(shape),
         )
 
     return jax.lax.cond(
         jnp.any(flat_mask),
-        _sort,
+        _sort_nonempty,
         _empty,
         operand=None,
     )
@@ -193,19 +214,15 @@ def packed_masked_state_eval(
     *,
     dtype=KEY_DTYPE,
 ) -> chex.Array:
-    """Evaluate only masked states via packed chunks and restore original order."""
+    """Evaluate only masked states via packed chunks and restore original order.
+
+    Fast-paths the dense case where all entries are computed, avoiding partition/
+    scatter permutations on every loop iteration.
+    """
     flat_size = flat_compute_mask.shape[0]
+    shape = (action_size, batch_size)
 
-    def _compute(_):
-        sorted_indices = stable_partition_three(
-            flat_compute_mask,
-            jnp.zeros_like(flat_compute_mask, dtype=jnp.bool_),
-        )
-        sorted_states = flat_states[sorted_indices]
-        sorted_mask = flat_compute_mask[sorted_indices]
-        sorted_states_chunked = sorted_states.reshape((action_size, batch_size))
-        sorted_mask_chunked = sorted_mask.reshape((action_size, batch_size))
-
+    def _scan_eval(states_chunked: Puzzle.State, mask_chunked: chex.Array) -> chex.Array:
         def _scan(carry, inputs):
             states_slice, compute_mask = inputs
             values = eval_chunk_fn(states_slice, compute_mask)
@@ -214,15 +231,40 @@ def packed_masked_state_eval(
         _, val_chunks = jax.lax.scan(
             _scan,
             None,
-            (sorted_states_chunked, sorted_mask_chunked),
+            (states_chunked, mask_chunked),
+        )
+        return val_chunks.astype(dtype)
+
+    def _compute_sparse(_):
+        sorted_indices = stable_partition_three(
+            flat_compute_mask,
+            jnp.zeros_like(flat_compute_mask, dtype=jnp.bool_),
+        )
+        sorted_states = flat_states[sorted_indices]
+        sorted_mask = flat_compute_mask[sorted_indices]
+        sorted_states_chunked = sorted_states.reshape(shape)
+        sorted_mask_chunked = sorted_mask.reshape(shape)
+
+        val_chunks = _scan_eval(sorted_states_chunked, sorted_mask_chunked)
+        sorted_vals = val_chunks.reshape((flat_size,))
+        flat_vals = jnp.empty((flat_size,), dtype=dtype).at[sorted_indices].set(sorted_vals)
+        return flat_vals.reshape(shape)
+
+    def _compute_dense(_):
+        states_chunked = flat_states.reshape(shape)
+        dense_mask = jnp.ones(shape, dtype=jnp.bool_)
+        return _scan_eval(states_chunked, dense_mask)
+
+    def _compute(_):
+        return jax.lax.cond(
+            jnp.all(flat_compute_mask),
+            _compute_dense,
+            _compute_sparse,
+            operand=None,
         )
 
-        sorted_vals = val_chunks.reshape((flat_size,)).astype(dtype)
-        flat_vals = jnp.empty((flat_size,), dtype=dtype).at[sorted_indices].set(sorted_vals)
-        return flat_vals.reshape((action_size, batch_size))
-
     def _empty(_):
-        return jnp.zeros((action_size, batch_size), dtype=dtype)
+        return jnp.zeros(shape, dtype=dtype)
 
     return jax.lax.cond(
         jnp.any(flat_compute_mask),

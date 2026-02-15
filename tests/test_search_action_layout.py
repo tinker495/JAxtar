@@ -4,7 +4,9 @@ from xtructure import HashIdx
 from JAxtar.stars.search_base import (
     build_action_major_parent_context,
     build_action_major_parent_layout,
+    packed_masked_state_eval,
     partition_and_pack_frontier_candidates,
+    sort_and_pack_action_candidates,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 
@@ -105,3 +107,61 @@ def test_partition_and_pack_frontier_candidates_matches_manual_pack():
     assert process_mask.tolist() == expected_process_mask.tolist()
     assert vals.cost.tolist() == expected_costs.tolist()
     assert vals.hashidx.index.tolist() == expected_hashidx.tolist()
+
+
+def test_sort_and_pack_action_candidates_dense_matches_sorted_keys():
+    action_size = 2
+    batch_size = 3
+    flat_keys = jnp.array([3.0, 1.0, 5.0, 2.0, 4.0, 0.5], dtype=jnp.float32)
+    flat_vals = jnp.array([30, 10, 50, 20, 40, 5], dtype=jnp.int32)
+    flat_mask = jnp.ones_like(flat_keys, dtype=jnp.bool_)
+
+    keys, vals, mask = sort_and_pack_action_candidates(
+        flat_keys=flat_keys,
+        flat_vals=flat_vals,
+        flat_mask=flat_mask,
+        action_size=action_size,
+        batch_size=batch_size,
+    )
+
+    sorted_idx = jnp.argsort(flat_keys)
+    expected_keys = flat_keys[sorted_idx].reshape((action_size, batch_size))
+    expected_vals = flat_vals[sorted_idx].reshape((action_size, batch_size))
+
+    assert keys.tolist() == expected_keys.tolist()
+    assert vals.tolist() == expected_vals.tolist()
+    assert mask.tolist() == [[True, True, True], [True, True, True]]
+
+
+def test_packed_masked_state_eval_dense_and_sparse_paths_match_expected():
+    action_size = 3
+    batch_size = 2
+    flat_states = jnp.array([1, 2, 3, 4, 5, 6], dtype=jnp.float32)
+
+    def eval_chunk_fn(states_slice, compute_mask):
+        return jnp.where(compute_mask, states_slice * 2.0 + 1.0, jnp.inf)
+
+    dense_mask = jnp.ones((action_size * batch_size,), dtype=jnp.bool_)
+    dense_vals = packed_masked_state_eval(
+        flat_states=flat_states,
+        flat_compute_mask=dense_mask,
+        action_size=action_size,
+        batch_size=batch_size,
+        eval_chunk_fn=eval_chunk_fn,
+        dtype=jnp.float32,
+    )
+    expected_dense = (flat_states * 2.0 + 1.0).reshape((action_size, batch_size))
+    assert dense_vals.tolist() == expected_dense.tolist()
+
+    sparse_mask = jnp.array([True, False, True, False, True, False], dtype=jnp.bool_)
+    sparse_vals = packed_masked_state_eval(
+        flat_states=flat_states,
+        flat_compute_mask=sparse_mask,
+        action_size=action_size,
+        batch_size=batch_size,
+        eval_chunk_fn=eval_chunk_fn,
+        dtype=jnp.float32,
+    )
+    expected_sparse_flat = jnp.where(sparse_mask, flat_states * 2.0 + 1.0, jnp.inf)
+    expected_sparse = expected_sparse_flat.reshape((action_size, batch_size))
+    assert sparse_vals.tolist() == expected_sparse.tolist()
