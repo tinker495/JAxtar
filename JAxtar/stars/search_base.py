@@ -8,6 +8,7 @@ Key features:
 - Generic puzzle-agnostic implementation
 """
 
+import math
 from functools import partial
 from typing import Any
 
@@ -802,6 +803,7 @@ class SearchResult:
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
         batch_size = search_result.batch_size
+        min_filled_count = max(1, int(math.ceil(POP_BATCH_FILLED_RATIO * batch_size)))
         stack_size = batch_size * 2
 
         # Initial expansion and filtering
@@ -823,9 +825,9 @@ class SearchResult:
             search_result, _, _, _, key, _, _, _ = state
             pq_not_empty = search_result.priority_queue.size > 0
 
-            # Optimization: Stop if batch is mostly full (e.g. 90%)
-            fill_ratio = jnp.mean(jnp.isfinite(key))
-            not_full_enough = fill_ratio < POP_BATCH_FILLED_RATIO
+            # Stop when at least min_filled_count entries are valid.
+            filled_count = jnp.sum(jnp.isfinite(key), dtype=jnp.int32)
+            not_full_enough = filled_count < min_filled_count
 
             return jnp.logical_and(pq_not_empty, not_full_enough)
 
