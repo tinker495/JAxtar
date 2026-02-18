@@ -5,6 +5,7 @@ JAxtar Core Bidirectional Loop Builder
 from typing import Any
 
 import chex
+import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
@@ -23,7 +24,7 @@ from JAxtar.core.search_strategy import ExpansionPolicy
 class BiLoopState:
     bi_result: BiDirectionalSearchResult
     solve_config: Puzzle.SolveConfig
-    inverse_solve_config: Puzzle.SolveConfig  # Need this for backward search (e.g. goal as start)
+    inverse_solve_config: (Puzzle.SolveConfig)  # Need this for backward search (e.g. goal as start)
     heuristic_params: Any
     inverse_heuristic_params: Any
     current_fwd: Any  # Current or ParentWithCosts
@@ -99,6 +100,29 @@ def unified_bi_search_loop_builder(
         bwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
         bwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
         current_bwd = Current(hashidx=bwd_idxs, cost=bwd_costs)
+
+        # Trivial solved case: start is already goal.
+        # Initialize meeting immediately so terminate_on_first_solution exits with zero cost.
+        start_batched = jax.tree_util.tree_map(lambda x: x[jnp.newaxis, ...], start)
+        start_is_goal = jnp.any(puzzle.batched_is_solved(solve_config, start_batched))
+
+        def _set_trivial_meeting(meeting):
+            meeting.fwd_hashidx = fwd_hash_idx
+            meeting.bwd_hashidx = bwd_hash_idx
+            meeting.fwd_cost = jnp.array(0, dtype=KEY_DTYPE)
+            meeting.bwd_cost = jnp.array(0, dtype=KEY_DTYPE)
+            meeting.total_cost = jnp.array(0, dtype=KEY_DTYPE)
+            meeting.found = jnp.array(True)
+            meeting.fwd_has_hashidx = jnp.array(True)
+            meeting.bwd_has_hashidx = jnp.array(True)
+            return meeting
+
+        bi_result.meeting = jax.lax.cond(
+            start_is_goal,
+            _set_trivial_meeting,
+            lambda meeting: meeting,
+            bi_result.meeting,
+        )
 
         return BiLoopState(
             bi_result=bi_result,

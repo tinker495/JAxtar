@@ -309,7 +309,9 @@ class DeferredExpansion(ExpansionPolicy):
         else:
             states = search_result.get_state(current)
             h_parent = self.heuristic_fn(heuristic_params, states, filled).astype(KEY_DTYPE)
-            h_vals = jnp.repeat(h_parent, action_size)
+            h_vals = jnp.broadcast_to(h_parent[jnp.newaxis, :], (action_size, batch_size)).reshape(
+                -1
+            )
             priority = self.scoring_policy.compute_priority(costs, h_vals, self.cost_weight)
             optimal_mask = filled_tiles
             vals_dist = h_vals
@@ -444,7 +446,9 @@ class DeferredExpansion(ExpansionPolicy):
         else:
             states = search_result.get_state(current)
             h_parent = self.heuristic_fn(heuristic_params, states, filled).astype(KEY_DTYPE)
-            h_vals = jnp.repeat(h_parent, action_size)
+            h_vals = jnp.broadcast_to(h_parent[jnp.newaxis, :], (action_size, batch_size)).reshape(
+                -1
+            )
             priority = self.scoring_policy.compute_priority(costs, h_vals, self.cost_weight)
             optimal_mask = filled_tiles
             vals_dist = h_vals

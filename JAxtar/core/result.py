@@ -212,6 +212,7 @@ class SearchResult:
         # 1. Pop initial batch
         pq, min_key, min_val = self.priority_queue.delete_mins()
         self.priority_queue = pq
+        min_key = _mask_unoptimal_current(self, min_key, min_val)
 
         batch_size = self.batch_size
         min_filled_count = max(1, int(math.ceil(POP_BATCH_FILLED_RATIO * batch_size)))
@@ -245,6 +246,7 @@ class SearchResult:
             sr, cur_states, cur_costs, cur_dists, key, val, _, _ = state
             pq, new_key, new_val = sr.priority_queue.delete_mins()
             sr.priority_queue = pq
+            new_key = _mask_unoptimal_current(sr, new_key, new_val)
 
             new_states, new_costs, new_dists, _ = _extract_state(sr, new_val)
 
@@ -289,7 +291,9 @@ class SearchResult:
             overflow_keys,
             overflow_vals,
         ) = jax.lax.while_loop(
-            _cond, _body, (self, states, costs, dists, min_key, min_val, buffer_key, buffer_val)
+            _cond,
+            _body,
+            (self, states, costs, dists, min_key, min_val, buffer_key, buffer_val),
         )
         self = new_sr
 
@@ -326,6 +330,7 @@ class SearchResult:
         Pop a full batch, expanding (parent, action) to states.
         Used by Deferred Expansion (A*d, Q*).
         """
+
         # Logic for Deferred pop
         # Helper to expand state from parent+action
         def _expand_and_filter_actions(sr, key, val):
@@ -406,7 +411,8 @@ class SearchResult:
             # same cond
             sr, _, _, _, key, _, _, _ = state
             return jnp.logical_and(
-                sr.priority_queue.size > 0, jnp.sum(jnp.isfinite(key)) < min_filled_count
+                sr.priority_queue.size > 0,
+                jnp.sum(jnp.isfinite(key)) < min_filled_count,
             )
 
         def _body(state):
@@ -466,7 +472,9 @@ class SearchResult:
             overflow_keys,
             overflow_vals,
         ) = jax.lax.while_loop(
-            _cond, _body, (self, states, costs, dists, min_key, min_val, buffer_key, buffer_val)
+            _cond,
+            _body,
+            (self, states, costs, dists, min_key, min_val, buffer_key, buffer_val),
         )
         self = new_sr
         self = self.insert_batch(overflow_keys, overflow_vals)
@@ -577,3 +585,14 @@ def _compute_pop_process_mask(
     min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= min_pop, filled)
 
     return jnp.logical_or(base_process_mask, min_pop_mask)
+
+
+def _mask_unoptimal_current(
+    search_result: SearchResult,
+    popped_keys: chex.Array,
+    popped_current: Current,
+) -> chex.Array:
+    """Mask stale Current PQ entries whose popped cost is worse than HT best cost."""
+    best_costs = search_result.get_cost(popped_current)
+    is_optimal = jnp.less_equal(popped_current.cost, best_costs)
+    return jnp.where(is_optimal, popped_keys, jnp.inf)
