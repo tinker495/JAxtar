@@ -350,8 +350,15 @@ class IDSearchBase:
             root_indices_sorted = root_indices[perm]
 
             current_ptr = sr.stack.size.astype(jnp.int32)
-            capacity = sr.stack.max_size
-            safe_n_push = jnp.minimum(n_push, capacity - current_ptr)
+            stack_capacity = jnp.array(sr.stack.max_size, dtype=jnp.int32)
+            generated_capacity = jnp.array(sr.capacity, dtype=jnp.int32)
+            remaining_stack = jnp.maximum(stack_capacity - current_ptr, 0)
+            remaining_generated = jnp.maximum(generated_capacity - sr.generated_count, 0)
+            remaining_trace = jnp.maximum(generated_capacity - sr.trace_size, 0)
+            safe_n_push = jnp.minimum(
+                n_push,
+                jnp.minimum(remaining_stack, jnp.minimum(remaining_generated, remaining_trace)),
+            )
 
             trace_base = sr.trace_size
             batch_len = valid_mask.shape[0]
@@ -379,12 +386,10 @@ class IDSearchBase:
             trace_root_updates = root_indices_sorted
             trace_mask = trace_ids_sorted >= 0
 
-            def _update_leaf(stack_arr, update_arr):
-                # Explicitly use int32 indices
-                start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)
-                return jax.lax.dynamic_update_slice(stack_arr, update_arr, start_indices)
-
-            new_val_store = jax.tree_util.tree_map(_update_leaf, sr.stack.val_store, items_sorted)
+            stack_indices = current_ptr + jnp.arange(batch_len, dtype=jnp.int32)
+            new_val_store = xnp.update_on_condition(
+                sr.stack.val_store, stack_indices, push_mask_sorted, items_sorted
+            )
 
             trace_ids_dense = jnp.where(trace_mask, trace_ids_sorted, 0)
             new_trace_parent = xnp.update_on_condition(
@@ -436,15 +441,21 @@ class IDSearchBase:
         to be pushed are at the beginning of the arrays.
         """
         current_ptr = self.stack.size.astype(jnp.int32)
-        capacity = self.stack.max_size
-
-        safe_n_push = jnp.minimum(n_push.astype(jnp.int32), capacity - current_ptr)
+        stack_capacity = jnp.array(self.stack.max_size, dtype=jnp.int32)
+        generated_capacity = jnp.array(self.capacity, dtype=jnp.int32)
+        remaining_stack = jnp.maximum(stack_capacity - current_ptr, 0)
+        remaining_generated = jnp.maximum(generated_capacity - self.generated_count, 0)
+        remaining_trace = jnp.maximum(generated_capacity - self.trace_size, 0)
+        safe_n_push = jnp.minimum(
+            n_push.astype(jnp.int32),
+            jnp.minimum(remaining_stack, jnp.minimum(remaining_generated, remaining_trace)),
+        )
 
         trace_base = self.trace_size
         batch_len = parent_indices.shape[0]
         trace_ids = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
         trace_ids = jnp.where(
-            jnp.arange(batch_len, dtype=jnp.int32) < n_push.astype(jnp.int32),
+            jnp.arange(batch_len, dtype=jnp.int32) < safe_n_push,
             trace_ids,
             -1,
         )
@@ -461,11 +472,11 @@ class IDSearchBase:
             action_history=action_histories,
         )
 
-        def _update_leaf(stack_arr, update_arr):
-            start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)
-            return jax.lax.dynamic_update_slice(stack_arr, update_arr, start_indices)
-
-        new_val_store = jax.tree_util.tree_map(_update_leaf, self.stack.val_store, items)
+        stack_indices = current_ptr + jnp.arange(batch_len, dtype=jnp.int32)
+        push_mask = jnp.arange(batch_len, dtype=jnp.int32) < safe_n_push
+        new_val_store = xnp.update_on_condition(
+            self.stack.val_store, stack_indices, push_mask, items
+        )
 
         trace_mask = trace_ids >= 0
         trace_ids_dense = jnp.where(trace_mask, trace_ids, 0)

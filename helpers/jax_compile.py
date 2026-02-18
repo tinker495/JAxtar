@@ -44,7 +44,13 @@ def jit_with_warmup(
     if warmup_inputs is None:
         empty_solve_config = puzzle.SolveConfig.default()
         empty_states = puzzle.State.default()
-        jitted_fn(empty_solve_config, empty_states)
+        try:
+            compile_with_example(jitted_fn, empty_solve_config, empty_states)
+        except Exception as exc:
+            # Some search implementations cannot trace with synthetic default
+            # values. In that case, defer compilation to the first real call.
+            if _should_log():
+                _get_logger().warning("skipping default warmup compile: %s", exc)
     else:
         compile_with_example(jitted_fn, *warmup_inputs)
 

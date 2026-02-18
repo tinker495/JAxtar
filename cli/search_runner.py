@@ -66,6 +66,13 @@ def _prepare_dist_parameters(
     return solve_config
 
 
+def _to_python_float(value: jnp.ndarray | float | int | None) -> float | None:
+    """Convert scalar-like JAX/NumPy values (including shape-(1,)) to Python float."""
+    if value is None:
+        return None
+    return float(jnp.ravel(jnp.asarray(value))[0])
+
+
 def search_samples(
     search_fn,
     puzzle: Puzzle,
@@ -156,18 +163,19 @@ def search_samples(
         if search_options.profile:
             jax.profiler.stop_trace()
 
+        solved_cost_value = _to_python_float(solved_cost)
         result_table = build_result_table(
             solved=solved,
             single_search_time=single_search_time,
             generated_size=generated_size,
             states_per_second=states_per_second,
-            solved_cost=solved_cost if solved_cost is None else float(solved_cost),
+            solved_cost=solved_cost_value,
             seed=seed,
         )
         console.print(result_table)
 
         if solved:
-            total_costs.append(float(solved_cost) if solved_cost is not None else 0.0)
+            total_costs.append(solved_cost_value if solved_cost_value is not None else 0.0)
 
             if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
                 if is_bidirectional:
@@ -247,10 +255,11 @@ def search_samples(
             total_costs.append(jnp.inf)
 
         if len(seeds) > 1:
+            avg_time_seconds = float(jnp.mean(jnp.array(total_search_times)))
             iterable.set_postfix(
                 {
                     "solved": f"{sum(total_solved)}/{len(total_solved)}",
-                    "avg_time": f"{jnp.mean(jnp.array(total_search_times)):.2f}s",
+                    "avg_time": "{:.2f}s".format(avg_time_seconds),
                     "avg_states": human_format(jnp.mean(jnp.array(total_states))),
                 }
             )

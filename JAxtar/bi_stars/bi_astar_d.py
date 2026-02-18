@@ -1,479 +1,21 @@
-"""
-JAxtar Bidirectional A* Deferred Search Implementation
-
-This module implements bidirectional A* with deferred heuristic evaluation.
-Like A* deferred, heuristic evaluation is delayed until nodes are popped from
-the priority queue, combined with bidirectional search for maximum efficiency.
-
-Key Benefits:
-- Reduced heuristic evaluations (only evaluated when popped)
-- Bidirectional search reduces search space
-- Efficient for expensive heuristics with large branching factors
-"""
-
 from typing import Any
 
-import chex
 import jax
 import jax.numpy as jnp
-import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.bi_stars.bi_search_base import (
+from JAxtar.annotate import MIN_BATCH_SIZE
+from JAxtar.core.bi_loop import unified_bi_search_loop_builder
+from JAxtar.core.bi_result import (
     BiDirectionalSearchResult,
-    BiLoopStateWithStates,
-    build_bi_search_result,
-    check_intersection,
-    common_bi_loop_condition,
     finalize_bidirectional_result,
-    initialize_bi_loop_common,
-    materialize_meeting_point_hashidxs,
-    update_meeting_point,
-    update_meeting_point_best_only_deferred,
 )
-from JAxtar.stars.search_base import (
-    Current,
-    Parant_with_Costs,
-    Parent,
-    build_action_major_parent_context,
-    insert_priority_queue_batches,
-    packed_masked_state_eval,
-    sort_and_pack_action_candidates,
-)
+from JAxtar.core.expansion import DeferredExpansion
+from JAxtar.core.result import ParentWithCosts
+from JAxtar.core.scoring import AStarScoring
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
-
-
-def _bi_astar_d_loop_builder(
-    puzzle: Puzzle,
-    heuristic: Heuristic,
-    batch_size: int = 1024,
-    cost_weight: float = 1.0 - 1e-6,
-    look_ahead_pruning: bool = True,
-    use_backward_heuristic: bool = True,
-    backward_value_lookahead: bool = True,
-    backward_value_lookahead_k: int | None = None,
-    terminate_on_first_solution: bool = False,
-):
-    """
-    Build the loop components for bidirectional A* deferred search.
-
-    Args:
-        puzzle: Puzzle instance
-        heuristic: Heuristic instance (used for both directions)
-        batch_size: Batch size for parallel processing
-        cost_weight: Weight for path cost in f = cost_weight * g + h
-        look_ahead_pruning: Enable look-ahead pruning optimization
-
-    Returns:
-        Tuple of (init_loop_state, loop_condition, loop_body) functions
-    """
-    action_size = puzzle.action_size
-
-    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
-        heuristic.batched_distance,
-        max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
-        pad_value=jnp.inf,
-    )
-
-    def init_loop_state(
-        bi_result: BiDirectionalSearchResult,
-        solve_config: Puzzle.SolveConfig,
-        inverse_solveconfig: Puzzle.SolveConfig,
-        start: Puzzle.State,
-        heuristic_params_forward: Any,
-        heuristic_params_backward: Any,
-    ) -> BiLoopStateWithStates:
-        """Initialize bidirectional deferred search from start and goal states."""
-
-        (
-            fwd_filled,
-            fwd_current,
-            fwd_states,
-            bwd_filled,
-            bwd_current,
-            bwd_states,
-        ) = initialize_bi_loop_common(bi_result, puzzle, solve_config, start)
-
-        return BiLoopStateWithStates(
-            bi_result=bi_result,
-            solve_config=solve_config,
-            inverse_solveconfig=inverse_solveconfig,
-            params_forward=heuristic_params_forward,
-            params_backward=heuristic_params_backward,
-            current_forward=fwd_current,
-            current_backward=bwd_current,
-            states_forward=fwd_states,
-            states_backward=bwd_states,
-            filled_forward=fwd_filled,
-            filled_backward=bwd_filled,
-        )
-
-    def loop_condition(loop_state: BiLoopStateWithStates) -> chex.Array:
-        """Check if search should continue."""
-        return common_bi_loop_condition(
-            loop_state.bi_result,
-            loop_state.filled_forward,
-            loop_state.filled_backward,
-            loop_state.current_forward,
-            loop_state.current_backward,
-            cost_weight,
-            terminate_on_first_solution,
-        )
-
-    def _expand_direction_deferred(
-        bi_result: BiDirectionalSearchResult,
-        solve_config: Puzzle.SolveConfig,
-        inverse_solveconfig: Puzzle.SolveConfig,
-        heuristic_params: Any,
-        current: Current,
-        states: Puzzle.State,
-        filled: chex.Array,
-        is_forward: bool,
-        use_heuristic: bool,
-    ) -> tuple[BiDirectionalSearchResult, Current, Puzzle.State, chex.Array]:
-        """
-        Expand one direction using deferred heuristic evaluation.
-
-        In deferred A*, we insert (parent, action) pairs into the PQ using
-        the parent's f-value. Heuristics are computed when nodes are popped.
-        """
-        if is_forward:
-            search_result = bi_result.forward
-            opposite_sr = bi_result.backward
-            current_solve_config = solve_config
-            get_neighbours_fn = puzzle.batched_get_neighbours
-        else:
-            search_result = bi_result.backward
-            opposite_sr = bi_result.forward
-            current_solve_config = inverse_solveconfig
-            get_neighbours_fn = puzzle.batched_get_inverse_neighbours
-
-        sr_batch_size = search_result.batch_size
-        flat_size = action_size * sr_batch_size
-
-        cost = current.cost
-        hash_idx = current.hashidx
-
-        (
-            flat_parent_hashidx,
-            flat_actions,
-            costs,
-            filled_tiles,
-            unflatten_shape,
-        ) = build_action_major_parent_context(
-            hash_idx,
-            cost,
-            filled,
-            action_size,
-            sr_batch_size,
-        )
-
-        flattened_filled_tiles = filled_tiles.flatten()
-
-        if look_ahead_pruning:
-            # Look-ahead: compute neighbors and filter before inserting into PQ
-            neighbour_look_a_head, ncosts = get_neighbours_fn(current_solve_config, states, filled)
-            look_a_head_costs = (costs + ncosts).astype(KEY_DTYPE)
-
-            flattened_neighbour_look_head = neighbour_look_a_head.flatten()
-            flattened_look_a_head_costs = look_a_head_costs.flatten().astype(KEY_DTYPE)
-
-            # Meeting update mask: unique (min cost) among current batch.
-            # We compute this first so we can restrict hash-table lookups to one
-            # representative per state.
-            meeting_mask = (
-                xnp.unique_mask(
-                    flattened_neighbour_look_head,
-                    flattened_look_a_head_costs,
-                    flattened_filled_tiles,
-                )
-                & flattened_filled_tiles
-            )
-
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head, meeting_mask
-            )
-
-            old_costs = search_result.get_cost(current_hash_idxs)
-
-            # PQ insertion mask: Must improve cost or be new in THIS direction's HT
-            candidate_mask = meeting_mask & jnp.logical_or(
-                ~found, jnp.less(flattened_look_a_head_costs, old_costs)
-            )
-
-            # `meeting_mask` is already unique-by-cost, so `candidate_mask` is unique as well.
-            optimal_mask = candidate_mask
-
-            if use_heuristic:
-                found_reshaped = found.reshape(action_size, sr_batch_size)
-                optimal_mask_reshaped = optimal_mask.reshape(action_size, sr_batch_size)
-
-                old_dists = search_result.get_dist(current_hash_idxs)
-                old_dists = old_dists.reshape(action_size, sr_batch_size)
-
-                need_compute = optimal_mask_reshaped & ~found_reshaped
-
-                # Pack contiguously for efficient heuristic computation
-                flat_states = neighbour_look_a_head.flatten()
-                flat_need_compute = need_compute.flatten()
-
-                computed_heuristic_vals = packed_masked_state_eval(
-                    flat_states,
-                    flat_need_compute,
-                    action_size,
-                    sr_batch_size,
-                    lambda states_slice, compute_mask: variable_heuristic_batch_switcher(
-                        heuristic_params, states_slice, compute_mask
-                    ),
-                    dtype=KEY_DTYPE,
-                )
-
-                heuristic_vals = jnp.where(
-                    found_reshaped,
-                    old_dists,
-                    computed_heuristic_vals,
-                )
-                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
-            else:
-                heuristic_vals = jnp.zeros_like(look_a_head_costs, dtype=KEY_DTYPE)
-                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
-
-            # Optional backward value-lookahead: use a 1-step backup on predecessor states
-            # to better match Q*(s,a)=step+h(next) behavior in the backward direction.
-            # For RubiksCubeQ, this corresponds to V(s)=min_a (1 + h(s')) which is strictly
-            # more informative than h(s) and can dramatically reduce expansions.
-            if (not is_forward) and use_heuristic and backward_value_lookahead:
-                # Use the already computed key (g + h) to pick a small set of best candidates
-                # and run the expensive backup only on those.
-                base_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
-                flat_keys = base_keys.flatten()
-                masked_flat_keys = jnp.where(optimal_mask, flat_keys, jnp.inf)
-
-                k = (
-                    sr_batch_size
-                    if backward_value_lookahead_k is None
-                    else backward_value_lookahead_k
-                )
-                # `variable_heuristic_batch_switcher` is built with max_batch_size=batch_size,
-                # so keep the backup batch <= sr_batch_size.
-                k = min(k, sr_batch_size, flat_size)
-                # Select only k best (smallest) keys without globally sorting all candidates.
-                topk_neg_keys, sel_idx = jax.lax.top_k(-masked_flat_keys, k)
-                sel_valid = jnp.isfinite(topk_neg_keys)
-
-                heur_flat = heuristic_vals.flatten()
-
-                def _apply_backup(hflat):
-                    sel_states = flattened_neighbour_look_head[sel_idx]
-                    succ_states, succ_costs = puzzle.batched_get_neighbours(
-                        solve_config, sel_states, sel_valid
-                    )  # [action, k], [action, k]
-
-                    def _scan_backup(carry, inputs):
-                        succ_slice, cost_slice = inputs
-                        h_succ = variable_heuristic_batch_switcher(
-                            heuristic_params, succ_slice, sel_valid
-                        ).astype(KEY_DTYPE)
-                        q_est = h_succ + cost_slice.astype(KEY_DTYPE)
-                        return carry, q_est
-
-                    _, q_chunks = jax.lax.scan(_scan_backup, None, (succ_states, succ_costs))
-                    v_sel = jnp.min(q_chunks, axis=0).astype(KEY_DTYPE)
-                    updated = jnp.where(sel_valid, v_sel, hflat[sel_idx])
-                    return hflat.at[sel_idx].set(updated)
-
-                heur_flat = jax.lax.cond(
-                    jnp.any(sel_valid),
-                    _apply_backup,
-                    lambda hflat: hflat,
-                    heur_flat,
-                )
-                heuristic_vals = heur_flat.reshape((action_size, sr_batch_size))
-
-            neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
-
-            # Early meeting detection for deferred variants (0 HT insert):
-            # Update the meeting upper bound without inserting the meeting state.
-            # If the meeting state doesn't exist in this direction's HT yet, store
-            # its last-edge (parent, action) so it can be materialized later.
-            bi_result.meeting = update_meeting_point_best_only_deferred(
-                bi_result.meeting,
-                this_sr=search_result,
-                opposite_sr=opposite_sr,
-                candidate_states=flattened_neighbour_look_head,
-                candidate_costs=flattened_look_a_head_costs,
-                candidate_mask=meeting_mask,
-                this_found=found,
-                this_hashidx=current_hash_idxs,
-                this_old_costs=old_costs,
-                this_parent_hashidx=flat_parent_hashidx,
-                this_parent_action=flat_actions,
-                is_forward=is_forward,
-            )
-
-        else:
-            # No look-ahead: use parent's heuristic value
-            if use_heuristic:
-                heuristic_vals = variable_heuristic_batch_switcher(heuristic_params, states, filled)
-                heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)
-                heuristic_vals = jnp.broadcast_to(
-                    heuristic_vals[jnp.newaxis, :], unflatten_shape
-                ).astype(KEY_DTYPE)
-            else:
-                heuristic_vals = jnp.zeros_like(costs, dtype=KEY_DTYPE)
-                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
-
-            optimal_mask = flattened_filled_tiles
-            neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
-
-        # Create values for priority queue
-        vals = Parant_with_Costs(
-            parent=Parent(hashidx=flat_parent_hashidx, action=flat_actions),
-            cost=costs.flatten(),
-            dist=heuristic_vals.flatten(),
-        )
-        flattened_vals = vals.flatten()
-        flattened_keys = neighbour_keys.flatten()
-
-        (
-            neighbour_keys_reshaped,
-            vals_reshaped,
-            optimal_mask_reshaped,
-        ) = sort_and_pack_action_candidates(
-            flattened_keys,
-            flattened_vals,
-            optimal_mask,
-            action_size,
-            sr_batch_size,
-        )
-
-        search_result = insert_priority_queue_batches(
-            search_result,
-            neighbour_keys_reshaped,
-            vals_reshaped,
-            optimal_mask_reshaped,
-        )
-
-        # Pop next batch with states
-        search_result, new_current, new_states, new_filled = search_result.pop_full_with_actions(
-            puzzle=puzzle,
-            solve_config=solve_config,
-            use_heuristic=True,
-            is_backward=not is_forward,
-        )
-
-        # Update bi_result
-        if is_forward:
-            bi_result.forward = search_result
-        else:
-            bi_result.backward = search_result
-
-        # Check if newly popped states exist in opposite HT
-        # At this point, new_current.hashidx is valid (states are inserted during pop)
-        (
-            new_found_mask,
-            new_opposite_hashidx,
-            new_opposite_costs,
-            new_total_costs,
-        ) = check_intersection(
-            new_states,
-            new_current.cost,
-            new_filled,
-            opposite_sr,
-        )
-
-        bi_result.meeting = update_meeting_point(
-            bi_result.meeting,
-            new_found_mask,
-            new_current.hashidx,
-            new_opposite_hashidx,
-            new_current.cost,
-            new_opposite_costs,
-            new_total_costs,
-            is_forward,
-        )
-
-        return bi_result, new_current, new_states, new_filled
-
-    def loop_body(loop_state: BiLoopStateWithStates) -> BiLoopStateWithStates:
-        """Main loop body for bidirectional A* deferred."""
-        bi_result = loop_state.bi_result
-        solve_config = loop_state.solve_config
-        inverse_solveconfig = loop_state.inverse_solveconfig
-
-        fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
-        bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
-
-        def _expand_forward(bi_result):
-            return _expand_direction_deferred(
-                bi_result,
-                solve_config,
-                inverse_solveconfig,
-                loop_state.params_forward,
-                loop_state.current_forward,
-                loop_state.states_forward,
-                loop_state.filled_forward,
-                is_forward=True,
-                use_heuristic=True,
-            )
-
-        def _expand_backward(bi_result):
-            return _expand_direction_deferred(
-                bi_result,
-                solve_config,
-                inverse_solveconfig,
-                loop_state.params_backward,
-                loop_state.current_backward,
-                loop_state.states_backward,
-                loop_state.filled_backward,
-                is_forward=False,
-                use_heuristic=use_backward_heuristic,
-            )
-
-        # Expand both directions
-        bi_result, new_fwd_current, new_fwd_states, new_fwd_filled = jax.lax.cond(
-            jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
-            _expand_forward,
-            lambda br: (
-                br,
-                loop_state.current_forward,
-                loop_state.states_forward,
-                loop_state.filled_forward,
-            ),
-            bi_result,
-        )
-
-        bi_result, new_bwd_current, new_bwd_states, new_bwd_filled = jax.lax.cond(
-            jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
-            _expand_backward,
-            lambda br: (
-                br,
-                loop_state.current_backward,
-                loop_state.states_backward,
-                loop_state.filled_backward,
-            ),
-            bi_result,
-        )
-
-        return BiLoopStateWithStates(
-            bi_result=bi_result,
-            solve_config=solve_config,
-            inverse_solveconfig=inverse_solveconfig,
-            params_forward=loop_state.params_forward,
-            params_backward=loop_state.params_backward,
-            current_forward=new_fwd_current,
-            current_backward=new_bwd_current,
-            states_forward=new_fwd_states,
-            states_backward=new_bwd_states,
-            filled_forward=new_fwd_filled,
-            filled_backward=new_bwd_filled,
-        )
-
-    return init_loop_state, loop_condition, loop_body
 
 
 def bi_astar_d_builder(
@@ -486,59 +28,54 @@ def bi_astar_d_builder(
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
     terminate_on_first_solution: bool = True,
-    split_node_budget: bool = True,
+    inverse_action_map: jax.Array | None = None,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
-    Builds and returns a JAX-accelerated bidirectional A* deferred search function.
-
-    Combines bidirectional search with deferred heuristic evaluation for
-    maximum efficiency when heuristics are expensive and branching factor is large.
-
-    Args:
-        puzzle: Puzzle instance (must support batched_get_inverse_neighbours)
-        heuristic: Heuristic instance
-        batch_size: Number of states to process in parallel per direction
-        max_nodes: Maximum node budget for the search.
-            If `split_node_budget=True`, this budget is split across forward/backward.
-        pop_ratio: Ratio controlling beam width
-        cost_weight: Weight for path cost in f = cost_weight * g + h
-        show_compile_time: If True, displays compilation time
-        look_ahead_pruning: Enable look-ahead pruning optimization.
-            Note: Bidirectional deferred search requires look_ahead_pruning=True
-            for correct termination condition. If False is passed, it will be
-            forced to True with a warning.
-        split_node_budget: If True, split `max_nodes` equally across two directions
-            to reduce peak memory usage and avoid OOM in large-node settings.
-
-    Returns:
-        A JIT-compiled function that performs bidirectional A* deferred search
+    Builds and returns a JAX-accelerated Bidirectional A* with deferred node evaluation.
+    Uses Unified Core Architecture.
     """
-    # Bidirectional deferred requires look_ahead_pruning for correct f-value computation
-    # Without it, the termination condition based on get_min_f_value() can be incorrect
-    if not look_ahead_pruning:
-        import warnings
+    # 0. Build Switcher
+    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        max_batch_size=batch_size,
+        min_batch_size=MIN_BATCH_SIZE,
+        pad_value=jnp.inf,
+    )
 
-        warnings.warn(
-            "Bidirectional A* deferred requires look_ahead_pruning=True for correct "
-            "termination. Forcing look_ahead_pruning=True.",
-            UserWarning,
-        )
-        look_ahead_pruning = True
+    # 1. Define Policies
+    scoring_policy = AStarScoring()
 
-    statecls = puzzle.State
-    action_size = puzzle.action_size
-    denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    # Forward Policy
+    fwd_expansion = DeferredExpansion(
+        scoring_policy=scoring_policy,
+        heuristic_fn=lambda p, s, m: variable_heuristic_batch_switcher(p, s, m),
+        cost_weight=cost_weight,
+        look_ahead_pruning=look_ahead_pruning,
+        is_backward=False,
+    )
 
-    use_backward_heuristic = not heuristic.is_fixed
-    init_loop_state, loop_condition, loop_body = _bi_astar_d_loop_builder(
+    # Backward Policy
+    bwd_expansion = DeferredExpansion(
+        scoring_policy=scoring_policy,
+        heuristic_fn=lambda p, s, m: variable_heuristic_batch_switcher(p, s, m),
+        cost_weight=cost_weight,
+        look_ahead_pruning=look_ahead_pruning,
+        is_backward=True,
+        inverse_action_map=inverse_action_map,
+    )
+
+    # 2. Build Loop
+    # Deferred uses ParentWithCosts for PQ
+    init_loop_state, loop_condition, loop_body = unified_bi_search_loop_builder(
         puzzle,
-        heuristic,
+        fwd_expansion,
+        bwd_expansion,
         batch_size,
-        cost_weight,
-        look_ahead_pruning,
-        use_backward_heuristic=use_backward_heuristic,
+        max_nodes,
+        pop_ratio,
+        min_pop=1,
+        pq_val_type=ParentWithCosts,
         terminate_on_first_solution=terminate_on_first_solution,
     )
 
@@ -547,54 +84,52 @@ def bi_astar_d_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
-        """Perform bidirectional A* deferred search."""
-        # Prepare heuristic parameters for both directions
-        heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
-        # Build a backward solve config that treats `start` as the target.
-        # Prefer puzzle-level normalization via hindsight_transform.
-        inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
+        """
+        bi_astar_d implementation (Unified).
+        """
+        # Prepare heuristics
+        heuristic_params = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
 
-        if use_backward_heuristic:
-            heuristic_params_backward = heuristic.prepare_heuristic_parameters(
-                inverse_solveconfig, **kwargs
-            )
+        # Inverse Config / Params
+        hindsight_transform = getattr(puzzle, "hindsight_transform", None)
+        if callable(hindsight_transform):
+            inverse_solve_config = hindsight_transform(solve_config, start)
         else:
-            heuristic_params_backward = heuristic_params_forward
-
-        # Build per-call search storage inside the jitted function to avoid
-        # capturing very large templates as compile-time constants.
-        bi_result = build_bi_search_result(
-            statecls,
-            batch_size,
-            max(1, max_nodes // 2) if split_node_budget else max_nodes,
-            action_size,
-            pop_ratio=pop_ratio,
-            min_pop=min_pop,
-            parant_with_costs=True,
+            get_inverse_solve_config = getattr(puzzle, "get_inverse_solve_config", None)
+            if callable(get_inverse_solve_config):
+                inverse_solve_config = get_inverse_solve_config(solve_config, start)
+            else:
+                # Fallback
+                inverse_solve_config = solve_config.replace(TargetState=start)
+        inverse_heuristic_params = heuristic.prepare_heuristic_parameters(
+            inverse_solve_config, **kwargs
         )
+
+        if hasattr(puzzle, "get_goal_state"):
+            goal = puzzle.get_goal_state(solve_config)
+        elif hasattr(solve_config, "TargetState"):
+            goal = solve_config.TargetState
+        else:
+            raise AttributeError(
+                "Puzzle does not support get_goal_state and solve_config has no TargetState."
+            )
 
         loop_state = init_loop_state(
-            bi_result,
             solve_config,
-            inverse_solveconfig,
+            inverse_solve_config,
             start,
-            heuristic_params_forward,
-            heuristic_params_backward,
+            goal,
+            heuristic_params=heuristic_params,
+            inverse_heuristic_params=inverse_heuristic_params,
         )
+
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 
-        bi_result = loop_state.bi_result
-
-        # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
-        bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, solve_config)
-
-        return finalize_bidirectional_result(bi_result)
+        return finalize_bidirectional_result(loop_state.bi_result)
 
     return jit_with_warmup(
         bi_astar_d,
         puzzle=puzzle,
         show_compile_time=show_compile_time,
         warmup_inputs=warmup_inputs,
-        init_message="Initializing JIT for bidirectional A* deferred...",
-        completion_message="JIT compiled\n",
     )
