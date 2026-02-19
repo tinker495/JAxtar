@@ -5,9 +5,13 @@ import jax.numpy as jnp
 from puxle import SlidePuzzle
 
 import cli.search_runner as search_runner
+import JAxtar.bi_stars.bi_astar as bi_astar_mod
 import JAxtar.bi_stars.bi_astar_d as bi_astar_d_mod
+import JAxtar.stars.astar as astar_mod
+import JAxtar.stars.astar_d as astar_d_mod
 from config.pydantic_models import SearchOptions, VisualizeOptions
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
+from JAxtar.annotate import MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
 from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.qstar import qstar_builder
@@ -166,6 +170,149 @@ def test_bi_astar_d_builder_uses_masked_batch_switcher(monkeypatch):
     states = jnp.arange(8, dtype=jnp.int32)
     mask = jnp.array([True, False, True, False, True, False, True, False])
 
+    fwd_vals = captured["fwd_heuristic_fn"](None, states, mask)
+    bwd_vals = captured["bwd_heuristic_fn"](None, states, mask)
+
+    assert captured["switcher_calls"] == 2
+    assert bool(jnp.all(jnp.isfinite(fwd_vals[mask])))
+    assert bool(jnp.all(jnp.isinf(fwd_vals[~mask])))
+    assert bool(jnp.all(jnp.isfinite(bwd_vals[mask])))
+    assert bool(jnp.all(jnp.isinf(bwd_vals[~mask])))
+
+
+def test_astar_builder_uses_masked_batch_switcher(monkeypatch):
+    """Regression: astar should route heuristic evaluation through mask-aware switcher."""
+    captured = {"switcher_calls": 0}
+
+    def _fake_switcher_builder(*args, **kwargs):
+        del args, kwargs
+
+        def _switcher(params, states, mask):
+            del params, states
+            captured["switcher_calls"] += 1
+            return jnp.where(mask, jnp.array(5.0, dtype=jnp.float32), jnp.inf)
+
+        return _switcher
+
+    def _fake_loop_builder(*args, **kwargs):
+        expansion = args[1]
+        captured["heuristic_fn"] = expansion.heuristic_fn
+
+        def _init_loop_state(*inner_args, **inner_kwargs):
+            del inner_args, inner_kwargs
+            return SimpleNamespace(search_result=SimpleNamespace(), current=None, filled=None)
+
+        return _init_loop_state, (lambda _: False), (lambda loop_state: loop_state)
+
+    monkeypatch.setattr(astar_mod, "variable_batch_switcher_builder", _fake_switcher_builder)
+    monkeypatch.setattr(astar_mod, "unified_search_loop_builder", _fake_loop_builder)
+    monkeypatch.setattr(astar_mod, "jit_with_warmup", lambda fn, **kwargs: fn)
+
+    search_fn = astar_mod.astar_builder(
+        puzzle=_BuilderDummyPuzzle(),
+        heuristic=_BuilderDummyHeuristic(),
+        batch_size=8,
+        max_nodes=64,
+    )
+    assert callable(search_fn)
+
+    states = jnp.arange(8, dtype=jnp.int32)
+    mask = jnp.array([True, False, True, False, True, False, True, False])
+    values = captured["heuristic_fn"](None, states, mask)
+
+    assert captured["switcher_calls"] == 1
+    assert bool(jnp.all(jnp.isfinite(values[mask])))
+    assert bool(jnp.all(jnp.isinf(values[~mask])))
+
+
+def test_astar_d_builder_uses_masked_batch_switcher_and_action_scaled_min_pop(monkeypatch):
+    """Regression: astar_d should use masked switcher and restored action-scaled min_pop."""
+    captured = {"switcher_calls": 0, "min_pop": None}
+
+    def _fake_switcher_builder(*args, **kwargs):
+        del args, kwargs
+
+        def _switcher(params, states, mask):
+            del params, states
+            captured["switcher_calls"] += 1
+            return jnp.where(mask, jnp.array(6.0, dtype=jnp.float32), jnp.inf)
+
+        return _switcher
+
+    def _fake_loop_builder(*args, **kwargs):
+        expansion = args[1]
+        captured["heuristic_fn"] = expansion.heuristic_fn
+        captured["min_pop"] = kwargs["min_pop"]
+
+        def _init_loop_state(*inner_args, **inner_kwargs):
+            del inner_args, inner_kwargs
+            return SimpleNamespace(search_result=SimpleNamespace(), current=None, filled=None)
+
+        return _init_loop_state, (lambda _: False), (lambda loop_state: loop_state)
+
+    monkeypatch.setattr(astar_d_mod, "variable_batch_switcher_builder", _fake_switcher_builder)
+    monkeypatch.setattr(astar_d_mod, "unified_search_loop_builder", _fake_loop_builder)
+    monkeypatch.setattr(astar_d_mod, "jit_with_warmup", lambda fn, **kwargs: fn)
+
+    search_fn = astar_d_mod.astar_d_builder(
+        puzzle=_BuilderDummyPuzzle(),
+        heuristic=_BuilderDummyHeuristic(),
+        batch_size=8,
+        max_nodes=64,
+    )
+    assert callable(search_fn)
+
+    states = jnp.arange(8, dtype=jnp.int32)
+    mask = jnp.array([True, False, True, False, True, False, True, False])
+    values = captured["heuristic_fn"](None, states, mask)
+
+    expected_min_pop = max(1, MIN_BATCH_SIZE // max(1, _BuilderDummyPuzzle.action_size // 2))
+    assert captured["min_pop"] == expected_min_pop
+    assert captured["switcher_calls"] == 1
+    assert bool(jnp.all(jnp.isfinite(values[mask])))
+    assert bool(jnp.all(jnp.isinf(values[~mask])))
+
+
+def test_bi_astar_builder_uses_masked_batch_switcher(monkeypatch):
+    """Regression: bi_astar should route both directions through mask-aware switcher."""
+    captured = {"switcher_calls": 0}
+
+    def _fake_switcher_builder(*args, **kwargs):
+        del args, kwargs
+
+        def _switcher(params, states, mask):
+            del params, states
+            captured["switcher_calls"] += 1
+            return jnp.where(mask, jnp.array(9.0, dtype=jnp.float32), jnp.inf)
+
+        return _switcher
+
+    def _fake_loop_builder(*args, **kwargs):
+        fwd_expansion = args[1]
+        bwd_expansion = args[2]
+        captured["fwd_heuristic_fn"] = fwd_expansion.heuristic_fn
+        captured["bwd_heuristic_fn"] = bwd_expansion.heuristic_fn
+
+        def _init_loop_state(*inner_args, **inner_kwargs):
+            del inner_args, inner_kwargs
+            return SimpleNamespace(bi_result=SimpleNamespace())
+
+        return _init_loop_state, (lambda _: False), (lambda loop_state: loop_state)
+
+    monkeypatch.setattr(bi_astar_mod, "variable_batch_switcher_builder", _fake_switcher_builder)
+    monkeypatch.setattr(bi_astar_mod, "unified_bi_search_loop_builder", _fake_loop_builder)
+    monkeypatch.setattr(bi_astar_mod, "jit_with_warmup", lambda fn, **kwargs: fn)
+
+    search_fn = bi_astar_mod.bi_astar_builder(
+        puzzle=_BuilderDummyPuzzle(),
+        heuristic=_BuilderDummyHeuristic(),
+        batch_size=8,
+        max_nodes=64,
+    )
+    assert callable(search_fn)
+
+    states = jnp.arange(8, dtype=jnp.int32)
+    mask = jnp.array([True, False, True, False, True, False, True, False])
     fwd_vals = captured["fwd_heuristic_fn"](None, states, mask)
     bwd_vals = captured["bwd_heuristic_fn"](None, states, mask)
 

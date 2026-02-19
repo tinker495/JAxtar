@@ -6,11 +6,13 @@ from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
+from JAxtar.annotate import MIN_BATCH_SIZE
 from JAxtar.core.common import finalize_search_result
 from JAxtar.core.expansion import DeferredExpansion
 from JAxtar.core.loop import unified_search_loop_builder
 from JAxtar.core.result import ParentWithCosts, SearchResult
 from JAxtar.core.scoring import AStarScoring
+from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
 def astar_d_builder(
@@ -29,25 +31,33 @@ def astar_d_builder(
     Uses Unified Core Architecture.
     """
     # 0. Build Switcher for efficiency
+    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        max_batch_size=batch_size,
+        min_batch_size=MIN_BATCH_SIZE,
+        pad_value=jnp.inf,
+    )
 
     # 1. Define Policies
     scoring_policy = AStarScoring()
     expansion_policy = DeferredExpansion(
         scoring_policy=scoring_policy,
-        heuristic_fn=lambda p, s, m: heuristic.batched_distance(p, s),
+        heuristic_fn=lambda p, s, m: variable_heuristic_batch_switcher(p, s, m),
         cost_weight=cost_weight,
         look_ahead_pruning=look_ahead_pruning,
     )
 
     # 2. Build Loop
     # Deferred uses ParentWithCosts for PQ
+    denom = max(1, puzzle.action_size // 2)
+    min_pop = max(1, MIN_BATCH_SIZE // denom)
     init_loop_state, loop_condition, loop_body = unified_search_loop_builder(
         puzzle,
         expansion_policy,
         batch_size,
         max_nodes,
         pop_ratio,
-        min_pop=1,
+        min_pop=min_pop,
         pq_val_type=ParentWithCosts,
     )
 

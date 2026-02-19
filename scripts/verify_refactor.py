@@ -3,8 +3,10 @@ import sys
 
 # Ensure current directory and dependencies are in path
 sys.path.append(os.getcwd())
-sys.path.append("/home/tinker/PuXle")
-sys.path.append("/home/tinker/Xtructure")
+for env_name in ("PUXLE_PATH", "XTRUCTURE_PATH"):
+    extra_path = os.getenv(env_name)
+    if extra_path:
+        sys.path.append(extra_path)
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
@@ -26,11 +28,8 @@ class HeuristicQFunction(QFunction):
         self.heuristic = heuristic
 
     def q_value(self, q_parameters, current):
-        # Q(s, a) = cost(s, a) + h(next_s)
-        # Using batched logic?
-        # QFunction.batched_q_value calls this via vmap (params, current -> [action])
-        # So current is single state here.
-        pass  # We implement batched_q_value directly for efficiency
+        current_batch = jax.tree_util.tree_map(lambda x: x[jnp.newaxis, ...], current)
+        return self.batched_q_value(q_parameters, current_batch)[0]
 
     def batched_q_value(self, q_parameters, current):
         # current: [batch] of states

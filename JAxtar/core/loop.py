@@ -72,18 +72,12 @@ def unified_search_loop_builder(
 
         # Start Batch
         start_hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
-        start_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+        start_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
 
         start_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
         start_current = Current(hashidx=start_hash_idxs, cost=start_costs)
 
-        # 3. Seed PQ only for Current-based eager variants.
-        # Deferred variants (ParentWithCosts) must not enqueue a synthetic edge.
-        if pq_val_type is Current:
-            start_pq_keys = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
-            search_result = search_result.insert_batch(start_pq_keys, start_current, start_filled)
-
-        # Materialize start states (padding)
+        # 3. Materialize start states (padding)
         start_states = xnp.pad(start, (0, sr_batch_size - 1))
 
         return LoopState(

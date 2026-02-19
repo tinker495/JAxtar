@@ -17,6 +17,7 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, HashIdx, base_dataclass, xtructure_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, HASH_SIZE_MULTIPLIER, KEY_DTYPE
+from JAxtar.core.common import normalize_neighbour_cost_layout, resolve_neighbour_layout
 from JAxtar.stars.search_base import Current, Parent, SearchResult
 
 
@@ -440,7 +441,12 @@ def update_meeting_point_best_only_deferred(
             return best_this_hashidx, jnp.array(True), dummy_hashidx, dummy_action
 
         def _this_edge_repr(_):
-            return dummy_hashidx, jnp.array(False), best_parent_hashidx, best_parent_action
+            return (
+                dummy_hashidx,
+                jnp.array(False),
+                best_parent_hashidx,
+                best_parent_action,
+            )
 
         (
             this_hashidx_repr,
@@ -487,6 +493,7 @@ def materialize_meeting_point_hashidxs(
     bi_result: BiDirectionalSearchResult,
     puzzle: Puzzle,
     solve_config: Puzzle.SolveConfig,
+    inverse_solve_config: Puzzle.SolveConfig | None = None,
 ) -> BiDirectionalSearchResult:
     """Ensure meeting point has hashidxs in both directions.
 
@@ -494,6 +501,9 @@ def materialize_meeting_point_hashidxs(
     (parent_hashidx, action) on one side. This function materializes the meeting
     state into the missing hash table(s) with at most one lookup+insert per side.
     """
+
+    if inverse_solve_config is None:
+        inverse_solve_config = solve_config
 
     dummy_hashidx = HashIdx.default(())
     dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
@@ -520,7 +530,16 @@ def materialize_meeting_point_hashidxs(
         parent_state = bi_result.backward.hashtable[meeting.bwd_parent_hashidx]
         parent_b = _add_batch_dim(parent_state)
         filled_b = jnp.array([True])
-        inv_neigh, _ = puzzle.batched_get_inverse_neighbours(solve_config, parent_b, filled_b)
+        inv_neigh, inv_cost = puzzle.batched_get_inverse_neighbours(
+            inverse_solve_config, parent_b, filled_b
+        )
+        inv_neigh, _ = normalize_neighbour_cost_layout(
+            inv_neigh,
+            inv_cost,
+            bi_result.action_size,
+            1,
+            layout=resolve_neighbour_layout(puzzle, is_backward=True),
+        )
         a = meeting.bwd_parent_action.astype(jnp.int32)
         child = inv_neigh[a, 0]
         return child
@@ -585,7 +604,9 @@ def materialize_meeting_point_hashidxs(
         )
         return sr, hashidx
 
-    def _materialize_if_needed(bi_result: BiDirectionalSearchResult) -> BiDirectionalSearchResult:
+    def _materialize_if_needed(
+        bi_result: BiDirectionalSearchResult,
+    ) -> BiDirectionalSearchResult:
         meeting = bi_result.meeting
         meeting_state = _pick_meeting_state(bi_result, meeting)
 

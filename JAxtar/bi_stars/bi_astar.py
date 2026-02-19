@@ -6,6 +6,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
+from JAxtar.annotate import MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
     build_bi_search_result as _legacy_build_bi_search_result,
 )
@@ -17,6 +18,7 @@ from JAxtar.core.bi_result import (
 from JAxtar.core.expansion import EagerExpansion
 from JAxtar.core.result import Current
 from JAxtar.core.scoring import AStarScoring
+from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
 def build_bi_search_result(*args, **kwargs):
@@ -40,12 +42,18 @@ def bi_astar_builder(
     Builds and returns a JAX-accelerated Bidirectional A* search function using Unified Core.
     """
     # 1. Define Policies
+    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        max_batch_size=batch_size,
+        min_batch_size=MIN_BATCH_SIZE,
+        pad_value=jnp.inf,
+    )
     scoring_policy = AStarScoring()
 
     # Forward Policy
     fwd_expansion = EagerExpansion(
         scoring_policy=scoring_policy,
-        heuristic_fn=lambda p, s, m: heuristic.batched_distance(p, s),
+        heuristic_fn=lambda p, s, m: variable_heuristic_batch_switcher(p, s, m),
         cost_weight=cost_weight,
         is_backward=False,
     )
@@ -53,7 +61,7 @@ def bi_astar_builder(
     # Backward Policy (uses inverse_action_map optimization if provided)
     bwd_expansion = EagerExpansion(
         scoring_policy=scoring_policy,
-        heuristic_fn=lambda p, s, m: heuristic.batched_distance(p, s),
+        heuristic_fn=lambda p, s, m: variable_heuristic_batch_switcher(p, s, m),
         cost_weight=cost_weight,
         is_backward=True,
         inverse_action_map=inverse_action_map,
@@ -84,55 +92,8 @@ def bi_astar_builder(
         # Forward Heuristic: h(state, goal)
         heuristic_params = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
 
-        # Backward Heuristic: h(state, start)
-        # We need to construct an "inverse solve config" where goal is start.
-        # puzzle.get_inverse_solve_config usually does this.
-        # But heuristic preparation needs valid "goal" in config.
-        # We need to pass `start` as goal for backward search.
-
-        # If puzzle supports generating inverse config:
-        # inverse_solve_config = puzzle.get_inverse_solve_config(solve_config, start)
-        # We assume `puzzle` has this method or we manually construct.
-        # `puxle` Puzzle usually supports `make_goal_from_state`?
-        # Or `solve_config` holds goal.
-
-        # We'll assume caller passes `inverse_solve_config` or we construct it.
-        # Existing `bi_astar.py` logic:
-        # inverse_solve_config = puzzle.change_goal_state(solve_config, start)
-        # inverse_heuristic_params = heuristic.prepare(inverse_solve_config)
-
-        # Let's assume puzzle.get_solve_config(start) works if we want start as goal?
-        # Or `solve_config` is immutable?
-        # Usually `solve_config` is a dataclass.
-        # We can construct new one.
-        # `puzzle.traverse(start, ...)` ?
-
-        # Let's check `bi_astar.py` original code.
-        # `bi_astar_builder` in original code assumed `solve_config`.
-        # Inside `bi_astar`:
-        # `inverse_solve_config = puzzle.get_inverse_solve_config(solve_config, start)` (hypothetical)
-
-        # Note: `puxle` doesn't standardize `inverse_solve_config`.
-        # However, for 15-puzzle, solve_config holds target.
-        # For Rubik's, usually fixed target.
-        # If we reverse, we search FROM End TO Start.
-        # The heuristic needs to estimate distance TO Start.
-        # So we need heuristic params configured for Start.
-
-        # Assuming `puzzle` has `get_inverse_solve_config` or similar.
-        # If not, we might need a `inverse_solve_config_fn` argument?
-        # But standard `bi_astar` assumed symmetric or provided mechanism.
-
-        # We'll use `puzzle.get_inverse_solve_config` if available.
-        # If not, let's assume `kwargs` has it?
-
-        # In `bi_astar.py` from `JAxtar`:
-        # `inverse_solveconfig = puzzle.get_inverse_solve_config(solve_config, start)`
-        # This was present in `bi_astar.py`?
-        # Let's check Step 19 summary or `bi_search_base` references.
-        # `bi_search_base` has `inverse_solveconfig` in LoopState.
-
-        # I'll use `puzzle.get_inverse_solve_config(solve_config, start)`.
+        # Backward heuristic should be parameterized against `start` as target.
+        # Prefer puzzle-level transforms for domains that need custom goal normalization.
 
         hindsight_transform = getattr(puzzle, "hindsight_transform", None)
         if callable(hindsight_transform):

@@ -33,6 +33,14 @@ class BiLoopState:
     filled_bwd: chex.Array
 
 
+def _priority_queue_min_key(priority_queue: Any) -> chex.Array:
+    """Return PQ lower-bound key without scanning full storage."""
+    store_min = jnp.min(jnp.ravel(priority_queue.key_store[0]))
+    buffer_min = jnp.min(jnp.ravel(priority_queue.key_buffer))
+    min_key = jnp.minimum(store_min, buffer_min)
+    return jnp.where(priority_queue.size > 0, min_key, jnp.inf)
+
+
 def unified_bi_search_loop_builder(
     puzzle: Puzzle,
     fwd_expansion_policy: ExpansionPolicy,
@@ -159,13 +167,18 @@ def unified_bi_search_loop_builder(
             fwd_weight = getattr(fwd_expansion_policy, "cost_weight", 1.0)
             bwd_weight = getattr(bwd_expansion_policy, "cost_weight", 1.0)
 
+            def _get_pq_min_key(sr):
+                return _priority_queue_min_key(sr.priority_queue)
+
             def _get_min_f(sr, cur, filled, weight):
                 if hasattr(cur, "dist"):
                     dist = cur.dist
                 else:
                     dist = sr.get_dist(cur)
                 f = weight * cur.cost + dist
-                return jnp.min(jnp.where(filled, f, jnp.inf))
+                current_min_f = jnp.min(jnp.where(filled, f, jnp.inf))
+                pq_min_f = _get_pq_min_key(sr)
+                return jnp.minimum(current_min_f, pq_min_f)
 
             fwd_min_f = _get_min_f(
                 bi_result.forward,
@@ -195,50 +208,88 @@ def unified_bi_search_loop_builder(
         fwd_config = loop_state.solve_config
         bwd_config = loop_state.inverse_solve_config
 
-        # 1. Forward Expansion
-        # Pass meeting point
-        (
-            bi_result.forward,
-            bi_result.meeting,
-            next_fwd,
-            next_fwd_states,  # Unused if not needed for intersection (expand_bi handled it)
-            next_fwd_filled,
-        ) = fwd_expansion_policy.expand_bi(
-            bi_result.forward,
-            bi_result.backward,  # Opponent
-            bi_result.meeting,
-            puzzle,
-            fwd_config,
-            loop_state.heuristic_params,
-            loop_state.current_fwd,
-            loop_state.filled_fwd,
-            is_forward=True,
+        fwd_has_frontier = jnp.logical_or(
+            jnp.any(loop_state.filled_fwd),
+            bi_result.forward.priority_queue.size > 0,
+        )
+        bwd_has_frontier = jnp.logical_or(
+            jnp.any(loop_state.filled_bwd),
+            bi_result.backward.priority_queue.size > 0,
+        )
+        fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
+        bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
+
+        fwd_should_expand = jnp.logical_and(fwd_has_frontier, fwd_not_full)
+        bwd_should_expand = jnp.logical_and(bwd_has_frontier, bwd_not_full)
+
+        def _expand_forward(br):
+            return fwd_expansion_policy.expand_bi(
+                br.forward,
+                br.backward,
+                br.meeting,
+                puzzle,
+                fwd_config,
+                loop_state.heuristic_params,
+                loop_state.current_fwd,
+                loop_state.filled_fwd,
+                is_forward=True,
+            )
+
+        def _skip_forward(br):
+            return (
+                br.forward,
+                br.meeting,
+                loop_state.current_fwd,
+                br.forward.get_state(loop_state.current_fwd),
+                loop_state.filled_fwd,
+            )
+
+        (bi_result.forward, bi_result.meeting, next_fwd, _, next_fwd_filled,) = jax.lax.cond(
+            fwd_should_expand,
+            _expand_forward,
+            _skip_forward,
+            bi_result,
         )
 
-        # 2. Backward Expansion
-        (
-            bi_result.backward,
-            bi_result.meeting,
-            next_bwd,
-            next_bwd_states,
-            next_bwd_filled,
-        ) = bwd_expansion_policy.expand_bi(
-            bi_result.backward,
-            bi_result.forward,  # Opponent
-            bi_result.meeting,
-            puzzle,
-            bwd_config,  # Inverse config
-            loop_state.inverse_heuristic_params,
-            loop_state.current_bwd,
-            loop_state.filled_bwd,
-            is_forward=False,
+        def _expand_backward(br):
+            return bwd_expansion_policy.expand_bi(
+                br.backward,
+                br.forward,
+                br.meeting,
+                puzzle,
+                bwd_config,
+                loop_state.inverse_heuristic_params,
+                loop_state.current_bwd,
+                loop_state.filled_bwd,
+                is_forward=False,
+            )
+
+        def _skip_backward(br):
+            return (
+                br.backward,
+                br.meeting,
+                loop_state.current_bwd,
+                br.backward.get_state(loop_state.current_bwd),
+                loop_state.filled_bwd,
+            )
+
+        (bi_result.backward, bi_result.meeting, next_bwd, _, next_bwd_filled,) = jax.lax.cond(
+            bwd_should_expand,
+            _expand_backward,
+            _skip_backward,
+            bi_result,
         )
 
         # 3. Materialize Meeting Point (if needed, e.g. deferred edge)
         # expand_bi might update meeting to "Edge" format.
         # We need to ensure we can reconstruct path.
         # materialize_meeting_point_hashidxs does this ensuring HT entries exist.
-        bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, fwd_config)
+        bi_result = materialize_meeting_point_hashidxs(
+            bi_result,
+            puzzle,
+            fwd_config,
+            bwd_config,
+        )
 
         return BiLoopState(
             bi_result=bi_result,

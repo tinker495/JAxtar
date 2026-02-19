@@ -6,11 +6,13 @@ from puxle import Puzzle
 
 from helpers.jax_compile import jit_with_warmup
 from heuristic.heuristic_base import Heuristic
+from JAxtar.annotate import MIN_BATCH_SIZE
 from JAxtar.core.common import finalize_search_result
 from JAxtar.core.expansion import EagerExpansion
 from JAxtar.core.loop import unified_search_loop_builder
 from JAxtar.core.result import Current, SearchResult
 from JAxtar.core.scoring import AStarScoring
+from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
 def astar_builder(
@@ -39,10 +41,16 @@ def astar_builder(
         A function that performs A* search given a start state and solve configuration.
     """
     # 1. Define Policies
+    variable_heuristic_batch_switcher = variable_batch_switcher_builder(
+        heuristic.batched_distance,
+        max_batch_size=batch_size,
+        min_batch_size=MIN_BATCH_SIZE,
+        pad_value=jnp.inf,
+    )
     scoring_policy = AStarScoring()
     expansion_policy = EagerExpansion(
         scoring_policy=scoring_policy,
-        heuristic_fn=lambda p, s, m: heuristic.batched_distance(p, s),
+        heuristic_fn=lambda p, s, m: variable_heuristic_batch_switcher(p, s, m),
         cost_weight=cost_weight,
     )
 

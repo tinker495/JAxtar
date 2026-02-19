@@ -3,6 +3,9 @@ import jax.numpy as jnp
 import pytest
 from xtructure import base_dataclass
 
+from JAxtar.core.common import (
+    insert_priority_queue_batches as insert_priority_queue_batches_core,
+)
 from JAxtar.stars.search_base import insert_priority_queue_batches
 
 
@@ -24,6 +27,7 @@ class _DummyPriorityQueue:
 @base_dataclass
 class _DummySearchResult:
     priority_queue: _DummyPriorityQueue
+    batch_size: int
 
 
 def _build_dummy_search_result(max_calls: int, row_width: int) -> _DummySearchResult:
@@ -32,7 +36,7 @@ def _build_dummy_search_result(max_calls: int, row_width: int) -> _DummySearchRe
         inserted_vals=jnp.full((max_calls, row_width), -1, dtype=jnp.int32),
         call_count=jnp.array(0, dtype=jnp.int32),
     )
-    return _DummySearchResult(priority_queue=pq)
+    return _DummySearchResult(priority_queue=pq, batch_size=row_width)
 
 
 def test_insert_priority_queue_batches_skips_rows_without_candidates():
@@ -100,3 +104,36 @@ def test_insert_priority_queue_batches_noop_when_all_rows_masked_out():
     assert int(out.priority_queue.call_count) == 0
     assert jnp.allclose(out.priority_queue.inserted_keys, jnp.array([[-1.0, -1.0], [-1.0, -1.0]]))
     assert out.priority_queue.inserted_vals.tolist() == [[-1, -1], [-1, -1]]
+
+
+def test_core_insert_priority_queue_batches_skips_rows_without_candidates():
+    keys = jnp.array(
+        [
+            [1.0, 1.1],
+            [2.0, 2.1],
+            [3.0, 3.1],
+        ],
+        dtype=jnp.float32,
+    )
+    vals = jnp.array(
+        [
+            [10, 11],
+            [20, 21],
+            [30, 31],
+        ],
+        dtype=jnp.int32,
+    )
+    masks = jnp.array(
+        [
+            [True, False],
+            [False, False],
+            [True, True],
+        ]
+    )
+
+    sr = _build_dummy_search_result(max_calls=3, row_width=2)
+    out = insert_priority_queue_batches_core(sr, keys, vals, masks)
+
+    assert int(out.priority_queue.call_count) == 2
+    assert out.priority_queue.inserted_keys[0].tolist() == pytest.approx([1.0, 1.1])
+    assert out.priority_queue.inserted_keys[1].tolist() == pytest.approx([3.0, 3.1])

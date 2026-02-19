@@ -20,8 +20,10 @@ from JAxtar.core.bi_result import (
 from JAxtar.core.common import (
     build_action_major_parent_context,
     build_action_major_parent_layout,
+    normalize_neighbour_cost_layout,
     packed_masked_state_eval,
     partition_and_pack_frontier_candidates,
+    resolve_neighbour_layout,
     sort_and_pack_action_candidates,
 )
 from JAxtar.core.result import Current, Parent, ParentWithCosts, SearchResult
@@ -69,26 +71,29 @@ class EagerExpansion(ExpansionPolicy):
                     return s, c
 
                 neighbours, ncost = jax.vmap(_step_action)(inv_actions)
-                neighbours = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), neighbours)
-                ncost = jnp.swapaxes(ncost, 0, 1)
+                neighbour_layout = "action_major"
 
             else:
                 neighbours, ncost = puzzle.batched_get_inverse_neighbours(
                     solve_config, states, filled
                 )
+                neighbour_layout = resolve_neighbour_layout(puzzle, is_backward=True)
         else:
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
+            neighbour_layout = resolve_neighbour_layout(puzzle, is_backward=False)
 
         # 2. Compute Costs
         action_size = search_result.action_size
         batch_size = search_result.batch_size
 
         current_costs = current.cost
-        # Normalize neighbour/cost layout to action-major: (action_size, batch_size).
-        # Some puzzle APIs return (batch_size, action_size), especially in backward paths.
-        if ncost.ndim == 2 and ncost.shape[0] == batch_size and ncost.shape[1] == action_size:
-            ncost = jnp.swapaxes(ncost, 0, 1)
-            neighbours = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), neighbours)
+        neighbours, ncost = normalize_neighbour_cost_layout(
+            neighbours,
+            ncost,
+            action_size,
+            batch_size,
+            layout=neighbour_layout,
+        )
 
         nextcosts = (current_costs[None, :] + ncost).astype(KEY_DTYPE)
         flat_neighbours = neighbours.flatten()
@@ -245,7 +250,7 @@ class DeferredExpansion(ExpansionPolicy):
             flat_actions,
             costs,
             filled_tiles,
-            unflatten_shape,
+            _,
         ) = build_action_major_parent_context(
             current.hashidx,
             current.cost,
@@ -258,14 +263,42 @@ class DeferredExpansion(ExpansionPolicy):
         if self.look_ahead_pruning:
             states = search_result.get_state(current)
             if self.is_backward:
-                neighbours, ncost = puzzle.batched_get_inverse_neighbours(
-                    solve_config,
-                    states,
-                    filled,
-                )
+                if self.inverse_action_map is not None:
+                    inv_actions = self.inverse_action_map
+
+                    def _step_action(act):
+                        act_batch = jnp.full(
+                            (batch_size,),
+                            act,
+                            dtype=self.inverse_action_map.dtype,
+                        )
+                        s, c = puzzle.batched_get_actions(
+                            solve_config,
+                            states,
+                            act_batch,
+                            filled,
+                        )
+                        return s, c
+
+                    neighbours, ncost = jax.vmap(_step_action)(inv_actions)
+                    neighbour_layout = "action_major"
+                else:
+                    neighbours, ncost = puzzle.batched_get_inverse_neighbours(
+                        solve_config,
+                        states,
+                        filled,
+                    )
+                    neighbour_layout = resolve_neighbour_layout(puzzle, is_backward=True)
             else:
                 neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
-
+                neighbour_layout = resolve_neighbour_layout(puzzle, is_backward=False)
+            neighbours, ncost = normalize_neighbour_cost_layout(
+                neighbours,
+                ncost,
+                action_size,
+                batch_size,
+                layout=neighbour_layout,
+            )
             look_ahead_costs = (current.cost[None, :] + ncost).astype(KEY_DTYPE)
 
             flat_neighbours = neighbours.flatten()
@@ -352,12 +385,6 @@ class DeferredExpansion(ExpansionPolicy):
         is_forward: bool,
         **kwargs,
     ) -> tuple[SearchResult, Any, Current, Puzzle.State, chex.Array]:
-        # Copied logic with intersection check (as implemented in previous turn)
-        # Note: I'm overwriting file so I should assume I'm writing full file.
-        # But for brevity I'll assume I write the version with expand_bi filled recursively if I was just editing.
-        # But here I am overwriting.
-
-        # 1. Primitives
         action_size = search_result.action_size
         batch_size = search_result.batch_size
 
@@ -366,7 +393,7 @@ class DeferredExpansion(ExpansionPolicy):
             flat_actions,
             costs,
             filled_tiles,
-            unflatten_shape,
+            _,
         ) = build_action_major_parent_context(
             current.hashidx,
             current.cost,
@@ -378,17 +405,42 @@ class DeferredExpansion(ExpansionPolicy):
         if self.look_ahead_pruning:
             states = search_result.get_state(current)
             if self.is_backward:
-                neighbours, ncost = puzzle.batched_get_inverse_neighbours(
-                    solve_config,
-                    states,
-                    filled,
-                )
+                if self.inverse_action_map is not None:
+                    inv_actions = self.inverse_action_map
+
+                    def _step_action(act):
+                        act_batch = jnp.full(
+                            (batch_size,),
+                            act,
+                            dtype=self.inverse_action_map.dtype,
+                        )
+                        s, c = puzzle.batched_get_actions(
+                            solve_config,
+                            states,
+                            act_batch,
+                            filled,
+                        )
+                        return s, c
+
+                    neighbours, ncost = jax.vmap(_step_action)(inv_actions)
+                    neighbour_layout = "action_major"
+                else:
+                    neighbours, ncost = puzzle.batched_get_inverse_neighbours(
+                        solve_config,
+                        states,
+                        filled,
+                    )
+                    neighbour_layout = resolve_neighbour_layout(puzzle, is_backward=True)
             else:
                 neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
-
-            # Ensure ncost is (action_size, batch_size) for consistent broadcasting
-            if ncost.ndim == 2 and ncost.shape[0] == batch_size:
-                ncost = jnp.swapaxes(ncost, 0, 1)  # (batch, action) -> (action, batch)
+                neighbour_layout = resolve_neighbour_layout(puzzle, is_backward=False)
+            neighbours, ncost = normalize_neighbour_cost_layout(
+                neighbours,
+                ncost,
+                action_size,
+                batch_size,
+                layout=neighbour_layout,
+            )
             look_ahead_costs = (current.cost[None, :] + ncost).astype(KEY_DTYPE)
             flat_neighbours = neighbours.flatten()
             flat_la_costs = look_ahead_costs.flatten()
@@ -520,37 +572,14 @@ class QStarExpansion(ExpansionPolicy):
 
         states = search_result.get_state(current)
 
-        # 1. Compute Q-values for parent actions
-        # q_fn returns [action_size, batch_size] or similar?
-        # qstar.py switcher returns [action_size, batch_size] presumably from transpose?
-        # variable_batch_switcher returns [batch_size, action_size] depending on q_fn implementation.
-        # qstar.py: q_vals = switcher(...).transpose()
-
-        # We assume q_fn returns [batch, action] or we adapt.
-        # If we use broadcasted lambda in constructor, we can control it.
-        # Here we assume q_fn result needs transpose if [batch, action].
-
-        # Actually variable_batch_switcher output shape depends on `batched_q_value`.
-        # let's assume `q_fn` returns [action, batch] to match layout we want for flattening.
-        # Or [batch, action] and we flatten responsibly.
-
         q_vals = self.q_fn(heuristic_params, states, filled)
-        # Assuming [action, batch] for now (based on qstar.py transpose logic).
-        # qstar.py said: `q_vals = q_vals.transpose()` implies original was `[batch, action]`.
-        # So q_fn typically returns `[batch, action]`.
-
-        # We want [action, batch] for flattening?
-        # `variable_batch_switcher` flattens internally or returns whatever `q_fn` returns?
-        # It calls `q_fn(slice)`.
-
-        # Let's standardize on `q_vals` being `[action, batch]`.
 
         (
             flat_parent_hashidx,
             flat_actions,
             costs,
             filled_tiles,
-            unflatten_shape,
+            _,
         ) = build_action_major_parent_context(
             current.hashidx,
             current.cost,
@@ -564,6 +593,13 @@ class QStarExpansion(ExpansionPolicy):
         # 2. Lookahead
         if self.look_ahead_pruning:
             neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
+            neighbours, ncost = normalize_neighbour_cost_layout(
+                neighbours,
+                ncost,
+                action_size,
+                batch_size,
+                layout=resolve_neighbour_layout(puzzle, is_backward=False),
+            )
             look_ahead_costs = (current.cost[None, :] + ncost).astype(KEY_DTYPE)
 
             flat_neighbours = neighbours.flatten()

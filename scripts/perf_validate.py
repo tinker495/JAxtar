@@ -1,7 +1,7 @@
 """
 Performance Validation Script for Refactored JAxtar Algorithms.
 
-Runs all 5 algorithms on N random SlidePuzzle instances and reports:
+Runs 4 algorithms on N random SlidePuzzle instances and reports:
 - Solve rate
 - Average solution cost
 - Average wall-clock time per solve
@@ -12,8 +12,10 @@ import sys
 import time
 
 sys.path.append(os.getcwd())
-sys.path.append("/home/tinker/PuXle")
-sys.path.append("/home/tinker/Xtructure")
+for env_name in ("PUXLE_PATH", "XTRUCTURE_PATH"):
+    extra_path = os.getenv(env_name)
+    if extra_path:
+        sys.path.append(extra_path)
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402

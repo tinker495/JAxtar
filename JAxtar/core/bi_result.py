@@ -10,6 +10,7 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, HashIdx, base_dataclass, xtructure_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, HASH_SIZE_MULTIPLIER, KEY_DTYPE
+from JAxtar.core.common import normalize_neighbour_cost_layout, resolve_neighbour_layout
 from JAxtar.core.result import Current, Parent, SearchResult
 
 
@@ -177,11 +178,6 @@ def update_meeting_point(
         )
 
     def _keep(_):
-        # We might need to carry over the 'found' status if previous was found
-        # Actually meeting.found stores if we EVER found one.
-        # But here we update specifically if better.
-        # If not better, we keep old meeting point, but we might want to update found flag?
-        # No, meeting stores "Best". If we found a worse one, we ignore it.
         return meeting
 
     return jax.lax.cond(better, _update, _keep, None)
@@ -297,8 +293,11 @@ def materialize_meeting_point_hashidxs(
     bi_result: BiDirectionalSearchResult,
     puzzle: Puzzle,
     solve_config: Puzzle.SolveConfig,
+    inverse_solve_config: Puzzle.SolveConfig | None = None,
 ) -> BiDirectionalSearchResult:
     """Materialize meeting point states if needed."""
+    if inverse_solve_config is None:
+        inverse_solve_config = solve_config
 
     dummy_hashidx = HashIdx.default(())
     dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
@@ -315,7 +314,16 @@ def materialize_meeting_point_hashidxs(
         parent_state = bi_result.backward.hashtable[meeting.bwd_parent_hashidx]
         parent_b = _add_batch_dim(parent_state)
         filled_b = jnp.array([True])
-        inv_neigh, _ = puzzle.batched_get_inverse_neighbours(solve_config, parent_b, filled_b)
+        inv_neigh, inv_cost = puzzle.batched_get_inverse_neighbours(
+            inverse_solve_config, parent_b, filled_b
+        )
+        inv_neigh, _ = normalize_neighbour_cost_layout(
+            inv_neigh,
+            inv_cost,
+            bi_result.action_size,
+            1,
+            layout=resolve_neighbour_layout(puzzle, is_backward=True),
+        )
         a = meeting.bwd_parent_action.astype(jnp.int32)
         child = inv_neigh[a, 0]
         return child
@@ -466,20 +474,6 @@ def bi_termination_condition(
     search_exhausted = jnp.logical_and(fwd_empty, bwd_empty)
 
     # 2. Check Optimality
-    # If meeting cost <= min_f_fwd + min_f_bwd, we found optimal.
-
-    # Get min keys [1]
-    # BGPQ structure: top_k_keys returns (k, batch).
-    # We assume 'delete_mins' logic accesses min keys internally.
-    # To implement this cleanly without breaking BGPQ abstraction:
-    # Use helper method on SR or access PQ.
-
-    # BGPQ usually has 'peek_mins'?
-    # Assuming standard xtructure BGPQ:
-    # `values, keys = pq.top_k(1)`?
-    # Let's try `top_k_keys(1)`.
-
-    # We need to handle empty PQ case (returns inf or similar?).
 
     bgpq_f = bi_result.forward.priority_queue
     bgpq_b = bi_result.backward.priority_queue

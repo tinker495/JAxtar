@@ -11,6 +11,7 @@ Key Benefits:
 - Efficient for domains where Q-learning has been applied
 """
 
+import inspect
 from typing import Any
 
 import chex
@@ -18,34 +19,230 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from xtructure import base_dataclass
 
 from helpers.jax_compile import jit_with_warmup
-from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
-from JAxtar.bi_stars.bi_search_base import (
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.core.bi_result import (
     BiDirectionalSearchResult,
-    BiLoopStateWithStates,
-    build_bi_search_result,
+    MeetingPoint,
     check_intersection,
-    common_bi_loop_condition,
     finalize_bidirectional_result,
-    initialize_bi_loop_common,
     materialize_meeting_point_hashidxs,
     update_meeting_point,
     update_meeting_point_best_only_deferred,
 )
-from JAxtar.stars.search_base import (
-    Current,
-    Parant_with_Costs,
-    Parent,
+from JAxtar.core.common import (
     build_action_major_parent_context,
-    insert_priority_queue_batches,
+    normalize_neighbour_cost_layout,
     packed_masked_state_eval,
+    resolve_neighbour_layout,
     sort_and_pack_action_candidates,
 )
+from JAxtar.core.result import Current, Parent, ParentWithCosts
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
 Q_EVAL_CHUNK_SIZE = 2048
+
+
+def _materialize_meeting_point_hashidxs_compat(
+    materialize_fn,
+    bi_result: BiDirectionalSearchResult,
+    puzzle: Puzzle,
+    solve_config: Puzzle.SolveConfig,
+    inverse_solveconfig: Puzzle.SolveConfig,
+) -> BiDirectionalSearchResult:
+    """Call meeting materialization with legacy arity compatibility."""
+    try:
+        signature = inspect.signature(materialize_fn)
+        params = list(signature.parameters.values())
+    except (TypeError, ValueError):
+        params = []
+
+    has_varargs = any(param.kind == inspect.Parameter.VAR_POSITIONAL for param in params)
+    positional_count = sum(
+        param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        for param in params
+    )
+    supports_inverse_config = has_varargs or positional_count >= 4
+
+    if supports_inverse_config:
+        return materialize_fn(
+            bi_result,
+            puzzle,
+            solve_config,
+            inverse_solveconfig,
+        )
+    return materialize_fn(bi_result, puzzle, solve_config)
+
+
+def build_bi_search_result(
+    statecls: Puzzle.State,
+    batch_size: int,
+    max_nodes: int,
+    action_size: int,
+    pop_ratio: float = jnp.inf,
+    min_pop: int = 1,
+    parant_with_costs: bool = False,
+    hash_size_multiplier: int = 2,
+) -> BiDirectionalSearchResult:
+    """Compatibility shim for tests/tools that monkeypatch this module symbol."""
+    pq_val_type = ParentWithCosts if parant_with_costs else Current
+    return BiDirectionalSearchResult.build(
+        statecls=statecls,
+        batch_size=batch_size,
+        max_nodes=max_nodes,
+        action_size=action_size,
+        pop_ratio=pop_ratio,
+        min_pop=min_pop,
+        pq_val_type=pq_val_type,
+        hash_size_multiplier=hash_size_multiplier,
+    )
+
+
+@base_dataclass
+class BiLoopStateWithStates:
+    bi_result: BiDirectionalSearchResult
+    solve_config: Puzzle.SolveConfig
+    inverse_solveconfig: Puzzle.SolveConfig
+    params_forward: Any
+    params_backward: Any
+    current_forward: Current
+    current_backward: Current
+    states_forward: Puzzle.State
+    states_backward: Puzzle.State
+    filled_forward: chex.Array
+    filled_backward: chex.Array
+
+
+def _priority_queue_min_key(priority_queue: Any) -> chex.Array:
+    """Return PQ lower-bound key without scanning full storage."""
+    store_min = jnp.min(jnp.ravel(priority_queue.key_store[0]))
+    buffer_min = jnp.min(jnp.ravel(priority_queue.key_buffer))
+    min_key = jnp.minimum(store_min, buffer_min)
+    return jnp.where(priority_queue.size > 0, min_key, jnp.inf)
+
+
+def _get_min_f_value(
+    sr,
+    current: Current,
+    filled: chex.Array,
+    cost_weight: float = 1.0,
+) -> chex.Array:
+    f_values = cost_weight * current.cost + sr.get_dist(current)
+    current_min_f = jnp.min(jnp.where(filled, f_values, jnp.inf))
+
+    pq_min_f = _priority_queue_min_key(sr.priority_queue)
+
+    return jnp.minimum(current_min_f, pq_min_f)
+
+
+def _bi_termination_condition(
+    bi_result: BiDirectionalSearchResult,
+    fwd_min_f: chex.Array,
+    bwd_min_f: chex.Array,
+    cost_weight: float,
+    terminate_on_first_solution: bool,
+) -> chex.Array:
+    if terminate_on_first_solution:
+        return bi_result.meeting.found
+
+    meeting_cost_weighted = cost_weight * bi_result.meeting.total_cost
+    fwd_done = meeting_cost_weighted <= fwd_min_f
+    bwd_done = meeting_cost_weighted <= bwd_min_f
+    return jnp.logical_and(bi_result.meeting.found, jnp.logical_and(fwd_done, bwd_done))
+
+
+def _common_bi_loop_condition(
+    bi_result: BiDirectionalSearchResult,
+    filled_forward: chex.Array,
+    filled_backward: chex.Array,
+    current_forward: Current,
+    current_backward: Current,
+    cost_weight: float,
+    terminate_on_first_solution: bool,
+) -> chex.Array:
+    fwd_has_frontier = jnp.logical_or(
+        filled_forward.any(), bi_result.forward.priority_queue.size > 0
+    )
+    bwd_has_frontier = jnp.logical_or(
+        filled_backward.any(), bi_result.backward.priority_queue.size > 0
+    )
+    fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
+    bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
+    has_work = jnp.logical_or(
+        jnp.logical_and(fwd_has_frontier, fwd_not_full),
+        jnp.logical_and(bwd_has_frontier, bwd_not_full),
+    )
+
+    fwd_min_f = _get_min_f_value(bi_result.forward, current_forward, filled_forward, cost_weight)
+    bwd_min_f = _get_min_f_value(bi_result.backward, current_backward, filled_backward, cost_weight)
+    should_terminate = _bi_termination_condition(
+        bi_result,
+        fwd_min_f,
+        bwd_min_f,
+        cost_weight,
+        terminate_on_first_solution,
+    )
+    return jnp.logical_and(has_work, jnp.logical_not(should_terminate))
+
+
+def _initialize_bi_loop_common(
+    bi_result: BiDirectionalSearchResult,
+    puzzle: Puzzle,
+    solve_config: Puzzle.SolveConfig,
+    start: Puzzle.State,
+) -> tuple[chex.Array, Current, Puzzle.State, chex.Array, Current, Puzzle.State]:
+    sr_batch_size = bi_result.batch_size
+
+    bi_result.forward.hashtable, _, fwd_hash_idx = bi_result.forward.hashtable.insert(start)
+    bi_result.forward.cost = bi_result.forward.cost.at[fwd_hash_idx.index].set(0)
+    fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
+    fwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    fwd_states = xnp.pad(start, (0, sr_batch_size - 1))
+    fwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
+    fwd_current = Current(hashidx=fwd_hash_idxs, cost=fwd_costs)
+
+    if hasattr(puzzle, "get_goal_state"):
+        goal = puzzle.get_goal_state(solve_config)
+    elif hasattr(solve_config, "TargetState"):
+        goal = solve_config.TargetState
+    else:
+        goal = puzzle.solve_config_to_state_transform(solve_config, key=jax.random.PRNGKey(0))
+    bi_result.backward.hashtable, _, bwd_hash_idx = bi_result.backward.hashtable.insert(goal)
+    bi_result.backward.cost = bi_result.backward.cost.at[bwd_hash_idx.index].set(0)
+    bwd_hash_idxs = xnp.pad(bwd_hash_idx, (0, sr_batch_size - 1))
+    bwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    bwd_states = xnp.pad(goal, (0, sr_batch_size - 1))
+    bwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
+    bwd_current = Current(hashidx=bwd_hash_idxs, cost=bwd_costs)
+
+    start_in_bwd_idx, start_in_bwd_found = bi_result.backward.hashtable.lookup(start)
+    is_same = jnp.logical_and(start_in_bwd_found, start_in_bwd_idx.index == bwd_hash_idx.index)
+    dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
+
+    bi_result.meeting = jax.lax.cond(
+        is_same,
+        lambda _: MeetingPoint(
+            fwd_hashidx=fwd_hash_idx,
+            bwd_hashidx=bwd_hash_idx,
+            fwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
+            bwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
+            total_cost=jnp.array(0.0, dtype=KEY_DTYPE),
+            found=jnp.array(True),
+            fwd_has_hashidx=jnp.array(True),
+            bwd_has_hashidx=jnp.array(True),
+            fwd_parent_hashidx=fwd_hash_idx,
+            fwd_parent_action=dummy_action,
+            bwd_parent_hashidx=bwd_hash_idx,
+            bwd_parent_action=dummy_action,
+        ),
+        lambda _: bi_result.meeting,
+        operand=None,
+    )
+
+    return fwd_filled, fwd_current, fwd_states, bwd_filled, bwd_current, bwd_states
 
 
 def _bi_qstar_loop_builder(
@@ -125,7 +322,7 @@ def _bi_qstar_loop_builder(
             bwd_filled,
             bwd_current,
             bwd_states,
-        ) = initialize_bi_loop_common(bi_result, puzzle, solve_config, start)
+        ) = _initialize_bi_loop_common(bi_result, puzzle, solve_config, start)
 
         return BiLoopStateWithStates(
             bi_result=bi_result,
@@ -143,7 +340,7 @@ def _bi_qstar_loop_builder(
 
     def loop_condition(loop_state: BiLoopStateWithStates) -> chex.Array:
         """Check if search should continue."""
-        return common_bi_loop_condition(
+        return _common_bi_loop_condition(
             loop_state.bi_result,
             loop_state.filled_forward,
             loop_state.filled_backward,
@@ -188,8 +385,8 @@ def _bi_qstar_loop_builder(
         (
             flat_parent_hashidx,
             flat_actions,
-            costs,
-            filled_tiles,
+            flat_costs,
+            flat_filled_tiles,
             unflatten_shape,
         ) = build_action_major_parent_context(
             hash_idx,
@@ -198,6 +395,8 @@ def _bi_qstar_loop_builder(
             action_size,
             sr_batch_size,
         )
+        costs = flat_costs.reshape(unflatten_shape)
+        filled_tiles = flat_filled_tiles.reshape(unflatten_shape)
 
         # For backward direction, action indices refer to inverse neighbours.
         # Action-dependent Q(s, a) on the backward "parent" state is not semantically aligned.
@@ -235,6 +434,13 @@ def _bi_qstar_loop_builder(
         need_neighbours = look_ahead_pruning or use_value_heuristic or (not use_q)
         if need_neighbours:
             neighbour_look_a_head, ncosts = get_neighbours_fn(current_solve_config, states, filled)
+            neighbour_look_a_head, ncosts = normalize_neighbour_cost_layout(
+                neighbour_look_a_head,
+                ncosts,
+                action_size,
+                sr_batch_size,
+                layout=resolve_neighbour_layout(puzzle, is_backward=not is_forward),
+            )
             look_a_head_costs = (costs + ncosts).astype(KEY_DTYPE)
 
         flattened_filled_tiles = filled_tiles.flatten()
@@ -411,7 +617,7 @@ def _bi_qstar_loop_builder(
                 optimal_mask = flattened_filled_tiles
 
         # Create values for priority queue
-        flattened_vals = Parant_with_Costs(
+        flattened_vals = ParentWithCosts(
             parent=Parent(hashidx=flat_parent_hashidx, action=flat_actions),
             cost=costs.flatten(),
             dist=dists,
@@ -429,8 +635,7 @@ def _bi_qstar_loop_builder(
             sr_batch_size,
         )
 
-        search_result = insert_priority_queue_batches(
-            search_result,
+        search_result = search_result.insert_batch(
             neighbour_keys_reshaped,
             vals_reshaped,
             optimal_mask_reshaped,
@@ -439,7 +644,7 @@ def _bi_qstar_loop_builder(
         # Pop next batch with states
         search_result, new_current, new_states, new_filled = search_result.pop_full_with_actions(
             puzzle=puzzle,
-            solve_config=solve_config,
+            solve_config=current_solve_config,
             use_heuristic=use_heuristic_in_pop,
             is_backward=not is_forward,
         )
@@ -483,6 +688,14 @@ def _bi_qstar_loop_builder(
         solve_config = loop_state.solve_config
         inverse_solveconfig = loop_state.inverse_solveconfig
 
+        fwd_has_frontier = jnp.logical_or(
+            loop_state.filled_forward.any(),
+            bi_result.forward.priority_queue.size > 0,
+        )
+        bwd_has_frontier = jnp.logical_or(
+            loop_state.filled_backward.any(),
+            bi_result.backward.priority_queue.size > 0,
+        )
         fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
         bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
 
@@ -514,7 +727,7 @@ def _bi_qstar_loop_builder(
 
         # Expand both directions
         bi_result, new_fwd_current, new_fwd_states, new_fwd_filled = jax.lax.cond(
-            jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
+            jnp.logical_and(fwd_has_frontier, fwd_not_full),
             _expand_forward,
             lambda br: (
                 br,
@@ -526,7 +739,7 @@ def _bi_qstar_loop_builder(
         )
 
         bi_result, new_bwd_current, new_bwd_states, new_bwd_filled = jax.lax.cond(
-            jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
+            jnp.logical_and(bwd_has_frontier, bwd_not_full),
             _expand_backward,
             lambda br: (
                 br,
@@ -691,7 +904,13 @@ def bi_qstar_builder(
         bi_result = loop_state.bi_result
 
         # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
-        bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, solve_config)
+        bi_result = _materialize_meeting_point_hashidxs_compat(
+            materialize_meeting_point_hashidxs,
+            bi_result,
+            puzzle,
+            solve_config,
+            inverse_solveconfig,
+        )
 
         return finalize_bidirectional_result(bi_result)
 

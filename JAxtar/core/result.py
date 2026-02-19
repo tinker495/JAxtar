@@ -354,6 +354,18 @@ class SearchResult:
                         parent_states,
                         filled_actions,
                     )
+                    from JAxtar.core.common import (
+                        normalize_neighbour_cost_layout,
+                        resolve_neighbour_layout,
+                    )
+
+                    all_inv_states, all_inv_costs = normalize_neighbour_cost_layout(
+                        all_inv_states,
+                        all_inv_costs,
+                        self.action_size,
+                        parent.action.shape[0],
+                        layout=resolve_neighbour_layout(puzzle, is_backward=True),
+                    )
                     parent_actions = parent.action.astype(jnp.int32)
                     batch_idx = jnp.arange(parent_actions.shape[0], dtype=jnp.int32)
                     next_states = all_inv_states[parent_actions, batch_idx]

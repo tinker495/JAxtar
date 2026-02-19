@@ -1,4 +1,6 @@
+import jax
 import jax.numpy as jnp
+from puxle import SlidePuzzle
 
 from JAxtar.core.bi_loop import BiLoopState, unified_bi_search_loop_builder
 from JAxtar.core.common import loop_continue_if_not_solved
@@ -7,8 +9,10 @@ from JAxtar.core.result import Current
 
 
 class _DummyPriorityQueue:
-    def __init__(self, size: int):
+    def __init__(self, size: int, min_key: float = jnp.inf):
         self.size = jnp.array(size, dtype=jnp.int32)
+        self.key_store = jnp.array([min_key], dtype=jnp.float32)
+        self.key_buffer = jnp.array([jnp.inf], dtype=jnp.float32)
 
 
 class _DummySearchResult:
@@ -46,16 +50,28 @@ class _DummySingleSearchResult:
 
 
 class _DummyDirectionResult:
-    def __init__(self, pq_size: int, generated_size: int = 1, capacity: int = 16):
-        self.priority_queue = _DummyPriorityQueue(pq_size)
+    def __init__(
+        self,
+        pq_size: int,
+        generated_size: int = 1,
+        capacity: int = 16,
+        pq_min_key: float = jnp.inf,
+    ):
+        self.priority_queue = _DummyPriorityQueue(pq_size, min_key=pq_min_key)
         self.generated_size = jnp.array(generated_size, dtype=jnp.int32)
         self.capacity = capacity
 
+    def get_dist(self, current):
+        return jnp.zeros_like(current.cost)
+
+    def get_state(self, current):
+        return jnp.zeros_like(current.hashidx.index, dtype=jnp.int32)
+
 
 class _DummyMeeting:
-    def __init__(self, found: bool):
+    def __init__(self, found: bool, total_cost: float = 0.0):
         self.found = jnp.array(found, dtype=jnp.bool_)
-        self.total_cost = jnp.array(0.0, dtype=jnp.float32)
+        self.total_cost = jnp.array(total_cost, dtype=jnp.float32)
 
 
 class _DummyBiResult:
@@ -64,10 +80,13 @@ class _DummyBiResult:
         fwd_pq_size: int,
         bwd_pq_size: int,
         meeting_found: bool = False,
+        meeting_total_cost: float = 0.0,
+        fwd_pq_min_key: float = jnp.inf,
+        bwd_pq_min_key: float = jnp.inf,
     ):
-        self.forward = _DummyDirectionResult(fwd_pq_size)
-        self.backward = _DummyDirectionResult(bwd_pq_size)
-        self.meeting = _DummyMeeting(meeting_found)
+        self.forward = _DummyDirectionResult(fwd_pq_size, pq_min_key=fwd_pq_min_key)
+        self.backward = _DummyDirectionResult(bwd_pq_size, pq_min_key=bwd_pq_min_key)
+        self.meeting = _DummyMeeting(meeting_found, total_cost=meeting_total_cost)
 
 
 def test_loop_continue_if_not_solved_keeps_popped_frontier_when_pq_drained():
@@ -180,3 +199,67 @@ def test_unified_single_loop_condition_keeps_queue_work_when_current_is_empty():
     )
 
     assert bool(loop_condition(loop_state))
+
+
+def test_unified_bi_loop_condition_optimality_uses_pq_lower_bound_when_current_empty():
+    """With optimality termination, queued work must keep loop alive even if current masks are empty."""
+    puzzle = _DummyPuzzle([False, False])
+    _, loop_condition, _ = unified_bi_search_loop_builder(
+        puzzle=puzzle,
+        fwd_expansion_policy=_DummyExpansionPolicy(),
+        bwd_expansion_policy=_DummyExpansionPolicy(),
+        batch_size=2,
+        max_nodes=16,
+        pop_ratio=jnp.inf,
+        min_pop=1,
+        pq_val_type=Current,
+        terminate_on_first_solution=False,
+    )
+
+    loop_state = BiLoopState(
+        bi_result=_DummyBiResult(
+            fwd_pq_size=1,
+            bwd_pq_size=0,
+            meeting_found=True,
+            meeting_total_cost=5.0,
+            fwd_pq_min_key=1.0,
+            bwd_pq_min_key=jnp.inf,
+        ),
+        solve_config=None,
+        inverse_solve_config=None,
+        heuristic_params=None,
+        inverse_heuristic_params=None,
+        current_fwd=Current.default((2,)),
+        current_bwd=Current.default((2,)),
+        filled_fwd=jnp.array([False, False], dtype=jnp.bool_),
+        filled_bwd=jnp.array([False, False], dtype=jnp.bool_),
+    )
+
+    assert bool(loop_condition(loop_state))
+
+
+def test_unified_single_init_avoids_synthetic_start_queue_entry():
+    """Unified init should not pre-seed PQ and should keep invalid lanes at inf cost."""
+
+    class _NoOpExpansion(_DummyExpansionPolicy):
+        def expand(self, *args, **kwargs):
+            raise RuntimeError("expand should not run in init-only regression test")
+
+    puzzle = SlidePuzzle(size=2)
+    solve_config, start = puzzle.get_inits(jax.random.PRNGKey(0))
+
+    init_loop_state, _, _ = unified_search_loop_builder(
+        puzzle=puzzle,
+        expansion_policy=_NoOpExpansion(),
+        batch_size=4,
+        max_nodes=64,
+        pop_ratio=jnp.inf,
+        min_pop=1,
+        pq_val_type=Current,
+    )
+
+    loop_state = init_loop_state(solve_config, start)
+
+    assert int(loop_state.search_result.priority_queue.size) == 0
+    assert float(loop_state.current.cost[0]) == 0.0
+    assert bool(jnp.all(jnp.isinf(loop_state.current.cost[1:])))

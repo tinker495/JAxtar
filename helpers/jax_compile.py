@@ -7,6 +7,24 @@ from typing import Any, Callable
 
 import jax
 
+WARMUP_COMPILE_EXCEPTIONS = (
+    AssertionError,
+    AttributeError,
+    NotImplementedError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+    jax.errors.ConcretizationTypeError,
+    jax.errors.JAXIndexError,
+    jax.errors.JAXTypeError,
+    jax.errors.JaxRuntimeError,
+    jax.errors.NonConcreteBooleanIndexError,
+    jax.errors.TracerArrayConversionError,
+    jax.errors.TracerBoolConversionError,
+    jax.errors.TracerIntegerConversionError,
+    jax.errors.UnexpectedTracerError,
+)
+
 
 def compile_with_example(fn: Callable[..., Any], *args: Any) -> None:
     if _should_log():
@@ -42,11 +60,11 @@ def jit_with_warmup(
         start_t = time.time()
 
     if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
         try:
+            empty_solve_config = puzzle.SolveConfig.default()
+            empty_states = puzzle.State.default()
             compile_with_example(jitted_fn, empty_solve_config, empty_states)
-        except Exception as exc:
+        except WARMUP_COMPILE_EXCEPTIONS as exc:
             # Some search implementations cannot trace with synthetic default
             # values. In that case, defer compilation to the first real call.
             if _should_log():
@@ -68,7 +86,6 @@ def _block_until_ready(tree: Any) -> None:
     for leaf in jax.tree_util.tree_leaves(tree):
         if hasattr(leaf, "block_until_ready"):
             leaf.block_until_ready()
-            return
 
 
 def _should_log() -> bool:

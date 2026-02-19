@@ -13,7 +13,7 @@ from JAxtar.annotate import KEY_DTYPE
 from JAxtar.bi_stars.bi_astar import bi_astar_builder
 from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
 from JAxtar.core.expansion import DeferredExpansion
-from JAxtar.core.result import Current, SearchResult
+from JAxtar.core.result import Current, ParentWithCosts, SearchResult
 from JAxtar.core.scoring import AStarScoring
 
 
@@ -168,3 +168,60 @@ def test_pop_full_masks_stale_current_entries():
 
     _, _, process_mask = search_result.pop_full()
     assert not bool(jnp.any(process_mask))
+
+
+def test_deferred_backward_expand_uses_inverse_action_map_when_provided(monkeypatch):
+    """Regression: deferred backward lookahead should use inverse_action_map action rollout."""
+    puzzle = SlidePuzzle(size=2)
+    solve_config, start_state = puzzle.get_inits(jax.random.PRNGKey(0))
+
+    search_result = SearchResult.build(
+        statecls=puzzle.State,
+        batch_size=4,
+        max_nodes=128,
+        action_size=puzzle.action_size,
+        pq_val_type=ParentWithCosts,
+    )
+    search_result.hashtable, _, hash_idx = search_result.hashtable.insert(start_state)
+    search_result.cost = search_result.cost.at[hash_idx.index].set(jnp.array(0.0, dtype=KEY_DTYPE))
+
+    current = Current(
+        hashidx=xnp.pad(hash_idx, (0, search_result.batch_size - 1)),
+        cost=jnp.full((search_result.batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0.0),
+    )
+    filled = jnp.array([True, False, False, False], dtype=jnp.bool_)
+
+    calls = {"actions": 0, "inverse_neighbours": 0}
+    original_actions = puzzle.batched_get_actions
+    original_inverse = puzzle.batched_get_inverse_neighbours
+
+    def _wrapped_actions(config, states, actions, mask):
+        calls["actions"] += 1
+        return original_actions(config, states, actions, mask)
+
+    def _wrapped_inverse(config, states, mask):
+        calls["inverse_neighbours"] += 1
+        return original_inverse(config, states, mask)
+
+    monkeypatch.setattr(puzzle, "batched_get_actions", _wrapped_actions)
+    monkeypatch.setattr(puzzle, "batched_get_inverse_neighbours", _wrapped_inverse)
+
+    expansion = DeferredExpansion(
+        scoring_policy=AStarScoring(),
+        heuristic_fn=lambda params, states, mask: jnp.where(mask, 0.0, jnp.inf).astype(KEY_DTYPE),
+        look_ahead_pruning=True,
+        is_backward=True,
+        inverse_action_map=puzzle.inverse_action_map,
+    )
+
+    expansion.expand(
+        search_result=search_result,
+        puzzle=puzzle,
+        solve_config=solve_config,
+        heuristic_params=None,
+        current=current,
+        filled=filled,
+    )
+
+    assert calls["actions"] > 0
+    assert calls["inverse_neighbours"] == 0
