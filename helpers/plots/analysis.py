@@ -245,7 +245,15 @@ def plot_heuristic_accuracy(
     ax.set_title(title)
     ax.set_xlabel("Actual Cost to Goal")
     ax.set_ylabel("Estimated Distance (Heuristic/Q-Value)")
-    ax.legend()
+    handles, labels = ax.get_legend_handles_labels()
+    valid_labels = [
+        (handle, label)
+        for handle, label in zip(handles, labels)
+        if label and not label.startswith("_")
+    ]
+    if valid_labels:
+        valid_handles, filtered_labels = zip(*valid_labels)
+        ax.legend(valid_handles, filtered_labels)
     ax.grid(True)
     fig.tight_layout()
     return fig

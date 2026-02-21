@@ -346,10 +346,10 @@ def run_search_command(
 ):
     config = {
         "puzzle_name": puzzle_name,
-        "search_options": search_options.dict(),
+        "search_options": search_options.model_dump(),
         component_name: component.__class__.__name__,
         f"{component_name}_metadata": getattr(component, "metadata", {}),
-        "visualize_options": visualize_options.dict(),
+        "visualize_options": visualize_options.model_dump(),
     }
     print_config(config_title, enrich_config(config))
 

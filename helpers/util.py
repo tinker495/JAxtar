@@ -10,7 +10,7 @@ T = TypeVar("T", bound=BaseModel)
 def convert_to_serializable_dict(obj: Any) -> Any:
     if isinstance(obj, BaseModel):
         # Recursively process the dict representation
-        return convert_to_serializable_dict(obj.dict())
+        return convert_to_serializable_dict(obj.model_dump())
     if isinstance(obj, dict):
         return {str(k): convert_to_serializable_dict(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple, set)):

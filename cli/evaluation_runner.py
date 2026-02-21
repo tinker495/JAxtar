@@ -185,10 +185,10 @@ class EvaluationRunner:
             )
 
             config = {
-                "puzzle_options": self.puzzle_opts.dict(),
+                "puzzle_options": self.puzzle_opts.model_dump(),
                 self.search_model_name: self.search_model.__class__.__name__,
                 f"{self.search_model_name}_metadata": model_metadata,
-                "eval_options": current_eval_opts.dict(),
+                "eval_options": current_eval_opts.model_dump(),
                 "node_metric_label": self.node_metric_label,
             }
 
@@ -1083,10 +1083,10 @@ def run_evaluation_sweep(
             config_title,
             enrich_config(
                 {
-                    "puzzle_options": puzzle_opts.dict(),
+                    "puzzle_options": puzzle_opts.model_dump(),
                     search_model_name: search_model.__class__.__name__,
                     f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
-                    "eval_options": eval_options.dict(),
+                    "eval_options": eval_options.model_dump(),
                 }
             ),
         )

@@ -211,8 +211,7 @@ class NeuralCallableConfig(BaseModel):
     callable: Callable
     param_path: Optional[str] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class WorldModelPuzzleConfig(BaseModel):
@@ -220,8 +219,7 @@ class WorldModelPuzzleConfig(BaseModel):
     path: str
     neural_config: Optional[dict] = Field(default_factory=dict)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class PuzzleConfig(BaseModel):
@@ -284,8 +282,7 @@ class PuzzleBundle(BaseModel):
         }
     )
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class BenchmarkBundle(BaseModel):
@@ -318,8 +315,7 @@ class BenchmarkBundle(BaseModel):
         }
     )
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class WorldModelBundle(BaseModel):
@@ -327,5 +323,4 @@ class WorldModelBundle(BaseModel):
     dataset_path: str
     puzzle_for_ds_gen: Callable
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)

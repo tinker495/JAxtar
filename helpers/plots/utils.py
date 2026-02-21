@@ -44,13 +44,22 @@ def _plot_scatter_with_ellipses(
     if len(plot_df) > scatter_max_points:
         plot_df = plot_df.sample(n=scatter_max_points, random_state=42)
 
+    num_labels = max(1, len(sorted_labels))
+    scatter_palette = (
+        PALETTE_TAB10
+        if len(PALETTE_TAB10) >= num_labels
+        else sns.color_palette("tab10", num_labels)
+    )
+    if len(PALETTE_TAB10) >= num_labels:
+        scatter_palette = PALETTE_TAB10[:num_labels]
+
     sns.scatterplot(
         data=plot_df,
         x=x_col,
         y=y_col,
         hue=hue_col,
         hue_order=sorted_labels,
-        palette=PALETTE_TAB10,
+        palette=scatter_palette,
         alpha=SCATTER_ALPHA_HIGH,
         edgecolor=None,
         ax=ax,
