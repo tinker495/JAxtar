@@ -130,23 +130,8 @@ class WorldModel(nn.Module):
         return logits
 
 
-class SokobanWorldModel(WorldModelPuzzleBase):
-
-    str_parse_img_size: int = 20
-
-    def __init__(self, **kwargs):
-
-        norm_fn = kwargs.pop("norm_fn", None)
-        resolved_norm_fn = get_norm_fn(norm_fn)
-        super().__init__(
-            data_path="world_model_puzzle/data/sokoban",
-            data_shape=(40, 40, 3),
-            latent_shape=(10, 10, 16),
-            action_size=4,
-            AE=lambda **ae_kwargs: AutoEncoder(norm_fn=resolved_norm_fn, **ae_kwargs),
-            WM=lambda **wm_kwargs: WorldModel(norm_fn=resolved_norm_fn, **wm_kwargs),
-            **kwargs,
-        )
+class _SokobanMixin:
+    """Shared methods for all Sokoban world model variants."""
 
     def batched_get_inverse_neighbours(
         self,
@@ -179,6 +164,25 @@ class SokobanWorldModel(WorldModelPuzzleBase):
                 return "↓"
             case _:
                 raise ValueError(f"Invalid action: {action}")
+
+
+class SokobanWorldModel(_SokobanMixin, WorldModelPuzzleBase):
+
+    str_parse_img_size: int = 20
+
+    def __init__(self, **kwargs):
+
+        norm_fn = kwargs.pop("norm_fn", None)
+        resolved_norm_fn = get_norm_fn(norm_fn)
+        super().__init__(
+            data_path="world_model_puzzle/data/sokoban",
+            data_shape=(40, 40, 3),
+            latent_shape=(10, 10, 16),
+            action_size=4,
+            AE=lambda **ae_kwargs: AutoEncoder(norm_fn=resolved_norm_fn, **ae_kwargs),
+            WM=lambda **wm_kwargs: WorldModel(norm_fn=resolved_norm_fn, **wm_kwargs),
+            **kwargs,
+        )
 
 
 class EncoderOptimized(nn.Module):
@@ -266,7 +270,7 @@ class AutoEncoderOptimized(nn.Module):
         return latent, output
 
 
-class SokobanWorldModelOptimized(WorldModelPuzzleBase):
+class SokobanWorldModelOptimized(_SokobanMixin, WorldModelPuzzleBase):
     """
     This is the optimized version of the sokoban world model.
     sokoban has 4 components so one position could be 2 bits.
@@ -288,35 +292,3 @@ class SokobanWorldModelOptimized(WorldModelPuzzleBase):
             WM=lambda **wm_kwargs: WorldModel(norm_fn=resolved_norm_fn, **wm_kwargs),
             **kwargs,
         )
-
-    def batched_get_inverse_neighbours(
-        self,
-        solve_configs: WorldModelPuzzleBase.SolveConfig,
-        states: WorldModelPuzzleBase.State,
-        filleds: bool = True,
-        multi_solve_config: bool = False,
-    ) -> tuple[WorldModelPuzzleBase.State, chex.Array]:
-        """
-        This function should return a neighbours, and the cost of the move.
-        """
-        raise NotImplementedError(
-            "Sokoban is not reversible,"
-            "so sokoban world model's inverse neighbours is not implemented for now\n"
-            "Please use '--using_hindsight_target' to train distance"
-        )
-
-    def action_to_string(self, action: int) -> str:
-        """
-        This function should return a string representation of the action.
-        """
-        match action:
-            case 0:
-                return "←"
-            case 1:
-                return "→"
-            case 2:
-                return "↑"
-            case 3:
-                return "↓"
-            case _:
-                raise ValueError(f"Invalid action: {action}")

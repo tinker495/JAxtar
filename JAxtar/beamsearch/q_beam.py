@@ -1,11 +1,9 @@
-import time
-
 import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import compile_search_builder
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.beamsearch.search_base import (
     ACTION_PAD,
@@ -270,24 +268,7 @@ def qbeam_builder(
         search_result.solved_idx = solved_idx
         return search_result
 
-    qbeam_fn = jax.jit(qbeam)
-    if show_compile_time:
-        print("initializing jit")
-        start = time.time()
-
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        qbeam_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(qbeam_fn, *warmup_inputs)
-
-    if show_compile_time:
-        end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
-        print("JIT compiled\n\n")
-
-    return qbeam_fn
+    return compile_search_builder(qbeam, puzzle, show_compile_time, warmup_inputs)
 
 
 __all__ = ["qbeam_builder"]

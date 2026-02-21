@@ -116,6 +116,7 @@ def insert_priority_queue_batches(
 
 
 def print_states(states: Xtructurable, costs: chex.Array, dists: chex.Array, key: chex.Array):
+    """Debug helper: print search states with their costs, heuristic distances, and random key."""
     print(states)
     print(f"costs: {costs}")
     print(f"dists: {dists}")
@@ -123,6 +124,7 @@ def print_states(states: Xtructurable, costs: chex.Array, dists: chex.Array, key
 
 
 def print_states_w_actions(states: Xtructurable, costs: chex.Array, actions: chex.Array):
+    """Debug helper: print search states with their costs and associated actions."""
     print(states)
     print(f"costs: {costs}")
     print(f"actions: {actions}")

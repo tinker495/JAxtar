@@ -1,4 +1,3 @@
-import time
 from typing import Any
 
 import jax
@@ -6,7 +5,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
@@ -334,25 +333,4 @@ def astar_d_builder(
         search_result.solved_idx = current[jnp.argmax(solved)]
         return search_result
 
-    astar_d_fn = jax.jit(astar_d)
-    if show_compile_time:
-        print("initializing jit")
-        start = time.time()
-
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        # Pass empty states and target to JIT-compile the function with simple data.
-        # Using actual puzzles would cause extremely long compilation times due to
-        # tracing all possible functions. Empty inputs allow JAX to specialize the
-        # compiled code without processing complex puzzle structures.
-        astar_d_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(astar_d_fn, *warmup_inputs)
-
-    if show_compile_time:
-        end = time.time()
-        print(f"Compile Time: {end - start:6.2f} seconds")
-        print("JIT compiled\n\n")
-
-    return astar_d_fn
+    return compile_search_builder(astar_d, puzzle, show_compile_time, warmup_inputs)

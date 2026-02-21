@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 import jax
 from flax.core.frozen_dict import FrozenDict
 
 from .formatting import human_format
+
+logger = logging.getLogger(__name__)
 
 
 def _format_bytes(num_bytes: int) -> str:
@@ -82,6 +85,7 @@ def jax_param_stats(params: Any, aqt_cfg: str | None = None) -> Dict[str, Any]:
             try:
                 n = int(leaf.size)
             except (AttributeError, TypeError, ValueError):
+                logger.debug("Skipping leaf with non-integer size: %r", leaf)
                 continue
 
             itemsize = int(getattr(leaf.dtype, "itemsize", 0))
