@@ -20,8 +20,8 @@ repos:
       - id: ruff
         name: Ruff lint
         args:
-          - --line-length=120
           - --select=E,F,W
+          - --ignore=E501
           - --config=ruff.toml
 
   - repo: https://github.com/asottile/blacken-docs
