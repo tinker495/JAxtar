@@ -496,7 +496,9 @@ class EvaluationRunner:
         }
         if solved:
             if is_bidirectional:
-                from JAxtar.bi_stars.bi_search_base import reconstruct_bidirectional_path
+                from JAxtar.bi_stars.bi_search_base import (
+                    reconstruct_bidirectional_path,
+                )
 
                 bi_pairs = reconstruct_bidirectional_path(search_result, self.puzzle)
                 actions = [a for a, _ in bi_pairs[1:]]
