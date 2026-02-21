@@ -6,6 +6,7 @@ from puxle import LightsOut
 from neural_util.basemodel import DistanceModel
 from neural_util.dtypes import DTYPE, PARAM_DTYPE
 from neural_util.modules import DEFAULT_NORM_FN, ConvResBlock, ResBlock, apply_norm
+from neural_util.preprocessing import lightsout_pre_process
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
@@ -16,13 +17,8 @@ class LightsOutNeuralQ(NeuralQFunctionBase):
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
     ) -> chex.Array:
-        current_map = current.board_unpacked.astype(DTYPE)
-        if self.is_fixed:
-            one_hots = current_map
-        else:
-            target_map = solve_config.TargetState.board_unpacked.astype(DTYPE)
-            one_hots = jnp.concatenate([target_map, current_map], axis=-1)
-        return ((one_hots - 0.5) * 2.0).astype(DTYPE)
+        target_board = None if self.is_fixed else solve_config.TargetState.board_unpacked
+        return lightsout_pre_process(current.board_unpacked, target_board, self.is_fixed)
 
 
 class Model(DistanceModel):

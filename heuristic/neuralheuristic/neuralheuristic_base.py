@@ -203,13 +203,11 @@ class NeuralHeuristicBase(Heuristic):
         return x.squeeze(1)
 
     def _preload_metadata(self):
-        try:
-            if not is_model_downloaded(self.path):
-                download_model(self.path)
-            params, metadata = load_params_with_metadata(self.path)
-            if params is not None:
-                self._preloaded_params = params
-            return metadata or {}
-        except (FileNotFoundError, pickle.PickleError, OSError, RuntimeError) as e:
-            print(f"Error loading metadata from {self.path}: {e}")
-            return {}
+        from neural_util.preprocessing import preload_metadata
+
+        params, metadata = preload_metadata(
+            self.path, is_model_downloaded, download_model, load_params_with_metadata
+        )
+        if params is not None:
+            self._preloaded_params = params
+        return metadata

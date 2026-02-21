@@ -1,35 +1,13 @@
 import chex
 import jax
-import jax.numpy as jnp
 from puxle import RubiksCube
 
 from neural_util.basemodel import HLGResMLPModel
-from neural_util.dtypes import DTYPE
+from neural_util.preprocessing import (
+    rubikscube_pre_process,
+    rubikscube_random_pre_process,
+)
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
-
-
-def _remove_face_centers(flatten_face: chex.Array, n: int) -> chex.Array:
-    """Drop centre stickers from the flattened cube faces."""
-    face_area = n * n
-    total_len = flatten_face.shape[0]
-    if face_area == 0:
-        raise ValueError("Cube dimension must be positive.")
-    if total_len % face_area != 0:
-        raise ValueError("Flattened face length is incompatible with cube size.")
-
-    if n % 2 == 0:
-        return flatten_face
-
-    num_faces = total_len // face_area
-    # Compute the (row-major) position of the face centre for the given n.
-    centre_index = (n // 2) * n + (n // 2)
-    indices_before = jnp.arange(centre_index, dtype=jnp.int32)
-    indices_after = jnp.arange(centre_index + 1, face_area, dtype=jnp.int32)
-    gather_indices = jnp.concatenate([indices_before, indices_after], axis=0)
-
-    faces = flatten_face.reshape((num_faces, face_area))
-    faces_without_centre = jnp.take(faces, gather_indices, axis=1)
-    return faces_without_centre.reshape(num_faces * (face_area - 1))
 
 
 class RubiksCubeNeuralQ(NeuralQFunctionBase):
@@ -47,14 +25,9 @@ class RubiksCubeNeuralQ(NeuralQFunctionBase):
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
         current_flatten_face = current.faces_unpacked.flatten()  # (3,3,6) -> (54,)
-        if self.metric == "UQTM":
-            # UQTM need to use all the stickers
-            current_one_hot = self._one_hot_faces(current_flatten_face).flatten()
-        else:
-            current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
-            # Create a one-hot encoding of the flattened face without centre stickers
-            current_one_hot = self._one_hot_faces(current_no_centers).flatten()
-        return ((current_one_hot - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
+        return rubikscube_pre_process(
+            self._one_hot_faces, self.metric, self.puzzle.size, current_flatten_face
+        )
 
 
 class RubiksCubeRandomNeuralQ(NeuralQFunctionBase):
@@ -72,23 +45,14 @@ class RubiksCubeRandomNeuralQ(NeuralQFunctionBase):
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> chex.Array:
         current_flatten_face = current.faces_unpacked.flatten()  # (3,3,6) -> (54,)
-        if self.metric == "UQTM":
-            # UQTM need to use all the stickers
-            current_one_hot = self._one_hot_faces(current_flatten_face).flatten()
-        else:
-            current_no_centers = _remove_face_centers(current_flatten_face, self.puzzle.size)
-            # Create a one-hot encoding of the flattened face without centre stickers
-            current_one_hot = self._one_hot_faces(current_no_centers).flatten()
         target_flatten_face = solve_config.TargetState.faces_unpacked.flatten()
-        if self.metric == "UQTM":
-            # UQTM need to use all the stickers
-            target_one_hot = self._one_hot_faces(target_flatten_face).flatten()
-        else:
-            target_no_centers = _remove_face_centers(target_flatten_face, self.puzzle.size)
-            # Create a one-hot encoding of the flattened face without centre stickers
-            target_one_hot = self._one_hot_faces(target_no_centers).flatten()
-        one_hots = jnp.concatenate([target_one_hot, current_one_hot], axis=-1)
-        return ((one_hots - 0.5) * 2.0).astype(DTYPE)  # normalize to [-1, 1]
+        return rubikscube_random_pre_process(
+            self._one_hot_faces,
+            self.metric,
+            self.puzzle.size,
+            current_flatten_face,
+            target_flatten_face,
+        )
 
 
 class RubiksCubeHLGNeuralQ(RubiksCubeNeuralQ):

@@ -1,5 +1,4 @@
 import chex
-import jax
 import jax.numpy as jnp
 from flax import linen as nn
 from puxle import SlidePuzzle
@@ -8,6 +7,11 @@ from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from neural_util.basemodel import DistanceModel
 from neural_util.dtypes import DTYPE, PARAM_DTYPE
 from neural_util.modules import DEFAULT_NORM_FN, ConvResBlock, ResBlock, apply_norm
+from neural_util.preprocessing import (
+    slidepuzzle_diff_pos,
+    slidepuzzle_pre_process,
+    slidepuzzle_zero_pos,
+)
 
 
 class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
@@ -28,19 +32,10 @@ class SlidePuzzleNeuralHeuristic(NeuralHeuristicBase):
         Returns:
             One-hot representation of the puzzle state
         """
-        # Create a one-hot encoding of the current state
-        # Shape will be [puzzle_size, puzzle_size, puzzle_size*puzzle_size]
-        current_board = current.board_unpacked
-        current_board_one_hot = jax.nn.one_hot(current_board, self.size_square).flatten()
-
-        if self.is_fixed:
-            one_hots = current_board_one_hot
-        else:
-            target_board = solve_config.TargetState.board_unpacked
-            target_board_one_hot = jax.nn.one_hot(target_board, self.size_square).flatten()
-            one_hots = jnp.concatenate([target_board_one_hot, current_board_one_hot], axis=-1)
-
-        return ((one_hots - 0.5) * 2.0).astype(DTYPE)
+        target_board = None if self.is_fixed else solve_config.TargetState.board_unpacked
+        return slidepuzzle_pre_process(
+            current.board_unpacked, target_board, self.size_square, self.is_fixed
+        )
 
 
 class Model(DistanceModel):
@@ -85,24 +80,11 @@ class SlidePuzzleConvNeuralHeuristic(NeuralHeuristicBase):
         return x.reshape((self.puzzle.size, self.puzzle.size, x.shape[-1]))
 
     def _diff_pos(self, current: SlidePuzzle.State, target: SlidePuzzle.State) -> chex.Array:
-        """
-        This function should return the difference between the state and the target.
-        """
-
-        def to_xy(index):
-            return index // self.puzzle.size, index % self.puzzle.size
-
-        def pos(num, board):
-            return to_xy(jnp.argmax(board == num))
-
-        tpos = jnp.array(
-            [pos(i, target.board_unpacked) for i in current.board_unpacked], dtype=jnp.int8
-        )  # [16, 2]
-        diff = self.base_xy - tpos  # [16, 2]
-        return diff
+        """Return the per-tile position difference between the current and target states."""
+        return slidepuzzle_diff_pos(
+            current.board_unpacked, target.board_unpacked, self.base_xy, self.puzzle.size
+        )
 
     def _zero_pos(self, current: SlidePuzzle.State) -> chex.Array:
-        """
-        This function should return the zero position in the state.
-        """
-        return jnp.expand_dims(current.board_unpacked == 0, axis=-1).astype(jnp.float32)
+        """Return a binary mask indicating the blank-tile position."""
+        return slidepuzzle_zero_pos(current.board_unpacked)
