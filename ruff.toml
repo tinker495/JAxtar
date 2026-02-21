@@ -1,0 +1,5 @@
+[lint]
+select = ["E", "F", "W"]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]
