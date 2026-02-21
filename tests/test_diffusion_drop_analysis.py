@@ -79,7 +79,17 @@ def analyze_diffusion_drop():
     # Use JIT to handle JAX tracing correctly
     @jax.jit
     def run_diffusion(sc, st, mc, ac, pi):
-        return _compute_diffusion_distance(sc, st, mc, ac, pi, SolveConfigsAndStates, k_max=k_max)
+        is_solved = puzzle.batched_is_solved(sc, st, multi_solve_config=True)
+        return _compute_diffusion_distance(
+            sc,
+            st,
+            is_solved,
+            mc,
+            ac,
+            pi,
+            SolveConfigsAndStates,
+            k_max=k_max,
+        )
 
     target_heuristic = run_diffusion(
         solve_configs, states, move_costs, action_costs, parent_indices
@@ -99,7 +109,7 @@ def analyze_diffusion_drop():
         mean_init = jnp.mean(h_init[k])
         mean_final = jnp.mean(h_final[k])
         drop = mean_init - mean_final
-        print(f"{k:4d} | {mean_init:11.4f} | {mean_final:12.4f} | {drop:9.4f}")
+        print(f"{k: 4d} | {mean_init: 11.4f} | {mean_final: 12.4f} | {drop: 9.4f}")
 
 
 if __name__ == "__main__":

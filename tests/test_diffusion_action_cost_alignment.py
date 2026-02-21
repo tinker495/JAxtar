@@ -41,6 +41,7 @@ def test_diffusion_distance_inverse_parent_uses_parent_indexed_action_costs():
     out = _compute_diffusion_distance(
         solve_configs=solve_configs,
         states=states,
+        is_solved=jnp.array([False, False, False, False], dtype=bool),
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -66,6 +67,7 @@ def test_diffusion_distance_hindsight_parent_uses_child_aligned_action_costs():
     out = _compute_diffusion_distance(
         solve_configs=solve_configs,
         states=states,
+        is_solved=jnp.array([False, False, False, True], dtype=bool),
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -87,6 +89,7 @@ def test_diffusion_q_inverse_parent_uses_parent_indexed_action_costs():
         solve_configs=solve_configs,
         states=states,
         trajectory_actions=actions,
+        is_solved=jnp.array([False, False, False, False], dtype=bool),
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -118,6 +121,7 @@ def test_diffusion_distance_inverse_parent_supports_child_aligned_action_costs_w
     out = _compute_diffusion_distance(
         solve_configs=solve_configs,
         states=states,
+        is_solved=jnp.array([False, False, False, False], dtype=bool),
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
@@ -139,6 +143,7 @@ def test_diffusion_q_inverse_parent_supports_child_aligned_action_costs_when_goa
         solve_configs=solve_configs,
         states=states,
         trajectory_actions=actions,
+        is_solved=jnp.array([False, False, False, False], dtype=bool),
         move_costs=move_costs,
         action_costs=action_costs,
         parent_indices=parent_indices,
