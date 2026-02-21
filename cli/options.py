@@ -428,20 +428,24 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
                     for pr_val in pop_ratio_str.split(","):
                         try:
                             pop_ratios.append(float(pr_val.strip()))
-                        except ValueError:
+                        except ValueError as e:
                             if pr_val.strip().lower() == "inf":
                                 pop_ratios.append(float("inf"))
                             else:
-                                raise click.BadParameter(f"Invalid pop_ratio value: {pr_val}")
+                                raise click.BadParameter(
+                                    f"Invalid pop_ratio value: {pr_val}"
+                                ) from e
                     overrides["pop_ratio"] = pop_ratios
                 else:
                     try:
                         overrides["pop_ratio"] = float(pop_ratio_str.strip())
-                    except ValueError:
+                    except ValueError as e:
                         if pop_ratio_str.strip().lower() == "inf":
                             overrides["pop_ratio"] = float("inf")
                         else:
-                            raise click.BadParameter(f"Invalid pop_ratio value: {pop_ratio_str}")
+                            raise click.BadParameter(
+                                f"Invalid pop_ratio value: {pop_ratio_str}"
+                            ) from e
 
             eval_opts = base_eval_options.model_copy(update=overrides).resolve_for_eval_setup(
                 has_benchmark=kwargs.get("benchmark") is not None

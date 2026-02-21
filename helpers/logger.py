@@ -36,7 +36,11 @@ class BaseLogger(ABC):
 
     def _get_git_commit_hash(self) -> str:
         try:
-            return subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode("utf-8")
+            return (
+                subprocess.check_output(["git", "rev-parse", "HEAD"], timeout=5)
+                .strip()
+                .decode("utf-8")
+            )
         except (subprocess.CalledProcessError, FileNotFoundError):
             return "N/A"
 

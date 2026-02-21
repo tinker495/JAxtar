@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 import jax.numpy as jnp
@@ -7,6 +8,8 @@ import xtructure.numpy as xnp
 from helpers.visualization import PathStep, build_path_steps_from_actions
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
+
+logger = logging.getLogger(__name__)
 
 
 def extract_heuristic_accuracy_data(
@@ -89,7 +92,7 @@ def extract_heuristic_accuracy_data(
                             str(puzzle.action_to_string(a)): a for a in range(action_size)
                         }
                 except (AttributeError, ValueError, TypeError):
-                    pass
+                    logger.debug("Could not build action lookup table for puzzle %r", puzzle)
 
             for a in action_sequence:
                 if isinstance(a, str) and not a.isdigit():

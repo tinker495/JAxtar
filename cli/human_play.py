@@ -72,6 +72,7 @@ def human_play(puzzle: Puzzle, seed: int, **kwargs):
 
                 return action
             except (ValueError, IndexError):
+                print("Invalid input, try again")
                 continue
 
     def generate_layout() -> Group:

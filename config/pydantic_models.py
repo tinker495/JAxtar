@@ -18,8 +18,8 @@ class PuzzleOptions(BaseModel):
         else:
             try:
                 return [int(s) for s in self.seeds.split(",")]
-            except ValueError:
-                raise ValueError("Invalid seeds")
+            except ValueError as e:
+                raise ValueError("Invalid seeds") from e
 
 
 class SearchOptions(BaseModel):
@@ -218,7 +218,7 @@ class NeuralCallableConfig(BaseModel):
 class WorldModelPuzzleConfig(BaseModel):
     callable: Callable
     path: str
-    neural_config: Optional[dict] = {}
+    neural_config: Optional[dict] = Field(default_factory=dict)
 
     class Config:
         arbitrary_types_allowed = True
@@ -259,26 +259,30 @@ class PuzzleBundle(BaseModel):
     q_function: Callable = EmptyQFunction
     q_function_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
     k_max: int = 50
-    eval_options_configs: Dict[str, EvalOptions] = {
-        "default": EvalOptions(),
-        "small_batch": EvalOptions(
-            batch_size=128,
-        ),
-        "large_batch": EvalOptions(
-            batch_size=262144,
-            max_node_size=int(2e8),
-        ),
-    }
-    search_options_configs: Dict[str, SearchOptions] = {
-        "default": SearchOptions(),
-        "small_batch": SearchOptions(
-            batch_size=128,
-        ),
-        "large_batch": SearchOptions(
-            batch_size=262144,
-            max_node_size=int(2e8),
-        ),
-    }
+    eval_options_configs: Dict[str, EvalOptions] = Field(
+        default_factory=lambda: {
+            "default": EvalOptions(),
+            "small_batch": EvalOptions(
+                batch_size=128,
+            ),
+            "large_batch": EvalOptions(
+                batch_size=262144,
+                max_node_size=int(2e8),
+            ),
+        }
+    )
+    search_options_configs: Dict[str, SearchOptions] = Field(
+        default_factory=lambda: {
+            "default": SearchOptions(),
+            "small_batch": SearchOptions(
+                batch_size=128,
+            ),
+            "large_batch": SearchOptions(
+                batch_size=262144,
+                max_node_size=int(2e8),
+            ),
+        }
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -289,26 +293,30 @@ class BenchmarkBundle(BaseModel):
     benchmark_args: Dict[str, Any] = Field(default_factory=dict)
     heuristic_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
     q_function_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
-    eval_options_configs: Dict[str, EvalOptions] = {
-        "default": EvalOptions(),
-        "small_batch": EvalOptions(
-            batch_size=128,
-        ),
-        "large_batch": EvalOptions(
-            batch_size=262144,
-            max_node_size=int(2e8),
-        ),
-    }
-    search_options_configs: Dict[str, SearchOptions] = {
-        "default": SearchOptions(),
-        "small_batch": SearchOptions(
-            batch_size=128,
-        ),
-        "large_batch": SearchOptions(
-            batch_size=262144,
-            max_node_size=int(2e8),
-        ),
-    }
+    eval_options_configs: Dict[str, EvalOptions] = Field(
+        default_factory=lambda: {
+            "default": EvalOptions(),
+            "small_batch": EvalOptions(
+                batch_size=128,
+            ),
+            "large_batch": EvalOptions(
+                batch_size=262144,
+                max_node_size=int(2e8),
+            ),
+        }
+    )
+    search_options_configs: Dict[str, SearchOptions] = Field(
+        default_factory=lambda: {
+            "default": SearchOptions(),
+            "small_batch": SearchOptions(
+                batch_size=128,
+            ),
+            "large_batch": SearchOptions(
+                batch_size=262144,
+                max_node_size=int(2e8),
+            ),
+        }
+    )
 
     class Config:
         arbitrary_types_allowed = True

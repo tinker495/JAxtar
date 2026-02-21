@@ -157,4 +157,3 @@ class ResMLPModel(DistanceModel):
         else:
             x = self.final_dense(x, training)
         return x
-        return x

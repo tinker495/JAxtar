@@ -21,6 +21,7 @@ def _expand_json_strings(obj: Any) -> Any:
             if isinstance(parsed, (dict, list)):
                 return _expand_json_strings(parsed)
         except (json.JSONDecodeError, TypeError):
+            # String is not valid JSON; return it as-is
             pass
     return obj
 

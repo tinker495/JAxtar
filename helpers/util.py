@@ -55,7 +55,7 @@ def display_value(val):
             if isinstance(loaded, dict) or isinstance(loaded, list):
                 return json.dumps(loaded, indent=2)
     except json.JSONDecodeError:
-        pass
+        pass  # Not a JSON string; fall through to default str(val) representation
     return str(val)
 
 

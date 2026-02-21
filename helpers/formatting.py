@@ -39,6 +39,7 @@ def human_format_to_float(num_str):
             try:
                 return float(parts[0]) ** float(parts[1])
             except (ValueError, OverflowError):
+                # Fallback: exponent syntax didn't parse; continue to suffix-based parsing below
                 pass
     num_str = num_str.replace("K", "e3").replace("M", "e6").replace("B", "e9").replace("T", "e12")
     return float(num_str)
