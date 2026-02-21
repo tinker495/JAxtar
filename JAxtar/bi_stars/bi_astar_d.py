@@ -11,7 +11,6 @@ Key Benefits:
 - Efficient for expensive heuristics with large branching factors
 """
 
-import time
 from typing import Any
 
 import chex
@@ -20,7 +19,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
@@ -607,21 +606,4 @@ def bi_astar_d_builder(
 
         return bi_result
 
-    bi_astar_d_fn = jax.jit(bi_astar_d)
-    if show_compile_time:
-        print("Initializing JIT for bidirectional A* deferred...")
-        start_time = time.time()
-
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        bi_astar_d_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(bi_astar_d_fn, *warmup_inputs)
-
-    if show_compile_time:
-        end_time = time.time()
-        print(f"Compile Time: {end_time - start_time:6.2f} seconds")
-        print("JIT compiled\n")
-
-    return bi_astar_d_fn
+    return compile_search_builder(bi_astar_d, puzzle, show_compile_time, warmup_inputs)

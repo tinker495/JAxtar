@@ -16,7 +16,6 @@ Key Benefits:
 - Particularly effective for puzzles with symmetric forward/backward transitions
 """
 
-import time
 from typing import Any
 
 import chex
@@ -25,7 +24,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.bi_stars.bi_search_base import (
@@ -503,22 +502,4 @@ def bi_astar_builder(
 
         return bi_result
 
-    bi_astar_fn = jax.jit(bi_astar)
-    if show_compile_time:
-        print("Initializing JIT for bidirectional A*...")
-        start_time = time.time()
-
-    if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        # Pre-compile with empty data
-        bi_astar_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(bi_astar_fn, *warmup_inputs)
-
-    if show_compile_time:
-        end_time = time.time()
-        print(f"Compile Time: {end_time - start_time:6.2f} seconds")
-        print("JIT compiled\n")
-
-    return bi_astar_fn
+    return compile_search_builder(bi_astar, puzzle, show_compile_time, warmup_inputs)
