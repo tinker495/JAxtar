@@ -9,7 +9,7 @@ Key features:
 """
 
 from functools import partial
-from typing import Any
+from typing import Any, Callable
 
 import chex
 import jax
@@ -902,3 +902,179 @@ def _unique_sort_merge_and_split(k1, v1, k2, v2, batch_size: int):
     overflow_keys = sorted_key[batch_size:]
     overflow_vals = sorted_val[batch_size:]
     return main_keys, main_vals, overflow_keys, overflow_vals
+
+
+# Add the generic loop builder
+def init_base_loop_state(
+    puzzle: Puzzle,
+    search_result: SearchResult,
+    solve_config: Puzzle.SolveConfig,
+    start: Puzzle.State,
+    params: Any,
+    sr_batch_size: int,
+):
+    (
+        search_result.hashtable,
+        _,
+        hash_idx,
+    ) = search_result.hashtable.insert(start)
+
+    search_result.cost = search_result.cost.at[hash_idx.index].set(0)
+    costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    states = xnp.pad(start, (0, sr_batch_size - 1))
+    hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
+    filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
+
+    return LoopStateWithStates(
+        search_result=search_result,
+        solve_config=solve_config,
+        params=params,
+        current=Current(hashidx=hash_idxs, cost=costs),
+        states=states,
+        filled=filled,
+    )
+
+
+def base_loop_condition(
+    puzzle: Puzzle, loop_state: LoopStateWithStates | LoopState, states: Puzzle.State
+):
+    search_result = loop_state.search_result
+    solve_config = loop_state.solve_config
+    filled = loop_state.filled
+    hash_size = search_result.generated_size
+    size_cond1 = filled.any()  # queue is not empty
+    size_cond2 = hash_size < search_result.capacity  # hash table is not full
+    size_cond = jnp.logical_and(size_cond1, size_cond2)
+
+    solved = puzzle.batched_is_solved(solve_config, states)
+    solved = jnp.logical_and(solved, filled)
+    return jnp.logical_and(size_cond, ~solved.any())
+
+
+def build_deferred_loop_body(
+    puzzle: Puzzle,
+    look_ahead_pruning: bool,
+    cost_weight: float,
+    eval_fn: Callable,  # Returns neighbour_keys, dists, optimal_mask (or handles its own pruning)
+    use_heuristic: bool = False,
+):
+    def loop_body(loop_state: LoopStateWithStates):
+        search_result = loop_state.search_result
+        solve_config = loop_state.solve_config
+        params = loop_state.params
+        cost = loop_state.current.cost
+        hash_idx = loop_state.current.hashidx
+        filled = loop_state.filled
+        states = loop_state.states
+
+        action_size = search_result.action_size
+        sr_batch_size = search_result.batch_size
+        flat_size = action_size * sr_batch_size
+        idx_tiles = xnp.tile(hash_idx, (action_size, 1))  # [action_size, batch_size, ...]
+        action = jnp.tile(
+            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
+            (1, sr_batch_size),
+        )  # [n_neighbours, batch_size]
+        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))  # [action_size, batch_size]
+        filled_tiles = jnp.tile(
+            filled[jnp.newaxis, :], (action_size, 1)
+        )  # [action_size, batch_size]
+
+        # Inject standard computations, delegate to eval_fn for Q-value / Heuristic specific logic
+        neighbour_keys, dists, optimal_mask = eval_fn(
+            puzzle,
+            search_result,
+            solve_config,
+            params,
+            states,
+            costs,
+            filled_tiles,
+            filled,
+            look_ahead_pruning,
+            cost_weight,
+        )
+
+        flattened_vals = Parant_with_Costs(
+            parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
+            cost=costs.flatten(),
+            dist=dists.flatten(),
+        )
+
+        flattened_neighbour_keys = jnp.where(
+            optimal_mask.flatten(), neighbour_keys.flatten(), jnp.inf
+        )
+
+        # Sort to keep best candidates
+        sorted_key, sorted_idx = jax.lax.sort_key_val(
+            flattened_neighbour_keys, jnp.arange(flat_size)
+        )
+        sorted_vals = flattened_vals[sorted_idx]
+        optimal_mask_sorted = optimal_mask.flatten()[sorted_idx]
+
+        neighbour_keys_out = sorted_key.reshape(action_size, sr_batch_size)
+        vals_out = sorted_vals.reshape((action_size, sr_batch_size))
+        optimal_mask_out = optimal_mask_sorted.reshape(action_size, sr_batch_size)
+
+        search_result = insert_priority_queue_batches(
+            search_result,
+            neighbour_keys_out,
+            vals_out,
+            optimal_mask_out,
+        )
+        search_result, min_val, next_states, next_filled = search_result.pop_full_with_actions(
+            puzzle=puzzle, solve_config=solve_config, use_heuristic=use_heuristic
+        )
+
+        return LoopStateWithStates(
+            search_result=search_result,
+            solve_config=solve_config,
+            params=params,
+            current=min_val,
+            states=next_states,
+            filled=next_filled,
+        )
+
+    return loop_body
+
+
+def init_base_loop_state_current(
+    puzzle: Puzzle,
+    search_result: SearchResult,
+    solve_config: Puzzle.SolveConfig,
+    start: Puzzle.State,
+    params: Any,
+    sr_batch_size: int,
+):
+    (
+        search_result.hashtable,
+        _,
+        hash_idx,
+    ) = search_result.hashtable.insert(start)
+
+    search_result.cost = search_result.cost.at[hash_idx.index].set(0)
+    hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
+    costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
+    filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
+
+    return LoopState(
+        search_result=search_result,
+        solve_config=solve_config,
+        params=params,
+        current=Current(hashidx=hash_idxs, cost=costs),
+        filled=filled,
+    )
+
+
+def base_loop_condition_current(puzzle: Puzzle, loop_state: LoopState):
+    search_result = loop_state.search_result
+    solve_config = loop_state.solve_config
+    states = search_result.get_state(loop_state.current)
+    filled = loop_state.filled
+    hash_size = search_result.generated_size
+    size_cond1 = filled.any()  # queue is not empty
+    size_cond2 = hash_size < search_result.capacity  # hash table is not full
+    size_cond = jnp.logical_and(size_cond1, size_cond2)
+
+    solved = puzzle.batched_is_solved(solve_config, states)
+    solved = jnp.logical_and(solved, filled)
+    return jnp.logical_and(size_cond, ~solved.any())
