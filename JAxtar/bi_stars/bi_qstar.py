@@ -337,6 +337,7 @@ def bi_qstar_builder(
     pessimistic_update: bool = True,
     backward_mode: str = "auto",
     terminate_on_first_solution: bool = True,
+    unsafe_allow_nonadmissible: bool = False,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
@@ -361,6 +362,8 @@ def bi_qstar_builder(
             - "value_v": use V(s)=min_a Q(s,a) as a heuristic on predecessor states.
             - "dijkstra": ignore Q in backward direction and use true step costs.
         terminate_on_first_solution: If True, stop as soon as any meeting is found.
+        unsafe_allow_nonadmissible: If True, allow `terminate_on_first_solution=False`
+            when backward mode is not "dijkstra". This can violate optimality claims.
 
     Returns:
         A JIT-compiled function that performs bidirectional Q* search
@@ -400,10 +403,16 @@ def bi_qstar_builder(
         backward_mode = "value_v"
 
     if (not terminate_on_first_solution) and backward_mode != "dijkstra":
+        if not unsafe_allow_nonadmissible:
+            raise ValueError(
+                "bi_qstar with terminate_on_first_solution=False requires an admissible lower "
+                "bound consistent with PQ keys. This is not guaranteed for learned/approximate Q "
+                "unless backward_mode='dijkstra'. Set unsafe_allow_nonadmissible=True only if you "
+                "accept potentially non-optimal early termination guarantees."
+            )
         warnings.warn(
-            "bi_qstar with terminate_on_first_solution=False requires an admissible lower bound "
-            "consistent with PQ keys. This is generally NOT guaranteed for learned/approximate Q. "
-            "Use with care or prefer terminate_on_first_solution=True.",
+            "bi_qstar running with terminate_on_first_solution=False and non-dijkstra "
+            "backward mode under unsafe_allow_nonadmissible=True. Optimality is not guaranteed.",
             UserWarning,
         )
 
@@ -451,7 +460,12 @@ def bi_qstar_builder(
         bi_result = loop_state.bi_result
 
         # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
-        bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, solve_config)
+        bi_result = materialize_meeting_point_hashidxs(
+            bi_result,
+            puzzle,
+            solve_config,
+            inverse_solveconfig=inverse_solveconfig,
+        )
 
         # Mark as solved if meeting point was found
         bi_result.forward.solved = bi_result.meeting.found

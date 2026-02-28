@@ -485,6 +485,7 @@ def materialize_meeting_point_hashidxs(
     bi_result: BiDirectionalSearchResult,
     puzzle: Puzzle,
     solve_config: Puzzle.SolveConfig,
+    inverse_solveconfig: Puzzle.SolveConfig | None = None,
 ) -> BiDirectionalSearchResult:
     """Ensure meeting point has hashidxs in both directions.
 
@@ -515,10 +516,13 @@ def materialize_meeting_point_hashidxs(
     def _compute_from_bwd_edge(
         bi_result: BiDirectionalSearchResult, meeting: MeetingPoint
     ) -> Puzzle.State:
+        backward_solve_config = solve_config if inverse_solveconfig is None else inverse_solveconfig
         parent_state = bi_result.backward.hashtable[meeting.bwd_parent_hashidx]
         parent_b = _add_batch_dim(parent_state)
         filled_b = jnp.array([True])
-        inv_neigh, _ = puzzle.batched_get_inverse_neighbours(solve_config, parent_b, filled_b)
+        inv_neigh, _ = puzzle.batched_get_inverse_neighbours(
+            backward_solve_config, parent_b, filled_b
+        )
         a = meeting.bwd_parent_action.astype(jnp.int32)
         child = inv_neigh[a, 0]
         return child
@@ -1147,7 +1151,7 @@ def build_bi_deferred_expand_direction(
 
         search_result, new_current, new_states, new_filled = search_result.pop_full_with_actions(
             puzzle=puzzle,
-            solve_config=solve_config,
+            solve_config=current_solve_config,
             use_heuristic=use_heuristic_in_pop,
             is_backward=not is_forward,
         )

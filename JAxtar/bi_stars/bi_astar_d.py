@@ -433,7 +433,12 @@ def bi_astar_d_builder(
         bi_result = loop_state.bi_result
 
         # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
-        bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, solve_config)
+        bi_result = materialize_meeting_point_hashidxs(
+            bi_result,
+            puzzle,
+            solve_config,
+            inverse_solveconfig=inverse_solveconfig,
+        )
 
         # Mark as solved if meeting point was found
         bi_result.forward.solved = bi_result.meeting.found
