@@ -32,7 +32,6 @@ class NeuralQFunctionBase(QFunction):
         **kwargs,
     ):
         self.puzzle = puzzle
-        self.is_fixed = puzzle.fixed_target
         self.action_size = puzzle.action_size
         self.metadata = {}
         self.nn_args_metadata = {}

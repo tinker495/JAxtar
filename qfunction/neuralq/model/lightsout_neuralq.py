@@ -11,14 +11,20 @@ from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
 class LightsOutNeuralQ(NeuralQFunctionBase):
+    is_fixed: bool = True
+
     def __init__(self, puzzle: LightsOut, **kwargs):
         super().__init__(puzzle, **kwargs)
 
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
     ) -> chex.Array:
-        target_board = None if self.is_fixed else solve_config.TargetState.board_unpacked
+        target_board = solve_config.TargetState.board_unpacked
         return lightsout_pre_process(current.board_unpacked, target_board, self.is_fixed)
+
+
+class LightsOutRandomNeuralQ(LightsOutNeuralQ):
+    is_fixed: bool = False
 
 
 class Model(DistanceModel):

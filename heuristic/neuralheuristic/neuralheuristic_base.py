@@ -32,7 +32,6 @@ class NeuralHeuristicBase(Heuristic):
         **kwargs,
     ):
         self.puzzle = puzzle
-        self.is_fixed = puzzle.fixed_target
         self.path = path
         self.metadata = {}
         self.nn_args_metadata = {}
