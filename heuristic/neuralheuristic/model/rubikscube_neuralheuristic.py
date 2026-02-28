@@ -33,6 +33,8 @@ class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
 
 
 class RubiksCubeRandomNeuralHeuristic(NeuralHeuristicBase):
+    is_fixed: bool = False
+
     def __init__(self, puzzle: RubiksCube, **kwargs):
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size
