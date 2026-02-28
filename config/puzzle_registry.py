@@ -207,8 +207,8 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube": PuzzleBundle(
-        puzzle=PuzzleConfig(callable=RubiksCube),
-        puzzle_hard=PuzzleConfig(callable=RubiksCube, initial_shuffle=100),
+        puzzle=PuzzleConfig(callable=RubiksCube, initial_shuffle=10),
+        puzzle_hard=PuzzleConfig(callable=RubiksCube),
         k_max=26,
         heuristic=RubiksCubeHeuristic,
         q_function=RubiksCubeQ,
