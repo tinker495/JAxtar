@@ -7,13 +7,13 @@ The `bi_qstar` command solves a puzzle using the Bidirectional Q\* search algori
 The basic syntax for the `bi_qstar` command is:
 
 ```bash
-python main.py bi_qstar [OPTIONS]
+python main.py bi-qstar [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py bi_qstar -p rubikscube -nn
+python main.py bi-qstar -p rubikscube -nn
 ```
 
 ## Options
@@ -37,15 +37,46 @@ The `bi_qstar` command uses similar option groups to the `qstar` command.
 -   `--debug`: Disable JIT.
 -   `--profile`: Enable profiling.
 -   `--show_compile_time`: Print compile time.
+-   `--search-preset`: Apply puzzle-specific search defaults.
 
 ### Q-Function Options (`@qfunction_options`)
 
 -   `-nn, --neural_qfunction`: Use neural network Q-function.
 -   `--param-path`: Path to Q-function parameters.
 -   `--model-type`: Q-function model type.
+-   `-q, --use-quantize`: Enable quantized neural inference.
+-   `--quant-type`: Quantization preset (`int8`, `int4`, `int4_w8a`, `int8_w_only`).
 
 ### Visualization Options (`@visualize_options`)
 
 -   `-vt, --visualize_terminal`: Render path in terminal.
 -   `-vi, --visualize_imgs`: Generate images/GIF.
 -   `-mt, --max_animation_time`: Max GIF duration.
+
+## Related Commands
+
+```bash
+python main.py eval bi-qstar [OPTIONS]
+python main.py benchmark bi-qstar [OPTIONS]
+```
+
+Training-time evaluation can also use this algorithm via:
+
+```bash
+python main.py distance-train qfunction --eval-search-metric bi_qstar
+```
+
+## Low-memory benchmark fallback profile
+
+If default benchmark settings trigger OOM on your machine, start with:
+
+```bash
+python main.py benchmark bi-qstar \
+  --benchmark rubikscube-deepcubea \
+  --num-eval 1 \
+  --batch-size 16 \
+  --max-node-size 4096 \
+  --param-path qfunction/neuralq/model/params/rubikscube_3_v2.pkl \
+  --use-quantize \
+  --quant-type int8
+```
