@@ -11,14 +11,20 @@ from neural_util.preprocessing import lightsout_pre_process
 
 
 class LightsOutNeuralHeuristic(NeuralHeuristicBase):
+    is_fixed: bool = True
+
     def __init__(self, puzzle: LightsOut, **kwargs):
         super().__init__(puzzle, **kwargs)
 
     def pre_process(
         self, solve_config: LightsOut.SolveConfig, current: LightsOut.State
     ) -> chex.Array:
-        target_board = None if self.is_fixed else solve_config.TargetState.board_unpacked
+        target_board = solve_config.TargetState.board_unpacked
         return lightsout_pre_process(current.board_unpacked, target_board, self.is_fixed)
+
+
+class LightsOutRandomNeuralHeuristic(LightsOutNeuralHeuristic):
+    is_fixed: bool = False
 
 
 class Model(DistanceModel):

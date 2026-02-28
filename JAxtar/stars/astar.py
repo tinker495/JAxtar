@@ -14,6 +14,8 @@ from JAxtar.stars.search_base import (
     Parent,
     SearchResult,
     insert_priority_queue_batches,
+    init_base_loop_state_current,
+    base_loop_condition_current,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -52,40 +54,17 @@ def _astar_loop_builder(
             min_pop=min_pop,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
-
-        (
-            search_result.hashtable,
-            _,
-            hash_idx,
-        ) = search_result.hashtable.insert(start)
-
-        search_result.cost = search_result.cost.at[hash_idx.index].set(0)
-        sr_batch_size = search_result.batch_size
-        hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
-        costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
-        filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
-
-        return LoopState(
-            search_result=search_result,
-            solve_config=solve_config,
-            params=heuristic_parameters,
-            current=Current(hashidx=hash_idxs, cost=costs),
-            filled=filled,
+        return init_base_loop_state_current(
+            puzzle,
+            search_result,
+            solve_config,
+            start,
+            heuristic_parameters,
+            search_result.batch_size,
         )
 
     def loop_condition(loop_state: LoopState):
-        search_result = loop_state.search_result
-        solve_config = loop_state.solve_config
-        states = search_result.get_state(loop_state.current)
-        filled = loop_state.filled
-        hash_size = search_result.generated_size
-        size_cond1 = filled.any()  # queue is not empty
-        size_cond2 = hash_size < search_result.capacity  # hash table is not full
-        size_cond = jnp.logical_and(size_cond1, size_cond2)
-
-        solved = puzzle.batched_is_solved(solve_config, states)
-        solved = jnp.logical_and(solved, filled)
-        return jnp.logical_and(size_cond, ~solved.any())
+        return base_loop_condition_current(puzzle, loop_state)
 
     def loop_body(loop_state: LoopState):
         search_result = loop_state.search_result

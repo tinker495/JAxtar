@@ -11,6 +11,8 @@ from neural_util.preprocessing import (
 
 
 class RubiksCubeNeuralHeuristic(NeuralHeuristicBase):
+    is_fixed: bool = True
+
     def __init__(self, puzzle: RubiksCube, **kwargs):
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size

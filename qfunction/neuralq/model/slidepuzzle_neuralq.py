@@ -15,6 +15,8 @@ from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
 class SlidePuzzleNeuralQ(NeuralQFunctionBase):
+    is_fixed: bool = True
+
     def __init__(self, puzzle: SlidePuzzle, **kwargs):
         self.size_square = puzzle.size * puzzle.size
         super().__init__(puzzle, **kwargs)
@@ -32,10 +34,14 @@ class SlidePuzzleNeuralQ(NeuralQFunctionBase):
         Returns:
             One-hot representation of the puzzle state
         """
-        target_board = None if self.is_fixed else solve_config.TargetState.board_unpacked
+        target_board = solve_config.TargetState.board_unpacked
         return slidepuzzle_pre_process(
             current.board_unpacked, target_board, self.size_square, self.is_fixed
         )
+
+
+class SlidePuzzleRandomNeuralQ(SlidePuzzleNeuralQ):
+    is_fixed: bool = False
 
 
 class Model(DistanceModel):

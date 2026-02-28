@@ -7,14 +7,13 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.stars.search_base import (
-    Current,
     LoopStateWithStates,
-    Parant_with_Costs,
-    Parent,
     SearchResult,
-    insert_priority_queue_batches,
+    init_base_loop_state,
+    base_loop_condition,
+    build_deferred_loop_body,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -29,9 +28,6 @@ def _astar_d_loop_builder(
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
 ):
-    # Loop builder isolates init/cond/body so downstream code can tap
-    # into intermediate loop data (params, queue state) without
-    # duplicating the search wiring or triggering extra traces.
     statecls = puzzle.State
     action_size = puzzle.action_size
 
@@ -55,72 +51,39 @@ def _astar_d_loop_builder(
             parant_with_costs=True,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
-
-        (
-            search_result.hashtable,
-            _,
-            hash_idx,
-        ) = search_result.hashtable.insert(start)
-
-        search_result.cost = search_result.cost.at[hash_idx.index].set(0)
-        sr_batch_size = search_result.batch_size
-        costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
-        states = xnp.pad(start, (0, sr_batch_size - 1))
-        hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
-        filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
-
-        return LoopStateWithStates(
-            search_result=search_result,
-            solve_config=solve_config,
-            params=heuristic_parameters,
-            current=Current(hashidx=hash_idxs, cost=costs),
-            states=states,
-            filled=filled,
+        return init_base_loop_state(
+            puzzle,
+            search_result,
+            solve_config,
+            start,
+            heuristic_parameters,
+            search_result.batch_size,
         )
 
     def loop_condition(loop_state: LoopStateWithStates):
-        search_result = loop_state.search_result
-        solve_config = loop_state.solve_config
-        states = loop_state.states
-        filled = loop_state.filled
-        hash_size = search_result.generated_size
-        size_cond1 = filled.any()  # queue is not empty
-        size_cond2 = hash_size < search_result.capacity  # hash table is not full
-        size_cond = jnp.logical_and(size_cond1, size_cond2)
+        return base_loop_condition(puzzle, loop_state, loop_state.states)
 
-        solved = puzzle.batched_is_solved(solve_config, states)
-        solved = jnp.logical_and(solved, filled)
-        return jnp.logical_and(size_cond, ~solved.any())
-
-    def loop_body(loop_state: LoopStateWithStates):
-        search_result = loop_state.search_result
-        solve_config = loop_state.solve_config
-        heuristic_parameters = loop_state.params
-        cost = loop_state.current.cost
-        hash_idx = loop_state.current.hashidx
-        filled = loop_state.filled
-        states = loop_state.states
-
+    def eval_fn(
+        puzzle,
+        search_result,
+        solve_config,
+        params,
+        states,
+        costs,
+        filled_tiles,
+        filled,
+        look_ahead_pruning,
+        cost_weight,
+    ):
         action_size = search_result.action_size
         sr_batch_size = search_result.batch_size
-        flat_size = action_size * sr_batch_size
-        idx_tiles = xnp.tile(hash_idx, (action_size, 1))  # [action_size, batch_size, ...]
-        action = jnp.tile(
-            jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
-            (1, sr_batch_size),
-        )  # [n_neighbours, batch_size]
-        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))  # [action_size, batch_size]
-        filled_tiles = jnp.tile(
-            filled[jnp.newaxis, :], (action_size, 1)
-        )  # [action_size, batch_size]
-
         flattened_filled_tiles = filled_tiles.flatten()
 
         if look_ahead_pruning:
             neighbour_look_a_head, ncosts = puzzle.batched_get_neighbours(
                 solve_config, states, filled
-            )  # [action_size, batch_size]
-            look_a_head_costs = costs + ncosts  # [action_size, batch_size]
+            )
+            look_a_head_costs = costs + ncosts
 
             flattened_neighbour_look_head = neighbour_look_a_head.flatten()
             flattened_look_a_head_costs = look_a_head_costs.flatten()
@@ -145,22 +108,18 @@ def _astar_d_loop_builder(
 
             found_reshaped = found.reshape(action_size, sr_batch_size)
             optimal_mask_reshaped = optimal_mask.reshape(action_size, sr_batch_size)
-
-            old_dists = search_result.get_dist(current_hash_idxs)  # flattened
-            old_dists = old_dists.reshape(action_size, sr_batch_size)
+            old_dists = search_result.get_dist(current_hash_idxs).reshape(
+                action_size, sr_batch_size
+            )
 
             need_compute = optimal_mask_reshaped & ~found_reshaped
 
-            # Pack all `need_compute=True` entries contiguously across the full
-            # (action_size * batch_size) batch to maximize effective batch size
-            # in `variable_heuristic_batch_switcher` (less padding / fewer small calls).
             flat_states = neighbour_look_a_head.flatten()
             flat_need_compute = need_compute.flatten()
 
-            n = flat_size
-            n = flat_size
-            # Stable sort so `need_compute=True` comes first (key False), preserving order.
-            # Stable sort so `need_compute=True` comes first (key False), preserving order.
+            # Clean duplicate sizes
+            flat_size = action_size * sr_batch_size
+
             sorted_indices = stable_partition_three(
                 flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
             )
@@ -168,31 +127,25 @@ def _astar_d_loop_builder(
             sorted_states = flat_states[sorted_indices]
             sorted_mask = flat_need_compute[sorted_indices]
 
-            # `variable_heuristic_batch_switcher` is built with max_batch_size=batch_size,
-            # so we must not call it with a larger leading dimension than `batch_size`.
-            # Reshape the globally-packed vector into `action_size` chunks of `batch_size`
-            # and compute per-chunk via scan.
-            # `sorted_states` is a (flattened) Puzzle.State pytree (xtructure),
-            # so reshape expects just the leading batch shape.
             sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
             sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
 
             def _calc_heuristic_chunk(carry, input_slice):
                 states_slice, compute_mask = input_slice
-                h_val = variable_heuristic_batch_switcher(
-                    heuristic_parameters, states_slice, compute_mask
-                )
+                h_val = variable_heuristic_batch_switcher(params, states_slice, compute_mask)
                 return carry, h_val
 
             _, h_val_chunks = jax.lax.scan(
                 _calc_heuristic_chunk,
                 None,
                 (sorted_states_chunked, sorted_mask_chunked),
-            )  # [action_size, batch_size]
+            )
 
-            h_val_sorted = h_val_chunks.reshape(-1)  # [action_size * batch_size]
+            h_val_sorted = h_val_chunks.reshape(-1)
             flat_h_val = (
-                jnp.empty((n,), dtype=h_val_sorted.dtype).at[sorted_indices].set(h_val_sorted)
+                jnp.empty((flat_size,), dtype=h_val_sorted.dtype)
+                .at[sorted_indices]
+                .set(h_val_sorted)
             )
             computed_heuristic_vals = flat_h_val.reshape(action_size, sr_batch_size)
 
@@ -204,62 +157,21 @@ def _astar_d_loop_builder(
             heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
 
             neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
-
         else:
-
-            heuristic_vals = variable_heuristic_batch_switcher(
-                heuristic_parameters, states, filled
-            )  # [batch_size]
-            heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)  # [batch_size]
+            heuristic_vals = variable_heuristic_batch_switcher(params, states, filled)
+            heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)
             heuristic_vals = jnp.tile(heuristic_vals[jnp.newaxis, :], (action_size, 1)).astype(
                 KEY_DTYPE
-            )  # [action_size, batch_size]
+            )
 
-            optimal_mask = flattened_filled_tiles
-
+            optimal_mask = flattened_filled_tiles.reshape(action_size, sr_batch_size)
             neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
 
-        vals = Parant_with_Costs(
-            parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
-            cost=costs.flatten(),
-            dist=heuristic_vals.flatten(),
-        )
-        flattened_vals = vals.flatten()
-        flattened_keys = neighbour_keys.flatten()
+        return neighbour_keys, heuristic_vals, optimal_mask
 
-        flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)
-
-        # Sort to keep best candidates
-        sorted_key, sorted_idx = jax.lax.sort_key_val(
-            flattened_neighbour_keys, jnp.arange(flat_size)
-        )
-        sorted_vals = flattened_vals[sorted_idx]
-        sorted_optimal_unique_mask = optimal_mask[sorted_idx]
-
-        neighbour_keys = sorted_key.reshape(action_size, sr_batch_size)
-        vals = sorted_vals.reshape((action_size, sr_batch_size))
-        optimal_unique_mask = sorted_optimal_unique_mask.reshape(action_size, sr_batch_size)
-
-        search_result = insert_priority_queue_batches(
-            search_result,
-            neighbour_keys,
-            vals,
-            optimal_unique_mask,
-        )
-        search_result, min_val, next_states, filled = search_result.pop_full_with_actions(
-            puzzle=puzzle,
-            solve_config=solve_config,
-            use_heuristic=True,
-        )
-
-        return LoopStateWithStates(
-            search_result=search_result,
-            solve_config=solve_config,
-            params=heuristic_parameters,
-            current=min_val,
-            states=next_states,
-            filled=filled,
-        )
+    loop_body = build_deferred_loop_body(
+        puzzle, look_ahead_pruning, cost_weight, eval_fn, use_heuristic=True
+    )
 
     return init_loop_state, loop_condition, loop_body
 

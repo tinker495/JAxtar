@@ -11,6 +11,8 @@ from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
 class RubiksCubeNeuralQ(NeuralQFunctionBase):
+    is_fixed: bool = True
+
     def __init__(self, puzzle: RubiksCube, **kwargs):
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size
@@ -31,6 +33,8 @@ class RubiksCubeNeuralQ(NeuralQFunctionBase):
 
 
 class RubiksCubeRandomNeuralQ(NeuralQFunctionBase):
+    is_fixed: bool = False
+
     def __init__(self, puzzle: RubiksCube, **kwargs):
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
         tile_count = puzzle.size * puzzle.size

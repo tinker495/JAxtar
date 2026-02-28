@@ -5,6 +5,7 @@ from puxle import (
     TSP,
     DotKnot,
     LightsOut,
+    LightsOutRandom,
     Maze,
     PancakeSorting,
     Room,
@@ -33,6 +34,7 @@ from heuristic import (
 from heuristic.neuralheuristic import (
     LightsOutConvNeuralHeuristic,
     LightsOutNeuralHeuristic,
+    LightsOutRandomNeuralHeuristic,
     PancakeNeuralHeuristic,
     RubiksCubeHLGNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
@@ -40,6 +42,7 @@ from heuristic.neuralheuristic import (
     RubiksCubeRandomNeuralHeuristic,
     SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
+    SlidePuzzleRandomNeuralHeuristic,
     SokobanNeuralHeuristic,
     WorldModelNeuralHeuristic,
 )
@@ -57,6 +60,7 @@ from qfunction import (
 from qfunction.neuralq import (
     LightsOutConvNeuralQ,
     LightsOutNeuralQ,
+    LightsOutRandomNeuralQ,
     PancakeNeuralQ,
     RubiksCubeHLGNeuralQ,
     RubiksCubeNeuralQ,
@@ -64,6 +68,7 @@ from qfunction.neuralq import (
     RubiksCubeRandomNeuralQ,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
+    SlidePuzzleRandomNeuralQ,
     SokobanNeuralQ,
     WorldModelNeuralQ,
 )
@@ -123,7 +128,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function=SlidePuzzleQ,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
-                callable=SlidePuzzleNeuralHeuristic,
+                callable=SlidePuzzleRandomNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/n-puzzle-random_{size}_v2.pkl",
             ),
             "conv": NeuralCallableConfig(
@@ -133,7 +138,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
-                callable=SlidePuzzleNeuralQ,
+                callable=SlidePuzzleRandomNeuralQ,
                 param_path="qfunction/neuralq/model/params/n-puzzle-random_{size}_v2.pkl",
             ),
             "conv": NeuralCallableConfig(
@@ -182,6 +187,24 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
             )
         },
         eval_benchmark="lightsout-deepcubea",
+    ),
+    "lightsout-random": PuzzleBundle(
+        puzzle=LightsOutRandom,
+        k_max=50,
+        heuristic=LightsOutHeuristic,
+        q_function=LightsOutQ,
+        heuristic_nn_configs={
+            "default": NeuralCallableConfig(
+                callable=LightsOutRandomNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/lightsout-random_{size}_v2.pkl",
+            ),
+        },
+        q_function_nn_configs={
+            "default": NeuralCallableConfig(
+                callable=LightsOutRandomNeuralQ,
+                param_path="qfunction/neuralq/model/params/lightsout-random_{size}_v2.pkl",
+            ),
+        },
     ),
     "rubikscube": PuzzleBundle(
         puzzle=PuzzleConfig(callable=RubiksCube),
@@ -613,6 +636,15 @@ for _s in [5, 7]:
     if _s == 7:
         bundle_l.eval_benchmark = "lightsout-deepcubea"
     puzzle_bundles[f"lightsout-{_s}"] = bundle_l
+
+    bundle_lr = _sized_bundle(
+        puzzle_bundles["lightsout-random"],
+        size=_s,
+        puzzle_cls=LightsOutRandom,
+        hard_cls=None,
+    )
+    bundle_lr.k_max = _LO_KMAX[_s]
+    puzzle_bundles[f"lightsout-random-{_s}"] = bundle_lr
 
 
 # Rubik's Cube size 3 with size-specific k_max
