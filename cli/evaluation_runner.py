@@ -326,10 +326,15 @@ class EvaluationRunner:
                 if heuristic_metrics and heuristic_metrics.get("has_optimal_path_used")
                 else ""
             )
-            fig = plot_heuristic_accuracy(results, metrics=heuristic_metrics)
+
+            results_for_plot = (
+                results if current_eval_opts.plot_unsolved else [r for r in results if r["solved"]]
+            )
+
+            fig = plot_heuristic_accuracy(results_for_plot, metrics=heuristic_metrics)
             am.save_and_log_plot(f"heuristic_accuracy{file_suffix}", fig)
 
-            for r in results[: current_eval_opts.max_expansion_plots]:
+            for r in results_for_plot[: current_eval_opts.max_expansion_plots]:
                 if r.get("expansion_analysis"):
                     # Original Expansion Plots
                     fig = plot_expansion_distribution(
