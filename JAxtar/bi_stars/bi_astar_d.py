@@ -40,8 +40,9 @@ from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 def _bi_astar_d_loop_builder(
     puzzle: Puzzle,
     heuristic: Heuristic,
-    bi_result_template: BiDirectionalSearchResult,
     batch_size: int = 1024,
+    max_nodes: int = int(1e6),
+    pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
     use_backward_heuristic: bool = True,
@@ -55,15 +56,19 @@ def _bi_astar_d_loop_builder(
     Args:
         puzzle: Puzzle instance
         heuristic: Heuristic instance (used for both directions)
-        bi_result_template: Pre-built BiDirectionalSearchResult template
         batch_size: Batch size for parallel processing
+        max_nodes: Maximum number of nodes to explore per direction
+        pop_ratio: Ratio controlling beam width
         cost_weight: Weight for path cost in f = cost_weight * g + h
         look_ahead_pruning: Enable look-ahead pruning optimization
 
     Returns:
         Tuple of (init_loop_state, loop_condition, loop_body) functions
     """
+    statecls = puzzle.State
     action_size = puzzle.action_size
+    denom = max(1, puzzle.action_size // 2)
+    min_pop = max(1, MIN_BATCH_SIZE // denom)
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -73,14 +78,30 @@ def _bi_astar_d_loop_builder(
     )
 
     def init_loop_state(
-        bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
-        inverse_solveconfig: Puzzle.SolveConfig,
         start: Puzzle.State,
-        heuristic_params_forward: Any,
-        heuristic_params_backward: Any,
+        **kwargs: Any,
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional deferred search from start and goal states."""
+        bi_result = build_bi_search_result(
+            statecls,
+            batch_size,
+            max_nodes,
+            action_size,
+            pop_ratio=pop_ratio,
+            min_pop=min_pop,
+            parant_with_costs=True,
+        )
+
+        heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
+        inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
+
+        if use_backward_heuristic:
+            heuristic_params_backward = heuristic.prepare_heuristic_parameters(
+                inverse_solveconfig, **kwargs
+            )
+        else:
+            heuristic_params_backward = heuristic_params_forward
 
         (
             fwd_filled,
@@ -373,28 +394,13 @@ def bi_astar_d_builder(
         )
         look_ahead_pruning = True
 
-    statecls = puzzle.State
-    action_size = puzzle.action_size
-    denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
-
-    # Pre-build the search result OUTSIDE of JIT context
-    bi_result_template = build_bi_search_result(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio=pop_ratio,
-        min_pop=min_pop,
-        parant_with_costs=True,
-    )
-
     use_backward_heuristic = not heuristic.is_fixed
     init_loop_state, loop_condition, loop_body = _bi_astar_d_loop_builder(
         puzzle,
         heuristic,
-        bi_result_template,
         batch_size,
+        max_nodes,
+        pop_ratio,
         cost_weight,
         look_ahead_pruning,
         use_backward_heuristic=use_backward_heuristic,
@@ -407,29 +413,10 @@ def bi_astar_d_builder(
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
         """Perform bidirectional A* deferred search."""
-        # Prepare heuristic parameters for both directions
-        heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
-        # Build a backward solve config that treats `start` as the target.
-        # Prefer puzzle-level normalization via hindsight_transform.
-        inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
-
-        if use_backward_heuristic:
-            heuristic_params_backward = heuristic.prepare_heuristic_parameters(
-                inverse_solveconfig, **kwargs
-            )
-        else:
-            heuristic_params_backward = heuristic_params_forward
-
-        loop_state = init_loop_state(
-            bi_result_template,
-            solve_config,
-            inverse_solveconfig,
-            start,
-            heuristic_params_forward,
-            heuristic_params_backward,
-        )
+        loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 
+        inverse_solveconfig = loop_state.inverse_solveconfig
         bi_result = loop_state.bi_result
 
         # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.

@@ -108,8 +108,9 @@ def build_bi_search_result(
     Creates a new BiDirectionalSearchResult with initialized forward and backward
     SearchResult instances.
 
-    NOTE: This function should be called OUTSIDE of JIT-traced context,
-    typically in the builder function before creating the JIT-compiled search.
+    NOTE: This helper is JAX-traceable and can be called inside a jitted
+    `init_loop_state(...)` (mirroring `JAxtar.stars` patterns). Keep in mind it
+    allocates full search buffers sized by `max_nodes`.
 
     Args:
         statecls: The state class for the puzzle
