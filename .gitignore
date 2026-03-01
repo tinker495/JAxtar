@@ -145,3 +145,6 @@ world_model_puzzle/data/
 heuristic/neuralheuristic/model/params
 qfunction/neuralq/model/params
 world_model_puzzle/model/params
+
+#ignore personal test scripts
+*.sh
