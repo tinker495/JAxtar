@@ -55,7 +55,7 @@ def _bi_astar_loop_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     use_backward_heuristic: bool = True,
-    terminate_on_first_solution: bool = False,
+    terminate_on_first_solution: bool = True,
 ):
     """
     Build the loop components for bidirectional A* search.

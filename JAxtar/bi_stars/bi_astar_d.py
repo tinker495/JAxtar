@@ -16,6 +16,7 @@ from typing import Any
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
@@ -44,9 +45,9 @@ def _bi_astar_d_loop_builder(
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
     use_backward_heuristic: bool = True,
-    backward_value_lookahead: bool = True,
+    backward_value_lookahead: bool = False,
     backward_value_lookahead_k: int | None = None,
-    terminate_on_first_solution: bool = False,
+    terminate_on_first_solution: bool = True,
 ):
     """
     Build the loop components for bidirectional A* deferred search.
@@ -101,6 +102,9 @@ def _bi_astar_d_loop_builder(
         else:
             heuristic_params_backward = heuristic_params_forward
 
+        if backward_value_lookahead:
+            heuristic_params_backward = (heuristic_params_backward, solve_config)
+
         (
             fwd_filled,
             fwd_current,
@@ -136,138 +140,197 @@ def _bi_astar_d_loop_builder(
             terminate_on_first_solution,
         )
 
-    def _eval_deferred_heuristic(
-        is_forward: bool,
-        solve_config: Puzzle.SolveConfig,
-        inverse_solveconfig: Puzzle.SolveConfig,
-        heuristic_params: Any,
-        states: Puzzle.State,
-        costs: chex.Array,
-        look_a_head_costs: chex.Array,
-        ncosts: chex.Array,
-        filled: chex.Array,
-        filled_tiles: chex.Array,
-        optimal_mask: chex.Array,
-        found: chex.Array,
-        current_hash_idxs: chex.Array,
-        search_result: Any,
-        neighbour_look_a_head: Puzzle.State,
+    def _build_eval_deferred_heuristic(
+        get_neighbours_fn,
+        *,
         use_heuristic: bool,
-    ) -> tuple[chex.Array, chex.Array]:
-        sr_batch_size = search_result.batch_size
-        flat_size = action_size * sr_batch_size
-        flattened_neighbour_look_head = neighbour_look_a_head.flatten()
-
-        if look_ahead_pruning:
-            if use_heuristic:
-                found_reshaped = found.reshape(action_size, sr_batch_size)
-                optimal_mask_reshaped = optimal_mask.reshape(action_size, sr_batch_size)
-
-                old_dists = search_result.get_dist(current_hash_idxs)
-                old_dists = old_dists.reshape(action_size, sr_batch_size)
-
-                need_compute = optimal_mask_reshaped & ~found_reshaped
-                flat_states = neighbour_look_a_head.flatten()
-                flat_need_compute = need_compute.flatten()
-
-                n = flat_size
-                sorted_indices = stable_partition_three(
-                    flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
-                )
-
-                sorted_states = flat_states[sorted_indices]
-                sorted_mask = flat_need_compute[sorted_indices]
-
-                sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-                sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-                def _calc_heuristic_chunk(carry, input_slice):
-                    states_slice, compute_mask = input_slice
-                    h_val = variable_heuristic_batch_switcher(
-                        heuristic_params, states_slice, compute_mask
-                    )
-                    return carry, h_val
-
-                _, h_val_chunks = jax.lax.scan(
-                    _calc_heuristic_chunk,
-                    None,
-                    (sorted_states_chunked, sorted_mask_chunked),
-                )
-
-                h_val_sorted = h_val_chunks.reshape(-1)
-                flat_h_val = (
-                    jnp.empty((n,), dtype=h_val_sorted.dtype).at[sorted_indices].set(h_val_sorted)
-                )
-                computed_heuristic_vals = flat_h_val.reshape(action_size, sr_batch_size)
-
-                heuristic_vals = jnp.where(
-                    found_reshaped,
-                    old_dists,
-                    computed_heuristic_vals,
-                )
-                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
+        enable_backward_value_lookahead: bool,
+    ):
+        def _eval_deferred_heuristic(
+            puzzle: Puzzle,
+            search_result: Any,
+            solve_config: Puzzle.SolveConfig,
+            params: Any,
+            states: Puzzle.State,
+            costs: chex.Array,
+            filled_tiles: chex.Array,
+            filled: chex.Array,
+            look_ahead_pruning: bool,
+            cost_weight: float,
+        ) -> tuple[chex.Array, chex.Array, chex.Array]:
+            if enable_backward_value_lookahead:
+                # params is packed as (heuristic_params, forward_solve_config)
+                heuristic_params, forward_solve_config = params
             else:
-                heuristic_vals = jnp.zeros_like(look_a_head_costs, dtype=KEY_DTYPE)
-                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
+                heuristic_params = params
+                forward_solve_config = None
 
-            if (not is_forward) and use_heuristic and backward_value_lookahead:
-                base_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
-                flat_keys = base_keys.flatten()
-                masked_flat_keys = jnp.where(optimal_mask, flat_keys, jnp.inf)
+            action_size = search_result.action_size
+            sr_batch_size = search_result.batch_size
+            flat_size = action_size * sr_batch_size
+            flattened_filled_tiles = filled_tiles.flatten()
 
-                sort_idx = jnp.arange(flat_size, dtype=jnp.int32)
-                sorted_keys, sorted_idx = jax.lax.sort_key_val(masked_flat_keys, sort_idx)
+            if look_ahead_pruning:
+                neighbour_look_a_head, ncosts = get_neighbours_fn(solve_config, states, filled)
+                look_a_head_costs = (costs + ncosts).astype(KEY_DTYPE)
 
-                k = (
-                    sr_batch_size
-                    if backward_value_lookahead_k is None
-                    else backward_value_lookahead_k
+                flattened_neighbour_look_head = neighbour_look_a_head.flatten()
+                flattened_look_a_head_costs = look_a_head_costs.flatten().astype(KEY_DTYPE)
+
+                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head, flattened_filled_tiles
                 )
-                k = min(k, sr_batch_size, flat_size)
-                sel_idx = sorted_idx[:k]
-                sel_valid = jnp.isfinite(sorted_keys[:k])
+                old_costs = search_result.get_cost(current_hash_idxs)
 
-                sel_states = flattened_neighbour_look_head[sel_idx]
-                succ_states, succ_costs = puzzle.batched_get_neighbours(
-                    solve_config, sel_states, sel_valid
+                candidate_mask = flattened_filled_tiles & jnp.logical_or(
+                    ~found, jnp.less(flattened_look_a_head_costs, old_costs)
                 )
+                unique_mask = xnp.unique_mask(
+                    flattened_neighbour_look_head, flattened_look_a_head_costs, candidate_mask
+                )
+                optimal_mask_flat = unique_mask & candidate_mask
+                optimal_mask = optimal_mask_flat.reshape(action_size, sr_batch_size)
 
-                def _scan_backup(carry, inputs):
-                    succ_slice, cost_slice = inputs
-                    h_succ = variable_heuristic_batch_switcher(
-                        heuristic_params, succ_slice, sel_valid
-                    ).astype(KEY_DTYPE)
-                    q_est = h_succ + cost_slice.astype(KEY_DTYPE)
-                    return carry, q_est
+                if use_heuristic:
+                    found_reshaped = found.reshape(action_size, sr_batch_size)
+                    old_dists = search_result.get_dist(current_hash_idxs).reshape(
+                        action_size, sr_batch_size
+                    )
 
-                _, q_chunks = jax.lax.scan(_scan_backup, None, (succ_states, succ_costs))
-                v_sel = jnp.min(q_chunks, axis=0).astype(KEY_DTYPE)
+                    need_compute = optimal_mask & ~found_reshaped
+                    flat_states = neighbour_look_a_head.flatten()
+                    flat_need_compute = need_compute.flatten()
 
-                heur_flat = heuristic_vals.flatten()
-                updated = jnp.where(sel_valid, v_sel, heur_flat[sel_idx])
-                heur_flat = heur_flat.at[sel_idx].set(updated)
-                heuristic_vals = heur_flat.reshape((action_size, sr_batch_size))
+                    sorted_indices = stable_partition_three(
+                        flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
+                    )
+                    sorted_states = flat_states[sorted_indices]
+                    sorted_mask = flat_need_compute[sorted_indices]
 
-            neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
+                    sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
+                    sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
 
-        else:
-            if use_heuristic:
-                heuristic_vals = variable_heuristic_batch_switcher(heuristic_params, states, filled)
-                heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)
-                heuristic_vals = jnp.tile(heuristic_vals[jnp.newaxis, :], (action_size, 1)).astype(
+                    def _calc_heuristic_chunk(carry, input_slice):
+                        states_slice, compute_mask = input_slice
+                        h_val = variable_heuristic_batch_switcher(
+                            heuristic_params, states_slice, compute_mask
+                        )
+                        return carry, h_val
+
+                    _, h_val_chunks = jax.lax.scan(
+                        _calc_heuristic_chunk,
+                        None,
+                        (sorted_states_chunked, sorted_mask_chunked),
+                    )
+
+                    h_val_sorted = h_val_chunks.reshape(-1)
+                    flat_h_val = (
+                        jnp.empty((flat_size,), dtype=h_val_sorted.dtype)
+                        .at[sorted_indices]
+                        .set(h_val_sorted)
+                    )
+                    computed_heuristic_vals = flat_h_val.reshape(action_size, sr_batch_size)
+
+                    heuristic_vals = jnp.where(
+                        found_reshaped,
+                        old_dists,
+                        computed_heuristic_vals,
+                    )
+                    heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(
+                        KEY_DTYPE
+                    )
+                else:
+                    heuristic_vals = jnp.zeros_like(look_a_head_costs, dtype=KEY_DTYPE)
+                    heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
+
+                if enable_backward_value_lookahead and use_heuristic:
+                    base_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
+                    flat_keys = base_keys.flatten()
+                    masked_flat_keys = jnp.where(optimal_mask_flat, flat_keys, jnp.inf)
+
+                    sort_idx = jnp.arange(flat_size, dtype=jnp.int32)
+                    sorted_keys, sorted_idx = jax.lax.sort_key_val(masked_flat_keys, sort_idx)
+
+                    k = (
+                        sr_batch_size
+                        if backward_value_lookahead_k is None
+                        else backward_value_lookahead_k
+                    )
+                    k = min(k, sr_batch_size, flat_size)
+                    sel_idx = sorted_idx[:k]
+                    sel_valid = jnp.isfinite(sorted_keys[:k])
+
+                    sel_states = flattened_neighbour_look_head[sel_idx]
+                    succ_states, succ_costs = puzzle.batched_get_neighbours(
+                        forward_solve_config, sel_states, sel_valid
+                    )
+
+                    def _scan_backup(carry, inputs):
+                        succ_slice, cost_slice = inputs
+                        h_succ = variable_heuristic_batch_switcher(
+                            heuristic_params, succ_slice, sel_valid
+                        ).astype(KEY_DTYPE)
+                        q_est = h_succ + cost_slice.astype(KEY_DTYPE)
+                        return carry, q_est
+
+                    _, q_chunks = jax.lax.scan(_scan_backup, None, (succ_states, succ_costs))
+                    v_sel = jnp.min(q_chunks, axis=0).astype(KEY_DTYPE)
+
+                    heur_flat = heuristic_vals.flatten()
+                    updated = jnp.where(sel_valid, v_sel, heur_flat[sel_idx])
+                    heur_flat = heur_flat.at[sel_idx].set(updated)
+                    heuristic_vals = heur_flat.reshape((action_size, sr_batch_size))
+
+                neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(
                     KEY_DTYPE
                 )
             else:
-                heuristic_vals = jnp.zeros_like(costs, dtype=KEY_DTYPE)
-                heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
+                if use_heuristic:
+                    heuristic_vals = variable_heuristic_batch_switcher(
+                        heuristic_params, states, filled
+                    )
+                    heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)
+                    heuristic_vals = jnp.tile(
+                        heuristic_vals[jnp.newaxis, :], (action_size, 1)
+                    ).astype(KEY_DTYPE)
+                else:
+                    heuristic_vals = jnp.zeros_like(costs, dtype=KEY_DTYPE)
+                    heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf)
 
-            neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
+                neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
+                optimal_mask = flattened_filled_tiles.reshape(action_size, sr_batch_size)
 
-        # Return order matches stars deferred contract: (neighbour_keys, dists).
-        return neighbour_keys, heuristic_vals
+            neighbour_keys = jnp.where(filled_tiles, neighbour_keys, jnp.inf)
+            return neighbour_keys, heuristic_vals, optimal_mask
 
-    _expand_direction_deferred = build_bi_deferred_expand_direction(
-        puzzle, cost_weight, look_ahead_pruning, _eval_deferred_heuristic
+        return _eval_deferred_heuristic
+
+    eval_forward = _build_eval_deferred_heuristic(
+        puzzle.batched_get_neighbours,
+        use_heuristic=True,
+        enable_backward_value_lookahead=False,
+    )
+    eval_backward = _build_eval_deferred_heuristic(
+        puzzle.batched_get_inverse_neighbours,
+        use_heuristic=use_backward_heuristic,
+        enable_backward_value_lookahead=backward_value_lookahead,
+    )
+
+    expand_forward_direction = build_bi_deferred_expand_direction(
+        puzzle,
+        cost_weight,
+        look_ahead_pruning,
+        eval_forward,
+        is_forward=True,
+        use_heuristic_in_pop=True,
+    )
+    expand_backward_direction = build_bi_deferred_expand_direction(
+        puzzle,
+        cost_weight,
+        look_ahead_pruning,
+        eval_backward,
+        is_forward=False,
+        use_heuristic_in_pop=True,
     )
 
     def loop_body(loop_state: BiLoopStateWithStates) -> BiLoopStateWithStates:
@@ -280,7 +343,7 @@ def _bi_astar_d_loop_builder(
         bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
 
         def _expand_forward(bi_result):
-            return _expand_direction_deferred(
+            return expand_forward_direction(
                 bi_result,
                 solve_config,
                 inverse_solveconfig,
@@ -288,12 +351,10 @@ def _bi_astar_d_loop_builder(
                 loop_state.current_forward,
                 loop_state.states_forward,
                 loop_state.filled_forward,
-                True,  # is_forward
-                True,  # use_heuristic
             )
 
         def _expand_backward(bi_result):
-            return _expand_direction_deferred(
+            return expand_backward_direction(
                 bi_result,
                 solve_config,
                 inverse_solveconfig,
@@ -301,8 +362,6 @@ def _bi_astar_d_loop_builder(
                 loop_state.current_backward,
                 loop_state.states_backward,
                 loop_state.filled_backward,
-                False,  # is_forward
-                use_backward_heuristic,  # use_heuristic
             )
 
         # Expand both directions
@@ -356,6 +415,8 @@ def bi_astar_d_builder(
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
+    experimental_backward_value_lookahead: bool = False,
+    experimental_backward_value_lookahead_k: int | None = None,
     terminate_on_first_solution: bool = True,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
@@ -377,21 +438,32 @@ def bi_astar_d_builder(
             Note: Bidirectional deferred search requires look_ahead_pruning=True
             for correct termination condition. If False is passed, it will be
             forced to True with a warning.
+        experimental_backward_value_lookahead: Experimental value-lookahead for
+            backward deferred expansion. Disabled by default for stars parity.
+        experimental_backward_value_lookahead_k: Number of backward candidates
+            to refine when experimental_backward_value_lookahead=True.
 
     Returns:
         A JIT-compiled function that performs bidirectional A* deferred search
     """
     # Bidirectional deferred requires look_ahead_pruning for correct f-value computation
     # Without it, the termination condition based on get_min_f_value() can be incorrect
-    if not look_ahead_pruning:
-        import warnings
+    import warnings
 
+    if not look_ahead_pruning:
         warnings.warn(
             "Bidirectional A* deferred requires look_ahead_pruning=True for correct "
             "termination. Forcing look_ahead_pruning=True.",
             UserWarning,
         )
         look_ahead_pruning = True
+
+    if experimental_backward_value_lookahead:
+        warnings.warn(
+            "experimental_backward_value_lookahead=True enables non-parity "
+            "experimental behavior in bi_astar_d backward expansion.",
+            UserWarning,
+        )
 
     use_backward_heuristic = not heuristic.is_fixed
     init_loop_state, loop_condition, loop_body = _bi_astar_d_loop_builder(
@@ -403,6 +475,8 @@ def bi_astar_d_builder(
         cost_weight,
         look_ahead_pruning,
         use_backward_heuristic=use_backward_heuristic,
+        backward_value_lookahead=experimental_backward_value_lookahead,
+        backward_value_lookahead_k=experimental_backward_value_lookahead_k,
         terminate_on_first_solution=terminate_on_first_solution,
     )
 

@@ -8,6 +8,7 @@ import pytest
 from puxle import SlidePuzzle
 
 from heuristic.empty_heuristic import EmptyHeuristic
+from JAxtar.bi_stars.bi_astar import bi_astar_builder
 from JAxtar.bi_stars.bi_astar import _bi_astar_loop_builder
 from JAxtar.bi_stars.bi_astar_d import _bi_astar_d_loop_builder, bi_astar_d_builder
 from JAxtar.bi_stars.bi_qstar import _bi_qstar_loop_builder, bi_qstar_builder
@@ -17,6 +18,7 @@ from JAxtar.bi_stars.bi_search_base import (
     build_bi_search_result,
     initialize_bi_loop_common,
 )
+from JAxtar.stars.astar import astar_builder
 from JAxtar.stars.astar import _astar_loop_builder
 from JAxtar.stars.search_base import Current, SearchResult
 from qfunction.q_base import QFunction
@@ -39,6 +41,16 @@ def _make_valid_slide_solve_config(puzzle: SlidePuzzle):
 class _ZeroQFunction(QFunction):
     def q_value(self, q_parameters, current):
         return jnp.zeros((self.puzzle.action_size,), dtype=jnp.float32)
+
+
+class _ActionIndexQFunction(QFunction):
+    def q_value(self, q_parameters, current):
+        return jnp.arange(self.puzzle.action_size, dtype=jnp.float32)
+
+
+class _UnitQFunction(QFunction):
+    def q_value(self, q_parameters, current):
+        return jnp.ones((self.puzzle.action_size,), dtype=jnp.float32)
 
 
 def test_bi_astar_d_builder_does_not_build_bi_search_result_outside_compile():
@@ -305,3 +317,164 @@ def test_bi_qstar_safety_guard_matches_plan_constraints():
         )
 
     assert "unsafe_allow_nonadmissible=True" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("pessimistic_update", "expected_action"),
+    [
+        (True, 3),
+        (False, 0),
+    ],
+)
+def test_bi_qstar_forward_tiebreak_matches_stars_distinct_score_semantics(
+    pessimistic_update: bool,
+    expected_action: int,
+):
+    puzzle = SlidePuzzle(size=3)
+    q_fn = _ActionIndexQFunction(puzzle)
+    solve_config, goal = _make_valid_slide_solve_config(puzzle)
+
+    goal_b = jax.tree_util.tree_map(lambda x: x[jnp.newaxis, ...], goal)
+    neighbours, ncosts = puzzle.batched_get_neighbours(solve_config, goal_b, jnp.array([True]))
+    valid = jnp.isfinite(ncosts[:, 0])
+    action = int(jax.device_get(jnp.argmax(valid)))
+    start = neighbours[action, 0]
+
+    original_get_neighbours = puzzle.batched_get_neighbours
+
+    def _duplicate_neighbours(solve_config_arg, states_arg, filled_arg):
+        candidate_states, candidate_costs = original_get_neighbours(
+            solve_config_arg, states_arg, filled_arg
+        )
+        duplicated_states = jax.tree_util.tree_map(
+            lambda x: jnp.repeat(x[:1, ...], puzzle.action_size, axis=0),
+            candidate_states,
+        )
+        duplicated_costs = jnp.zeros_like(
+            jnp.repeat(candidate_costs[:1, :], puzzle.action_size, axis=0)
+        )
+        return duplicated_states, duplicated_costs
+
+    with patch.object(puzzle, "batched_get_neighbours", side_effect=_duplicate_neighbours):
+        init_loop_state, _, loop_body = _bi_qstar_loop_builder(
+            puzzle,
+            q_fn,
+            batch_size=8,
+            max_nodes=128,
+            pop_ratio=jnp.inf,
+            cost_weight=1.0,
+            look_ahead_pruning=True,
+            pessimistic_update=pessimistic_update,
+            use_backward_q=False,
+            backward_mode="dijkstra",
+            terminate_on_first_solution=False,
+        )
+
+        loop_state0 = init_loop_state(solve_config, start)
+        loop_state = BiLoopStateWithStates(
+            bi_result=loop_state0.bi_result,
+            solve_config=loop_state0.solve_config,
+            inverse_solveconfig=loop_state0.inverse_solveconfig,
+            params_forward=loop_state0.params_forward,
+            params_backward=loop_state0.params_backward,
+            current_forward=loop_state0.current_forward,
+            current_backward=loop_state0.current_backward,
+            states_forward=loop_state0.states_forward,
+            states_backward=loop_state0.states_backward,
+            filled_forward=loop_state0.filled_forward,
+            filled_backward=jnp.zeros_like(loop_state0.filled_backward),
+        )
+
+        def _pop_full_with_actions_noop(
+            self,
+            *,
+            puzzle,
+            solve_config,
+            use_heuristic: bool = False,
+            is_backward: bool = False,
+            **kwargs,
+        ):
+            batch_size = self.batch_size
+            current = Current.default((batch_size,))
+            states = puzzle.State.default((batch_size,))
+            filled = jnp.zeros((batch_size,), dtype=jnp.bool_)
+            return self, current, states, filled
+
+        with patch.object(SearchResult, "pop_full_with_actions", _pop_full_with_actions_noop):
+            loop_state_out = loop_body(loop_state)
+
+    pq = loop_state_out.bi_result.forward.priority_queue
+    finite_indices = jnp.where(jnp.isfinite(pq.key_store))
+    selected_actions = jax.device_get(pq.val_store.parent.action[finite_indices]).tolist()
+    assert len(selected_actions) == 1
+
+    assert selected_actions[0] == expected_action
+
+
+def test_bi_astar_optimal_mode_cost_matches_astar():
+    puzzle = SlidePuzzle(size=3)
+    heuristic = EmptyHeuristic(puzzle)
+    solve_config, goal = _make_valid_slide_solve_config(puzzle)
+
+    goal_b = jax.tree_util.tree_map(lambda x: x[jnp.newaxis, ...], goal)
+    neighbours, ncosts = puzzle.batched_get_neighbours(solve_config, goal_b, jnp.array([True]))
+    valid = jnp.isfinite(ncosts[:, 0])
+    action = int(jax.device_get(jnp.argmax(valid)))
+    start = neighbours[action, 0]
+
+    astar = astar_builder(puzzle, heuristic, batch_size=16, max_nodes=256, cost_weight=1.0)
+    bi_astar = bi_astar_builder(
+        puzzle,
+        heuristic,
+        batch_size=16,
+        max_nodes=256,
+        cost_weight=1.0,
+        terminate_on_first_solution=False,
+    )
+
+    astar_result = astar(solve_config, start)
+    bi_result = bi_astar(solve_config, start)
+
+    astar_cost = float(
+        jax.device_get(astar_result.cost[astar_result.solved_idx.hashidx.index]).astype(jnp.float32)
+    )
+    bi_cost = float(jax.device_get(bi_result.meeting.total_cost).astype(jnp.float32))
+    assert astar_cost == pytest.approx(bi_cost, rel=0.0, abs=1e-6)
+
+
+def test_bi_qstar_dijkstra_optimal_mode_cost_matches_bi_astar_with_admissible_q():
+    puzzle = SlidePuzzle(size=3)
+    heuristic = EmptyHeuristic(puzzle)
+    q_fn = _UnitQFunction(puzzle)
+    solve_config, goal = _make_valid_slide_solve_config(puzzle)
+
+    goal_b = jax.tree_util.tree_map(lambda x: x[jnp.newaxis, ...], goal)
+    neighbours, ncosts = puzzle.batched_get_neighbours(solve_config, goal_b, jnp.array([True]))
+    valid = jnp.isfinite(ncosts[:, 0])
+    action = int(jax.device_get(jnp.argmax(valid)))
+    start = neighbours[action, 0]
+
+    bi_astar = bi_astar_builder(
+        puzzle,
+        heuristic,
+        batch_size=16,
+        max_nodes=256,
+        cost_weight=1.0,
+        terminate_on_first_solution=False,
+    )
+    bi_qstar = bi_qstar_builder(
+        puzzle,
+        q_fn,
+        batch_size=16,
+        max_nodes=256,
+        cost_weight=1.0,
+        backward_mode="dijkstra",
+        terminate_on_first_solution=False,
+    )
+
+    astar_result = bi_astar(solve_config, start)
+    qstar_result = bi_qstar(solve_config, start)
+
+    astar_cost = float(jax.device_get(astar_result.meeting.total_cost).astype(jnp.float32))
+    qstar_cost = float(jax.device_get(qstar_result.meeting.total_cost).astype(jnp.float32))
+    assert astar_cost == pytest.approx(qstar_cost, rel=0.0, abs=1e-6)
