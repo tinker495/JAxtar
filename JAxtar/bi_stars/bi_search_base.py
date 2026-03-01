@@ -108,8 +108,9 @@ def build_bi_search_result(
     Creates a new BiDirectionalSearchResult with initialized forward and backward
     SearchResult instances.
 
-    NOTE: This function should be called OUTSIDE of JIT-traced context,
-    typically in the builder function before creating the JIT-compiled search.
+    NOTE: This helper is JAX-traceable and can be called inside a jitted
+    `init_loop_state(...)` (mirroring `JAxtar.stars` patterns). Keep in mind it
+    allocates full search buffers sized by `max_nodes`.
 
     Args:
         statecls: The state class for the puzzle
@@ -485,6 +486,7 @@ def materialize_meeting_point_hashidxs(
     bi_result: BiDirectionalSearchResult,
     puzzle: Puzzle,
     solve_config: Puzzle.SolveConfig,
+    inverse_solveconfig: Puzzle.SolveConfig | None = None,
 ) -> BiDirectionalSearchResult:
     """Ensure meeting point has hashidxs in both directions.
 
@@ -515,10 +517,13 @@ def materialize_meeting_point_hashidxs(
     def _compute_from_bwd_edge(
         bi_result: BiDirectionalSearchResult, meeting: MeetingPoint
     ) -> Puzzle.State:
+        backward_solve_config = solve_config if inverse_solveconfig is None else inverse_solveconfig
         parent_state = bi_result.backward.hashtable[meeting.bwd_parent_hashidx]
         parent_b = _add_batch_dim(parent_state)
         filled_b = jnp.array([True])
-        inv_neigh, _ = puzzle.batched_get_inverse_neighbours(solve_config, parent_b, filled_b)
+        inv_neigh, _ = puzzle.batched_get_inverse_neighbours(
+            backward_solve_config, parent_b, filled_b
+        )
         a = meeting.bwd_parent_action.astype(jnp.int32)
         child = inv_neigh[a, 0]
         return child
@@ -688,6 +693,30 @@ def materialize_meeting_point_hashidxs(
     return jax.lax.cond(bi_result.meeting.found, _materialize_if_needed, lambda x: x, bi_result)
 
 
+def stamp_bi_solved_from_meeting(
+    bi_result: BiDirectionalSearchResult,
+) -> BiDirectionalSearchResult:
+    """Stamp solved fields (`solved`, `solved_idx`) from `bi_result.meeting`.
+
+    Contract:
+        - For deferred variants, call this after `materialize_meeting_point_hashidxs(...)`
+          so `meeting.{fwd,bwd}_hashidx` is valid in both directions.
+    """
+
+    found = bi_result.meeting.found
+    bi_result.forward.solved = found
+    bi_result.forward.solved_idx = Current(
+        hashidx=bi_result.meeting.fwd_hashidx,
+        cost=bi_result.meeting.fwd_cost,
+    )
+    bi_result.backward.solved = found
+    bi_result.backward.solved_idx = Current(
+        hashidx=bi_result.meeting.bwd_hashidx,
+        cost=bi_result.meeting.bwd_cost,
+    )
+    return bi_result
+
+
 def bi_termination_condition(
     bi_result: BiDirectionalSearchResult,
     fwd_min_f: chex.Array,
@@ -843,7 +872,9 @@ def initialize_bi_loop_common(
     bi_result.forward.cost = bi_result.forward.cost.at[fwd_hash_idx.index].set(0)
 
     fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
-    fwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    # Safety parity with `JAxtar.stars.search_base.init_base_loop_state_current`:
+    # pad non-filled entries with +inf so an accidental read cannot produce work.
+    fwd_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     fwd_states = xnp.pad(start, (0, sr_batch_size - 1))
     fwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
     fwd_current = Current(hashidx=fwd_hash_idxs, cost=fwd_costs)
@@ -855,7 +886,7 @@ def initialize_bi_loop_common(
     bi_result.backward.cost = bi_result.backward.cost.at[bwd_hash_idx.index].set(0)
 
     bwd_hash_idxs = xnp.pad(bwd_hash_idx, (0, sr_batch_size - 1))
-    bwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    bwd_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     bwd_states = xnp.pad(goal, (0, sr_batch_size - 1))
     bwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
     bwd_current = Current(hashidx=bwd_hash_idxs, cost=bwd_costs)
@@ -990,14 +1021,30 @@ def build_bi_deferred_expand_direction(
     cost_weight: float,
     look_ahead_pruning: bool,
     eval_fn: Any,
+    *,
+    is_forward: bool,
+    use_heuristic_in_pop: bool,
 ):
     """
     Builds the generalized bidirectional deferred expansion logic.
     This acts as a high-order function replacing _expand_direction_deferred and _expand_direction_q.
+
+    Deferred callback contract:
+        Stars-parity contract:
+
+        `eval_fn(puzzle, search_result, solve_config, params, states, costs, filled_tiles, filled,`
+        `        look_ahead_pruning, cost_weight) -> (neighbour_keys, dists, optimal_mask)`
+
+        - neighbour_keys: (action_size, batch), KEY_DTYPE
+        - dists: (action_size, batch), KEY_DTYPE
+        - optimal_mask: (action_size, batch), bool
+
+        The bidirectional helper owns only orchestration:
+        PQ insertion -> pop_full_with_actions -> post-pop intersection + meeting update.
     """
     action_size = puzzle.action_size
 
-    def _expand_direction_common(
+    def _expand_direction(
         bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
         inverse_solveconfig: Puzzle.SolveConfig,
@@ -1005,19 +1052,15 @@ def build_bi_deferred_expand_direction(
         current: Current,
         states: Puzzle.State,
         filled: chex.Array,
-        is_forward: bool,
-        use_evaluation: bool,
     ) -> tuple[BiDirectionalSearchResult, Current, Puzzle.State, chex.Array]:
         if is_forward:
             search_result = bi_result.forward
             opposite_sr = bi_result.backward
             current_solve_config = solve_config
-            get_neighbours_fn = puzzle.batched_get_neighbours
         else:
             search_result = bi_result.backward
             opposite_sr = bi_result.forward
             current_solve_config = inverse_solveconfig
-            get_neighbours_fn = puzzle.batched_get_inverse_neighbours
 
         sr_batch_size = search_result.batch_size
         flat_size = action_size * sr_batch_size
@@ -1033,101 +1076,35 @@ def build_bi_deferred_expand_direction(
         costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))
         filled_tiles = jnp.tile(filled[jnp.newaxis, :], (action_size, 1))
 
-        flattened_filled_tiles = filled_tiles.flatten()
-
-        # Step 1: Look Ahead Generation
-        if look_ahead_pruning:
-            neighbour_look_a_head, ncosts = get_neighbours_fn(current_solve_config, states, filled)
-            look_a_head_costs = (costs + ncosts).astype(KEY_DTYPE)
-
-            flattened_neighbour_look_head = neighbour_look_a_head.flatten()
-            flattened_look_a_head_costs = look_a_head_costs.flatten().astype(KEY_DTYPE)
-
-            meeting_mask = (
-                xnp.unique_mask(
-                    flattened_neighbour_look_head,
-                    flattened_look_a_head_costs,
-                    flattened_filled_tiles,
-                )
-                & flattened_filled_tiles
-            )
-
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head, meeting_mask
-            )
-            old_costs = search_result.get_cost(current_hash_idxs)
-
-            candidate_mask = meeting_mask & jnp.logical_or(
-                ~found, jnp.less(flattened_look_a_head_costs, old_costs)
-            )
-            optimal_mask = candidate_mask
-        else:
-            # Fake variables if not look-ahead pruning so eval_fn signature is satisfied
-            # (or evaluated locally based on config).
-            neighbour_look_a_head = states
-            look_a_head_costs = costs
-            ncosts = jnp.zeros_like(costs)
-            flattened_neighbour_look_head = states.flatten()
-            flattened_look_a_head_costs = look_a_head_costs.flatten()
-            meeting_mask = flattened_filled_tiles
-            current_hash_idxs = idx_tiles.flatten()
-            found = jnp.zeros_like(meeting_mask)
-            old_costs = jnp.zeros_like(flattened_look_a_head_costs)
-            optimal_mask = flattened_filled_tiles
-
-        # Step 2: Evaluation Callback
-        # Give control to heuristic or Q-value logic
-        heuristic_vals, neighbour_keys = eval_fn(
-            is_forward,
-            solve_config,
-            inverse_solveconfig,
+        # Step 1: Evaluation Callback (algorithm-owned pruning/unique/optimal_mask)
+        neighbour_keys, dists, optimal_mask = eval_fn(
+            puzzle,
+            search_result,
+            current_solve_config,
             params,
             states,
             costs,
-            look_a_head_costs,
-            ncosts,
-            filled,
             filled_tiles,
-            optimal_mask,
-            found,
-            current_hash_idxs,
-            search_result,
-            neighbour_look_a_head,
-            use_evaluation,
+            filled,
+            look_ahead_pruning,
+            cost_weight,
         )
 
-        # Step 3: Meeting Update
-        if look_ahead_pruning:
-            # Update meeting point
-            bi_result.meeting = update_meeting_point_best_only_deferred(
-                bi_result.meeting,
-                this_sr=search_result,
-                opposite_sr=opposite_sr,
-                candidate_states=flattened_neighbour_look_head,
-                candidate_costs=flattened_look_a_head_costs,
-                candidate_mask=meeting_mask,
-                this_found=found,
-                this_hashidx=current_hash_idxs,
-                this_old_costs=old_costs,
-                this_parent_hashidx=idx_tiles.flatten(),
-                this_parent_action=action.flatten(),
-                is_forward=is_forward,
-            )
-
-        # Step 4: Priorty Queue Insertion
+        # Step 2: Priority Queue Insertion
         flattened_vals = Parant_with_Costs(
             parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
             cost=costs.flatten(),
-            dist=heuristic_vals.flatten(),
+            dist=dists.flatten(),
         )
         flattened_keys = neighbour_keys.flatten()
-        flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)
+        flattened_optimal_mask = optimal_mask.flatten()
+        flattened_neighbour_keys = jnp.where(flattened_optimal_mask, flattened_keys, jnp.inf)
 
         sorted_key, sorted_idx = jax.lax.sort_key_val(
             flattened_neighbour_keys, jnp.arange(flat_size)
         )
         sorted_vals = flattened_vals[sorted_idx]
-        sorted_optimal_mask = optimal_mask[sorted_idx]
+        sorted_optimal_mask = flattened_optimal_mask[sorted_idx]
 
         neighbour_keys_reshaped = sorted_key.reshape(action_size, sr_batch_size)
         vals_reshaped = sorted_vals.reshape((action_size, sr_batch_size))
@@ -1140,14 +1117,10 @@ def build_bi_deferred_expand_direction(
             optimal_mask_reshaped,
         )
 
-        # Step 5: Pop and Verify True Intersection
-        use_heuristic_in_pop = use_evaluation
-        if callable(getattr(eval_fn, "override_use_heuristic_in_pop", None)):
-            use_heuristic_in_pop = eval_fn.override_use_heuristic_in_pop(is_forward, use_evaluation)
-
+        # Step 3: Pop and Verify True Intersection
         search_result, new_current, new_states, new_filled = search_result.pop_full_with_actions(
             puzzle=puzzle,
-            solve_config=solve_config,
+            solve_config=current_solve_config,
             use_heuristic=use_heuristic_in_pop,
             is_backward=not is_forward,
         )
@@ -1182,4 +1155,4 @@ def build_bi_deferred_expand_direction(
 
         return bi_result, new_current, new_states, new_filled
 
-    return _expand_direction_common
+    return _expand_direction

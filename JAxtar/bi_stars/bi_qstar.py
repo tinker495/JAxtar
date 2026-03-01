@@ -16,6 +16,7 @@ from typing import Any
 import chex
 import jax
 import jax.numpy as jnp
+import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
@@ -27,10 +28,8 @@ from JAxtar.bi_stars.bi_search_base import (
     common_bi_loop_condition,
     initialize_bi_loop_common,
     materialize_meeting_point_hashidxs,
+    stamp_bi_solved_from_meeting,
     build_bi_deferred_expand_direction,
-)
-from JAxtar.stars.search_base import (
-    Current,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -40,14 +39,15 @@ from qfunction.q_base import QFunction
 def _bi_qstar_loop_builder(
     puzzle: Puzzle,
     q_fn: QFunction,
-    bi_result_template: BiDirectionalSearchResult,
     batch_size: int = 1024,
+    max_nodes: int = int(1e6),
+    pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
     use_backward_q: bool = True,
     backward_mode: str = "auto",
-    terminate_on_first_solution: bool = False,
+    terminate_on_first_solution: bool = True,
 ):
     """
     Build the loop components for bidirectional Q* search.
@@ -55,8 +55,9 @@ def _bi_qstar_loop_builder(
     Args:
         puzzle: Puzzle instance
         q_fn: QFunction instance (used for both directions)
-        bi_result_template: Pre-built BiDirectionalSearchResult template
         batch_size: Batch size for parallel processing
+        max_nodes: Maximum number of nodes to explore per direction
+        pop_ratio: Ratio controlling beam width
         cost_weight: Weight for path cost in f = cost_weight * g + Q(s,a)
         look_ahead_pruning: Enable look-ahead pruning optimization
         pessimistic_update: Use max Q-value for duplicates (True) or min (False)
@@ -64,7 +65,11 @@ def _bi_qstar_loop_builder(
     Returns:
         Tuple of (init_loop_state, loop_condition, loop_body) functions
     """
+    statecls = puzzle.State
     action_size = puzzle.action_size
+    dist_sign = -1.0 if pessimistic_update else 1.0
+    denom = max(1, puzzle.action_size // 2)
+    min_pop = max(1, MIN_BATCH_SIZE // denom)
 
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
@@ -72,16 +77,38 @@ def _bi_qstar_loop_builder(
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
+    has_inverse_action_map = hasattr(puzzle, "inverse_action_map")
+    backward_use_edge_q = use_backward_q and (
+        backward_mode == "edge_q" or (backward_mode == "auto" and has_inverse_action_map)
+    )
+    backward_use_value_heuristic = use_backward_q and (
+        backward_mode == "value_v" or (backward_mode == "auto" and (not has_inverse_action_map))
+    )
+    backward_use_q = backward_use_edge_q or backward_use_value_heuristic
 
     def init_loop_state(
-        bi_result: BiDirectionalSearchResult,
         solve_config: Puzzle.SolveConfig,
-        inverse_solveconfig: Puzzle.SolveConfig,
         start: Puzzle.State,
-        q_params_forward: Any,
-        q_params_backward: Any,
+        **kwargs: Any,
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional Q* search from start and goal states."""
+        bi_result = build_bi_search_result(
+            statecls,
+            batch_size,
+            max_nodes,
+            action_size,
+            pop_ratio=pop_ratio,
+            min_pop=min_pop,
+            parant_with_costs=True,
+        )
+
+        q_params_forward = q_fn.prepare_q_parameters(solve_config, **kwargs)
+        inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
+
+        if use_backward_q:
+            q_params_backward = q_fn.prepare_q_parameters(inverse_solveconfig, **kwargs)
+        else:
+            q_params_backward = q_params_forward
 
         (
             fwd_filled,
@@ -118,134 +145,191 @@ def _bi_qstar_loop_builder(
             terminate_on_first_solution,
         )
 
-    def _eval_deferred_q(
+    def _build_eval_deferred_q(
+        *,
         is_forward: bool,
-        solve_config: Puzzle.SolveConfig,
-        inverse_solveconfig: Puzzle.SolveConfig,
-        q_params: Any,
-        states: Puzzle.State,
-        costs: chex.Array,
-        look_a_head_costs: chex.Array,
-        ncosts: chex.Array,
-        filled: chex.Array,
-        filled_tiles: chex.Array,
-        optimal_mask: chex.Array,
-        found: chex.Array,
-        current_hash_idxs: chex.Array,
-        search_result: Any,
-        neighbour_look_a_head: Puzzle.State,
         use_q: bool,
-    ) -> tuple[chex.Array, chex.Array]:
-        sr_batch_size = search_result.batch_size
-        flat_size = action_size * sr_batch_size
+        use_value_heuristic: bool,
+        can_optimize_bwd: bool,
+    ):
+        get_neighbours_fn = (
+            puzzle.batched_get_neighbours if is_forward else puzzle.batched_get_inverse_neighbours
+        )
 
-        if (not is_forward) and use_q:
-            if backward_mode == "auto":
-                can_optimize_bwd = hasattr(puzzle, "inverse_action_map")
-                use_value_heuristic = not can_optimize_bwd
-            elif backward_mode == "edge_q":
-                can_optimize_bwd = hasattr(puzzle, "inverse_action_map")
-                use_value_heuristic = False
-            elif backward_mode == "value_v":
-                can_optimize_bwd = False
-                use_value_heuristic = True
-            else:
-                can_optimize_bwd = False
-                use_value_heuristic = False
-        else:
-            can_optimize_bwd = False
-            use_value_heuristic = False
-
-        flattened_filled_tiles = filled_tiles.flatten()
-
-        if use_value_heuristic:
-            flattened_neighbour_look_head = neighbour_look_a_head.flatten()
-
-            flat_states = flattened_neighbour_look_head
-            flat_mask = flattened_filled_tiles
-
-            n = flat_size
-            invperm = stable_partition_three(flat_mask, jnp.zeros_like(flat_mask, dtype=jnp.bool_))
-            sorted_states = flat_states[invperm]
-            sorted_mask = flat_mask[invperm]
-
-            sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-            sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-            def _calc_v_chunk(carry, input_slice):
-                states_slice, compute_mask = input_slice
-                q_vals = variable_q_batch_switcher(q_params, states_slice, compute_mask)
-                v_vals = jnp.min(q_vals, axis=-1)
-                return carry, v_vals
-
-            _, v_chunks = jax.lax.scan(
-                _calc_v_chunk,
-                None,
-                (sorted_states_chunked, sorted_mask_chunked),
-            )
-
-            v_sorted = v_chunks.reshape(-1).astype(KEY_DTYPE)
-            v_flat = jnp.empty((n,), dtype=v_sorted.dtype).at[invperm].set(v_sorted)
-
-            heuristic_vals = v_flat.reshape(action_size, sr_batch_size)
-            heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
-
-            neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
-        else:
-            if use_q:
-                q_vals = variable_q_batch_switcher(q_params, states, filled)
-                q_vals = q_vals.transpose().astype(KEY_DTYPE)
-
-                if can_optimize_bwd:
-                    inv_map = puzzle.inverse_action_map
-                    q_vals = q_vals[inv_map, :]
-            else:
-                q_vals = ncosts.astype(KEY_DTYPE)
-
-            neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
-            raw_q_flat = q_vals.flatten()
-            dists = raw_q_flat
+        def _eval_deferred_q(
+            puzzle: Puzzle,
+            search_result: Any,
+            solve_config: Puzzle.SolveConfig,
+            q_params: Any,
+            states: Puzzle.State,
+            costs: chex.Array,
+            filled_tiles: chex.Array,
+            filled: chex.Array,
+            look_ahead_pruning: bool,
+            cost_weight: float,
+        ) -> tuple[chex.Array, chex.Array, chex.Array]:
+            sr_batch_size = search_result.batch_size
+            flat_size = action_size * sr_batch_size
+            flattened_filled_tiles = filled_tiles.flatten()
 
             if look_ahead_pruning:
-                old_dists = search_result.get_dist(current_hash_idxs)
+                neighbour_look_ahead, ncosts = get_neighbours_fn(solve_config, states, filled)
+                look_ahead_costs = (costs + ncosts).astype(KEY_DTYPE)
+                flattened_neighbour_look_ahead = neighbour_look_ahead.flatten()
+                flattened_look_ahead_costs = look_ahead_costs.flatten().astype(KEY_DTYPE)
 
-                if use_q:
-                    q_old_reconstructed = old_dists.astype(KEY_DTYPE) + ncosts.flatten().astype(
-                        KEY_DTYPE
+                if use_value_heuristic:
+                    current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                        flattened_neighbour_look_ahead, flattened_filled_tiles
                     )
-                    if pessimistic_update:
-                        q_old_for_max = jnp.where(found, q_old_reconstructed, -jnp.inf)
-                        dists = jnp.maximum(dists, q_old_for_max)
+                    old_costs = search_result.get_cost(current_hash_idxs)
+
+                    candidate_mask = flattened_filled_tiles & jnp.logical_or(
+                        ~found, jnp.less(flattened_look_ahead_costs, old_costs)
+                    )
+                    unique_mask = xnp.unique_mask(
+                        flattened_neighbour_look_ahead,
+                        flattened_look_ahead_costs,
+                        candidate_mask,
+                    )
+                    optimal_mask_flat = unique_mask & candidate_mask
+                    optimal_mask = optimal_mask_flat.reshape(action_size, sr_batch_size)
+
+                    found_reshaped = found.reshape(action_size, sr_batch_size)
+                    old_dists = search_result.get_dist(current_hash_idxs).reshape(
+                        action_size, sr_batch_size
+                    )
+                    need_compute = optimal_mask & ~found_reshaped
+
+                    flat_states = neighbour_look_ahead.flatten()
+                    flat_need_compute = need_compute.flatten()
+                    sorted_indices = stable_partition_three(
+                        flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
+                    )
+                    sorted_states = flat_states[sorted_indices]
+                    sorted_mask = flat_need_compute[sorted_indices]
+
+                    sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
+                    sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
+
+                    def _calc_v_chunk(carry, input_slice):
+                        states_slice, compute_mask = input_slice
+                        q_vals = variable_q_batch_switcher(q_params, states_slice, compute_mask)
+                        v_vals = jnp.min(q_vals, axis=-1)
+                        return carry, v_vals
+
+                    _, v_chunks = jax.lax.scan(
+                        _calc_v_chunk,
+                        None,
+                        (sorted_states_chunked, sorted_mask_chunked),
+                    )
+
+                    v_sorted = v_chunks.reshape(-1).astype(KEY_DTYPE)
+                    flat_v_vals = (
+                        jnp.empty((flat_size,), dtype=v_sorted.dtype)
+                        .at[sorted_indices]
+                        .set(v_sorted)
+                    )
+                    computed_heuristic_vals = flat_v_vals.reshape(action_size, sr_batch_size)
+
+                    dists = jnp.where(found_reshaped, old_dists, computed_heuristic_vals)
+                    dists = jnp.where(filled_tiles, dists, jnp.inf).astype(KEY_DTYPE)
+                    neighbour_keys = (cost_weight * look_ahead_costs + dists).astype(KEY_DTYPE)
+                else:
+                    if use_q:
+                        q_vals = variable_q_batch_switcher(q_params, states, filled)
+                        q_vals = q_vals.transpose().astype(KEY_DTYPE)
+                        if (not is_forward) and can_optimize_bwd:
+                            q_vals = q_vals[puzzle.inverse_action_map, :]
                     else:
-                        q_old_for_min = jnp.where(found, q_old_reconstructed, jnp.inf)
-                        dists = jnp.minimum(dists, q_old_for_min)
+                        q_vals = ncosts.astype(KEY_DTYPE)
 
-            heuristic_vals = dists.reshape(action_size, sr_batch_size)
+                    dists_flat = q_vals.flatten()
+                    if use_q:
+                        distinct_score = (
+                            flattened_look_ahead_costs + dist_sign * 1e-5 * dists_flat
+                        ).astype(KEY_DTYPE)
+                    else:
+                        distinct_score = flattened_look_ahead_costs
 
-        neighbour_keys = jnp.where(filled_tiles, neighbour_keys, jnp.inf)
-        return heuristic_vals, neighbour_keys
+                    unique_mask = xnp.unique_mask(
+                        flattened_neighbour_look_ahead,
+                        distinct_score,
+                        flattened_filled_tiles,
+                    )
+                    current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                        flattened_neighbour_look_ahead, unique_mask
+                    )
+                    old_costs = search_result.get_cost(current_hash_idxs)
+                    old_dists = search_result.get_dist(current_hash_idxs)
 
-    def override_use_heuristic_in_pop(is_forward: bool, use_q: bool) -> bool:
-        if (not is_forward) and use_q:
-            if backward_mode == "auto":
-                can_optimize_bwd = hasattr(puzzle, "inverse_action_map")
-                use_value_heuristic = not can_optimize_bwd
-            elif backward_mode == "edge_q":
-                can_optimize_bwd = hasattr(puzzle, "inverse_action_map")
-                use_value_heuristic = False
-            elif backward_mode == "value_v":
-                can_optimize_bwd = False
-                use_value_heuristic = True
+                    if use_q:
+                        step_cost = ncosts.flatten().astype(KEY_DTYPE)
+                        q_old = old_dists.astype(KEY_DTYPE) + step_cost
+                        if pessimistic_update:
+                            q_old_for_max = jnp.where(found, q_old, -jnp.inf)
+                            dists_flat = jnp.maximum(dists_flat, q_old_for_max)
+                        else:
+                            q_old_for_min = jnp.where(found, q_old, jnp.inf)
+                            dists_flat = jnp.minimum(dists_flat, q_old_for_min)
+
+                    better_cost_mask = jnp.less(flattened_look_ahead_costs, old_costs)
+                    optimal_mask_flat = unique_mask & jnp.logical_or(~found, better_cost_mask)
+                    optimal_mask = optimal_mask_flat.reshape(action_size, sr_batch_size)
+
+                    dists = dists_flat.reshape(action_size, sr_batch_size).astype(KEY_DTYPE)
+                    neighbour_keys = (cost_weight * costs + q_vals).astype(KEY_DTYPE)
             else:
-                use_value_heuristic = False
-            return use_value_heuristic
+                if use_value_heuristic:
+                    q_vals = variable_q_batch_switcher(q_params, states, filled)
+                    v_vals = jnp.min(q_vals, axis=-1).astype(KEY_DTYPE)
+                    v_vals = jnp.where(filled, v_vals, jnp.inf)
+                    dists = jnp.tile(v_vals[jnp.newaxis, :], (action_size, 1)).astype(KEY_DTYPE)
+                else:
+                    if use_q:
+                        q_vals = variable_q_batch_switcher(q_params, states, filled)
+                        q_vals = q_vals.transpose().astype(KEY_DTYPE)
+                        if (not is_forward) and can_optimize_bwd:
+                            q_vals = q_vals[puzzle.inverse_action_map, :]
+                    else:
+                        q_vals = jnp.zeros_like(costs, dtype=KEY_DTYPE)
+                    dists = q_vals.astype(KEY_DTYPE)
 
-        return False
+                optimal_mask = flattened_filled_tiles.reshape(action_size, sr_batch_size)
+                neighbour_keys = (cost_weight * costs + dists).astype(KEY_DTYPE)
 
-    _eval_deferred_q.override_use_heuristic_in_pop = override_use_heuristic_in_pop
+            neighbour_keys = jnp.where(filled_tiles, neighbour_keys, jnp.inf)
+            return neighbour_keys, dists, optimal_mask
 
-    _expand_direction_q = build_bi_deferred_expand_direction(
-        puzzle, cost_weight, look_ahead_pruning, _eval_deferred_q
+        return _eval_deferred_q
+
+    eval_forward = _build_eval_deferred_q(
+        is_forward=True,
+        use_q=True,
+        use_value_heuristic=False,
+        can_optimize_bwd=False,
+    )
+    eval_backward = _build_eval_deferred_q(
+        is_forward=False,
+        use_q=backward_use_q,
+        use_value_heuristic=backward_use_value_heuristic,
+        can_optimize_bwd=backward_use_edge_q,
+    )
+    expand_forward_direction = build_bi_deferred_expand_direction(
+        puzzle,
+        cost_weight,
+        look_ahead_pruning,
+        eval_forward,
+        is_forward=True,
+        use_heuristic_in_pop=False,
+    )
+    expand_backward_direction = build_bi_deferred_expand_direction(
+        puzzle,
+        cost_weight,
+        look_ahead_pruning,
+        eval_backward,
+        is_forward=False,
+        use_heuristic_in_pop=backward_use_value_heuristic,
     )
 
     def loop_body(loop_state: BiLoopStateWithStates) -> BiLoopStateWithStates:
@@ -258,7 +342,7 @@ def _bi_qstar_loop_builder(
         bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
 
         def _expand_forward(bi_result):
-            return _expand_direction_q(
+            return expand_forward_direction(
                 bi_result,
                 solve_config,
                 inverse_solveconfig,
@@ -266,12 +350,10 @@ def _bi_qstar_loop_builder(
                 loop_state.current_forward,
                 loop_state.states_forward,
                 loop_state.filled_forward,
-                use_evaluation=True,
-                is_forward=True,
             )
 
         def _expand_backward(bi_result):
-            return _expand_direction_q(
+            return expand_backward_direction(
                 bi_result,
                 solve_config,
                 inverse_solveconfig,
@@ -279,8 +361,6 @@ def _bi_qstar_loop_builder(
                 loop_state.current_backward,
                 loop_state.states_backward,
                 loop_state.filled_backward,
-                use_evaluation=use_backward_q,
-                is_forward=False,
             )
 
         # Expand both directions
@@ -337,6 +417,7 @@ def bi_qstar_builder(
     pessimistic_update: bool = True,
     backward_mode: str = "auto",
     terminate_on_first_solution: bool = True,
+    unsafe_allow_nonadmissible: bool = False,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
@@ -361,26 +442,12 @@ def bi_qstar_builder(
             - "value_v": use V(s)=min_a Q(s,a) as a heuristic on predecessor states.
             - "dijkstra": ignore Q in backward direction and use true step costs.
         terminate_on_first_solution: If True, stop as soon as any meeting is found.
+        unsafe_allow_nonadmissible: If True, allow `terminate_on_first_solution=False`
+            when backward mode is not "dijkstra". This can violate optimality claims.
 
     Returns:
         A JIT-compiled function that performs bidirectional Q* search
     """
-    statecls = puzzle.State
-    action_size = puzzle.action_size
-    denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
-
-    # Pre-build the search result OUTSIDE of JIT context
-    bi_result_template = build_bi_search_result(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio=pop_ratio,
-        min_pop=min_pop,
-        parant_with_costs=True,
-    )
-
     import warnings
 
     backward_mode = backward_mode.strip().lower()
@@ -400,10 +467,16 @@ def bi_qstar_builder(
         backward_mode = "value_v"
 
     if (not terminate_on_first_solution) and backward_mode != "dijkstra":
+        if not unsafe_allow_nonadmissible:
+            raise ValueError(
+                "bi_qstar with terminate_on_first_solution=False requires an admissible lower "
+                "bound consistent with PQ keys. This is not guaranteed for learned/approximate Q "
+                "unless backward_mode='dijkstra'. Set unsafe_allow_nonadmissible=True only if you "
+                "accept potentially non-optimal early termination guarantees."
+            )
         warnings.warn(
-            "bi_qstar with terminate_on_first_solution=False requires an admissible lower bound "
-            "consistent with PQ keys. This is generally NOT guaranteed for learned/approximate Q. "
-            "Use with care or prefer terminate_on_first_solution=True.",
+            "bi_qstar running with terminate_on_first_solution=False and non-dijkstra "
+            "backward mode under unsafe_allow_nonadmissible=True. Optimality is not guaranteed.",
             UserWarning,
         )
 
@@ -411,8 +484,9 @@ def bi_qstar_builder(
     init_loop_state, loop_condition, loop_body = _bi_qstar_loop_builder(
         puzzle,
         q_fn,
-        bi_result_template,
         batch_size,
+        max_nodes,
+        pop_ratio,
         cost_weight,
         look_ahead_pruning,
         pessimistic_update,
@@ -427,44 +501,20 @@ def bi_qstar_builder(
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
         """Perform bidirectional Q* search."""
-        # Prepare Q-function parameters for both directions
-        q_params_forward = q_fn.prepare_q_parameters(solve_config, **kwargs)
-        # Build a backward solve config that treats `start` as the target.
-        # Prefer puzzle-level normalization via hindsight_transform.
-        inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
-
-        if use_backward_q:
-            q_params_backward = q_fn.prepare_q_parameters(inverse_solveconfig, **kwargs)
-        else:
-            q_params_backward = q_params_forward
-
-        loop_state = init_loop_state(
-            bi_result_template,
-            solve_config,
-            inverse_solveconfig,
-            start,
-            q_params_forward,
-            q_params_backward,
-        )
+        loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 
+        inverse_solveconfig = loop_state.inverse_solveconfig
         bi_result = loop_state.bi_result
 
         # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
-        bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, solve_config)
-
-        # Mark as solved if meeting point was found
-        bi_result.forward.solved = bi_result.meeting.found
-        bi_result.forward.solved_idx = Current(
-            hashidx=bi_result.meeting.fwd_hashidx,
-            cost=bi_result.meeting.fwd_cost,
-        )
-        bi_result.backward.solved = bi_result.meeting.found
-        bi_result.backward.solved_idx = Current(
-            hashidx=bi_result.meeting.bwd_hashidx,
-            cost=bi_result.meeting.bwd_cost,
+        bi_result = materialize_meeting_point_hashidxs(
+            bi_result,
+            puzzle,
+            solve_config,
+            inverse_solveconfig=inverse_solveconfig,
         )
 
-        return bi_result
+        return stamp_bi_solved_from_meeting(bi_result)
 
     return compile_search_builder(bi_qstar, puzzle, show_compile_time, warmup_inputs)

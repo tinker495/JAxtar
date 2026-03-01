@@ -7,13 +7,13 @@ The `bi_astar` command solves a puzzle using the Bidirectional A\* search algori
 The basic syntax for the `bi_astar` command is:
 
 ```bash
-python main.py bi_astar [OPTIONS]
+python main.py bi-astar [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py bi_astar -p rubikscube -nn
+python main.py bi-astar -p rubikscube -nn
 ```
 
 ## Options
@@ -55,6 +55,8 @@ These options control the behavior of the search algorithm.
     -   Type: `Flag`
 -   `--show_compile_time`: Prints compilation time.
     -   Type: `Flag`
+-   `--search-preset`: Apply puzzle-specific search defaults.
+    -   Type: `String`
 
 ### Heuristic Options (`@heuristic_options`)
 
@@ -64,6 +66,10 @@ These options control the behavior of the search algorithm.
     -   Type: `String`
 -   `--model-type`: Type of the heuristic model.
     -   Type: `String`
+-   `-q, --use-quantize`: Enable quantized neural inference.
+    -   Type: `Flag`
+-   `--quant-type`: Quantization preset (`int8`, `int4`, `int4_w8a`, `int8_w_only`).
+    -   Type: `Choice`
 
 ### Visualization Options (`@visualize_options`)
 
@@ -73,3 +79,29 @@ These options control the behavior of the search algorithm.
     -   Type: `Flag`
 -   `-mt, --max_animation_time`: Max duration for GIF.
     -   Type: `Integer`
+
+## Related Commands
+
+```bash
+python main.py eval bi-astar [OPTIONS]
+python main.py benchmark bi-astar [OPTIONS]
+```
+
+Training-time evaluation can also use this algorithm via:
+
+```bash
+python main.py distance-train heuristic --eval-search-metric bi_astar
+```
+
+## Low-memory benchmark fallback profile
+
+If default benchmark settings trigger OOM on your machine, start with:
+
+```bash
+python main.py benchmark bi-astar \
+  --benchmark rubikscube-deepcubea \
+  --num-eval 1 \
+  --batch-size 16 \
+  --max-node-size 4096 \
+  --param-path heuristic/neuralheuristic/model/params/rubikscube_3_v2.pkl
+```
