@@ -693,6 +693,30 @@ def materialize_meeting_point_hashidxs(
     return jax.lax.cond(bi_result.meeting.found, _materialize_if_needed, lambda x: x, bi_result)
 
 
+def stamp_bi_solved_from_meeting(
+    bi_result: BiDirectionalSearchResult,
+) -> BiDirectionalSearchResult:
+    """Stamp solved fields (`solved`, `solved_idx`) from `bi_result.meeting`.
+
+    Contract:
+        - For deferred variants, call this after `materialize_meeting_point_hashidxs(...)`
+          so `meeting.{fwd,bwd}_hashidx` is valid in both directions.
+    """
+
+    found = bi_result.meeting.found
+    bi_result.forward.solved = found
+    bi_result.forward.solved_idx = Current(
+        hashidx=bi_result.meeting.fwd_hashidx,
+        cost=bi_result.meeting.fwd_cost,
+    )
+    bi_result.backward.solved = found
+    bi_result.backward.solved_idx = Current(
+        hashidx=bi_result.meeting.bwd_hashidx,
+        cost=bi_result.meeting.bwd_cost,
+    )
+    return bi_result
+
+
 def bi_termination_condition(
     bi_result: BiDirectionalSearchResult,
     fwd_min_f: chex.Array,
@@ -848,7 +872,9 @@ def initialize_bi_loop_common(
     bi_result.forward.cost = bi_result.forward.cost.at[fwd_hash_idx.index].set(0)
 
     fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
-    fwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    # Safety parity with `JAxtar.stars.search_base.init_base_loop_state_current`:
+    # pad non-filled entries with +inf so an accidental read cannot produce work.
+    fwd_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     fwd_states = xnp.pad(start, (0, sr_batch_size - 1))
     fwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
     fwd_current = Current(hashidx=fwd_hash_idxs, cost=fwd_costs)
@@ -860,7 +886,7 @@ def initialize_bi_loop_common(
     bi_result.backward.cost = bi_result.backward.cost.at[bwd_hash_idx.index].set(0)
 
     bwd_hash_idxs = xnp.pad(bwd_hash_idx, (0, sr_batch_size - 1))
-    bwd_costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
+    bwd_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     bwd_states = xnp.pad(goal, (0, sr_batch_size - 1))
     bwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
     bwd_current = Current(hashidx=bwd_hash_idxs, cost=bwd_costs)
@@ -999,6 +1025,16 @@ def build_bi_deferred_expand_direction(
     """
     Builds the generalized bidirectional deferred expansion logic.
     This acts as a high-order function replacing _expand_direction_deferred and _expand_direction_q.
+
+    Deferred callback contract:
+        `eval_fn(...) -> (neighbour_keys, dists)` where both have shape
+        `(action_size, batch)` and `neighbour_keys` is the PQ ordering scalar.
+
+        `dists` is stored in `Parant_with_Costs.dist` and later interpreted by
+        `SearchResult.pop_full_with_actions(...)`:
+        - if `use_heuristic=True`: `dist` is treated as a heuristic h(child)
+        - if `use_heuristic=False`: `dist` is treated as a Q-like quantity and the pop
+          path uses `dist - step_cost` (mirroring stars Q* semantics).
     """
     action_size = puzzle.action_size
 
@@ -1082,7 +1118,7 @@ def build_bi_deferred_expand_direction(
 
         # Step 2: Evaluation Callback
         # Give control to heuristic or Q-value logic
-        heuristic_vals, neighbour_keys = eval_fn(
+        neighbour_keys, dists = eval_fn(
             is_forward,
             solve_config,
             inverse_solveconfig,
@@ -1123,7 +1159,7 @@ def build_bi_deferred_expand_direction(
         flattened_vals = Parant_with_Costs(
             parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
             cost=costs.flatten(),
-            dist=heuristic_vals.flatten(),
+            dist=dists.flatten(),
         )
         flattened_keys = neighbour_keys.flatten()
         flattened_neighbour_keys = jnp.where(optimal_mask, flattened_keys, jnp.inf)

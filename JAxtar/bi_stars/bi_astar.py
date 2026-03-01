@@ -34,6 +34,7 @@ from JAxtar.bi_stars.bi_search_base import (
     check_intersection,
     common_bi_loop_condition,
     initialize_bi_loop_common,
+    stamp_bi_solved_from_meeting,
     update_meeting_point,
 )
 from JAxtar.stars.search_base import (
@@ -474,18 +475,6 @@ def bi_astar_builder(
 
         bi_result = loop_state.bi_result
 
-        # Mark as solved if meeting point was found
-        bi_result.forward.solved = bi_result.meeting.found
-        bi_result.forward.solved_idx = Current(
-            hashidx=bi_result.meeting.fwd_hashidx,
-            cost=bi_result.meeting.fwd_cost,
-        )
-        bi_result.backward.solved = bi_result.meeting.found
-        bi_result.backward.solved_idx = Current(
-            hashidx=bi_result.meeting.bwd_hashidx,
-            cost=bi_result.meeting.bwd_cost,
-        )
-
-        return bi_result
+        return stamp_bi_solved_from_meeting(bi_result)
 
     return compile_search_builder(bi_astar, puzzle, show_compile_time, warmup_inputs)

@@ -28,10 +28,8 @@ from JAxtar.bi_stars.bi_search_base import (
     common_bi_loop_condition,
     initialize_bi_loop_common,
     materialize_meeting_point_hashidxs,
+    stamp_bi_solved_from_meeting,
     build_bi_deferred_expand_direction,
-)
-from JAxtar.stars.search_base import (
-    Current,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -265,7 +263,8 @@ def _bi_astar_d_loop_builder(
 
             neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
 
-        return heuristic_vals, neighbour_keys
+        # Return order matches stars deferred contract: (neighbour_keys, dists).
+        return neighbour_keys, heuristic_vals
 
     _expand_direction_deferred = build_bi_deferred_expand_direction(
         puzzle, cost_weight, look_ahead_pruning, _eval_deferred_heuristic
@@ -427,18 +426,6 @@ def bi_astar_d_builder(
             inverse_solveconfig=inverse_solveconfig,
         )
 
-        # Mark as solved if meeting point was found
-        bi_result.forward.solved = bi_result.meeting.found
-        bi_result.forward.solved_idx = Current(
-            hashidx=bi_result.meeting.fwd_hashidx,
-            cost=bi_result.meeting.fwd_cost,
-        )
-        bi_result.backward.solved = bi_result.meeting.found
-        bi_result.backward.solved_idx = Current(
-            hashidx=bi_result.meeting.bwd_hashidx,
-            cost=bi_result.meeting.bwd_cost,
-        )
-
-        return bi_result
+        return stamp_bi_solved_from_meeting(bi_result)
 
     return compile_search_builder(bi_astar_d, puzzle, show_compile_time, warmup_inputs)
