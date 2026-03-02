@@ -156,7 +156,7 @@ class DistTrainOptions(BaseModel):
     learning_rate: float = 1e-3
     weight_decay_size: Optional[float] = 0.01
     opt_state_reset: bool = False
-    optimizer: str = "normuon"
+    optimizer: str = "norprism"
     temperature: float = 0.33
     replay_ratio: int = Field(
         1, description="Number of gradient updates per generated dataset. Default is 1."

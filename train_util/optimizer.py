@@ -6,7 +6,17 @@ import optax
 PyTree = Any
 
 
-def adoptw(
+def adamw_cwd(**kwargs: Any) -> optax.GradientTransformation:
+    return optax.chain(
+        optax.scale_by_adam(**kwargs),
+        optax.contrib.add_cautious_weight_decay(
+            kwargs.get("weight_decay", None), kwargs.get("weight_decay_mask", None)
+        ),
+        optax.scale_by_learning_rate(kwargs.get("learning_rate", None)),
+    )
+
+
+def adoptw_cwd(
     learning_rate: float,
     weight_decay: float = None,
     weight_decay_mask: Optional[PyTree] = None,
@@ -33,24 +43,18 @@ def adoptw(
 
 
 OPTIMIZERS = {
-    "adam": lambda **kwargs: optax.adamw(
-        cautious_weight_decay=True, mask=kwargs.get("weight_decay_mask", None), **kwargs
-    ),
+    "adam": adamw_cwd,
     "schedule_free_adamw": optax.contrib.schedule_free_adamw,
-    "nadam": lambda **kwargs: optax.adamw(
+    "nadam": lambda **kwargs: adamw_cwd(
         nesterov=True,
-        cautious_weight_decay=True,
-        mask=kwargs.get("weight_decay_mask", None),
         **kwargs,
     ),
-    "adopt": adoptw,
-    "nadopt": lambda **kwargs: adoptw(nesterov=True, cautious_weight_decay=True, **kwargs),
-    "muon": lambda **kwargs: optax.contrib.muon(cautious_weight_decay=True, **kwargs),
-    "normuon": lambda **kwargs: optax.contrib.normuon(cautious_weight_decay=True, **kwargs),
-    "adago": lambda **kwargs: optax.contrib.adago(cautious_weight_decay=True, **kwargs),
-    "noradago": lambda **kwargs: optax.contrib.adago(
-        cautious_weight_decay=False, use_normuon=True, **kwargs
-    ),
+    "adopt": adoptw_cwd,
+    "nadopt": lambda **kwargs: adoptw_cwd(nesterov=True, **kwargs),
+    "muon": optax.contrib.muon,
+    "normuon": optax.contrib.normuon,
+    "prism": optax.contrib.prism,
+    "norprism": optax.contrib.norprism,
     "rmsprop": optax.rmsprop,
     "prodigy": optax.contrib.prodigy,
     "lamb_adam": optax.lamb,
