@@ -1,6 +1,7 @@
 import concurrent.futures
 import inspect
 import itertools
+import json
 import multiprocessing as mp
 import os
 import pickle
@@ -42,6 +43,7 @@ from helpers.visualization import (
     build_path_steps_from_actions,
     build_path_steps_from_nodes,
 )
+from helpers.xtructure_signature import extract_xtructure_signature
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
@@ -214,6 +216,9 @@ class EvaluationRunner:
                 "pop_ratio": pr,
                 "cost_weight": cw,
                 "show_compile_time": current_eval_opts.show_compile_time,
+                "emit_workload_signature": getattr(
+                    current_eval_opts, "emit_workload_signature", False
+                ),
             }
             sig = inspect.signature(self.search_builder_fn)
             supported_kwargs = {k: v for k, v in builder_kwargs.items() if k in sig.parameters}
@@ -278,6 +283,13 @@ class EvaluationRunner:
                             "benchmark/exact_optimal_path_rate",
                             benchmark_metrics["exact_optimal_path_rate"],
                         )
+
+            if getattr(current_eval_opts, "emit_workload_signature", False):
+                sig_records = [
+                    {k: v for k, v in r.items() if str(k).startswith("xtr_")} for r in results
+                ]
+                with open(run_dir / "workload_signature.json", "w", encoding="utf-8") as f:
+                    json.dump({"records": sig_records}, f, indent=2)
 
             am.save_config(config)
             am.save_results(results)
@@ -463,6 +475,9 @@ class EvaluationRunner:
             "benchmark_verification_error": None,
             "benchmark_has_optimal_action_sequence": False,
         }
+
+        if getattr(self.eval_options, "emit_workload_signature", False) and (not is_bidirectional):
+            result_item.update(extract_xtructure_signature(search_result))
 
         if self.benchmark is not None:
             result_item["benchmark_sample_id"] = run_identifier

@@ -149,11 +149,19 @@ def create_puzzle_options(
 
         if use_seeds_flag:
             wrapper = click.option(
-                "-s", "--seeds", default="0", type=str, help="Seed for the random puzzle"
+                "-s",
+                "--seeds",
+                default="0",
+                type=str,
+                help="Seed for the random puzzle",
             )(wrapper)
 
         wrapper = click.option(
-            "-pargs", "--puzzle_args", default="", type=str, help="Arguments for the puzzle"
+            "-pargs",
+            "--puzzle_args",
+            default="",
+            type=str,
+            help="Arguments for the puzzle",
         )(wrapper)
 
         if use_hard_flag:
@@ -266,13 +274,25 @@ wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle
 def search_options(func=None, *, variant: str = "default") -> callable:
     def decorator(func: callable) -> callable:
         @click.option(
-            "-m", "--max_node_size", default=None, type=HUMAN_INT, help="Size of the puzzle"
+            "-m",
+            "--max_node_size",
+            default=None,
+            type=HUMAN_INT,
+            help="Size of the puzzle",
         )
         @click.option(
-            "-b", "--batch_size", default=None, type=HUMAN_INT, help="Batch size for BGPQ"
+            "-b",
+            "--batch_size",
+            default=None,
+            type=HUMAN_INT,
+            help="Batch size for BGPQ",
         )
         @click.option(
-            "-w", "--cost_weight", default=None, type=HUMAN_FLOAT, help="Weight for the A* search"
+            "-w",
+            "--cost_weight",
+            default=None,
+            type=HUMAN_FLOAT,
+            help="Weight for the A* search",
         )
         @click.option(
             "-pr",
@@ -285,6 +305,13 @@ def search_options(func=None, *, variant: str = "default") -> callable:
         @click.option("--debug", is_flag=True, default=None, help="Debug mode")
         @click.option("--profile", is_flag=True, default=None, help="Profile mode")
         @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
+        @click.option(
+            "--emit-workload-signature",
+            "emit_workload_signature",
+            is_flag=True,
+            default=None,
+            help="Emit Xtructure workload signature (xtr_* metrics).",
+        )
         @click.option(
             "--search-preset",
             type=str,
@@ -338,9 +365,20 @@ def search_options(func=None, *, variant: str = "default") -> callable:
 def eval_options(func=None, *, variant: str = "default") -> callable:
     def decorator(func: callable) -> callable:
         @click.option(
-            "-b", "--batch-size", type=HUMAN_INT, default=None, help="Batch size for search."
+            "-b",
+            "--batch-size",
+            type=HUMAN_INT,
+            default=None,
+            help="Batch size for search.",
         )
         @click.option("--show_compile_time", is_flag=True, default=None, help="Show compile time")
+        @click.option(
+            "--emit-workload-signature",
+            "emit_workload_signature",
+            is_flag=True,
+            default=None,
+            help="Emit Xtructure workload signature (xtr_* metrics).",
+        )
         @click.option(
             "-m",
             "--max-node-size",
@@ -349,7 +387,11 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
             help="Maximum number of nodes to search.",
         )
         @click.option(
-            "-w", "--cost-weight", type=HUMAN_FLOAT, default=None, help="Weight for cost in search."
+            "-w",
+            "--cost-weight",
+            type=HUMAN_FLOAT,
+            default=None,
+            help="Weight for cost in search.",
         )
         @click.option(
             "-pr",
@@ -360,10 +402,18 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
             "'inf', or a comma-separated list (e.g., 'inf,0.4,0.3').",
         )
         @click.option(
-            "-ne", "--num-eval", type=HUMAN_INT, default=None, help="Number of puzzles to evaluate."
+            "-ne",
+            "--num-eval",
+            type=HUMAN_INT,
+            default=None,
+            help="Number of puzzles to evaluate.",
         )
         @click.option(
-            "-rn", "--run-name", type=str, default=None, help="Name of the evaluation run."
+            "-rn",
+            "--run-name",
+            type=str,
+            default=None,
+            help="Name of the evaluation run.",
         )
         @click.option(
             "--use-early-stopping",
@@ -640,10 +690,16 @@ def qfunction_options(func: callable) -> callable:
 
 def visualize_options(func: callable) -> callable:
     @click.option(
-        "-vt", "--visualize_terminal", is_flag=True, help="Visualize the path with terminal"
+        "-vt",
+        "--visualize_terminal",
+        is_flag=True,
+        help="Visualize the path with terminal",
     )
     @click.option(
-        "-vi", "--visualize_imgs", is_flag=True, help="Visualize the path with gif images"
+        "-vi",
+        "--visualize_imgs",
+        is_flag=True,
+        help="Visualize the path with gif images",
     )
     @click.option("-mt", "--max_animation_time", default=10, type=int, help="Max animation time")
     @wraps(func)

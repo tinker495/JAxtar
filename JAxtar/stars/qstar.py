@@ -27,6 +27,7 @@ def _qstar_loop_builder(
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
+    emit_workload_signature: bool = False,
 ):
     statecls = puzzle.State
     action_size = puzzle.action_size
@@ -51,10 +52,16 @@ def _qstar_loop_builder(
             pop_ratio=pop_ratio,
             min_pop=min_pop,
             parant_with_costs=True,
+            emit_workload_signature=emit_workload_signature,
         )
         q_parameters = q_fn.prepare_q_parameters(solve_config, **kwargs)
         return init_base_loop_state(
-            puzzle, search_result, solve_config, start, q_parameters, search_result.batch_size
+            puzzle,
+            search_result,
+            solve_config,
+            start,
+            q_parameters,
+            search_result.batch_size,
         )
 
     def loop_condition(loop_state: LoopStateWithStates):
@@ -145,6 +152,7 @@ def qstar_builder(
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
+    emit_workload_signature: bool = False,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -174,6 +182,7 @@ def qstar_builder(
         cost_weight,
         look_ahead_pruning,
         pessimistic_update,
+        emit_workload_signature,
     )
 
     def qstar(

@@ -28,6 +28,7 @@ def _astar_loop_builder(
     max_nodes: int = int(1e6),
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
+    emit_workload_signature: bool = False,
 ):
     # The loop builder factors out loop init/condition/body so callers
     # can reuse intermediate loop data (e.g., parameters, queue state)
@@ -52,6 +53,7 @@ def _astar_loop_builder(
             action_size,
             pop_ratio=pop_ratio,
             min_pop=min_pop,
+            emit_workload_signature=emit_workload_signature,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
         return init_base_loop_state_current(
@@ -111,11 +113,41 @@ def _astar_loop_builder(
             flatten_neighbours, flatten_filleds, flatten_nextcosts
         )
 
+        def _update_insert_stats(sr: SearchResult):
+            cand_total_delta = jnp.sum(jnp.ones_like(flatten_filleds, dtype=jnp.int32))
+            sr.xtr_cand_total = sr.xtr_cand_total + cand_total_delta
+            sr.xtr_cand_valid = sr.xtr_cand_valid + jnp.sum(flatten_filleds).astype(jnp.int32)
+            sr.xtr_cand_unique = sr.xtr_cand_unique + jnp.sum(cheapest_uniques_mask).astype(
+                jnp.int32
+            )
+            sr.xtr_ht_inserted = sr.xtr_ht_inserted + jnp.sum(flatten_new_states_mask).astype(
+                jnp.int32
+            )
+            return sr
+
+        search_result = jax.lax.cond(
+            search_result.xtr_enabled,
+            _update_insert_stats,
+            lambda sr: sr,
+            search_result,
+        )
+
         # It must also be cheaper than any previously found path to this state.
         optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
 
         # Combine all conditions for the final decision.
         final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
+
+        def _update_accept_stats(sr: SearchResult):
+            sr.xtr_accept = sr.xtr_accept + jnp.sum(final_process_mask).astype(jnp.int32)
+            return sr
+
+        search_result = jax.lax.cond(
+            search_result.xtr_enabled,
+            _update_accept_stats,
+            lambda sr: sr,
+            search_result,
+        )
 
         # Update the cost (g-value) for the newly found optimal paths before they are
         # masked out. This ensures the cost table is always up-to-date.
@@ -215,6 +247,7 @@ def astar_builder(
     cost_weight: float = 1.0 - 1e-6,
     show_compile_time: bool = False,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
+    emit_workload_signature: bool = False,
 ):
     """
     Builds and returns a JAX-accelerated A* search function.
@@ -233,7 +266,13 @@ def astar_builder(
     """
 
     init_loop_state, loop_condition, loop_body = _astar_loop_builder(
-        puzzle, heuristic, batch_size, max_nodes, pop_ratio, cost_weight
+        puzzle,
+        heuristic,
+        batch_size,
+        max_nodes,
+        pop_ratio,
+        cost_weight,
+        emit_workload_signature,
     )
 
     def astar(

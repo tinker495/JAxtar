@@ -36,6 +36,9 @@ class SearchOptions(BaseModel):
     )
     vmap_size: int = Field(1, description="Size of vmap for search.")
     show_compile_time: bool = Field(False, description="Show compile time for search.")
+    emit_workload_signature: bool = Field(
+        False, description="Emit Xtructure workload signature (xtr_* metrics)."
+    )
     profile: bool = Field(False, description="Profile search.")
     debug: bool = Field(False, description="Debug mode.")
 
@@ -47,10 +50,14 @@ class EvalOptions(BaseModel):
     DEFAULT_NUM_EVAL_WITHOUT_BENCHMARK: ClassVar[int] = 200
 
     batch_size: Union[int, List[int]] = Field(
-        default=[10000], description="Batch size for search. Can be a single int or a list of ints."
+        default=[10000],
+        description="Batch size for search. Can be a single int or a list of ints.",
     )
     max_node_size: int = Field(int(2e7), description="Maximum number of nodes to search.")
     show_compile_time: bool = Field(False, description="Show compile time for search.")
+    emit_workload_signature: bool = Field(
+        False, description="Emit Xtructure workload signature (xtr_* metrics)."
+    )
     cost_weight: Union[float, List[float]] = Field(
         0.6,
         description="Weight for cost in search. Can be a single float or a list of floats.",
@@ -80,7 +87,8 @@ class EvalOptions(BaseModel):
         10, description="Number of samples to check before considering early stopping."
     )
     early_stop_threshold: float = Field(
-        0.5, description="Minimum success rate threshold for early stopping (0.0 to 1.0)."
+        0.5,
+        description="Minimum success rate threshold for early stopping (0.0 to 1.0).",
     )
     plot_unsolved: bool = Field(False, description="Whether to plot unsolved samples.")
 
@@ -174,7 +182,11 @@ class DistTrainOptions(BaseModel):
     )
     eval_count: int = Field(5, description="Number of evaluations to perform during training.")
     eval_options: EvalOptions = Field(
-        EvalOptions(num_eval=100, cost_weight=[0.9, 0.6, 0.3], pop_ratio=[float("inf"), 0.3, 0.1]),
+        EvalOptions(
+            num_eval=100,
+            cost_weight=[0.9, 0.6, 0.3],
+            pop_ratio=[float("inf"), 0.3, 0.1],
+        ),
         description="Options for evaluation during training.",
     )
     eval_search_metric: Optional[str] = Field(

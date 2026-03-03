@@ -1,3 +1,5 @@
+import inspect
+import json
 import time
 
 import jax
@@ -30,6 +32,7 @@ from helpers.visualization import (
     build_vmapped_setup_panel,
     save_solution_animation_and_frames,
 )
+from helpers.xtructure_signature import extract_xtructure_signature
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
@@ -165,6 +168,16 @@ def search_samples(
             seed=seed,
         )
         console.print(result_table)
+        if getattr(search_options, "emit_workload_signature", False):
+            signature = extract_xtructure_signature(search_result)
+            if signature:
+                console.print(
+                    Panel(
+                        Text(json.dumps(signature, indent=2)),
+                        title="[bold cyan]Xtructure Workload Signature[/bold cyan]",
+                        expand=False,
+                    )
+                )
 
         if solved:
             total_costs.append(float(solved_cost) if solved_cost is not None else 0.0)
@@ -356,15 +369,21 @@ def run_search_command(
     warmup_seed = seeds[0] if seeds else 0
     warmup_config, warmup_state = puzzle.get_inits(jax.random.PRNGKey(warmup_seed))
 
+    builder_kwargs = {
+        "pop_ratio": search_options.pop_ratio,
+        "cost_weight": search_options.cost_weight,
+        "show_compile_time": search_options.show_compile_time,
+        "warmup_inputs": (warmup_config, warmup_state),
+        "emit_workload_signature": getattr(search_options, "emit_workload_signature", False),
+    }
+    signature = inspect.signature(builder_fn)
+    supported_kwargs = {k: v for k, v in builder_kwargs.items() if k in signature.parameters}
     search_fn = builder_fn(
         puzzle,
         component,
         search_options.batch_size,
         search_options.get_max_node_size(),
-        pop_ratio=search_options.pop_ratio,
-        cost_weight=search_options.cost_weight,
-        show_compile_time=search_options.show_compile_time,
-        warmup_inputs=(warmup_config, warmup_state),
+        **supported_kwargs,
     )
 
     total_search_times, states_per_second, single_search_time = search_samples(
@@ -384,7 +403,10 @@ def run_search_command(
 
     vmapped_search_samples(
         vmapped_search=vmapping_search(
-            puzzle, search_fn, search_options.vmap_size, search_options.show_compile_time
+            puzzle,
+            search_fn,
+            search_options.vmap_size,
+            search_options.show_compile_time,
         ),
         puzzle=puzzle,
         seeds=seeds,

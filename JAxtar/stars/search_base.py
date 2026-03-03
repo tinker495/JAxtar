@@ -112,6 +112,23 @@ def insert_priority_queue_batches(
         return sr, None
 
     search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
+
+    def _update_pq_insert(sr: "SearchResult"):
+        row_any = jnp.any(masks, axis=1)
+        sr.xtr_pq_insert_calls = sr.xtr_pq_insert_calls + jnp.sum(row_any).astype(jnp.int32)
+        sr.xtr_pq_insert_items = sr.xtr_pq_insert_items + jnp.sum(masks).astype(jnp.int32)
+        return sr
+
+    # Keep helper usage compatible with lightweight dummy search_result stubs in tests.
+    if not hasattr(search_result, "xtr_enabled"):
+        return search_result
+
+    search_result = jax.lax.cond(
+        search_result.xtr_enabled,
+        _update_pq_insert,
+        lambda sr: sr,
+        search_result,
+    )
     return search_result
 
 
@@ -282,6 +299,24 @@ class SearchResult:
     solved_idx: Xtructurable | Current  # solved index
     pop_generation: chex.Array  # records which pop generation a node was expanded in
     pop_count: chex.Array  # counter for pop_full calls
+    xtr_enabled: chex.Array  # enables xtr_* workload counters
+    xtr_steps: chex.Array
+    xtr_cand_total: chex.Array
+    xtr_cand_valid: chex.Array
+    xtr_cand_unique: chex.Array
+    xtr_accept: chex.Array
+    xtr_ht_inserted: chex.Array
+    xtr_ht_lookup: chex.Array
+    xtr_ht_found: chex.Array
+    xtr_pq_insert_calls: chex.Array
+    xtr_pq_insert_items: chex.Array
+    xtr_pq_delete_calls: chex.Array
+    xtr_pq_popped_items: chex.Array
+    xtr_pq_processed_items: chex.Array
+    xtr_pq_requeued_items: chex.Array
+    xtr_pq_heap_size_sum: chex.Array
+    xtr_pq_buffer_size_sum: chex.Array
+    xtr_pq_size_samples: chex.Array
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3), static_argnames=("parant_with_costs",))
@@ -294,6 +329,7 @@ class SearchResult:
         min_pop: int = 1,
         seed=42,
         parant_with_costs: bool = False,
+        emit_workload_signature: bool = False,
     ):
         """
         Creates a new instance of SearchResult with initialized data structures.
@@ -337,6 +373,8 @@ class SearchResult:
         solved_idx = Current.default((1,))
         pop_generation = jnp.full(hashtable.table.shape.batch, -1, dtype=jnp.int32)
         pop_count = jnp.array(0, dtype=jnp.int32)
+        xtr_enabled = jnp.array(emit_workload_signature, dtype=jnp.bool_)
+        xtr_zero = jnp.array(0, dtype=jnp.int32)
 
         return SearchResult(
             hashtable=hashtable,
@@ -351,6 +389,24 @@ class SearchResult:
             solved_idx=solved_idx,
             pop_generation=pop_generation,
             pop_count=pop_count,
+            xtr_enabled=xtr_enabled,
+            xtr_steps=jnp.array(0, dtype=jnp.int32),
+            xtr_cand_total=xtr_zero,
+            xtr_cand_valid=xtr_zero,
+            xtr_cand_unique=xtr_zero,
+            xtr_accept=xtr_zero,
+            xtr_ht_inserted=xtr_zero,
+            xtr_ht_lookup=xtr_zero,
+            xtr_ht_found=xtr_zero,
+            xtr_pq_insert_calls=xtr_zero,
+            xtr_pq_insert_items=xtr_zero,
+            xtr_pq_delete_calls=xtr_zero,
+            xtr_pq_popped_items=xtr_zero,
+            xtr_pq_processed_items=xtr_zero,
+            xtr_pq_requeued_items=xtr_zero,
+            xtr_pq_heap_size_sum=xtr_zero,
+            xtr_pq_buffer_size_sum=xtr_zero,
+            xtr_pq_size_samples=xtr_zero,
         )
 
     @property
@@ -426,14 +482,16 @@ class SearchResult:
 
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
+        delete_calls0 = jnp.array(1, dtype=jnp.int32)
         min_key = search_result.mask_unoptimal(min_key, min_val)
+        popped0 = jnp.sum(jnp.isfinite(min_key)).astype(jnp.int32)
         batch_size = search_result.batch_size
         buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
         buffer_val = Current.default((batch_size,))
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
-            search_result, key, _, _, _ = state
+            search_result, key, _, _, _, _, _ = state
             pq_not_empty = search_result.priority_queue.size > 0
 
             # Optimization: Stop if batch is mostly full (e.g. 90%)
@@ -447,7 +505,7 @@ class SearchResult:
             return jnp.logical_and(pq_not_empty, not_full_enough)
 
         def _body(state):
-            search_result, key, val, _, _ = state
+            search_result, key, val, _, _, delete_calls, popped_total = state
             # Pop new nodes from PQ
             (
                 search_result.priority_queue,
@@ -455,16 +513,35 @@ class SearchResult:
                 new_val,
             ) = search_result.priority_queue.delete_mins()
             new_key = search_result.mask_unoptimal(new_key, new_val)
+            new_popped = jnp.sum(jnp.isfinite(new_key)).astype(jnp.int32)
 
             # Merge current batch with new nodes, splitting into main and overflow
             main_keys, main_vals, overflow_keys, overflow_vals = _unique_sort_merge_and_split(
                 key, val, new_key, new_val, batch_size
             )
-            return search_result, main_keys, main_vals, overflow_keys, overflow_vals
+            return (
+                search_result,
+                main_keys,
+                main_vals,
+                overflow_keys,
+                overflow_vals,
+                delete_calls + jnp.array(1, dtype=jnp.int32),
+                popped_total + new_popped,
+            )
 
         # Run the loop until we have a full batch of the best available nodes
-        search_result, min_key, min_val, overflow_keys, overflow_vals = jax.lax.while_loop(
-            _cond, _body, (search_result, min_key, min_val, buffer, buffer_val)
+        (
+            search_result,
+            min_key,
+            min_val,
+            overflow_keys,
+            overflow_vals,
+            delete_calls,
+            popped_total,
+        ) = jax.lax.while_loop(
+            _cond,
+            _body,
+            (search_result, min_key, min_val, buffer, buffer_val, delete_calls0, popped0),
         )
 
         # Put overflow nodes back into the PQ so they are never lost
@@ -479,6 +556,29 @@ class SearchResult:
             min_key,
             pop_ratio=search_result.pop_ratio,
             min_pop=search_result.min_pop,
+        )
+
+        def _update_pq_pop(sr: "SearchResult"):
+            processed = jnp.sum(final_process_mask).astype(jnp.int32)
+            sr.xtr_steps = sr.xtr_steps + jnp.array(1, dtype=jnp.int32)
+            sr.xtr_pq_delete_calls = sr.xtr_pq_delete_calls + delete_calls
+            sr.xtr_pq_popped_items = sr.xtr_pq_popped_items + popped_total
+            sr.xtr_pq_processed_items = sr.xtr_pq_processed_items + processed
+            sr.xtr_pq_requeued_items = sr.xtr_pq_requeued_items + (popped_total - processed)
+            sr.xtr_pq_heap_size_sum = sr.xtr_pq_heap_size_sum + sr.priority_queue.heap_size.astype(
+                jnp.int32
+            )
+            sr.xtr_pq_buffer_size_sum = (
+                sr.xtr_pq_buffer_size_sum + sr.priority_queue.buffer_size.astype(jnp.int32)
+            )
+            sr.xtr_pq_size_samples = sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32)
+            return sr
+
+        search_result = jax.lax.cond(
+            search_result.xtr_enabled,
+            _update_pq_pop,
+            lambda sr: sr,
+            search_result,
         )
 
         # Separate the nodes to be returned and re-insert them into the PQ
@@ -503,9 +603,10 @@ class SearchResult:
         return_states: bool = False,
         is_backward: bool = False,
         **kwargs,
-    ) -> tuple["SearchResult", Current, chex.Array] | tuple[
-        "SearchResult", Current, Puzzle.State, chex.Array
-    ]:
+    ) -> (
+        tuple["SearchResult", Current, chex.Array]
+        | tuple["SearchResult", Current, Puzzle.State, chex.Array]
+    ):
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
@@ -569,6 +670,20 @@ class SearchResult:
                 current_states, unique_mask
             )
 
+            def _update_lookup(sr: "SearchResult"):
+                sr.xtr_ht_lookup = sr.xtr_ht_lookup + jnp.sum(unique_mask).astype(jnp.int32)
+                sr.xtr_ht_found = sr.xtr_ht_found + jnp.sum(
+                    jnp.logical_and(found, unique_mask)
+                ).astype(jnp.int32)
+                return sr
+
+            search_result = jax.lax.cond(
+                search_result.xtr_enabled,
+                _update_lookup,
+                lambda sr: sr,
+                search_result,
+            )
+
             old_costs = search_result.get_cost(current_hash_idxs)
             # Only consider nodes that are either:
             # 1. Not found in the hash table (new nodes), or
@@ -583,6 +698,7 @@ class SearchResult:
 
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
+        delete_calls0 = jnp.array(1, dtype=jnp.int32)
         batch_size = search_result.batch_size
         stack_size = batch_size * 2
 
@@ -590,6 +706,7 @@ class SearchResult:
         (current_states, current_costs, current_dists, min_key) = _expand_and_filter(
             search_result, min_key, min_val
         )
+        popped0 = jnp.sum(jnp.isfinite(min_key)).astype(jnp.int32)
 
         # Apply unique mask to initial batch to maintain invariant
         filled = jnp.isfinite(min_key)
@@ -602,7 +719,7 @@ class SearchResult:
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
-            search_result, _, _, _, key, _, _, _ = state
+            search_result, _, _, _, key, _, _, _, _, _ = state
             pq_not_empty = search_result.priority_queue.size > 0
 
             # Optimization: Stop if batch is mostly full (e.g. 90%)
@@ -612,7 +729,18 @@ class SearchResult:
             return jnp.logical_and(pq_not_empty, not_full_enough)
 
         def _body(state):
-            search_result, current_states, costs, dists, key, val, _, _ = state
+            (
+                search_result,
+                current_states,
+                costs,
+                dists,
+                key,
+                val,
+                _,
+                _,
+                delete_calls,
+                popped_total,
+            ) = state
 
             # Pop new nodes from PQ
             (
@@ -625,6 +753,7 @@ class SearchResult:
             (new_states, new_costs, new_dists, new_key) = _expand_and_filter(
                 search_result, new_key, new_val
             )
+            new_popped = jnp.sum(jnp.isfinite(new_key)).astype(jnp.int32)
 
             # Merge with existing batch
             stack_states = xnp.concatenate((current_states, new_states))
@@ -655,6 +784,8 @@ class SearchResult:
                 sorted_val[:batch_size],
                 sorted_key[batch_size:],  # New buffer (overflow)
                 sorted_val[batch_size:],  # New buffer val
+                delete_calls + jnp.array(1, dtype=jnp.int32),
+                popped_total + new_popped,
             )
 
         # Run the loop until we have a full batch of the best available nodes
@@ -667,6 +798,8 @@ class SearchResult:
             final_val,
             overflow_keys,
             overflow_vals,
+            delete_calls,
+            popped_total,
         ) = jax.lax.while_loop(
             _cond,
             _body,
@@ -679,6 +812,8 @@ class SearchResult:
                 min_val,
                 buffer_key,
                 buffer_val,
+                delete_calls0,
+                popped0,
             ),
         )
 
@@ -698,6 +833,29 @@ class SearchResult:
             min_pop=search_result.min_pop,
         )
 
+        def _update_deferred(sr: "SearchResult"):
+            processed = jnp.sum(final_process_mask).astype(jnp.int32)
+            sr.xtr_steps = sr.xtr_steps + jnp.array(1, dtype=jnp.int32)
+            sr.xtr_pq_delete_calls = sr.xtr_pq_delete_calls + delete_calls
+            sr.xtr_pq_popped_items = sr.xtr_pq_popped_items + popped_total
+            sr.xtr_pq_processed_items = sr.xtr_pq_processed_items + processed
+            sr.xtr_pq_requeued_items = sr.xtr_pq_requeued_items + (popped_total - processed)
+            sr.xtr_pq_heap_size_sum = sr.xtr_pq_heap_size_sum + sr.priority_queue.heap_size.astype(
+                jnp.int32
+            )
+            sr.xtr_pq_buffer_size_sum = (
+                sr.xtr_pq_buffer_size_sum + sr.priority_queue.buffer_size.astype(jnp.int32)
+            )
+            sr.xtr_pq_size_samples = sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32)
+            return sr
+
+        search_result = jax.lax.cond(
+            search_result.xtr_enabled,
+            _update_deferred,
+            lambda sr: sr,
+            search_result,
+        )
+
         # Separate the nodes to be returned and re-insert them into the PQ
         return_keys = jnp.where(final_process_mask, jnp.inf, final_key)
         final_costs = jnp.where(final_process_mask, final_costs, jnp.inf)
@@ -705,10 +863,21 @@ class SearchResult:
 
         (
             search_result.hashtable,
-            _,
+            inserted_mask,
             _,
             hash_idx,
         ) = search_result.hashtable.parallel_insert(final_states, final_process_mask)
+
+        def _update_inserted(sr: "SearchResult"):
+            sr.xtr_ht_inserted = sr.xtr_ht_inserted + jnp.sum(inserted_mask).astype(jnp.int32)
+            return sr
+
+        search_result = jax.lax.cond(
+            search_result.xtr_enabled,
+            _update_inserted,
+            lambda sr: sr,
+            search_result,
+        )
 
         final_currents = Current(hashidx=hash_idx, cost=final_costs)
 
