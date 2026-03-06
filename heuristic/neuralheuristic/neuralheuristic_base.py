@@ -19,7 +19,7 @@ from neural_util.param_manager import (
     merge_params,
     save_params_with_metadata,
 )
-from neural_util.util import download_model, is_model_downloaded
+from neural_util.util import download_model, is_model_downloaded, resolve_model_path
 
 
 class NeuralHeuristicBase(Heuristic):
@@ -32,7 +32,7 @@ class NeuralHeuristicBase(Heuristic):
         **kwargs,
     ):
         self.puzzle = puzzle
-        self.path = path
+        self.path = resolve_model_path(path) if path is not None else None
         self.metadata = {}
         self.nn_args_metadata = {}
         self._preloaded_params = None
@@ -71,10 +71,16 @@ class NeuralHeuristicBase(Heuristic):
         try:
             params = self._preloaded_params
             metadata = self.metadata
+            resolved_path = self.path
             if params is None:
-                if not is_model_downloaded(self.path):
-                    download_model(self.path)
-                params, metadata = load_params_with_metadata(self.path)
+                if resolved_path is None:
+                    raise FileNotFoundError("Model path is required when init_params is False.")
+                resolved_path = resolve_model_path(resolved_path)
+                if not is_model_downloaded(resolved_path):
+                    resolved_path = download_model(resolved_path)
+                params, metadata = load_params_with_metadata(resolved_path)
+            if resolved_path is not None:
+                self.path = resolved_path
             assert params is not None, f"Failed to load parameters from {self.path}"
             self.metadata = metadata or {}
             self.metadata["nn_args"] = self.nn_args_metadata
@@ -204,9 +210,10 @@ class NeuralHeuristicBase(Heuristic):
     def _preload_metadata(self):
         from neural_util.preprocessing import preload_metadata
 
-        params, metadata = preload_metadata(
+        params, metadata, resolved_path = preload_metadata(
             self.path, is_model_downloaded, download_model, load_params_with_metadata
         )
         if params is not None:
             self._preloaded_params = params
+        self.path = resolved_path
         return metadata

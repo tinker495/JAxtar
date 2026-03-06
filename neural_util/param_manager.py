@@ -6,6 +6,7 @@ from typing import Any, Dict, Tuple
 import jax
 import jax.numpy as jnp
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
+from flax.traverse_util import flatten_dict, unflatten_dict
 
 from neural_util.dtypes import PARAM_DTYPE
 
@@ -68,6 +69,31 @@ def merge_params(new_params: Any, old_params: Any) -> Any:
     # Convert to mutable dicts if needed
     target = unfreeze(new_params) if isinstance(new_params, FrozenDict) else new_params
     source = unfreeze(old_params) if isinstance(old_params, FrozenDict) else old_params
+
+    def adapt_legacy_resblock_keys(target_tree: Any, source_tree: Any) -> Any:
+        if not isinstance(target_tree, dict) or not isinstance(source_tree, dict):
+            return source_tree
+
+        target_flat = flatten_dict(target_tree)
+        source_flat = flatten_dict(source_tree)
+        remapped_flat = {}
+
+        for key, value in source_flat.items():
+            new_key = key
+            if key not in target_flat:
+                if len(key) >= 3 and key[-2] == "BatchNorm_1" and key[-3].startswith("ResBlock_"):
+                    candidate = key[:-2] + ("MLP_0", "BatchNorm_0", key[-1])
+                    if candidate in target_flat:
+                        new_key = candidate
+                elif len(key) >= 3 and key[-2] == "Dense_1" and key[-3].startswith("ResBlock_"):
+                    candidate = key[:-2] + ("MLP_0", "Dense_0", key[-1])
+                    if candidate in target_flat:
+                        new_key = candidate
+            remapped_flat[new_key] = value
+
+        return unflatten_dict(remapped_flat)
+
+    source = adapt_legacy_resblock_keys(target, source)
 
     # If standard dicts, we might need deep copy of target to avoid side effects if mutable,
     # but typically new_params is fresh.

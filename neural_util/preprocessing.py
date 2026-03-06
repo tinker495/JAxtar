@@ -249,15 +249,16 @@ def preload_metadata(path, is_model_downloaded_fn, download_model_fn, load_param
         load_params_fn: Callable to load params and metadata from a file.
 
     Returns:
-        Tuple of (params_or_none, metadata_dict).
+        Tuple of (params_or_none, metadata_dict, resolved_path).
     """
     import pickle
 
     try:
-        if not is_model_downloaded_fn(path):
-            download_model_fn(path)
-        params, metadata = load_params_fn(path)
-        return params, metadata or {}
+        resolved_path = path
+        if not is_model_downloaded_fn(resolved_path):
+            resolved_path = download_model_fn(resolved_path)
+        params, metadata = load_params_fn(resolved_path)
+        return params, metadata or {}, resolved_path
     except (FileNotFoundError, pickle.PickleError, OSError, RuntimeError) as e:
         print(f"Error loading metadata from {path}: {e}")
-        return None, {}
+        return None, {}, path

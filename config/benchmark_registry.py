@@ -173,12 +173,12 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
         benchmark=SlidePuzzleDeepCubeABenchmark,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
-                callable=SlidePuzzleNeuralHeuristic,
-                param_path="heuristic/neuralheuristic/model/params/n-puzzle_4_v2.pkl",
+                callable=SlidePuzzleConvNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/n-puzzle-conv_4.pkl",
             ),
             "conv": NeuralCallableConfig(
                 callable=SlidePuzzleConvNeuralHeuristic,
-                param_path="heuristic/neuralheuristic/model/params/n-puzzle-conv_4_v2.pkl",
+                param_path="heuristic/neuralheuristic/model/params/n-puzzle-conv_4.pkl",
             ),
         },
         q_function_nn_configs={
@@ -196,12 +196,12 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
         benchmark=SlidePuzzleDeepCubeA15HardBenchmark,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
-                callable=SlidePuzzleNeuralHeuristic,
-                param_path="heuristic/neuralheuristic/model/params/n-puzzle_4_v2.pkl",
+                callable=SlidePuzzleConvNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/n-puzzle-conv_4.pkl",
             ),
             "conv": NeuralCallableConfig(
                 callable=SlidePuzzleConvNeuralHeuristic,
-                param_path="heuristic/neuralheuristic/model/params/n-puzzle-conv_4_v2.pkl",
+                param_path="heuristic/neuralheuristic/model/params/n-puzzle-conv_4.pkl",
             ),
         },
         q_function_nn_configs={
