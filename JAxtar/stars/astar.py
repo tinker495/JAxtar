@@ -115,15 +115,14 @@ def _astar_loop_builder(
 
         def _update_insert_stats(sr: SearchResult):
             cand_total_delta = jnp.sum(jnp.ones_like(flatten_filleds, dtype=jnp.int32))
-            sr.xtr_cand_total = sr.xtr_cand_total + cand_total_delta
-            sr.xtr_cand_valid = sr.xtr_cand_valid + jnp.sum(flatten_filleds).astype(jnp.int32)
-            sr.xtr_cand_unique = sr.xtr_cand_unique + jnp.sum(cheapest_uniques_mask).astype(
-                jnp.int32
+            return sr.replace(
+                xtr_cand_total=sr.xtr_cand_total + cand_total_delta,
+                xtr_cand_valid=sr.xtr_cand_valid + jnp.sum(flatten_filleds).astype(jnp.int32),
+                xtr_cand_unique=sr.xtr_cand_unique
+                + jnp.sum(cheapest_uniques_mask).astype(jnp.int32),
+                xtr_ht_inserted=sr.xtr_ht_inserted
+                + jnp.sum(flatten_new_states_mask).astype(jnp.int32),
             )
-            sr.xtr_ht_inserted = sr.xtr_ht_inserted + jnp.sum(flatten_new_states_mask).astype(
-                jnp.int32
-            )
-            return sr
 
         search_result = jax.lax.cond(
             search_result.xtr_enabled,
@@ -139,8 +138,9 @@ def _astar_loop_builder(
         final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
 
         def _update_accept_stats(sr: SearchResult):
-            sr.xtr_accept = sr.xtr_accept + jnp.sum(final_process_mask).astype(jnp.int32)
-            return sr
+            return sr.replace(
+                xtr_accept=sr.xtr_accept + jnp.sum(final_process_mask).astype(jnp.int32)
+            )
 
         search_result = jax.lax.cond(
             search_result.xtr_enabled,

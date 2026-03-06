@@ -27,6 +27,7 @@ def _astar_d_loop_builder(
     pop_ratio: float = jnp.inf,
     cost_weight: float = 1.0 - 1e-6,
     look_ahead_pruning: bool = True,
+    emit_workload_signature: bool = False,
 ):
     statecls = puzzle.State
     action_size = puzzle.action_size
@@ -49,6 +50,7 @@ def _astar_d_loop_builder(
             pop_ratio=pop_ratio,
             min_pop=min_pop,
             parant_with_costs=True,
+            emit_workload_signature=emit_workload_signature,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
         return init_base_loop_state(
@@ -186,6 +188,7 @@ def astar_d_builder(
     show_compile_time: bool = False,
     look_ahead_pruning: bool = True,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
+    emit_workload_signature: bool = False,
 ):
     """
     Builds and returns a JAX-accelerated A* with deferred node evaluation (A* deferred).
@@ -216,13 +219,21 @@ def astar_d_builder(
         look_ahead_pruning: Enables neighbour look-ahead pruning (default: True). Disable
             to recover canonical A* deferred behaviour when simulator cost outweighs queue
             pressure.
+        emit_workload_signature: If True, track xtr_* workload signature counters.
 
     Returns:
         A function that performs A* with deferred search given a start state and solve configuration.
     """
 
     init_loop_state, loop_condition, loop_body = _astar_d_loop_builder(
-        puzzle, heuristic, batch_size, max_nodes, pop_ratio, cost_weight, look_ahead_pruning
+        puzzle,
+        heuristic,
+        batch_size,
+        max_nodes,
+        pop_ratio,
+        cost_weight,
+        look_ahead_pruning,
+        emit_workload_signature,
     )
 
     def astar_d(

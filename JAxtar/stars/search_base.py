@@ -115,9 +115,10 @@ def insert_priority_queue_batches(
 
     def _update_pq_insert(sr: "SearchResult"):
         row_any = jnp.any(masks, axis=1)
-        sr.xtr_pq_insert_calls = sr.xtr_pq_insert_calls + jnp.sum(row_any).astype(jnp.int32)
-        sr.xtr_pq_insert_items = sr.xtr_pq_insert_items + jnp.sum(masks).astype(jnp.int32)
-        return sr
+        return sr.replace(
+            xtr_pq_insert_calls=sr.xtr_pq_insert_calls + jnp.sum(row_any).astype(jnp.int32),
+            xtr_pq_insert_items=sr.xtr_pq_insert_items + jnp.sum(masks).astype(jnp.int32),
+        )
 
     # Keep helper usage compatible with lightweight dummy search_result stubs in tests.
     if not hasattr(search_result, "xtr_enabled"):
@@ -560,19 +561,18 @@ class SearchResult:
 
         def _update_pq_pop(sr: "SearchResult"):
             processed = jnp.sum(final_process_mask).astype(jnp.int32)
-            sr.xtr_steps = sr.xtr_steps + jnp.array(1, dtype=jnp.int32)
-            sr.xtr_pq_delete_calls = sr.xtr_pq_delete_calls + delete_calls
-            sr.xtr_pq_popped_items = sr.xtr_pq_popped_items + popped_total
-            sr.xtr_pq_processed_items = sr.xtr_pq_processed_items + processed
-            sr.xtr_pq_requeued_items = sr.xtr_pq_requeued_items + (popped_total - processed)
-            sr.xtr_pq_heap_size_sum = sr.xtr_pq_heap_size_sum + sr.priority_queue.heap_size.astype(
-                jnp.int32
+            return sr.replace(
+                xtr_steps=sr.xtr_steps + jnp.array(1, dtype=jnp.int32),
+                xtr_pq_delete_calls=sr.xtr_pq_delete_calls + delete_calls,
+                xtr_pq_popped_items=sr.xtr_pq_popped_items + popped_total,
+                xtr_pq_processed_items=sr.xtr_pq_processed_items + processed,
+                xtr_pq_requeued_items=sr.xtr_pq_requeued_items + (popped_total - processed),
+                xtr_pq_heap_size_sum=sr.xtr_pq_heap_size_sum
+                + sr.priority_queue.heap_size.astype(jnp.int32),
+                xtr_pq_buffer_size_sum=sr.xtr_pq_buffer_size_sum
+                + sr.priority_queue.buffer_size.astype(jnp.int32),
+                xtr_pq_size_samples=sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32),
             )
-            sr.xtr_pq_buffer_size_sum = (
-                sr.xtr_pq_buffer_size_sum + sr.priority_queue.buffer_size.astype(jnp.int32)
-            )
-            sr.xtr_pq_size_samples = sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32)
-            return sr
 
         search_result = jax.lax.cond(
             search_result.xtr_enabled,
@@ -671,11 +671,11 @@ class SearchResult:
             )
 
             def _update_lookup(sr: "SearchResult"):
-                sr.xtr_ht_lookup = sr.xtr_ht_lookup + jnp.sum(unique_mask).astype(jnp.int32)
-                sr.xtr_ht_found = sr.xtr_ht_found + jnp.sum(
-                    jnp.logical_and(found, unique_mask)
-                ).astype(jnp.int32)
-                return sr
+                return sr.replace(
+                    xtr_ht_lookup=sr.xtr_ht_lookup + jnp.sum(unique_mask).astype(jnp.int32),
+                    xtr_ht_found=sr.xtr_ht_found
+                    + jnp.sum(jnp.logical_and(found, unique_mask)).astype(jnp.int32),
+                )
 
             search_result = jax.lax.cond(
                 search_result.xtr_enabled,
@@ -694,7 +694,7 @@ class SearchResult:
             # Mask unoptimal keys with infinity
             filtered_key = jnp.where(optimal_mask, key, jnp.inf)
 
-            return current_states, current_costs, current_dists, filtered_key
+            return search_result, current_states, current_costs, current_dists, filtered_key
 
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
@@ -703,7 +703,7 @@ class SearchResult:
         stack_size = batch_size * 2
 
         # Initial expansion and filtering
-        (current_states, current_costs, current_dists, min_key) = _expand_and_filter(
+        (search_result, current_states, current_costs, current_dists, min_key) = _expand_and_filter(
             search_result, min_key, min_val
         )
         popped0 = jnp.sum(jnp.isfinite(min_key)).astype(jnp.int32)
@@ -750,7 +750,7 @@ class SearchResult:
             ) = search_result.priority_queue.delete_mins()
 
             # Expand and filter new nodes
-            (new_states, new_costs, new_dists, new_key) = _expand_and_filter(
+            (search_result, new_states, new_costs, new_dists, new_key) = _expand_and_filter(
                 search_result, new_key, new_val
             )
             new_popped = jnp.sum(jnp.isfinite(new_key)).astype(jnp.int32)
@@ -835,19 +835,18 @@ class SearchResult:
 
         def _update_deferred(sr: "SearchResult"):
             processed = jnp.sum(final_process_mask).astype(jnp.int32)
-            sr.xtr_steps = sr.xtr_steps + jnp.array(1, dtype=jnp.int32)
-            sr.xtr_pq_delete_calls = sr.xtr_pq_delete_calls + delete_calls
-            sr.xtr_pq_popped_items = sr.xtr_pq_popped_items + popped_total
-            sr.xtr_pq_processed_items = sr.xtr_pq_processed_items + processed
-            sr.xtr_pq_requeued_items = sr.xtr_pq_requeued_items + (popped_total - processed)
-            sr.xtr_pq_heap_size_sum = sr.xtr_pq_heap_size_sum + sr.priority_queue.heap_size.astype(
-                jnp.int32
+            return sr.replace(
+                xtr_steps=sr.xtr_steps + jnp.array(1, dtype=jnp.int32),
+                xtr_pq_delete_calls=sr.xtr_pq_delete_calls + delete_calls,
+                xtr_pq_popped_items=sr.xtr_pq_popped_items + popped_total,
+                xtr_pq_processed_items=sr.xtr_pq_processed_items + processed,
+                xtr_pq_requeued_items=sr.xtr_pq_requeued_items + (popped_total - processed),
+                xtr_pq_heap_size_sum=sr.xtr_pq_heap_size_sum
+                + sr.priority_queue.heap_size.astype(jnp.int32),
+                xtr_pq_buffer_size_sum=sr.xtr_pq_buffer_size_sum
+                + sr.priority_queue.buffer_size.astype(jnp.int32),
+                xtr_pq_size_samples=sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32),
             )
-            sr.xtr_pq_buffer_size_sum = (
-                sr.xtr_pq_buffer_size_sum + sr.priority_queue.buffer_size.astype(jnp.int32)
-            )
-            sr.xtr_pq_size_samples = sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32)
-            return sr
 
         search_result = jax.lax.cond(
             search_result.xtr_enabled,
@@ -869,8 +868,9 @@ class SearchResult:
         ) = search_result.hashtable.parallel_insert(final_states, final_process_mask)
 
         def _update_inserted(sr: "SearchResult"):
-            sr.xtr_ht_inserted = sr.xtr_ht_inserted + jnp.sum(inserted_mask).astype(jnp.int32)
-            return sr
+            return sr.replace(
+                xtr_ht_inserted=sr.xtr_ht_inserted + jnp.sum(inserted_mask).astype(jnp.int32)
+            )
 
         search_result = jax.lax.cond(
             search_result.xtr_enabled,
