@@ -582,8 +582,13 @@ def materialize_meeting_point_hashidxs(
         sr.cost = sr.cost.at[hashidx.index].set(
             jnp.where(better, desired_cost.astype(KEY_DTYPE), old_cost.astype(KEY_DTYPE))
         )
-        sr.parent = sr.parent.at[hashidx.index].set_as_condition(
-            better,
+        # `set_as_condition` expects the condition shape to match the selected
+        # update slots. For this scalar materialization update, make both the
+        # index and condition explicitly one-element batches.
+        parent_update_index = jnp.asarray(hashidx.index)[jnp.newaxis]
+        parent_update_mask = jnp.asarray(better, dtype=jnp.bool_)[jnp.newaxis]
+        sr.parent = sr.parent.at[parent_update_index].set_as_condition(
+            parent_update_mask,
             Parent(hashidx=parent_hashidx, action=parent_action),
         )
         return sr, hashidx
