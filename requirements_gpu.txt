@@ -5,7 +5,7 @@ click
 rich
 pre-commit
 pytest
-jax[cuda]
+jax[cuda]<=0.8.1
 chex
 dm_pix
 dm-haiku
