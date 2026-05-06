@@ -49,22 +49,29 @@ from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
+from .verification import (
+    BenchmarkVerification,
+    build_benchmark_action_strings,
+    init_verify_worker,
+    verify_benchmark_path,
+    verify_benchmark_path_with_strings,
+    verify_solution_worker,
+)
 
-_VERIFY_BENCHMARK = None
 
-
-def _init_verify_worker(benchmark):
-    global _VERIFY_BENCHMARK
-    _VERIFY_BENCHMARK = benchmark
-
-
-def _verify_solution_worker(args):
-    benchmark_sample, states, action_sequence = args
-    return _VERIFY_BENCHMARK.verify_solution(
-        benchmark_sample,
-        states=states,
-        action_sequence=action_sequence,
-    )
+def _apply_benchmark_verification(
+    result_item: dict,
+    verification: BenchmarkVerification,
+) -> None:
+    if verification.path_action_strings is not None:
+        result_item["path_action_strings"] = verification.path_action_strings
+    if verification.benchmark_verification_error is not None:
+        result_item["benchmark_verification_error"] = verification.benchmark_verification_error
+    if (
+        verification.matches_optimal_path is not None
+        or verification.benchmark_verification_error is not None
+    ):
+        result_item["matches_optimal_path"] = verification.matches_optimal_path
 
 
 @partial(jax.jit)
@@ -586,40 +593,18 @@ class EvaluationRunner:
             ]
             states_concat = xnp.concatenate(states) if states else None
 
-            if (
-                self.benchmark is not None
-                and states
-                and hasattr(self.benchmark, "verify_solution")
-                and result_item.get("matches_optimal_path") is None
-            ):
-                if actual_actions and not result_item.get("path_action_strings"):
-                    action_to_string_fn = getattr(self.puzzle, "action_to_string", None)
-                    actual_action_labels = []
-                    for action_id in actual_actions:
-                        if action_to_string_fn is None:
-                            label = str(action_id)
-                        else:
-                            try:
-                                label = action_to_string_fn(action_id)
-                            except (ValueError, IndexError):
-                                label = str(action_id)
-                        actual_action_labels.append(label)
-                    result_item["path_action_strings"] = actual_action_labels
-
-                try:
-                    verification_result = self.benchmark.verify_solution(
-                        benchmark_sample,
-                        states=states,
-                        action_sequence=result_item.get("path_action_strings"),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    verification_result = None
-                    result_item["benchmark_verification_error"] = str(exc)
-
-                result_item["matches_optimal_path"] = verification_result
-                deferred_payload["path_action_strings"] = result_item.get("path_action_strings")
-                deferred_payload["verify_result"] = verification_result
-                deferred_payload["verify_error"] = result_item.get("benchmark_verification_error")
+            verification = verify_benchmark_path(
+                benchmark=self.benchmark,
+                puzzle=self.puzzle,
+                benchmark_sample=benchmark_sample,
+                states=states,
+                actual_actions=actual_actions,
+            )
+            _apply_benchmark_verification(result_item, verification)
+            deferred_payload["benchmark_verification"] = verification
+            deferred_payload["path_action_strings"] = verification.path_action_strings
+            deferred_payload["verify_result"] = verification.matches_optimal_path
+            deferred_payload["verify_error"] = verification.benchmark_verification_error
             deferred_payload.update(
                 {
                     "path_steps": path_steps,
@@ -722,40 +707,39 @@ class EvaluationRunner:
         max_len = 0
 
         verify_jobs = []
-        action_to_string_fn = getattr(self.puzzle, "action_to_string", None)
         for idx, payload in enumerate(deferred_payloads):
             result_item = payload["result_item"]
             path_steps = payload.get("path_steps")
             states = payload.get("states") or []
             actual_actions = payload.get("actual_actions") or []
+            verification = payload.get("benchmark_verification")
 
-            if payload.get("path_action_strings") is not None:
+            if isinstance(verification, BenchmarkVerification):
+                _apply_benchmark_verification(result_item, verification)
+            elif payload.get("path_action_strings") is not None:
                 result_item["path_action_strings"] = payload.get("path_action_strings")
-            elif path_steps and actual_actions and not result_item.get("path_action_strings"):
-                actual_action_labels = []
-                for action_id in actual_actions:
-                    if action_to_string_fn is None:
-                        label = str(action_id)
-                    else:
-                        try:
-                            label = action_to_string_fn(action_id)
-                        except (ValueError, IndexError):
-                            label = str(action_id)
-                    actual_action_labels.append(label)
-                result_item["path_action_strings"] = actual_action_labels
 
             if (
                 self.benchmark is not None
                 and states
                 and hasattr(self.benchmark, "verify_solution")
+                and verification is None
                 and result_item.get("matches_optimal_path") is None
             ):
+                action_strings = result_item.get("path_action_strings")
+                if action_strings is None and path_steps and actual_actions:
+                    action_strings = build_benchmark_action_strings(
+                        puzzle=self.puzzle,
+                        actual_actions=actual_actions,
+                    )
+                    if action_strings is not None:
+                        result_item["path_action_strings"] = action_strings
                 verify_jobs.append(
                     (
                         idx,
                         payload.get("benchmark_sample"),
                         states,
-                        result_item.get("path_action_strings"),
+                        action_strings,
                     )
                 )
 
@@ -799,12 +783,12 @@ class EvaluationRunner:
                 with concurrent.futures.ProcessPoolExecutor(
                     max_workers=max_workers,
                     mp_context=ctx,
-                    initializer=_init_verify_worker,
+                    initializer=init_verify_worker,
                     initargs=(self.benchmark,),
                 ) as executor:
                     future_map = {
                         executor.submit(
-                            _verify_solution_worker,
+                            verify_solution_worker,
                             (sample, states, actions),
                         ): idx
                         for idx, sample, states, actions in verify_jobs
@@ -812,28 +796,33 @@ class EvaluationRunner:
                     for future in concurrent.futures.as_completed(future_map):
                         idx = future_map[future]
                         try:
-                            verify_results[idx] = (future.result(), None)
+                            verify_results[idx] = future.result()
                         except Exception as exc:  # noqa: BLE001
-                            verify_results[idx] = (None, str(exc))
+                            verify_results[idx] = BenchmarkVerification(
+                                benchmark_verification_error=str(exc)
+                            )
             else:
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=min(32, max_workers)
                 ) as executor:
                     future_map = {
                         executor.submit(
-                            self.benchmark.verify_solution,
-                            sample,
+                            verify_benchmark_path_with_strings,
+                            benchmark=self.benchmark,
+                            benchmark_sample=sample,
                             states=states,
-                            action_sequence=actions,
+                            path_action_strings=actions,
                         ): idx
                         for idx, sample, states, actions in verify_jobs
                     }
                     for future in concurrent.futures.as_completed(future_map):
                         idx = future_map[future]
                         try:
-                            verify_results[idx] = (future.result(), None)
+                            verify_results[idx] = future.result()
                         except Exception as exc:  # noqa: BLE001
-                            verify_results[idx] = (None, str(exc))
+                            verify_results[idx] = BenchmarkVerification(
+                                benchmark_verification_error=str(exc)
+                            )
 
         batched_actual = None
         batched_estimated = None
@@ -923,12 +912,8 @@ class EvaluationRunner:
                         result_item["benchmark_verification_error"] = payload.get("verify_error")
                 else:
                     verify_result = verify_results.get(idx)
-                    if verify_result is not None:
-                        verification_result, error_text = verify_result
-                        if error_text is not None:
-                            result_item["benchmark_verification_error"] = error_text
-                        if verification_result is not None:
-                            result_item["matches_optimal_path"] = verification_result
+                    if isinstance(verify_result, BenchmarkVerification):
+                        _apply_benchmark_verification(result_item, verify_result)
 
             if self.benchmark is not None and solve_config is not None:
                 optimal_sequence = result_item.get("benchmark_optimal_action_sequence")
