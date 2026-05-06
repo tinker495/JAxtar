@@ -40,8 +40,7 @@ from helpers.plots import (
 from helpers.rich_progress import trange
 from helpers.summaries import create_summary_panel
 from helpers.visualization import (
-    build_path_steps_from_actions,
-    build_path_steps_from_nodes,
+    build_path_steps_from_trace,
 )
 from helpers.xtructure_signature import extract_xtructure_signature
 from heuristic.heuristic_base import Heuristic
@@ -522,59 +521,15 @@ class EvaluationRunner:
             "benchmark_sample": benchmark_sample,
         }
         if solved:
-            if is_bidirectional:
-                from JAxtar.bi_stars.bi_search_base import (
-                    reconstruct_bidirectional_path,
-                )
-
-                bi_pairs = reconstruct_bidirectional_path(search_result, self.puzzle)
-                actions = [a for a, _ in bi_pairs[1:]]
-                states_trace = [s for _, s in bi_pairs]
-                path_steps = build_path_steps_from_actions(
-                    puzzle=self.puzzle,
-                    solve_config=solve_config,
-                    initial_state=state,
-                    actions=actions,
-                    heuristic=heuristic_model,
-                    q_fn=qfunction_model,
-                    states=states_trace,
-                )
-            elif hasattr(search_result, "solution_trace"):
-                (
-                    states_trace,
-                    costs_trace,
-                    dists_trace,
-                    actions_trace,
-                ) = search_result.solution_trace()
-                path_steps = build_path_steps_from_actions(
-                    puzzle=self.puzzle,
-                    solve_config=solve_config,
-                    initial_state=state,
-                    actions=actions_trace,
-                    heuristic=heuristic_model,
-                    q_fn=qfunction_model,
-                    states=states_trace,
-                    costs=costs_trace,
-                    dists=dists_trace,
-                )
-            elif hasattr(search_result, "solution_actions"):
-                actions = search_result.solution_actions()
-                path_steps = build_path_steps_from_actions(
-                    puzzle=self.puzzle,
-                    solve_config=solve_config,
-                    initial_state=state,
-                    actions=actions,
-                    heuristic=heuristic_model,
-                    q_fn=qfunction_model,
-                )
-            else:
-                path = search_result.get_solved_path()
-                path_steps = build_path_steps_from_nodes(
-                    search_result=search_result,
-                    path=path,
-                    puzzle=self.puzzle,
-                    solve_config=solve_config,
-                )
+            solution_trace = search_result.to_solution_trace(puzzle=self.puzzle)
+            path_steps = build_path_steps_from_trace(
+                puzzle=self.puzzle,
+                solve_config=solve_config,
+                initial_state=state,
+                solution_trace=solution_trace,
+                heuristic=heuristic_model,
+                q_fn=qfunction_model,
+            )
 
             path_cost = path_steps[-1].cost if path_steps else 0.0
             result_item["path_cost"] = float(path_cost)

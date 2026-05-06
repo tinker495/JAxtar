@@ -21,8 +21,7 @@ from helpers import (
 from helpers.config_printer import print_config
 from helpers.rich_progress import tqdm
 from helpers.visualization import (
-    build_path_steps_from_actions,
-    build_path_steps_from_nodes,
+    build_path_steps_from_trace,
     build_result_table,
     build_seed_setup_panel,
     build_solution_path_panel,
@@ -183,59 +182,15 @@ def search_samples(
             total_costs.append(float(solved_cost) if solved_cost is not None else 0.0)
 
             if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
-                if is_bidirectional:
-                    from JAxtar.bi_stars.bi_search_base import (
-                        reconstruct_bidirectional_path,
-                    )
-
-                    bi_pairs = reconstruct_bidirectional_path(search_result, puzzle)
-                    actions = [a for a, _ in bi_pairs[1:]]
-                    states_trace = [s for _, s in bi_pairs]
-                    path_steps = build_path_steps_from_actions(
-                        puzzle=puzzle,
-                        solve_config=solve_config,
-                        initial_state=state,
-                        actions=actions,
-                        heuristic=heuristic,
-                        q_fn=qfunction,
-                        states=states_trace,
-                    )
-                elif hasattr(search_result, "solution_trace"):
-                    (
-                        states_trace,
-                        costs_trace,
-                        dists_trace,
-                        actions_trace,
-                    ) = search_result.solution_trace()
-                    path_steps = build_path_steps_from_actions(
-                        puzzle=puzzle,
-                        solve_config=solve_config,
-                        initial_state=state,
-                        actions=actions_trace,
-                        heuristic=heuristic,
-                        q_fn=qfunction,
-                        states=states_trace,
-                        costs=costs_trace,
-                        dists=dists_trace,
-                    )
-                elif hasattr(search_result, "solution_actions"):
-                    actions = search_result.solution_actions()
-                    path_steps = build_path_steps_from_actions(
-                        puzzle=puzzle,
-                        solve_config=solve_config,
-                        initial_state=state,
-                        actions=actions,
-                        heuristic=heuristic,
-                        q_fn=qfunction,
-                    )
-                else:
-                    path = search_result.get_solved_path()
-                    path_steps = build_path_steps_from_nodes(
-                        search_result=search_result,
-                        path=path,
-                        puzzle=puzzle,
-                        solve_config=solve_config,
-                    )
+                solution_trace = search_result.to_solution_trace(puzzle=puzzle)
+                path_steps = build_path_steps_from_trace(
+                    puzzle=puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    solution_trace=solution_trace,
+                    heuristic=heuristic,
+                    q_fn=qfunction,
+                )
 
                 if visualize_options.visualize_terminal:
                     console.print(

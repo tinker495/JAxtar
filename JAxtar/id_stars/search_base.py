@@ -17,6 +17,11 @@ from xtructure.stack import Stack
 from helpers.jax_compile import compile_with_example
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
+from JAxtar.solution_trace import (
+    SolutionTrace,
+    action_pad_int,
+    normalise_action_sequence,
+)
 from JAxtar.utils.array_ops import stable_partition_three
 
 
@@ -232,6 +237,28 @@ class IDSearchBase:
         """
         valid_mask = self.solution_actions_arr != ACTION_PAD
         return self.solution_actions_arr[valid_mask]
+
+    def to_solution_trace(
+        self,
+        *,
+        puzzle: Puzzle | None = None,
+    ) -> SolutionTrace:
+        """Return the host-side solution trace for CLI/evaluation adapters."""
+        if not bool(jax.device_get(self.solved)):
+            return SolutionTrace.unsolved()
+
+        actions = normalise_action_sequence(
+            jax.device_get(self.solution_actions_arr),
+            action_pad=action_pad_int(ACTION_DTYPE),
+        )
+        return SolutionTrace(
+            solved=True,
+            actions=actions,
+            states=None,
+            costs=None,
+            dists=None,
+            requires_replay=True,
+        )
 
     def get_generated_size(self):
         return self.generated_count

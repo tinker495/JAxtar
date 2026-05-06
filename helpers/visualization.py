@@ -15,6 +15,7 @@ from rich.text import Text
 
 from helpers.formatting import human_format
 from JAxtar.annotate import ACTION_DTYPE
+from JAxtar.solution_trace import SolutionTrace
 
 ACTION_PAD_INT = int(np.iinfo(np.dtype(ACTION_DTYPE)).max)
 
@@ -395,6 +396,31 @@ def build_path_steps_from_nodes(
             )
         )
     return steps
+
+
+def build_path_steps_from_trace(
+    puzzle,
+    solve_config,
+    initial_state,
+    solution_trace: SolutionTrace,
+    heuristic=None,
+    q_fn=None,
+) -> List[PathStep]:
+    """Convert search-owned solution trace into display-oriented path steps."""
+    if not solution_trace.solved:
+        return []
+
+    return build_path_steps_from_actions(
+        puzzle=puzzle,
+        solve_config=solve_config,
+        initial_state=initial_state,
+        actions=list(solution_trace.actions),
+        heuristic=heuristic,
+        q_fn=q_fn,
+        states=list(solution_trace.states) if solution_trace.states is not None else None,
+        costs=list(solution_trace.costs) if solution_trace.costs is not None else None,
+        dists=list(solution_trace.dists) if solution_trace.dists is not None else None,
+    )
 
 
 def build_path_steps_from_actions(

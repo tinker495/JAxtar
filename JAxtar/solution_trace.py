@@ -1,0 +1,42 @@
+"""Host-side solution trace exposed by search result modules."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Iterable
+
+import numpy as np
+
+
+@dataclass(frozen=True)
+class SolutionTrace:
+    """Normalised host-side solution trace returned by search results."""
+
+    solved: bool
+    actions: tuple[int, ...]
+    states: tuple[Any, ...] | None = None
+    costs: tuple[float, ...] | None = None
+    dists: tuple[float | None, ...] | None = None
+    requires_replay: bool = False
+
+    @classmethod
+    def unsolved(cls) -> "SolutionTrace":
+        return cls(solved=False, actions=())
+
+
+def action_pad_int(action_dtype: Any) -> int:
+    return int(np.iinfo(np.dtype(action_dtype)).max)
+
+
+def normalise_action_sequence(
+    actions: Iterable[Any],
+    *,
+    action_pad: int,
+) -> tuple[int, ...]:
+    normalised: list[int] = []
+    for raw_action in actions:
+        action = int(raw_action)
+        if action == action_pad:
+            break
+        normalised.append(action)
+    return tuple(normalised)

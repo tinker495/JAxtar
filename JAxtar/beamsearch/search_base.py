@@ -19,6 +19,11 @@ from puxle import Puzzle
 from xtructure import Xtructurable, base_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.solution_trace import (
+    SolutionTrace,
+    action_pad_int,
+    normalise_action_sequence,
+)
 
 ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
 TRACE_INDEX_DTYPE = jnp.uint32
@@ -193,6 +198,37 @@ class BeamSearchResult:
             return [], [], [], []
         costs, dists, actions = trace
         return [], costs, dists, actions
+
+    def to_solution_trace(
+        self,
+        *,
+        puzzle: Puzzle | None = None,
+    ) -> SolutionTrace:
+        """Return the host-side solution trace for CLI/evaluation adapters."""
+        if not bool(jax.device_get(self.solved)):
+            return SolutionTrace.unsolved()
+
+        trace = self._reconstruct_trace()
+        if trace is None:
+            return SolutionTrace.unsolved()
+
+        costs, dists, actions = trace
+        states = tuple(self.get_solved_path())
+        costs_tuple = tuple(float(cost) for cost in costs)
+        dists_tuple = tuple(None if dist is None else float(dist) for dist in dists)
+        actions_tuple = normalise_action_sequence(
+            actions,
+            action_pad=action_pad_int(ACTION_DTYPE),
+        )
+
+        return SolutionTrace(
+            solved=True,
+            actions=actions_tuple,
+            states=states if states else None,
+            costs=costs_tuple,
+            dists=dists_tuple,
+            requires_replay=not states,
+        )
 
     def _reconstruct_trace(self):
         solved_idx = int(self.solved_idx)

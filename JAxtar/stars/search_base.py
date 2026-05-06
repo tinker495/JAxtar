@@ -32,6 +32,11 @@ from JAxtar.annotate import (
     HASH_SIZE_MULTIPLIER,
     KEY_DTYPE,
 )
+from JAxtar.solution_trace import (
+    SolutionTrace,
+    action_pad_int,
+    normalise_action_sequence,
+)
 
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
@@ -978,6 +983,33 @@ class SearchResult:
             )
 
         return path
+
+    def to_solution_trace(
+        search_result,
+        *,
+        puzzle: Puzzle | None = None,
+    ) -> SolutionTrace:
+        """Return the host-side solution trace for CLI/evaluation adapters."""
+        if not bool(jax.device_get(search_result.solved)):
+            return SolutionTrace.unsolved()
+
+        path = search_result.get_solved_path()
+        action_pad = action_pad_int(ACTION_DTYPE)
+        raw_actions = [getattr(node, "action", action_pad) for node in path[:-1]]
+        actions = normalise_action_sequence(raw_actions, action_pad=action_pad)
+
+        states = tuple(search_result.get_state(node) for node in path)
+        costs = tuple(float(jax.device_get(search_result.get_cost(node))) for node in path)
+        dists = tuple(float(jax.device_get(search_result.get_dist(node))) for node in path)
+
+        return SolutionTrace(
+            solved=True,
+            actions=actions,
+            states=states,
+            costs=costs,
+            dists=dists,
+            requires_replay=False,
+        )
 
     def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:
         """

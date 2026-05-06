@@ -15,12 +15,18 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, HashIdx, base_dataclass, xtructure_dataclass
+
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.solution_trace import (
+    SolutionTrace,
+    action_pad_int,
+    normalise_action_sequence,
+)
 from JAxtar.stars.search_base import (
     Current,
+    Parant_with_Costs,
     Parent,
     SearchResult,
-    Parant_with_Costs,
     insert_priority_queue_batches,
 )
 
@@ -93,6 +99,33 @@ class BiDirectionalSearchResult:
     def total_generated(self) -> int:
         """Total nodes generated across both directions."""
         return self.forward.generated_size + self.backward.generated_size
+
+    def to_solution_trace(
+        self,
+        *,
+        puzzle: Puzzle | None = None,
+    ) -> SolutionTrace:
+        """Return the host-side solution trace for CLI/evaluation adapters."""
+        if not bool(jax.device_get(self.meeting.found)):
+            return SolutionTrace.unsolved()
+
+        path = reconstruct_bidirectional_path(self, puzzle)
+        if not path:
+            return SolutionTrace(solved=True, actions=(), states=None)
+
+        actions = normalise_action_sequence(
+            (action for action, _ in path[1:]),
+            action_pad=action_pad_int(ACTION_DTYPE),
+        )
+        states = tuple(state for _, state in path)
+        return SolutionTrace(
+            solved=True,
+            actions=actions,
+            states=states,
+            costs=None,
+            dists=None,
+            requires_replay=bool(actions),
+        )
 
 
 def build_bi_search_result(
