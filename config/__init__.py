@@ -1,3 +1,9 @@
+from .algorithm_registry import (
+    SEARCH_ALGORITHM_CATALOG,
+    ComponentKind,
+    SearchAlgorithmEntry,
+    get_algorithm_entry,
+)
 from .benchmark_registry import benchmark_bundles
 from .puzzle_registry import puzzle_bundles
 from .pydantic_models import (
@@ -39,4 +45,8 @@ __all__ = [
     "WorldModelPuzzleConfig",
     "NeuralCallableConfig",
     "PuzzleConfig",
+    "SEARCH_ALGORITHM_CATALOG",
+    "SearchAlgorithmEntry",
+    "ComponentKind",
+    "get_algorithm_entry",
 ]

@@ -1,24 +1,21 @@
+"""Evaluation Click commands generated from the Search Algorithm Catalog.
+
+See CONTEXT.md "Search Algorithm Catalog". The 10 algorithm-specific eval
+subcommands (`eval astar`, `eval astar-d`, ...) are built by iterating
+`SEARCH_ALGORITHM_CATALOG` and attaching to the `evaluation` Click group.
+The `eval compare` command is not algorithm-dispatched and stays hand-written.
+"""
+
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
 
 import click
 import matplotlib
-from puxle import Puzzle
 from rich.console import Console
 
-from config.pydantic_models import EvalOptions, PuzzleOptions
-from heuristic.heuristic_base import Heuristic
-from JAxtar.beamsearch.heuristic_beam import beam_builder
-from JAxtar.beamsearch.q_beam import qbeam_builder
-from JAxtar.bi_stars.bi_astar import bi_astar_builder
-from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
-from JAxtar.bi_stars.bi_qstar import bi_qstar_builder
-from JAxtar.id_stars.id_astar import id_astar_builder
-from JAxtar.id_stars.id_qstar import id_qstar_builder
-from JAxtar.stars.astar import astar_builder
-from JAxtar.stars.astar_d import astar_d_builder
-from JAxtar.stars.qstar import qstar_builder
-from qfunction.q_base import QFunction
+from config.algorithm_registry import SEARCH_ALGORITHM_CATALOG, SearchAlgorithmEntry
 
 from .comparison_generator import ComparisonGenerator
 from .evaluation_runner import run_evaluation_sweep
@@ -38,266 +35,36 @@ def evaluation():
     pass
 
 
-@evaluation.command(name="astar")
-@eval_puzzle_options
-@eval_options
-@heuristic_options
-def eval_astar(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    heuristic: Heuristic,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a heuristic-driven A* search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=heuristic,
-        search_model_name="heuristic",
-        run_label="astar",
-        search_builder_fn=astar_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        **kwargs,
+def _build_eval_command(entry: SearchAlgorithmEntry) -> click.Command:
+    component_dec = heuristic_options if entry.component_kind == "heuristic" else qfunction_options
+    eval_dec = eval_options(variant="beam") if entry.is_beam else eval_options
+    extra_sweep_kwargs = (
+        {"node_metric_label": entry.node_metric_label} if entry.node_metric_label else {}
     )
 
+    def inner(**kwargs):
+        component = kwargs[entry.component_kind]
+        run_evaluation_sweep(
+            puzzle=kwargs["puzzle"],
+            puzzle_name=kwargs["puzzle_name"],
+            search_model=component,
+            search_model_name=entry.component_kind,
+            run_label=entry.run_label,
+            search_builder_fn=entry.builder_fn,
+            eval_options=kwargs["eval_options"],
+            puzzle_opts=kwargs["puzzle_opts"],
+            **extra_sweep_kwargs,
+        )
 
-@evaluation.command(name="astar-d")
-@eval_puzzle_options
-@eval_options
-@heuristic_options
-def eval_astar_d(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    heuristic: Heuristic,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a heuristic-driven A* Deferred search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=heuristic,
-        search_model_name="heuristic",
-        run_label="astar_d",
-        search_builder_fn=astar_d_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        **kwargs,
-    )
+    inner.__doc__ = entry.eval_description
+    inner = component_dec(inner)
+    inner = eval_dec(inner)
+    inner = eval_puzzle_options(inner)
+    return click.command(name=entry.cli_subcommand, help=entry.eval_description)(inner)
 
 
-@evaluation.command(name="bi-astar")
-@eval_puzzle_options
-@eval_options
-@heuristic_options
-def eval_bi_astar(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    heuristic: Heuristic,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a heuristic-driven bidirectional A* search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=heuristic,
-        search_model_name="heuristic",
-        run_label="bi_astar",
-        search_builder_fn=bi_astar_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        **kwargs,
-    )
-
-
-@evaluation.command(name="bi-astar-d")
-@eval_puzzle_options
-@eval_options
-@heuristic_options
-def eval_bi_astar_d(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    heuristic: Heuristic,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a heuristic-driven bidirectional A* deferred search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=heuristic,
-        search_model_name="heuristic",
-        run_label="bi_astar_d",
-        search_builder_fn=bi_astar_d_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        **kwargs,
-    )
-
-
-@evaluation.command(name="beam")
-@eval_puzzle_options
-@eval_options(variant="beam")
-@heuristic_options
-def eval_beam(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    heuristic: Heuristic,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a heuristic-driven beam search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=heuristic,
-        search_model_name="heuristic",
-        run_label="beam",
-        search_builder_fn=beam_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        node_metric_label="Beam Slots",
-        **kwargs,
-    )
-
-
-@evaluation.command(name="qstar")
-@eval_puzzle_options
-@eval_options
-@qfunction_options
-def eval_qstar(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    qfunction: QFunction,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a Q*-style search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=qfunction,
-        search_model_name="qfunction",
-        run_label="qstar",
-        search_builder_fn=qstar_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        **kwargs,
-    )
-
-
-@evaluation.command(name="bi-qstar")
-@eval_puzzle_options
-@eval_options
-@qfunction_options
-def eval_bi_qstar(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    qfunction: QFunction,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a bidirectional Q* search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=qfunction,
-        search_model_name="qfunction",
-        run_label="bi_qstar",
-        search_builder_fn=bi_qstar_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        **kwargs,
-    )
-
-
-@evaluation.command(name="qbeam")
-@eval_puzzle_options
-@eval_options(variant="beam")
-@qfunction_options
-def eval_qbeam(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    qfunction: QFunction,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a Q-beam search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=qfunction,
-        search_model_name="qfunction",
-        run_label="qbeam",
-        search_builder_fn=qbeam_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        node_metric_label="Beam Slots",
-        **kwargs,
-    )
-
-
-@evaluation.command(name="id-astar")
-@eval_puzzle_options
-@eval_options
-@heuristic_options
-def eval_id_astar(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    heuristic: Heuristic,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a heuristic-driven ID-A* search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=heuristic,
-        search_model_name="heuristic",
-        run_label="id_astar",
-        search_builder_fn=id_astar_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        **kwargs,
-    )
-
-
-@evaluation.command(name="id-qstar")
-@eval_puzzle_options
-@eval_options
-@qfunction_options
-def eval_id_qstar(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    qfunction: QFunction,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    **kwargs,
-):
-    """Evaluate a Q*-style ID-Q* search with optional parameter sweeps."""
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=qfunction,
-        search_model_name="qfunction",
-        run_label="id_qstar",
-        search_builder_fn=id_qstar_builder,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        **kwargs,
-    )
+for _entry in SEARCH_ALGORITHM_CATALOG:
+    evaluation.add_command(_build_eval_command(_entry))
 
 
 @evaluation.command(name="compare")
@@ -319,15 +86,12 @@ def eval_compare(run_dirs: list[str], scatter_max_points: int):
         console.print("[bold red]Error: Please provide at least one run directory.[/bold red]")
         return
 
-    # Discover all individual run directories
     actual_run_dirs = []
     for run_dir_str in run_dirs:
         run_dir = Path(run_dir_str)
-        # Check if the directory itself is a run directory
         if (run_dir / "results.csv").exists():
             actual_run_dirs.append(run_dir_str)
         else:
-            # If not, treat it as a parent and search for sub-directories
             sub_dirs_found = [
                 str(sub_dir)
                 for sub_dir in run_dir.iterdir()
@@ -346,19 +110,15 @@ def eval_compare(run_dirs: list[str], scatter_max_points: int):
         console.print("[bold red]Error: No valid run directories found to compare.[/bold red]")
         return
 
-    # Determine output directory
     output_dir: Path
     if len(run_dirs) == 1 and Path(run_dirs[0]).is_dir():
-        # If a single directory is provided (likely a sweep parent), save results there
         output_dir = Path(run_dirs[0])
     else:
-        # For multiple dirs or other cases, create a new comparison directory
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         output_dir = Path("runs") / f"comparison_{timestamp}"
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use set to avoid duplicates if user provides both parent and sub-run
     unique_run_dirs = sorted(list(set(actual_run_dirs)))
 
     comparison_generator = ComparisonGenerator(

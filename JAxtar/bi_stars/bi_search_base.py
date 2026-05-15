@@ -17,6 +17,7 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, HashIdx, base_dataclass, xtructure_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.parent_chain import walk_parent_chain
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
@@ -980,64 +981,27 @@ def reconstruct_bidirectional_path(
     if not bi_result.meeting.found:
         return []
 
-    def _u32_max() -> int:
-        # Sentinel used by xtructure for "-1" index (uint32 max).
-        return (1 << 32) - 1
-
-    def _trace_root_to_target(sr: SearchResult, target: HashIdx) -> tuple[list[int], list[int]]:
-        """Return (indices, actions) where indices are root->target inclusive."""
-        idx = int(jax.device_get(target.index))
+    def _walk(sr: SearchResult, target: HashIdx) -> tuple[list[int], list[int]]:
         max_steps = max(1, int(jax.device_get(sr.generated_size)) + 1)
-        indices_rev: list[int] = [idx]
-        actions_rev: list[int] = []
-        for _ in range(max_steps):
-            parent = sr.parent[idx]
-            parent_idx = int(jax.device_get(parent.hashidx.index))
-            if parent_idx == _u32_max():
-                break
-            actions_rev.append(int(jax.device_get(parent.action)))
-            idx = parent_idx
-            indices_rev.append(idx)
-        else:
-            raise RuntimeError(
-                "Path reconstruction exceeded max_steps (cycle/corruption suspected)"
-            )
-        return list(reversed(indices_rev)), list(reversed(actions_rev))
+        return walk_parent_chain(
+            sr.parent,
+            int(jax.device_get(target.index)),
+            max_steps,
+        )
 
-    def _trace_target_to_root(sr: SearchResult, start_idx: HashIdx) -> tuple[list[int], list[int]]:
-        """Return (indices, actions) where indices are start->root inclusive."""
-        idx = int(jax.device_get(start_idx.index))
-        max_steps = max(1, int(jax.device_get(sr.generated_size)) + 1)
-        indices: list[int] = [idx]
-        actions: list[int] = []
-        for _ in range(max_steps):
-            parent = sr.parent[idx]
-            parent_idx = int(jax.device_get(parent.hashidx.index))
-            if parent_idx == _u32_max():
-                break
-            actions.append(int(jax.device_get(parent.action)))
-            idx = parent_idx
-            indices.append(idx)
-        else:
-            raise RuntimeError(
-                "Path reconstruction exceeded max_steps (cycle/corruption suspected)"
-            )
-        return indices, actions
-
-    # Forward half: start -> meeting
-    fwd_indices, fwd_actions = _trace_root_to_target(
-        bi_result.forward, bi_result.meeting.fwd_hashidx
-    )
+    # Forward half: start -> meeting. walk_parent_chain returns target-to-root
+    # order, so reverse to get root-to-target ordering for the merged path.
+    fwd_t2r_indices, fwd_t2r_actions = _walk(bi_result.forward, bi_result.meeting.fwd_hashidx)
+    fwd_indices = list(reversed(fwd_t2r_indices))
+    fwd_actions = list(reversed(fwd_t2r_actions))
     fwd_states = [bi_result.forward.hashtable[HashIdx(index=jnp.uint32(i))] for i in fwd_indices]
 
-    # Backward half: meeting -> goal (follow parent pointers toward the backward root)
+    # Backward half: meeting -> goal (follow parent pointers toward the backward root).
     # Contract (puxle convention): the i-th inverse neighbour is a predecessor state from which
     # applying *forward* action i reaches the current state.
     # With that convention, the stored actions are already forward actions (no inversion needed).
     # If a puzzle violates this convention, reconstructed action sequences will be incorrect.
-    bwd_indices, bwd_actions = _trace_target_to_root(
-        bi_result.backward, bi_result.meeting.bwd_hashidx
-    )
+    bwd_indices, bwd_actions = _walk(bi_result.backward, bi_result.meeting.bwd_hashidx)
     bwd_states = [bi_result.backward.hashtable[HashIdx(index=jnp.uint32(i))] for i in bwd_indices]
 
     # Merge, dropping the duplicated meeting state in the backward half.

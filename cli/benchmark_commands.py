@@ -1,3 +1,11 @@
+"""Benchmark Click commands generated from the Search Algorithm Catalog.
+
+See CONTEXT.md "Search Algorithm Catalog". The 10 algorithm-specific benchmark
+subcommands (`benchmark astar`, `benchmark astar-d`, ...) are built by
+iterating `SEARCH_ALGORITHM_CATALOG` and attaching to the `benchmark` Click
+group.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,18 +14,9 @@ from typing import Any, Optional
 import click
 from puxle import Puzzle
 
+from config.algorithm_registry import SEARCH_ALGORITHM_CATALOG, SearchAlgorithmEntry
 from config.pydantic_models import EvalOptions, PuzzleOptions
 from helpers.param_stats import attach_runtime_metadata
-from JAxtar.beamsearch.heuristic_beam import beam_builder
-from JAxtar.beamsearch.q_beam import qbeam_builder
-from JAxtar.bi_stars.bi_astar import bi_astar_builder
-from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
-from JAxtar.bi_stars.bi_qstar import bi_qstar_builder
-from JAxtar.id_stars.id_astar import id_astar_builder
-from JAxtar.id_stars.id_qstar import id_qstar_builder
-from JAxtar.stars.astar import astar_builder
-from JAxtar.stars.astar_d import astar_d_builder
-from JAxtar.stars.qstar import qstar_builder
 
 from .evaluation_runner import run_evaluation_sweep
 from .options import benchmark_options, eval_options
@@ -215,146 +214,25 @@ def _execute_benchmark_command(
     )
 
 
-@benchmark.command(name="astar")
-@benchmark_options
-@eval_options
-@_benchmark_model_options
-def benchmark_astar(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=astar_builder,
-        search_model_name="heuristic",
-        run_label="astar",
-        **kwargs,
-    )
+def _build_benchmark_command(entry: SearchAlgorithmEntry) -> click.Command:
+    eval_dec = eval_options(variant="beam") if entry.is_beam else eval_options
+
+    def inner(**kwargs):
+        _execute_benchmark_command(
+            search_builder_fn=entry.builder_fn,
+            search_model_name=entry.component_kind,
+            run_label=entry.run_label,
+            **kwargs,
+        )
+
+    inner = _benchmark_model_options(inner)
+    inner = eval_dec(inner)
+    inner = benchmark_options(inner)
+    return click.command(name=entry.cli_subcommand)(inner)
 
 
-@benchmark.command(name="astar-d")
-@benchmark_options
-@eval_options
-@_benchmark_model_options
-def benchmark_astar_d(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=astar_d_builder,
-        search_model_name="heuristic",
-        run_label="astar_d",
-        **kwargs,
-    )
+for _entry in SEARCH_ALGORITHM_CATALOG:
+    benchmark.add_command(_build_benchmark_command(_entry))
 
 
-@benchmark.command(name="bi-astar")
-@benchmark_options
-@eval_options
-@_benchmark_model_options
-def benchmark_bi_astar(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=bi_astar_builder,
-        search_model_name="heuristic",
-        run_label="bi_astar",
-        **kwargs,
-    )
-
-
-@benchmark.command(name="bi-astar-d")
-@benchmark_options
-@eval_options
-@_benchmark_model_options
-def benchmark_bi_astar_d(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=bi_astar_d_builder,
-        search_model_name="heuristic",
-        run_label="bi_astar_d",
-        **kwargs,
-    )
-
-
-@benchmark.command(name="qstar")
-@benchmark_options
-@eval_options
-@_benchmark_model_options
-def benchmark_qstar(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=qstar_builder,
-        search_model_name="qfunction",
-        run_label="qstar",
-        **kwargs,
-    )
-
-
-@benchmark.command(name="bi-qstar")
-@benchmark_options
-@eval_options
-@_benchmark_model_options
-def benchmark_bi_qstar(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=bi_qstar_builder,
-        search_model_name="qfunction",
-        run_label="bi_qstar",
-        **kwargs,
-    )
-
-
-@benchmark.command(name="beam")
-@benchmark_options
-@eval_options(variant="beam")
-@_benchmark_model_options
-def benchmark_beam(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=beam_builder,
-        search_model_name="heuristic",
-        run_label="beam",
-        **kwargs,
-    )
-
-
-@benchmark.command(name="qbeam")
-@benchmark_options
-@eval_options(variant="beam")
-@_benchmark_model_options
-def benchmark_qbeam(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=qbeam_builder,
-        search_model_name="qfunction",
-        run_label="qbeam",
-        **kwargs,
-    )
-
-
-@benchmark.command(name="id-astar")
-@benchmark_options
-@eval_options
-@_benchmark_model_options
-def benchmark_id_astar(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=id_astar_builder,
-        search_model_name="heuristic",
-        run_label="id_astar",
-        **kwargs,
-    )
-
-
-@benchmark.command(name="id-qstar")
-@benchmark_options
-@eval_options
-@_benchmark_model_options
-def benchmark_id_qstar(**kwargs):
-    _execute_benchmark_command(
-        search_builder_fn=id_qstar_builder,
-        search_model_name="qfunction",
-        run_label="id_qstar",
-        **kwargs,
-    )
-
-
-__all__ = [
-    "benchmark",
-    "benchmark_astar",
-    "benchmark_astar_d",
-    "benchmark_bi_astar",
-    "benchmark_bi_astar_d",
-    "benchmark_qstar",
-    "benchmark_bi_qstar",
-    "benchmark_beam",
-    "benchmark_qbeam",
-    "benchmark_id_astar",
-    "benchmark_id_qstar",
-]
+__all__ = ["benchmark"]
