@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Protocol
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from puxle import Puzzle
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,23 @@ class SolutionTrace:
             dists=dists,
             requires_replay=requires_replay,
         )
+
+
+class SearchAlgorithmResult(Protocol):
+    """Public seam every search algorithm Result exposes to CLI / evaluation /
+    visualization / Benchmark Verification adapters.
+
+    Per CONTEXT.md L161 the only Solution Trace Interface surface on each
+    search base Module is `to_solution_trace(*, puzzle=None)`. Algorithm-
+    specific reconstruction helpers (`_get_solved_path`, `_solution_actions`,
+    bidirectional meeting handling, ID stack handling) stay private to each
+    search base and must not appear in this Protocol.
+    """
+
+    def to_solution_trace(
+        self, *, puzzle: "Puzzle | None" = None
+    ) -> "SolutionTrace":  # pragma: no cover - structural typing only
+        ...
 
 
 def action_pad_int(action_dtype: Any) -> int:

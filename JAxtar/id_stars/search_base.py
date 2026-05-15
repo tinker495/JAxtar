@@ -78,14 +78,14 @@ class IDLoopState:
     Loop state for the inner DFS loop of IDA*.
     """
 
-    search_result: "IDSearchBase"
+    search_result: "IDSearchResult"
     solve_config: Puzzle.SolveConfig
     params: Any
     frontier: IDFrontier
 
 
 @base_dataclass(static_fields=("capacity", "action_size", "ItemCls"))
-class IDSearchBase:
+class IDSearchResult:
     """
     Data structure for Iterative Deepening Search.
     Maintains an explicit stack for Batched DFS.
@@ -129,9 +129,9 @@ class IDSearchBase:
         non_backtracking_steps: int = 0,
         max_path_len: int = 256,
         seed: int = 42,
-    ) -> "IDSearchBase":
+    ) -> "IDSearchResult":
         """
-        Initialize the IDSearchBase with empty stack.
+        Initialize the IDSearchResult with empty stack.
         """
         # Define dynamic Item class
         if non_backtracking_steps < 0:
@@ -169,7 +169,7 @@ class IDSearchBase:
         trace_size = jnp.array(0, dtype=jnp.int32)
         frontier_action_history = jnp.full((1, max_path_len), ACTION_PAD, dtype=ACTION_DTYPE)
 
-        return IDSearchBase(
+        return IDSearchResult(
             capacity=capacity,
             action_size=action_size,
             ItemCls=IDStackItem,
@@ -271,7 +271,7 @@ class IDSearchBase:
     def get_top_batch(
         self, batch_size: int
     ) -> tuple[
-        "IDSearchBase",
+        "IDSearchResult",
         Puzzle.State,
         chex.Array,
         chex.Array,
@@ -331,7 +331,7 @@ class IDSearchBase:
         trails: Xtructurable,
         action_histories: chex.Array,
         valid_mask: chex.Array,
-    ) -> "IDSearchBase":
+    ) -> "IDSearchResult":
         """
         Push a batch of items onto the stack.
         Only pushes items where valid_mask is True.
@@ -422,7 +422,7 @@ class IDSearchBase:
         trails: Xtructurable,
         action_histories: chex.Array,
         n_push: chex.Array,
-    ) -> "IDSearchBase":
+    ) -> "IDSearchResult":
         """
         Push a pre-packed batch of items onto the stack.
         Assumes the items are already sorted/packed such that the valid items
@@ -490,7 +490,7 @@ class IDSearchBase:
         frontier: "IDFrontier",
         bound: chex.Array,
         frontier_actions: chex.Array,
-    ) -> "IDSearchBase":
+    ) -> "IDSearchResult":
         """
         Push allowed frontier nodes to stack and update next_bound.
 
@@ -504,7 +504,7 @@ class IDSearchBase:
             frontier_actions: Placeholder actions for frontier nodes [batch_size]
 
         Returns:
-            Updated IDSearchBase with nodes pushed and next_bound updated
+            Updated IDSearchResult with nodes pushed and next_bound updated
         """
         fs = frontier.f_scores
         batch_size = frontier.valid_mask.shape[0]
@@ -542,7 +542,7 @@ class IDSearchBase:
         fs: chex.Array,
         valid: chex.Array,
         update_next_bound: bool = True,
-    ) -> "IDSearchBase":
+    ) -> "IDSearchResult":
         """
         Expand valid nodes and push to stack, sorted by f-value descending (LIFO).
 
@@ -561,7 +561,7 @@ class IDSearchBase:
                                ID-Q* updates next_bound earlier in inner_body)
 
         Returns:
-            Updated IDSearchBase with nodes pushed to stack
+            Updated IDSearchResult with nodes pushed to stack
         """
         active_bound = self.bound
         keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
@@ -605,7 +605,7 @@ class IDSearchBase:
         solved_cost: chex.Array,
         solved_actions: chex.Array,
         solved_trace_idx: chex.Array,
-    ) -> "IDSearchBase":
+    ) -> "IDSearchResult":
         """
         Mark search as solved and store solution info.
         """
@@ -634,7 +634,7 @@ class IDSearchBase:
         eval_fn: callable,
         params: Any,
         frontier_actions: chex.Array,
-    ) -> "IDSearchBase":
+    ) -> "IDSearchResult":
         """
         Initialize bound and stack from a pre-computed frontier.
         """
@@ -743,7 +743,7 @@ class IDSearchBase:
         flat_size: int,
         trail_indices: jnp.ndarray,
         batch_size: int,
-    ) -> tuple["IDSearchBase", chex.Array]:
+    ) -> tuple["IDSearchResult", chex.Array]:
         """
         Apply in-batch deduplication and non-backtracking.
         """

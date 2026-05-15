@@ -17,7 +17,7 @@ from JAxtar.id_stars.id_frontier import (
 )
 from JAxtar.id_stars.search_base import (
     IDLoopState,
-    IDSearchBase,
+    IDSearchResult,
     apply_non_backtracking,
     build_inner_cond,
     build_outer_loop,
@@ -135,7 +135,7 @@ def _id_qstar_frontier_builder(
                 found_sol_cost,
                 found_sol_actions,
                 _,
-            ) = IDSearchBase.detect_solution(
+            ) = IDSearchResult.detect_solution(
                 puzzle, solve_config, flat_states, flat_g, flat_action_history, flat_valid
             )
 
@@ -257,7 +257,7 @@ def _id_qstar_loop_builder(
     )
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
-        search_result = IDSearchBase.build(
+        search_result = IDSearchResult.build(
             statecls,
             capacity=max_nodes,
             action_size=action_size,
