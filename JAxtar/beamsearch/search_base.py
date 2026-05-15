@@ -22,7 +22,6 @@ from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
-    normalise_action_sequence,
 )
 
 ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
@@ -142,7 +141,7 @@ class BeamSearchResult:
     def filled_mask(self) -> chex.Array:
         return jnp.isfinite(self.cost)
 
-    def solution_actions(self) -> list[int]:
+    def _solution_actions(self) -> list[int]:
         """Return the action sequence that reaches the solved slot."""
         trace = self._reconstruct_trace()
         if trace is None:
@@ -162,7 +161,7 @@ class BeamSearchResult:
         """Return the cached heuristic/Q distance for the slot."""
         return self.dist[int(idx)]
 
-    def get_solved_path(self):
+    def _get_solved_path(self):
         """Return the sequence of states along the solved path."""
         solved_idx = int(self.solved_idx)
         if solved_idx < 0:
@@ -191,14 +190,6 @@ class BeamSearchResult:
         states.reverse()
         return states
 
-    def solution_trace(self):
-        """Return (states, costs, dists, actions) describing the solved path."""
-        trace = self._reconstruct_trace()
-        if trace is None:
-            return [], [], [], []
-        costs, dists, actions = trace
-        return [], costs, dists, actions
-
     def to_solution_trace(
         self,
         *,
@@ -213,21 +204,17 @@ class BeamSearchResult:
             return SolutionTrace.unsolved()
 
         costs, dists, actions = trace
-        states = tuple(self.get_solved_path())
+        states = tuple(self._get_solved_path())
         costs_tuple = tuple(float(cost) for cost in costs)
         dists_tuple = tuple(None if dist is None else float(dist) for dist in dists)
-        actions_tuple = normalise_action_sequence(
-            actions,
-            action_pad=action_pad_int(ACTION_DTYPE),
-        )
 
-        return SolutionTrace(
+        return SolutionTrace.from_raw(
             solved=True,
-            actions=actions_tuple,
+            raw_actions=actions,
+            action_pad=action_pad_int(ACTION_DTYPE),
             states=states if states else None,
             costs=costs_tuple,
             dists=dists_tuple,
-            requires_replay=not states,
         )
 
     def _reconstruct_trace(self):

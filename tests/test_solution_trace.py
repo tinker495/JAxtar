@@ -117,3 +117,99 @@ def test_cli_runners_consume_solution_trace_interface(runner_path):
     )
     for phrase in forbidden:
         assert phrase not in source
+
+
+def test_solution_trace_from_raw_unsolved_short_circuits():
+    action_pad = action_pad_int(ACTION_DTYPE)
+    assert (
+        SolutionTrace.from_raw(
+            solved=False,
+            raw_actions=[1, 2, action_pad],
+            action_pad=action_pad,
+            states=("a",),
+            costs=(0.0,),
+            dists=(0.0,),
+        )
+        == SolutionTrace.unsolved()
+    )
+
+
+def test_solution_trace_from_raw_marks_replay_when_any_trace_data_missing():
+    action_pad = action_pad_int(ACTION_DTYPE)
+    actions_only = SolutionTrace.from_raw(
+        solved=True,
+        raw_actions=[1, action_pad],
+        action_pad=action_pad,
+    )
+    assert actions_only.requires_replay is True
+    assert actions_only.actions == (1,)
+    assert actions_only.states is None
+
+    states_no_costs = SolutionTrace.from_raw(
+        solved=True,
+        raw_actions=[1, action_pad],
+        action_pad=action_pad,
+        states=("a", "b"),
+    )
+    assert states_no_costs.requires_replay is True
+
+
+def test_solution_trace_from_raw_skips_replay_when_all_trace_data_present():
+    action_pad = action_pad_int(ACTION_DTYPE)
+    complete = SolutionTrace.from_raw(
+        solved=True,
+        raw_actions=[1, action_pad],
+        action_pad=action_pad,
+        states=("a", "b"),
+        costs=(0.0, 1.0),
+        dists=(2.0, 0.0),
+    )
+    assert complete.requires_replay is False
+
+
+@pytest.mark.parametrize(
+    "search_base_path",
+    [
+        "JAxtar/stars/search_base.py",
+        "JAxtar/beamsearch/search_base.py",
+        "JAxtar/bi_stars/bi_search_base.py",
+        "JAxtar/id_stars/search_base.py",
+    ],
+)
+def test_search_base_does_not_expose_public_trace_helpers(search_base_path):
+    source = (Path(__file__).parents[1] / search_base_path).read_text()
+    forbidden = (
+        "    def get_solved_path(",
+        "    def solution_actions(",
+        "    def solution_trace(",
+    )
+    for phrase in forbidden:
+        assert phrase not in source, (
+            f"{search_base_path} still exposes a public trace helper {phrase.strip()!r}; "
+            "the Solution Trace Interface is `to_solution_trace` only."
+        )
+
+
+@pytest.mark.parametrize(
+    "search_base_path",
+    [
+        "JAxtar/stars/search_base.py",
+        "JAxtar/beamsearch/search_base.py",
+        "JAxtar/bi_stars/bi_search_base.py",
+        "JAxtar/id_stars/search_base.py",
+    ],
+)
+def test_search_base_constructs_solution_trace_only_through_from_raw(search_base_path):
+    """Solved SolutionTrace must come from `SolutionTrace.from_raw(...)`; the only
+    direct-construction exception is `SolutionTrace.unsolved()`. This locks the
+    Solution Replay Requirement policy as a single source of truth."""
+    source = (Path(__file__).parents[1] / search_base_path).read_text()
+    forbidden = (
+        "SolutionTrace(solved=True",
+        "SolutionTrace(solved=False",
+    )
+    for phrase in forbidden:
+        assert phrase not in source, (
+            f"{search_base_path} constructs SolutionTrace directly with {phrase!r}; "
+            "use SolutionTrace.from_raw(...) for solved traces and SolutionTrace.unsolved() otherwise."
+        )

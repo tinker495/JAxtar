@@ -20,7 +20,6 @@ from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
-    normalise_action_sequence,
 )
 from JAxtar.stars.search_base import (
     Current,
@@ -109,22 +108,22 @@ class BiDirectionalSearchResult:
         if not bool(jax.device_get(self.meeting.found)):
             return SolutionTrace.unsolved()
 
+        action_pad = action_pad_int(ACTION_DTYPE)
         path = reconstruct_bidirectional_path(self, puzzle)
         if not path:
-            return SolutionTrace(solved=True, actions=(), states=None)
+            return SolutionTrace.from_raw(
+                solved=True,
+                raw_actions=(),
+                action_pad=action_pad,
+            )
 
-        actions = normalise_action_sequence(
-            (action for action, _ in path[1:]),
-            action_pad=action_pad_int(ACTION_DTYPE),
-        )
-        states = tuple(state for _, state in path)
-        return SolutionTrace(
+        return SolutionTrace.from_raw(
             solved=True,
-            actions=actions,
-            states=states,
+            raw_actions=(action for action, _ in path[1:]),
+            action_pad=action_pad,
+            states=tuple(state for _, state in path),
             costs=None,
             dists=None,
-            requires_replay=bool(actions),
         )
 
 

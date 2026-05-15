@@ -23,6 +23,37 @@ class SolutionTrace:
     def unsolved(cls) -> "SolutionTrace":
         return cls(solved=False, actions=())
 
+    @classmethod
+    def from_raw(
+        cls,
+        *,
+        solved: bool,
+        raw_actions: Iterable[Any],
+        action_pad: int,
+        states: tuple[Any, ...] | None = None,
+        costs: tuple[float, ...] | None = None,
+        dists: tuple[float | None, ...] | None = None,
+    ) -> "SolutionTrace":
+        """Build a SolutionTrace from algorithm-specific raw reconstruction data.
+
+        Owns the Solution Replay Requirement policy: a trace requires replay
+        when any of states / costs / dists is missing, so a Path Step Adapter
+        can decide whether to replay actions through a puzzle to recover the
+        missing facts.
+        """
+        if not solved:
+            return cls.unsolved()
+        actions = normalise_action_sequence(raw_actions, action_pad=action_pad)
+        requires_replay = states is None or costs is None or dists is None
+        return cls(
+            solved=True,
+            actions=actions,
+            states=states,
+            costs=costs,
+            dists=dists,
+            requires_replay=requires_replay,
+        )
+
 
 def action_pad_int(action_dtype: Any) -> int:
     return int(np.iinfo(np.dtype(action_dtype)).max)

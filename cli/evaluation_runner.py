@@ -50,10 +50,10 @@ from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
 from .verification import (
     BenchmarkVerification,
+    benchmark_verification_from_exception,
     build_benchmark_action_strings,
     init_verify_worker,
     verify_benchmark_path,
-    verify_benchmark_path_with_strings,
     verify_solution_worker,
 )
 
@@ -753,19 +753,19 @@ class EvaluationRunner:
                         try:
                             verify_results[idx] = future.result()
                         except Exception as exc:  # noqa: BLE001
-                            verify_results[idx] = BenchmarkVerification(
-                                benchmark_verification_error=str(exc)
-                            )
+                            verify_results[idx] = benchmark_verification_from_exception(exc)
             else:
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=min(32, max_workers)
                 ) as executor:
                     future_map = {
                         executor.submit(
-                            verify_benchmark_path_with_strings,
+                            verify_benchmark_path,
                             benchmark=self.benchmark,
+                            puzzle=None,
                             benchmark_sample=sample,
                             states=states,
+                            actual_actions=None,
                             path_action_strings=actions,
                         ): idx
                         for idx, sample, states, actions in verify_jobs
@@ -775,9 +775,7 @@ class EvaluationRunner:
                         try:
                             verify_results[idx] = future.result()
                         except Exception as exc:  # noqa: BLE001
-                            verify_results[idx] = BenchmarkVerification(
-                                benchmark_verification_error=str(exc)
-                            )
+                            verify_results[idx] = benchmark_verification_from_exception(exc)
 
         batched_actual = None
         batched_estimated = None

@@ -35,7 +35,6 @@ from JAxtar.annotate import (
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
-    normalise_action_sequence,
 )
 
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
@@ -914,7 +913,7 @@ class SearchResult:
 
         return search_result, final_currents, final_process_mask
 
-    def get_solved_path(search_result) -> list[Parent]:
+    def _get_solved_path(search_result) -> list[Parent]:
         """
         Get the path to the solved state.
         """
@@ -993,22 +992,20 @@ class SearchResult:
         if not bool(jax.device_get(search_result.solved)):
             return SolutionTrace.unsolved()
 
-        path = search_result.get_solved_path()
         action_pad = action_pad_int(ACTION_DTYPE)
+        path = search_result._get_solved_path()
         raw_actions = [getattr(node, "action", action_pad) for node in path[:-1]]
-        actions = normalise_action_sequence(raw_actions, action_pad=action_pad)
-
         states = tuple(search_result.get_state(node) for node in path)
         costs = tuple(float(jax.device_get(search_result.get_cost(node))) for node in path)
         dists = tuple(float(jax.device_get(search_result.get_dist(node))) for node in path)
 
-        return SolutionTrace(
+        return SolutionTrace.from_raw(
             solved=True,
-            actions=actions,
+            raw_actions=raw_actions,
+            action_pad=action_pad,
             states=states,
             costs=costs,
             dists=dists,
-            requires_replay=False,
         )
 
     def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:

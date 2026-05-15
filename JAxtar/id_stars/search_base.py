@@ -20,7 +20,6 @@ from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
-    normalise_action_sequence,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 
@@ -195,7 +194,7 @@ class IDSearchBase:
     def stack_ptr(self):
         return self.stack.size
 
-    def get_solved_path(self, puzzle: Puzzle = None, solve_config: Puzzle.SolveConfig = None):
+    def _get_solved_path(self, puzzle: Puzzle = None, solve_config: Puzzle.SolveConfig = None):
         """
         Return the solved path.
         Requires 'puzzle' and 'solve_config' to reconstruct the path by replaying actions.
@@ -208,7 +207,7 @@ class IDSearchBase:
 
         # Reconstruct path
         path = [self.start_state[0]]
-        actions = self.solution_actions()
+        actions = self._solution_actions()
 
         curr = xnp.expand_dims(self.start_state[0], 0)  # (1, ...)
 
@@ -231,7 +230,7 @@ class IDSearchBase:
 
         return path
 
-    def solution_actions(self):
+    def _solution_actions(self):
         """
         Return the list of actions to reach the solution.
         """
@@ -247,17 +246,10 @@ class IDSearchBase:
         if not bool(jax.device_get(self.solved)):
             return SolutionTrace.unsolved()
 
-        actions = normalise_action_sequence(
-            jax.device_get(self.solution_actions_arr),
-            action_pad=action_pad_int(ACTION_DTYPE),
-        )
-        return SolutionTrace(
+        return SolutionTrace.from_raw(
             solved=True,
-            actions=actions,
-            states=None,
-            costs=None,
-            dists=None,
-            requires_replay=True,
+            raw_actions=jax.device_get(self.solution_actions_arr),
+            action_pad=action_pad_int(ACTION_DTYPE),
         )
 
     def get_generated_size(self):
