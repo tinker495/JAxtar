@@ -13,10 +13,12 @@ from train_util.annotate import MAX_GEN_DS_BATCH_SIZE
 from train_util.sampling import (
     calculate_dataset_params,
     compute_diffusion_targets,
+    wrap_dataset_runner,
+)
+from train_util.trajectory_dataset_adapter import (
     create_hindsight_target_shuffled_path,
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
-    wrap_dataset_runner,
 )
 from train_util.util import boltzmann_action_selection
 

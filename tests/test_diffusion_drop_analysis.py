@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 from heuristic.neuralheuristic.target_dataset_builder import _compute_diffusion_distance
-from train_util.sampling import create_target_shuffled_path
+from train_util.trajectory_dataset_adapter import create_target_shuffled_path
 
 
 class DummyPuzzle:

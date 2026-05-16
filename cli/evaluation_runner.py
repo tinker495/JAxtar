@@ -28,15 +28,6 @@ from helpers.config_printer import print_config
 from helpers.logger import BaseLogger
 from helpers.metrics import calculate_benchmark_metrics, calculate_heuristic_metrics
 from helpers.path_analysis import extract_heuristic_accuracy_data
-from helpers.plots import (
-    plot_benchmark_path_comparison,
-    plot_expansion_distribution,
-    plot_heuristic_accuracy,
-    plot_nodes_generated_by_path_cost,
-    plot_path_cost_distribution,
-    plot_search_time_by_path_cost,
-    plot_search_tree_semantic,
-)
 from helpers.rich_progress import trange
 from helpers.summaries import create_summary_panel
 from helpers.visualization import (
@@ -48,6 +39,10 @@ from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
+from .evaluation_plot_adapter import (
+    EvaluationPlotAdapter,
+    MatplotlibPlotAdapter,
+)
 from .verification import (
     BenchmarkVerification,
     benchmark_verification_from_exception,
@@ -110,6 +105,7 @@ class EvaluationRunner:
         step: int = 0,
         node_metric_label: Optional[str] = None,
         run_label: Optional[str] = None,
+        plot_adapter: Optional[EvaluationPlotAdapter] = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -126,6 +122,7 @@ class EvaluationRunner:
         self.node_metric_label = node_metric_label or "Nodes Generated"
         self.kwargs = kwargs
         self.run_label = run_label or search_model_name
+        self.plot_adapter: EvaluationPlotAdapter = plot_adapter or MatplotlibPlotAdapter()
         self.benchmark: Optional[Benchmark] = kwargs.get("benchmark")
         self.benchmark_name: Optional[str] = kwargs.get("benchmark_name")
         benchmark_cli_options = kwargs.get("benchmark_cli_options", {})
@@ -309,16 +306,9 @@ class EvaluationRunner:
             if not is_sweep:
                 self.console.print(create_summary_panel(results, heuristic_metrics))
 
+            self.plot_adapter.plot_solved_distributions(solved_df=solved_df, artifact_manager=am)
+
             if not solved_df.empty:
-                fig = plot_path_cost_distribution(solved_df)
-                am.save_and_log_plot("path_cost_distribution", fig)
-
-                fig = plot_search_time_by_path_cost(solved_df)
-                am.save_and_log_plot("search_time_by_path_cost", fig)
-
-                fig = plot_nodes_generated_by_path_cost(solved_df)
-                am.save_and_log_plot("nodes_generated_by_path_cost", fig)
-
                 am.log_scalar("time_to_solve", solved_df["search_time_s"].mean())
                 am.log_scalar("nodes_generated", solved_df["nodes_generated"].mean())
                 am.log_scalar("path_cost", solved_df["path_cost"].mean())
@@ -331,9 +321,12 @@ class EvaluationRunner:
                     "benchmark_optimal_action_count" in solved_df
                     and solved_df["benchmark_optimal_action_count"].notna().any()
                 )
-                if self.benchmark is not None and (has_benchmark_cost or has_benchmark_length):
-                    fig = plot_benchmark_path_comparison(solved_df)
-                    am.save_and_log_plot("benchmark_path_comparison", fig)
+                self.plot_adapter.plot_benchmark_comparison(
+                    solved_df=solved_df,
+                    has_benchmark=self.benchmark is not None
+                    and (has_benchmark_cost or has_benchmark_length),
+                    artifact_manager=am,
+                )
 
             if heuristic_metrics:
                 am.log_scalar("heuristic_r_squared", heuristic_metrics["r_squared"])
@@ -349,34 +342,19 @@ class EvaluationRunner:
                 results if current_eval_opts.plot_unsolved else [r for r in results if r["solved"]]
             )
 
-            fig = plot_heuristic_accuracy(results_for_plot, metrics=heuristic_metrics)
-            am.save_and_log_plot(f"heuristic_accuracy{file_suffix}", fig)
-
-            for r in results_for_plot[: current_eval_opts.max_expansion_plots]:
-                if r.get("expansion_analysis"):
-                    # Original Expansion Plots
-                    fig = plot_expansion_distribution(
-                        [r], scatter_max_points=current_eval_opts.scatter_max_points
-                    )
-                    am.save_and_log_plot(
-                        f"expansion_dist_seed_{r['seed']}",
-                        fig,
-                        sub_dir="expansion_plots",
-                    )
-
-                    # New Semantic Search Tree Plot (g vs h)
-                    try:
-                        fig_tree = plot_search_tree_semantic(
-                            r,
-                            max_points=current_eval_opts.max_node_size,  # Use a large limit
-                        )
-                        am.save_and_log_plot(
-                            f"search_tree_semantic_seed_{r['seed']}",
-                            fig_tree,
-                            sub_dir="expansion_plots",
-                        )
-                    except (ValueError, RuntimeError, AttributeError, OSError) as e:
-                        print(f"Warning: Failed to generate semantic search tree plot: {e}")
+            self.plot_adapter.plot_heuristic_panel(
+                results=results_for_plot,
+                metrics=heuristic_metrics,
+                file_suffix=file_suffix,
+                artifact_manager=am,
+            )
+            self.plot_adapter.plot_per_seed_expansion(
+                results=results_for_plot,
+                max_plots=current_eval_opts.max_expansion_plots,
+                scatter_max_points=current_eval_opts.scatter_max_points,
+                max_node_size=current_eval_opts.max_node_size,
+                artifact_manager=am,
+            )
 
         if is_sweep:
             self.console.rule(
