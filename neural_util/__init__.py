@@ -1,10 +1,20 @@
-"""
-Neural utilities module for JAxtar.
+"""Neural utilities module for JAxtar."""
 
-Provides neural network building blocks, model architectures, AQT quantization,
-and parameter loading/saving utilities.
-"""
+from __future__ import annotations
 
-from neural_util import aqt_utils, modules, nn_metadata, norm, param_manager
+import importlib
+from typing import Any
 
 __all__ = ["modules", "aqt_utils", "param_manager", "nn_metadata", "norm"]
+
+
+def __getattr__(name: str) -> Any:
+    if name not in __all__:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = importlib.import_module(f"neural_util.{name}")
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

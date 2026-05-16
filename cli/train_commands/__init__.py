@@ -1,27 +1,98 @@
+from __future__ import annotations
+
+import importlib
+from typing import Any
+
 import click
 
-from .dist_train_command import heuristic_train_command, qfunction_train_command
-from .world_model_ds_command import (
-    make_puzzle_eval_trajectory,
-    make_puzzle_sample_data,
-    make_puzzle_transition_dataset,
+__all__ = [
+    "distance_train",
+    "world_model_train",
+    "heuristic_train_command",
+    "qfunction_train_command",
+    "make_puzzle_eval_trajectory",
+    "make_puzzle_sample_data",
+    "make_puzzle_transition_dataset",
+    "train",
+]
+
+_COMMAND_EXPORTS = {
+    "heuristic_train_command": (
+        "cli.train_commands.dist_train_command",
+        "heuristic_train_command",
+    ),
+    "qfunction_train_command": (
+        "cli.train_commands.dist_train_command",
+        "qfunction_train_command",
+    ),
+    "make_puzzle_eval_trajectory": (
+        "cli.train_commands.world_model_ds_command",
+        "make_puzzle_eval_trajectory",
+    ),
+    "make_puzzle_sample_data": (
+        "cli.train_commands.world_model_ds_command",
+        "make_puzzle_sample_data",
+    ),
+    "make_puzzle_transition_dataset": (
+        "cli.train_commands.world_model_ds_command",
+        "make_puzzle_transition_dataset",
+    ),
+    "train": ("cli.train_commands.world_model_train_command", "train"),
+}
+
+
+class LazyGroup(click.Group):
+    def __init__(self, *args: Any, command_exports: dict[str, tuple[str, str]], **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self._command_exports = command_exports
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        names = set(super().list_commands(ctx))
+        names.update(self._command_exports)
+        return sorted(names)
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+        command = super().get_command(ctx, cmd_name)
+        if command is not None:
+            return command
+        spec = self._command_exports.get(cmd_name)
+        if spec is None:
+            return None
+        module_name, attr_name = spec
+        command = getattr(importlib.import_module(module_name), attr_name)
+        self.add_command(command, name=cmd_name)
+        return command
+
+
+distance_train = LazyGroup(
+    name="distance-train",
+    help="Train neural heuristic and Q-function distance estimators.",
+    command_exports={
+        "heuristic": _COMMAND_EXPORTS["heuristic_train_command"],
+        "qfunction": _COMMAND_EXPORTS["qfunction_train_command"],
+    },
 )
-from .world_model_train_command import train
+world_model_train = LazyGroup(
+    name="world-model-train",
+    help="Create datasets and train world models.",
+    command_exports={
+        "make_transition_dataset": _COMMAND_EXPORTS["make_puzzle_transition_dataset"],
+        "make_sample_data": _COMMAND_EXPORTS["make_puzzle_sample_data"],
+        "make_eval_trajectory": _COMMAND_EXPORTS["make_puzzle_eval_trajectory"],
+        "train": _COMMAND_EXPORTS["train"],
+    },
+)
 
 
-@click.group()
-def distance_train():
-    pass
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _COMMAND_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(importlib.import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
 
 
-@click.group()
-def world_model_train():
-    pass
-
-
-distance_train.add_command(heuristic_train_command, name="heuristic")
-distance_train.add_command(qfunction_train_command, name="qfunction")
-world_model_train.add_command(make_puzzle_transition_dataset, name="make_transition_dataset")
-world_model_train.add_command(make_puzzle_sample_data, name="make_sample_data")
-world_model_train.add_command(make_puzzle_eval_trajectory, name="make_eval_trajectory")
-world_model_train.add_command(train, name="train")
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))
