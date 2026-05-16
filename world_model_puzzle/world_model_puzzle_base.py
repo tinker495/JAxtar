@@ -274,8 +274,8 @@ class WorldModelPuzzleBase(Puzzle):
         """
         if not is_world_model_dataset_downloaded():
             download_world_model_dataset()
-        self.inits = jnp.load(self.data_path + "/inits.npy").to_device(jax.devices("gpu")[0])
-        self.targets = jnp.load(self.data_path + "/targets.npy").to_device(jax.devices("gpu")[0])
+        self.inits = jax.device_put(jnp.load(self.data_path + "/inits.npy"))
+        self.targets = jax.device_put(jnp.load(self.data_path + "/targets.npy"))
         self.init_state_size = self.inits.shape[0]
 
     def get_string_parser(self):

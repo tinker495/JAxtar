@@ -1,115 +1,92 @@
-import jax
 import jax.numpy as jnp
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 from heuristic.neuralheuristic.target_dataset_builder import _compute_diffusion_distance
-from train_util.trajectory_dataset_adapter import create_target_shuffled_path
 
 
-class DummyPuzzle:
-    def __init__(self):
-        self.action_size = 4
-        self.fixed_target = False
-
-        @xtructure_dataclass
-        class State:
-            val: FieldDescriptor.scalar(dtype=jnp.int32)
-
-        @xtructure_dataclass
-        class SolveConfig:
-            target: FieldDescriptor.scalar(dtype=jnp.int32)
-
-        self.State = State
-        self.SolveConfig = SolveConfig
-
-    def get_inits(self, key):
-        return self.SolveConfig(target=jnp.int32(0)), self.State(val=jnp.int32(0))
-
-    def solve_config_to_state_transform(self, solve_config, state):
-        return state
-
-    def batched_get_neighbours(self, solve_configs, states, filleds, multi_solve_config=True):
-        # Explicit type conversion to handle tracers correctly if needed, though JAX usually handles it.
-        # The issue 'Var' and 'int' suggests states.val is a Tracer that doesn't support + int?
-        # That's weird for JAX. It usually means we need jnp.add.
-
-        val = states.val
-
-        n_vals = [val + 1, jnp.maximum(val - 1, 0), val, val + 2]
-        neighbor_vals = jnp.stack(n_vals)
-        neighbor_costs = jnp.ones_like(neighbor_vals, dtype=jnp.float32)
-
-        return self.State(val=neighbor_vals), neighbor_costs
-
-    def batched_get_inverse_neighbours(
-        self, solve_configs, states, filleds, multi_solve_config=True
-    ):
-        return self.batched_get_neighbours(solve_configs, states, filleds, multi_solve_config)
-
-    def batched_hindsight_transform(self, solve_configs, targets):
-        return solve_configs
+@xtructure_dataclass
+class DummyState:
+    val: FieldDescriptor.scalar(dtype=jnp.int32)
 
 
-def analyze_diffusion_drop():
-    puzzle = DummyPuzzle()
-    k_max = 10
-    shuffle_parallel = 10000
-    key = jax.random.PRNGKey(42)
+@xtructure_dataclass
+class DummySolveConfig:
+    target: FieldDescriptor.scalar(dtype=jnp.int32)
 
-    path_data = create_target_shuffled_path(
-        puzzle,
-        k_max,
-        shuffle_parallel,
-        include_solved_states=True,
-        key=key,
-        non_backtracking_steps=3,
+
+def _linear_chain_diffusion_inputs(k_max: int, shuffle_parallel: int):
+    step_indices = jnp.broadcast_to(
+        jnp.arange(k_max, dtype=jnp.int32)[jnp.newaxis, :],
+        (shuffle_parallel, k_max),
     )
+    flat_size = k_max * shuffle_parallel
+    flat_indices = jnp.arange(flat_size, dtype=jnp.int32).reshape(shuffle_parallel, k_max)
+    parent_indices = (flat_indices - 1).at[:, 0].set(-1).reshape(-1)
 
-    solve_configs = path_data["solve_configs"]
-    states = path_data["states"]
-    move_costs = path_data["move_costs"]
-    action_costs = path_data["action_costs"]
-    parent_indices = path_data["parent_indices"]
+    move_costs = step_indices.astype(jnp.float32).reshape(-1)
+    return {
+        "solve_configs": DummySolveConfig(target=jnp.zeros((flat_size,), dtype=jnp.int32)),
+        "states": DummyState(val=step_indices.reshape(-1)),
+        "move_costs": move_costs,
+        "action_costs": jnp.ones_like(move_costs),
+        "parent_indices": parent_indices,
+        "is_solved": step_indices.reshape(-1) == 0,
+    }
+
+
+def analyze_diffusion_drop(
+    k_max: int = 10,
+    shuffle_parallel: int = 10000,
+    print_summary: bool = True,
+):
+    path_data = _linear_chain_diffusion_inputs(k_max, shuffle_parallel)
 
     @xtructure_dataclass
     class SolveConfigsAndStates:
-        solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        states: FieldDescriptor.scalar(dtype=puzzle.State)
+        solveconfigs: FieldDescriptor.scalar(dtype=DummySolveConfig)
+        states: FieldDescriptor.scalar(dtype=DummyState)
 
-    # Use JIT to handle JAX tracing correctly
-    @jax.jit
-    def run_diffusion(sc, st, mc, ac, pi):
-        is_solved = puzzle.batched_is_solved(sc, st, multi_solve_config=True)
-        return _compute_diffusion_distance(
-            sc,
-            st,
-            is_solved,
-            mc,
-            ac,
-            pi,
-            SolveConfigsAndStates,
-            k_max=k_max,
-        )
-
-    target_heuristic = run_diffusion(
-        solve_configs, states, move_costs, action_costs, parent_indices
+    target_heuristic = _compute_diffusion_distance(
+        path_data["solve_configs"],
+        path_data["states"],
+        path_data["is_solved"],
+        path_data["move_costs"],
+        path_data["action_costs"],
+        path_data["parent_indices"],
+        SolveConfigsAndStates,
+        k_max=k_max,
     )
 
-    # Reshape back to (k_max, parallel)
-    # The sampling output 'move_costs' is [k_max, parallel] flattened.
-    # Note: create_target_shuffled_path uses tile(..., (k_max, 1)) then flatten.
-    # So reshaped indices [k, p] correspond to step k of path p.
+    h_init = path_data["move_costs"].reshape(shuffle_parallel, k_max).T
+    h_final = target_heuristic.reshape(shuffle_parallel, k_max).T
 
-    h_init = move_costs.reshape(k_max, shuffle_parallel)
-    h_final = target_heuristic.reshape(k_max, shuffle_parallel)
+    if print_summary:
+        print("Step | Mean Init H | Mean Final H | Mean Drop")
+        print("-----|-------------|--------------|----------")
+        for k in range(k_max):
+            mean_init = jnp.mean(h_init[k])
+            mean_final = jnp.mean(h_final[k])
+            drop = mean_init - mean_final
+            print(f"{k: 4d} | {mean_init: 11.4f} | {mean_final: 12.4f} | {drop: 9.4f}")
 
-    print("Step | Mean Init H | Mean Final H | Mean Drop")
-    print("-----|-------------|--------------|----------")
-    for k in range(k_max):
-        mean_init = jnp.mean(h_init[k])
-        mean_final = jnp.mean(h_final[k])
-        drop = mean_init - mean_final
-        print(f"{k: 4d} | {mean_init: 11.4f} | {mean_final: 12.4f} | {drop: 9.4f}")
+    return {
+        "target_heuristic": target_heuristic,
+        "move_costs": path_data["move_costs"],
+        "h_init": h_init,
+        "h_final": h_final,
+    }
+
+
+def test_diffusion_distance_preserves_linear_chain_cost_bounds():
+    result = analyze_diffusion_drop(k_max=4, shuffle_parallel=3, print_summary=False)
+
+    target_heuristic = result["target_heuristic"]
+    move_costs = result["move_costs"]
+
+    assert target_heuristic.shape == move_costs.shape
+    assert bool(jnp.all(jnp.isfinite(target_heuristic)))
+    assert bool(jnp.all(target_heuristic <= move_costs))
+    assert bool(jnp.all(target_heuristic[::4] == 0.0))
 
 
 if __name__ == "__main__":
