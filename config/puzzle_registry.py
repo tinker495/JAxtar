@@ -3,6 +3,11 @@ from typing import Dict
 from puxle import (
     PDDL,
     TSP,
+    CayleyLRX8,
+    CayleyPancake7,
+    CayleyPancake8,
+    CayleyTopSpin8K4,
+    CayleyCoxeter8,
     DotKnot,
     LightsOut,
     LightsOutRandom,
@@ -350,6 +355,26 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm-random-hlg_{size}_v2.pkl",
             ),
         },
+    ),
+    "cayley-pancake-7": PuzzleBundle(
+        puzzle=CayleyPancake7,
+        k_max=50,
+    ),
+    "cayley-pancake-8": PuzzleBundle(
+        puzzle=CayleyPancake8,
+        k_max=50,
+    ),
+    "cayley-lrx-8": PuzzleBundle(
+        puzzle=CayleyLRX8,
+        k_max=50,
+    ),
+    "cayley-top-spin-8-k4": PuzzleBundle(
+        puzzle=CayleyTopSpin8K4,
+        k_max=50,
+    ),
+    "cayley-coxeter-8": PuzzleBundle(
+        puzzle=CayleyCoxeter8,
+        k_max=50,
     ),
     "maze": PuzzleBundle(puzzle=Maze, heuristic=MazeHeuristic, q_function=MazeQ),
     "room": PuzzleBundle(puzzle=Room, heuristic=MazeHeuristic, q_function=MazeQ),

@@ -114,7 +114,9 @@ def _astar_loop_builder(
         )
 
         def _update_insert_stats(sr: SearchResult):
-            cand_total_delta = jnp.sum(jnp.ones_like(flatten_filleds, dtype=jnp.int32))
+            cand_total_delta = jnp.sum(jnp.ones_like(flatten_filleds, dtype=jnp.int32)).astype(
+                jnp.int32
+            )
             return sr.replace(
                 xtr_cand_total=sr.xtr_cand_total + cand_total_delta,
                 xtr_cand_valid=sr.xtr_cand_valid + jnp.sum(flatten_filleds).astype(jnp.int32),
