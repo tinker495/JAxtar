@@ -27,6 +27,11 @@ from puxle import Puzzle
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.search_build_spec import (
+    DEFAULT_SEARCH_BUILD_SPEC,
+    SearchBuildSpec,
+    _require_no_workload_signature,
+)
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopState,
@@ -417,11 +422,9 @@ def bi_astar_builder(
     heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
-    show_compile_time: bool = False,
+    spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
+    *,
     terminate_on_first_solution: bool = True,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
     Builds and returns a JAX-accelerated bidirectional A* search function.
@@ -436,21 +439,20 @@ def bi_astar_builder(
         heuristic: Heuristic instance that provides state evaluation.
         batch_size: Number of states to process in parallel per direction.
         max_nodes: Maximum number of nodes to explore per direction.
-        pop_ratio: Ratio controlling beam width.
-        cost_weight: Weight for path cost in f = cost_weight * g + h.
-        show_compile_time: If True, displays compilation time.
+        spec: Shared build-time tuning knobs for search construction.
 
     Returns:
         A JIT-compiled function that performs bidirectional A* search.
     """
+    _require_no_workload_signature(spec)
     use_backward_heuristic = not heuristic.is_fixed
     init_loop_state, loop_condition, loop_body = _bi_astar_loop_builder(
         puzzle,
         heuristic,
         batch_size,
         max_nodes,
-        pop_ratio,
-        cost_weight,
+        spec.pop_ratio,
+        spec.cost_weight,
         use_backward_heuristic=use_backward_heuristic,
         terminate_on_first_solution=terminate_on_first_solution,
     )
@@ -477,4 +479,4 @@ def bi_astar_builder(
 
         return stamp_bi_solved_from_meeting(bi_result)
 
-    return compile_search_builder(bi_astar, puzzle, show_compile_time, warmup_inputs)
+    return compile_search_builder(bi_astar, puzzle, spec.show_compile_time, spec.warmup_inputs)

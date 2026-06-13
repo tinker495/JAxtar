@@ -9,7 +9,7 @@ import numpy as np
 from puxle import Puzzle
 
 from cli.evaluation_runner import run_evaluation_sweep
-from config import benchmark_bundles
+from config import benchmark_bundles, resolve_algorithm_for_component
 from config.pydantic_models import DistTrainOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.jax_compile import compile_with_example
@@ -20,10 +20,6 @@ from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from heuristic.neuralheuristic.target_dataset_builder import (
     get_heuristic_dataset_builder,
 )
-from JAxtar.beamsearch.heuristic_beam import beam_builder
-from JAxtar.beamsearch.q_beam import qbeam_builder
-from JAxtar.stars.astar_d import astar_d_builder
-from JAxtar.stars.qstar import qstar_builder
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.qfunction_train import qfunction_train_builder
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
@@ -77,65 +73,31 @@ def _resolve_eval_context(
     )
 
 
-def _resolve_eval_search_components(
+def _resolve_eval_search_entry(
     *,
     train_options: DistTrainOptions,
     search_model_name: str,
 ) -> tuple[str, callable, dict]:
-    """
-    Resolve which evaluation search algorithm to use during training.
-
-    Returns:
-      - run_label (str)
-      - search_builder_fn (callable)
-      - extra_kwargs (dict): e.g. node_metric_label for beam-style searches
-    """
     metric = (train_options.eval_search_metric or "").strip()
-    extra_kwargs: dict = {}
-
     if search_model_name == "heuristic":
-        # Default evaluation for heuristic training matches existing behavior (A* Deferred).
         metric = metric or "astar_d"
-        if metric == "astar":
-            # NOTE: astar_builder exists in eval commands; keep train default as astar_d unless requested.
-            from JAxtar.stars.astar import astar_builder
-
-            return "astar", astar_builder, extra_kwargs
-        if metric == "astar_d":
-            return "astar_d", astar_d_builder, extra_kwargs
-        if metric == "bi_astar":
-            from JAxtar.bi_stars.bi_astar import bi_astar_builder
-
-            return "bi_astar", bi_astar_builder, extra_kwargs
-        if metric == "bi_astar_d":
-            from JAxtar.bi_stars.bi_astar_d import bi_astar_d_builder
-
-            return "bi_astar_d", bi_astar_d_builder, extra_kwargs
-        if metric == "beam":
-            extra_kwargs["node_metric_label"] = "Beam Slots"
-            return "beam", beam_builder, extra_kwargs
-        raise click.UsageError(
-            f"Invalid --eval-search-metric '{metric}' for heuristic training. "
-            "Choose one of: astar, astar_d, bi_astar, bi_astar_d, beam."
-        )
-
-    if search_model_name == "qfunction":
+        expected_component = "heuristic"
+    elif search_model_name == "qfunction":
         metric = metric or "qstar"
-        if metric == "qstar":
-            return "qstar", qstar_builder, extra_kwargs
-        if metric == "bi_qstar":
-            from JAxtar.bi_stars.bi_qstar import bi_qstar_builder
+        expected_component = "qfunction"
+    else:
+        raise click.UsageError(f"Unknown search model name '{search_model_name}'.")
 
-            return "bi_qstar", bi_qstar_builder, extra_kwargs
-        if metric == "qbeam":
-            extra_kwargs["node_metric_label"] = "Beam Slots"
-            return "qbeam", qbeam_builder, extra_kwargs
+    try:
+        resolution = resolve_algorithm_for_component(metric, expected_component)
+    except KeyError as exc:
+        raise click.UsageError(f"Invalid --eval-search-metric '{metric}'.") from exc
+    except ValueError as exc:
         raise click.UsageError(
-            f"Invalid --eval-search-metric '{metric}' for qfunction training. "
-            "Choose one of: qstar, bi_qstar, qbeam."
-        )
+            f"Invalid --eval-search-metric '{metric}' for {search_model_name} training."
+        ) from exc
 
-    raise click.UsageError(f"Unknown search model name '{search_model_name}'.")
+    return resolution.run_label, resolution.builder_fn, resolution.extra_kwargs
 
 
 @click.command()
@@ -385,7 +347,7 @@ def heuristic_train_command(
             if eval_options.num_eval > 0:
                 light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
-                run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_components(
+                run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
                     train_options=train_options, search_model_name="heuristic"
                 )
                 with pbar.pause():
@@ -415,7 +377,7 @@ def heuristic_train_command(
     # Evaluation
     if eval_options.num_eval > 0 and train_options.eval_count > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
-        run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_components(
+        run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
             train_options=train_options, search_model_name="heuristic"
         )
         with pbar.pause():
@@ -478,7 +440,7 @@ def qfunction_train_command(
         "q_config": q_config,
         "derived_parameters": {
             "training_loop_iterations": steps,
-            "total_gradient_updates": steps * n_devices if train_options.multi_device else steps,
+            "total_gradient_updates": (steps * n_devices if train_options.multi_device else steps),
             "update_interval_gradient_steps": update_interval,
             "reset_interval_gradient_steps": reset_interval,
             "n_devices": n_devices,
@@ -683,7 +645,7 @@ def qfunction_train_command(
             if eval_options.num_eval > 0:
                 light_eval_options = eval_options.light_eval_options
                 eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
-                run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_components(
+                run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
                     train_options=train_options, search_model_name="qfunction"
                 )
                 with pbar.pause():
@@ -713,7 +675,7 @@ def qfunction_train_command(
     # Evaluation
     if eval_options.num_eval > 0 and train_options.eval_count > 0:
         eval_run_dir = Path(logger.log_dir) / "evaluation"
-        run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_components(
+        run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
             train_options=train_options, search_model_name="qfunction"
         )
         with pbar.pause():

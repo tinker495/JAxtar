@@ -18,6 +18,7 @@ from JAxtar.bi_stars.bi_search_base import (
     build_bi_search_result,
     initialize_bi_loop_common,
 )
+from JAxtar.search_build_spec import SearchBuildSpec
 from JAxtar.stars.astar import astar_builder
 from JAxtar.stars.astar import _astar_loop_builder
 from JAxtar.stars.search_base import Current, SearchResult
@@ -160,7 +161,11 @@ def test_bi_astar_forward_key_formula_matches_astar_on_empty_heuristic():
 
     def _pop_full_noop(self, **kwargs):
         batch_size = self.batch_size
-        return self, Current.default((batch_size,)), jnp.zeros((batch_size,), dtype=jnp.bool_)
+        return (
+            self,
+            Current.default((batch_size,)),
+            jnp.zeros((batch_size,), dtype=jnp.bool_),
+        )
 
     with patch.object(SearchResult, "pop_full", _pop_full_noop):
         astar_state_out = astar_body(astar_state)
@@ -422,13 +427,14 @@ def test_bi_astar_optimal_mode_cost_matches_astar():
     action = int(jax.device_get(jnp.argmax(valid)))
     start = neighbours[action, 0]
 
-    astar = astar_builder(puzzle, heuristic, batch_size=16, max_nodes=256, cost_weight=1.0)
+    spec = SearchBuildSpec(cost_weight=1.0)
+    astar = astar_builder(puzzle, heuristic, batch_size=16, max_nodes=256, spec=spec)
     bi_astar = bi_astar_builder(
         puzzle,
         heuristic,
         batch_size=16,
         max_nodes=256,
-        cost_weight=1.0,
+        spec=spec,
         terminate_on_first_solution=False,
     )
 
@@ -454,12 +460,13 @@ def test_bi_qstar_dijkstra_optimal_mode_cost_matches_bi_astar_with_admissible_q(
     action = int(jax.device_get(jnp.argmax(valid)))
     start = neighbours[action, 0]
 
+    spec = SearchBuildSpec(cost_weight=1.0)
     bi_astar = bi_astar_builder(
         puzzle,
         heuristic,
         batch_size=16,
         max_nodes=256,
-        cost_weight=1.0,
+        spec=spec,
         terminate_on_first_solution=False,
     )
     bi_qstar = bi_qstar_builder(
@@ -467,7 +474,7 @@ def test_bi_qstar_dijkstra_optimal_mode_cost_matches_bi_astar_with_admissible_q(
         q_fn,
         batch_size=16,
         max_nodes=256,
-        cost_weight=1.0,
+        spec=spec,
         backward_mode="dijkstra",
         terminate_on_first_solution=False,
     )

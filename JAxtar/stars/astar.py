@@ -8,6 +8,7 @@ from puxle import Puzzle
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.search_build_spec import DEFAULT_SEARCH_BUILD_SPEC, SearchBuildSpec
 from JAxtar.stars.search_base import (
     Current,
     LoopState,
@@ -245,11 +246,7 @@ def astar_builder(
     heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
-    show_compile_time: bool = False,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
-    emit_workload_signature: bool = False,
+    spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
 ):
     """
     Builds and returns a JAX-accelerated A* search function.
@@ -259,9 +256,7 @@ def astar_builder(
         heuristic: Heuristic instance that provides state evaluation.
         batch_size: Number of states to process in parallel (default: 1024).
         max_nodes: Maximum number of nodes to explore before terminating (default: 1e6).
-        cost_weight: Weight applied to the path cost in f(n) = g(n) + w*h(n) (default: 1.0-1e-6).
-                    Values closer to 1.0 make the search more greedy/depth-first.
-        show_compile_time: If True, displays the time taken to compile the search function (default: False).
+        spec: Shared build-time tuning knobs for search construction.
 
     Returns:
         A function that performs A* search given a start state and solve configuration.
@@ -272,9 +267,9 @@ def astar_builder(
         heuristic,
         batch_size,
         max_nodes,
-        pop_ratio,
-        cost_weight,
-        emit_workload_signature,
+        spec.pop_ratio,
+        spec.cost_weight,
+        spec.emit_workload_signature,
     )
 
     def astar(
@@ -297,4 +292,4 @@ def astar_builder(
         search_result.solved_idx = current[jnp.argmax(solved)]
         return search_result
 
-    return compile_search_builder(astar, puzzle, show_compile_time, warmup_inputs)
+    return compile_search_builder(astar, puzzle, spec.show_compile_time, spec.warmup_inputs)

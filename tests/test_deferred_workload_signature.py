@@ -2,10 +2,13 @@ import inspect
 
 import jax
 import jax.numpy as jnp
+import pytest
 import xtructure.numpy as xnp
 from puxle import SlidePuzzle
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from config import SEARCH_ALGORITHM_CATALOG
+from JAxtar.search_build_spec import SearchBuildSpec
 from JAxtar.stars.astar_d import astar_d_builder
 from JAxtar.stars.search_base import Parent, Parant_with_Costs, SearchResult
 
@@ -84,4 +87,21 @@ def test_pop_full_with_actions_tracks_deferred_lookup_counters_with_heuristic():
 
 
 def test_astar_d_builder_accepts_emit_workload_signature():
-    assert "emit_workload_signature" in inspect.signature(astar_d_builder).parameters
+    signature = inspect.signature(astar_d_builder)
+    assert "spec" in signature.parameters
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [entry for entry in SEARCH_ALGORITHM_CATALOG if not entry.supports_workload_signature],
+    ids=lambda entry: entry.python_id,
+)
+def test_non_emitting_catalog_builders_reject_workload_signature(entry):
+    with pytest.raises(ValueError, match="emit_workload_signature"):
+        entry.builder_fn(
+            object(),
+            object(),
+            1,
+            1,
+            SearchBuildSpec(emit_workload_signature=True),
+        )

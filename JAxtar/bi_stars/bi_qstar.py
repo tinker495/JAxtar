@@ -21,6 +21,11 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.search_build_spec import (
+    DEFAULT_SEARCH_BUILD_SPEC,
+    SearchBuildSpec,
+    _require_no_workload_signature,
+)
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
@@ -204,7 +209,8 @@ def _bi_qstar_loop_builder(
                     flat_states = neighbour_look_ahead.flatten()
                     flat_need_compute = need_compute.flatten()
                     sorted_indices = stable_partition_three(
-                        flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
+                        flat_need_compute,
+                        jnp.zeros_like(flat_need_compute, dtype=jnp.bool_),
                     )
                     sorted_states = flat_states[sorted_indices]
                     sorted_mask = flat_need_compute[sorted_indices]
@@ -410,15 +416,13 @@ def bi_qstar_builder(
     q_fn: QFunction,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
-    show_compile_time: bool = False,
+    spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
+    *,
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
     backward_mode: str = "auto",
     terminate_on_first_solution: bool = True,
     unsafe_allow_nonadmissible: bool = False,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
     Builds and returns a JAX-accelerated bidirectional Q* search function.
@@ -450,6 +454,7 @@ def bi_qstar_builder(
     """
     import warnings
 
+    _require_no_workload_signature(spec)
     backward_mode = backward_mode.strip().lower()
     valid_backward_modes = {"auto", "edge_q", "value_v", "dijkstra"}
     if backward_mode not in valid_backward_modes:
@@ -486,8 +491,8 @@ def bi_qstar_builder(
         q_fn,
         batch_size,
         max_nodes,
-        pop_ratio,
-        cost_weight,
+        spec.pop_ratio,
+        spec.cost_weight,
         look_ahead_pruning,
         pessimistic_update,
         use_backward_q=use_backward_q,
@@ -517,4 +522,4 @@ def bi_qstar_builder(
 
         return stamp_bi_solved_from_meeting(bi_result)
 
-    return compile_search_builder(bi_qstar, puzzle, show_compile_time, warmup_inputs)
+    return compile_search_builder(bi_qstar, puzzle, spec.show_compile_time, spec.warmup_inputs)

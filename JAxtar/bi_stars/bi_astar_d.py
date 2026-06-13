@@ -22,6 +22,11 @@ from puxle import Puzzle
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.search_build_spec import (
+    DEFAULT_SEARCH_BUILD_SPEC,
+    SearchBuildSpec,
+    _require_no_workload_signature,
+)
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
@@ -186,7 +191,9 @@ def _bi_astar_d_loop_builder(
                     ~found, jnp.less(flattened_look_a_head_costs, old_costs)
                 )
                 unique_mask = xnp.unique_mask(
-                    flattened_neighbour_look_head, flattened_look_a_head_costs, candidate_mask
+                    flattened_neighbour_look_head,
+                    flattened_look_a_head_costs,
+                    candidate_mask,
                 )
                 optimal_mask_flat = unique_mask & candidate_mask
                 optimal_mask = optimal_mask_flat.reshape(action_size, sr_batch_size)
@@ -202,7 +209,8 @@ def _bi_astar_d_loop_builder(
                     flat_need_compute = need_compute.flatten()
 
                     sorted_indices = stable_partition_three(
-                        flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
+                        flat_need_compute,
+                        jnp.zeros_like(flat_need_compute, dtype=jnp.bool_),
                     )
                     sorted_states = flat_states[sorted_indices]
                     sorted_mask = flat_need_compute[sorted_indices]
@@ -411,14 +419,12 @@ def bi_astar_d_builder(
     heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
-    show_compile_time: bool = False,
+    spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
+    *,
     look_ahead_pruning: bool = True,
     experimental_backward_value_lookahead: bool = False,
     experimental_backward_value_lookahead_k: int | None = None,
     terminate_on_first_solution: bool = True,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """
     Builds and returns a JAX-accelerated bidirectional A* deferred search function.
@@ -465,14 +471,15 @@ def bi_astar_d_builder(
             UserWarning,
         )
 
+    _require_no_workload_signature(spec)
     use_backward_heuristic = not heuristic.is_fixed
     init_loop_state, loop_condition, loop_body = _bi_astar_d_loop_builder(
         puzzle,
         heuristic,
         batch_size,
         max_nodes,
-        pop_ratio,
-        cost_weight,
+        spec.pop_ratio,
+        spec.cost_weight,
         look_ahead_pruning,
         use_backward_heuristic=use_backward_heuristic,
         backward_value_lookahead=experimental_backward_value_lookahead,
@@ -502,4 +509,4 @@ def bi_astar_d_builder(
 
         return stamp_bi_solved_from_meeting(bi_result)
 
-    return compile_search_builder(bi_astar_d, puzzle, show_compile_time, warmup_inputs)
+    return compile_search_builder(bi_astar_d, puzzle, spec.show_compile_time, spec.warmup_inputs)

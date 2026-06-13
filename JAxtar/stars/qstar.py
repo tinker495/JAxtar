@@ -7,6 +7,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.search_build_spec import DEFAULT_SEARCH_BUILD_SPEC, SearchBuildSpec
 from JAxtar.stars.search_base import (
     LoopStateWithStates,
     SearchResult,
@@ -146,13 +147,10 @@ def qstar_builder(
     q_fn: QFunction,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
-    show_compile_time: bool = False,
+    spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
+    *,
     look_ahead_pruning: bool = True,
     pessimistic_update: bool = True,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
-    emit_workload_signature: bool = False,
 ):
     """
     Builds and returns a JAX-accelerated Q* search function.
@@ -162,10 +160,7 @@ def qstar_builder(
         q_fn: QFunction instance that provides state-action value estimation.
         batch_size: Number of states to process in parallel (default: 1024).
         max_nodes: Maximum number of nodes to explore before terminating (default: 1e6).
-        pop_ratio: Ratio of states to pop from the priority queue.
-        cost_weight: Weight applied to the path cost in the Q* algorithm (default: 1.0-1e-6).
-                    Values closer to 1.0 make the search more greedy/depth-first.
-        show_compile_time: If True, displays the time taken to compile the search function (default: False).
+        spec: Shared build-time tuning knobs for search construction.
         look_ahead_pruning: If True, enables neighbour look-ahead pruning for duplicate and cost-based filtering.
         pessimistic_update: If True, maintains the maximum (pessimistic) Q-value when a duplicate state is found.
                            If False, uses the minimum (optimistic) Q-value. Default is True.
@@ -178,11 +173,11 @@ def qstar_builder(
         q_fn,
         batch_size,
         max_nodes,
-        pop_ratio,
-        cost_weight,
+        spec.pop_ratio,
+        spec.cost_weight,
         look_ahead_pruning,
         pessimistic_update,
-        emit_workload_signature,
+        spec.emit_workload_signature,
     )
 
     def qstar(
@@ -207,4 +202,4 @@ def qstar_builder(
         search_result.solved_idx = current[jnp.argmax(solved)]
         return search_result
 
-    return compile_search_builder(qstar, puzzle, show_compile_time, warmup_inputs)
+    return compile_search_builder(qstar, puzzle, spec.show_compile_time, spec.warmup_inputs)

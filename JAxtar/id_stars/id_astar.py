@@ -5,6 +5,11 @@ from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.search_build_spec import (
+    DEFAULT_SEARCH_BUILD_SPEC,
+    SearchBuildSpec,
+    _require_no_workload_signature,
+)
 from JAxtar.id_stars.id_frontier import (
     ACTION_PAD,
     IDFrontier,
@@ -116,7 +121,12 @@ def _id_astar_frontier_builder(
             h_params = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
 
         init_val = IDFrontier.initialize_from_start(
-            puzzle, solve_config, start, batch_size, non_backtracking_steps, max_path_len
+            puzzle,
+            solve_config,
+            start,
+            batch_size,
+            non_backtracking_steps,
+            max_path_len,
         )
 
         MAX_FRONTIER_STEPS = 100
@@ -129,7 +139,8 @@ def _id_astar_frontier_builder(
             within_limit = i < MAX_FRONTIER_STEPS
             not_solved = ~frontier.solved
             return jnp.logical_and(
-                not_solved, jnp.logical_and(within_limit, jnp.logical_and(has_capacity, has_nodes))
+                not_solved,
+                jnp.logical_and(within_limit, jnp.logical_and(has_capacity, has_nodes)),
             )
 
         action_ids = jnp.arange(action_size, dtype=jnp.int32)
@@ -179,15 +190,26 @@ def _id_astar_frontier_builder(
                 found_sol_actions,
                 _,
             ) = IDSearchResult.detect_solution(
-                puzzle, solve_config, flat_states, flat_g, flat_action_history, flat_valid
+                puzzle,
+                solve_config,
+                flat_states,
+                flat_g,
+                flat_action_history,
+                flat_valid,
             )
 
             new_solved = jnp.logical_or(frontier.solved, any_solved)
             new_sol_state = jax.lax.cond(
-                any_solved, lambda _: found_sol_state, lambda _: frontier.solution_state, None
+                any_solved,
+                lambda _: found_sol_state,
+                lambda _: frontier.solution_state,
+                None,
             )
             new_sol_cost = jax.lax.cond(
-                any_solved, lambda _: found_sol_cost, lambda _: frontier.solution_cost, None
+                any_solved,
+                lambda _: found_sol_cost,
+                lambda _: frontier.solution_cost,
+                None,
             )
             new_sol_actions = jax.lax.cond(
                 any_solved,
@@ -291,7 +313,11 @@ def _id_astar_loop_builder(
     flat_indices = jnp.arange(flat_size, dtype=jnp.int32)
 
     _chunked_heuristic_eval = _build_chunked_heuristic_eval(
-        variable_heuristic_batch_switcher, flat_indices, action_size, batch_size, flat_size
+        variable_heuristic_batch_switcher,
+        flat_indices,
+        action_size,
+        batch_size,
+        flat_size,
     )
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
@@ -396,7 +422,9 @@ def _id_astar_loop_builder(
         )
 
         flat_action_history = jnp.where(
-            flat_valid[:, None], flat_action_history, jnp.full_like(flat_action_history, ACTION_PAD)
+            flat_valid[:, None],
+            flat_action_history,
+            jnp.full_like(flat_action_history, ACTION_PAD),
         )
         # ----------------------------------------------------
 
@@ -464,19 +492,18 @@ def id_astar_builder(
     heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    cost_weight: float = 1.0,
-    pop_ratio: float = 1.0,
+    spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
+    *,
     non_backtracking_steps: int = 0,
-    show_compile_time: bool = False,
     max_path_len: int = 256,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
+    _require_no_workload_signature(spec)
     init_loop, cond, body = _id_astar_loop_builder(
         puzzle,
         heuristic,
         batch_size,
         max_nodes,
-        cost_weight,
+        spec.cost_weight,
         non_backtracking_steps=non_backtracking_steps,
         max_path_len=max_path_len,
     )
@@ -487,6 +514,6 @@ def id_astar_builder(
         cond,
         body,
         name="ID-A*",
-        show_compile_time=show_compile_time,
-        warmup_inputs=warmup_inputs,
+        show_compile_time=spec.show_compile_time,
+        warmup_inputs=spec.warmup_inputs,
     )

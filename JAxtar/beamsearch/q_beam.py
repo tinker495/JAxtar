@@ -5,6 +5,11 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.search_build_spec import (
+    DEFAULT_SEARCH_BUILD_SPEC,
+    SearchBuildSpec,
+    _require_no_workload_signature,
+)
 from JAxtar.beamsearch.search_base import (
     ACTION_PAD,
     TRACE_INDEX_DTYPE,
@@ -228,21 +233,20 @@ def qbeam_builder(
     q_fn: QFunction,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
-    show_compile_time: bool = False,
+    spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
+    *,
     non_backtracking_steps: int = 3,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
     """Construct a batched Q*-style beam search solver without hash tables."""
+    _require_no_workload_signature(spec)
 
     (init_loop_state, loop_condition, loop_body,) = _qbeam_loop_builder(
         puzzle,
         q_fn,
         batch_size,
         max_nodes,
-        pop_ratio,
-        cost_weight,
+        spec.pop_ratio,
+        spec.cost_weight,
         non_backtracking_steps,
     )
 
@@ -268,7 +272,7 @@ def qbeam_builder(
         search_result.solved_idx = solved_idx
         return search_result
 
-    return compile_search_builder(qbeam, puzzle, show_compile_time, warmup_inputs)
+    return compile_search_builder(qbeam, puzzle, spec.show_compile_time, spec.warmup_inputs)
 
 
 __all__ = ["qbeam_builder"]

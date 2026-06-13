@@ -1,5 +1,4 @@
 import concurrent.futures
-import inspect
 import itertools
 import json
 import multiprocessing as mp
@@ -31,6 +30,7 @@ from helpers.path_analysis import extract_heuristic_accuracy_data
 from helpers.rich_progress import trange
 from helpers.summaries import create_summary_panel
 from heuristic.heuristic_base import Heuristic
+from JAxtar.search_build_spec import SearchBuildSpec
 from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
@@ -202,24 +202,31 @@ class EvaluationRunner:
             config_title = f"{self.run_label.replace('_', ' ').title()} Evaluation Configuration"
             print_config(config_title, enrich_config(config))
 
-            # Some builder fns accept optional kwargs (e.g. show_compile_time). We only pass
-            # supported kwargs to keep compatibility across different search implementations.
-            builder_kwargs = {
-                "pop_ratio": pr,
-                "cost_weight": cw,
-                "show_compile_time": current_eval_opts.show_compile_time,
-                "emit_workload_signature": getattr(
+            warmup_inputs = None
+            if eval_inputs:
+                warmup_identifier = eval_inputs[0]
+                if self.benchmark is not None:
+                    warmup_sample = self.benchmark.get_sample(warmup_identifier)
+                    warmup_inputs = (warmup_sample.solve_config, warmup_sample.state)
+                else:
+                    warmup_inputs = self.puzzle.get_inits(
+                        jax.random.PRNGKey(int(warmup_identifier))
+                    )
+            spec = SearchBuildSpec(
+                pop_ratio=pr,
+                cost_weight=cw,
+                show_compile_time=current_eval_opts.show_compile_time,
+                warmup_inputs=warmup_inputs,
+                emit_workload_signature=getattr(
                     current_eval_opts, "emit_workload_signature", False
                 ),
-            }
-            sig = inspect.signature(self.search_builder_fn)
-            supported_kwargs = {k: v for k, v in builder_kwargs.items() if k in sig.parameters}
+            )
             search_fn = self.search_builder_fn(
                 self.puzzle,
                 self.search_model,
                 bs,
                 self.eval_options.get_max_node_size(bs),
-                **supported_kwargs,
+                spec,
             )
 
             results = self._run_evaluation(

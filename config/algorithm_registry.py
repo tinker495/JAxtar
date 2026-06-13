@@ -7,6 +7,7 @@ See CONTEXT.md "Search Algorithm Catalog".
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -39,6 +40,16 @@ class SearchAlgorithmEntry(BaseModel):
     search_title: str
     eval_description: str
     node_metric_label: Optional[str] = None
+    supports_workload_signature: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SearchAlgorithmResolution:
+    """Validated builder facts for adapter call sites."""
+
+    run_label: str
+    builder_fn: Callable
+    extra_kwargs: dict
 
 
 SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
@@ -50,6 +61,7 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
         component_kind="heuristic",
         search_title="A* Search Configuration",
         eval_description="Evaluate a heuristic-driven A* search with optional parameter sweeps.",
+        supports_workload_signature=True,
     ),
     SearchAlgorithmEntry(
         python_id="astar_d",
@@ -61,6 +73,7 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
         eval_description=(
             "Evaluate a heuristic-driven A* Deferred search with optional parameter sweeps."
         ),
+        supports_workload_signature=True,
     ),
     SearchAlgorithmEntry(
         python_id="bi_astar",
@@ -115,6 +128,7 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
         component_kind="qfunction",
         search_title="Q* Search Configuration",
         eval_description="Evaluate a Q*-style search with optional parameter sweeps.",
+        supports_workload_signature=True,
     ),
     SearchAlgorithmEntry(
         python_id="bi_qstar",
@@ -155,9 +169,31 @@ def get_algorithm_entry(python_id: str) -> SearchAlgorithmEntry:
     raise KeyError(f"No Search Algorithm Catalog entry for python_id={python_id!r}")
 
 
+def resolve_algorithm_for_component(
+    python_id: str,
+    component_kind: ComponentKind,
+) -> SearchAlgorithmResolution:
+    entry = get_algorithm_entry(python_id)
+    if entry.component_kind != component_kind:
+        raise ValueError(
+            f"Algorithm {python_id!r} expects {entry.component_kind!r}, not {component_kind!r}."
+        )
+
+    extra_kwargs: dict = {}
+    if entry.node_metric_label is not None:
+        extra_kwargs["node_metric_label"] = entry.node_metric_label
+    return SearchAlgorithmResolution(
+        run_label=entry.run_label,
+        builder_fn=entry.builder_fn,
+        extra_kwargs=extra_kwargs,
+    )
+
+
 __all__ = [
     "ComponentKind",
     "SearchAlgorithmEntry",
+    "SearchAlgorithmResolution",
     "SEARCH_ALGORITHM_CATALOG",
     "get_algorithm_entry",
+    "resolve_algorithm_for_component",
 ]

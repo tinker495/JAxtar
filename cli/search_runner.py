@@ -1,4 +1,3 @@
-import inspect
 import json
 import time
 
@@ -30,6 +29,7 @@ from helpers.visualization import (
     build_vmapped_setup_panel,
     save_solution_animation_and_frames,
 )
+from JAxtar.search_build_spec import SearchBuildSpec
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
@@ -318,21 +318,19 @@ def run_search_command(
     warmup_seed = seeds[0] if seeds else 0
     warmup_config, warmup_state = puzzle.get_inits(jax.random.PRNGKey(warmup_seed))
 
-    builder_kwargs = {
-        "pop_ratio": search_options.pop_ratio,
-        "cost_weight": search_options.cost_weight,
-        "show_compile_time": search_options.show_compile_time,
-        "warmup_inputs": (warmup_config, warmup_state),
-        "emit_workload_signature": getattr(search_options, "emit_workload_signature", False),
-    }
-    signature = inspect.signature(builder_fn)
-    supported_kwargs = {k: v for k, v in builder_kwargs.items() if k in signature.parameters}
+    spec = SearchBuildSpec(
+        pop_ratio=search_options.pop_ratio,
+        cost_weight=search_options.cost_weight,
+        show_compile_time=search_options.show_compile_time,
+        warmup_inputs=(warmup_config, warmup_state),
+        emit_workload_signature=getattr(search_options, "emit_workload_signature", False),
+    )
     search_fn = builder_fn(
         puzzle,
         component,
         search_options.batch_size,
         search_options.get_max_node_size(),
-        **supported_kwargs,
+        spec,
     )
 
     total_search_times, states_per_second, single_search_time = search_samples(

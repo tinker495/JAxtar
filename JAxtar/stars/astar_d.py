@@ -8,6 +8,7 @@ from puxle import Puzzle
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.search_build_spec import DEFAULT_SEARCH_BUILD_SPEC, SearchBuildSpec
 from JAxtar.stars.search_base import (
     LoopStateWithStates,
     SearchResult,
@@ -103,7 +104,9 @@ def _astar_d_loop_builder(
 
             optimal_mask = (
                 xnp.unique_mask(
-                    flattened_neighbour_look_head, flattened_look_a_head_costs, candidate_mask
+                    flattened_neighbour_look_head,
+                    flattened_look_a_head_costs,
+                    candidate_mask,
                 )
                 & candidate_mask
             )
@@ -183,12 +186,9 @@ def astar_d_builder(
     heuristic: Heuristic,
     batch_size: int = 1024,
     max_nodes: int = int(1e6),
-    pop_ratio: float = jnp.inf,
-    cost_weight: float = 1.0 - 1e-6,
-    show_compile_time: bool = False,
+    spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
+    *,
     look_ahead_pruning: bool = True,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
-    emit_workload_signature: bool = False,
 ):
     """
     Builds and returns a JAX-accelerated A* with deferred node evaluation (A* deferred).
@@ -212,14 +212,10 @@ def astar_d_builder(
         heuristic: Heuristic instance that provides state evaluation.
         batch_size: Number of states to process in parallel (default: 1024).
         max_nodes: Maximum number of nodes to explore before terminating (default: 1e6).
-        pop_ratio: Ratio of states to pop from the priority queue.
-        cost_weight: Weight applied to the path cost in the A* with deferred search algorithm (default: 1.0-1e-6).
-                    Values closer to 1.0 make the search more greedy/depth-first.
-        show_compile_time: If True, displays the time taken to compile the search function (default: False).
+        spec: Shared build-time tuning knobs for search construction.
         look_ahead_pruning: Enables neighbour look-ahead pruning (default: True). Disable
             to recover canonical A* deferred behaviour when simulator cost outweighs queue
             pressure.
-        emit_workload_signature: If True, track xtr_* workload signature counters.
 
     Returns:
         A function that performs A* with deferred search given a start state and solve configuration.
@@ -230,10 +226,10 @@ def astar_d_builder(
         heuristic,
         batch_size,
         max_nodes,
-        pop_ratio,
-        cost_weight,
+        spec.pop_ratio,
+        spec.cost_weight,
         look_ahead_pruning,
-        emit_workload_signature,
+        spec.emit_workload_signature,
     )
 
     def astar_d(
@@ -256,4 +252,4 @@ def astar_d_builder(
         search_result.solved_idx = current[jnp.argmax(solved)]
         return search_result
 
-    return compile_search_builder(astar_d, puzzle, show_compile_time, warmup_inputs)
+    return compile_search_builder(astar_d, puzzle, spec.show_compile_time, spec.warmup_inputs)
