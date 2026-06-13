@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import pytest
 from puxle import SlidePuzzle
 
-from helpers.visualization import build_path_steps_from_trace
+from helpers.path_steps import build_path_steps_from_trace
 from JAxtar.annotate import ACTION_DTYPE
 from JAxtar.id_stars.search_base import IDSearchResult
 from JAxtar.solution_trace import (
@@ -149,11 +149,11 @@ def test_cli_runners_delegate_result_outcome_normalisation():
 
 
 def test_path_step_adapter_consumes_solution_trace_interface_only():
-    """Path Step Adapter (helpers/visualization.py) must consume SolutionTrace
+    """Path Step Adapter (helpers/path_steps.py) must consume SolutionTrace
     through the public Solution Trace Interface only. It may import SolutionTrace
     for type annotations but must not call search-internal trace helpers or
     construct solved/unsolved SolutionTrace directly."""
-    source = (_REPO_ROOT / "helpers/visualization.py").read_text()
+    source = (_REPO_ROOT / "helpers/path_steps.py").read_text()
 
     forbidden = (
         "_get_solved_path(",
@@ -164,9 +164,26 @@ def test_path_step_adapter_consumes_solution_trace_interface_only():
     )
     for phrase in forbidden:
         assert phrase not in source, (
-            f"helpers/visualization.py touched a search-internal trace path {phrase!r}; "
+            f"helpers/path_steps.py touched a search-internal trace path {phrase!r}; "
             "Path Step Adapter must consume SolutionTrace through the public "
             "Solution Trace Interface only (CONTEXT.md L156-158)."
+        )
+
+
+def test_visualization_does_not_own_path_step_adapter_logic():
+    source = (_REPO_ROOT / "helpers/visualization.py").read_text()
+
+    forbidden = (
+        "class PathStep:",
+        "def build_path_steps_from_trace(",
+        "def build_path_steps_from_actions(",
+        "def build_path_steps_from_nodes(",
+        "puzzle.get_neighbours(",
+    )
+    for phrase in forbidden:
+        assert phrase not in source, (
+            f"helpers/visualization.py still owns Path Step Adapter logic {phrase!r}; "
+            "move replay/annotation facts to helpers.path_steps so rendering I/O stays outside the seam."
         )
 
 

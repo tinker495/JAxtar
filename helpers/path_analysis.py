@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import xtructure.numpy as xnp
 
-from helpers.visualization import PathStep, build_path_steps_from_actions
+from helpers.path_steps import PathStep, build_path_steps_from_actions
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 

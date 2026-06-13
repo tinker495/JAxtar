@@ -15,7 +15,7 @@ import jax
 import numpy as np
 import xtructure.numpy as xnp
 
-from helpers.visualization import PathStep, build_path_steps_from_trace
+from helpers.path_steps import PathStep, build_path_steps_from_trace
 from helpers.xtructure_signature import extract_xtructure_signature
 from JAxtar.solution_trace import SolutionTrace
 

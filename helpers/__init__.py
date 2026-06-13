@@ -37,6 +37,10 @@ __all__ = [
     "build_solution_path_panel",
     "build_vmapped_setup_panel",
     "save_solution_animation_and_frames",
+    "PathStep",
+    "build_path_steps_from_actions",
+    "build_path_steps_from_nodes",
+    "build_path_steps_from_trace",
 ]
 
 _EXPORTS: dict[str, tuple[str, str | None]] = {
@@ -79,6 +83,10 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
         "helpers.visualization",
         "save_solution_animation_and_frames",
     ),
+    "PathStep": ("helpers.path_steps", "PathStep"),
+    "build_path_steps_from_actions": ("helpers.path_steps", "build_path_steps_from_actions"),
+    "build_path_steps_from_nodes": ("helpers.path_steps", "build_path_steps_from_nodes"),
+    "build_path_steps_from_trace": ("helpers.path_steps", "build_path_steps_from_trace"),
 }
 
 
