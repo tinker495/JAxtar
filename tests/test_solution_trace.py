@@ -115,13 +115,37 @@ def test_cli_runners_consume_solution_trace_interface(runner_path):
     forbidden = (
         "reconstruct_bidirectional_path",
         "search_result.solution_trace(",
+        "search_result.to_solution_trace(",
         "solution_actions",
         "get_solved_path",
+        "build_path_steps_from_trace",
         "build_path_steps_from_actions",
         "build_path_steps_from_nodes",
     )
     for phrase in forbidden:
         assert phrase not in source
+
+
+def test_cli_runners_delegate_result_outcome_normalisation():
+    """Runners cross the Search Outcome Module seam instead of branching on
+    Stars / Beam / Bidirectional / ID Result implementation facts."""
+    runner_sources = {
+        path: (_REPO_ROOT / path).read_text()
+        for path in ("cli/search_runner.py", "cli/evaluation_runner.py")
+    }
+    forbidden = (
+        'hasattr(search_result, "meeting")',
+        "search_result.meeting",
+        "search_result.total_generated",
+        "search_result.get_cost(search_result.solved_idx)",
+        "search_result.to_solution_trace(",
+    )
+    for path, source in runner_sources.items():
+        for phrase in forbidden:
+            assert phrase not in source, (
+                f"{path} normalises search Result internals with {phrase!r}; "
+                "use cli/search_outcome.py so runner knowledge stays behind one seam."
+            )
 
 
 def test_path_step_adapter_consumes_solution_trace_interface_only():

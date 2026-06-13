@@ -30,10 +30,6 @@ from helpers.metrics import calculate_benchmark_metrics, calculate_heuristic_met
 from helpers.path_analysis import extract_heuristic_accuracy_data
 from helpers.rich_progress import trange
 from helpers.summaries import create_summary_panel
-from helpers.visualization import (
-    build_path_steps_from_trace,
-)
-from helpers.xtructure_signature import extract_xtructure_signature
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
@@ -43,6 +39,14 @@ from .evaluation_plot_adapter import (
     EvaluationPlotAdapter,
     MatplotlibPlotAdapter,
 )
+from .search_outcome import (
+    apply_benchmark_verification,
+    build_deferred_payload,
+    build_evaluation_result_item,
+    normalise_search_result,
+    with_solution_path,
+    with_workload_signature,
+)
 from .verification import (
     BenchmarkVerification,
     benchmark_verification_from_exception,
@@ -51,21 +55,6 @@ from .verification import (
     verify_benchmark_path,
     verify_solution_worker,
 )
-
-
-def _apply_benchmark_verification(
-    result_item: dict,
-    verification: BenchmarkVerification,
-) -> None:
-    if verification.path_action_strings is not None:
-        result_item["path_action_strings"] = verification.path_action_strings
-    if verification.benchmark_verification_error is not None:
-        result_item["benchmark_verification_error"] = verification.benchmark_verification_error
-    if (
-        verification.matches_optimal_path is not None
-        or verification.benchmark_verification_error is not None
-    ):
-        result_item["matches_optimal_path"] = verification.matches_optimal_path
 
 
 @partial(jax.jit)
@@ -425,130 +414,41 @@ class EvaluationRunner:
 
         start_time = time.time()
         search_result = search_fn(solve_config, state)
-        is_bidirectional = (
-            hasattr(search_result, "meeting")
-            and hasattr(search_result, "forward")
-            and hasattr(search_result, "backward")
-        )
-        if is_bidirectional:
-            solved = bool(search_result.meeting.found.block_until_ready())
-        else:
-            solved = bool(search_result.solved.block_until_ready())
+        outcome = normalise_search_result(search_result)
         end_time = time.time()
 
         search_time = end_time - start_time
-        if is_bidirectional:
-            generated_nodes = int(jax.device_get(search_result.total_generated))
-        else:
-            generated_nodes = int(search_result.generated_size)
+        if getattr(self.eval_options, "emit_workload_signature", False):
+            outcome = with_workload_signature(outcome, search_result)
 
-        result_item = {
-            "seed": run_identifier,
-            "solved": solved,
-            "search_time_s": search_time,
-            "nodes_generated": generated_nodes,
-            "node_metric_label": self.node_metric_label,
-            "path_cost": 0,
-            "path_analysis": None,
-            "expansion_analysis": None,
-            "path_state_count": None,
-            "path_action_count": None,
-            "matches_optimal_path": None,
-            "path_actions": None,
-            "path_action_strings": None,
-            "benchmark_verification_error": None,
-            "benchmark_has_optimal_action_sequence": False,
-        }
-
-        if getattr(self.eval_options, "emit_workload_signature", False) and (not is_bidirectional):
-            result_item.update(extract_xtructure_signature(search_result))
-
-        if self.benchmark is not None:
-            result_item["benchmark_sample_id"] = run_identifier
-            optimal_path_cost = getattr(benchmark_sample, "optimal_path_cost", None)
-            if optimal_path_cost is None:
-                optimal_path_cost = getattr(benchmark_sample, "optimal_path_costs", None)
-            if optimal_path_cost is not None:
-                result_item["benchmark_optimal_path_cost"] = float(optimal_path_cost)
-            optimal_path = getattr(benchmark_sample, "optimal_path", None)
-            if optimal_path is not None:
-                optimal_state_count = len(optimal_path)
-                result_item["benchmark_optimal_path_state_count"] = optimal_state_count
-                if optimal_state_count > 0:
-                    result_item["benchmark_optimal_path_length"] = max(0, optimal_state_count - 1)
-            optimal_action_sequence = getattr(benchmark_sample, "optimal_action_sequence", None)
-            if optimal_action_sequence is not None:
-                result_item["benchmark_has_optimal_action_sequence"] = True
-                if not isinstance(optimal_action_sequence, (list, tuple)):
-                    optimal_action_sequence = list(optimal_action_sequence)
-                optimal_actions: list[int | str] = []
-                for action_val in optimal_action_sequence:
-                    if isinstance(action_val, str):
-                        optimal_actions.append(action_val)
-                    else:
-                        optimal_actions.append(int(action_val))
-                result_item["benchmark_optimal_action_sequence"] = optimal_actions
-                result_item["benchmark_optimal_action_count"] = len(optimal_actions)
-            elif optimal_path is not None:
-                result_item["benchmark_optimal_action_count"] = max(0, len(optimal_path) - 1)
-
-        deferred_payload = {
-            "result_item": result_item,
-            "solve_config": solve_config,
-            "initial_state": state,
-            "benchmark_sample": benchmark_sample,
-        }
-        if solved:
-            solution_trace = search_result.to_solution_trace(puzzle=self.puzzle)
-            path_steps = build_path_steps_from_trace(
+        if outcome.solved:
+            outcome = with_solution_path(
+                outcome,
+                search_result,
                 puzzle=self.puzzle,
                 solve_config=solve_config,
                 initial_state=state,
-                solution_trace=solution_trace,
                 heuristic=heuristic_model,
-                q_fn=qfunction_model,
-            )
-
-            path_cost = path_steps[-1].cost if path_steps else 0.0
-            result_item["path_cost"] = float(path_cost)
-            path_state_count = len(path_steps)
-            result_item["path_state_count"] = path_state_count
-            result_item["path_action_count"] = max(0, path_state_count - 1)
-            actual_actions = [
-                int(step.action) for step in path_steps[:-1] if step.action is not None
-            ]
-            result_item["path_actions"] = actual_actions
-
-            states = [step.state for step in path_steps]
-            costs_list = [step.cost for step in path_steps]
-            dists_list = [
-                float(step.dist) if step.dist is not None else np.inf for step in path_steps
-            ]
-            states_concat = xnp.concatenate(states) if states else None
-
-            verification = verify_benchmark_path(
+                qfunction=qfunction_model,
                 benchmark=self.benchmark,
-                puzzle=self.puzzle,
                 benchmark_sample=benchmark_sample,
-                states=states,
-                actual_actions=actual_actions,
             )
-            _apply_benchmark_verification(result_item, verification)
-            deferred_payload["benchmark_verification"] = verification
-            deferred_payload["path_action_strings"] = verification.path_action_strings
-            deferred_payload["verify_result"] = verification.matches_optimal_path
-            deferred_payload["verify_error"] = verification.benchmark_verification_error
-            deferred_payload.update(
-                {
-                    "path_steps": path_steps,
-                    "states": states,
-                    "actual_actions": actual_actions,
-                    "path_costs": costs_list,
-                    "path_dists": dists_list,
-                    "path_len": len(costs_list),
-                    "states_concat": states_concat,
-                }
-            )
+
+        result_item = build_evaluation_result_item(
+            run_identifier=run_identifier,
+            outcome=outcome,
+            node_metric_label=self.node_metric_label,
+            search_time_s=search_time,
+            benchmark_sample=benchmark_sample if self.benchmark is not None else None,
+        )
+
+        deferred_payload = build_deferred_payload(
+            result_item=result_item,
+            outcome=outcome,
+            solve_config=solve_config,
+            initial_state=state,
+            benchmark_sample=benchmark_sample,
+        )
 
         # Extract expansion data for plotting node value distributions
         if hasattr(search_result, "pop_generation"):
@@ -601,7 +501,7 @@ class EvaluationRunner:
                             parents = search_result.parent.hashidx.index
                             expanded_parents = parents[expanded_nodes_mask]
                             analysis_data["parent_indices"] = np.asarray(expanded_parents)
-                        if solved:
+                        if outcome.solved:
                             try:
                                 solved_hash = int(
                                     np.asarray(
@@ -615,11 +515,14 @@ class EvaluationRunner:
                                 ValueError,
                                 TypeError,
                             ) as exc:
-                                print(f"Warning: Could not extract solved index: {exc}")
+                                self.console.print(
+                                    f"[yellow]Warning: Could not extract solved index: {exc}[/yellow]"
+                                )
 
                     except (AttributeError, KeyError, ValueError, TypeError) as e:
-                        print(
-                            f"Warning: Could not extract states/parents for expansion analysis: {e}"
+                        self.console.print(
+                            f"[yellow]Warning: Could not extract states/parents for "
+                            f"expansion analysis: {e}[/yellow]"
                         )
 
                     result_item["expansion_analysis"] = analysis_data
@@ -648,7 +551,7 @@ class EvaluationRunner:
             verification = payload.get("benchmark_verification")
 
             if isinstance(verification, BenchmarkVerification):
-                _apply_benchmark_verification(result_item, verification)
+                apply_benchmark_verification(result_item, verification)
             elif payload.get("path_action_strings") is not None:
                 result_item["path_action_strings"] = payload.get("path_action_strings")
 
@@ -681,11 +584,10 @@ class EvaluationRunner:
             path_steps = payload.get("path_steps")
             states = payload.get("states") or []
             if path_steps and states and not result_item.get("path_analysis"):
-                costs = payload.get("path_costs") or [step.cost for step in path_steps]
-                dists = payload.get("path_dists") or [
-                    float(step.dist) if step.dist is not None else np.inf for step in path_steps
-                ]
-                length = payload.get("path_len") or len(costs)
+                # build_deferred_payload always sets path_costs/dists/len alongside path_steps.
+                costs = payload["path_costs"]
+                dists = payload["path_dists"]
+                length = payload["path_len"]
                 if length == 0:
                     continue
                 payload["_batch_index"] = len(batched_payloads)
@@ -844,7 +746,7 @@ class EvaluationRunner:
                 else:
                     verify_result = verify_results.get(idx)
                     if isinstance(verify_result, BenchmarkVerification):
-                        _apply_benchmark_verification(result_item, verify_result)
+                        apply_benchmark_verification(result_item, verify_result)
 
             if self.benchmark is not None and solve_config is not None:
                 optimal_sequence = result_item.get("benchmark_optimal_action_sequence")

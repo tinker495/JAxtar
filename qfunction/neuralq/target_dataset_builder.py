@@ -60,7 +60,6 @@ def _get_datasets_with_policy(
         cost = jnp.transpose(cost, (1, 0))
         valid_action_mask = jnp.isfinite(cost)
         has_valid_action = jnp.any(valid_action_mask, axis=1)
-        # q_sum_cost = q_values + cost
         q_sum_cost = jnp.where(jnp.isfinite(cost), q_values, jnp.inf)
 
         # Select an action 'a' probabilistically using a Boltzmann (softmax) exploration policy.
@@ -142,7 +141,6 @@ def _get_datasets_with_policy(
         target_q = jnp.where(solved, 0.0, target_q)
         target_q = jnp.where(has_valid_action, target_q, 0.0)
 
-        # if the puzzle is already solved, the all q is 0
         return key, (
             solve_configs,
             states,

@@ -67,6 +67,9 @@ class SearchAlgorithmResult(Protocol):
     specific reconstruction helpers (`_get_solved_path`, `_solution_actions`,
     bidirectional meeting handling, ID stack handling) stay private to each
     search base and must not appear in this Protocol.
+
+    Runner-facing solved / cost / generated facts are normalised by the Search
+    Outcome Module, not by expanding this Protocol with algorithm internals.
     """
 
     def to_solution_trace(

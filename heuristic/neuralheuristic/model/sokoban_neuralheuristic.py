@@ -8,8 +8,6 @@ from neural_util.dtypes import DTYPE
 
 
 class SokobanNeuralHeuristic(NeuralHeuristicBase):
-    base_xy: chex.Array  # The coordinates of the numbers in the puzzle
-
     def __init__(self, puzzle: Sokoban, **kwargs):
         super().__init__(puzzle, **kwargs)
 

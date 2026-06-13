@@ -503,8 +503,5 @@ def tqdm(iterable=None, **kwargs):
     return RichProgressBar(iterable=iterable, **kwargs)
 
 
-# For compatibility
-class tqdm_class(RichProgressBar):
-    """Alias for backward compatibility."""
-
-    pass
+# Backward-compatible import surface for older callers.
+tqdm_class = RichProgressBar

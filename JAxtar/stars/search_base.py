@@ -137,21 +137,6 @@ def insert_priority_queue_batches(
     return search_result
 
 
-def print_states(states: Xtructurable, costs: chex.Array, dists: chex.Array, key: chex.Array):
-    """Debug helper: print search states with their costs, heuristic distances, and random key."""
-    print(states)
-    print(f"costs: {costs}")
-    print(f"dists: {dists}")
-    print(f"key: {key}")
-
-
-def print_states_w_actions(states: Xtructurable, costs: chex.Array, actions: chex.Array):
-    """Debug helper: print search states with their costs and associated actions."""
-    print(states)
-    print(f"costs: {costs}")
-    print(f"actions: {actions}")
-
-
 @partial(jax.jit, static_argnames=("max_steps",))
 def _reconstruct_path_arrays(
     parent_indices: chex.Array,
@@ -707,7 +692,7 @@ class SearchResult:
         stack_size = batch_size * 2
 
         # Initial expansion and filtering
-        (search_result, current_states, current_costs, current_dists, min_key) = _expand_and_filter(
+        search_result, current_states, current_costs, current_dists, min_key = _expand_and_filter(
             search_result, min_key, min_val
         )
         popped0 = jnp.sum(jnp.isfinite(min_key)).astype(jnp.int32)
@@ -754,7 +739,7 @@ class SearchResult:
             ) = search_result.priority_queue.delete_mins()
 
             # Expand and filter new nodes
-            (search_result, new_states, new_costs, new_dists, new_key) = _expand_and_filter(
+            search_result, new_states, new_costs, new_dists, new_key = _expand_and_filter(
                 search_result, new_key, new_val
             )
             new_popped = jnp.sum(jnp.isfinite(new_key)).astype(jnp.int32)

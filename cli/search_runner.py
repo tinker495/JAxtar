@@ -21,7 +21,6 @@ from helpers import (
 from helpers.config_printer import print_config
 from helpers.rich_progress import tqdm
 from helpers.visualization import (
-    build_path_steps_from_trace,
     build_result_table,
     build_seed_setup_panel,
     build_solution_path_panel,
@@ -31,11 +30,15 @@ from helpers.visualization import (
     build_vmapped_setup_panel,
     save_solution_animation_and_frames,
 )
-from helpers.xtructure_signature import extract_xtructure_signature
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
 from .config_utils import enrich_config
+from .search_outcome import (
+    normalise_search_result,
+    with_solution_path,
+    with_workload_signature,
+)
 
 
 def _prepare_dist_parameters(
@@ -118,79 +121,70 @@ def search_samples(
 
         start = time.time()
         search_result = search_fn(solve_config, state)
-        is_bidirectional = (
-            hasattr(search_result, "meeting")
-            and hasattr(search_result, "forward")
-            and hasattr(search_result, "backward")
-        )
-
-        if is_bidirectional:
-            solved = search_result.meeting.found.block_until_ready()
-            generated_size = search_result.total_generated
-            solved_cost = (
-                search_result.meeting.total_cost
-                if bool(jax.device_get(search_result.meeting.found))
-                else None
-            )
-        else:
-            solved = search_result.solved.block_until_ready()
-            generated_size = search_result.generated_size
-            solved_cost = search_result.get_cost(search_result.solved_idx) if solved else None
+        outcome = normalise_search_result(search_result)
         end = time.time()
         single_search_time = end - start
-        states_per_second = generated_size / single_search_time
+        states_per_second = outcome.generated_size / single_search_time
 
-        if (not has_target) and solved and (not is_bidirectional):
-            solved_st = search_result.get_state(search_result.solved_idx)
-            console.print(
-                Panel(
-                    Text.from_ansi(str(solved_st)),
-                    title="[bold green]Solution State[/bold green]",
-                    expand=False,
+        if getattr(search_options, "emit_workload_signature", False):
+            outcome = with_workload_signature(outcome, search_result)
+
+        def ensure_path_outcome():
+            nonlocal outcome
+            if outcome.solved and not outcome.path_steps:
+                outcome = with_solution_path(
+                    outcome,
+                    search_result,
+                    puzzle=puzzle,
+                    solve_config=solve_config,
+                    initial_state=state,
+                    heuristic=heuristic,
+                    qfunction=qfunction,
                 )
-            )
+            return outcome
+
+        if (not has_target) and outcome.solved:
+            path_outcome = ensure_path_outcome()
+            if path_outcome.solution_state is not None:
+                console.print(
+                    Panel(
+                        Text.from_ansi(str(path_outcome.solution_state)),
+                        title="[bold green]Solution State[/bold green]",
+                        expand=False,
+                    )
+                )
 
         total_search_times.append(single_search_time)
-        total_states.append(generated_size)
-        total_solved.append(solved)
+        total_states.append(outcome.generated_size)
+        total_solved.append(outcome.solved)
         states_per_sec_list.append(states_per_second)
 
         if search_options.profile:
             jax.profiler.stop_trace()
 
         result_table = build_result_table(
-            solved=solved,
+            solved=outcome.solved,
             single_search_time=single_search_time,
-            generated_size=generated_size,
+            generated_size=outcome.generated_size,
             states_per_second=states_per_second,
-            solved_cost=solved_cost if solved_cost is None else float(solved_cost),
+            solved_cost=outcome.solved_cost,
             seed=seed,
         )
         console.print(result_table)
-        if getattr(search_options, "emit_workload_signature", False):
-            signature = extract_xtructure_signature(search_result)
-            if signature:
-                console.print(
-                    Panel(
-                        Text(json.dumps(signature, indent=2)),
-                        title="[bold cyan]Xtructure Workload Signature[/bold cyan]",
-                        expand=False,
-                    )
+        if outcome.workload_signature:
+            console.print(
+                Panel(
+                    Text(json.dumps(outcome.workload_signature, indent=2)),
+                    title="[bold cyan]Xtructure Workload Signature[/bold cyan]",
+                    expand=False,
                 )
+            )
 
-        if solved:
-            total_costs.append(float(solved_cost) if solved_cost is not None else 0.0)
+        if outcome.solved:
+            total_costs.append(outcome.solved_cost if outcome.solved_cost is not None else 0.0)
 
             if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
-                solution_trace = search_result.to_solution_trace(puzzle=puzzle)
-                path_steps = build_path_steps_from_trace(
-                    puzzle=puzzle,
-                    solve_config=solve_config,
-                    initial_state=state,
-                    solution_trace=solution_trace,
-                    heuristic=heuristic,
-                    q_fn=qfunction,
-                )
+                path_steps = list(ensure_path_outcome().path_steps)
 
                 if visualize_options.visualize_terminal:
                     console.print(

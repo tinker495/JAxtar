@@ -53,38 +53,10 @@ def variable_batch_switcher_builder(
         if current_batch == 0:
             batch_sizes.append(0)
 
-            # Branch for 0 batch size: return array of pad_value without calling eval_fn
+            # Zero batch: slice 0 items so eval_fn yields a correctly-typed empty
+            # result, then pad up to max_batch_size. jax.lax.switch requires every
+            # branch to share output shape/dtype, which the eval_fn + pad path keeps.
             def zero_branch(distance_fn_parameters, current):
-                # Just return an array of pad_value with shape [max_batch_size, ...]
-                # We need to know the output shape/dtype.
-                # Since we can't infer it easily without calling eval_fn,
-                # we might need a dummy call or rely on the fact that all branches must return same shape/dtype.
-                # A safer way is to call eval_fn with 1 element (if possible) or use eval_fn's signature.
-                # However, here we simply rely on padding logic if we assume current has correct leading dim?
-                # No, current has shape [max_batch_size, ...].
-                # We want output [max_batch_size, ...].
-                # Let's assume eval_fn returns something compatible with _pad_leading_axis.
-                # BUT, pad_leading_axis pads 'values'. If we don't call eval_fn, what is 'values'?
-                # It should be an empty array with correct trailing dimensions and dtype.
-
-                # To get correct shape/dtype, we can call eval_fn on a dummy input of size 1 and discard it?
-                # That defeats the purpose of 0 cost.
-                # Instead, let's assume pad_value is scalar and broadcast it?
-                # JAX switch requires all branches to return same shape/dtype.
-                # So we actually MUST return something that matches eval_fn's output structure.
-
-                # If current_batch > 0 branches exist, JAX will infer the type from them.
-                # But we need to construct the array.
-                # Strategy: Let's just call eval_fn with slice 0?
-                # slice 0 of current is empty. eval_fn might fail on empty input.
-
-                # Correct approach:
-                # If min_batch_size is allowed to be 0, we should process 0-sized batch by
-                # slicing 0 items, calling eval_fn(0 items), and padding back to max.
-                # If eval_fn supports 0-sized input, this works automatically!
-                # If eval_fn does NOT support 0-sized input, we can't support 0 batch size easily without more info.
-
-                # Let's try standard path: slice 0 -> eval_fn -> pad.
                 sliced_current = current[:0]
                 values = eval_fn(distance_fn_parameters, sliced_current)
                 return _pad_leading_axis(values, max_batch_size, pad_value)
@@ -107,17 +79,13 @@ def variable_batch_switcher_builder(
         branches.append(make_branch(current_batch, pad_width))
 
         if current_batch <= min_batch_size:
-            # If we reached min_batch_size and it is > 0, check if we should add 0 case
-            # If min_batch_size is 0, loop continues until current_batch hits 0
-            if min_batch_size == 0 and current_batch > 0:
-                # Force next iteration to hit 0 eventually
-                pass
-            else:
+            # When min_batch_size is 0 keep going so we still emit the 0-batch branch.
+            if not (min_batch_size == 0 and current_batch > 0):
                 break
 
         next_batch = max(current_batch >> 1, min_batch_size)
         if next_batch == current_batch:
-            # If we are stuck (e.g. at min_batch_size), but we want to go to 0
+            # Halving stalled at min_batch_size; drop to 0 only if 0 is allowed.
             if min_batch_size == 0 and current_batch > 0:
                 next_batch = 0
             else:
