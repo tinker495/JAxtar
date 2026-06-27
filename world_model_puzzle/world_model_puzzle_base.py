@@ -7,7 +7,7 @@ import numpy as np
 from flax import linen as nn
 from puxle import Puzzle
 from puxle.core.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
-from puxle.utils.annotate import IMG_SIZE
+from puxle.utils import IMG_SIZE
 from xtructure import numpy as xnp
 
 from helpers.formatting import img_to_colored_str
@@ -94,8 +94,15 @@ class WorldModel(nn.Module):
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)
         latent_size = np.prod(self.latent_shape)
-        logits = nn.Dense(latent_size * self.action_size, dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
-        logits = jnp.reshape(logits, shape=(x.shape[0], self.action_size) + self.latent_shape)
+        logits = nn.Dense(
+            latent_size * self.action_size,
+            dtype=DTYPE,
+            param_dtype=PARAM_DTYPE,
+        )(x)
+        logits = jnp.reshape(
+            logits,
+            shape=(x.shape[0], self.action_size) + self.latent_shape,
+        )
         return logits
 
 
@@ -183,9 +190,8 @@ class WorldModelPuzzleBase(Puzzle):
                 action = jnp.reshape(
                     action, (-1,) + (1,) * (next_logits_preds.ndim - 1)
                 )  # [batch_size, 1, ...]
-                next_logits_pred = jnp.take_along_axis(next_logits_preds, action, axis=1).squeeze(
-                    axis=1
-                )  # [batch_size, ...]
+                next_logits = jnp.take_along_axis(next_logits_preds, action, axis=1)
+                next_logits_pred = next_logits.squeeze(axis=1)  # [batch_size, ...]
                 next_latents_pred = nn.sigmoid(next_logits_pred)
                 rounded_next_latents_pred = round_through_gradient(next_latents_pred)
 
@@ -237,7 +243,7 @@ class WorldModelPuzzleBase(Puzzle):
             params, metadata = load_params_with_metadata(self.path)
             if params is None:
                 print(
-                    f"Warning: Loaded parameters from {self.path} are invalid or in an old format. "
+                    f"Warning: Loaded parameters from {self.path} are invalid or old. "
                     "Initializing new parameters."
                 )
                 self.metadata = {}
@@ -309,7 +315,7 @@ class WorldModelPuzzleBase(Puzzle):
 
     def get_img_parser(self) -> callable:
         """
-        This function should return a callable that takes a state and returns a image representation of it.
+        Return a callable that renders a state as an image.
         function signature: (state: State) -> jnp.ndarray
         """
         import cv2
@@ -327,7 +333,11 @@ class WorldModelPuzzleBase(Puzzle):
             data = self.model.apply(
                 self.params, latent, training=False, method=self.model.decode
             ).squeeze(0)
-            data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
+            data = np.clip(
+                np.array(data * 255.0) / 2.0 + 127.5,
+                0,
+                255,
+            ).astype(np.uint8)
             height, width = data.shape[:2]
             if resize_img:
                 width, height = int(target_height * width / height), target_height
@@ -340,7 +350,11 @@ class WorldModelPuzzleBase(Puzzle):
                 data = self.model.apply(
                     self.params, latent, training=False, method=self.model.decode
                 ).squeeze(0)
-                data = np.clip(np.array(data * 255.0) / 2.0 + 127.5, 0, 255).astype(np.uint8)
+                data = np.clip(
+                    np.array(data * 255.0) / 2.0 + 127.5,
+                    0,
+                    255,
+                ).astype(np.uint8)
                 if resize_img:
                     img2 = cv2.resize(
                         data,
@@ -400,7 +414,11 @@ class WorldModelPuzzleBase(Puzzle):
 
         actions_indices = jnp.expand_dims(actions, axis=0)
 
-        batched_next_states = xnp.take_along_axis(batched_neighbours, actions_indices, axis=0)
+        batched_next_states = xnp.take_along_axis(
+            batched_neighbours,
+            actions_indices,
+            axis=0,
+        )
         batched_costs = jnp.take_along_axis(costs, actions_indices, axis=0)
 
         batched_next_states = xnp.squeeze(batched_next_states, axis=0)
@@ -441,9 +459,11 @@ class WorldModelPuzzleBase(Puzzle):
         next_bit_latent = jnp.swapaxes(
             next_bit_latent, 0, 1
         )  # (action_size, batch_size, latent_size)
-        next_states = jax.vmap(jax.vmap(lambda lat: self.State.from_unpacked(latent=lat)))(
-            next_bit_latent
-        )
+
+        def state_from_latent(latent):
+            return self.State.from_unpacked(latent=latent)
+
+        next_states = jax.vmap(jax.vmap(state_from_latent))(next_bit_latent)
         cost = jnp.where(
             filleds,
             jnp.ones((self.action_size, states.latent.shape[0]), dtype=jnp.float16),
@@ -456,7 +476,7 @@ class WorldModelPuzzleBase(Puzzle):
     ) -> tuple[Puzzle.State, chex.Array]:
         """
         This function should return a neighbours, and the cost of the move.
-        if impossible to move in a direction cost should be inf and State should be same as input state.
+        Impossible moves have infinite cost and keep the same state.
         """
         states = state[jnp.newaxis, ...]
         # filleds = filled[jnp.newaxis, ...]
@@ -470,7 +490,7 @@ class WorldModelPuzzleBase(Puzzle):
         multi_solve_config: bool = False,
     ) -> bool:
         """
-        This function should return a boolean array that indicates whether the state is the target state.
+        Return a boolean array indicating whether each state is the target state.
         """
         if multi_solve_config:
             return jax.vmap(self.is_solved, in_axes=(0, 0))(solve_configs, states)
@@ -495,7 +515,11 @@ class WorldModelPuzzleBase(Puzzle):
         """
         states = state[jnp.newaxis, ...]
         # filleds = filled[jnp.newaxis, ...]
-        next_states, costs = self.batched_get_inverse_neighbours(solve_config, states, filled)
+        next_states, costs = self.batched_get_inverse_neighbours(
+            solve_config,
+            states,
+            filled,
+        )
         return next_states[:, 0], costs[:, 0]
 
     def batched_get_inverse_neighbours(
@@ -505,4 +529,9 @@ class WorldModelPuzzleBase(Puzzle):
         filleds: bool = True,
         multi_solve_config: bool = False,
     ) -> tuple[Puzzle.State, chex.Array]:
-        return self.batched_get_neighbours(solve_configs, states, filleds, multi_solve_config)
+        return self.batched_get_neighbours(
+            solve_configs,
+            states,
+            filleds,
+            multi_solve_config,
+        )
