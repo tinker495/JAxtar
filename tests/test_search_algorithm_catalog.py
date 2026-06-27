@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import inspect
 import re
+from dataclasses import is_dataclass
 from pathlib import Path
 
 import pytest
 
 from config import (
     SEARCH_ALGORITHM_CATALOG,
+    SearchAlgorithmEntry,
     resolve_algorithm_for_component,
 )
 
@@ -26,6 +28,11 @@ from cli.main import cli
 from JAxtar.search_build_spec import SearchBuildSpec
 
 CATALOG_KEBAB = {entry.cli_subcommand for entry in SEARCH_ALGORITHM_CATALOG}
+
+
+def test_catalog_entries_are_plain_dataclasses():
+    assert is_dataclass(SearchAlgorithmEntry)
+    assert not hasattr(SearchAlgorithmEntry, "model_validate")
 
 
 def test_catalog_entries_have_unique_python_ids():
