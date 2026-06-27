@@ -72,6 +72,43 @@ def apply_non_backtracking(
     return jnp.logical_and(valid_mask, jnp.logical_not(blocked))
 
 
+def build_frontier_cond(batch_size: int, max_steps: int = 100):
+    def cond_bounded(val: tuple["IDFrontier", jnp.int32]):
+        frontier, i = val
+        num_valid = jnp.sum(frontier.valid_mask)
+        has_capacity = num_valid < batch_size
+        has_nodes = num_valid > 0
+        within_limit = i < max_steps
+        return jnp.logical_and(
+            ~frontier.solved,
+            jnp.logical_and(within_limit, jnp.logical_and(has_capacity, has_nodes)),
+        )
+
+    return cond_bounded
+
+
+def merge_frontier_solution(
+    frontier: "IDFrontier",
+    any_solved: chex.Array,
+    found_sol_state: Xtructurable,
+    found_sol_cost: chex.Array,
+    found_sol_actions: chex.Array,
+):
+    return (
+        jnp.logical_or(frontier.solved, any_solved),
+        jax.lax.cond(
+            any_solved, lambda _: found_sol_state, lambda _: frontier.solution_state, None
+        ),
+        jax.lax.cond(any_solved, lambda _: found_sol_cost, lambda _: frontier.solution_cost, None),
+        jax.lax.cond(
+            any_solved,
+            lambda _: found_sol_actions,
+            lambda _: frontier.solution_actions_arr,
+            None,
+        ),
+    )
+
+
 @base_dataclass
 class IDLoopState:
     """
