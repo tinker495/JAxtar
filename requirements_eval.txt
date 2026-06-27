@@ -2,4 +2,3 @@
 pandas
 matplotlib
 seaborn
-plotly

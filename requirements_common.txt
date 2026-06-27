@@ -10,7 +10,6 @@ dm-haiku
 huggingface_hub
 aqtp
 flax
-termcolor
 pydantic
 xtructure @ git+https://github.com/tinker495/xtructure.git
 puxle @ git+https://github.com/tinker495/PuXle.git
