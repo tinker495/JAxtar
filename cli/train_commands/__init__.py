@@ -5,6 +5,8 @@ from typing import Any
 
 import click
 
+from _lazy_imports import lazy_dir, load_lazy_export
+
 __all__ = [
     "distance_train",
     "world_model_train",
@@ -84,15 +86,9 @@ world_model_train = LazyGroup(
 )
 
 
-def __getattr__(name: str) -> Any:
-    try:
-        module_name, attr_name = _COMMAND_EXPORTS[name]
-    except KeyError as exc:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
-    value = getattr(importlib.import_module(module_name), attr_name)
-    globals()[name] = value
-    return value
+def __getattr__(name: str):
+    return load_lazy_export(name, __name__, _COMMAND_EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(__all__))
+    return lazy_dir(globals(), __all__)
