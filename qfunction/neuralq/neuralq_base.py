@@ -1,157 +1,28 @@
-import pickle
-from abc import abstractmethod
 from typing import Any
 
 import chex
-import jax
-import jax.numpy as jnp
-import numpy as np
 from puxle import Puzzle
 
-from neural_util.aqt_utils import convert_to_serving
-from neural_util.basemodel import DistanceHLGModel, DistanceModel, ResMLPModel
-from neural_util.dtypes import PARAM_DTYPE
-from neural_util.nn_metadata import resolve_model_kwargs
-from neural_util.param_manager import (
-    align_params_dtype,
-    load_params_with_metadata,
-    merge_params,
-    save_params_with_metadata,
-)
-from neural_util.util import download_model, is_model_downloaded, resolve_model_path
+from neural_util.neural_distance_base import NeuralDistanceBase
 from qfunction.q_base import QFunction
 
 
-class NeuralQFunctionBase(QFunction):
-    def __init__(
-        self,
-        puzzle: Puzzle,
-        model: DistanceModel | DistanceHLGModel = ResMLPModel,
-        init_params: bool = True,
-        path: str = None,
-        **kwargs,
-    ):
-        self.puzzle = puzzle
+class NeuralQFunctionBase(NeuralDistanceBase, QFunction):
+    load_error_name = "NeuralQFunction"
+
+    def _configure_puzzle(self, puzzle: Puzzle) -> None:
         self.action_size = puzzle.action_size
-        self.metadata = {}
-        self.nn_args_metadata = {}
-        self._preloaded_params = None
-        self.path = resolve_model_path(path) if path is not None else None
 
-        saved_metadata = {}
-        if path is not None and not init_params:
-            saved_metadata = self._preload_metadata()
+    def _model_kwargs(self, resolved_kwargs: dict[str, Any]) -> dict[str, Any]:
+        return {**resolved_kwargs, "action_size": self.action_size}
 
-        resolved_kwargs, nn_args = resolve_model_kwargs(kwargs, saved_metadata.get("nn_args"))
-        self.nn_args_metadata = nn_args
-        self.aqt_cfg = kwargs.get("aqt_cfg")
-        self.model_cls = model
-        self.model_kwargs = {**resolved_kwargs, "action_size": self.action_size}
-        self.model = model(self.action_size, **resolved_kwargs)
-        self.metadata = saved_metadata or {}
-        self.metadata["nn_args"] = self.nn_args_metadata
-        if path is not None:
-            if init_params:
-                self.params = self.get_new_params()
-            else:
-                self.params = self.load_model()
-        else:
-            self.params = self.get_new_params()
-
-    def get_new_params(self):
-        dummy_solve_config = self.puzzle.SolveConfig.default()
-        dummy_current = self.puzzle.State.default()
-        return self.model.init(
-            jax.random.PRNGKey(np.random.randint(0, 2**32 - 1)),
-            jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
-        )
-
-    def load_model(self):
-        try:
-            params = self._preloaded_params
-            metadata = self.metadata
-            resolved_path = self.path
-            if params is None:
-                if resolved_path is None:
-                    raise FileNotFoundError("Model path is required when init_params is False.")
-                resolved_path = resolve_model_path(resolved_path)
-                if not is_model_downloaded(resolved_path):
-                    resolved_path = download_model(resolved_path)
-                params, metadata = load_params_with_metadata(resolved_path)
-            if resolved_path is not None:
-                self.path = resolved_path
-            assert params is not None, f"Failed to load parameters from {self.path}"
-            self.metadata = metadata or {}
-            self.metadata["nn_args"] = self.nn_args_metadata
-
-            # Align loaded params to the model's expected dtype (e.g. bf16)
-            params = align_params_dtype(params, PARAM_DTYPE)
-
-            # Initialize full parameters for the current model configuration (includes AQT vars if any)
-            full_params = self.get_new_params()
-
-            # Merge old params into full params. This ensures AQT variables (if missing in old params) are present.
-            params = merge_params(full_params, params)
-
-            if self.aqt_cfg is not None:
-                print("Converting model to serving mode (AQT)...")
-                dummy_solve_config = self.puzzle.SolveConfig.default()
-                dummy_current = self.puzzle.State.default()
-                sample_input = jnp.expand_dims(
-                    self.pre_process(dummy_solve_config, dummy_current), axis=0
-                )
-
-                self.model, params = convert_to_serving(
-                    self.model_cls,
-                    params,
-                    sample_input,
-                    **self.model_kwargs,
-                )
-
-            dummy_solve_config = self.puzzle.SolveConfig.default()
-            dummy_current = self.puzzle.State.default()
-            self.model.apply(
-                params,
-                jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0),
-                training=False,
-                rngs={"params": jax.random.PRNGKey(0)},
-            )  # check if the params are compatible with the model
-            self._preloaded_params = None
-            return params
-        except (
-            FileNotFoundError,
-            pickle.PickleError,
-            ValueError,
-            RuntimeError,
-            OSError,
-        ) as e:
-            raise ValueError(f"Error loading NeuralQFunction model: {e}") from e
-
-    def save_model(self, path: str = None, metadata: dict = None):
-        path = path or self.path
-        if metadata is None:
-            metadata = {}
-        combined_metadata = {**self.metadata, **metadata}
-        combined_metadata["puzzle_type"] = str(type(self.puzzle))
-        combined_metadata["nn_args"] = self.nn_args_metadata
-        save_params_with_metadata(path, self.params, combined_metadata)
-        self.metadata = combined_metadata
+    def _build_model(self, model, resolved_kwargs: dict[str, Any]):
+        return model(self.action_size, **resolved_kwargs)
 
     def prepare_q_parameters(
         self, solve_config: Puzzle.SolveConfig, **kwargs: Any
     ) -> tuple[Any, Puzzle.SolveConfig]:
-        """
-        This function prepares the parameters for use in Q-value calculations.
-        By default, it returns the solve config unchanged. Subclasses can override
-        this to transform the solve config into a more efficient representation,
-        such as embedding it into a special vector (e.g., via a neural network)
-        to guide the search toward the goal.
-        """
-        if "params" in kwargs and kwargs["params"] is not None:
-            params = kwargs["params"]
-        else:
-            params = self.params
-        return (params, solve_config)
+        return (self._params_from_kwargs(**kwargs), solve_config)
 
     def batched_q_value(
         self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State
@@ -162,51 +33,13 @@ class NeuralQFunctionBase(QFunction):
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = self.batched_pre_process(solve_config, current)
-        x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
-        x = self.post_process(x)
-        return x
+        return self._batched_model_values(params, solve_config, current)
 
-    def batched_pre_process(
-        self, solve_configs: Puzzle.SolveConfig, current: Puzzle.State
-    ) -> chex.Array:
-        return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
-
-    def q_value(self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State) -> float:
-        """
-        This function should return the distance between the state and the target.
-        """
+    def q_value(self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State):
         params, solve_config = q_parameters
         return self.param_q_value(params, solve_config, current)[0]
 
     def param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
     ) -> chex.Array:
-        x = self.pre_process(solve_config, current)
-        x = jnp.expand_dims(x, axis=0)
-        x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
-        return self.post_process(x)
-
-    @abstractmethod
-    def pre_process(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
-        """
-        This function should return the pre-processed state.
-        """
-        pass
-
-    def post_process(self, x: chex.Array) -> float:
-        """
-        This function should return the post-processed distance.
-        """
-        return x
-
-    def _preload_metadata(self):
-        from neural_util.preprocessing import preload_metadata
-
-        params, metadata, resolved_path = preload_metadata(
-            self.path, is_model_downloaded, download_model, load_params_with_metadata
-        )
-        if params is not None:
-            self._preloaded_params = params
-        self.path = resolved_path
-        return metadata
+        return self._model_values(params, solve_config, current)
