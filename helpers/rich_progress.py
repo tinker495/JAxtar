@@ -501,7 +501,3 @@ def trange(*args, **kwargs):
 def tqdm(iterable=None, **kwargs):
     """Rich-based replacement for tqdm.tqdm."""
     return RichProgressBar(iterable=iterable, **kwargs)
-
-
-# Backward-compatible import surface for older callers.
-tqdm_class = RichProgressBar
