@@ -51,17 +51,7 @@ from heuristic.neuralheuristic import (
     SokobanNeuralHeuristic,
     WorldModelNeuralHeuristic,
 )
-from qfunction import (
-    PDDLQ,
-    TSPQ,
-    DotKnotQ,
-    LightsOutQ,
-    MazeQ,
-    PancakeQ,
-    RubiksCubeQ,
-    SlidePuzzleQ,
-    SokobanQ,
-)
+from qfunction.q_base import QFromHeuristic
 from qfunction.neuralq import (
     LightsOutConvNeuralQ,
     LightsOutNeuralQ,
@@ -97,13 +87,22 @@ from .pydantic_models import (
     WorldModelPuzzleConfig,
 )
 
+
+def _q_from_heuristic(heuristic_cls):
+    def build_q(puzzle):
+        return QFromHeuristic(heuristic_cls(puzzle))
+
+    build_q.__name__ = f"q_from_{heuristic_cls.__name__}"
+    return build_q
+
+
 puzzle_bundles: Dict[str, PuzzleBundle] = {
     "n-puzzle": PuzzleBundle(
         puzzle=SlidePuzzle,
         puzzle_hard=SlidePuzzleHard,
         k_max=500,
         heuristic=SlidePuzzleHeuristic,
-        q_function=SlidePuzzleQ,
+        q_function=_q_from_heuristic(SlidePuzzleHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=SlidePuzzleNeuralHeuristic,
@@ -130,7 +129,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         puzzle=SlidePuzzleRandom,
         k_max=500,
         heuristic=SlidePuzzleHeuristic,
-        q_function=SlidePuzzleQ,
+        q_function=_q_from_heuristic(SlidePuzzleHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=SlidePuzzleRandomNeuralHeuristic,
@@ -156,7 +155,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         puzzle=LightsOut,
         puzzle_hard=PuzzleConfig(callable=LightsOut, initial_shuffle=50),
         heuristic=LightsOutHeuristic,
-        q_function=LightsOutQ,
+        q_function=_q_from_heuristic(LightsOutHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=LightsOutNeuralHeuristic,
@@ -197,7 +196,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         puzzle=LightsOutRandom,
         k_max=50,
         heuristic=LightsOutHeuristic,
-        q_function=LightsOutQ,
+        q_function=_q_from_heuristic(LightsOutHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=LightsOutRandomNeuralHeuristic,
@@ -216,7 +215,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         puzzle_hard=PuzzleConfig(callable=RubiksCube),
         k_max=26,
         heuristic=RubiksCubeHeuristic,
-        q_function=RubiksCubeQ,
+        q_function=_q_from_heuristic(RubiksCubeHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
@@ -251,7 +250,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         puzzle=PuzzleConfig(callable=RubiksCubeRandom),
         k_max=26,
         heuristic=RubiksCubeHeuristic,
-        q_function=RubiksCubeQ,
+        q_function=_q_from_heuristic(RubiksCubeHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeRandomNeuralHeuristic,
@@ -288,7 +287,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         ),
         k_max=26,
         heuristic=RubiksCubeHeuristic,
-        q_function=RubiksCubeQ,
+        q_function=_q_from_heuristic(RubiksCubeHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeNeuralHeuristic,
@@ -326,7 +325,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         ),
         k_max=26,
         heuristic=RubiksCubeHeuristic,
-        q_function=RubiksCubeQ,
+        q_function=_q_from_heuristic(RubiksCubeHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=RubiksCubeRandomNeuralHeuristic,
@@ -376,15 +375,29 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         puzzle=CayleyCoxeter8,
         k_max=50,
     ),
-    "maze": PuzzleBundle(puzzle=Maze, heuristic=MazeHeuristic, q_function=MazeQ),
-    "room": PuzzleBundle(puzzle=Room, heuristic=MazeHeuristic, q_function=MazeQ),
-    "dotknot": PuzzleBundle(puzzle=DotKnot, heuristic=DotKnotHeuristic, q_function=DotKnotQ),
-    "tsp": PuzzleBundle(puzzle=TSP, heuristic=TSPHeuristic, q_function=TSPQ),
+    "maze": PuzzleBundle(
+        puzzle=Maze,
+        heuristic=MazeHeuristic,
+        q_function=_q_from_heuristic(MazeHeuristic),
+    ),
+    "room": PuzzleBundle(
+        puzzle=Room,
+        heuristic=MazeHeuristic,
+        q_function=_q_from_heuristic(MazeHeuristic),
+    ),
+    "dotknot": PuzzleBundle(
+        puzzle=DotKnot,
+        heuristic=DotKnotHeuristic,
+        q_function=_q_from_heuristic(DotKnotHeuristic),
+    ),
+    "tsp": PuzzleBundle(
+        puzzle=TSP, heuristic=TSPHeuristic, q_function=_q_from_heuristic(TSPHeuristic)
+    ),
     "sokoban": PuzzleBundle(
         puzzle=Sokoban,
         puzzle_hard=SokobanHard,
         heuristic=SokobanHeuristic,
-        q_function=SokobanQ,
+        q_function=_q_from_heuristic(SokobanHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=SokobanNeuralHeuristic,
@@ -402,7 +415,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "pancake": PuzzleBundle(
         puzzle=PancakeSorting,
         heuristic=PancakeHeuristic,
-        q_function=PancakeQ,
+        q_function=_q_from_heuristic(PancakeHeuristic),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=PancakeNeuralHeuristic,
@@ -421,27 +434,27 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     "pddl_blocksworld": PuzzleBundle(
         puzzle=lambda: PDDL.from_preset("blocksworld", "bw-H-01"),
         heuristic=PDDLHeuristic,
-        q_function=PDDLQ,
+        q_function=_q_from_heuristic(PDDLHeuristic),
     ),
     "pddl_gripper": PuzzleBundle(
         puzzle=lambda: PDDL.from_preset("gripper", "gr-H-01"),
         heuristic=PDDLHeuristic,
-        q_function=PDDLQ,
+        q_function=_q_from_heuristic(PDDLHeuristic),
     ),
     "pddl_logistics": PuzzleBundle(
         puzzle=lambda: PDDL.from_preset("logistics", "lg-H-01"),
         heuristic=PDDLHeuristic,
-        q_function=PDDLQ,
+        q_function=_q_from_heuristic(PDDLHeuristic),
     ),
     "pddl_rovers": PuzzleBundle(
         puzzle=lambda: PDDL.from_preset("rovers", "rv-H-01"),
         heuristic=PDDLHeuristic,
-        q_function=PDDLQ,
+        q_function=_q_from_heuristic(PDDLHeuristic),
     ),
     "pddl_satellite": PuzzleBundle(
         puzzle=lambda: PDDL.from_preset("satellite", "st-H-01"),
         heuristic=PDDLHeuristic,
-        q_function=PDDLQ,
+        q_function=_q_from_heuristic(PDDLHeuristic),
     ),
     "rubikscube_world_model": PuzzleBundle(
         puzzle=WorldModelPuzzleConfig(
@@ -555,7 +568,8 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "sokoban_world_model": PuzzleBundle(
         puzzle=WorldModelPuzzleConfig(
-            callable=SokobanWorldModel, path="world_model_puzzle/model/params/sokoban_v2.pkl"
+            callable=SokobanWorldModel,
+            path="world_model_puzzle/model/params/sokoban_v2.pkl",
         ),
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
@@ -602,7 +616,7 @@ def _sized_bundle(
     hard_cls=None,
     hard_initial_shuffle=None,
 ) -> PuzzleBundle:
-    """Create a sized variant of a base PuzzleBundle by binding size into PuzzleConfig.kwargs.
+    """Create a size-bound copy of a base PuzzleBundle.
 
     This preserves other bundle fields (heuristic configs, q-function configs, etc.).
     """
@@ -641,13 +655,16 @@ for _s in [3, 4, 5, 6, 7]:
     puzzle_bundles[f"n-puzzle-{_s}"] = bundle
 
     bundle_r = _sized_bundle(
-        puzzle_bundles["n-puzzle-random"], size=_s, puzzle_cls=SlidePuzzleRandom, hard_cls=None
+        puzzle_bundles["n-puzzle-random"],
+        size=_s,
+        puzzle_cls=SlidePuzzleRandom,
+        hard_cls=None,
     )
     bundle_r.k_max = _NP_KMAX[_s]
     bundle_r.eval_benchmark = _NP_BENCHMARKS.get(_s)
     puzzle_bundles[f"n-puzzle-random-{_s}"] = bundle_r
 
-# LightsOut common sizes (5, 7) with same hard initial shuffle policy and size-specific k_max
+# LightsOut common sizes share hard initial shuffle policy and size-specific k_max.
 _LO_KMAX = {5: 50, 7: 70}
 for _s in [5, 7]:
     bundle_l = _sized_bundle(
@@ -693,7 +710,10 @@ for _s in [3, 4, 5]:
     puzzle_bundles[f"rubikscube-{_s}"] = bundle_rc
 
     bundle_rcr = _sized_bundle(
-        puzzle_bundles["rubikscube-random"], size=_s, puzzle_cls=RubiksCubeRandom, hard_cls=None
+        puzzle_bundles["rubikscube-random"],
+        size=_s,
+        puzzle_cls=RubiksCubeRandom,
+        hard_cls=None,
     )
     bundle_rcr.k_max = _RC_KMAX[_s]
     puzzle_bundles[f"rubikscube-random-{_s}"] = bundle_rcr

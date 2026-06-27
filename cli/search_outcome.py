@@ -88,12 +88,6 @@ def normalise_search_result(
     )
 
 
-def with_workload_signature(outcome: SearchOutcome, search_result: Any) -> SearchOutcome:
-    """Attach xtructure workload facts without changing search timing semantics."""
-
-    return replace(outcome, workload_signature=extract_xtructure_signature(search_result))
-
-
 def with_solution_path(
     outcome: SearchOutcome,
     search_result: Any,

@@ -34,11 +34,7 @@ from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
 from .config_utils import enrich_config
-from .search_outcome import (
-    normalise_search_result,
-    with_solution_path,
-    with_workload_signature,
-)
+from .search_outcome import normalise_search_result, with_solution_path
 
 
 def _prepare_dist_parameters(
@@ -54,18 +50,12 @@ def _prepare_dist_parameters(
     - Q-functions are defined as q_value(q_parameters, state)
 
     Most simple implementations use the raw solve_config as parameters, but neural
-    implementations typically require (params, solve_config). Some older code uses
-    `prepare_parameters` instead of the base-class `prepare_*_parameters` hook, so we
-    support both here.
+    implementations typically require (params, solve_config).
     """
     if heuristic is not None:
-        if hasattr(heuristic, "prepare_parameters"):
-            return heuristic.prepare_parameters(solve_config)
         return heuristic.prepare_heuristic_parameters(solve_config)
 
     if qfunction is not None:
-        if hasattr(qfunction, "prepare_parameters"):
-            return qfunction.prepare_parameters(solve_config)
         return qfunction.prepare_q_parameters(solve_config)
 
     return solve_config
@@ -121,13 +111,13 @@ def search_samples(
 
         start = time.time()
         search_result = search_fn(solve_config, state)
-        outcome = normalise_search_result(search_result)
+        outcome = normalise_search_result(
+            search_result,
+            emit_workload_signature=getattr(search_options, "emit_workload_signature", False),
+        )
         end = time.time()
         single_search_time = end - start
         states_per_second = outcome.generated_size / single_search_time
-
-        if getattr(search_options, "emit_workload_signature", False):
-            outcome = with_workload_signature(outcome, search_result)
 
         def ensure_path_outcome():
             nonlocal outcome

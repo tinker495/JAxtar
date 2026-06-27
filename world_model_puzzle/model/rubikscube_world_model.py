@@ -1,49 +1,39 @@
 from ..world_model_puzzle_base import WorldModelPuzzleBase
 
 
-class RubiksCubeWorldModel_test(WorldModelPuzzleBase):
-    def __init__(self, **kwargs):
+class _RubiksCubeWorldModelBase(WorldModelPuzzleBase):
+    data_path = "world_model_puzzle/data/rubikscube"
+    latent_shape = (400,)
 
+    def __init__(self, **kwargs):
         super().__init__(
-            data_path="world_model_puzzle/data/rubikscube_test",
+            data_path=self.data_path,
             data_shape=(32, 64, 3),
-            latent_shape=(400,),
+            latent_shape=self.latent_shape,
             action_size=12,
-            **kwargs
+            **kwargs,
         )
 
 
-class RubiksCubeWorldModel(WorldModelPuzzleBase):
-    def __init__(self, **kwargs):
-
-        super().__init__(
-            data_path="world_model_puzzle/data/rubikscube",
-            data_shape=(32, 64, 3),
-            latent_shape=(400,),
-            action_size=12,
-            **kwargs
-        )
-
-
-class RubiksCubeWorldModel_reversed(RubiksCubeWorldModel):
+class _ReversedDataMixin:
     def data_init(self):
         super().data_init()
         self.inits, self.targets = self.targets, self.inits
 
 
-class RubiksCubeWorldModelOptimized_test(WorldModelPuzzleBase):
-    def __init__(self, **kwargs):
-
-        super().__init__(
-            data_path="world_model_puzzle/data/rubikscube_test",
-            data_shape=(32, 64, 3),
-            latent_shape=(240,),  # almost optimal is 144 bits
-            action_size=12,
-            **kwargs
-        )
+class RubiksCubeWorldModel_test(_RubiksCubeWorldModelBase):
+    data_path = "world_model_puzzle/data/rubikscube_test"
 
 
-class RubiksCubeWorldModelOptimized(WorldModelPuzzleBase):
+class RubiksCubeWorldModel(_RubiksCubeWorldModelBase):
+    pass
+
+
+class RubiksCubeWorldModel_reversed(_ReversedDataMixin, RubiksCubeWorldModel):
+    pass
+
+
+class RubiksCubeWorldModelOptimized(_RubiksCubeWorldModelBase):
     """
     This is the optimized version of the rubiks cube world model.
     rubiks cube has 6 faces, 9 stickers per face, 3 colors per sticker.
@@ -52,18 +42,12 @@ class RubiksCubeWorldModelOptimized(WorldModelPuzzleBase):
     so we can reduce it to 144 bits. but it is hard to train, so we use 200 bit as 8 x 25
     """
 
-    def __init__(self, **kwargs):
-
-        super().__init__(
-            data_path="world_model_puzzle/data/rubikscube",
-            data_shape=(32, 64, 3),
-            latent_shape=(240,),
-            action_size=12,
-            **kwargs
-        )
+    latent_shape = (240,)  # almost optimal is 144 bits
 
 
-class RubiksCubeWorldModelOptimized_reversed(RubiksCubeWorldModelOptimized):
-    def data_init(self):
-        super().data_init()
-        self.inits, self.targets = self.targets, self.inits
+class RubiksCubeWorldModelOptimized_test(RubiksCubeWorldModelOptimized):
+    data_path = "world_model_puzzle/data/rubikscube_test"
+
+
+class RubiksCubeWorldModelOptimized_reversed(_ReversedDataMixin, RubiksCubeWorldModelOptimized):
+    pass

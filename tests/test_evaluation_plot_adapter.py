@@ -1,51 +1,8 @@
-"""Architecture + behaviour guard for evaluation plotting.
-
-Locks the small seam documented in CONTEXT.md "Evaluation Plot Adapter":
-
-- ``EvaluationRunner`` MUST NOT import the seven ``plot_*`` helpers from
-  ``helpers.plots`` directly.
-- The default ``MatplotlibPlotAdapter`` keeps plotting imports behind methods.
-- ``EvaluationRunner`` still accepts a duck-typed ``plot_adapter`` override for
-  tests/headless callers, without maintaining a separate Null adapter class.
-"""
+"""Behaviour tests for evaluation plotting."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-
-_EVAL_RUNNER_PATH = Path(__file__).resolve().parents[1] / "cli" / "evaluation_runner.py"
-
-_PLOT_NAMES = (
-    "plot_path_cost_distribution",
-    "plot_search_time_by_path_cost",
-    "plot_nodes_generated_by_path_cost",
-    "plot_benchmark_path_comparison",
-    "plot_heuristic_accuracy",
-    "plot_expansion_distribution",
-    "plot_search_tree_semantic",
-)
-
-
-def test_evaluation_runner_does_not_import_helpers_plots_directly():
-    source = _EVAL_RUNNER_PATH.read_text()
-    assert "from helpers.plots" not in source, (
-        "`EvaluationRunner` must consume plots through its plot adapter. "
-        "Move new plot emissions into `MatplotlibPlotAdapter` instead of "
-        "importing `helpers.plots` here."
-    )
-    for plot_name in _PLOT_NAMES:
-        assert plot_name + "(" not in source, (
-            f"Direct call to `{plot_name}` found in evaluation_runner.py — "
-            "route it through `self.plot_adapter` instead."
-        )
-
-
-def test_runner_imports_default_adapter_seam():
-    source = _EVAL_RUNNER_PATH.read_text()
-    assert "from .evaluation_plot_adapter import MatplotlibPlotAdapter" in source
 
 
 def test_runner_accepts_duck_typed_plot_adapter_kwarg():

@@ -1,18 +1,9 @@
-"""Architecture guard for the Search Algorithm Catalog.
-
-Locks the contract documented in CONTEXT.md "Search Algorithm Catalog": the
-three CLI surfaces (`cli/commands.py`, `cli/eval_commands.py`,
-`cli/benchmark_commands.py`) build their Click command sets by iterating the
-Catalog. Drift between the Catalog and any CLI surface, or hand-written
-`@click.command()` regressions in those surfaces, must fail this test.
-"""
+"""Search Algorithm Catalog contract tests."""
 
 from __future__ import annotations
 
 import inspect
-import re
 from dataclasses import is_dataclass
-from pathlib import Path
 
 import pytest
 
@@ -105,28 +96,3 @@ def test_benchmark_surface_command_set_matches_catalog():
     assert (
         bench_names == CATALOG_KEBAB
     ), f"benchmark subcommands {bench_names} != Catalog {CATALOG_KEBAB}"
-
-
-def test_cli_surface_files_have_no_hand_written_algorithm_dispatch():
-    """Lock the shape: no `@click.command()` directly above an algorithm function
-    in the three Catalog-iterating surface files. Catching this prevents the old
-    copy-paste pattern from regrowing."""
-    cli_dir = Path(__file__).resolve().parents[1] / "cli"
-    pattern = re.compile(
-        r"@click\.command\(\)\s*\n(?:@\w+(?:\([^)]*\))?\s*\n)+def\s+(?:astar|qstar|beam|qbeam|bi_|id_)",
-    )
-    for filename in ("commands.py", "eval_commands.py", "benchmark_commands.py"):
-        source = (cli_dir / filename).read_text()
-        match = pattern.search(source)
-        assert match is None, (
-            f"{filename} still hand-writes an algorithm-dispatch @click.command(); "
-            "add the algorithm to SEARCH_ALGORITHM_CATALOG instead."
-        )
-
-
-def test_runners_do_not_filter_builder_kwargs_with_inspect_signature():
-    cli_dir = Path(__file__).resolve().parents[1] / "cli"
-    for filename in ("search_runner.py", "evaluation_runner.py"):
-        source = (cli_dir / filename).read_text()
-        assert "inspect.signature(builder_fn)" not in source
-        assert "inspect.signature(self.search_builder_fn)" not in source

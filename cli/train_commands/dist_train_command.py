@@ -15,14 +15,13 @@ from helpers.config_printer import print_config
 from helpers.jax_compile import compile_with_example
 from helpers.logger import create_logger
 from helpers.rich_progress import trange
-from heuristic.neuralheuristic.heuristic_train import heuristic_train_builder
 from heuristic.neuralheuristic.neuralheuristic_base import NeuralHeuristicBase
 from heuristic.neuralheuristic.target_dataset_builder import (
     get_heuristic_dataset_builder,
 )
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
-from qfunction.neuralq.qfunction_train import qfunction_train_builder
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
+from train_util.distance_train_builder import distance_train_builder
 from train_util.optimizer import get_learning_rate, setup_optimizer
 from train_util.target_update import scaled_by_reset
 from train_util.train_logs import TrainLogInfo
@@ -198,11 +197,12 @@ def heuristic_train_command(
     )
 
     # Build training function
-    heuristic_train_fn = heuristic_train_builder(
-        train_options.train_minibatch_size,
-        heuristic_model,
-        optimizer,
-        heuristic.pre_process,
+    heuristic_train_fn = distance_train_builder(
+        minibatch_size=train_options.train_minibatch_size,
+        model=heuristic_model,
+        optimizer=optimizer,
+        preproc_fn=heuristic.pre_process,
+        target_keys=("target_heuristic",),
         n_devices=n_devices,
         loss_type=train_options.loss,
         loss_args=train_options.loss_args,
@@ -495,11 +495,12 @@ def qfunction_train_command(
     )
 
     # Build training function
-    qfunction_train_fn = qfunction_train_builder(
-        train_options.train_minibatch_size,
-        qfunc_model,
-        optimizer,
-        qfunction.pre_process,
+    qfunction_train_fn = distance_train_builder(
+        minibatch_size=train_options.train_minibatch_size,
+        model=qfunc_model,
+        optimizer=optimizer,
+        preproc_fn=qfunction.pre_process,
+        target_keys=("target_q", "actions"),
         n_devices=n_devices,
         loss_type=train_options.loss,
         loss_args=train_options.loss_args,

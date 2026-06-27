@@ -29,6 +29,15 @@ class UnidirectionalResult:
         )
 
 
+class WorkloadResult(UnidirectionalResult):
+    xtr_enabled = jnp.array(True)
+    xtr_steps = jnp.array(2)
+    xtr_cand_total = jnp.array(5)
+    xtr_cand_valid = jnp.array(4)
+    xtr_cand_unique = jnp.array(3)
+    xtr_accept = jnp.array(2)
+
+
 class Meeting:
     found = jnp.array(True)
     total_cost = jnp.array(9.0)
@@ -84,6 +93,13 @@ def test_search_outcome_normalises_bidirectional_result_facts():
     assert outcome.solved is True
     assert outcome.generated_size == 12
     assert outcome.solved_cost == 9.0
+
+
+def test_normalise_search_result_can_attach_workload_signature():
+    outcome = normalise_search_result(WorkloadResult(), emit_workload_signature=True)
+
+    assert outcome.workload_signature["xtr_steps"] == 2
+    assert outcome.workload_signature["xtr_cand_total"] == 5
 
 
 def test_solution_path_and_verification_facts_cross_outcome_seam():

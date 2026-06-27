@@ -213,30 +213,3 @@ def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
     serving_model = model_cls(**serve_kwargs)
 
     return serving_model, converting_variables
-
-
-def create_serving_fn(model_cls, serving_variables, **model_kwargs):
-    """
-    Creates a jit-compiled serving function.
-    """
-    aqt_cfg = model_kwargs.pop("aqt_cfg", None)
-
-    if aqt_cfg is None:
-        raise ValueError("aqt_cfg must be provided in model_kwargs")
-
-    if isinstance(aqt_cfg, str):
-        aqt_cfg = get_aqt_cfg(aqt_cfg)
-
-    serve_kwargs = model_kwargs.copy()
-    serve_kwargs["aqt_cfg"] = aqt_cfg
-    serve_kwargs["quant_mode"] = aqt_flax.QuantMode.SERVE
-
-    serving_model = model_cls(**serve_kwargs)
-
-    @jax.jit
-    def serve_fn(x):
-        return serving_model.apply(
-            serving_variables, x, training=False, rngs={"params": jax.random.PRNGKey(0)}
-        )
-
-    return serve_fn

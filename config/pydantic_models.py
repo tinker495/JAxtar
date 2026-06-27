@@ -230,7 +230,6 @@ class NeuralCallableConfig(BaseModel):
 class WorldModelPuzzleConfig(BaseModel):
     callable: Callable
     path: str
-    neural_config: Optional[dict] = Field(default_factory=dict)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -263,7 +262,6 @@ class PuzzleConfig(BaseModel):
 class PuzzleBundle(BaseModel):
     puzzle: Optional[Union[Callable, PuzzleConfig, WorldModelPuzzleConfig]] = None
     puzzle_hard: Optional[Union[Callable, PuzzleConfig]] = None
-    puzzle_ds: Optional[Callable] = None
     eval_benchmark: Optional[str] = None
     heuristic: Callable = EmptyHeuristic
     heuristic_nn_configs: Optional[Dict[str, NeuralCallableConfig]] = None
