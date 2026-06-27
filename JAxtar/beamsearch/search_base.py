@@ -254,6 +254,103 @@ class BeamSearchResult:
         actions = list(reversed(actions_rev))
         return costs, dists, actions
 
+    def seed_start(self, start: Puzzle.State, dist: chex.Array, score: chex.Array):
+        self.beam = self.beam.at[0].set(start)
+        self.cost = self.cost.at[0].set(0)
+        self.dist = self.dist.at[0].set(dist)
+        self.scores = self.scores.at[0].set(score)
+        self.parent_index = self.parent_index.at[0].set(-1)
+        self.active_trace = self.active_trace.at[0].set(0)
+        self.trace_cost = self.trace_cost.at[0].set(0)
+        self.trace_dist = self.trace_dist.at[0].set(dist)
+        self.trace_depth = self.trace_depth.at[0].set(0)
+        self.trace_action = self.trace_action.at[0].set(ACTION_PAD)
+        self.trace_state = self.trace_state.at[0].set(start)
+        return self
+
+    def advance(
+        self,
+        selected_states: Xtructurable,
+        selected_costs: chex.Array,
+        selected_dists: chex.Array,
+        selected_scores: chex.Array,
+        selected_actions: chex.Array,
+        selected_parents: chex.Array,
+        selected_valid: chex.Array,
+    ) -> "BeamSearchResult":
+        parent_trace_ids = self.active_trace[selected_parents]
+        invalid_parent = jnp.full_like(parent_trace_ids, TRACE_INVALID)
+        parent_trace_ids = jnp.where(selected_valid, parent_trace_ids, invalid_parent)
+
+        next_depth_idx = jnp.minimum(self.depth + 1, self.max_depth)
+        trace_offset = next_depth_idx.astype(TRACE_INDEX_DTYPE) * jnp.asarray(
+            self.beam_width, dtype=TRACE_INDEX_DTYPE
+        )
+        slot_indices = jnp.arange(self.beam_width, dtype=TRACE_INDEX_DTYPE)
+        next_trace_ids = trace_offset + slot_indices
+
+        trace_actions = jnp.where(
+            selected_valid,
+            selected_actions.astype(ACTION_DTYPE),
+            jnp.full_like(selected_actions, ACTION_PAD),
+        )
+        depth_fill = jnp.full((self.beam_width,), next_depth_idx, dtype=jnp.int32)
+        depth_default = -jnp.ones((self.beam_width,), dtype=jnp.int32)
+        trace_depths = jnp.where(selected_valid, depth_fill, depth_default)
+
+        self.trace_parent = self.trace_parent.at[next_trace_ids].set(parent_trace_ids)
+        self.trace_action = self.trace_action.at[next_trace_ids].set(trace_actions)
+        self.trace_cost = self.trace_cost.at[next_trace_ids].set(selected_costs)
+        self.trace_dist = self.trace_dist.at[next_trace_ids].set(selected_dists)
+        self.trace_depth = self.trace_depth.at[next_trace_ids].set(trace_depths)
+        self.trace_state = self.trace_state.at[next_trace_ids].set(selected_states)
+
+        invalid_trace = jnp.full_like(next_trace_ids, TRACE_INVALID)
+        self.active_trace = jnp.where(selected_valid, next_trace_ids, invalid_trace)
+        self.beam = selected_states
+        self.cost = selected_costs
+        self.dist = selected_dists
+        self.scores = selected_scores
+        self.parent_index = jnp.where(
+            selected_valid, selected_parents, -jnp.ones_like(selected_parents)
+        )
+        self.generated_size = self.generated_size + selected_valid.astype(jnp.int32).sum()
+        self.depth = self.depth + 1
+        return self
+
+
+def build_beam_loop_condition(puzzle: Puzzle):
+    def loop_condition(loop_state: BeamSearchLoopState):
+        search_result = loop_state.search_result
+        solve_config = loop_state.solve_config
+        filled_mask = search_result.filled_mask()
+        has_states = filled_mask.any()
+        depth_ok = search_result.depth < search_result.max_depth
+
+        solved = puzzle.batched_is_solved(solve_config, search_result.beam)
+        solved = jnp.logical_and(solved, filled_mask)
+        return jnp.logical_and(jnp.logical_and(depth_ok, has_states), ~solved.any())
+
+    return loop_condition
+
+
+def finalize_beam_result(
+    puzzle: Puzzle,
+    solve_config: Puzzle.SolveConfig,
+    search_result: BeamSearchResult,
+) -> BeamSearchResult:
+    filled_mask = search_result.filled_mask()
+    solved_mask = puzzle.batched_is_solved(solve_config, search_result.beam)
+    solved_mask = jnp.logical_and(solved_mask, filled_mask)
+
+    solved_any = solved_mask.any()
+    solved_idx = jnp.argmax(solved_mask)
+    search_result.solved = solved_any
+    search_result.solved_idx = jnp.where(
+        solved_any, solved_idx.astype(jnp.int32), jnp.array(-1, dtype=jnp.int32)
+    )
+    return search_result
+
 
 def select_beam(
     scores: chex.Array,
@@ -358,7 +455,10 @@ def non_backtracking_mask(
 
 
 __all__ = [
+    "ACTION_PAD",
     "BeamSearchResult",
+    "build_beam_loop_condition",
+    "finalize_beam_result",
     "select_beam",
     "TRACE_INVALID",
     "TRACE_INVALID_INT",
