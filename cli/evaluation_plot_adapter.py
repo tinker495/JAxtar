@@ -1,120 +1,15 @@
-"""Evaluation Plot Adapter.
+"""Evaluation plotting helpers kept out of ``EvaluationRunner``.
 
-Owns every plot emission previously inlined in ``EvaluationRunner.run()``.
-The Module exposes ``EvaluationPlotAdapter`` as a Protocol with four
-high-level methods and ships two first-party implementations:
-
-- ``MatplotlibPlotAdapter`` — production default, consumes ``helpers.plots``.
-- ``NullPlotAdapter`` — test/CI default; every method is a no-op so the eval
-  loop can run without importing matplotlib or ``helpers.plots``.
-
-``EvaluationRunner`` takes the adapter as a constructor parameter and never
-imports ``helpers.plots`` directly.
+``EvaluationRunner`` calls methods on a duck-typed plot adapter. The default
+adapter below imports ``helpers.plots`` only inside plotting methods, so the
+main evaluation loop can be imported without loading matplotlib plot helpers.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Mapping, Optional, Protocol, Sequence, runtime_checkable
-
-if TYPE_CHECKING:
-    import pandas as pd
-
-    from helpers.artifact_manager import ArtifactManager
-
-
-@runtime_checkable
-class EvaluationPlotAdapter(Protocol):
-    """Plot-emission Interface consumed by ``EvaluationRunner``."""
-
-    def plot_solved_distributions(
-        self,
-        *,
-        solved_df: "pd.DataFrame",
-        artifact_manager: "ArtifactManager",
-    ) -> None:
-        """Emit path cost / search time / nodes-generated distribution plots."""
-        ...
-
-    def plot_benchmark_comparison(
-        self,
-        *,
-        solved_df: "pd.DataFrame",
-        has_benchmark: bool,
-        artifact_manager: "ArtifactManager",
-    ) -> None:
-        """Emit the benchmark vs solved-path comparison plot when benchmark
-        data is present."""
-        ...
-
-    def plot_heuristic_panel(
-        self,
-        *,
-        results: Sequence[Mapping],
-        metrics: Optional[Mapping],
-        file_suffix: str,
-        artifact_manager: "ArtifactManager",
-    ) -> None:
-        """Emit the heuristic-accuracy panel."""
-        ...
-
-    def plot_per_seed_expansion(
-        self,
-        *,
-        results: Sequence[Mapping],
-        max_plots: int,
-        scatter_max_points: int,
-        max_node_size: int,
-        artifact_manager: "ArtifactManager",
-    ) -> None:
-        """For each result with expansion analysis, emit expansion-distribution
-        and search-tree-semantic plots inside ``expansion_plots/``."""
-        ...
-
-
-class NullPlotAdapter:
-    """No-op adapter for test/CI environments."""
-
-    def plot_solved_distributions(
-        self,
-        *,
-        solved_df,
-        artifact_manager,
-    ) -> None:
-        return None
-
-    def plot_benchmark_comparison(
-        self,
-        *,
-        solved_df,
-        has_benchmark,
-        artifact_manager,
-    ) -> None:
-        return None
-
-    def plot_heuristic_panel(
-        self,
-        *,
-        results,
-        metrics,
-        file_suffix,
-        artifact_manager,
-    ) -> None:
-        return None
-
-    def plot_per_seed_expansion(
-        self,
-        *,
-        results,
-        max_plots,
-        scatter_max_points,
-        max_node_size,
-        artifact_manager,
-    ) -> None:
-        return None
-
 
 class MatplotlibPlotAdapter:
-    """Production default: consumes ``helpers.plots`` for every emission."""
+    """Default adapter: consumes ``helpers.plots`` for every emission."""
 
     def plot_solved_distributions(
         self,
@@ -201,8 +96,4 @@ class MatplotlibPlotAdapter:
                 print(f"Warning: Failed to generate semantic search tree plot: {e}")
 
 
-__all__ = [
-    "EvaluationPlotAdapter",
-    "MatplotlibPlotAdapter",
-    "NullPlotAdapter",
-]
+__all__ = ["MatplotlibPlotAdapter"]

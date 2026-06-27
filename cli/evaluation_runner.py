@@ -35,10 +35,7 @@ from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
-from .evaluation_plot_adapter import (
-    EvaluationPlotAdapter,
-    MatplotlibPlotAdapter,
-)
+from .evaluation_plot_adapter import MatplotlibPlotAdapter
 from .search_outcome import (
     apply_benchmark_verification,
     build_deferred_payload,
@@ -94,7 +91,7 @@ class EvaluationRunner:
         step: int = 0,
         node_metric_label: Optional[str] = None,
         run_label: Optional[str] = None,
-        plot_adapter: Optional[EvaluationPlotAdapter] = None,
+        plot_adapter: Optional[object] = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -111,7 +108,7 @@ class EvaluationRunner:
         self.node_metric_label = node_metric_label or "Nodes Generated"
         self.kwargs = kwargs
         self.run_label = run_label or search_model_name
-        self.plot_adapter: EvaluationPlotAdapter = plot_adapter or MatplotlibPlotAdapter()
+        self.plot_adapter = plot_adapter or MatplotlibPlotAdapter()
         self.benchmark: Optional[Benchmark] = kwargs.get("benchmark")
         self.benchmark_name: Optional[str] = kwargs.get("benchmark_name")
         benchmark_cli_options = kwargs.get("benchmark_cli_options", {})

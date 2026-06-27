@@ -1,13 +1,12 @@
-"""Architecture + behaviour guard for the Evaluation Plot Adapter.
+"""Architecture + behaviour guard for evaluation plotting.
 
-Locks the contracts documented in CONTEXT.md "Evaluation Plot Adapter":
+Locks the small seam documented in CONTEXT.md "Evaluation Plot Adapter":
 
-- `EvaluationRunner` MUST NOT import the seven `plot_*` helpers from
-  `helpers.plots` directly. Every plot emission flows through the adapter.
-- The `EvaluationPlotAdapter` Protocol is runtime-checkable; both
-  `MatplotlibPlotAdapter` and `NullPlotAdapter` satisfy it.
-- `NullPlotAdapter` no-ops every method (CI / headless paths can opt out of
-  plotting without a matplotlib dependency).
+- ``EvaluationRunner`` MUST NOT import the seven ``plot_*`` helpers from
+  ``helpers.plots`` directly.
+- The default ``MatplotlibPlotAdapter`` keeps plotting imports behind methods.
+- ``EvaluationRunner`` still accepts a duck-typed ``plot_adapter`` override for
+  tests/headless callers, without maintaining a separate Null adapter class.
 """
 
 from __future__ import annotations
@@ -33,10 +32,9 @@ _PLOT_NAMES = (
 def test_evaluation_runner_does_not_import_helpers_plots_directly():
     source = _EVAL_RUNNER_PATH.read_text()
     assert "from helpers.plots" not in source, (
-        "`EvaluationRunner` must consume plots through `EvaluationPlotAdapter`. "
-        "Move new plot emissions into a method on the adapter (and on "
-        "`MatplotlibPlotAdapter` + `NullPlotAdapter`) instead of importing "
-        "`helpers.plots` here."
+        "`EvaluationRunner` must consume plots through its plot adapter. "
+        "Move new plot emissions into `MatplotlibPlotAdapter` instead of "
+        "importing `helpers.plots` here."
     )
     for plot_name in _PLOT_NAMES:
         assert plot_name + "(" not in source, (
@@ -45,73 +43,30 @@ def test_evaluation_runner_does_not_import_helpers_plots_directly():
         )
 
 
-def test_runner_imports_adapter_seam():
+def test_runner_imports_default_adapter_seam():
     source = _EVAL_RUNNER_PATH.read_text()
-    assert "from .evaluation_plot_adapter import" in source, (
-        "`EvaluationRunner` must import `EvaluationPlotAdapter` and "
-        "`MatplotlibPlotAdapter` from the adapter module."
-    )
+    assert "from .evaluation_plot_adapter import MatplotlibPlotAdapter" in source
 
 
-def test_both_adapters_satisfy_protocol():
-    from cli.evaluation_plot_adapter import (
-        EvaluationPlotAdapter,
-        MatplotlibPlotAdapter,
-        NullPlotAdapter,
-    )
-
-    assert isinstance(
-        MatplotlibPlotAdapter(), EvaluationPlotAdapter
-    ), "MatplotlibPlotAdapter must satisfy the EvaluationPlotAdapter Protocol."
-    assert isinstance(
-        NullPlotAdapter(), EvaluationPlotAdapter
-    ), "NullPlotAdapter must satisfy the EvaluationPlotAdapter Protocol."
-
-
-def test_null_adapter_methods_are_no_op():
-    """NullPlotAdapter must accept the canonical kwargs without touching them."""
-    from cli.evaluation_plot_adapter import NullPlotAdapter
-
-    n = NullPlotAdapter()
-    assert n.plot_solved_distributions(solved_df=None, artifact_manager=None) is None
-    assert (
-        n.plot_benchmark_comparison(solved_df=None, has_benchmark=False, artifact_manager=None)
-        is None
-    )
-    assert (
-        n.plot_heuristic_panel(results=[], metrics=None, file_suffix="", artifact_manager=None)
-        is None
-    )
-    assert (
-        n.plot_per_seed_expansion(
-            results=[],
-            max_plots=0,
-            scatter_max_points=0,
-            max_node_size=0,
-            artifact_manager=None,
-        )
-        is None
-    )
-
-
-def test_runner_accepts_plot_adapter_kwarg():
-    """`EvaluationRunner.__init__` must declare a `plot_adapter` keyword so CI
-    paths can inject `NullPlotAdapter()`.
+def test_runner_accepts_duck_typed_plot_adapter_kwarg():
+    """`EvaluationRunner.__init__` keeps a plot_adapter keyword so tests and
+    headless callers can inject any object with the four plotting methods.
     """
     import inspect
 
     from cli.evaluation_runner import EvaluationRunner
 
     sig = inspect.signature(EvaluationRunner.__init__)
-    assert "plot_adapter" in sig.parameters, (
-        "`EvaluationRunner.__init__` must accept a `plot_adapter` parameter "
-        "for CI / NullPlotAdapter injection."
-    )
-    param = sig.parameters["plot_adapter"]
-    assert param.default is None, (
-        "`plot_adapter` should default to None so the constructor falls back "
-        "to MatplotlibPlotAdapter when no adapter is injected."
-    )
+    assert "plot_adapter" in sig.parameters
+    assert sig.parameters["plot_adapter"].default is None
+
+
+def test_adapter_module_only_exports_default_adapter():
+    import cli.evaluation_plot_adapter as adapter_module
+
+    assert adapter_module.__all__ == ["MatplotlibPlotAdapter"]
+    assert not hasattr(adapter_module, "EvaluationPlotAdapter")
+    assert not hasattr(adapter_module, "NullPlotAdapter")
 
 
 @pytest.fixture
@@ -145,6 +100,4 @@ def test_matplotlib_adapter_skips_when_solved_df_empty(_stub_artifact_manager):
         has_benchmark=True,
         artifact_manager=_stub_artifact_manager,
     )
-    assert (
-        _stub_artifact_manager.calls == []
-    ), "MatplotlibPlotAdapter must not emit plots for an empty solved_df."
+    assert _stub_artifact_manager.calls == []
