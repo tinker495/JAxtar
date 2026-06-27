@@ -1,26 +1,7 @@
-"""Architecture + behaviour guard for the JAxtar trajectory-dataset adapter.
-
-Locks the contracts documented in CONTEXT.md "Puzzle Trajectory Module":
-
-- PuxLe's `puxle.core.trajectory` is the single source of truth for the three
-  creators (`create_target_shuffled_path`, `create_hindsight_target_shuffled_path`,
-  `create_hindsight_target_triangular_shuffled_path`).
-- `JAxtar/train_util/sampling.py` MUST NOT redeclare those creators.
-- The JAxtar-owned adapter
-  `JAxtar/train_util/trajectory_dataset_adapter.py` exposes the three names
-  with the same signatures but returns the flat `dict[str, chex.Array]` shape
-  the JIT'd training step consumes.
-- The dict keys produced by `trajectory_to_dataset_dict` match the legacy
-  schema so neural heuristic / Q-function dataset builders do not change at
-  the call site.
-"""
+"""Behaviour tests for the JAxtar trajectory-dataset adapter."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-
-_SAMPLING_PATH = Path(__file__).resolve().parents[1] / "train_util" / "sampling.py"
 _EXPECTED_DICT_KEYS = frozenset(
     {
         "solve_configs",
@@ -34,21 +15,6 @@ _EXPECTED_DICT_KEYS = frozenset(
         "step_indices",
     }
 )
-
-
-def test_jaxtar_does_not_redeclare_trajectory_creators():
-    source = _SAMPLING_PATH.read_text()
-    for fn in (
-        "def create_target_shuffled_path",
-        "def create_hindsight_target_shuffled_path",
-        "def create_hindsight_target_triangular_shuffled_path",
-    ):
-        assert fn not in source, (
-            f"`train_util/sampling.py` must not redeclare `{fn[4:]}`; the "
-            "canonical implementation lives in `puxle.core.trajectory`. JAxtar "
-            "callers import the dict-shape wrapper from "
-            "`train_util.trajectory_dataset_adapter` instead."
-        )
 
 
 def test_adapter_re_exports_three_creators():

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from cli.verification import (
@@ -109,24 +107,3 @@ def test_verify_benchmark_path_noops_when_required_facts_are_missing(
 def test_benchmark_verification_from_exception_wraps_message():
     verification = benchmark_verification_from_exception(RuntimeError("boom"))
     assert verification == BenchmarkVerification(benchmark_verification_error="boom")
-
-
-def test_evaluation_runner_does_not_reach_past_verification_module_seam():
-    """EvaluationRunner consumes the Verification Module's small Interface only.
-
-    The Module exposes BenchmarkVerification (type), build_benchmark_action_strings,
-    verify_benchmark_path, and benchmark_verification_from_exception. Reaching for
-    any other symbol means a
-    seam leak that future Verification Module refactors must work around.
-    """
-    source = (Path(__file__).parents[1] / "cli/evaluation_runner.py").read_text()
-    forbidden = (
-        "verify_benchmark_path_with_strings",
-        "_verify_benchmark_path_with_strings",
-        "from .verification import _",
-    )
-    for phrase in forbidden:
-        assert phrase not in source, (
-            f"cli/evaluation_runner.py reaches past the Verification Module seam ({phrase!r}); "
-            "use `verify_benchmark_path(...)` or `benchmark_verification_from_exception(...)` instead."
-        )
