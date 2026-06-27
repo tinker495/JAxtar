@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import importlib
-from typing import Any
-
 __all__ = ["cli"]
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str):
     if name != "cli":
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(importlib.import_module("cli.main"), name)
-    globals()[name] = value
-    return value
+    from .main import cli
 
-
-def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(__all__))
+    globals()[name] = cli
+    return cli

@@ -28,7 +28,7 @@ _load_dotenv(Path(__file__).resolve().parent / ".env")
 # This hides "Difference at X: Y, expected Z" messages during quantization
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
-from cli import cli  # noqa: E402
+from cli.main import cli  # noqa: E402
 
 if __name__ == "__main__":
     cli()
