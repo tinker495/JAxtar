@@ -24,9 +24,11 @@ from JAxtar.id_stars.search_base import (
     IDLoopState,
     IDSearchResult,
     apply_non_backtracking,
+    build_frontier_cond,
     build_inner_cond,
     build_outer_loop,
     finalize_builder,
+    merge_frontier_solution,
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
@@ -78,24 +80,8 @@ def _id_qstar_frontier_builder(
             max_path_len,
         )
 
-        MAX_FRONTIER_STEPS = 100
-
-        def cond_bounded(val: tuple[IDFrontier, jnp.int32]):
-            frontier, i = val
-            num_valid = jnp.sum(frontier.valid_mask)
-            has_capacity = num_valid < batch_size
-            has_nodes = num_valid > 0
-            within_limit = i < MAX_FRONTIER_STEPS
-            not_solved = ~frontier.solved
-            return jnp.logical_and(
-                not_solved,
-                jnp.logical_and(
-                    within_limit,
-                    jnp.logical_and(has_capacity, has_nodes),
-                ),
-            )
-
         action_ids = jnp.arange(action_size, dtype=jnp.int32)
+        cond_bounded = build_frontier_cond(batch_size)
 
         def body_bounded(val: tuple[IDFrontier, jnp.int32]):
             frontier, i = val
@@ -154,24 +140,12 @@ def _id_qstar_frontier_builder(
                 flat_valid,
             )
 
-            new_solved = jnp.logical_or(frontier.solved, any_solved)
-            new_sol_state = jax.lax.cond(
+            (new_solved, new_sol_state, new_sol_cost, new_sol_actions,) = merge_frontier_solution(
+                frontier,
                 any_solved,
-                lambda _: found_sol_state,
-                lambda _: frontier.solution_state,
-                None,
-            )
-            new_sol_cost = jax.lax.cond(
-                any_solved,
-                lambda _: found_sol_cost,
-                lambda _: frontier.solution_cost,
-                None,
-            )
-            new_sol_actions = jax.lax.cond(
-                any_solved,
-                lambda _: found_sol_actions,
-                lambda _: frontier.solution_actions_arr,
-                None,
+                found_sol_state,
+                found_sol_cost,
+                found_sol_actions,
             )
 
             q_vals = variable_q_parent_switcher(q_params, states, valid).astype(KEY_DTYPE)
@@ -403,52 +377,25 @@ def _id_qstar_loop_builder(
             jnp.full_like(flat_action_history, ACTION_PAD),
         )
 
+        flat_batch = IDNodeBatch(
+            state=flat_neighbours,
+            cost=flat_g,
+            depth=flat_depth,
+            action=flat_actions,
+            trail=flat_trail,
+            action_history=flat_action_history,
+            parent_index=flat_parent_indices,
+            root_index=flat_root_indices,
+        )
+
         return_sr = jax.lax.cond(
             any_solved,
             lambda s: s,
-            lambda s: _expand_step(
-                s,
-                flat_neighbours,
-                flat_g,
-                flat_depth,
-                flat_actions,
-                flat_trail,
-                flat_action_history,
-                flat_valid,
-                flat_f,
-                flat_parent_indices,
-                flat_root_indices,
-            ),
+            lambda s: s.expand_and_push(flat_batch, flat_f, flat_valid, update_next_bound=False),
             sr_solved,
         )
 
         return loop_state.replace(search_result=return_sr)
-
-    def _expand_step(
-        sr,
-        states,
-        gs,
-        depths,
-        actions,
-        trails,
-        action_histories,
-        valid,
-        fs,
-        parent_indices,
-        root_indices,
-    ):
-        flat_batch = IDNodeBatch(
-            state=states,
-            cost=gs,
-            depth=depths,
-            action=actions,
-            trail=trails,
-            action_history=action_histories,
-            parent_index=parent_indices,
-            root_index=root_indices,
-        )
-
-        return sr.expand_and_push(flat_batch, fs, valid, update_next_bound=False)
 
     outer_cond, outer_body = build_outer_loop(inner_cond, inner_body, statecls, frontier_actions)
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import importlib
-from typing import Any
+from _lazy_imports import lazy_dir, load_lazy_export
 
 __all__ = [
     "QFunction",
+    "QFromHeuristic",
     "DotKnotQ",
     "EmptyQFunction",
     "LightsOutQ",
@@ -22,6 +22,7 @@ __all__ = [
 
 _EXPORTS = {
     "QFunction": ("qfunction.q_base", "QFunction"),
+    "QFromHeuristic": ("qfunction.q_base", "QFromHeuristic"),
     "DotKnotQ": ("qfunction.dotknot_q", "DotKnotQ"),
     "EmptyQFunction": ("qfunction.empty_q", "EmptyQFunction"),
     "LightsOutQ": ("qfunction.lightsout_q", "LightsOutQ"),
@@ -38,15 +39,9 @@ _EXPORTS = {
 }
 
 
-def __getattr__(name: str) -> Any:
-    try:
-        module_name, attr_name = _EXPORTS[name]
-    except KeyError as exc:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
-    value = getattr(importlib.import_module(module_name), attr_name)
-    globals()[name] = value
-    return value
+def __getattr__(name: str):
+    return load_lazy_export(name, __name__, _EXPORTS, globals())
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(__all__))
+    return lazy_dir(globals(), __all__)

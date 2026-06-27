@@ -1,26 +1,4 @@
+-r requirements_common.txt
 numpy>=2.2.0
-opencv-python
-imageio
-click
-rich
-pre-commit
-pytest
 jax[cuda]<=0.8.1
-chex
-dm_pix
-dm-haiku
-huggingface_hub
-aqtp
-flax
 optax @ git+https://github.com/tinker495/optax.git@dev/merge-all-custom
-termcolor
-tensorboardX
-pydantic
-xtructure @ git+https://github.com/tinker495/xtructure.git
-puxle @ git+https://github.com/tinker495/PuXle.git
-aim
-wandb
-plotly
-pandas
-seaborn
-matplotlib

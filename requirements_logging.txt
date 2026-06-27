@@ -1,0 +1,4 @@
+# Optional training/logging backends.
+aim
+tensorboardX
+wandb

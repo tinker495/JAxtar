@@ -1,9 +1,7 @@
 import concurrent.futures
 import itertools
 import json
-import multiprocessing as mp
 import os
-import pickle
 import time
 from datetime import datetime
 from functools import partial
@@ -35,10 +33,7 @@ from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
-from .evaluation_plot_adapter import (
-    EvaluationPlotAdapter,
-    MatplotlibPlotAdapter,
-)
+from .evaluation_plot_adapter import MatplotlibPlotAdapter
 from .search_outcome import (
     apply_benchmark_verification,
     build_deferred_payload,
@@ -51,9 +46,7 @@ from .verification import (
     BenchmarkVerification,
     benchmark_verification_from_exception,
     build_benchmark_action_strings,
-    init_verify_worker,
     verify_benchmark_path,
-    verify_solution_worker,
 )
 
 
@@ -94,7 +87,7 @@ class EvaluationRunner:
         step: int = 0,
         node_metric_label: Optional[str] = None,
         run_label: Optional[str] = None,
-        plot_adapter: Optional[EvaluationPlotAdapter] = None,
+        plot_adapter: Optional[object] = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -111,7 +104,7 @@ class EvaluationRunner:
         self.node_metric_label = node_metric_label or "Nodes Generated"
         self.kwargs = kwargs
         self.run_label = run_label or search_model_name
-        self.plot_adapter: EvaluationPlotAdapter = plot_adapter or MatplotlibPlotAdapter()
+        self.plot_adapter = plot_adapter or MatplotlibPlotAdapter()
         self.benchmark: Optional[Benchmark] = kwargs.get("benchmark")
         self.benchmark_name: Optional[str] = kwargs.get("benchmark_name")
         benchmark_cli_options = kwargs.get("benchmark_cli_options", {})
@@ -608,61 +601,26 @@ class EvaluationRunner:
 
         verify_results = {}
         if verify_jobs:
-            use_process_pool = False
-            try:
-                pickle.dumps(self.benchmark)
-                sample_job = verify_jobs[0]
-                pickle.dumps(sample_job[1])
-                pickle.dumps(sample_job[2])
-                pickle.dumps(sample_job[3])
-                use_process_pool = True
-            except (pickle.PickleError, TypeError, AttributeError):
-                use_process_pool = False
-
-            max_workers = min(len(verify_jobs), max(1, os.cpu_count() or 1))
-            if use_process_pool:
-                ctx = mp.get_context("spawn")
-                with concurrent.futures.ProcessPoolExecutor(
-                    max_workers=max_workers,
-                    mp_context=ctx,
-                    initializer=init_verify_worker,
-                    initargs=(self.benchmark,),
-                ) as executor:
-                    future_map = {
-                        executor.submit(
-                            verify_solution_worker,
-                            (sample, states, actions),
-                        ): idx
-                        for idx, sample, states, actions in verify_jobs
-                    }
-                    for future in concurrent.futures.as_completed(future_map):
-                        idx = future_map[future]
-                        try:
-                            verify_results[idx] = future.result()
-                        except Exception as exc:  # noqa: BLE001
-                            verify_results[idx] = benchmark_verification_from_exception(exc)
-            else:
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=min(32, max_workers)
-                ) as executor:
-                    future_map = {
-                        executor.submit(
-                            verify_benchmark_path,
-                            benchmark=self.benchmark,
-                            puzzle=None,
-                            benchmark_sample=sample,
-                            states=states,
-                            actual_actions=None,
-                            path_action_strings=actions,
-                        ): idx
-                        for idx, sample, states, actions in verify_jobs
-                    }
-                    for future in concurrent.futures.as_completed(future_map):
-                        idx = future_map[future]
-                        try:
-                            verify_results[idx] = future.result()
-                        except Exception as exc:  # noqa: BLE001
-                            verify_results[idx] = benchmark_verification_from_exception(exc)
+            max_workers = min(32, len(verify_jobs), max(1, os.cpu_count() or 1))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_map = {
+                    executor.submit(
+                        verify_benchmark_path,
+                        benchmark=self.benchmark,
+                        puzzle=self.puzzle,
+                        benchmark_sample=sample,
+                        states=states,
+                        actual_actions=None,
+                        path_action_strings=actions,
+                    ): idx
+                    for idx, sample, states, actions in verify_jobs
+                }
+                for future in concurrent.futures.as_completed(future_map):
+                    idx = future_map[future]
+                    try:
+                        verify_results[idx] = future.result()
+                    except Exception as exc:  # noqa: BLE001
+                        verify_results[idx] = benchmark_verification_from_exception(exc)
 
         batched_actual = None
         batched_estimated = None

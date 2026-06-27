@@ -77,10 +77,6 @@ def apply_with_conditional_batch_stats(
         return outputs, {}
 
 
-# Backward-compat alias (to be removed later)
-apply_with_optional_batch_stats = apply_with_conditional_batch_stats
-
-
 def build_new_params_from_updates(
     params: Any, variable_updates: dict, collection: str = "batch_stats"
 ):

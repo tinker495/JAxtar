@@ -1,11 +1,21 @@
+import importlib
+
 import jax.numpy as jnp
 
-from helpers.rich_progress import RichProgressBar, tqdm_class
+from helpers.rich_progress import RichProgressBar, tqdm
 from train_util.target_update import soft_update
 
 
-def test_tqdm_class_alias_remains_importable():
-    assert tqdm_class is RichProgressBar
+def test_progress_alias_tqdm_class_is_removed():
+    rich_progress = importlib.import_module("helpers.rich_progress")
+    assert not hasattr(rich_progress, "tqdm_class")
+    assert isinstance(tqdm([]), RichProgressBar)
+
+
+def test_optional_batch_stats_alias_is_removed():
+    train_util = importlib.import_module("train_util.util")
+    assert hasattr(train_util, "apply_with_conditional_batch_stats")
+    assert not hasattr(train_util, "apply_with_optional_batch_stats")
 
 
 def test_soft_update_remains_importable_with_legacy_weighting():

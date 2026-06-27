@@ -4,7 +4,6 @@ from functools import wraps
 import click
 import jax
 
-from config import benchmark_bundles, puzzle_bundles, train_presets, world_model_bundles
 from config.pydantic_models import (
     DistTrainOptions,
     EvalOptions,
@@ -26,6 +25,30 @@ from helpers.util import map_kwargs_to_pydantic
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 from train_util.optimizer import OPTIMIZERS
+
+
+def _puzzle_bundles():
+    from config import puzzle_bundles
+
+    return puzzle_bundles
+
+
+def _benchmark_bundles():
+    from config import benchmark_bundles
+
+    return benchmark_bundles
+
+
+def _train_presets():
+    from config import train_presets
+
+    return train_presets
+
+
+def _world_model_bundles():
+    from config import world_model_bundles
+
+    return world_model_bundles
 
 
 def _setup_neural_component(
@@ -105,7 +128,8 @@ def create_puzzle_options(
             puzzle_opts = PuzzleOptions(**puzzle_kwargs)
 
             puzzle_name = puzzle_opts.puzzle
-            puzzle_bundle = puzzle_bundles[puzzle_name]
+            bundles = _world_model_bundles() if puzzle_ds_flag else _puzzle_bundles()
+            puzzle_bundle = bundles[puzzle_name]
 
             input_args = {}
             if puzzle_opts.puzzle_args:
@@ -170,9 +194,9 @@ def create_puzzle_options(
             )(wrapper)
 
         if puzzle_ds_flag:
-            choices = list(world_model_bundles.keys())
+            choices = list(_world_model_bundles().keys())
         else:
-            choices = list(puzzle_bundles.keys())
+            choices = list(_puzzle_bundles().keys())
 
         wrapper = click.option(
             "-p",
@@ -187,16 +211,17 @@ def create_puzzle_options(
 
 
 def benchmark_options(func: callable) -> callable:
-    if not benchmark_bundles:
+    bundles = _benchmark_bundles()
+    if not bundles:
         raise RuntimeError("No benchmark bundles registered.")
 
-    default_benchmark = next(iter(benchmark_bundles))
+    default_benchmark = next(iter(bundles))
 
     @click.option(
         "--benchmark",
         "benchmark_key",
         default=default_benchmark,
-        type=click.Choice(list(benchmark_bundles.keys())),
+        type=click.Choice(list(bundles.keys())),
         help="Benchmark dataset to evaluate.",
     )
     @click.option(
@@ -220,7 +245,7 @@ def benchmark_options(func: callable) -> callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
         benchmark_key = kwargs.pop("benchmark_key")
-        benchmark_bundle = benchmark_bundles[benchmark_key]
+        benchmark_bundle = _benchmark_bundles()[benchmark_key]
 
         benchmark_args = dict(benchmark_bundle.benchmark_args or {})
         benchmark_args_override = kwargs.pop("benchmark_args")
@@ -266,9 +291,18 @@ def benchmark_options(func: callable) -> callable:
 puzzle_options = create_puzzle_options(
     default_puzzle="n-puzzle", use_hard_flag=True, use_seeds_flag=True
 )
-eval_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
-dist_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
-wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
+
+
+def eval_puzzle_options(func: callable) -> callable:
+    return create_puzzle_options(default_puzzle="rubikscube", default_hard=True)(func)
+
+
+def dist_puzzle_options(func: callable) -> callable:
+    return create_puzzle_options(default_puzzle="rubikscube", default_hard=True)(func)
+
+
+def wm_puzzle_ds_options(func: callable) -> callable:
+    return create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)(func)
 
 
 def search_options(func=None, *, variant: str = "default") -> callable:
@@ -729,7 +763,7 @@ def human_play_options(func: callable) -> callable:
 def dist_train_options(
     func: callable = None, *, preset_category: str, default_preset: str | None = None
 ) -> callable:
-    preset_map = train_presets.get(preset_category)
+    preset_map = _train_presets().get(preset_category)
     if not preset_map:
         raise RuntimeError(f"Unknown training preset category '{preset_category}'.")
 
@@ -1068,7 +1102,7 @@ def wm_get_ds_options(func: callable) -> callable:
         "-ds",
         "--dataset",
         default="rubikscube",
-        type=click.Choice(list(world_model_bundles.keys())),
+        type=click.Choice(list(_world_model_bundles().keys())),
         help="Dataset to use",
     )
     @wraps(func)
@@ -1076,7 +1110,7 @@ def wm_get_ds_options(func: callable) -> callable:
         get_ds_kwargs = map_kwargs_to_pydantic(WMGetDSOptions, kwargs)
         get_ds_opts = WMGetDSOptions(**get_ds_kwargs)
         dataset_name = get_ds_opts.dataset
-        wm_bundle = world_model_bundles[dataset_name]
+        wm_bundle = _world_model_bundles()[dataset_name]
         dataset_path = wm_bundle.dataset_path
 
         datas = jax.numpy.load(dataset_path + "/images.npy")
@@ -1099,7 +1133,7 @@ def wm_get_world_model_options(func: callable) -> callable:
     @click.option(
         "--world_model",
         default="rubikscube",
-        type=click.Choice(list(world_model_bundles.keys())),
+        type=click.Choice(list(_world_model_bundles().keys())),
         help="World model to use",
     )
     @wraps(func)
@@ -1107,7 +1141,7 @@ def wm_get_world_model_options(func: callable) -> callable:
         wm_model_kwargs = map_kwargs_to_pydantic(WMGetModelOptions, kwargs)
         wm_model_opts = WMGetModelOptions(**wm_model_kwargs)
         world_model_name = wm_model_opts.world_model
-        wm_bundle = world_model_bundles[world_model_name]
+        wm_bundle = _world_model_bundles()[world_model_name]
         world_model = wm_bundle.world_model(reset=True)
         kwargs["world_model"] = world_model
         kwargs["world_model_name"] = world_model_name
@@ -1148,12 +1182,13 @@ def wm_dataset_options(func: callable) -> callable:
         # but the puzzle object itself is what we need now.
         # Overwriting the puzzle in kwargs with the one for dataset generation
         puzzle_name = kwargs["puzzle_name"]
-        if puzzle_name not in world_model_bundles:
+        bundles = _world_model_bundles()
+        if puzzle_name not in bundles:
             raise click.UsageError(
                 f"World model dataset generation is not defined for '{puzzle_name}'"
             )
 
-        wm_bundle = world_model_bundles[puzzle_name]
+        wm_bundle = bundles[puzzle_name]
         puzzle_callable = wm_bundle.puzzle_for_ds_gen
         kwargs["puzzle"] = puzzle_callable()
 

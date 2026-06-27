@@ -8,9 +8,7 @@ See CONTEXT.md "Search Algorithm Catalog".
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Literal, Optional
-
-from pydantic import BaseModel, ConfigDict
+from typing import Callable, Literal
 
 from JAxtar.beamsearch.heuristic_beam import beam_builder
 from JAxtar.beamsearch.q_beam import qbeam_builder
@@ -26,20 +24,19 @@ from JAxtar.stars.qstar import qstar_builder
 ComponentKind = Literal["heuristic", "qfunction"]
 
 
-class SearchAlgorithmEntry(BaseModel):
+@dataclass(frozen=True, slots=True)
+class SearchAlgorithmEntry:
     """One algorithm's facts shared across the three CLI surfaces."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     python_id: str
     cli_subcommand: str
     run_label: str
     builder_fn: Callable
     component_kind: ComponentKind
-    is_beam: bool = False
     search_title: str
     eval_description: str
-    node_metric_label: Optional[str] = None
+    is_beam: bool = False
+    node_metric_label: str | None = None
     supports_workload_signature: bool = False
 
 

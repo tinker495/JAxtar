@@ -21,7 +21,6 @@ class BenchmarkVerification:
 
 
 _NO_VERIFICATION = BenchmarkVerification()
-_VERIFY_BENCHMARK: Any | None = None
 
 
 def build_benchmark_action_strings(
@@ -55,23 +54,24 @@ def _can_verify(benchmark: Any, benchmark_sample: Any, states: Sequence[Any] | N
     )
 
 
-def _verify_benchmark_path_with_strings(
+def verify_benchmark_path(
     *,
     benchmark: Any,
+    puzzle: Any,
     benchmark_sample: Any,
     states: Sequence[Any] | None,
-    path_action_strings: Sequence[str] | None,
+    actual_actions: Sequence[int] | None,
+    path_action_strings: Sequence[str] | None = None,
 ) -> BenchmarkVerification:
-    """Run benchmark verification when action labels are already prepared.
-
-    Internal: callers either pre-build action strings (worker batch path) or
-    use the public `verify_benchmark_path` seam that derives them. The Module
-    Interface does not expose this lower-level entry point.
-    """
+    """Build action labels (if needed) and verify a reconstructed benchmark path."""
     if not _can_verify(benchmark, benchmark_sample, states):
         return _NO_VERIFICATION
 
-    action_sequence = list(path_action_strings) if path_action_strings is not None else None
+    action_sequence = (
+        list(path_action_strings)
+        if path_action_strings is not None
+        else build_benchmark_action_strings(puzzle=puzzle, actual_actions=actual_actions)
+    )
     try:
         verification_result = benchmark.verify_solution(
             benchmark_sample,
@@ -92,54 +92,6 @@ def _verify_benchmark_path_with_strings(
     )
 
 
-def verify_benchmark_path(
-    *,
-    benchmark: Any,
-    puzzle: Any,
-    benchmark_sample: Any,
-    states: Sequence[Any] | None,
-    actual_actions: Sequence[int] | None,
-    path_action_strings: Sequence[str] | None = None,
-) -> BenchmarkVerification:
-    """Build action labels (if needed) and verify a reconstructed benchmark path.
-
-    This is the single public seam for inline (non-worker) Benchmark Verification.
-    """
-    if not _can_verify(benchmark, benchmark_sample, states):
-        return _NO_VERIFICATION
-
-    action_strings = (
-        list(path_action_strings)
-        if path_action_strings is not None
-        else build_benchmark_action_strings(puzzle=puzzle, actual_actions=actual_actions)
-    )
-    return _verify_benchmark_path_with_strings(
-        benchmark=benchmark,
-        benchmark_sample=benchmark_sample,
-        states=states,
-        path_action_strings=action_strings,
-    )
-
-
 def benchmark_verification_from_exception(exc: BaseException) -> BenchmarkVerification:
     """Wrap an out-of-band verifier exception (e.g. worker pool failure) as a fact."""
     return BenchmarkVerification(benchmark_verification_error=str(exc))
-
-
-def init_verify_worker(benchmark: Any) -> None:
-    """Initialise a process-pool worker with a benchmark object."""
-    global _VERIFY_BENCHMARK
-    _VERIFY_BENCHMARK = benchmark
-
-
-def verify_solution_worker(
-    args: tuple[Any, Sequence[Any], Sequence[str] | None]
-) -> BenchmarkVerification:
-    """Process-pool Adapter for Benchmark Verification."""
-    benchmark_sample, states, action_sequence = args
-    return _verify_benchmark_path_with_strings(
-        benchmark=_VERIFY_BENCHMARK,
-        benchmark_sample=benchmark_sample,
-        states=states,
-        path_action_strings=action_sequence,
-    )

@@ -1,27 +1,5 @@
 --find-links https://storage.googleapis.com/jax-releases/libtpu_releases.html
+-r requirements_common.txt
 numpy
-opencv-python
-imageio
-click
-rich
-pre-commit
-pytest
 jax[tpu]
-chex
-dm_pix
-dm-haiku
-huggingface_hub
-aqtp
-flax
 optax @ git+https://github.com/tinker495/optax.git@feature/add-normuon
-termcolor
-tensorboardX
-pydantic
-xtructure @ git+https://github.com/tinker495/xtructure.git
-puxle @ git+https://github.com/tinker495/PuXle.git
-aim
-wandb
-plotly
-pandas
-seaborn
-matplotlib

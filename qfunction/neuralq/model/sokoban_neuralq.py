@@ -1,20 +1,6 @@
-import chex
-import jax
-import jax.numpy as jnp
-from puxle import Sokoban
-
-from neural_util.dtypes import DTYPE
+from neural_util.model_preprocessing import SokobanPreProcessMixin
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 
 
-class SokobanNeuralQ(NeuralQFunctionBase):
-    def __init__(self, puzzle: Sokoban, **kwargs):
-        super().__init__(puzzle, **kwargs)
-
-    def pre_process(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> chex.Array:
-        target_board = solve_config.TargetState.board_unpacked
-        current_board = current.board_unpacked
-        stacked_board = jnp.concatenate([current_board, target_board], axis=-1)
-        one_hot_board = jax.nn.one_hot(stacked_board, num_classes=4)
-        flattened_board = jnp.reshape(one_hot_board, (-1,))
-        return ((flattened_board - 0.5) * 2.0).astype(DTYPE)
+class SokobanNeuralQ(SokobanPreProcessMixin, NeuralQFunctionBase):
+    pass
