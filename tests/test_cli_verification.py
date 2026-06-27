@@ -115,8 +115,8 @@ def test_evaluation_runner_does_not_reach_past_verification_module_seam():
     """EvaluationRunner consumes the Verification Module's small Interface only.
 
     The Module exposes BenchmarkVerification (type), build_benchmark_action_strings,
-    init_verify_worker, verify_benchmark_path, verify_solution_worker, and
-    benchmark_verification_from_exception. Reaching for any other symbol means a
+    verify_benchmark_path, and benchmark_verification_from_exception. Reaching for
+    any other symbol means a
     seam leak that future Verification Module refactors must work around.
     """
     source = (Path(__file__).parents[1] / "cli/evaluation_runner.py").read_text()
