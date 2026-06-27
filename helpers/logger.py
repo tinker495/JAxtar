@@ -1,3 +1,4 @@
+import importlib
 import os
 import shutil
 import subprocess
@@ -5,16 +6,20 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional
 
-import aim
 import imageio.v2 as imageio
-import matplotlib
 import numpy as np
-import tensorboardX
-import wandb
 
 from helpers.util import convert_to_serializable_dict
 
-matplotlib.use("Agg")
+
+def _optional_module(module_name: str, feature: str):
+    try:
+        return importlib.import_module(module_name)
+    except ImportError as exc:
+        raise ImportError(
+            f"{feature} requires optional logging dependencies. "
+            "Install them with `pip install -r requirements_logging.txt`."
+        ) from exc
 
 
 class BaseLogger(ABC):
@@ -123,6 +128,7 @@ class BaseLogger(ABC):
 class TensorboardLogger(BaseLogger):
     def __init__(self, log_dir_base: str, config: dict):
         super().__init__(log_dir_base, config)
+        tensorboardX = _optional_module("tensorboardX", "Tensorboard logging")
         self.writer = tensorboardX.SummaryWriter(self.log_dir)
         print(f"Tensorboard log directory: {self.log_dir}")
         self._log_hyperparameters()
@@ -173,8 +179,10 @@ class AimLogger(BaseLogger):
     def __init__(self, log_dir_base: str, config: dict):
         super().__init__(log_dir_base, config)
         self.aim_run = None
+        self._aim = None
         try:
-            self.aim_run = aim.Run(experiment=log_dir_base)
+            self._aim = _optional_module("aim", "Aim logging")
+            self.aim_run = self._aim.Run(experiment=log_dir_base)
             print(f"Aim logging enabled. Repo: {self.aim_run.repo.path}")
             print(f"Aim run hash: {self.aim_run.hash}")
         except (ImportError, ConnectionError, ValueError, RuntimeError) as e:
@@ -200,7 +208,7 @@ class AimLogger(BaseLogger):
     def log_histogram(self, tag: str, values: np.ndarray, step: int):
         if self.aim_run:
             try:
-                self.aim_run.track(aim.Distribution(values), name=tag, step=step)
+                self.aim_run.track(self._aim.Distribution(values), name=tag, step=step)
             except ValueError as e:
                 print(
                     f"Warning: Could not log histogram '{tag}' to Aim at step {step}. "
@@ -214,13 +222,13 @@ class AimLogger(BaseLogger):
                 aim_image = image
             else:  # CHW
                 aim_image = np.transpose(image, (1, 2, 0))
-            self.aim_run.track(aim.Image(aim_image), name=tag, step=step)
+            self.aim_run.track(self._aim.Image(aim_image), name=tag, step=step)
 
         self._save_image_local(tag, image, step)
 
     def log_text(self, tag: str, text: str, step: int = 0):
         if self.aim_run:
-            self.aim_run.track(aim.Text(text), name=tag, step=step)
+            self.aim_run.track(self._aim.Text(text), name=tag, step=step)
 
     def log_figure(self, tag: str, figure, step: int):
         if self.aim_run:
@@ -230,7 +238,7 @@ class AimLogger(BaseLogger):
             image_from_plot = np.frombuffer(buf, dtype=np.uint8).reshape((height, width, 4))[
                 ..., :3
             ]
-            self.aim_run.track(aim.Image(image_from_plot), name=tag, step=step)
+            self.aim_run.track(self._aim.Image(image_from_plot), name=tag, step=step)
 
     def log_artifact(
         self,
@@ -247,7 +255,7 @@ class AimLogger(BaseLogger):
                 "type": artifact_type,
                 "path": dest_path,
                 "original_path": artifact_path,
-                "size": os.path.getsize(dest_path) if os.path.isfile(dest_path) else "directory",
+                "size": (os.path.getsize(dest_path) if os.path.isfile(dest_path) else "directory"),
             }
             self.aim_run.track(artifact_info, name=f"artifacts/{artifact_type}/{artifact_name}")
 
@@ -260,7 +268,9 @@ class WandbLogger(BaseLogger):
     def __init__(self, log_dir_base: str, config: dict):
         super().__init__(log_dir_base, config)
         self.wandb_run = None
+        self._wandb = None
         try:
+            self._wandb = _optional_module("wandb", "Wandb logging")
             # Initialize wandb with project name and config
             # Support for run organization through config
             init_kwargs = {
@@ -278,7 +288,7 @@ class WandbLogger(BaseLogger):
             if "wandb_job_type" in config:
                 init_kwargs["job_type"] = config["wandb_job_type"]
 
-            self.wandb_run = wandb.init(**init_kwargs)
+            self.wandb_run = self._wandb.init(**init_kwargs)
             print(f"Wandb logging enabled. Project: {log_dir_base}")
             print(f"Wandb run URL: {self.wandb_run.url}")
         except (ImportError, ConnectionError, ValueError, RuntimeError) as e:
@@ -291,20 +301,24 @@ class WandbLogger(BaseLogger):
         super()._log_hyperparameters()
         # Wandb automatically logs config during init, but we can also update it
         if self.wandb_run:
-            wandb.config.update(convert_to_serializable_dict(self.config), allow_val_change=True)
+            self._wandb.config.update(
+                convert_to_serializable_dict(self.config), allow_val_change=True
+            )
 
     def _log_git_info(self):
         if self.wandb_run:
-            wandb.config.update({"git_commit": self._get_git_commit_hash()}, allow_val_change=True)
+            self._wandb.config.update(
+                {"git_commit": self._get_git_commit_hash()}, allow_val_change=True
+            )
 
     def log_scalar(self, tag: str, value: float, step: int):
         if self.wandb_run:
-            wandb.log({tag: float(value)}, step=step)
+            self._wandb.log({tag: float(value)}, step=step)
 
     def log_histogram(self, tag: str, values: np.ndarray, step: int):
         if self.wandb_run:
             try:
-                wandb.log({tag: wandb.Histogram(values)}, step=step)
+                self._wandb.log({tag: self._wandb.Histogram(values)}, step=step)
             except ValueError as e:
                 print(
                     f"Warning: Could not log histogram '{tag}' to Wandb at step {step}. "
@@ -317,7 +331,7 @@ class WandbLogger(BaseLogger):
             if dataformats == "CHW":
                 # Convert CHW to HWC for wandb
                 image = np.transpose(image, (1, 2, 0))
-            wandb.log({tag: wandb.Image(image)}, step=step)
+            self._wandb.log({tag: self._wandb.Image(image)}, step=step)
 
         self._save_image_local(tag, image, step)
 
@@ -325,12 +339,12 @@ class WandbLogger(BaseLogger):
         if self.wandb_run:
             # Use wandb.Text for better clarity with plain text
             # For rich HTML content, consider using wandb.Html explicitly
-            wandb.log({tag: wandb.Text(text)}, step=step)
+            self._wandb.log({tag: self._wandb.Text(text)}, step=step)
 
     def log_figure(self, tag: str, figure, step: int):
         if self.wandb_run:
             # Wrap figure with wandb.Image for better portability across backends
-            wandb.log({tag: wandb.Image(figure)}, step=step)
+            self._wandb.log({tag: self._wandb.Image(figure)}, step=step)
 
     def log_artifact(
         self,
@@ -368,7 +382,7 @@ class WandbLogger(BaseLogger):
             if metadata:
                 artifact_kwargs["metadata"] = metadata
 
-            artifact = wandb.Artifact(**artifact_kwargs)
+            artifact = self._wandb.Artifact(**artifact_kwargs)
 
             # Add file or directory to artifact
             if os.path.isdir(artifact_path):
@@ -389,7 +403,7 @@ class WandbLogger(BaseLogger):
 
     def close(self):
         if self.wandb_run:
-            wandb.finish()
+            self._wandb.finish()
 
 
 class NoOpLogger(BaseLogger):
