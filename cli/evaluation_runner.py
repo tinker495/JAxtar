@@ -40,7 +40,6 @@ from .search_outcome import (
     build_evaluation_result_item,
     normalise_search_result,
     with_solution_path,
-    with_workload_signature,
 )
 from .verification import (
     BenchmarkVerification,
@@ -414,12 +413,13 @@ class EvaluationRunner:
 
         start_time = time.time()
         search_result = search_fn(solve_config, state)
-        outcome = normalise_search_result(search_result)
+        outcome = normalise_search_result(
+            search_result,
+            emit_workload_signature=getattr(self.eval_options, "emit_workload_signature", False),
+        )
         end_time = time.time()
 
         search_time = end_time - start_time
-        if getattr(self.eval_options, "emit_workload_signature", False):
-            outcome = with_workload_signature(outcome, search_result)
 
         if outcome.solved:
             outcome = with_solution_path(
