@@ -8,7 +8,6 @@ OPTIONAL_STACK = {
     "aim",
     "matplotlib",
     "pandas",
-    "plotly",
     "seaborn",
     "tensorboardX",
     "wandb",
