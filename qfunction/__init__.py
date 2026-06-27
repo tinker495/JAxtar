@@ -4,6 +4,7 @@ from _lazy_imports import lazy_dir, load_lazy_export
 
 __all__ = [
     "QFunction",
+    "QFromHeuristic",
     "DotKnotQ",
     "EmptyQFunction",
     "LightsOutQ",
@@ -21,6 +22,7 @@ __all__ = [
 
 _EXPORTS = {
     "QFunction": ("qfunction.q_base", "QFunction"),
+    "QFromHeuristic": ("qfunction.q_base", "QFromHeuristic"),
     "DotKnotQ": ("qfunction.dotknot_q", "DotKnotQ"),
     "EmptyQFunction": ("qfunction.empty_q", "EmptyQFunction"),
     "LightsOutQ": ("qfunction.lightsout_q", "LightsOutQ"),
