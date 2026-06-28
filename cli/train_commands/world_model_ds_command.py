@@ -22,8 +22,7 @@ from ..options import wm_dataset_options, wm_puzzle_ds_options
 
 def convert_to_imgs(state: Puzzle.State, img_size: tuple):
     state_img = state.img()
-    small_state_img = cv2.resize(state_img, img_size, interpolation=cv2.INTER_AREA)
-    return state_img, small_state_img
+    return cv2.resize(state_img, img_size, interpolation=cv2.INTER_AREA)
 
 
 @click.command()
@@ -66,10 +65,8 @@ def make_puzzle_transition_dataset(
     images_stack = []
     next_images_stack = []
     for i in trange(len(actions)):
-        state_img, small_state_img = convert_to_imgs(states[i], wm_dataset_options.img_size)
-        next_state_img, small_next_state_img = convert_to_imgs(
-            next_states[i], wm_dataset_options.img_size
-        )
+        small_state_img = convert_to_imgs(states[i], wm_dataset_options.img_size)
+        small_next_state_img = convert_to_imgs(next_states[i], wm_dataset_options.img_size)
         if i < 3:
             logger.log_image(f"State/{i}", cv2.cvtColor(small_state_img, cv2.COLOR_BGR2RGB), i)
             logger.log_image(
@@ -117,12 +114,8 @@ def make_puzzle_sample_data(
     target_images_stack = []
     initial_images_stack = []
     for i in trange(len(target_states)):
-        target_img, small_target_img = convert_to_imgs(
-            target_states[i], wm_dataset_options.img_size
-        )
-        initial_img, small_initial_img = convert_to_imgs(
-            initial_states[i], wm_dataset_options.img_size
-        )
+        small_target_img = convert_to_imgs(target_states[i], wm_dataset_options.img_size)
+        small_initial_img = convert_to_imgs(initial_states[i], wm_dataset_options.img_size)
         if i < 3:
             logger.log_image(
                 f"Initial_State/{i}", cv2.cvtColor(small_initial_img, cv2.COLOR_BGR2RGB), i
@@ -170,7 +163,7 @@ def make_puzzle_eval_trajectory(
     np.save(f"tmp/{puzzle_name}/eval_actions.npy", actions)
     state_images_stack = []
     for i in trange(len(states)):
-        state_img, small_state_img = convert_to_imgs(states[i], wm_dataset_options.img_size)
+        small_state_img = convert_to_imgs(states[i], wm_dataset_options.img_size)
         if i < 3:
             logger.log_image(f"State/{i}", cv2.cvtColor(small_state_img, cv2.COLOR_BGR2RGB), i)
         state_images_stack.append(small_state_img)
