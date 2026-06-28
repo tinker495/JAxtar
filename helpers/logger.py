@@ -334,7 +334,6 @@ class WandbLogger(BaseLogger):
         artifact_path: str,
         artifact_name: str = None,
         artifact_type: str = "model",
-        metadata: dict = None,
         aliases: list = None,
     ):
         """
@@ -356,15 +355,11 @@ class WandbLogger(BaseLogger):
             aliases = ["latest"]
 
         try:
-            # Create wandb artifact with optional metadata
             artifact_kwargs = {
                 "name": artifact_name,
                 "type": artifact_type,
                 "description": f"Artifact: {artifact_name} of type {artifact_type}",
             }
-            if metadata:
-                artifact_kwargs["metadata"] = metadata
-
             artifact = self._wandb.Artifact(**artifact_kwargs)
 
             # Add file or directory to artifact
@@ -392,10 +387,6 @@ class WandbLogger(BaseLogger):
 class NoOpLogger(BaseLogger):
     def __init__(self):
         print("Logging is disabled.")
-
-    def _create_log_dir(self, log_dir_base: str) -> str:
-        # This method is part of the abstract base class but won't be called.
-        return "runs/no_op_log"
 
     def _log_hyperparameters(self):
         pass

@@ -198,9 +198,7 @@ class EvaluationRunner:
                 cost_weight=cw,
                 show_compile_time=current_eval_opts.show_compile_time,
                 warmup_inputs=warmup_inputs,
-                emit_workload_signature=getattr(
-                    current_eval_opts, "emit_workload_signature", False
-                ),
+                emit_workload_signature=current_eval_opts.emit_workload_signature,
             )
             search_fn = self.search_builder_fn(
                 self.puzzle,
@@ -243,7 +241,7 @@ class EvaluationRunner:
                         if metric_key in benchmark_metrics:
                             am.log_scalar(f"benchmark/{metric_key}", benchmark_metrics[metric_key])
 
-            if getattr(current_eval_opts, "emit_workload_signature", False):
+            if current_eval_opts.emit_workload_signature:
                 sig_records = [
                     {k: v for k, v in r.items() if str(k).startswith("xtr_")} for r in results
                 ]
@@ -383,7 +381,7 @@ class EvaluationRunner:
         search_result = search_fn(solve_config, state)
         outcome = normalise_search_result(
             search_result,
-            emit_workload_signature=getattr(self.eval_options, "emit_workload_signature", False),
+            emit_workload_signature=self.eval_options.emit_workload_signature,
         )
         end_time = time.time()
 
