@@ -63,26 +63,10 @@ class RichProgressBar:
         total: Optional[int] = None,
         leave: bool = True,
         file=None,
-        ncols: Optional[int] = None,
-        mininterval: float = 0.1,
-        maxinterval: float = 10.0,
-        miniters: Optional[int] = None,
-        ascii: Optional[bool] = None,
         disable: bool = False,
         unit: str = "it",
-        unit_scale: bool = False,
-        dynamic_ncols: bool = False,
-        smoothing: float = 0.3,
-        bar_format: Optional[str] = None,
         initial: int = 0,
         position: Optional[int] = None,
-        postfix: Optional[Dict] = None,
-        unit_divisor: int = 1000,
-        write_bytes: bool = False,
-        lock_args: Optional[tuple] = None,
-        nrows: Optional[int] = None,
-        colour: Optional[str] = None,
-        delay: float = 0,
         **kwargs,
     ):
         self.desc = desc or "Processing"
@@ -278,45 +262,6 @@ class RichProgressBar:
                 self._refresh_display()
             finally:
                 self._pause_depth -= 1
-
-    def close(self):
-        """Clean up the progress bar."""
-        if not self.disable and self.live:
-            self.live.stop()
-
-    def clear(self, nolock: bool = False):
-        """Clear the progress bar."""
-        pass  # Rich handles this automatically
-
-    def refresh(self):
-        """Force refresh the progress bar."""
-        if not self.disable:
-            self._refresh_display()
-
-    def reset(self, total: Optional[int] = None):
-        """Reset the progress bar."""
-        if total is not None:
-            self.total = total
-        self.n = self.initial
-        if not self.disable and self.task_id is not None:
-            with self._lock:
-                self.progress.reset(self.task_id, total=self.total)
-                self._refresh_display()
-
-    @property
-    def format_dict(self):
-        """Return a dictionary with current progress information."""
-        elapsed = time.time() - self.start_time
-        rate = self.n / elapsed if elapsed > 0 else 0
-
-        return {
-            "n": self.n,
-            "total": self.total,
-            "elapsed": elapsed,
-            "rate": rate,
-            "desc": self.desc,
-            "percentage": (self.n / self.total * 100) if self.total else 0,
-        }
 
     def _refresh_display(self):
         """Refresh the live display with updated layout."""
