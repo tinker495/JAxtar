@@ -104,10 +104,6 @@ class BaseLogger(ABC):
         pass
 
     @abstractmethod
-    def log_text(self, tag: str, text: str, step: int = 0):
-        pass
-
-    @abstractmethod
     def log_figure(self, tag: str, figure, step: int):
         pass
 
@@ -152,9 +148,6 @@ class TensorboardLogger(BaseLogger):
         image = np.asarray(image)
         self.writer.add_image(tag, image, step, dataformats=dataformats)
         self._save_image_local(tag, image, step)
-
-    def log_text(self, tag: str, text: str, step: int = 0):
-        self.writer.add_text(tag, text, step)
 
     def log_figure(self, tag: str, figure, step: int):
         self.writer.add_figure(tag, figure, step)
@@ -225,10 +218,6 @@ class AimLogger(BaseLogger):
             self.aim_run.track(self._aim.Image(aim_image), name=tag, step=step)
 
         self._save_image_local(tag, image, step)
-
-    def log_text(self, tag: str, text: str, step: int = 0):
-        if self.aim_run:
-            self.aim_run.track(self._aim.Text(text), name=tag, step=step)
 
     def log_figure(self, tag: str, figure, step: int):
         if self.aim_run:
@@ -335,12 +324,6 @@ class WandbLogger(BaseLogger):
 
         self._save_image_local(tag, image, step)
 
-    def log_text(self, tag: str, text: str, step: int = 0):
-        if self.wandb_run:
-            # Use wandb.Text for better clarity with plain text
-            # For rich HTML content, consider using wandb.Html explicitly
-            self._wandb.log({tag: self._wandb.Text(text)}, step=step)
-
     def log_figure(self, tag: str, figure, step: int):
         if self.wandb_run:
             # Wrap figure with wandb.Image for better portability across backends
@@ -427,9 +410,6 @@ class NoOpLogger(BaseLogger):
         pass
 
     def log_image(self, tag: str, image, step: int, dataformats="HWC"):
-        pass
-
-    def log_text(self, tag: str, text: str, step: int = 0):
         pass
 
     def log_figure(self, tag: str, figure, step: int):
