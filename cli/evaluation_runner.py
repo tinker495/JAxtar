@@ -50,17 +50,6 @@ from .verification import (
 
 
 @partial(jax.jit)
-def _bulk_actual_estimated(
-    costs: jnp.ndarray,
-    dists: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    path_cost = costs[-1]
-    actual = path_cost - costs
-    valid = jnp.isfinite(dists)
-    return actual, dists, valid
-
-
-@partial(jax.jit)
 def _bulk_actual_estimated_batch(
     costs: jnp.ndarray,
     dists: jnp.ndarray,
@@ -664,34 +653,12 @@ class EvaluationRunner:
                     batched_estimated = np.asarray(estimated_arr)
                     batched_valid = np.asarray(valid_mask)
 
-                if batched_actual is not None and batch_index is not None:
-                    length = batched_lengths[batch_index]
-                    actual_np = batched_actual[batch_index, :length]
-                    estimated_np = batched_estimated[batch_index, :length]
-                    valid_np = batched_valid[batch_index, :length]
-                    actual_dists = [float(v) for v in actual_np[valid_np]]
-                    estimated_dists = [float(v) for v in estimated_np[valid_np]]
-                else:
-                    costs_arr = jnp.asarray(
-                        [step.cost for step in path_steps],
-                        dtype=jnp.float32,
-                    )
-                    dists_arr = jnp.asarray(
-                        [
-                            float(step.dist) if step.dist is not None else np.inf
-                            for step in path_steps
-                        ],
-                        dtype=jnp.float32,
-                    )
-                    actual_dists_arr, estimated_dists_arr, valid_mask = _bulk_actual_estimated(
-                        costs_arr,
-                        dists_arr,
-                    )
-                    actual_np = np.asarray(actual_dists_arr)
-                    estimated_np = np.asarray(estimated_dists_arr)
-                    valid_np = np.asarray(valid_mask)
-                    actual_dists = [float(v) for v in actual_np[valid_np]]
-                    estimated_dists = [float(v) for v in estimated_np[valid_np]]
+                length = batched_lengths[batch_index]
+                actual_np = batched_actual[batch_index, :length]
+                estimated_np = batched_estimated[batch_index, :length]
+                valid_np = batched_valid[batch_index, :length]
+                actual_dists = [float(v) for v in actual_np[valid_np]]
+                estimated_dists = [float(v) for v in estimated_np[valid_np]]
 
                 result_item["path_analysis"] = {
                     "actual": actual_dists,
