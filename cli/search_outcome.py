@@ -17,7 +17,6 @@ import xtructure.numpy as xnp
 
 from helpers.path_steps import PathStep, build_path_steps_from_trace
 from helpers.xtructure_signature import _as_float, _as_int, extract_xtructure_signature
-from JAxtar.solution_trace import SolutionTrace
 
 from .verification import BenchmarkVerification, verify_benchmark_path
 
@@ -30,7 +29,6 @@ class SearchOutcome:
     generated_size: int
     solved_cost: float | None
     workload_signature: Mapping[str, Any]
-    solution_trace: SolutionTrace | None = None
     path_steps: tuple[PathStep, ...] = ()
     benchmark_verification: BenchmarkVerification | None = None
 
@@ -103,7 +101,7 @@ def with_solution_path(
     """Attach Solution Trace, Path Step, and optional Benchmark Verification facts."""
 
     if not outcome.solved:
-        return replace(outcome, solution_trace=SolutionTrace.unsolved(), path_steps=())
+        return replace(outcome, path_steps=())
 
     solution_trace = search_result.to_solution_trace(puzzle=puzzle)
     path_steps = tuple(
@@ -129,7 +127,6 @@ def with_solution_path(
         )
     return replace(
         outcome,
-        solution_trace=solution_trace,
         path_steps=path_steps,
         benchmark_verification=verification,
     )
