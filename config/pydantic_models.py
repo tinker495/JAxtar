@@ -101,23 +101,18 @@ class EvalOptions(BaseModel):
             return self
         return self.model_copy(update={"num_eval": self.DEFAULT_NUM_EVAL_WITHOUT_BENCHMARK})
 
-    def light_eval(self, max_eval: int = 20) -> "EvalOptions":
-        capped_eval = min(max_eval, self.num_eval)
-
+    @property
+    def light_eval_options(self) -> "EvalOptions":
         def get_first(v):
             return v[0] if isinstance(v, list) else v
 
         return self.model_copy(
             update={
-                "num_eval": capped_eval,
+                "num_eval": min(20, self.num_eval),
                 "cost_weight": [get_first(self.cost_weight)],
                 "pop_ratio": [get_first(self.pop_ratio)],
             }
         )
-
-    @property
-    def light_eval_options(self) -> "EvalOptions":
-        return self.light_eval()
 
 
 class VisualizeOptions(BaseModel):

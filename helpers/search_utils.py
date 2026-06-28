@@ -5,8 +5,6 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from JAxtar.stars.search_base import Current, SearchResult
-
 _VMAPPED_STAR_CACHE: dict[tuple[int, int], callable] = {}
 
 
@@ -54,7 +52,3 @@ def vmapping_search(
         print("JIT compiled\n\n")
     _VMAPPED_STAR_CACHE[cache_key] = vmapped_star
     return vmapped_star
-
-
-def vmapping_get_state(search_result: SearchResult, idx: Current):
-    return jax.vmap(SearchResult.get_state, in_axes=(0, 0))(search_result, idx)

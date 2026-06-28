@@ -13,7 +13,6 @@ from rich.text import Text
 from config.pydantic_models import SearchOptions, VisualizeOptions
 from helpers import (
     human_format,
-    vmapping_get_state,
     vmapping_init_target,
     vmapping_search,
 )
@@ -30,6 +29,7 @@ from helpers.visualization import (
     save_solution_animation_and_frames,
 )
 from JAxtar.search_build_spec import SearchBuildSpec
+from JAxtar.stars.search_base import SearchResult
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
@@ -248,7 +248,9 @@ def vmapped_search_samples(
     vmapped_search_time = end - start
 
     if not has_target and solved.any():
-        solved_st = vmapping_get_state(search_result, search_result.solved_idx)
+        solved_st = jax.vmap(SearchResult.get_state, in_axes=(0, 0))(
+            search_result, search_result.solved_idx
+        )
         grid = Table.grid(expand=False)
         grid.add_column()
         grid.add_row(Align.center("[bold green]Solution State[/bold green]"))
