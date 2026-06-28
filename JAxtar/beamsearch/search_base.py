@@ -141,14 +141,6 @@ class BeamSearchResult:
     def filled_mask(self) -> chex.Array:
         return jnp.isfinite(self.cost)
 
-    def _solution_actions(self) -> list[int]:
-        """Return the action sequence that reaches the solved slot."""
-        trace = self._reconstruct_trace()
-        if trace is None:
-            return []
-        _, _, actions = trace
-        return actions
-
     def get_state(self, idx: int) -> Puzzle.State:
         """Return the state at `idx` in the current beam."""
         return self.beam[int(idx)]
