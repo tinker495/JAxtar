@@ -231,38 +231,17 @@ class EvaluationRunner:
                     config["benchmark_metrics"] = benchmark_metrics
 
                     # Log metrics to artifact manager
-                    if "avg_optimal_cost" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_optimal_cost",
-                            benchmark_metrics["avg_optimal_cost"],
-                        )
-                    if "avg_path_cost" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_path_cost",
-                            benchmark_metrics["avg_path_cost"],
-                        )
-                    if "avg_cost_gap" in benchmark_metrics:
-                        am.log_scalar("benchmark/avg_cost_gap", benchmark_metrics["avg_cost_gap"])
-                    if "avg_optimal_actions" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_optimal_actions",
-                            benchmark_metrics["avg_optimal_actions"],
-                        )
-                    if "avg_path_actions" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_path_actions",
-                            benchmark_metrics["avg_path_actions"],
-                        )
-                    if "avg_action_gap" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_action_gap",
-                            benchmark_metrics["avg_action_gap"],
-                        )
-                    if "exact_optimal_path_rate" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/exact_optimal_path_rate",
-                            benchmark_metrics["exact_optimal_path_rate"],
-                        )
+                    for metric_key in (
+                        "avg_optimal_cost",
+                        "avg_path_cost",
+                        "avg_cost_gap",
+                        "avg_optimal_actions",
+                        "avg_path_actions",
+                        "avg_action_gap",
+                        "exact_optimal_path_rate",
+                    ):
+                        if metric_key in benchmark_metrics:
+                            am.log_scalar(f"benchmark/{metric_key}", benchmark_metrics[metric_key])
 
             if getattr(current_eval_opts, "emit_workload_signature", False):
                 sig_records = [
