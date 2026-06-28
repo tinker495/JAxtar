@@ -13,13 +13,10 @@ class PuzzleOptions(BaseModel):
     seeds: str = "0"
 
     def get_seed_list(self) -> List[int]:
-        if self.seeds.isdigit():
-            return [int(self.seeds)]
-        else:
-            try:
-                return [int(s) for s in self.seeds.split(",")]
-            except ValueError as e:
-                raise ValueError("Invalid seeds") from e
+        try:
+            return [int(s) for s in self.seeds.split(",")]
+        except ValueError as e:
+            raise ValueError("Invalid seeds") from e
 
 
 class SearchOptions(BaseModel):
