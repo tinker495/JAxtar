@@ -24,18 +24,12 @@ __all__ = [
     "PuzzleConfig",
     "SEARCH_ALGORITHM_CATALOG",
     "SearchAlgorithmEntry",
-    "SearchAlgorithmResolution",
-    "ComponentKind",
-    "get_algorithm_entry",
     "resolve_algorithm_for_component",
 ]
 
 _EXPORTS = {
     "SEARCH_ALGORITHM_CATALOG": ".algorithm_registry",
-    "ComponentKind": ".algorithm_registry",
     "SearchAlgorithmEntry": ".algorithm_registry",
-    "SearchAlgorithmResolution": ".algorithm_registry",
-    "get_algorithm_entry": ".algorithm_registry",
     "resolve_algorithm_for_component": ".algorithm_registry",
     "benchmark_bundles": ".benchmark_registry",
     "puzzle_bundles": ".puzzle_registry",

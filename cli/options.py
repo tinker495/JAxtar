@@ -138,8 +138,6 @@ def create_puzzle_options(
             puzzle_opts.hard = default_hard or puzzle_opts.hard
             if puzzle_opts.hard and puzzle_bundle.puzzle_hard is not None:
                 puzzle_callable = puzzle_bundle.puzzle_hard
-            elif puzzle_ds_flag:
-                puzzle_callable = puzzle_bundle.puzzle
             else:
                 puzzle_callable = puzzle_bundle.puzzle
 
@@ -297,8 +295,8 @@ def eval_puzzle_options(func: callable) -> callable:
     return create_puzzle_options(default_puzzle="rubikscube", default_hard=True)(func)
 
 
-def dist_puzzle_options(func: callable) -> callable:
-    return create_puzzle_options(default_puzzle="rubikscube", default_hard=True)(func)
+# dist training shares the eval puzzle option surface.
+dist_puzzle_options = eval_puzzle_options
 
 
 def wm_puzzle_ds_options(func: callable) -> callable:

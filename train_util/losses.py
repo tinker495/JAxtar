@@ -1,7 +1,7 @@
 from typing import Any, Literal, Mapping, Optional
 
-import jax
 import jax.numpy as jnp
+import optax
 
 
 def mse_loss(diff: jnp.ndarray) -> jnp.ndarray:
@@ -9,15 +9,11 @@ def mse_loss(diff: jnp.ndarray) -> jnp.ndarray:
 
 
 def huber_loss(diff: jnp.ndarray, delta: float = 0.1) -> jnp.ndarray:
-    abs_diff = jnp.abs(diff)
-    quadratic = 0.5 * jnp.square(diff)
-    linear = delta * (abs_diff - 0.5 * delta)
-    return jnp.where(abs_diff <= delta, quadratic, linear)
+    return optax.huber_loss(diff, delta=delta)
 
 
 def logcosh_loss(diff: jnp.ndarray) -> jnp.ndarray:
-    # Stable formulation: log(cosh(x)) = x + softplus(-2x) - log(2)
-    return diff + jax.nn.softplus(-2.0 * diff) - jnp.log(2.0)
+    return optax.losses.log_cosh(diff)
 
 
 def _quantile_weight(diff: jnp.ndarray, tau: float) -> jnp.ndarray:

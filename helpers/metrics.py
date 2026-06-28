@@ -96,11 +96,10 @@ def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
 
     if solved_with_opt_cost:
         avg_optimal = float(
-            sum(r["benchmark_optimal_path_cost"] for r in solved_with_opt_cost)
-            / len(solved_with_opt_cost)
+            np.mean([r["benchmark_optimal_path_cost"] for r in solved_with_opt_cost])
         )
         path_costs = [r["path_cost"] for r in solved_with_opt_cost]
-        avg_path_cost = float(sum(path_costs) / len(path_costs)) if path_costs else None
+        avg_path_cost = float(np.mean(path_costs)) if path_costs else None
         cost_gap = avg_path_cost - avg_optimal if avg_path_cost is not None else None
         metrics.update(
             {
@@ -122,13 +121,9 @@ def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
 
     if solved_with_opt_length:
         avg_opt_actions = float(
-            sum(r["benchmark_optimal_action_count"] for r in solved_with_opt_length)
-            / len(solved_with_opt_length)
+            np.mean([r["benchmark_optimal_action_count"] for r in solved_with_opt_length])
         )
-        avg_path_actions = float(
-            sum(r["path_action_count"] for r in solved_with_opt_length)
-            / len(solved_with_opt_length)
-        )
+        avg_path_actions = float(np.mean([r["path_action_count"] for r in solved_with_opt_length]))
         action_gap = avg_path_actions - avg_opt_actions
         metrics.update(
             {

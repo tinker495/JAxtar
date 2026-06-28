@@ -13,7 +13,6 @@ def minibatch_datasets(
     data_size: int = None,
     batch_size: int = None,
     minibatch_size: int = None,
-    sample_path_length: int = 1,
     key: chex.PRNGKey = jax.random.PRNGKey(0),
 ):
     key_perm_replay, key_fill_replay = jax.random.split(key)

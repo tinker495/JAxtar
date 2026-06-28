@@ -50,17 +50,6 @@ from .verification import (
 
 
 @partial(jax.jit)
-def _bulk_actual_estimated(
-    costs: jnp.ndarray,
-    dists: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    path_cost = costs[-1]
-    actual = path_cost - costs
-    valid = jnp.isfinite(dists)
-    return actual, dists, valid
-
-
-@partial(jax.jit)
 def _bulk_actual_estimated_batch(
     costs: jnp.ndarray,
     dists: jnp.ndarray,
@@ -209,9 +198,7 @@ class EvaluationRunner:
                 cost_weight=cw,
                 show_compile_time=current_eval_opts.show_compile_time,
                 warmup_inputs=warmup_inputs,
-                emit_workload_signature=getattr(
-                    current_eval_opts, "emit_workload_signature", False
-                ),
+                emit_workload_signature=current_eval_opts.emit_workload_signature,
             )
             search_fn = self.search_builder_fn(
                 self.puzzle,
@@ -242,40 +229,19 @@ class EvaluationRunner:
                     config["benchmark_metrics"] = benchmark_metrics
 
                     # Log metrics to artifact manager
-                    if "avg_optimal_cost" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_optimal_cost",
-                            benchmark_metrics["avg_optimal_cost"],
-                        )
-                    if "avg_path_cost" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_path_cost",
-                            benchmark_metrics["avg_path_cost"],
-                        )
-                    if "avg_cost_gap" in benchmark_metrics:
-                        am.log_scalar("benchmark/avg_cost_gap", benchmark_metrics["avg_cost_gap"])
-                    if "avg_optimal_actions" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_optimal_actions",
-                            benchmark_metrics["avg_optimal_actions"],
-                        )
-                    if "avg_path_actions" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_path_actions",
-                            benchmark_metrics["avg_path_actions"],
-                        )
-                    if "avg_action_gap" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/avg_action_gap",
-                            benchmark_metrics["avg_action_gap"],
-                        )
-                    if "exact_optimal_path_rate" in benchmark_metrics:
-                        am.log_scalar(
-                            "benchmark/exact_optimal_path_rate",
-                            benchmark_metrics["exact_optimal_path_rate"],
-                        )
+                    for metric_key in (
+                        "avg_optimal_cost",
+                        "avg_path_cost",
+                        "avg_cost_gap",
+                        "avg_optimal_actions",
+                        "avg_path_actions",
+                        "avg_action_gap",
+                        "exact_optimal_path_rate",
+                    ):
+                        if metric_key in benchmark_metrics:
+                            am.log_scalar(f"benchmark/{metric_key}", benchmark_metrics[metric_key])
 
-            if getattr(current_eval_opts, "emit_workload_signature", False):
+            if current_eval_opts.emit_workload_signature:
                 sig_records = [
                     {k: v for k, v in r.items() if str(k).startswith("xtr_")} for r in results
                 ]
@@ -415,7 +381,7 @@ class EvaluationRunner:
         search_result = search_fn(solve_config, state)
         outcome = normalise_search_result(
             search_result,
-            emit_workload_signature=getattr(self.eval_options, "emit_workload_signature", False),
+            emit_workload_signature=self.eval_options.emit_workload_signature,
         )
         end_time = time.time()
 
@@ -664,34 +630,12 @@ class EvaluationRunner:
                     batched_estimated = np.asarray(estimated_arr)
                     batched_valid = np.asarray(valid_mask)
 
-                if batched_actual is not None and batch_index is not None:
-                    length = batched_lengths[batch_index]
-                    actual_np = batched_actual[batch_index, :length]
-                    estimated_np = batched_estimated[batch_index, :length]
-                    valid_np = batched_valid[batch_index, :length]
-                    actual_dists = [float(v) for v in actual_np[valid_np]]
-                    estimated_dists = [float(v) for v in estimated_np[valid_np]]
-                else:
-                    costs_arr = jnp.asarray(
-                        [step.cost for step in path_steps],
-                        dtype=jnp.float32,
-                    )
-                    dists_arr = jnp.asarray(
-                        [
-                            float(step.dist) if step.dist is not None else np.inf
-                            for step in path_steps
-                        ],
-                        dtype=jnp.float32,
-                    )
-                    actual_dists_arr, estimated_dists_arr, valid_mask = _bulk_actual_estimated(
-                        costs_arr,
-                        dists_arr,
-                    )
-                    actual_np = np.asarray(actual_dists_arr)
-                    estimated_np = np.asarray(estimated_dists_arr)
-                    valid_np = np.asarray(valid_mask)
-                    actual_dists = [float(v) for v in actual_np[valid_np]]
-                    estimated_dists = [float(v) for v in estimated_np[valid_np]]
+                length = batched_lengths[batch_index]
+                actual_np = batched_actual[batch_index, :length]
+                estimated_np = batched_estimated[batch_index, :length]
+                valid_np = batched_valid[batch_index, :length]
+                actual_dists = [float(v) for v in actual_np[valid_np]]
+                estimated_dists = [float(v) for v in estimated_np[valid_np]]
 
                 result_item["path_analysis"] = {
                     "actual": actual_dists,

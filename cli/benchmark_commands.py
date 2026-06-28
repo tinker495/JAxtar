@@ -132,43 +132,6 @@ def _load_benchmark_solver(
     return solver
 
 
-def _run_benchmark(
-    *,
-    puzzle: Puzzle,
-    puzzle_name: str,
-    search_model,
-    search_model_name: str,
-    search_builder_fn,
-    eval_options: EvalOptions,
-    puzzle_opts: PuzzleOptions,
-    benchmark,
-    benchmark_name: str,
-    benchmark_bundle,
-    benchmark_cli_options,
-    run_label: Optional[str] = None,
-    output_dir: Optional[Path] = None,
-    logger=None,
-    step: int = 0,
-) -> None:
-    run_evaluation_sweep(
-        puzzle=puzzle,
-        puzzle_name=puzzle_name,
-        search_model=search_model,
-        search_model_name=search_model_name,
-        run_label=run_label,
-        search_builder_fn=search_builder_fn,
-        eval_options=eval_options,
-        puzzle_opts=puzzle_opts,
-        output_dir=output_dir,
-        logger=logger,
-        step=step,
-        benchmark=benchmark,
-        benchmark_name=benchmark_name,
-        benchmark_bundle=benchmark_bundle,
-        benchmark_cli_options=benchmark_cli_options,
-    )
-
-
 def _execute_benchmark_command(
     puzzle: Puzzle,
     eval_options: EvalOptions,
@@ -197,7 +160,7 @@ def _execute_benchmark_command(
         search_model_name,
     )
     puzzle_opts = PuzzleOptions(puzzle=benchmark_name)
-    _run_benchmark(
+    run_evaluation_sweep(
         puzzle=puzzle,
         puzzle_name=benchmark_name,
         search_model=solver,
@@ -221,7 +184,7 @@ def _build_benchmark_command(entry: SearchAlgorithmEntry) -> click.Command:
         _execute_benchmark_command(
             search_builder_fn=entry.builder_fn,
             search_model_name=entry.component_kind,
-            run_label=entry.run_label,
+            run_label=entry.python_id,
             **kwargs,
         )
 

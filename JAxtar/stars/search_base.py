@@ -1026,17 +1026,6 @@ class SearchResult:
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_parent(search_result, idx: HashIdx | Current | Parent) -> Parent:
-        """
-        Get the parent action from the parent action array.
-        """
-        if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.parent[idx.hashidx.index]
-        elif isinstance(idx, HashIdx):
-            return search_result.parent[idx.index]
-        else:
-            raise ValueError(f"Invalid index type: {type(idx)}")
-
     def mask_unoptimal(search_result, min_key: chex.Array, min_current: Current) -> chex.Array:
         """
         Mask the unoptimal states.

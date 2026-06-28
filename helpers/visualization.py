@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from typing import List
 
-import jax.numpy as jnp
+import numpy as np
 from rich.align import Align
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -213,13 +213,13 @@ def build_summary_table(
 
     summary_table.add_section()
 
-    avg_solved = jnp.mean(jnp.array(total_solved)) * 100
-    avg_time = jnp.mean(jnp.array(total_search_times))
-    avg_states = jnp.mean(jnp.array(total_states))
-    avg_sps = jnp.mean(jnp.array(states_per_sec_list))
+    avg_solved = np.mean(total_solved) * 100
+    avg_time = np.mean(total_search_times)
+    avg_states = np.mean(total_states)
+    avg_sps = np.mean(states_per_sec_list)
 
-    valid_costs = [c for c in total_costs if c != jnp.inf]
-    avg_cost = jnp.mean(jnp.array(valid_costs)) if valid_costs else 0.0
+    valid_costs = [c for c in total_costs if c != np.inf]
+    avg_cost = np.mean(valid_costs) if valid_costs else 0.0
 
     summary_table.add_row(
         "[bold]Average[/bold]",

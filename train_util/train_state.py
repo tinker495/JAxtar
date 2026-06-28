@@ -125,11 +125,7 @@ def soft_update_target(state: TrainStateExtended, tau: float) -> TrainStateExten
     from train_util.optimizer import get_eval_params
 
     eval_params = get_eval_params(state.opt_state, state.params)
-    new_target_params = jax.tree_util.tree_map(
-        lambda p, tp: tau * p + (1 - tau) * tp,
-        eval_params,
-        state.target_params,
-    )
+    new_target_params = optax.incremental_update(eval_params, state.target_params, tau)
     return state.update_target_params(new_target_params)
 
 

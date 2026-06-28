@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 
-import jax.numpy as jnp
+import numpy as np
 import pandas as pd
 from rich.panel import Panel
 from rich.table import Table
@@ -57,25 +57,23 @@ def create_summary_panel(results: list[dict], metrics: Optional[Dict[str, float]
         solved_nodes = [r["nodes_generated"] for r in solved_results]
         solved_paths = [r["path_cost"] for r in solved_results]
 
-        summary_table.add_row(
-            "Avg. Search Time (Solved)", f"{jnp.mean(jnp.array(solved_times)):.3f} s"
-        )
+        summary_table.add_row("Avg. Search Time (Solved)", f"{np.mean(solved_times):.3f} s")
         summary_table.add_row(
             "Avg. Generated Nodes (Solved)",
-            human_format(jnp.mean(jnp.array(solved_nodes))),
+            human_format(np.mean(solved_nodes)),
         )
-        summary_table.add_row("Avg. Path Cost", f"{jnp.mean(jnp.array(solved_paths)):.2f}")
+        summary_table.add_row("Avg. Path Cost", f"{np.mean(solved_paths):.2f}")
 
         optimal_costs = [r.get("benchmark_optimal_path_cost") for r in solved_with_opt_ref]
         optimal_costs = [c for c in optimal_costs if c is not None]
         if optimal_costs:
-            mean_opt_cost = jnp.mean(jnp.array(optimal_costs))
+            mean_opt_cost = np.mean(optimal_costs)
             summary_table.add_row("Avg. Optimal Cost", f"{float(mean_opt_cost):.2f}")
             cost_gaps = [
                 r["path_cost"] - r["benchmark_optimal_path_cost"] for r in solved_with_opt_ref
             ]
             if cost_gaps:
-                mean_gap = jnp.mean(jnp.array(cost_gaps))
+                mean_gap = np.mean(cost_gaps)
                 summary_table.add_row("Avg. Cost Gap", f"{float(mean_gap):+.2f}")
 
         # Length statistics are redundant with cost metrics for unit-cost puzzles,

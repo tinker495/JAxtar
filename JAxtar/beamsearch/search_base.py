@@ -141,14 +141,6 @@ class BeamSearchResult:
     def filled_mask(self) -> chex.Array:
         return jnp.isfinite(self.cost)
 
-    def _solution_actions(self) -> list[int]:
-        """Return the action sequence that reaches the solved slot."""
-        trace = self._reconstruct_trace()
-        if trace is None:
-            return []
-        _, _, actions = trace
-        return actions
-
     def get_state(self, idx: int) -> Puzzle.State:
         """Return the state at `idx` in the current beam."""
         return self.beam[int(idx)]
@@ -398,14 +390,6 @@ def select_beam(
     keep_mask = jnp.logical_and(keep_mask, selected_valid)
 
     return selected_scores, topk_idx, keep_mask
-
-
-def _leafwise_all_equal(lhs: chex.Array, rhs: chex.Array) -> chex.Array:
-    eq = jnp.equal(lhs, rhs)
-    if eq.ndim <= 1:
-        return eq
-    axes = tuple(range(1, eq.ndim))
-    return jnp.all(eq, axis=axes)
 
 
 def _batched_state_equal(lhs: Xtructurable, rhs: Xtructurable) -> chex.Array:

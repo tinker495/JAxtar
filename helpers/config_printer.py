@@ -114,43 +114,23 @@ def print_config(title: str, config: dict):
             add_node(layout, key, value)
     # For more items, put the longest item in the first column, and the rest in the second.
     else:
-        main_key = None
-        try:
-            # Select the key with the longest JSON string representation as the main item.
-            main_key = max(config.keys(), key=lambda k: len(json.dumps(config.get(k), default=str)))
-        except (TypeError, OverflowError, ValueError):
-            # Fallback if max() is empty or another error occurs.
-            main_key = None
+        # Select the key with the longest JSON string representation as the main item.
+        main_key = max(config.keys(), key=lambda k: len(json.dumps(config.get(k), default=str)))
 
-        # If a main key is found, use the main/side layout.
-        if main_key:
-            main_tree = Tree("", guide_style="bright_blue")
-            add_node(main_tree, main_key, config[main_key])
+        main_tree = Tree("", guide_style="bright_blue")
+        add_node(main_tree, main_key, config[main_key])
 
-            side_tree = Tree("", guide_style="bright_blue")
-            for key, value in config.items():
-                if key != main_key:
-                    add_node(side_tree, key, value)
+        side_tree = Tree("", guide_style="bright_blue")
+        for key, value in config.items():
+            if key != main_key:
+                add_node(side_tree, key, value)
 
-            layout = Columns([main_tree, side_tree], equal=True, expand=True)
-        # Fallback to the 50/50 split if no main key was determined.
-        else:
-            items = list(config.items())
-            midpoint = (len(items) + 1) // 2
-            left_items, right_items = items[:midpoint], items[midpoint:]
-
-            left_tree = Tree("", guide_style="bright_blue")
-            for key, value in left_items:
-                add_node(left_tree, key, value)
-
-            right_tree = Tree("", guide_style="bright_blue")
-            if right_items:
-                for key, value in right_items:
-                    add_node(right_tree, key, value)
-
-            layout = Columns([left_tree, right_tree], equal=True, expand=True)
+        layout = Columns([main_tree, side_tree], equal=True, expand=True)
 
     panel = Panel(
-        layout, title=f"[bold green]{title}[/bold green]", border_style="dim", expand=False
+        layout,
+        title=f"[bold green]{title}[/bold green]",
+        border_style="dim",
+        expand=False,
     )
     console.print(panel)

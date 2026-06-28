@@ -30,7 +30,6 @@ class SearchAlgorithmEntry:
 
     python_id: str
     cli_subcommand: str
-    run_label: str
     builder_fn: Callable
     component_kind: ComponentKind
     search_title: str
@@ -53,7 +52,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="astar",
         cli_subcommand="astar",
-        run_label="astar",
         builder_fn=astar_builder,
         component_kind="heuristic",
         search_title="A* Search Configuration",
@@ -63,7 +61,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="astar_d",
         cli_subcommand="astar-d",
-        run_label="astar_d",
         builder_fn=astar_d_builder,
         component_kind="heuristic",
         search_title="A* Deferred Search Configuration",
@@ -75,7 +72,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="bi_astar",
         cli_subcommand="bi-astar",
-        run_label="bi_astar",
         builder_fn=bi_astar_builder,
         component_kind="heuristic",
         search_title="Bidirectional A* Search Configuration",
@@ -86,7 +82,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="bi_astar_d",
         cli_subcommand="bi-astar-d",
-        run_label="bi_astar_d",
         builder_fn=bi_astar_d_builder,
         component_kind="heuristic",
         search_title="Bidirectional A* Deferred Search Configuration",
@@ -98,7 +93,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="beam",
         cli_subcommand="beam",
-        run_label="beam",
         builder_fn=beam_builder,
         component_kind="heuristic",
         is_beam=True,
@@ -109,7 +103,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="qbeam",
         cli_subcommand="qbeam",
-        run_label="qbeam",
         builder_fn=qbeam_builder,
         component_kind="qfunction",
         is_beam=True,
@@ -120,7 +113,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="qstar",
         cli_subcommand="qstar",
-        run_label="qstar",
         builder_fn=qstar_builder,
         component_kind="qfunction",
         search_title="Q* Search Configuration",
@@ -130,7 +122,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="bi_qstar",
         cli_subcommand="bi-qstar",
-        run_label="bi_qstar",
         builder_fn=bi_qstar_builder,
         component_kind="qfunction",
         search_title="Bidirectional Q* Search Configuration",
@@ -139,7 +130,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="id_astar",
         cli_subcommand="id-astar",
-        run_label="id_astar",
         builder_fn=id_astar_builder,
         component_kind="heuristic",
         search_title="IDA* Search Configuration",
@@ -150,7 +140,6 @@ SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="id_qstar",
         cli_subcommand="id-qstar",
-        run_label="id_qstar",
         builder_fn=id_qstar_builder,
         component_kind="qfunction",
         search_title="ID-Q* Search Configuration",
@@ -180,7 +169,7 @@ def resolve_algorithm_for_component(
     if entry.node_metric_label is not None:
         extra_kwargs["node_metric_label"] = entry.node_metric_label
     return SearchAlgorithmResolution(
-        run_label=entry.run_label,
+        run_label=entry.python_id,
         builder_fn=entry.builder_fn,
         extra_kwargs=extra_kwargs,
     )

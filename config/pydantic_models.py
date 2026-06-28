@@ -1,6 +1,6 @@
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from heuristic import EmptyHeuristic
 from qfunction import EmptyQFunction
@@ -13,13 +13,10 @@ class PuzzleOptions(BaseModel):
     seeds: str = "0"
 
     def get_seed_list(self) -> List[int]:
-        if self.seeds.isdigit():
-            return [int(self.seeds)]
-        else:
-            try:
-                return [int(s) for s in self.seeds.split(",")]
-            except ValueError as e:
-                raise ValueError("Invalid seeds") from e
+        try:
+            return [int(s) for s in self.seeds.split(",")]
+        except ValueError as e:
+            raise ValueError("Invalid seeds") from e
 
 
 class SearchOptions(BaseModel):
@@ -101,23 +98,18 @@ class EvalOptions(BaseModel):
             return self
         return self.model_copy(update={"num_eval": self.DEFAULT_NUM_EVAL_WITHOUT_BENCHMARK})
 
-    def light_eval(self, max_eval: int = 20) -> "EvalOptions":
-        capped_eval = min(max_eval, self.num_eval)
-
+    @property
+    def light_eval_options(self) -> "EvalOptions":
         def get_first(v):
             return v[0] if isinstance(v, list) else v
 
         return self.model_copy(
             update={
-                "num_eval": capped_eval,
+                "num_eval": min(20, self.num_eval),
                 "cost_weight": [get_first(self.cost_weight)],
                 "pop_ratio": [get_first(self.pop_ratio)],
             }
         )
-
-    @property
-    def light_eval_options(self) -> "EvalOptions":
-        return self.light_eval()
 
 
 class VisualizeOptions(BaseModel):
@@ -235,28 +227,11 @@ class WorldModelPuzzleConfig(BaseModel):
 
 
 class PuzzleConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     callable: Callable
     initial_shuffle: Optional[int] = None
     kwargs: Dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _merge_extras(cls, values):
-        if isinstance(values, cls) or not isinstance(values, dict):
-            return values
-
-        data = dict(values)
-        recognized = {"callable", "initial_shuffle", "kwargs"}
-        extra = {k: data.pop(k) for k in list(data.keys()) if k not in recognized}
-
-        if extra:
-            merged_kwargs = dict(data.get("kwargs", {}))
-            merged_kwargs.update(extra)
-            data["kwargs"] = merged_kwargs
-
-        return data
 
 
 class PuzzleBundle(BaseModel):
