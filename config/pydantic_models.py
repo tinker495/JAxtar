@@ -1,6 +1,6 @@
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from heuristic import EmptyHeuristic
 from qfunction import EmptyQFunction
@@ -235,28 +235,11 @@ class WorldModelPuzzleConfig(BaseModel):
 
 
 class PuzzleConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     callable: Callable
     initial_shuffle: Optional[int] = None
     kwargs: Dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _merge_extras(cls, values):
-        if isinstance(values, cls) or not isinstance(values, dict):
-            return values
-
-        data = dict(values)
-        recognized = {"callable", "initial_shuffle", "kwargs"}
-        extra = {k: data.pop(k) for k in list(data.keys()) if k not in recognized}
-
-        if extra:
-            merged_kwargs = dict(data.get("kwargs", {}))
-            merged_kwargs.update(extra)
-            data["kwargs"] = merged_kwargs
-
-        return data
 
 
 class PuzzleBundle(BaseModel):
