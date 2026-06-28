@@ -392,14 +392,6 @@ def select_beam(
     return selected_scores, topk_idx, keep_mask
 
 
-def _leafwise_all_equal(lhs: chex.Array, rhs: chex.Array) -> chex.Array:
-    eq = jnp.equal(lhs, rhs)
-    if eq.ndim <= 1:
-        return eq
-    axes = tuple(range(1, eq.ndim))
-    return jnp.all(eq, axis=axes)
-
-
 def _batched_state_equal(lhs: Xtructurable, rhs: Xtructurable) -> chex.Array:
     equality_tree = lhs == rhs
     leaves, _ = jax.tree_util.tree_flatten(equality_tree)
