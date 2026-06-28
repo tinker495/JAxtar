@@ -49,7 +49,7 @@ def _build_eval_command(entry: SearchAlgorithmEntry) -> click.Command:
             puzzle_name=kwargs["puzzle_name"],
             search_model=component,
             search_model_name=entry.component_kind,
-            run_label=entry.run_label,
+            run_label=entry.python_id,
             search_builder_fn=entry.builder_fn,
             eval_options=kwargs["eval_options"],
             puzzle_opts=kwargs["puzzle_opts"],

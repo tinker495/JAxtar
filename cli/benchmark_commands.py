@@ -221,7 +221,7 @@ def _build_benchmark_command(entry: SearchAlgorithmEntry) -> click.Command:
         _execute_benchmark_command(
             search_builder_fn=entry.builder_fn,
             search_model_name=entry.component_kind,
-            run_label=entry.run_label,
+            run_label=entry.python_id,
             **kwargs,
         )
 
