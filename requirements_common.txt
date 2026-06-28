@@ -2,8 +2,6 @@ opencv-python
 imageio
 click
 rich
-pre-commit
-pytest
 chex
 dm_pix
 dm-haiku
