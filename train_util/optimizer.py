@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 
 import jax
 import optax
@@ -28,9 +28,11 @@ def adoptw_cwd(
             optax.contrib.scale_by_adopt(
                 **adopt_kwargs,
             ),
-            optax.contrib.add_cautious_weight_decay(weight_decay, weight_decay_mask)
-            if cautious_weight_decay
-            else optax.add_decayed_weights(weight_decay, weight_decay_mask),
+            (
+                optax.contrib.add_cautious_weight_decay(weight_decay, weight_decay_mask)
+                if cautious_weight_decay
+                else optax.add_decayed_weights(weight_decay, weight_decay_mask)
+            ),
             optax.scale_by_learning_rate(learning_rate),
         )
     else:
@@ -141,77 +143,10 @@ def setup_optimizer(
     return optimizer, opt_state
 
 
-def _coerce_estim_lr(value: Any) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _extract_estim_lr(opt_state: Any) -> float | None:
-    seen: set[int] = set()
-
-    def _search(node: Any) -> float | None:
-        if node is None:
-            return None
-        node_id = id(node)
-        if node_id in seen:
-            return None
-        seen.add(node_id)
-
-        if hasattr(node, "estim_lr"):
-            estim_lr = _coerce_estim_lr(getattr(node, "estim_lr"))
-            if estim_lr is not None:
-                return estim_lr
-
-        if isinstance(node, Mapping):
-            for value in node.values():
-                result = _search(value)
-                if result is not None:
-                    return result
-
-        if isinstance(node, tuple):
-            if hasattr(node, "_fields"):
-                for field in node._fields:
-                    result = _search(getattr(node, field))
-                    if result is not None:
-                        return result
-            for value in node:
-                result = _search(value)
-                if result is not None:
-                    return result
-
-        if isinstance(node, list):
-            for value in node:
-                result = _search(value)
-                if result is not None:
-                    return result
-
-        if hasattr(node, "__dict__"):
-            for value in vars(node).values():
-                result = _search(value)
-                if result is not None:
-                    return result
-
-        if hasattr(node, "_asdict"):
-            for value in node._asdict().values():
-                result = _search(value)
-                if result is not None:
-                    return result
-
-        return None
-
-    return _search(opt_state)
-
-
 def get_learning_rate(optimizer_state: optax.OptState):
-    estim_lr = _extract_estim_lr(optimizer_state)
+    estim_lr = optax.tree_utils.tree_get(optimizer_state, "estim_lr")
     if estim_lr is not None:
-        return estim_lr
+        return float(estim_lr)
     return optimizer_state.hyperparams["learning_rate"]
 
 
