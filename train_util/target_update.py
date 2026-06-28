@@ -2,13 +2,14 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import optax
 
 PyTree = Any
 
 
 @jax.jit
 def soft_update(target_params: PyTree, params: PyTree, tau: float) -> PyTree:
-    return jax.tree.map(lambda t, n: t * tau + n * (1 - tau), target_params, params)
+    return optax.incremental_update(target_params, params, tau)
 
 
 def random_split_like_tree(rng_key: jax.random.PRNGKey, target: PyTree = None, treedef=None):
