@@ -16,7 +16,7 @@ import numpy as np
 import xtructure.numpy as xnp
 
 from helpers.path_steps import PathStep, build_path_steps_from_trace
-from helpers.xtructure_signature import extract_xtructure_signature
+from helpers.xtructure_signature import _as_float, _as_int, extract_xtructure_signature
 from JAxtar.solution_trace import SolutionTrace
 
 from .verification import BenchmarkVerification, verify_benchmark_path
@@ -262,14 +262,6 @@ def _ready_bool(value: Any) -> bool:
     if hasattr(value, "block_until_ready"):
         value = value.block_until_ready()
     return bool(jax.device_get(value))
-
-
-def _as_int(value: Any) -> int:
-    return int(np.asarray(jax.device_get(value)))
-
-
-def _as_float(value: Any) -> float:
-    return float(np.asarray(jax.device_get(value)))
 
 
 def _benchmark_reference_facts(benchmark_sample: Any, run_identifier: int) -> dict:
