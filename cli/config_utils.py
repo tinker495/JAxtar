@@ -31,17 +31,4 @@ def enrich_config(config: Dict[str, Any]) -> Dict[str, Any]:
     Enriches the configuration dictionary by expanding JSON strings.
     This ensures that all configuration details are visible and structured.
     """
-    # 1. Convert to serializable dict to handle Pydantic models
-    # We do this first so we can manipulate the structure easily
-    serializable_config = convert_to_serializable_dict(config)
-
-    # 2. Construct new config
-    enriched_config = {}
-
-    # Copy existing config
-    enriched_config.update(serializable_config)
-
-    # 3. Recursively expand JSON strings
-    enriched_config = _expand_json_strings(enriched_config)
-
-    return enriched_config
+    return _expand_json_strings(convert_to_serializable_dict(config))
