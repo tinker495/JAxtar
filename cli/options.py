@@ -291,16 +291,12 @@ puzzle_options = create_puzzle_options(
 )
 
 
-def eval_puzzle_options(func: callable) -> callable:
-    return create_puzzle_options(default_puzzle="rubikscube", default_hard=True)(func)
-
+eval_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
 
 # dist training shares the eval puzzle option surface.
 dist_puzzle_options = eval_puzzle_options
 
-
-def wm_puzzle_ds_options(func: callable) -> callable:
-    return create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)(func)
+wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
 
 
 def search_options(func=None, *, variant: str = "default") -> callable:
