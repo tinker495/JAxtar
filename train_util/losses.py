@@ -4,10 +4,6 @@ import jax.numpy as jnp
 import optax
 
 
-def mse_loss(diff: jnp.ndarray) -> jnp.ndarray:
-    return jnp.square(diff)
-
-
 def huber_loss(diff: jnp.ndarray, delta: float = 0.1) -> jnp.ndarray:
     return optax.huber_loss(diff, delta=delta)
 
@@ -53,7 +49,7 @@ def loss_from_diff(
     huber_delta = float(args.get("huber_delta", 0.1))
     asymmetric_tau = float(args.get("asymmetric_tau", 0.25))
     if loss == "mse":
-        return mse_loss(diff)
+        return jnp.square(diff)
     if loss == "huber":
         return huber_loss(diff, delta=huber_delta)
     if loss == "logcosh":
@@ -62,5 +58,4 @@ def loss_from_diff(
         return asymmetric_huber_loss(diff, delta=huber_delta, tau=asymmetric_tau)
     if loss == "asymmetric_logcosh":
         return asymmetric_logcosh_loss(diff, tau=asymmetric_tau)
-    # Fallback to MSE if invalid option sneaks in
-    return mse_loss(diff)
+    raise ValueError(f"Unsupported loss: {loss!r}")
