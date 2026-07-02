@@ -4,7 +4,6 @@ import json
 import os
 import time
 from datetime import datetime
-from functools import partial
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Union
 
@@ -117,7 +116,6 @@ def _plot_per_seed_expansion(
             print(f"Warning: Failed to generate semantic search tree plot: {e}")
 
 
-@partial(jax.jit)
 def _bulk_actual_estimated_batch(
     costs: jnp.ndarray,
     dists: jnp.ndarray,
