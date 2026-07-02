@@ -40,39 +40,6 @@ from JAxtar.solution_trace import (
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
 
-def _find_first_cost_drop(costs: list[float]) -> int | None:
-    for idx in range(1, len(costs)):
-        if costs[idx] < costs[idx - 1]:
-            return idx
-    return None
-
-
-def _build_path_reconstruction_diagnostic_message(
-    *,
-    loop_detected: bool,
-    loop_idx: int,
-    corruption_detected: bool,
-    costs: list[float] | None = None,
-    dists: list[float] | None = None,
-) -> str:
-    parts = ["PATH_RECONSTRUCTION_DIAGNOSTIC"]
-    parts.append(f"loop_detected={loop_detected}")
-    parts.append(f"loop_idx={loop_idx}")
-    parts.append(f"corruption_detected={corruption_detected}")
-
-    if corruption_detected and costs is not None:
-        first_drop_idx = _find_first_cost_drop(costs)
-        parts.append(f"first_cost_drop_idx={first_drop_idx}")
-        if first_drop_idx is not None:
-            parts.append(f"prev_cost={costs[first_drop_idx - 1]}")
-            parts.append(f"next_cost={costs[first_drop_idx]}")
-        parts.append(f"costs={costs}")
-        if dists is not None:
-            parts.append(f"dists={dists}")
-
-    return " | ".join(parts)
-
-
 def _compute_pop_process_mask(
     key: chex.Array,
     pop_ratio: float,
@@ -940,11 +907,9 @@ class SearchResult:
         loop_idx = int(path_idx[length - 1]) if length > 0 else -1
         if loop_detected:
             print(
-                _build_path_reconstruction_diagnostic_message(
-                    loop_detected=True,
-                    loop_idx=loop_idx,
-                    corruption_detected=False,
-                )
+                "PATH_RECONSTRUCTION_DIAGNOSTIC | "
+                f"loop_detected=True | loop_idx={loop_idx} | "
+                "corruption_detected=False"
             )
 
         # Check that costs are monotonically increasing to prevent path corruption
@@ -956,14 +921,26 @@ class SearchResult:
             dists = [float(val) for val in path_dists[:used_len]]
             costs.reverse()
             dists.reverse()
-            raise AssertionError(
-                _build_path_reconstruction_diagnostic_message(
-                    loop_detected=loop_detected,
-                    loop_idx=loop_idx,
-                    corruption_detected=True,
-                    costs=costs,
-                    dists=dists,
+
+            first_drop_idx = next(
+                (idx for idx in range(1, len(costs)) if costs[idx] < costs[idx - 1]),
+                None,
+            )
+            drop_details = ""
+            if first_drop_idx is not None:
+                drop_details = (
+                    f" | prev_cost={costs[first_drop_idx - 1]}"
+                    f" | next_cost={costs[first_drop_idx]}"
                 )
+            raise AssertionError(
+                "PATH_RECONSTRUCTION_DIAGNOSTIC | "
+                f"loop_detected={loop_detected} | "
+                f"loop_idx={loop_idx} | "
+                "corruption_detected=True | "
+                f"first_cost_drop_idx={first_drop_idx}"
+                f"{drop_details} | "
+                f"costs={costs} | "
+                f"dists={dists}"
             )
 
         return path
