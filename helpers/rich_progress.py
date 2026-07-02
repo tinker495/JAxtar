@@ -6,7 +6,6 @@ real-time progress display with enhanced metrics visualization.
 """
 
 import threading
-import time
 from contextlib import contextmanager
 from typing import Any, Dict, Iterable, Optional
 
@@ -62,24 +61,16 @@ class RichProgressBar:
         desc: Optional[str] = None,
         total: Optional[int] = None,
         leave: bool = True,
-        file=None,
         disable: bool = False,
-        unit: str = "it",
         initial: int = 0,
-        position: Optional[int] = None,
-        **kwargs,
+        **_ignored_tqdm_kwargs,
     ):
         self.desc = desc or "Processing"
         self.total = total
         self.leave = leave
         self.disable = disable
-        self.unit = unit
         self.initial = initial
-        self.position = position
         self.n = initial
-        self.last_print_n = initial
-        self.start_time = time.time()
-        self.last_time = self.start_time
 
         # Store description components separately
         self.current_desc = desc or "Processing"
