@@ -15,7 +15,6 @@ from helpers.formatting import human_format
 from helpers.path_steps import (
     PathStep as PathStep,
     build_path_steps_from_actions as build_path_steps_from_actions,
-    build_path_steps_from_nodes as build_path_steps_from_nodes,
     build_path_steps_from_trace as build_path_steps_from_trace,
 )
 
