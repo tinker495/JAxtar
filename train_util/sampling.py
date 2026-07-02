@@ -1,4 +1,5 @@
 import math
+from functools import partial
 from typing import Any, Callable
 
 import chex
@@ -57,6 +58,70 @@ def calculate_dataset_params(dataset_size: int, k_max: int, max_batch_size: int)
     steps = math.ceil(needed_trajectories / shuffle_parallel)
 
     return nn_minibatch_size, shuffle_parallel, steps
+
+
+def prepare_shuffled_path_sampling(
+    *,
+    puzzle: Any,
+    dataset_size: int,
+    k_max: int,
+    max_batch_size: int,
+    using_hindsight_target: bool,
+    using_triangular_sampling: bool,
+    include_action_costs: bool,
+    non_backtracking_steps: int,
+    create_hindsight_target_shuffled_path: Callable,
+    create_hindsight_target_triangular_shuffled_path: Callable,
+    create_target_shuffled_path: Callable,
+    fixed_target_error: str | None = None,
+):
+    """Build the shared shuffled-path sampler used by distance dataset builders."""
+    if non_backtracking_steps < 0:
+        raise ValueError("non_backtracking_steps must be non-negative")
+    non_backtracking_steps = int(non_backtracking_steps)
+    nn_minibatch_size, shuffle_parallel, steps = calculate_dataset_params(
+        dataset_size, k_max, max_batch_size
+    )
+
+    if using_hindsight_target:
+        if fixed_target_error is not None:
+            assert not puzzle.fixed_target, fixed_target_error
+        create_fn = (
+            create_hindsight_target_triangular_shuffled_path
+            if using_triangular_sampling
+            else create_hindsight_target_shuffled_path
+        )
+    else:
+        create_fn = create_target_shuffled_path
+
+    create_shuffled_path_fn = partial(
+        create_fn,
+        puzzle,
+        k_max,
+        shuffle_parallel,
+        include_action_costs,
+        non_backtracking_steps=non_backtracking_steps,
+    )
+    return nn_minibatch_size, shuffle_parallel, steps, jax.jit(create_shuffled_path_fn)
+
+
+def make_diffusion_step_selector(
+    *,
+    use_diffusion_features: bool,
+    use_diffusion_distance_warmup: bool,
+    diffusion_distance_warmup_steps: int,
+) -> Callable[[int], bool]:
+    warmup_steps = max(int(diffusion_distance_warmup_steps), 0)
+    warmup_enabled = use_diffusion_features and use_diffusion_distance_warmup and warmup_steps > 0
+
+    def should_use_diffusion(step: int) -> bool:
+        if not use_diffusion_features:
+            return False
+        if warmup_enabled:
+            return step < warmup_steps
+        return True
+
+    return should_use_diffusion
 
 
 def compute_diffusion_targets(
