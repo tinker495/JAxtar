@@ -41,7 +41,6 @@ from .search_outcome import (
 )
 from .verification import (
     BenchmarkVerification,
-    benchmark_verification_from_exception,
     build_benchmark_action_strings,
     verify_benchmark_path,
 )
@@ -650,7 +649,9 @@ class EvaluationRunner:
                     try:
                         verify_results[idx] = future.result()
                     except Exception as exc:  # noqa: BLE001
-                        verify_results[idx] = benchmark_verification_from_exception(exc)
+                        verify_results[idx] = BenchmarkVerification(
+                            benchmark_verification_error=str(exc)
+                        )
 
         batched_actual = None
         batched_estimated = None
