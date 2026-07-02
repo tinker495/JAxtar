@@ -39,15 +39,6 @@ class SearchAlgorithmEntry:
     supports_workload_signature: bool = False
 
 
-@dataclass(frozen=True, slots=True)
-class SearchAlgorithmResolution:
-    """Validated builder facts for adapter call sites."""
-
-    run_label: str
-    builder_fn: Callable
-    extra_kwargs: dict
-
-
 SEARCH_ALGORITHM_CATALOG: tuple[SearchAlgorithmEntry, ...] = (
     SearchAlgorithmEntry(
         python_id="astar",
@@ -158,7 +149,7 @@ def get_algorithm_entry(python_id: str) -> SearchAlgorithmEntry:
 def resolve_algorithm_for_component(
     python_id: str,
     component_kind: ComponentKind,
-) -> SearchAlgorithmResolution:
+) -> tuple[str, Callable, dict]:
     entry = get_algorithm_entry(python_id)
     if entry.component_kind != component_kind:
         raise ValueError(
@@ -168,17 +159,12 @@ def resolve_algorithm_for_component(
     extra_kwargs: dict = {}
     if entry.node_metric_label is not None:
         extra_kwargs["node_metric_label"] = entry.node_metric_label
-    return SearchAlgorithmResolution(
-        run_label=entry.python_id,
-        builder_fn=entry.builder_fn,
-        extra_kwargs=extra_kwargs,
-    )
+    return entry.python_id, entry.builder_fn, extra_kwargs
 
 
 __all__ = [
     "ComponentKind",
     "SearchAlgorithmEntry",
-    "SearchAlgorithmResolution",
     "SEARCH_ALGORITHM_CATALOG",
     "get_algorithm_entry",
     "resolve_algorithm_for_component",

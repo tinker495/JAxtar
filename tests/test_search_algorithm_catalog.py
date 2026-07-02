@@ -63,10 +63,10 @@ def test_catalog_builders_accept_search_build_spec():
 
 
 def test_catalog_resolves_adapter_payload_for_matching_component():
-    resolution = resolve_algorithm_for_component("beam", "heuristic")
-    assert resolution.run_label == "beam"
-    assert resolution.builder_fn.__name__ == "beam_builder"
-    assert resolution.extra_kwargs == {"node_metric_label": "Beam Slots"}
+    run_label, builder_fn, extra_kwargs = resolve_algorithm_for_component("beam", "heuristic")
+    assert run_label == "beam"
+    assert builder_fn.__name__ == "beam_builder"
+    assert extra_kwargs == {"node_metric_label": "Beam Slots"}
 
 
 def test_catalog_rejects_cross_component_resolution():

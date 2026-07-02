@@ -96,7 +96,7 @@ def _resolve_eval_search_entry(
             f"Invalid --eval-search-metric '{metric}' for {search_model_name} training."
         ) from exc
 
-    return resolution.run_label, resolution.builder_fn, resolution.extra_kwargs
+    return resolution
 
 
 def _run_distance_training(
