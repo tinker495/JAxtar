@@ -24,6 +24,9 @@ class _DummyPriorityQueue:
 @base_dataclass
 class _DummySearchResult:
     priority_queue: _DummyPriorityQueue
+    xtr_enabled: chex.Array
+    xtr_pq_insert_calls: chex.Array
+    xtr_pq_insert_items: chex.Array
 
 
 def _build_dummy_search_result(max_calls: int, row_width: int) -> _DummySearchResult:
@@ -32,7 +35,12 @@ def _build_dummy_search_result(max_calls: int, row_width: int) -> _DummySearchRe
         inserted_vals=jnp.full((max_calls, row_width), -1, dtype=jnp.int32),
         call_count=jnp.array(0, dtype=jnp.int32),
     )
-    return _DummySearchResult(priority_queue=pq)
+    return _DummySearchResult(
+        priority_queue=pq,
+        xtr_enabled=jnp.array(False),
+        xtr_pq_insert_calls=jnp.array(0, dtype=jnp.int32),
+        xtr_pq_insert_items=jnp.array(0, dtype=jnp.int32),
+    )
 
 
 def test_insert_priority_queue_batches_skips_rows_without_candidates():
@@ -70,6 +78,8 @@ def test_insert_priority_queue_batches_skips_rows_without_candidates():
     assert out.priority_queue.inserted_vals[0].tolist() == [10, 11]
     assert out.priority_queue.inserted_vals[1].tolist() == [30, 31]
     assert out.priority_queue.inserted_vals[2].tolist() == [-1, -1]
+    assert int(out.xtr_pq_insert_calls) == 0
+    assert int(out.xtr_pq_insert_items) == 0
 
 
 def test_insert_priority_queue_batches_noop_when_all_rows_masked_out():
@@ -100,3 +110,5 @@ def test_insert_priority_queue_batches_noop_when_all_rows_masked_out():
     assert int(out.priority_queue.call_count) == 0
     assert jnp.allclose(out.priority_queue.inserted_keys, jnp.array([[-1.0, -1.0], [-1.0, -1.0]]))
     assert out.priority_queue.inserted_vals.tolist() == [[-1, -1], [-1, -1]]
+    assert int(out.xtr_pq_insert_calls) == 0
+    assert int(out.xtr_pq_insert_items) == 0

@@ -91,10 +91,6 @@ def insert_priority_queue_batches(
             xtr_pq_insert_items=sr.xtr_pq_insert_items + jnp.sum(masks).astype(jnp.int32),
         )
 
-    # Keep helper usage compatible with lightweight dummy search_result stubs in tests.
-    if not hasattr(search_result, "xtr_enabled"):
-        return search_result
-
     search_result = jax.lax.cond(
         search_result.xtr_enabled,
         _update_pq_insert,
