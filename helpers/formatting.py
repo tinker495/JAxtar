@@ -54,17 +54,6 @@ def human_format(num):
     if not np.isfinite(num_float):
         return str(num_float)
 
-    # If 1000 or less, format as plain number without suffix or power-of-2 logic
-    if abs(num_float) < 1000:
-        formatted = "{:f}".format(float("{:.3g}".format(num_float))).rstrip("0").rstrip(".")
-        return formatted if formatted != "" else "0"
-
-    # Check if exactly a power of 2 (only for > 1000 now)
-    if num_float > 1000 and num_float == int(num_float):
-        n = int(num_float)
-        if (n & (n - 1)) == 0:
-            return f"2^{n.bit_length() - 1}"
-
     suffixes = ["", "K", "M", "B", "T"]
     magnitude = 0
 
@@ -72,14 +61,7 @@ def human_format(num):
         num_float /= 1000.0
         magnitude += 1
 
-    if abs(num_float) >= 1000:
-        return "{:.3g}".format(float(num))
-
-    formatted = "{:f}".format(float("{:.3g}".format(num_float))).rstrip("0").rstrip(".")
-    if formatted == "":
-        formatted = "0"
-
-    return f"{formatted}{suffixes[magnitude]}"
+    return f"{num_float:.3g}{suffixes[magnitude]}"
 
 
 def heuristic_dist_format(puzzle, dist) -> Text:

@@ -16,10 +16,10 @@ def test_human_format_to_float_supports_power_and_suffix_notation():
     assert human_format_to_float("3e3") == 3000.0
 
 
-def test_human_format_converts_number_ranges_and_power_of_two():
+def test_human_format_converts_number_ranges_without_power_special_case():
     assert human_format(12) == "12"
-    assert human_format(999.9) == "1000"
-    assert human_format(1024) == "2^10"
+    assert human_format(999.9) == "1e+03"
+    assert human_format(1024) == "1.02K"
     assert human_format(1536) == "1.54K"
     assert human_format(1_000_000) == "1M"
 
