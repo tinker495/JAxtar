@@ -224,14 +224,6 @@ class WMDatasetOptions(BaseModel):
     key: int = 0
 
 
-class WMGetDSOptions(BaseModel):
-    dataset: str = "rubikscube"
-
-
-class WMGetModelOptions(BaseModel):
-    world_model: str = "rubikscube"
-
-
 class WMTrainOptions(BaseModel):
     train_epochs: int = 2000
     mini_batch_size: int = 1000
