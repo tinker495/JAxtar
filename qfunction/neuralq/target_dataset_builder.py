@@ -9,7 +9,6 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
-from train_util.annotate import MAX_GEN_DS_BATCH_SIZE
 from train_util.sampling import (
     compute_diffusion_targets,
     make_diffusion_step_selector,
@@ -379,7 +378,7 @@ def get_qfunction_dataset_builder(
         puzzle=puzzle,
         dataset_size=dataset_size,
         k_max=k_max,
-        max_batch_size=MAX_GEN_DS_BATCH_SIZE,
+        max_batch_size=262144,
         using_hindsight_target=using_hindsight_target,
         using_triangular_sampling=using_triangular_sampling,
         include_action_costs=False,
