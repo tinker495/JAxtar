@@ -18,14 +18,13 @@ import numpy as np
 from puxle import Puzzle
 from xtructure import Xtructurable, base_dataclass
 
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
 )
 from JAxtar.utils.array_ops import batched_state_equal
 
-ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
 TRACE_INDEX_DTYPE = jnp.uint32
 TRACE_INVALID_INT = int(jnp.iinfo(TRACE_INDEX_DTYPE).max)
 TRACE_INVALID = jnp.array(TRACE_INVALID_INT, dtype=TRACE_INDEX_DTYPE)

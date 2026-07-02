@@ -7,9 +7,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-
-ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
+from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE
 
 
 def validate_non_backtracking_steps(steps: int) -> int:
