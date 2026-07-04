@@ -10,7 +10,7 @@ from puxle import Puzzle
 
 from neural_util.aqt_utils import convert_to_serving
 from neural_util.basemodel import DistanceHLGModel, DistanceModel, ResMLPModel
-from neural_util.dtypes import PARAM_DTYPE
+from neural_util.dtypes import INFERENCE_PARAM_DTYPE, PARAM_DTYPE
 from neural_util.nn_metadata import resolve_model_kwargs
 from neural_util.param_manager import (
     align_params_dtype,
@@ -101,6 +101,8 @@ class NeuralDistanceBase(ABC):
                     self._sample_input(),
                     **self.model_kwargs,
                 )
+            elif INFERENCE_PARAM_DTYPE is not None:
+                params = align_params_dtype(params, INFERENCE_PARAM_DTYPE)
 
             self.model.apply(
                 params,
