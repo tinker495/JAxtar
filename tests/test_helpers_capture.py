@@ -9,20 +9,20 @@ def test_log_sanitizer_handles_carriage_returns_and_backspaces():
     sanitizer.process("ab\b!")
     assert sanitizer.render() == "a!"
 
-    sanitizer.process("\rxy")
+    sanitizer.process("c\rxy")
     assert sanitizer.render() == "xy"
 
 
-def test_log_sanitizer_supports_cursor_movement_ansi_sequences():
+def test_log_sanitizer_strips_ansi_sequences():
     sanitizer = _LogSanitizer()
-    sanitizer.process("hello\x1b[2D!!")
-    assert sanitizer.render() == "hel!!"
+    sanitizer.process("\x1b[?25l\x1b[32mhello\x1b[0m")
+    assert sanitizer.render() == "hello"
 
 
 def test_log_sanitizer_clear_line_sequence_and_multiline_output():
     sanitizer = _LogSanitizer()
-    sanitizer.process("abc\r\x1b[2Kx\nnext")
-    assert sanitizer.render() == "x\nnext"
+    sanitizer.process("first\nabc\r\x1b[2Knext")
+    assert sanitizer.render() == "first\nnext"
 
 
 def test_tee_console_captures_stdout_and_stderr_into_log(tmp_path: Path):

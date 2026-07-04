@@ -18,13 +18,13 @@ import numpy as np
 from puxle import Puzzle
 from xtructure import Xtructurable, base_dataclass
 
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
 )
+from JAxtar.utils.array_ops import batched_state_equal
 
-ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
 TRACE_INDEX_DTYPE = jnp.uint32
 TRACE_INVALID_INT = int(jnp.iinfo(TRACE_INDEX_DTYPE).max)
 TRACE_INVALID = jnp.array(TRACE_INVALID_INT, dtype=TRACE_INDEX_DTYPE)
@@ -392,17 +392,6 @@ def select_beam(
     return selected_scores, topk_idx, keep_mask
 
 
-def _batched_state_equal(lhs: Xtructurable, rhs: Xtructurable) -> chex.Array:
-    equality_tree = lhs == rhs
-    leaves, _ = jax.tree_util.tree_flatten(equality_tree)
-    if not leaves:
-        raise ValueError("State comparison received an empty tree")
-    result = leaves[0]
-    for leaf in leaves[1:]:
-        result = jnp.logical_and(result, leaf)
-    return result
-
-
 def non_backtracking_mask(
     candidate_states: Xtructurable,
     parent_trace_ids: chex.Array,
@@ -420,7 +409,7 @@ def non_backtracking_mask(
         safe_ids_int = safe_ids.astype(jnp.int32)
 
         ancestor_states = trace_state[safe_ids_int]
-        matches = _batched_state_equal(candidate_states, ancestor_states)
+        matches = batched_state_equal(candidate_states, ancestor_states)
         matches = jnp.logical_and(matches, valid)
         blocked = jnp.logical_or(blocked, matches)
 

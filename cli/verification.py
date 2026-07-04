@@ -90,8 +90,3 @@ def verify_benchmark_path(
         matches_optimal_path=verification_result,
         benchmark_verification_error=None,
     )
-
-
-def benchmark_verification_from_exception(exc: BaseException) -> BenchmarkVerification:
-    """Wrap an out-of-band verifier exception (e.g. worker pool failure) as a fact."""
-    return BenchmarkVerification(benchmark_verification_error=str(exc))

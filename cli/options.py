@@ -14,8 +14,6 @@ from config.pydantic_models import (
     SearchOptions,
     VisualizeOptions,
     WMDatasetOptions,
-    WMGetDSOptions,
-    WMGetModelOptions,
     WMTrainOptions,
     WorldModelPuzzleConfig,
 )
@@ -291,16 +289,12 @@ puzzle_options = create_puzzle_options(
 )
 
 
-def eval_puzzle_options(func: callable) -> callable:
-    return create_puzzle_options(default_puzzle="rubikscube", default_hard=True)(func)
-
+eval_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default_hard=True)
 
 # dist training shares the eval puzzle option surface.
 dist_puzzle_options = eval_puzzle_options
 
-
-def wm_puzzle_ds_options(func: callable) -> callable:
-    return create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)(func)
+wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
 
 
 def search_options(func=None, *, variant: str = "default") -> callable:
@@ -1105,9 +1099,7 @@ def wm_get_ds_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        get_ds_kwargs = map_kwargs_to_pydantic(WMGetDSOptions, kwargs)
-        get_ds_opts = WMGetDSOptions(**get_ds_kwargs)
-        dataset_name = get_ds_opts.dataset
+        dataset_name = kwargs.pop("dataset")
         wm_bundle = _world_model_bundles()[dataset_name]
         dataset_path = wm_bundle.dataset_path
 
@@ -1121,7 +1113,7 @@ def wm_get_ds_options(func: callable) -> callable:
         eval_trajectory = jax.numpy.load(dataset_path + "/eval_traj_images.npy")
         eval_actions = jax.numpy.load(dataset_path + "/eval_actions.npy")
         kwargs["eval_trajectory"] = (eval_trajectory, eval_actions)
-        kwargs["get_ds_options"] = get_ds_opts
+        kwargs["dataset_name"] = dataset_name
         return func(*args, **kwargs)
 
     return wrapper
@@ -1136,14 +1128,11 @@ def wm_get_world_model_options(func: callable) -> callable:
     )
     @wraps(func)
     def wrapper(*args, **kwargs):
-        wm_model_kwargs = map_kwargs_to_pydantic(WMGetModelOptions, kwargs)
-        wm_model_opts = WMGetModelOptions(**wm_model_kwargs)
-        world_model_name = wm_model_opts.world_model
+        world_model_name = kwargs.pop("world_model")
         wm_bundle = _world_model_bundles()[world_model_name]
         world_model = wm_bundle.world_model(reset=True)
         kwargs["world_model"] = world_model
         kwargs["world_model_name"] = world_model_name
-        kwargs["wm_model_options"] = wm_model_opts
         return func(*args, **kwargs)
 
     return wrapper

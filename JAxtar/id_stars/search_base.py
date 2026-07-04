@@ -21,18 +21,7 @@ from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
 )
-from JAxtar.utils.array_ops import stable_partition_three
-
-
-def _batched_state_equal(lhs: Puzzle.State, rhs: Puzzle.State) -> jnp.ndarray:
-    equality_tree = lhs == rhs
-    leaves, _ = jax.tree_util.tree_flatten(equality_tree)
-    if not leaves:
-        raise ValueError("State comparison received an empty tree")
-    result = leaves[0]
-    for leaf in leaves[1:]:
-        result = jnp.logical_and(result, leaf)
-    return result
+from JAxtar.utils.array_ops import batched_state_equal, stable_partition_three
 
 
 def apply_non_backtracking(
@@ -52,7 +41,7 @@ def apply_non_backtracking(
 
     parent_states_tiled = xnp.stack([parent_states] * action_size, axis=0)
     flat_parent_states = xnp.reshape(parent_states_tiled, (flat_size,))
-    blocked = _batched_state_equal(candidate_states, flat_parent_states)
+    blocked = batched_state_equal(candidate_states, flat_parent_states)
     blocked = jnp.logical_and(blocked, valid_mask)
 
     parent_trail_tiled = xnp.stack([parent_trail] * action_size, axis=0)
@@ -63,7 +52,7 @@ def apply_non_backtracking(
 
     def _loop(i, carry):
         trail_state = xnp.take(flat_trail, trail_indices[i], axis=1)
-        matches = _batched_state_equal(candidate_states, trail_state)
+        matches = batched_state_equal(candidate_states, trail_state)
         valid_trail = trail_indices[i] < flat_parent_depths
         matches = jnp.logical_and(matches, valid_trail)
         return jnp.logical_or(carry, matches)
@@ -97,7 +86,10 @@ def merge_frontier_solution(
     return (
         jnp.logical_or(frontier.solved, any_solved),
         jax.lax.cond(
-            any_solved, lambda _: found_sol_state, lambda _: frontier.solution_state, None
+            any_solved,
+            lambda _: found_sol_state,
+            lambda _: frontier.solution_state,
+            None,
         ),
         jax.lax.cond(any_solved, lambda _: found_sol_cost, lambda _: frontier.solution_cost, None),
         jax.lax.cond(
@@ -474,7 +466,9 @@ class IDSearchResult:
         batch_len = parent_indices.shape[0]
         trace_ids = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
         trace_ids = jnp.where(
-            jnp.arange(batch_len, dtype=jnp.int32) < n_push.astype(jnp.int32), trace_ids, -1
+            jnp.arange(batch_len, dtype=jnp.int32) < n_push.astype(jnp.int32),
+            trace_ids,
+            -1,
         )
 
         items = self.ItemCls(
@@ -650,10 +644,16 @@ class IDSearchResult:
             any_solved, lambda _: solved_state, lambda _: self.solution_state, None
         )
         new_solution_cost = jax.lax.cond(
-            any_solved, lambda _: solved_cost.astype(KEY_DTYPE), lambda _: self.solution_cost, None
+            any_solved,
+            lambda _: solved_cost.astype(KEY_DTYPE),
+            lambda _: self.solution_cost,
+            None,
         )
         new_solution_actions = jax.lax.cond(
-            any_solved, lambda _: solved_actions, lambda _: self.solution_actions_arr, None
+            any_solved,
+            lambda _: solved_actions,
+            lambda _: self.solution_actions_arr,
+            None,
         )
 
         return self.replace(
@@ -697,7 +697,10 @@ class IDSearchResult:
         )
 
         # Push frontier nodes within bound to stack
-        return sr.push_frontier_to_stack(frontier, start_bound, frontier_actions), frontier
+        return (
+            sr.push_frontier_to_stack(frontier, start_bound, frontier_actions),
+            frontier,
+        )
 
     @staticmethod
     def detect_solution(
@@ -741,7 +744,12 @@ class IDSearchResult:
         ) = self.get_top_batch(batch_size)
 
         any_solved, solved_state, solved_cost, solved_actions, first_idx = self.detect_solution(
-            puzzle, solve_config, parents, parent_costs, parent_action_histories, valid_mask
+            puzzle,
+            solve_config,
+            parents,
+            parent_costs,
+            parent_action_histories,
+            valid_mask,
         )
         solved_trace_idx = parent_trace_indices[first_idx]
 

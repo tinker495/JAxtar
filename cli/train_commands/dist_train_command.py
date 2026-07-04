@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import click
 import jax
@@ -96,7 +96,286 @@ def _resolve_eval_search_entry(
             f"Invalid --eval-search-metric '{metric}' for {search_model_name} training."
         ) from exc
 
-    return resolution.run_label, resolution.builder_fn, resolution.extra_kwargs
+    return resolution
+
+
+def _run_distance_training(
+    *,
+    puzzle: Puzzle,
+    puzzle_opts: PuzzleOptions,
+    search_model,
+    search_model_name: str,
+    model_config: Dict[str, Any],
+    puzzle_name: str,
+    puzzle_bundle,
+    train_options: DistTrainOptions,
+    k_max: int,
+    target_keys: tuple[str, ...],
+    target_key: str,
+    dataset_builder: Callable,
+    steps: int,
+    gradient_updates_per_iteration: int,
+    config_title: str,
+    config_key: str,
+    logger_suffix: str,
+    progress_title: str,
+    save_prefix: str,
+    include_loss_in_progress: bool = False,
+    dataset_extra_kwargs: dict[str, Any] | None = None,
+    **kwargs,
+):
+    eval_options = train_options.eval_options
+    eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
+        puzzle, puzzle_name, puzzle_opts, puzzle_bundle
+    )
+    update_interval = train_options.update_interval
+    reset_interval = train_options.reset_interval
+    n_devices = jax.device_count()
+
+    if train_options.multi_device and n_devices > 1:
+        steps = steps // n_devices
+
+    total_gradient_updates = (
+        steps * gradient_updates_per_iteration * n_devices
+        if train_options.multi_device
+        else steps * gradient_updates_per_iteration
+    )
+
+    config = {
+        "puzzle_options": puzzle_opts,
+        search_model_name: search_model.__class__.__name__,
+        f"{search_model_name}_metadata": getattr(search_model, "metadata", {}),
+        "train_options": train_options,
+        "eval_options": eval_options,
+        config_key: model_config,
+        "derived_parameters": {
+            "training_loop_iterations": steps,
+            "total_gradient_updates": total_gradient_updates,
+            "update_interval_gradient_steps": update_interval,
+            "reset_interval_gradient_steps": reset_interval,
+            "n_devices": n_devices,
+        },
+    }
+    print_config(config_title, enrich_config(config))
+    logger = create_logger(train_options.logger, f"{puzzle_name}-{logger_suffix}", config)
+    key = jax.random.PRNGKey(
+        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
+    )
+    key, _ = jax.random.split(key)
+
+    model = search_model.model
+    model_params = search_model.params
+
+    if train_options.multi_device and n_devices > 1:
+        print(f"Training with {n_devices} devices")
+
+    params = model_params.get("params", model_params)
+    batch_stats = model_params.get("batch_stats", None)
+
+    optimizer, opt_state = setup_optimizer(
+        params,
+        n_devices,
+        steps,
+        train_options.dataset_batch_size // train_options.train_minibatch_size,
+        train_options.optimizer,
+        lr_init=train_options.learning_rate,
+        weight_decay_size=train_options.weight_decay_size,
+    )
+
+    state = TrainStateExtended.create(
+        apply_fn=model.apply,
+        params=params,
+        tx=optimizer,
+        batch_stats=batch_stats,
+        target_params=params,
+    ).replace(opt_state=opt_state)
+
+    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
+    enable_jit_hard_update = (
+        not train_options.use_soft_update and train_options.loss_threshold == float("inf")
+    )
+
+    train_fn = distance_train_builder(
+        minibatch_size=train_options.train_minibatch_size,
+        model=model,
+        optimizer=optimizer,
+        preproc_fn=search_model.pre_process,
+        target_keys=target_keys,
+        n_devices=n_devices,
+        loss_type=train_options.loss,
+        loss_args=train_options.loss_args,
+        replay_ratio=train_options.replay_ratio,
+        use_soft_update=train_options.use_soft_update,
+        update_interval=update_interval,
+        soft_update_tau=soft_update_tau,
+        enable_jit_hard_update=enable_jit_hard_update,
+    )
+
+    dataset_kwargs = {
+        "n_devices": n_devices,
+        "temperature": train_options.temperature,
+        "use_diffusion_distance": train_options.use_diffusion_distance,
+        "use_diffusion_distance_mixture": train_options.use_diffusion_distance_mixture,
+        "use_diffusion_distance_warmup": train_options.use_diffusion_distance_warmup,
+        "diffusion_distance_warmup_steps": train_options.diffusion_distance_warmup_steps,
+        "non_backtracking_steps": train_options.sampling_non_backtracking_steps,
+    }
+    if dataset_extra_kwargs:
+        dataset_kwargs.update(dataset_extra_kwargs)
+
+    get_datasets = dataset_builder(
+        puzzle,
+        search_model.pre_process,
+        model,
+        train_options.dataset_batch_size,
+        k_max,
+        train_options.dataset_minibatch_size,
+        train_options.using_hindsight_target,
+        train_options.using_triangular_sampling,
+        **dataset_kwargs,
+    )
+
+    print("warming up dataset + train function")
+    dataset_key, train_key = jax.random.split(jax.random.PRNGKey(0))
+    warmup_dataset = get_datasets(state, dataset_key, 0)
+    compile_with_example(train_fn, train_key, warmup_dataset, state)
+
+    eval_interval = steps
+    if train_options.eval_count > 0:
+        eval_interval = max(1, steps // train_options.eval_count)
+
+    pbar = trange(steps)
+    last_reset_time = 0
+    last_update_step = -1
+
+    for i in pbar:
+        key, subkey = jax.random.split(key)
+        dataset = get_datasets(state, subkey, i)
+        target = dataset[target_key]
+        mean_target = jnp.mean(target)
+        state, loss, log_infos = train_fn(key, dataset, state)
+        lr = get_learning_rate(state.opt_state)
+        log_info_leaves = jax.tree_util.tree_leaves(
+            log_infos, is_leaf=lambda x: isinstance(x, TrainLogInfo)
+        )
+
+        if include_loss_in_progress:
+            discription_logs = {
+                "lr": lr,
+                "loss": float(loss),
+                "target": float(mean_target),
+                **{v.short_name: float(v.mean) for v in log_info_leaves if v.log_mean},
+            }
+        else:
+            discription_logs = {
+                "lr": lr,
+                "target": float(mean_target),
+                **{v.short_name: float(v.mean) for v in log_info_leaves if v.log_mean},
+            }
+        pbar.set_description(desc=progress_title, desc_dict=discription_logs)
+
+        logger.log_scalar("Metrics/Learning Rate", lr, i)
+        logger.log_scalar("Metrics/Mean Target", mean_target, i)
+        for v in log_info_leaves:
+            if v.log_mean:
+                logger.log_scalar(v.mean_name, v.mean, i)
+            if v.log_histogram and i % 100 == 0:
+                logger.log_histogram(v.histogram_name, v.data, i)
+        if i % 100 == 0:
+            logger.log_histogram("Metrics/Target", target, i)
+
+        current_step = int(state.step)
+        if train_options.use_soft_update:
+            last_update_step = current_step
+        elif not enable_jit_hard_update:
+            is_regular_update_step = (current_step % update_interval == 0) and (current_step > 0)
+            should_force_update = (
+                current_step - last_update_step >= train_options.force_update_interval
+            )
+            should_regular_update = is_regular_update_step and (
+                loss <= train_options.loss_threshold
+            )
+            if should_force_update or should_regular_update:
+                state = state.update_target_params(state.get_full_eval_params()["params"])
+                if train_options.opt_state_reset:
+                    state = state.replace(opt_state=optimizer.init(state.params))
+                last_update_step = current_step
+        elif current_step > 0:
+            last_update_step = (current_step // update_interval) * update_interval
+
+        if (
+            (current_step - last_reset_time >= reset_interval)
+            and (current_step > 0)
+            and (current_step < total_gradient_updates * 2 / 3)
+            and (last_update_step >= last_reset_time)
+        ):
+            last_reset_time = current_step
+            reset_params = {"params": state.params}
+            if state.batch_stats is not None:
+                reset_params["batch_stats"] = state.batch_stats
+            reset_params = scaled_by_reset(reset_params, key, train_options.tau)
+            state = state.replace(
+                params=reset_params["params"],
+                opt_state=optimizer.init(reset_params["params"]),
+            )
+
+        if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
+            search_model.params = state.get_full_eval_params()
+            backup_path = os.path.join(logger.log_dir, f"{save_prefix}_{i}.pkl")
+            search_model.save_model(path=backup_path)
+            if eval_options.num_eval > 0:
+                light_eval_options = eval_options.light_eval_options
+                eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
+                run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
+                    train_options=train_options, search_model_name=search_model_name
+                )
+                with pbar.pause():
+                    run_evaluation_sweep(
+                        puzzle=eval_puzzle,
+                        puzzle_name=eval_puzzle_name,
+                        search_model=search_model,
+                        search_model_name=search_model_name,
+                        run_label=run_label,
+                        search_builder_fn=search_builder_fn,
+                        eval_options=light_eval_options,
+                        puzzle_opts=eval_puzzle_opts,
+                        output_dir=eval_run_dir,
+                        logger=logger,
+                        step=i,
+                        **eval_builder_kwargs,
+                        **eval_kwargs,
+                        **kwargs,
+                    )
+
+    search_model.params = state.get_full_eval_params()
+    backup_path = os.path.join(logger.log_dir, f"{save_prefix}_final.pkl")
+    search_model.save_model(path=backup_path)
+    logger.log_artifact(backup_path, f"{save_prefix}_final", "model")
+
+    if eval_options.num_eval > 0 and train_options.eval_count > 0:
+        eval_run_dir = Path(logger.log_dir) / "evaluation"
+        run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
+            train_options=train_options, search_model_name=search_model_name
+        )
+        with pbar.pause():
+            run_evaluation_sweep(
+                puzzle=eval_puzzle,
+                puzzle_name=eval_puzzle_name,
+                search_model=search_model,
+                search_model_name=search_model_name,
+                run_label=run_label,
+                search_builder_fn=search_builder_fn,
+                eval_options=eval_options,
+                puzzle_opts=eval_puzzle_opts,
+                output_dir=eval_run_dir,
+                logger=logger,
+                step=steps,
+                **eval_builder_kwargs,
+                **eval_kwargs,
+                **kwargs,
+            )
+
+    logger.close()
 
 
 @click.command()
@@ -114,291 +393,29 @@ def heuristic_train_command(
     heuristic_config: Dict[str, Any],
     **kwargs,
 ):
-    eval_options = train_options.eval_options
-    eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
-        puzzle, puzzle_name, puzzle_opts, puzzle_bundle
-    )
-    # Calculate derived parameters first for logging
-    # steps is total training loop iterations (each does replay_ratio gradient updates)
     steps = train_options.steps // train_options.replay_ratio
-    # Intervals are in gradient-step units (matching state.step counter)
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
-    n_devices = jax.device_count()
-
-    if train_options.multi_device and n_devices > 1:
-        steps = steps // n_devices
-
-    config = {
-        "puzzle_options": puzzle_opts,
-        "heuristic": heuristic.__class__.__name__,
-        "heuristic_metadata": getattr(heuristic, "metadata", {}),
-        "train_options": train_options,
-        "eval_options": eval_options,
-        "heuristic_config": heuristic_config,
-        "derived_parameters": {
-            "training_loop_iterations": steps,
-            "total_gradient_updates": (
-                steps * train_options.replay_ratio * n_devices
-                if train_options.multi_device
-                else steps * train_options.replay_ratio
-            ),
-            "update_interval_gradient_steps": update_interval,
-            "reset_interval_gradient_steps": reset_interval,
-            "n_devices": n_devices,
-        },
-    }
-    print_config("Heuristic Training Configuration", enrich_config(config))
-    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-train", config)
-    key = jax.random.PRNGKey(
-        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
-    )
-    key, subkey = jax.random.split(key)
-
-    heuristic_model = heuristic.model
-    heuristic_params = heuristic.params
-
-    if train_options.multi_device and n_devices > 1:
-        print(f"Training with {n_devices} devices")
-
-    # Extract params and batch_stats for TrainState
-    params = heuristic_params.get("params", heuristic_params)
-    batch_stats = heuristic_params.get("batch_stats", None)
-
-    # Setup optimizer
-    optimizer, opt_state = setup_optimizer(
-        params,
-        n_devices,
-        steps,
-        train_options.dataset_batch_size // train_options.train_minibatch_size,
-        train_options.optimizer,
-        lr_init=train_options.learning_rate,
-        weight_decay_size=train_options.weight_decay_size,
-    )
-
-    # Create TrainStateExtended
-    state = TrainStateExtended.create(
-        apply_fn=heuristic_model.apply,
-        params=params,
-        tx=optimizer,
-        batch_stats=batch_stats,
-        target_params=params,  # Initialize target with current params
-    )
-    # Replace opt_state with the one from setup_optimizer (has schedule info)
-    state = state.replace(opt_state=opt_state)
-
-    # Calculate soft update tau for use in train_builder
-    # Intervals are in gradient-step units, matching state.step counter
-    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
-
-    # Disable JIT hard updates when loss_threshold is used (handled externally)
-    enable_jit_hard_update = (
-        not train_options.use_soft_update and train_options.loss_threshold == float("inf")
-    )
-
-    # Build training function
-    heuristic_train_fn = distance_train_builder(
-        minibatch_size=train_options.train_minibatch_size,
-        model=heuristic_model,
-        optimizer=optimizer,
-        preproc_fn=heuristic.pre_process,
+    _run_distance_training(
+        puzzle=puzzle,
+        puzzle_opts=puzzle_opts,
+        search_model=heuristic,
+        search_model_name="heuristic",
+        model_config=heuristic_config,
+        puzzle_name=puzzle_name,
+        puzzle_bundle=puzzle_bundle,
+        train_options=train_options,
+        k_max=k_max,
         target_keys=("target_heuristic",),
-        n_devices=n_devices,
-        loss_type=train_options.loss,
-        loss_args=train_options.loss_args,
-        replay_ratio=train_options.replay_ratio,
-        use_soft_update=train_options.use_soft_update,
-        update_interval=update_interval,
-        soft_update_tau=soft_update_tau,
-        enable_jit_hard_update=enable_jit_hard_update,
+        target_key="target_heuristic",
+        dataset_builder=get_heuristic_dataset_builder,
+        steps=steps,
+        gradient_updates_per_iteration=train_options.replay_ratio,
+        config_title="Heuristic Training Configuration",
+        config_key="heuristic_config",
+        logger_suffix="dist-train",
+        progress_title="Heuristic Training",
+        save_prefix="heuristic",
+        **kwargs,
     )
-
-    get_datasets = get_heuristic_dataset_builder(
-        puzzle,
-        heuristic.pre_process,
-        heuristic_model,
-        train_options.dataset_batch_size,
-        k_max,
-        train_options.dataset_minibatch_size,
-        train_options.using_hindsight_target,
-        train_options.using_triangular_sampling,
-        n_devices=n_devices,
-        temperature=train_options.temperature,
-        use_diffusion_distance=train_options.use_diffusion_distance,
-        use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
-        use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
-        diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
-        non_backtracking_steps=train_options.sampling_non_backtracking_steps,
-    )
-
-    print("warming up dataset + train function")
-    warmup_key = jax.random.PRNGKey(0)
-    dataset_key, train_key = jax.random.split(warmup_key)
-    warmup_dataset = get_datasets(state, dataset_key, 0)
-    compile_with_example(heuristic_train_fn, train_key, warmup_dataset, state)
-
-    # Calculate eval interval safely
-    eval_interval = steps
-    if train_options.eval_count > 0:
-        eval_interval = max(1, steps // train_options.eval_count)
-
-    pbar = trange(steps)
-    last_reset_time = 0
-    last_update_step = -1  # Track last update step for force update
-
-    for i in pbar:
-        key, subkey = jax.random.split(key)
-
-        # Get dataset using TrainStateExtended directly
-        dataset = get_datasets(state, subkey, i)
-        target_heuristic = dataset["target_heuristic"]
-        mean_target_heuristic = jnp.mean(target_heuristic)
-
-        # Train step
-        state, loss, log_infos = heuristic_train_fn(key, dataset, state)
-
-        lr = get_learning_rate(state.opt_state)
-
-        # Cache tree_leaves to avoid duplicate calls
-        log_info_leaves = jax.tree_util.tree_leaves(
-            log_infos, is_leaf=lambda x: isinstance(x, TrainLogInfo)
-        )
-
-        discription_logs = {
-            "lr": lr,
-            "target": float(mean_target_heuristic),
-            **{v.short_name: float(v.mean) for v in log_info_leaves if v.log_mean},
-        }
-
-        pbar.set_description(
-            desc="Heuristic Training",
-            desc_dict=discription_logs,
-        )
-        logger.log_scalar("Metrics/Learning Rate", lr, i)
-        logger.log_scalar("Metrics/Mean Target", mean_target_heuristic, i)
-
-        # Log metrics
-        for v in log_info_leaves:
-            if v.log_mean:
-                logger.log_scalar(v.mean_name, v.mean, i)
-            if v.log_histogram and i % 100 == 0:
-                logger.log_histogram(v.histogram_name, v.data, i)
-
-        if i % 100 == 0:
-            logger.log_histogram("Metrics/Target", target_heuristic, i)
-
-        # Handle target updates outside JIT when loss_threshold or force_update is used
-        # (When enable_jit_hard_update=True, updates are handled inside JIT)
-        current_step = int(state.step)
-        if train_options.use_soft_update:
-            # Soft updates happen every step inside JIT
-            last_update_step = current_step
-        elif not enable_jit_hard_update:
-            # Non-JIT hard updates with optional loss threshold / force update
-            # Track when regular interval-based update would occur
-            is_regular_update_step = (current_step % update_interval == 0) and (current_step > 0)
-
-            # Update conditions:
-            # 1. Force update interval exceeded, OR
-            # 2. Regular update interval + loss below threshold
-            should_force_update = (
-                current_step - last_update_step >= train_options.force_update_interval
-            )
-            should_regular_update = is_regular_update_step and (
-                loss <= train_options.loss_threshold
-            )
-
-            if should_force_update or should_regular_update:
-                state = state.update_target_params(state.get_full_eval_params()["params"])
-                if train_options.opt_state_reset:
-                    state = state.replace(opt_state=optimizer.init(state.params))
-                last_update_step = current_step
-        else:
-            # JIT hard updates: compute last update step from the step counter
-            # Updates happen at exact intervals inside JIT, so we can calculate when they occurred
-            if current_step > 0:
-                last_update_step = (current_step // update_interval) * update_interval
-
-        # Reset logic (only if target was updated since last reset)
-        total_gradient_steps = (
-            steps * train_options.replay_ratio * (n_devices if train_options.multi_device else 1)
-        )
-        if (
-            (current_step - last_reset_time >= reset_interval)
-            and (current_step > 0)
-            and (current_step < total_gradient_steps * 2 / 3)
-            and (last_update_step >= last_reset_time)
-        ):
-            last_reset_time = current_step
-            reset_params = {"params": state.params}
-            if state.batch_stats is not None:
-                reset_params["batch_stats"] = state.batch_stats
-            reset_params = scaled_by_reset(reset_params, key, train_options.tau)
-            state = state.replace(
-                params=reset_params["params"],
-                opt_state=optimizer.init(reset_params["params"]),
-            )
-
-        if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
-            heuristic.params = state.get_full_eval_params()
-            backup_path = os.path.join(logger.log_dir, f"heuristic_{i}.pkl")
-            heuristic.save_model(path=backup_path)
-            # Log model as artifact
-            if eval_options.num_eval > 0:
-                light_eval_options = eval_options.light_eval_options
-                eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
-                run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
-                    train_options=train_options, search_model_name="heuristic"
-                )
-                with pbar.pause():
-                    run_evaluation_sweep(
-                        puzzle=eval_puzzle,
-                        puzzle_name=eval_puzzle_name,
-                        search_model=heuristic,
-                        search_model_name="heuristic",
-                        run_label=run_label,
-                        search_builder_fn=search_builder_fn,
-                        eval_options=light_eval_options,
-                        puzzle_opts=eval_puzzle_opts,
-                        output_dir=eval_run_dir,
-                        logger=logger,
-                        step=i,
-                        **eval_builder_kwargs,
-                        **eval_kwargs,
-                        **kwargs,
-                    )
-
-    heuristic.params = state.get_full_eval_params()
-    backup_path = os.path.join(logger.log_dir, "heuristic_final.pkl")
-    heuristic.save_model(path=backup_path)
-    # Log final model as artifact
-    logger.log_artifact(backup_path, "heuristic_final", "model")
-
-    # Evaluation
-    if eval_options.num_eval > 0 and train_options.eval_count > 0:
-        eval_run_dir = Path(logger.log_dir) / "evaluation"
-        run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
-            train_options=train_options, search_model_name="heuristic"
-        )
-        with pbar.pause():
-            run_evaluation_sweep(
-                puzzle=eval_puzzle,
-                puzzle_name=eval_puzzle_name,
-                search_model=heuristic,
-                search_model_name="heuristic",
-                run_label=run_label,
-                search_builder_fn=search_builder_fn,
-                eval_options=eval_options,
-                puzzle_opts=eval_puzzle_opts,
-                output_dir=eval_run_dir,
-                logger=logger,
-                step=steps,
-                **eval_builder_kwargs,
-                **eval_kwargs,
-                **kwargs,
-            )
-
-    logger.close()
 
 
 @click.command()
@@ -416,285 +433,28 @@ def qfunction_train_command(
     q_config: Dict[str, Any],
     **kwargs,
 ):
-    eval_options = train_options.eval_options
-    eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
-        puzzle, puzzle_name, puzzle_opts, puzzle_bundle
-    )
-    # Calculate derived parameters first for logging
-    # Note: For qfunction, steps is already total gradient updates (no division by replay_ratio)
     steps = train_options.steps
-    # Intervals are in gradient-step units (matching state.step counter)
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
-    n_devices = jax.device_count()
-
-    if train_options.multi_device and n_devices > 1:
-        steps = steps // n_devices
-
-    config = {
-        "puzzle_options": puzzle_opts,
-        "qfunction": qfunction.__class__.__name__,
-        "qfunction_metadata": getattr(qfunction, "metadata", {}),
-        "train_options": train_options,
-        "eval_options": eval_options,
-        "q_config": q_config,
-        "derived_parameters": {
-            "training_loop_iterations": steps,
-            "total_gradient_updates": (steps * n_devices if train_options.multi_device else steps),
-            "update_interval_gradient_steps": update_interval,
-            "reset_interval_gradient_steps": reset_interval,
-            "n_devices": n_devices,
-        },
-    }
-    print_config("Q-Function Training Configuration", enrich_config(config))
-    logger = create_logger(train_options.logger, f"{puzzle_name}-dist-q-train", config)
-    key = jax.random.PRNGKey(
-        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
-    )
-    key, subkey = jax.random.split(key)
-
-    qfunc_model = qfunction.model
-    qfunc_params = qfunction.params
-
-    if train_options.multi_device and n_devices > 1:
-        print(f"Training with {n_devices} devices")
-
-    # Extract params and batch_stats for TrainState
-    params = qfunc_params.get("params", qfunc_params)
-    batch_stats = qfunc_params.get("batch_stats", None)
-
-    # Setup optimizer
-    optimizer, opt_state = setup_optimizer(
-        params,
-        n_devices,
-        steps,
-        train_options.dataset_batch_size // train_options.train_minibatch_size,
-        train_options.optimizer,
-        lr_init=train_options.learning_rate,
-        weight_decay_size=train_options.weight_decay_size,
-    )
-
-    # Create TrainStateExtended
-    state = TrainStateExtended.create(
-        apply_fn=qfunc_model.apply,
-        params=params,
-        tx=optimizer,
-        batch_stats=batch_stats,
-        target_params=params,  # Initialize target with current params
-    )
-    # Replace opt_state with the one from setup_optimizer (has schedule info)
-    state = state.replace(opt_state=opt_state)
-
-    # Calculate soft update tau for use in train_builder
-    # Intervals are in gradient-step units, matching state.step counter
-    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
-
-    # Disable JIT hard updates when loss_threshold is used (handled externally)
-    enable_jit_hard_update = (
-        not train_options.use_soft_update and train_options.loss_threshold == float("inf")
-    )
-
-    # Build training function
-    qfunction_train_fn = distance_train_builder(
-        minibatch_size=train_options.train_minibatch_size,
-        model=qfunc_model,
-        optimizer=optimizer,
-        preproc_fn=qfunction.pre_process,
+    _run_distance_training(
+        puzzle=puzzle,
+        puzzle_opts=puzzle_opts,
+        search_model=qfunction,
+        search_model_name="qfunction",
+        model_config=q_config,
+        puzzle_name=puzzle_name,
+        puzzle_bundle=puzzle_bundle,
+        train_options=train_options,
+        k_max=k_max,
         target_keys=("target_q", "actions"),
-        n_devices=n_devices,
-        loss_type=train_options.loss,
-        loss_args=train_options.loss_args,
-        replay_ratio=train_options.replay_ratio,
-        use_soft_update=train_options.use_soft_update,
-        update_interval=update_interval,
-        soft_update_tau=soft_update_tau,
-        enable_jit_hard_update=enable_jit_hard_update,
+        target_key="target_q",
+        dataset_builder=get_qfunction_dataset_builder,
+        steps=steps,
+        gradient_updates_per_iteration=1,
+        config_title="Q-Function Training Configuration",
+        config_key="q_config",
+        logger_suffix="dist-q-train",
+        progress_title="Q-Function Training",
+        save_prefix="qfunction",
+        include_loss_in_progress=True,
+        dataset_extra_kwargs={"use_double_dqn": train_options.use_double_dqn},
+        **kwargs,
     )
-
-    get_datasets = get_qfunction_dataset_builder(
-        puzzle,
-        qfunction.pre_process,
-        qfunc_model,
-        train_options.dataset_batch_size,
-        k_max,
-        train_options.dataset_minibatch_size,
-        train_options.using_hindsight_target,
-        train_options.using_triangular_sampling,
-        n_devices=n_devices,
-        temperature=train_options.temperature,
-        use_double_dqn=train_options.use_double_dqn,
-        use_diffusion_distance=train_options.use_diffusion_distance,
-        use_diffusion_distance_mixture=train_options.use_diffusion_distance_mixture,
-        use_diffusion_distance_warmup=train_options.use_diffusion_distance_warmup,
-        diffusion_distance_warmup_steps=train_options.diffusion_distance_warmup_steps,
-        non_backtracking_steps=train_options.sampling_non_backtracking_steps,
-    )
-
-    print("warming up dataset + train function")
-    warmup_key = jax.random.PRNGKey(0)
-    dataset_key, train_key = jax.random.split(warmup_key)
-    warmup_dataset = get_datasets(state, dataset_key, 0)
-    compile_with_example(qfunction_train_fn, train_key, warmup_dataset, state)
-
-    # Calculate eval interval safely
-    eval_interval = steps
-    if train_options.eval_count > 0:
-        eval_interval = max(1, steps // train_options.eval_count)
-
-    pbar = trange(steps)
-    last_reset_time = 0
-    last_update_step = -1  # Track last update step for force update
-
-    for i in pbar:
-        key, subkey = jax.random.split(key)
-
-        # Get dataset using TrainStateExtended directly
-        dataset = get_datasets(state, subkey, i)
-        target_q = dataset["target_q"]
-        mean_target_q = jnp.mean(target_q)
-
-        # Train step
-        state, loss, log_infos = qfunction_train_fn(key, dataset, state)
-
-        lr = get_learning_rate(state.opt_state)
-
-        # Cache tree_leaves to avoid duplicate calls
-        log_info_leaves = jax.tree_util.tree_leaves(
-            log_infos, is_leaf=lambda x: isinstance(x, TrainLogInfo)
-        )
-
-        discription_logs = {
-            "lr": lr,
-            "loss": float(loss),
-            "target": float(mean_target_q),
-            **{v.short_name: float(v.mean) for v in log_info_leaves if v.log_mean},
-        }
-
-        pbar.set_description(
-            desc="Q-Function Training",
-            desc_dict=discription_logs,
-        )
-
-        logger.log_scalar("Metrics/Learning Rate", lr, i)
-        logger.log_scalar("Metrics/Mean Target", mean_target_q, i)
-
-        # Log metrics
-        for v in log_info_leaves:
-            if v.log_mean:
-                logger.log_scalar(v.mean_name, v.mean, i)
-            if v.log_histogram and i % 100 == 0:
-                logger.log_histogram(v.histogram_name, v.data, i)
-
-        if i % 100 == 0:
-            logger.log_histogram("Metrics/Target", target_q, i)
-
-        # Handle target updates outside JIT when loss_threshold or force_update is used
-        # (When enable_jit_hard_update=True, updates are handled inside JIT)
-        current_step = int(state.step)
-        if train_options.use_soft_update:
-            # Soft updates happen every step inside JIT
-            last_update_step = current_step
-        elif not enable_jit_hard_update:
-            # Non-JIT hard updates with optional loss threshold / force update
-            # Track when regular interval-based update would occur
-            is_regular_update_step = (current_step % update_interval == 0) and (current_step > 0)
-
-            # Update conditions:
-            # 1. Force update interval exceeded, OR
-            # 2. Regular update interval + loss below threshold
-            should_force_update = (
-                current_step - last_update_step >= train_options.force_update_interval
-            )
-            should_regular_update = is_regular_update_step and (
-                loss <= train_options.loss_threshold
-            )
-
-            if should_force_update or should_regular_update:
-                state = state.update_target_params(state.get_full_eval_params()["params"])
-                if train_options.opt_state_reset:
-                    state = state.replace(opt_state=optimizer.init(state.params))
-                last_update_step = current_step
-        else:
-            # JIT hard updates: compute last update step from the step counter
-            # Updates happen at exact intervals inside JIT, so we can calculate when they occurred
-            if current_step > 0:
-                last_update_step = (current_step // update_interval) * update_interval
-
-        # Reset logic (only if target was updated since last reset)
-        total_gradient_steps = steps * (n_devices if train_options.multi_device else 1)
-        if (
-            (current_step - last_reset_time >= reset_interval)
-            and (current_step > 0)
-            and (current_step < total_gradient_steps * 2 / 3)
-            and (last_update_step >= last_reset_time)
-        ):
-            last_reset_time = current_step
-            reset_params = {"params": state.params}
-            if state.batch_stats is not None:
-                reset_params["batch_stats"] = state.batch_stats
-            reset_params = scaled_by_reset(reset_params, key, train_options.tau)
-            state = state.replace(
-                params=reset_params["params"],
-                opt_state=optimizer.init(reset_params["params"]),
-            )
-
-        if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
-            qfunction.params = state.get_full_eval_params()
-            backup_path = os.path.join(logger.log_dir, f"qfunction_{i}.pkl")
-            qfunction.save_model(path=backup_path)
-            # Log model as artifact
-            if eval_options.num_eval > 0:
-                light_eval_options = eval_options.light_eval_options
-                eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
-                run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
-                    train_options=train_options, search_model_name="qfunction"
-                )
-                with pbar.pause():
-                    run_evaluation_sweep(
-                        puzzle=eval_puzzle,
-                        puzzle_name=eval_puzzle_name,
-                        search_model=qfunction,
-                        search_model_name="qfunction",
-                        run_label=run_label,
-                        search_builder_fn=search_builder_fn,
-                        eval_options=light_eval_options,
-                        puzzle_opts=eval_puzzle_opts,
-                        output_dir=eval_run_dir,
-                        logger=logger,
-                        step=i,
-                        **eval_builder_kwargs,
-                        **eval_kwargs,
-                        **kwargs,
-                    )
-
-    qfunction.params = state.get_full_eval_params()
-    backup_path = os.path.join(logger.log_dir, "qfunction_final.pkl")
-    qfunction.save_model(path=backup_path)
-    # Log final model as artifact
-    logger.log_artifact(backup_path, "qfunction_final", "model")
-
-    # Evaluation
-    if eval_options.num_eval > 0 and train_options.eval_count > 0:
-        eval_run_dir = Path(logger.log_dir) / "evaluation"
-        run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
-            train_options=train_options, search_model_name="qfunction"
-        )
-        with pbar.pause():
-            run_evaluation_sweep(
-                puzzle=eval_puzzle,
-                puzzle_name=eval_puzzle_name,
-                search_model=qfunction,
-                search_model_name="qfunction",
-                run_label=run_label,
-                search_builder_fn=search_builder_fn,
-                eval_options=eval_options,
-                puzzle_opts=eval_puzzle_opts,
-                output_dir=eval_run_dir,
-                logger=logger,
-                step=steps,
-                **eval_builder_kwargs,
-                **eval_kwargs,
-                **kwargs,
-            )
-
-    logger.close()

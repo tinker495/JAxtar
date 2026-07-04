@@ -9,10 +9,10 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
-from train_util.annotate import MAX_GEN_DS_BATCH_SIZE
 from train_util.sampling import (
-    calculate_dataset_params,
     compute_diffusion_targets,
+    make_diffusion_step_selector,
+    prepare_shuffled_path_sampling,
     wrap_dataset_runner,
 )
 from train_util.trajectory_dataset_adapter import (
@@ -369,47 +369,27 @@ def get_qfunction_dataset_builder(
     diffusion_distance_warmup_steps: int = 0,
     non_backtracking_steps: int = 3,
 ):
-    if non_backtracking_steps < 0:
-        raise ValueError("non_backtracking_steps must be non-negative")
-    non_backtracking_steps = int(non_backtracking_steps)
-
-    # Calculate optimal parameters for dataset generation
-    nn_minibatch_size, shuffle_parallel, steps = calculate_dataset_params(
-        dataset_size, k_max, MAX_GEN_DS_BATCH_SIZE
+    (
+        nn_minibatch_size,
+        shuffle_parallel,
+        steps,
+        jited_create_shuffled_path,
+    ) = prepare_shuffled_path_sampling(
+        puzzle=puzzle,
+        dataset_size=dataset_size,
+        k_max=k_max,
+        max_batch_size=262144,
+        using_hindsight_target=using_hindsight_target,
+        using_triangular_sampling=using_triangular_sampling,
+        include_action_costs=False,
+        non_backtracking_steps=non_backtracking_steps,
+        create_hindsight_target_shuffled_path=create_hindsight_target_shuffled_path,
+        create_hindsight_target_triangular_shuffled_path=(
+            create_hindsight_target_triangular_shuffled_path
+        ),
+        create_target_shuffled_path=create_target_shuffled_path,
+        fixed_target_error="Fixed target is not supported for hindsight target",
     )
-
-    if using_hindsight_target:
-        assert not puzzle.fixed_target, "Fixed target is not supported for hindsight target"
-
-        if using_triangular_sampling:
-            create_shuffled_path_fn = partial(
-                create_hindsight_target_triangular_shuffled_path,
-                puzzle,
-                k_max,
-                shuffle_parallel,
-                False,
-                non_backtracking_steps=non_backtracking_steps,
-            )
-        else:
-            create_shuffled_path_fn = partial(
-                create_hindsight_target_shuffled_path,
-                puzzle,
-                k_max,
-                shuffle_parallel,
-                False,
-                non_backtracking_steps=non_backtracking_steps,
-            )
-    else:
-        create_shuffled_path_fn = partial(
-            create_target_shuffled_path,
-            puzzle,
-            k_max,
-            shuffle_parallel,
-            False,
-            non_backtracking_steps=non_backtracking_steps,
-        )
-
-    jited_create_shuffled_path = jax.jit(create_shuffled_path_fn)
 
     base_get_datasets = partial(
         _get_datasets_with_policy,
@@ -467,22 +447,16 @@ def get_qfunction_dataset_builder(
     else:
         diffusion_get_datasets = base_get_datasets
 
-    warmup_steps = max(int(diffusion_distance_warmup_steps), 0)
-    warmup_enabled = use_diffusion_features and use_diffusion_distance_warmup and warmup_steps > 0
-
-    def should_use_diffusion(step: int) -> bool:
-        if not use_diffusion_features:
-            return False
-        if warmup_enabled:
-            return step < warmup_steps
-        return True
-
     return wrap_dataset_runner(
         dataset_size=dataset_size,
         steps=steps,
         jited_create_shuffled_path=jited_create_shuffled_path,
         base_get_datasets=base_get_datasets,
         diffusion_get_datasets=diffusion_get_datasets,
-        should_use_diffusion_fn=should_use_diffusion,
+        should_use_diffusion_fn=make_diffusion_step_selector(
+            use_diffusion_features=use_diffusion_features,
+            use_diffusion_distance_warmup=use_diffusion_distance_warmup,
+            diffusion_distance_warmup_steps=diffusion_distance_warmup_steps,
+        ),
         n_devices=n_devices,
     )

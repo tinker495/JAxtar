@@ -1,29 +1,18 @@
-import os
-
 import jax
 import jax.numpy as jnp
 
 from helpers.jax_compile import (
-    _get_logger,
-    _should_log,
     compile_search_builder,
     compile_with_example,
 )
 
 
-def test_should_log_reads_expected_environment_values():
-    original = os.environ.get("JAX_WARMUP_LOG")
-    try:
-        os.environ["JAX_WARMUP_LOG"] = "false"
-        assert _should_log() is False
+def test_compile_with_example_prints_warmup_log_when_enabled(monkeypatch, capsys):
+    monkeypatch.setenv("JAX_WARMUP_LOG", "1")
 
-        os.environ["JAX_WARMUP_LOG"] = "1"
-        assert _should_log() is True
-    finally:
-        if original is None:
-            os.environ.pop("JAX_WARMUP_LOG", None)
-        else:
-            os.environ["JAX_WARMUP_LOG"] = original
+    compile_with_example(lambda: 1)
+
+    assert capsys.readouterr().out == "[JAX warmup] compiling <lambda>\n"
 
 
 def test_compile_with_example_uses_lower_path_when_available():
@@ -79,4 +68,3 @@ def test_compile_search_builder_builds_jitted_callable_for_puzzle_defaults():
     out = compiled_fn(_Puzzle.SolveConfig.default(), _Puzzle.State.default())
 
     assert (jax.device_get(out) == jnp.array([4.0, 6.0])).all()
-    assert _get_logger().name == "jax_warmup"

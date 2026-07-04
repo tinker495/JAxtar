@@ -1,5 +1,17 @@
 import chex
+import jax
 import jax.numpy as jnp
+
+
+def batched_state_equal(lhs: object, rhs: object) -> chex.Array:
+    equality_tree = lhs == rhs
+    leaves, _ = jax.tree_util.tree_flatten(equality_tree)
+    if not leaves:
+        raise ValueError("State comparison received an empty tree")
+    result = leaves[0]
+    for leaf in leaves[1:]:
+        result = jnp.logical_and(result, leaf)
+    return result
 
 
 def stable_partition_three(mask2: chex.Array, mask1: chex.Array) -> chex.Array:

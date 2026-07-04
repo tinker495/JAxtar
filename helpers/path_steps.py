@@ -20,33 +20,6 @@ class PathStep:
     action: int | None
 
 
-def build_path_steps_from_nodes(
-    search_result,
-    path,
-    puzzle,
-    solve_config,
-) -> List[PathStep]:
-    steps: List[PathStep] = []
-    for node in path:
-        state = search_result.get_state(node)
-        cost = float(search_result.get_cost(node))
-        dist = float(search_result.get_dist(node))
-        action = getattr(node, "action", None)
-        if action is not None:
-            action = int(action)
-            if action == ACTION_PAD_INT:
-                action = None
-        steps.append(
-            PathStep(
-                state=state,
-                cost=cost,
-                dist=dist,
-                action=action,
-            )
-        )
-    return steps
-
-
 def build_path_steps_from_trace(
     puzzle,
     solve_config,

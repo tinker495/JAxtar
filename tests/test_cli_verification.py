@@ -2,7 +2,6 @@ import pytest
 
 from cli.verification import (
     BenchmarkVerification,
-    benchmark_verification_from_exception,
     build_benchmark_action_strings,
     verify_benchmark_path,
 )
@@ -102,8 +101,3 @@ def test_verify_benchmark_path_noops_when_required_facts_are_missing(
     assert verification == BenchmarkVerification()
     if isinstance(benchmark, RecordingBenchmark):
         assert benchmark.calls == []
-
-
-def test_benchmark_verification_from_exception_wraps_message():
-    verification = benchmark_verification_from_exception(RuntimeError("boom"))
-    assert verification == BenchmarkVerification(benchmark_verification_error="boom")

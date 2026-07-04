@@ -4,7 +4,6 @@ import json
 import os
 import time
 from datetime import datetime
-from functools import partial
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Union
 
@@ -33,7 +32,6 @@ from qfunction.q_base import QFunction
 
 from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
-from .evaluation_plot_adapter import MatplotlibPlotAdapter
 from .search_outcome import (
     apply_benchmark_verification,
     build_deferred_payload,
@@ -43,13 +41,80 @@ from .search_outcome import (
 )
 from .verification import (
     BenchmarkVerification,
-    benchmark_verification_from_exception,
     build_benchmark_action_strings,
     verify_benchmark_path,
 )
 
 
-@partial(jax.jit)
+def _plot_solved_distributions(*, solved_df, artifact_manager) -> None:
+    if solved_df.empty:
+        return
+    from helpers.plots import (
+        plot_nodes_generated_by_path_cost,
+        plot_path_cost_distribution,
+        plot_search_time_by_path_cost,
+    )
+
+    fig = plot_path_cost_distribution(solved_df)
+    artifact_manager.save_and_log_plot("path_cost_distribution", fig)
+
+    fig = plot_search_time_by_path_cost(solved_df)
+    artifact_manager.save_and_log_plot("search_time_by_path_cost", fig)
+
+    fig = plot_nodes_generated_by_path_cost(solved_df)
+    artifact_manager.save_and_log_plot("nodes_generated_by_path_cost", fig)
+
+
+def _plot_benchmark_comparison(*, solved_df, has_benchmark, artifact_manager) -> None:
+    if solved_df.empty or not has_benchmark:
+        return
+    from helpers.plots import plot_benchmark_path_comparison
+
+    fig = plot_benchmark_path_comparison(solved_df)
+    artifact_manager.save_and_log_plot("benchmark_path_comparison", fig)
+
+
+def _plot_heuristic_panel(*, results, metrics, file_suffix, artifact_manager) -> None:
+    from helpers.plots import plot_heuristic_accuracy
+
+    fig = plot_heuristic_accuracy(results, metrics=metrics)
+    artifact_manager.save_and_log_plot(f"heuristic_accuracy{file_suffix}", fig)
+
+
+def _plot_per_seed_expansion(
+    *,
+    results,
+    max_plots,
+    scatter_max_points,
+    max_node_size,
+    artifact_manager,
+) -> None:
+    from helpers.plots import (
+        plot_expansion_distribution,
+        plot_search_tree_semantic,
+    )
+
+    for r in results[:max_plots]:
+        if not r.get("expansion_analysis"):
+            continue
+        fig = plot_expansion_distribution([r], scatter_max_points=scatter_max_points)
+        artifact_manager.save_and_log_plot(
+            f"expansion_dist_seed_{r['seed']}",
+            fig,
+            sub_dir="expansion_plots",
+        )
+        try:
+            fig_tree = plot_search_tree_semantic(r, max_points=max_node_size)
+            artifact_manager.save_and_log_plot(
+                f"search_tree_semantic_seed_{r['seed']}",
+                fig_tree,
+                sub_dir="expansion_plots",
+            )
+        except (ValueError, RuntimeError, AttributeError, OSError) as e:
+            # Semantic tree plot is best-effort; mirror prior behaviour.
+            print(f"Warning: Failed to generate semantic search tree plot: {e}")
+
+
 def _bulk_actual_estimated_batch(
     costs: jnp.ndarray,
     dists: jnp.ndarray,
@@ -75,7 +140,6 @@ class EvaluationRunner:
         step: int = 0,
         node_metric_label: Optional[str] = None,
         run_label: Optional[str] = None,
-        plot_adapter: Optional[object] = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -92,7 +156,6 @@ class EvaluationRunner:
         self.node_metric_label = node_metric_label or "Nodes Generated"
         self.kwargs = kwargs
         self.run_label = run_label or search_model_name
-        self.plot_adapter = plot_adapter or MatplotlibPlotAdapter()
         self.benchmark: Optional[Benchmark] = kwargs.get("benchmark")
         self.benchmark_name: Optional[str] = kwargs.get("benchmark_name")
         benchmark_cli_options = kwargs.get("benchmark_cli_options", {})
@@ -260,7 +323,7 @@ class EvaluationRunner:
             if not is_sweep:
                 self.console.print(create_summary_panel(results, heuristic_metrics))
 
-            self.plot_adapter.plot_solved_distributions(solved_df=solved_df, artifact_manager=am)
+            _plot_solved_distributions(solved_df=solved_df, artifact_manager=am)
 
             if not solved_df.empty:
                 am.log_scalar("time_to_solve", solved_df["search_time_s"].mean())
@@ -275,7 +338,7 @@ class EvaluationRunner:
                     "benchmark_optimal_action_count" in solved_df
                     and solved_df["benchmark_optimal_action_count"].notna().any()
                 )
-                self.plot_adapter.plot_benchmark_comparison(
+                _plot_benchmark_comparison(
                     solved_df=solved_df,
                     has_benchmark=self.benchmark is not None
                     and (has_benchmark_cost or has_benchmark_length),
@@ -296,13 +359,13 @@ class EvaluationRunner:
                 results if current_eval_opts.plot_unsolved else [r for r in results if r["solved"]]
             )
 
-            self.plot_adapter.plot_heuristic_panel(
+            _plot_heuristic_panel(
                 results=results_for_plot,
                 metrics=heuristic_metrics,
                 file_suffix=file_suffix,
                 artifact_manager=am,
             )
-            self.plot_adapter.plot_per_seed_expansion(
+            _plot_per_seed_expansion(
                 results=results_for_plot,
                 max_plots=current_eval_opts.max_expansion_plots,
                 scatter_max_points=current_eval_opts.scatter_max_points,
@@ -586,7 +649,9 @@ class EvaluationRunner:
                     try:
                         verify_results[idx] = future.result()
                     except Exception as exc:  # noqa: BLE001
-                        verify_results[idx] = benchmark_verification_from_exception(exc)
+                        verify_results[idx] = BenchmarkVerification(
+                            benchmark_verification_error=str(exc)
+                        )
 
         batched_actual = None
         batched_estimated = None

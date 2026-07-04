@@ -7,24 +7,11 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
-
-ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)
+from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE
 
 
 def validate_non_backtracking_steps(steps: int) -> int:
-    """
-    Validate and convert non_backtracking_steps parameter.
-
-    Args:
-        steps: Number of non-backtracking steps to validate
-
-    Returns:
-        Validated steps as integer
-
-    Raises:
-        ValueError: If steps is negative
-    """
+    """Validate and convert non_backtracking_steps."""
     if steps < 0:
         raise ValueError("non_backtracking_steps must be non-negative")
     return int(steps)
