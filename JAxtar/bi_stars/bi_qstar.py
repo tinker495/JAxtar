@@ -36,8 +36,8 @@ from JAxtar.bi_stars.bi_search_base import (
     stamp_bi_solved_from_meeting,
     build_bi_deferred_expand_direction,
 )
-from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.chunked_eval import chunked_masked_eval
 from qfunction.q_base import QFunction
 
 
@@ -174,7 +174,6 @@ def _bi_qstar_loop_builder(
             cost_weight: float,
         ) -> tuple[chex.Array, chex.Array, chex.Array]:
             sr_batch_size = search_result.batch_size
-            flat_size = action_size * sr_batch_size
             flattened_filled_tiles = filled_tiles.flatten()
 
             if look_ahead_pruning:
@@ -208,35 +207,14 @@ def _bi_qstar_loop_builder(
 
                     flat_states = neighbour_look_ahead.flatten()
                     flat_need_compute = need_compute.flatten()
-                    sorted_indices = stable_partition_three(
+
+                    computed_heuristic_vals = chunked_masked_eval(
+                        lambda s, m: jnp.min(variable_q_batch_switcher(q_params, s, m), axis=-1),
+                        flat_states,
                         flat_need_compute,
-                        jnp.zeros_like(flat_need_compute, dtype=jnp.bool_),
-                    )
-                    sorted_states = flat_states[sorted_indices]
-                    sorted_mask = flat_need_compute[sorted_indices]
-
-                    sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-                    sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-                    def _calc_v_chunk(carry, input_slice):
-                        states_slice, compute_mask = input_slice
-                        q_vals = variable_q_batch_switcher(q_params, states_slice, compute_mask)
-                        v_vals = jnp.min(q_vals, axis=-1)
-                        return carry, v_vals
-
-                    _, v_chunks = jax.lax.scan(
-                        _calc_v_chunk,
-                        None,
-                        (sorted_states_chunked, sorted_mask_chunked),
-                    )
-
-                    v_sorted = v_chunks.reshape(-1).astype(KEY_DTYPE)
-                    flat_v_vals = (
-                        jnp.empty((flat_size,), dtype=v_sorted.dtype)
-                        .at[sorted_indices]
-                        .set(v_sorted)
-                    )
-                    computed_heuristic_vals = flat_v_vals.reshape(action_size, sr_batch_size)
+                        action_size,
+                        sr_batch_size,
+                    ).reshape(action_size, sr_batch_size)
 
                     dists = jnp.where(found_reshaped, old_dists, computed_heuristic_vals)
                     dists = jnp.where(filled_tiles, dists, jnp.inf).astype(KEY_DTYPE)
