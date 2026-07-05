@@ -27,21 +27,21 @@ from JAxtar.id_stars.search_base import (
     finalize_builder,
     merge_frontier_solution,
 )
-from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.chunked_eval import chunked_masked_eval
 
 
 def _build_chunked_heuristic_eval(
     variable_heuristic_fn,
     action_size: int,
     batch_size: int,
-    flat_size: int,
 ):
     """
     Factory function to create a chunked heuristic evaluation function.
 
     This avoids code duplication between frontier builder and loop builder.
-    The returned function evaluates heuristics in chunks for memory efficiency.
+    The returned function delegates to the shared ``chunked_masked_eval`` primitive,
+    closing over the heuristic parameters so the primitive stays value-fn generic.
     """
 
     def _chunked_heuristic_eval(
@@ -49,33 +49,13 @@ def _build_chunked_heuristic_eval(
         flat_states: Puzzle.State,
         flat_valid: jnp.ndarray,
     ) -> jnp.ndarray:
-        sorted_idx = stable_partition_three(flat_valid, jnp.zeros_like(flat_valid, dtype=jnp.bool_))
-        sorted_states = xnp.take(flat_states, sorted_idx, axis=0)
-        sorted_mask = flat_valid[sorted_idx]
-
-        chunk_states = xnp.reshape(sorted_states, (action_size, batch_size))
-        chunk_mask = sorted_mask.reshape((action_size, batch_size))
-
-        def _compute(_, inputs):
-            states_slice, mask_slice = inputs
-
-            def _calc(_):
-                vals = variable_heuristic_fn(h_params, states_slice, mask_slice).astype(KEY_DTYPE)
-                vals = jnp.maximum(0.0, vals)  # Ensure non-negative heuristic
-                return jnp.where(mask_slice, vals, jnp.inf)
-
-            return None, jax.lax.cond(
-                jnp.any(mask_slice),
-                _calc,
-                lambda _: jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE),
-                None,
-            )
-
-        _, chunk_vals = jax.lax.scan(_compute, None, (chunk_states, chunk_mask))
-        sorted_vals = chunk_vals.reshape((flat_size,))
-        flat_vals = jnp.full((flat_size,), jnp.inf, dtype=KEY_DTYPE)
-        flat_vals = flat_vals.at[sorted_idx].set(sorted_vals)
-        return flat_vals
+        return chunked_masked_eval(
+            lambda s, m: variable_heuristic_fn(h_params, s, m),
+            flat_states,
+            flat_valid,
+            action_size,
+            batch_size,
+        )
 
     return _chunked_heuristic_eval
 
@@ -109,7 +89,7 @@ def _id_astar_frontier_builder(
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
 
     _chunked_heuristic_eval = _build_chunked_heuristic_eval(
-        variable_heuristic, action_size, batch_size, flat_size
+        variable_heuristic, action_size, batch_size
     )
 
     def generate_frontier(
@@ -289,7 +269,6 @@ def _id_astar_loop_builder(
         variable_heuristic_batch_switcher,
         action_size,
         batch_size,
-        flat_size,
     )
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):

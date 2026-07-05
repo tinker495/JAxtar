@@ -16,8 +16,8 @@ from JAxtar.stars.search_base import (
     base_loop_condition,
     build_deferred_loop_body,
 )
-from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from JAxtar.utils.chunked_eval import chunked_masked_eval
 
 
 def _astar_d_loop_builder(
@@ -122,37 +122,13 @@ def _astar_d_loop_builder(
             flat_states = neighbour_look_a_head.flatten()
             flat_need_compute = need_compute.flatten()
 
-            # Clean duplicate sizes
-            flat_size = action_size * sr_batch_size
-
-            sorted_indices = stable_partition_three(
-                flat_need_compute, jnp.zeros_like(flat_need_compute, dtype=jnp.bool_)
-            )
-
-            sorted_states = flat_states[sorted_indices]
-            sorted_mask = flat_need_compute[sorted_indices]
-
-            sorted_states_chunked = sorted_states.reshape((action_size, sr_batch_size))
-            sorted_mask_chunked = sorted_mask.reshape((action_size, sr_batch_size))
-
-            def _calc_heuristic_chunk(carry, input_slice):
-                states_slice, compute_mask = input_slice
-                h_val = variable_heuristic_batch_switcher(params, states_slice, compute_mask)
-                return carry, h_val
-
-            _, h_val_chunks = jax.lax.scan(
-                _calc_heuristic_chunk,
-                None,
-                (sorted_states_chunked, sorted_mask_chunked),
-            )
-
-            h_val_sorted = h_val_chunks.reshape(-1)
-            flat_h_val = (
-                jnp.empty((flat_size,), dtype=h_val_sorted.dtype)
-                .at[sorted_indices]
-                .set(h_val_sorted)
-            )
-            computed_heuristic_vals = flat_h_val.reshape(action_size, sr_batch_size)
+            computed_heuristic_vals = chunked_masked_eval(
+                lambda s, m: variable_heuristic_batch_switcher(params, s, m),
+                flat_states,
+                flat_need_compute,
+                action_size,
+                sr_batch_size,
+            ).reshape(action_size, sr_batch_size)
 
             heuristic_vals = jnp.where(
                 found_reshaped,
