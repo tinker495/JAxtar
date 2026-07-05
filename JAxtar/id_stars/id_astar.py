@@ -21,6 +21,7 @@ from JAxtar.id_stars.search_base import (
     IDLoopState,
     IDSearchResult,
     apply_non_backtracking,
+    apply_standard_deduplication,
     build_frontier_cond,
     build_inner_cond,
     build_outer_loop,
@@ -190,8 +191,8 @@ def _id_astar_frontier_builder(
                 batch_size,
             )
 
+            # chunked_masked_eval already clamps values to >= 0.
             flat_h = _chunked_heuristic_eval(h_params, flat_states, flat_valid)
-            flat_h = jnp.maximum(0.0, flat_h)  # Ensure non-negative
             flat_f = (cost_weight * flat_g + flat_h).astype(KEY_DTYPE)
             f_safe = jnp.where(flat_valid, jnp.nan_to_num(flat_f, nan=1e5, posinf=1e5), jnp.inf)
 
@@ -360,7 +361,7 @@ def _id_astar_loop_builder(
         flat_root_indices = jnp.where(flat_valid, flat_root_indices, -1)
 
         # --- Optimization: Deduplication ---
-        sr, flat_valid = sr.apply_standard_deduplication(
+        flat_valid = apply_standard_deduplication(
             flat_neighbours,
             flat_g,
             flat_valid,
@@ -382,9 +383,8 @@ def _id_astar_loop_builder(
         # ----------------------------------------------------
 
         # Heuristic Evaluation (No Caching - Re-compute Always)
+        # chunked_masked_eval already clamps values to >= 0.
         flat_h = _chunked_heuristic_eval(params, flat_neighbours, flat_valid)
-        flat_h = jnp.maximum(0.0, flat_h)
-
         flat_f = (cost_weight * flat_g + flat_h).astype(KEY_DTYPE)
 
         flat_batch = IDNodeBatch(

@@ -130,11 +130,8 @@ class IDLoopState:
 class IDSearchResult:
     """
     Data structure for Iterative Deepening Search.
-    Maintains an explicit stack for Batched DFS.
-
-    Renamed from IDSearchResult for clarity:
-    - "Base" indicates this is the core search state container
-    - Methods handle stack operations and trace management
+    Maintains an explicit stack for Batched DFS; solutions are reconstructed from the
+    per-node ``action_history`` carried on each stack item.
     """
 
     capacity: int
@@ -156,11 +153,6 @@ class IDSearchResult:
     solution_cost: chex.Array  # Scalar - cost of solution
     generated_count: chex.Array  # Scalar - count of generated nodes
     solution_actions_arr: chex.Array  # [max_path_len]
-    trace_parent: chex.Array  # [capacity]
-    trace_action: chex.Array  # [capacity]
-    trace_root: chex.Array  # [capacity]
-    trace_size: chex.Array  # scalar
-    frontier_action_history: chex.Array  # [batch_size, max_path_len]
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
@@ -205,11 +197,6 @@ class IDSearchResult:
         solution_cost = jnp.array(jnp.inf, dtype=KEY_DTYPE)
         solution_actions = jnp.full((max_path_len,), ACTION_PAD, dtype=ACTION_DTYPE)
         generated_count = jnp.array(0, dtype=jnp.int32)
-        trace_parent = jnp.full((capacity,), -1, dtype=jnp.int32)
-        trace_action = jnp.full((capacity,), ACTION_PAD, dtype=ACTION_DTYPE)
-        trace_root = jnp.full((capacity,), -1, dtype=jnp.int32)
-        trace_size = jnp.array(0, dtype=jnp.int32)
-        frontier_action_history = jnp.full((1, max_path_len), ACTION_PAD, dtype=ACTION_DTYPE)
 
         return IDSearchResult(
             capacity=capacity,
@@ -224,11 +211,6 @@ class IDSearchResult:
             start_state=start_state,
             solution_cost=solution_cost,
             solution_actions_arr=solution_actions,
-            trace_parent=trace_parent,
-            trace_action=trace_action,
-            trace_root=trace_root,
-            trace_size=trace_size,
-            frontier_action_history=frontier_action_history,
             generated_count=generated_count,
         )
 
@@ -304,12 +286,6 @@ class IDSearchResult:
     def get_cost(self, idx: int):
         return self.solution_cost
 
-    def get_state(self, idx: int):
-        return self.solution_state[0]
-
-    def get_dist(self, idx: int):
-        return 0.0
-
     def get_top_batch(
         self, batch_size: int
     ) -> tuple[
@@ -373,10 +349,15 @@ class IDSearchResult:
         trails: Xtructurable,
         action_histories: chex.Array,
         valid_mask: chex.Array,
+        count_generated: bool = True,
     ) -> "IDSearchResult":
         """
         Push a batch of items onto the stack.
         Only pushes items where valid_mask is True.
+
+        ``count_generated`` gates the ``generated_count`` metric: frontier re-pushes at
+        each IDA* threshold reset pass False so seed nodes are counted once, not once
+        per iteration.
         """
         n_push = jnp.sum(valid_mask.astype(jnp.int32))
 
@@ -394,14 +375,8 @@ class IDSearchResult:
 
         safe_n_push = jnp.minimum(n_push, capacity - current_ptr)
 
-        trace_base = self.trace_size
         batch_len = valid_mask.shape[0]
-        trace_ids_sorted = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
-        valid_sorted = valid_mask[perm]
-        push_mask_sorted = jnp.logical_and(
-            valid_sorted, jnp.arange(batch_len, dtype=jnp.int32) < safe_n_push
-        )
-        trace_ids_sorted = jnp.where(push_mask_sorted, trace_ids_sorted, -1)
+        dead_trace = jnp.full((batch_len,), -1, dtype=jnp.int32)  # vestigial IDStackItem field
 
         items_sorted = self.ItemCls(
             state=states_sorted,
@@ -410,15 +385,10 @@ class IDSearchResult:
             action=actions_sorted,
             parent_index=parent_indices_sorted,
             root_index=root_indices_sorted,
-            trace_index=trace_ids_sorted,
+            trace_index=dead_trace,
             trail=xnp.take(trails, perm, axis=0),
             action_history=action_histories[perm],
         )
-
-        trace_parent_updates = parent_indices_sorted
-        trace_action_updates = actions_sorted
-        trace_root_updates = root_indices_sorted
-        trace_mask = trace_ids_sorted >= 0
 
         new_val_store = jax.tree_util.tree_map(
             lambda s, u: _bounded_scatter_leaf(s, u, current_ptr, safe_n_push),
@@ -426,30 +396,14 @@ class IDSearchResult:
             items_sorted,
         )
 
-        trace_ids_dense = jnp.where(trace_mask, trace_ids_sorted, 0)
-        new_trace_parent = xnp.update_on_condition(
-            self.trace_parent, trace_ids_dense, trace_mask, trace_parent_updates
-        )
-        new_trace_action = xnp.update_on_condition(
-            self.trace_action, trace_ids_dense, trace_mask, trace_action_updates
-        )
-        new_trace_root = xnp.update_on_condition(
-            self.trace_root, trace_ids_dense, trace_mask, trace_root_updates
-        )
-
         new_ptr = (current_ptr + safe_n_push).astype(self.stack.size.dtype)
-        new_generated_count = self.generated_count + safe_n_push
-        new_trace_size = self.trace_size + safe_n_push
+        new_generated_count = self.generated_count + jnp.where(count_generated, safe_n_push, 0)
 
         new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
 
         return self.replace(
             stack=new_stack,
             generated_count=new_generated_count,
-            trace_parent=new_trace_parent,
-            trace_action=new_trace_action,
-            trace_root=new_trace_root,
-            trace_size=new_trace_size,
         )
 
     def push_packed_batch(
@@ -474,14 +428,8 @@ class IDSearchResult:
 
         safe_n_push = jnp.minimum(n_push.astype(jnp.int32), capacity - current_ptr)
 
-        trace_base = self.trace_size
         batch_len = parent_indices.shape[0]
-        trace_ids = trace_base + jnp.arange(batch_len, dtype=jnp.int32)
-        trace_ids = jnp.where(
-            jnp.arange(batch_len, dtype=jnp.int32) < n_push.astype(jnp.int32),
-            trace_ids,
-            -1,
-        )
+        dead_trace = jnp.full((batch_len,), -1, dtype=jnp.int32)  # vestigial IDStackItem field
 
         items = self.ItemCls(
             state=states,
@@ -490,7 +438,7 @@ class IDSearchResult:
             action=actions,
             parent_index=parent_indices,
             root_index=root_indices,
-            trace_index=trace_ids,
+            trace_index=dead_trace,
             trail=trails,
             action_history=action_histories,
         )
@@ -501,31 +449,14 @@ class IDSearchResult:
             items,
         )
 
-        trace_mask = trace_ids >= 0
-        trace_ids_dense = jnp.where(trace_mask, trace_ids, 0)
-        new_trace_parent = xnp.update_on_condition(
-            self.trace_parent, trace_ids_dense, trace_mask, parent_indices
-        )
-        new_trace_action = xnp.update_on_condition(
-            self.trace_action, trace_ids_dense, trace_mask, actions
-        )
-        new_trace_root = xnp.update_on_condition(
-            self.trace_root, trace_ids_dense, trace_mask, root_indices
-        )
-
         new_ptr = (current_ptr + safe_n_push).astype(self.stack.size.dtype)
         new_generated_count = self.generated_count + safe_n_push
-        new_trace_size = self.trace_size + safe_n_push
 
         new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
 
         return self.replace(
             stack=new_stack,
             generated_count=new_generated_count,
-            trace_parent=new_trace_parent,
-            trace_action=new_trace_action,
-            trace_root=new_trace_root,
-            trace_size=new_trace_size,
         )
 
     def push_frontier_to_stack(
@@ -533,6 +464,7 @@ class IDSearchResult:
         frontier: "IDFrontier",
         bound: chex.Array,
         frontier_actions: chex.Array,
+        count_generated: bool = True,
     ) -> "IDSearchResult":
         """
         Push allowed frontier nodes to stack and update next_bound.
@@ -577,6 +509,7 @@ class IDSearchResult:
             frontier.trail,
             frontier.action_history,
             keep_mask,
+            count_generated=count_generated,
         )
 
     def expand_and_push(
@@ -704,8 +637,7 @@ class IDSearchResult:
             solution_state=frontier.solution_state,
             solution_cost=frontier.solution_cost,
             solution_actions_arr=frontier.solution_actions_arr,
-            solved_idx=jnp.where(frontier.solved, -1, -1),
-            frontier_action_history=frontier.action_history,
+            solved_idx=jnp.array(-1, dtype=jnp.int32),
         )
 
         # Push frontier nodes within bound to stack
@@ -787,44 +719,40 @@ class IDSearchResult:
             step_costs,
         )
 
-    def apply_standard_deduplication(
-        self,
-        flat_neighbours: Xtructurable,
-        flat_g: chex.Array,
-        flat_valid: chex.Array,
-        parents: Xtructurable,
-        parent_trails: Xtructurable,
-        parent_depths: chex.Array,
-        non_backtracking_steps: int,
-        action_size: int,
-        flat_size: int,
-        trail_indices: jnp.ndarray,
-        batch_size: int,
-    ) -> tuple["IDSearchResult", chex.Array]:
-        """
-        Apply in-batch deduplication and non-backtracking.
-        """
-        unique_mask = xnp.unique_mask(
-            flat_neighbours,
-            key=flat_g,
-            filled=flat_valid,
-        )
-        flat_valid = jnp.logical_and(flat_valid, unique_mask)
 
-        flat_valid = apply_non_backtracking(
-            flat_neighbours,
-            parents,
-            parent_trails,
-            parent_depths,
-            flat_valid,
-            non_backtracking_steps,
-            action_size,
-            flat_size,
-            trail_indices,
-            batch_size,
-        )
+def apply_standard_deduplication(
+    flat_neighbours: Xtructurable,
+    flat_g: chex.Array,
+    flat_valid: chex.Array,
+    parents: Xtructurable,
+    parent_trails: Xtructurable,
+    parent_depths: chex.Array,
+    non_backtracking_steps: int,
+    action_size: int,
+    flat_size: int,
+    trail_indices: jnp.ndarray,
+    batch_size: int,
+) -> chex.Array:
+    """Apply in-batch deduplication and non-backtracking; return the filtered valid mask."""
+    unique_mask = xnp.unique_mask(
+        flat_neighbours,
+        key=flat_g,
+        filled=flat_valid,
+    )
+    flat_valid = jnp.logical_and(flat_valid, unique_mask)
 
-        return self, flat_valid
+    return apply_non_backtracking(
+        flat_neighbours,
+        parents,
+        parent_trails,
+        parent_depths,
+        flat_valid,
+        non_backtracking_steps,
+        action_size,
+        flat_size,
+        trail_indices,
+        batch_size,
+    )
 
 
 def finalize_builder(
@@ -901,10 +829,13 @@ def build_outer_loop(
             bound=new_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
-            trace_size=jnp.array(0, dtype=jnp.int32),
         )
 
-        reset_sr = reset_sr.push_frontier_to_stack(loop_state.frontier, new_bound, frontier_actions)
+        # Re-seed the same frontier for the next threshold; count_generated=False so
+        # these seed nodes are not re-tallied every iteration.
+        reset_sr = reset_sr.push_frontier_to_stack(
+            loop_state.frontier, new_bound, frontier_actions, count_generated=False
+        )
 
         return loop_state.replace(search_result=reset_sr)
 

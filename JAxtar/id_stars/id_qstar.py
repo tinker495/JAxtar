@@ -24,6 +24,7 @@ from JAxtar.id_stars.search_base import (
     IDLoopState,
     IDSearchResult,
     apply_non_backtracking,
+    apply_standard_deduplication,
     build_frontier_cond,
     build_inner_cond,
     build_outer_loop,
@@ -357,7 +358,7 @@ def _id_qstar_loop_builder(
         flat_valid = jnp.logical_and(flat_valid, flat_f <= active_bound + 1e-6)
 
         # --- Optimization: Deduplication ---
-        sr, flat_valid = sr.apply_standard_deduplication(
+        flat_valid = apply_standard_deduplication(
             flat_neighbours,
             flat_g,
             flat_valid,
