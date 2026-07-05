@@ -592,7 +592,7 @@ class SearchResult:
                 # In bidirectional deferred search, backward expansion stores action indices
                 # that refer to the i-th inverse neighbour. Child generation must therefore
                 # use inverse neighbours and gather by action index.
-                if hasattr(puzzle, "inverse_action_map"):
+                if puzzle.is_reversible:
                     inv_map = puzzle.inverse_action_map  # [action_size]
                     inv_actions = inv_map[parent_actions.astype(jnp.int32)]
                     # Use batched_get_actions for efficient O(batch) expansion

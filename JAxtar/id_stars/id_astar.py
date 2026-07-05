@@ -64,6 +64,7 @@ def _id_astar_frontier_builder(
     puzzle: Puzzle,
     heuristic: Heuristic,
     batch_size: int = 1024,
+    cost_weight: float = 1.0,
     non_backtracking_steps: int = 3,
     max_path_len: int = 256,
 ):
@@ -191,7 +192,7 @@ def _id_astar_frontier_builder(
 
             flat_h = _chunked_heuristic_eval(h_params, flat_states, flat_valid)
             flat_h = jnp.maximum(0.0, flat_h)  # Ensure non-negative
-            flat_f = (flat_g + flat_h).astype(KEY_DTYPE)
+            flat_f = (cost_weight * flat_g + flat_h).astype(KEY_DTYPE)
             f_safe = jnp.where(flat_valid, jnp.nan_to_num(flat_f, nan=1e5, posinf=1e5), jnp.inf)
 
             flat_parent_indices = jnp.tile(jnp.arange(batch_size, dtype=jnp.int32), action_size)
@@ -261,6 +262,7 @@ def _id_astar_loop_builder(
         puzzle,
         heuristic,
         batch_size,
+        cost_weight=cost_weight,
         non_backtracking_steps=non_backtracking_steps,
         max_path_len=max_path_len,
     )

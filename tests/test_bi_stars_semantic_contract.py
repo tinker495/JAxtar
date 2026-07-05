@@ -307,6 +307,7 @@ def test_bi_qstar_safety_guard_matches_plan_constraints():
     class _DummyPuzzle:
         action_size = 4
         State = object
+        is_reversible = False
 
     class _DummyQFunction:
         is_fixed = False

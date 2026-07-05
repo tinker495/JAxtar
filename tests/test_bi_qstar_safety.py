@@ -7,6 +7,7 @@ from JAxtar.bi_stars.bi_qstar import bi_qstar_builder
 class _DummyPuzzle:
     action_size = 4
     State = object
+    is_reversible = False
 
 
 class _DummyQFunction:

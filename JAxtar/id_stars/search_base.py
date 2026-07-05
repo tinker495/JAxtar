@@ -24,6 +24,19 @@ from JAxtar.solution_trace import (
 from JAxtar.utils.array_ops import batched_state_equal, stable_partition_three
 
 
+def _bounded_scatter_leaf(stack_arr, update_arr, start, n_write):
+    """Scatter ``update_arr[:n_write]`` into ``stack_arr`` at ``[start, start + n_write)``.
+
+    Rows at/after ``n_write`` map to an out-of-bounds index and are dropped. This
+    replaces ``dynamic_update_slice``, which clamps a near-capacity start index and
+    would slide the whole write block down, silently overwriting already-committed
+    live stack entries below ``start``.
+    """
+    rows = jnp.arange(update_arr.shape[0], dtype=jnp.int32)
+    target = jnp.where(rows < n_write, start + rows, stack_arr.shape[0])
+    return stack_arr.at[target].set(update_arr, mode="drop")
+
+
 def apply_non_backtracking(
     candidate_states: Puzzle.State,
     parent_states: Puzzle.State,
@@ -407,12 +420,11 @@ class IDSearchResult:
         trace_root_updates = root_indices_sorted
         trace_mask = trace_ids_sorted >= 0
 
-        def _update_leaf(stack_arr, update_arr):
-            # Explicitly use int32 indices
-            start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)
-            return jax.lax.dynamic_update_slice(stack_arr, update_arr, start_indices)
-
-        new_val_store = jax.tree_util.tree_map(_update_leaf, self.stack.val_store, items_sorted)
+        new_val_store = jax.tree_util.tree_map(
+            lambda s, u: _bounded_scatter_leaf(s, u, current_ptr, safe_n_push),
+            self.stack.val_store,
+            items_sorted,
+        )
 
         trace_ids_dense = jnp.where(trace_mask, trace_ids_sorted, 0)
         new_trace_parent = xnp.update_on_condition(
@@ -483,11 +495,11 @@ class IDSearchResult:
             action_history=action_histories,
         )
 
-        def _update_leaf(stack_arr, update_arr):
-            start_indices = (current_ptr,) + (0,) * (stack_arr.ndim - 1)
-            return jax.lax.dynamic_update_slice(stack_arr, update_arr, start_indices)
-
-        new_val_store = jax.tree_util.tree_map(_update_leaf, self.stack.val_store, items)
+        new_val_store = jax.tree_util.tree_map(
+            lambda s, u: _bounded_scatter_leaf(s, u, current_ptr, safe_n_push),
+            self.stack.val_store,
+            items,
+        )
 
         trace_mask = trace_ids >= 0
         trace_ids_dense = jnp.where(trace_mask, trace_ids, 0)

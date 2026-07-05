@@ -82,7 +82,7 @@ def _bi_qstar_loop_builder(
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
-    has_inverse_action_map = hasattr(puzzle, "inverse_action_map")
+    has_inverse_action_map = puzzle.is_reversible
     backward_use_edge_q = use_backward_q and (
         backward_mode == "edge_q" or (backward_mode == "auto" and has_inverse_action_map)
     )
@@ -453,7 +453,7 @@ def bi_qstar_builder(
             f"Invalid backward_mode={backward_mode!r}. Expected one of {sorted(valid_backward_modes)}"
         )
 
-    has_inverse_action_map = hasattr(puzzle, "inverse_action_map")
+    has_inverse_action_map = puzzle.is_reversible
     if backward_mode == "edge_q" and (not has_inverse_action_map):
         warnings.warn(
             "bi_qstar backward_mode='edge_q' requires puzzle.inverse_action_map; "
