@@ -7,10 +7,13 @@ from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.bi_stars.bi_search_base import (
     MeetingPoint,
     build_bi_search_result,
+    detect_meeting,
     initialize_bi_loop_common,
-    materialize_meeting_point_hashidxs,
     reconstruct_bidirectional_path,
+    register_seen,
+    update_meeting_point,
 )
+from JAxtar.stars.search_base import Parent
 
 
 def _make_valid_slide_solve_config(puzzle: SlidePuzzle):
@@ -57,23 +60,6 @@ def _find_one_step_start_to_goal(puzzle: SlidePuzzle, solve_config, goal):
     raise AssertionError("Expected a one-step path from generated start to goal")
 
 
-def _find_inverse_action_to_start(puzzle: SlidePuzzle, inverse_solveconfig, goal, start):
-    goal_b = jax.tree_util.tree_map(lambda x: x[jnp.newaxis, ...], goal)
-    inv_neighbours, inv_costs = puzzle.batched_get_inverse_neighbours(
-        inverse_solveconfig,
-        goal_b,
-        jnp.array([True]),
-    )
-
-    for action in range(puzzle.action_size):
-        if bool(jax.device_get(jnp.isfinite(inv_costs[action, 0]))) and _states_equal(
-            inv_neighbours[action, 0], start
-        ):
-            return action, inv_costs[action, 0].astype(KEY_DTYPE)
-
-    raise AssertionError("Expected inverse neighbours to contain the one-step start")
-
-
 def _assert_path_replays_to_goal(puzzle: SlidePuzzle, solve_config, path, goal):
     assert len(path) >= 2
 
@@ -114,6 +100,9 @@ def test_build_bi_search_result_initializes_forward_and_backward_consistently():
     assert int(result.forward.generated_size) == 0
     assert int(result.backward.generated_size) == 0
 
+    # Both directions share a single hash table.
+    assert result.forward.hashtable is result.backward.hashtable
+
     assert bool(result.meeting.found) is False
     assert jnp.isinf(result.meeting.total_cost)
 
@@ -137,9 +126,49 @@ def test_initialize_bi_loop_common_sets_meeting_when_start_equals_goal():
     assert float(jax.device_get(bi_result.meeting.total_cost)) == 0.0
     assert float(jax.device_get(bi_result.meeting.fwd_cost)) == 0.0
     assert float(jax.device_get(bi_result.meeting.bwd_cost)) == 0.0
+    # start == goal collapses to a single shared slot registered by both directions.
+    assert int(jax.device_get(bi_result.meeting.fwd_hashidx.index)) == int(
+        jax.device_get(bi_result.meeting.bwd_hashidx.index)
+    )
 
 
-def test_materialize_meeting_point_hashidxs_materializes_edge_only_meeting():
+def test_initialize_bi_loop_common_shares_table_and_registers_roots():
+    puzzle = SlidePuzzle(size=2)
+    solve_config, goal = _make_valid_slide_solve_config(puzzle)
+    start, _, _ = _find_one_step_start_to_goal(puzzle, solve_config, goal)
+
+    bi_result = build_bi_search_result(
+        statecls=puzzle.State,
+        batch_size=8,
+        max_nodes=64,
+        action_size=puzzle.action_size,
+    )
+
+    _, fwd_current, _, _, bwd_current, _ = initialize_bi_loop_common(
+        bi_result, puzzle, solve_config, start
+    )
+
+    # Forward and backward share one hash table object after initialization.
+    assert bi_result.forward.hashtable is bi_result.backward.hashtable
+
+    start_slot = int(jax.device_get(fwd_current.hashidx[0].index))
+    goal_slot = int(jax.device_get(bwd_current.hashidx[0].index))
+    assert start_slot != goal_slot
+
+    # Each root is registered only in its own direction.
+    assert bool(jax.device_get(bi_result.seen_forward[start_slot])) is True
+    assert bool(jax.device_get(bi_result.seen_backward[goal_slot])) is True
+    assert bool(jax.device_get(bi_result.seen_backward[start_slot])) is False
+    assert bool(jax.device_get(bi_result.seen_forward[goal_slot])) is False
+
+    # The shared table holds both roots, findable from either direction's handle.
+    _, start_found = bi_result.backward.hashtable.lookup(start)
+    _, goal_found = bi_result.forward.hashtable.lookup(goal)
+    assert bool(jax.device_get(start_found)) is True
+    assert bool(jax.device_get(goal_found)) is True
+
+
+def test_meeting_via_shared_slot_reconstructs_path():
     puzzle = SlidePuzzle(size=2)
     solve_config, goal = _make_valid_slide_solve_config(puzzle)
     start, action, step_cost = _find_one_step_start_to_goal(puzzle, solve_config, goal)
@@ -155,112 +184,95 @@ def test_materialize_meeting_point_hashidxs_materializes_edge_only_meeting():
         bi_result, puzzle, solve_config, start
     )
     start_hashidx = fwd_current.hashidx[0]
-    meeting_state = goal
-    meeting_bwd_hashidx = bwd_current.hashidx[0]
+    goal_slot = int(jax.device_get(bwd_current.hashidx[0].index))
 
-    dummy_hashidx = HashIdx.default(())
-    dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
-    bi_result.meeting = MeetingPoint(
-        fwd_hashidx=dummy_hashidx,
-        bwd_hashidx=meeting_bwd_hashidx,
-        fwd_cost=step_cost,
-        bwd_cost=jnp.array(0, dtype=KEY_DTYPE),
-        total_cost=step_cost,
-        found=jnp.array(True),
-        fwd_has_hashidx=jnp.array(False),
-        bwd_has_hashidx=jnp.array(True),
-        fwd_parent_hashidx=start_hashidx,
-        fwd_parent_action=jnp.array(action, dtype=ACTION_DTYPE),
-        bwd_parent_hashidx=dummy_hashidx,
-        bwd_parent_action=dummy_action,
+    # Simulate the forward frontier expanding start -> goal into the shared table.
+    # The shared table already holds goal (the backward root), so forward gets the
+    # SAME slot rather than a fresh one.
+    bi_result.forward.hashtable, _, fwd_goal_hashidx = bi_result.forward.hashtable.insert(goal)
+    assert int(jax.device_get(fwd_goal_hashidx.index)) == goal_slot
+
+    bi_result.forward.cost = bi_result.forward.cost.at[fwd_goal_hashidx.index].set(
+        jnp.asarray(step_cost, dtype=KEY_DTYPE)
+    )
+    bi_result.forward.parent = bi_result.forward.parent.at[
+        jnp.asarray(fwd_goal_hashidx.index)[jnp.newaxis]
+    ].set_as_condition(
+        jnp.array([True]),
+        Parent(hashidx=start_hashidx, action=jnp.array(action, dtype=ACTION_DTYPE)),
     )
 
-    bi_result = materialize_meeting_point_hashidxs(bi_result, puzzle, solve_config)
+    hashidxs = HashIdx(index=jnp.asarray(fwd_goal_hashidx.index)[jnp.newaxis])
+    mask = jnp.array([True])
+    this_costs = jnp.asarray(step_cost, dtype=KEY_DTYPE)[jnp.newaxis]
 
-    assert bool(jax.device_get(bi_result.meeting.fwd_has_hashidx)) is True
-    assert bool(jax.device_get(bi_result.meeting.bwd_has_hashidx)) is True
+    bi_result = register_seen(bi_result, hashidxs, mask, is_forward=True)
+    assert bool(jax.device_get(bi_result.seen_forward[goal_slot])) is True
 
-    fwd_hidx, found = bi_result.forward.hashtable.lookup(meeting_state)
-    assert bool(jax.device_get(found)) is True
-    assert int(jax.device_get(fwd_hidx.index)) == int(
-        jax.device_get(bi_result.meeting.fwd_hashidx.index)
+    # Meeting is a pure gather against the opposite frontier's seen flags/costs.
+    found_mask, opposite_costs, total_costs = detect_meeting(
+        bi_result, hashidxs, mask, this_costs, is_forward=True
+    )
+    assert bool(jax.device_get(found_mask[0])) is True
+    assert float(jax.device_get(opposite_costs[0])) == 0.0
+
+    bi_result.meeting = update_meeting_point(
+        bi_result.meeting,
+        found_mask,
+        hashidxs,
+        this_costs,
+        opposite_costs,
+        total_costs,
+        is_forward=True,
     )
 
-    parent = bi_result.forward.parent[bi_result.meeting.fwd_hashidx.index]
-    assert int(jax.device_get(parent.hashidx.index)) == int(jax.device_get(start_hashidx.index))
-    assert int(jax.device_get(parent.action)) == action
-
-    path = reconstruct_bidirectional_path(bi_result, puzzle)
-    assert _states_equal(path[0][1], start)
-    assert _states_equal(path[-1][1], goal)
-    assert [a for a, _ in path] == [-1, action]
-    _assert_path_replays_to_goal(puzzle, solve_config, path, goal)
-
-
-def test_materialize_meeting_point_hashidxs_materializes_backward_edge_only_meeting():
-    puzzle = SlidePuzzle(size=2)
-    solve_config, goal = _make_valid_slide_solve_config(puzzle)
-    start, _, _ = _find_one_step_start_to_goal(puzzle, solve_config, goal)
-    inverse_solveconfig = puzzle.hindsight_transform(solve_config, start)
-
-    bi_result = build_bi_search_result(
-        statecls=puzzle.State,
-        batch_size=8,
-        max_nodes=64,
-        action_size=puzzle.action_size,
-    )
-
-    (
-        _,
-        fwd_current,
-        _,
-        _,
-        bwd_current,
-        bwd_states,
-    ) = initialize_bi_loop_common(bi_result, puzzle, solve_config, start)
-
-    goal_hashidx = bwd_current.hashidx[0]
-    assert _states_equal(jax.tree_util.tree_map(lambda x: x[0], bwd_states), goal)
-    action, step_cost = _find_inverse_action_to_start(puzzle, inverse_solveconfig, goal, start)
-    meeting_state = start
-    meeting_fwd_hashidx = fwd_current.hashidx[0]
-
-    dummy_hashidx = HashIdx.default(())
-    dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
-    bi_result.meeting = MeetingPoint(
-        fwd_hashidx=meeting_fwd_hashidx,
-        bwd_hashidx=dummy_hashidx,
-        fwd_cost=jnp.array(0, dtype=KEY_DTYPE),
-        bwd_cost=step_cost,
-        total_cost=step_cost,
-        found=jnp.array(True),
-        fwd_has_hashidx=jnp.array(True),
-        bwd_has_hashidx=jnp.array(False),
-        fwd_parent_hashidx=dummy_hashidx,
-        fwd_parent_action=dummy_action,
-        bwd_parent_hashidx=goal_hashidx,
-        bwd_parent_action=jnp.array(action, dtype=ACTION_DTYPE),
-    )
-
-    bi_result = materialize_meeting_point_hashidxs(
-        bi_result, puzzle, solve_config, inverse_solveconfig=inverse_solveconfig
-    )
-
-    assert bool(jax.device_get(bi_result.meeting.fwd_has_hashidx)) is True
-    assert bool(jax.device_get(bi_result.meeting.bwd_has_hashidx)) is True
-
-    bwd_hidx, found = bi_result.backward.hashtable.lookup(meeting_state)
-    assert bool(jax.device_get(found)) is True
-    assert int(jax.device_get(bwd_hidx.index)) == int(
+    assert bool(jax.device_get(bi_result.meeting.found)) is True
+    # A shared meeting slot: both views point at the same table entry.
+    assert int(jax.device_get(bi_result.meeting.fwd_hashidx.index)) == int(
         jax.device_get(bi_result.meeting.bwd_hashidx.index)
     )
-
-    parent = bi_result.backward.parent[bi_result.meeting.bwd_hashidx.index]
-    assert int(jax.device_get(parent.hashidx.index)) == int(jax.device_get(goal_hashidx.index))
-    assert int(jax.device_get(parent.action)) == action
+    assert float(jax.device_get(bi_result.meeting.total_cost)) == float(jax.device_get(step_cost))
 
     path = reconstruct_bidirectional_path(bi_result, puzzle)
     assert _states_equal(path[0][1], start)
     assert _states_equal(path[-1][1], goal)
     assert [a for a, _ in path] == [-1, action]
     _assert_path_replays_to_goal(puzzle, solve_config, path, goal)
+
+
+def test_update_meeting_point_records_real_slot_on_float16_overflow():
+    # A first meeting whose summed g-cost overflows KEY_DTYPE (float16) to +inf must
+    # still record the real meeting slot, not flip found=True while pointing at the
+    # build-time sentinel (which would corrupt stamping/reconstruction).
+    dummy = HashIdx.default(())
+    meeting = MeetingPoint(
+        fwd_hashidx=dummy,
+        bwd_hashidx=dummy,
+        fwd_cost=jnp.array(jnp.inf, dtype=KEY_DTYPE),
+        bwd_cost=jnp.array(jnp.inf, dtype=KEY_DTYPE),
+        total_cost=jnp.array(jnp.inf, dtype=KEY_DTYPE),
+        found=jnp.array(False),
+    )
+
+    real_slot = 5
+    hashidxs = HashIdx(index=jnp.array([real_slot], dtype=dummy.index.dtype))
+    found_mask = jnp.array([True])
+    this_costs = jnp.array([40000.0], dtype=KEY_DTYPE)
+    opposite_costs = jnp.array([40000.0], dtype=KEY_DTYPE)
+    total_costs = (this_costs + opposite_costs).astype(KEY_DTYPE)
+    assert bool(jax.device_get(jnp.isinf(total_costs[0]))), "expected float16 overflow"
+
+    out = update_meeting_point(
+        meeting,
+        found_mask,
+        hashidxs,
+        this_costs,
+        opposite_costs,
+        total_costs,
+        is_forward=True,
+    )
+
+    assert bool(jax.device_get(out.found)) is True
+    assert int(jax.device_get(out.fwd_hashidx.index)) == real_slot
+    assert int(jax.device_get(out.bwd_hashidx.index)) == real_slot
+    assert int(jax.device_get(out.fwd_hashidx.index)) != int(jax.device_get(dummy.index))

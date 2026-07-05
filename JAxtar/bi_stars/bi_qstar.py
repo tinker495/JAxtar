@@ -29,10 +29,10 @@ from JAxtar.search_build_spec import (
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
+    _adopt_shared_hashtable,
     build_bi_search_result,
     common_bi_loop_condition,
     initialize_bi_loop_common,
-    materialize_meeting_point_hashidxs,
     stamp_bi_solved_from_meeting,
     build_bi_deferred_expand_direction,
 )
@@ -199,11 +199,14 @@ def _bi_qstar_loop_builder(
                     optimal_mask_flat = unique_mask & candidate_mask
                     optimal_mask = optimal_mask_flat.reshape(action_size, sr_batch_size)
 
-                    found_reshaped = found.reshape(action_size, sr_batch_size)
                     old_dists = search_result.get_dist(current_hash_idxs).reshape(
                         action_size, sr_batch_size
                     )
-                    need_compute = optimal_mask & ~found_reshaped
+                    # Reuse a stored value only when THIS direction already evaluated
+                    # the state; the shared-table `found` also fires for states seen
+                    # only by the opposite frontier (this-side dist still +inf).
+                    this_seen = jnp.isfinite(old_dists)
+                    need_compute = optimal_mask & ~this_seen
 
                     flat_states = neighbour_look_ahead.flatten()
                     flat_need_compute = need_compute.flatten()
@@ -216,7 +219,7 @@ def _bi_qstar_loop_builder(
                         sr_batch_size,
                     ).reshape(action_size, sr_batch_size)
 
-                    dists = jnp.where(found_reshaped, old_dists, computed_heuristic_vals)
+                    dists = jnp.where(this_seen, old_dists, computed_heuristic_vals)
                     dists = jnp.where(filled_tiles, dists, jnp.inf).astype(KEY_DTYPE)
                     neighbour_keys = (cost_weight * look_ahead_costs + dists).astype(KEY_DTYPE)
                 else:
@@ -250,11 +253,16 @@ def _bi_qstar_loop_builder(
                     if use_q:
                         step_cost = ncosts.flatten().astype(KEY_DTYPE)
                         q_old = old_dists.astype(KEY_DTYPE) + step_cost
+                        # Merge a stored Q only when THIS direction produced it. Under
+                        # the shared table `found` also fires for opposite-only states
+                        # whose this-side dist is +inf, which would corrupt the
+                        # pessimistic max; gate on a finite stored dist instead.
+                        this_seen = jnp.isfinite(old_dists)
                         if pessimistic_update:
-                            q_old_for_max = jnp.where(found, q_old, -jnp.inf)
+                            q_old_for_max = jnp.where(this_seen, q_old, -jnp.inf)
                             dists_flat = jnp.maximum(dists_flat, q_old_for_max)
                         else:
-                            q_old_for_min = jnp.where(found, q_old, jnp.inf)
+                            q_old_for_min = jnp.where(this_seen, q_old, jnp.inf)
                             dists_flat = jnp.minimum(dists_flat, q_old_for_min)
 
                     better_cost_mask = jnp.less(flattened_look_ahead_costs, old_costs)
@@ -347,7 +355,8 @@ def _bi_qstar_loop_builder(
                 loop_state.filled_backward,
             )
 
-        # Expand both directions
+        # Expand both directions, baton-passing the shared hash table between them so
+        # each direction inserts into the table already holding the other's states.
         bi_result, new_fwd_current, new_fwd_states, new_fwd_filled = jax.lax.cond(
             jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
             _expand_forward,
@@ -360,6 +369,8 @@ def _bi_qstar_loop_builder(
             bi_result,
         )
 
+        bi_result = _adopt_shared_hashtable(bi_result, from_forward=True)
+
         bi_result, new_bwd_current, new_bwd_states, new_bwd_filled = jax.lax.cond(
             jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
             _expand_backward,
@@ -371,6 +382,8 @@ def _bi_qstar_loop_builder(
             ),
             bi_result,
         )
+
+        bi_result = _adopt_shared_hashtable(bi_result, from_forward=False)
 
         return BiLoopStateWithStates(
             bi_result=bi_result,
@@ -487,17 +500,10 @@ def bi_qstar_builder(
         loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 
-        inverse_solveconfig = loop_state.inverse_solveconfig
         bi_result = loop_state.bi_result
 
-        # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
-        bi_result = materialize_meeting_point_hashidxs(
-            bi_result,
-            puzzle,
-            solve_config,
-            inverse_solveconfig=inverse_solveconfig,
-        )
-
+        # With the shared table a meeting always carries valid slots on both sides, so
+        # no edge-only materialization is needed before stamping solved fields.
         return stamp_bi_solved_from_meeting(bi_result)
 
     return compile_search_builder(bi_qstar, puzzle, spec.show_compile_time, spec.warmup_inputs)

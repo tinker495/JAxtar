@@ -5,6 +5,18 @@ This module implements the core data structures and utilities for bidirectional 
 Bidirectional search explores from both start and goal simultaneously, reducing
 the search space from O(b^d) to approximately O(b^(d/2)) where b is the branching
 factor and d is the solution depth.
+
+Shared hash table design
+-------------------------
+Both directions store their states in a single, shared `HashTable`. A given state
+therefore occupies the *same* slot index regardless of which direction inserted it.
+Two per-slot boolean arrays, `seen_forward` and `seen_backward`, record which
+direction has registered (committed a g-value / parent for) each slot.
+
+This turns meeting detection into a pure array gather: after a direction inserts a
+batch it already knows each state's shared slot, so "did the opposite frontier reach
+this state?" is just `seen_opposite[slot]`, and the opposite g-value is
+`opposite.cost[slot]`. No second hash-table probe is needed.
 """
 
 from typing import Any
@@ -36,33 +48,25 @@ class MeetingPoint:
     """
     Tracks the best known meeting point between forward and backward search frontiers.
 
+    With a shared hash table the meeting state lives at a single slot common to both
+    directions, so `fwd_hashidx == bwd_hashidx`. Both fields are kept because path
+    reconstruction walks the two directions' independent parent chains from that slot.
+
     Attributes:
-        fwd_hashidx: Hash index of meeting state in forward hashtable
-        bwd_hashidx: Hash index of meeting state in backward hashtable
+        fwd_hashidx: Shared-table slot of the meeting state (forward view)
+        bwd_hashidx: Shared-table slot of the meeting state (backward view); equals fwd_hashidx
         fwd_cost: g-value from start to meeting point (forward direction)
         bwd_cost: g-value from goal to meeting point (backward direction)
         total_cost: fwd_cost + bwd_cost (total path cost through this meeting point)
-        found: Boolean indicating whether a valid meeting point has been discovered
+        found: Whether a valid meeting point has been discovered
     """
 
-    # Primary representation (legacy): both meeting states live in both hash tables.
     fwd_hashidx: FieldDescriptor.scalar(dtype=HashIdx)
     bwd_hashidx: FieldDescriptor.scalar(dtype=HashIdx)
     fwd_cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
     bwd_cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
     total_cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
     found: FieldDescriptor.scalar(dtype=jnp.bool_)
-
-    # Extended representation for deferred variants:
-    # During look-ahead we may discover a meeting state without inserting it into the
-    # current direction's hash table. In that case we store the last edge (parent, action)
-    # so the meeting state can be materialized later (or reconstructed without insertion).
-    fwd_has_hashidx: FieldDescriptor.scalar(dtype=jnp.bool_)
-    bwd_has_hashidx: FieldDescriptor.scalar(dtype=jnp.bool_)
-    fwd_parent_hashidx: FieldDescriptor.scalar(dtype=HashIdx)
-    fwd_parent_action: FieldDescriptor.scalar(dtype=ACTION_DTYPE)
-    bwd_parent_hashidx: FieldDescriptor.scalar(dtype=HashIdx)
-    bwd_parent_action: FieldDescriptor.scalar(dtype=ACTION_DTYPE)
 
 
 @base_dataclass(static_fields=("action_size",))
@@ -71,17 +75,25 @@ class BiDirectionalSearchResult:
     Container for bidirectional search state, holding both forward and backward
     SearchResult instances plus meeting point information.
 
+    Both directions share a single hash table (`forward.hashtable is backward.hashtable`
+    at loop boundaries); the `seen_*` arrays are indexed by that shared slot space and
+    record per-direction registration.
+
     Attributes:
         forward: SearchResult for start -> goal direction
         backward: SearchResult for goal -> start direction
         action_size: Number of actions available (static)
         meeting: Best known meeting point between frontiers
+        seen_forward: Per-slot mask of states registered by the forward direction
+        seen_backward: Per-slot mask of states registered by the backward direction
     """
 
     forward: SearchResult
     backward: SearchResult
     action_size: int
     meeting: MeetingPoint
+    seen_forward: chex.Array
+    seen_backward: chex.Array
 
     @property
     def forward_capacity(self) -> int:
@@ -97,8 +109,13 @@ class BiDirectionalSearchResult:
 
     @property
     def total_generated(self) -> int:
-        """Total nodes generated across both directions."""
-        return self.forward.generated_size + self.backward.generated_size
+        """Distinct states generated across both directions.
+
+        Forward and backward share one hash table, so its size already counts the
+        union of states from both frontiers (`forward.generated_size` equals
+        `backward.generated_size`).
+        """
+        return self.forward.generated_size
 
     def to_solution_trace(
         self,
@@ -139,7 +156,7 @@ def build_bi_search_result(
 ) -> BiDirectionalSearchResult:
     """
     Creates a new BiDirectionalSearchResult with initialized forward and backward
-    SearchResult instances.
+    SearchResult instances backed by a single shared hash table.
 
     NOTE: This helper is JAX-traceable and can be called inside a jitted
     `init_loop_state(...)` (mirroring `JAxtar.stars` patterns). Keep in mind it
@@ -148,7 +165,7 @@ def build_bi_search_result(
     Args:
         statecls: The state class for the puzzle
         batch_size: Batch size for parallel processing
-        max_nodes: Maximum nodes per direction (total will be 2x)
+        max_nodes: Shared hash-table capacity (both directions share this budget)
         action_size: Number of actions
         pop_ratio: Controls beam width
         min_pop: Minimum nodes to pop per batch
@@ -157,9 +174,6 @@ def build_bi_search_result(
     Returns:
         BiDirectionalSearchResult with initialized data structures
     """
-    # Note: Both forward and backward use the default seed (42) in SearchResult.build.
-    # This is acceptable since they are separate hash tables with independent state storage.
-    # We pass pop_ratio and min_pop positionally to avoid triggering JIT tracing issues.
     forward = SearchResult.build(
         statecls,
         batch_size,
@@ -178,10 +192,17 @@ def build_bi_search_result(
         min_pop,
         parant_with_costs=parant_with_costs,
     )
+    # Share ONE hash table between both directions so a state maps to a single slot
+    # index across the whole search. Backward's own table (same seed/geometry) is
+    # discarded; its cost/dist/parent buffers stay valid because they are sized by the
+    # identical table geometry.
+    backward.hashtable = forward.hashtable
 
-    # Initialize meeting point as not found with infinite cost
+    seen_shape = forward.hashtable.table.shape.batch
+    seen_forward = jnp.zeros(seen_shape, dtype=jnp.bool_)
+    seen_backward = jnp.zeros(seen_shape, dtype=jnp.bool_)
+
     dummy_hashidx = HashIdx.default(())
-    dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
     meeting = MeetingPoint(
         fwd_hashidx=dummy_hashidx,
         bwd_hashidx=dummy_hashidx,
@@ -189,12 +210,6 @@ def build_bi_search_result(
         bwd_cost=jnp.array(jnp.inf, dtype=KEY_DTYPE),
         total_cost=jnp.array(jnp.inf, dtype=KEY_DTYPE),
         found=jnp.array(False),
-        fwd_has_hashidx=jnp.array(True),
-        bwd_has_hashidx=jnp.array(True),
-        fwd_parent_hashidx=dummy_hashidx,
-        fwd_parent_action=dummy_action,
-        bwd_parent_hashidx=dummy_hashidx,
-        bwd_parent_action=dummy_action,
     )
 
     return BiDirectionalSearchResult(
@@ -202,6 +217,8 @@ def build_bi_search_result(
         backward=backward,
         action_size=action_size,
         meeting=meeting,
+        seen_forward=seen_forward,
+        seen_backward=seen_backward,
     )
 
 
@@ -271,52 +288,72 @@ class BiLoopStateWithStates:
     filled_backward: chex.Array
 
 
-def check_intersection(
-    expanded_states: Puzzle.State,
-    expanded_costs: chex.Array,
-    expanded_mask: chex.Array,
-    opposite_sr: SearchResult,
-) -> tuple[chex.Array, HashIdx, chex.Array, chex.Array]:
+def _adopt_shared_hashtable(bi_result: BiDirectionalSearchResult, from_forward: bool):
+    """Copy the shared hash table from one direction onto the other.
+
+    Both directions must insert into the *same* table for slot indices to be shared.
+    Since JAX structures are immutable, each expansion produces a new table object on
+    the direction that ran; this baton-passes it to the other direction so the next
+    insert (and `generated_size`) sees the up-to-date shared table.
     """
-    Check if any expanded states exist in the opposite direction's hash table.
+    if from_forward:
+        bi_result.backward.hashtable = bi_result.forward.hashtable
+    else:
+        bi_result.forward.hashtable = bi_result.backward.hashtable
+    return bi_result
 
-    This is the core operation for detecting when forward and backward frontiers
-    meet. When a state is found in both hash tables, we have discovered a potential
-    path from start to goal.
 
-    Args:
-        expanded_states: States that were just expanded
-        expanded_costs: g-values for the expanded states (from this direction)
-        expanded_mask: Boolean mask indicating valid expanded states
-        opposite_sr: SearchResult for the opposite direction
+def detect_meeting(
+    bi_result: BiDirectionalSearchResult,
+    hashidxs: HashIdx,
+    mask: chex.Array,
+    this_costs: chex.Array,
+    is_forward: bool,
+) -> tuple[chex.Array, chex.Array, chex.Array]:
+    """Detect frontier meetings using the shared table + per-direction seen flags.
+
+    `hashidxs` are shared-table slots for states this direction just registered. A
+    state is a meeting point iff the opposite direction has also registered its slot,
+    so the check and the opposite g-value are direct array gathers — no hash probe.
 
     Returns:
-        tuple of:
-            - found_mask: Boolean mask where True indicates state exists in opposite HT
-            - opposite_hashidx: Hash indices of found states in opposite HT
-            - opposite_costs: g-values of found states in opposite direction
-            - total_costs: Sum of costs from both directions (potential path cost)
+        found_mask: True where `mask` and the opposite frontier has registered the slot
+        opposite_costs: opposite-direction g-values at those slots
+        total_costs: this_costs + opposite_costs
     """
-    # Look up expanded states in opposite hash table
-    opposite_hashidx, found = opposite_sr.hashtable.lookup_parallel(expanded_states, expanded_mask)
+    slots = hashidxs.index
+    if is_forward:
+        seen_opposite = bi_result.seen_backward
+        opposite_cost = bi_result.backward.cost
+    else:
+        seen_opposite = bi_result.seen_forward
+        opposite_cost = bi_result.forward.cost
 
-    # Get costs from opposite direction for found states
-    opposite_costs = opposite_sr.get_cost(opposite_hashidx)
+    found_mask = jnp.logical_and(mask, seen_opposite[slots])
+    opposite_costs = opposite_cost[slots]
+    total_costs = (this_costs + opposite_costs).astype(KEY_DTYPE)
+    return found_mask, opposite_costs, total_costs
 
-    # Total path cost through this meeting point
-    total_costs = expanded_costs + opposite_costs
 
-    # Only consider valid intersections
-    found_mask = jnp.logical_and(found, expanded_mask)
-
-    return found_mask, opposite_hashidx, opposite_costs, total_costs
+def register_seen(
+    bi_result: BiDirectionalSearchResult,
+    hashidxs: HashIdx,
+    mask: chex.Array,
+    is_forward: bool,
+) -> BiDirectionalSearchResult:
+    """Mark the given shared slots as registered in this direction (monotone OR)."""
+    slots = hashidxs.index
+    if is_forward:
+        bi_result.seen_forward = bi_result.seen_forward.at[slots].max(mask)
+    else:
+        bi_result.seen_backward = bi_result.seen_backward.at[slots].max(mask)
+    return bi_result
 
 
 def update_meeting_point(
     meeting: MeetingPoint,
     found_mask: chex.Array,
-    this_hashidxs: HashIdx,
-    opposite_hashidxs: HashIdx,
+    hashidxs: HashIdx,
     this_costs: chex.Array,
     opposite_costs: chex.Array,
     total_costs: chex.Array,
@@ -327,297 +364,64 @@ def update_meeting_point(
 
     Args:
         meeting: Current best meeting point
-        found_mask: Mask indicating which states intersect with opposite frontier
-        this_hashidxs: Hash indices in the current direction's hash table
-        opposite_hashidxs: Hash indices in the opposite direction's hash table
-        this_costs: g-values from current direction
-        opposite_costs: g-values from opposite direction
-        total_costs: Sum of costs (this_costs + opposite_costs)
+        found_mask: Mask indicating which candidates intersect the opposite frontier
+        hashidxs: Shared-table slots of the candidate states
+        this_costs: g-values from the current direction
+        opposite_costs: g-values from the opposite direction
+        total_costs: this_costs + opposite_costs
         is_forward: True if this direction is forward, False if backward
 
     Returns:
-        Updated MeetingPoint with best known meeting point
+        Updated MeetingPoint with the best known meeting point
     """
-    import jax
+    # Pick the cheapest genuine intersection. Rank found candidates strictly below every
+    # non-found slot (which sit at +inf), clipping so that a found candidate whose summed
+    # cost overflowed KEY_DTYPE (float16, max ~65504) to +inf still outranks non-found —
+    # otherwise argmin over all-+inf could land on a non-meeting slot.
+    rank = jnp.where(found_mask, jnp.minimum(total_costs.astype(jnp.float32), 1e30), jnp.inf)
+    best_new_idx = jnp.argmin(rank)
+    best_new_cost = jnp.where(found_mask, total_costs, jnp.inf)[best_new_idx]
 
-    # Find the best meeting point among newly found intersections
-    # Set non-found entries to inf so they don't affect argmin
-    masked_total_costs = jnp.where(found_mask, total_costs, jnp.inf)
-    best_new_idx = jnp.argmin(masked_total_costs)
-    best_new_cost = masked_total_costs[best_new_idx]
-
-    # Check if any valid intersection was found
     any_found = found_mask.any()
+    # Always record the FIRST genuine meeting, even if its summed cost overflowed float16
+    # to +inf (initial meeting.total_cost is also +inf, so a strict `<` would reject it
+    # and leave `found=True` pointing at the build-time sentinel slot). Afterwards, only
+    # replace the recorded meeting when a strictly cheaper one appears.
+    first_meeting = jnp.logical_and(any_found, jnp.logical_not(meeting.found))
+    strictly_better = jnp.logical_and(any_found, best_new_cost < meeting.total_cost)
+    record = jnp.logical_or(first_meeting, strictly_better)
 
-    # Update meeting point if new path is better
-    better = jnp.logical_and(any_found, best_new_cost < meeting.total_cost)
-
-    # Select appropriate indices based on direction
+    best_hashidx = hashidxs[best_new_idx]
+    this_best = this_costs[best_new_idx].astype(KEY_DTYPE)
+    opposite_best = opposite_costs[best_new_idx].astype(KEY_DTYPE)
     if is_forward:
-        new_fwd_hashidx = this_hashidxs[best_new_idx]
-        new_bwd_hashidx = opposite_hashidxs[best_new_idx]
-        new_fwd_cost = this_costs[best_new_idx]
-        new_bwd_cost = opposite_costs[best_new_idx]
+        new_fwd_cost, new_bwd_cost = this_best, opposite_best
     else:
-        new_fwd_hashidx = opposite_hashidxs[best_new_idx]
-        new_bwd_hashidx = this_hashidxs[best_new_idx]
-        new_fwd_cost = opposite_costs[best_new_idx]
-        new_bwd_cost = this_costs[best_new_idx]
-
-    # Use jax.lax.cond to conditionally update the meeting point
-    # This handles HashIdx correctly since it returns one branch or the other
-    dummy_hashidx = HashIdx.default(())
-    dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
+        new_fwd_cost, new_bwd_cost = opposite_best, this_best
 
     def _update_meeting(_):
         return MeetingPoint(
-            fwd_hashidx=new_fwd_hashidx,
-            bwd_hashidx=new_bwd_hashidx,
+            fwd_hashidx=best_hashidx,
+            bwd_hashidx=best_hashidx,
             fwd_cost=new_fwd_cost,
             bwd_cost=new_bwd_cost,
-            total_cost=best_new_cost,
+            total_cost=best_new_cost.astype(KEY_DTYPE),
             found=jnp.array(True),
-            fwd_has_hashidx=jnp.array(True),
-            bwd_has_hashidx=jnp.array(True),
-            fwd_parent_hashidx=dummy_hashidx,
-            fwd_parent_action=dummy_action,
-            bwd_parent_hashidx=dummy_hashidx,
-            bwd_parent_action=dummy_action,
         )
 
     def _keep_meeting(_):
+        # `record` already covers the first-meeting case, so when we keep, `found` is
+        # unchanged: either no meeting was found, or one was already recorded.
         return MeetingPoint(
             fwd_hashidx=meeting.fwd_hashidx,
             bwd_hashidx=meeting.bwd_hashidx,
             fwd_cost=meeting.fwd_cost,
             bwd_cost=meeting.bwd_cost,
             total_cost=meeting.total_cost,
-            found=jnp.logical_or(meeting.found, any_found),
-            fwd_has_hashidx=meeting.fwd_has_hashidx,
-            bwd_has_hashidx=meeting.bwd_has_hashidx,
-            fwd_parent_hashidx=meeting.fwd_parent_hashidx,
-            fwd_parent_action=meeting.fwd_parent_action,
-            bwd_parent_hashidx=meeting.bwd_parent_hashidx,
-            bwd_parent_action=meeting.bwd_parent_action,
+            found=meeting.found,
         )
 
-    return jax.lax.cond(better, _update_meeting, _keep_meeting, None)
-
-
-def materialize_meeting_point_hashidxs(
-    bi_result: BiDirectionalSearchResult,
-    puzzle: Puzzle,
-    solve_config: Puzzle.SolveConfig,
-    inverse_solveconfig: Puzzle.SolveConfig | None = None,
-) -> BiDirectionalSearchResult:
-    """Ensure meeting point has hashidxs in both directions.
-
-    For deferred variants we may have a meeting point represented via a last-edge
-    (parent_hashidx, action) on one side. This function materializes the meeting
-    state into the missing hash table(s) with at most one lookup+insert per side.
-    """
-
-    dummy_hashidx = HashIdx.default(())
-    dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
-
-    def _add_batch_dim(state: Puzzle.State) -> Puzzle.State:
-        return jax.tree_util.tree_map(lambda x: x[jnp.newaxis, ...], state)
-
-    def _strip_batch_dim(state: Puzzle.State) -> Puzzle.State:
-        return jax.tree_util.tree_map(lambda x: x[0], state)
-
-    def _compute_from_fwd_edge(
-        bi_result: BiDirectionalSearchResult, meeting: MeetingPoint
-    ) -> Puzzle.State:
-        parent_state = bi_result.forward.hashtable[meeting.fwd_parent_hashidx]
-        parent_b = _add_batch_dim(parent_state)
-        action_b = jnp.array([meeting.fwd_parent_action], dtype=ACTION_DTYPE)
-        filled_b = jnp.array([True])
-        child_b, _ = puzzle.batched_get_actions(solve_config, parent_b, action_b, filled_b)
-        return _strip_batch_dim(child_b)
-
-    def _compute_from_bwd_edge(
-        bi_result: BiDirectionalSearchResult, meeting: MeetingPoint
-    ) -> Puzzle.State:
-        backward_solve_config = solve_config if inverse_solveconfig is None else inverse_solveconfig
-        parent_state = bi_result.backward.hashtable[meeting.bwd_parent_hashidx]
-        parent_b = _add_batch_dim(parent_state)
-        filled_b = jnp.array([True])
-        inv_neigh, _ = puzzle.batched_get_inverse_neighbours(
-            backward_solve_config, parent_b, filled_b
-        )
-        a = meeting.bwd_parent_action.astype(jnp.int32)
-        child = inv_neigh[a, 0]
-        return child
-
-    def _pick_meeting_state(
-        bi_result: BiDirectionalSearchResult, meeting: MeetingPoint
-    ) -> Puzzle.State:
-        # Prefer an existing hashidx (cheap); fallback to edge materialization.
-        def _from_fwd(args):
-            bi_result, meeting = args
-            return bi_result.forward.hashtable[meeting.fwd_hashidx]
-
-        def _from_bwd(args):
-            bi_result, meeting = args
-            return bi_result.backward.hashtable[meeting.bwd_hashidx]
-
-        def _from_edge(args):
-            bi_result, meeting = args
-            return jax.lax.cond(
-                meeting.fwd_has_hashidx,
-                _from_fwd,
-                lambda args: _compute_from_fwd_edge(args[0], args[1]),
-                args,
-            )
-
-        args = (bi_result, meeting)
-        return jax.lax.cond(
-            meeting.fwd_has_hashidx,
-            _from_fwd,
-            lambda args: jax.lax.cond(meeting.bwd_has_hashidx, _from_bwd, _from_edge, args),
-            args,
-        )
-
-    def _materialize_side(
-        sr: SearchResult,
-        meeting_state: Puzzle.State,
-        parent_hashidx: HashIdx,
-        parent_action: chex.Array,
-        desired_cost: chex.Array,
-    ) -> tuple[SearchResult, HashIdx]:
-        existing_hashidx, exists = sr.hashtable.lookup(meeting_state)
-
-        def _use_existing(_):
-            return sr, existing_hashidx
-
-        def _insert_new(_):
-            sr.hashtable, _, new_hashidx = sr.hashtable.insert(meeting_state)
-            return sr, new_hashidx
-
-        sr, hashidx = jax.lax.cond(exists, _use_existing, _insert_new, None)
-
-        # Ensure the stored g/parent are compatible with meeting reconstruction.
-        old_cost = sr.get_cost(hashidx)
-        better = desired_cost < old_cost
-
-        sr.cost = sr.cost.at[hashidx.index].set(
-            jnp.where(better, desired_cost.astype(KEY_DTYPE), old_cost.astype(KEY_DTYPE))
-        )
-        # `set_as_condition` expects the condition shape to match the selected
-        # update slots. For this scalar materialization update, make both the
-        # index and condition explicitly one-element batches.
-        parent_update_index = jnp.asarray(hashidx.index)[jnp.newaxis]
-        parent_update_mask = jnp.asarray(better, dtype=jnp.bool_)[jnp.newaxis]
-        sr.parent = sr.parent.at[parent_update_index].set_as_condition(
-            parent_update_mask,
-            Parent(hashidx=parent_hashidx, action=parent_action),
-        )
-        return sr, hashidx
-
-    def _materialize_if_needed(bi_result: BiDirectionalSearchResult) -> BiDirectionalSearchResult:
-        meeting = bi_result.meeting
-        meeting_state = _pick_meeting_state(bi_result, meeting)
-
-        def _mat_fwd(args):
-            bi_result, meeting_state = args
-            meeting0 = bi_result.meeting
-            sr, hidx = _materialize_side(
-                bi_result.forward,
-                meeting_state,
-                meeting0.fwd_parent_hashidx,
-                meeting0.fwd_parent_action,
-                meeting0.fwd_cost,
-            )
-            bi_result.forward = sr
-            bi_result.meeting = MeetingPoint(
-                fwd_hashidx=hidx,
-                bwd_hashidx=meeting0.bwd_hashidx,
-                fwd_cost=meeting0.fwd_cost,
-                bwd_cost=meeting0.bwd_cost,
-                total_cost=meeting0.total_cost,
-                found=meeting0.found,
-                fwd_has_hashidx=jnp.array(True),
-                bwd_has_hashidx=meeting0.bwd_has_hashidx,
-                fwd_parent_hashidx=dummy_hashidx,
-                fwd_parent_action=dummy_action,
-                bwd_parent_hashidx=meeting0.bwd_parent_hashidx,
-                bwd_parent_action=meeting0.bwd_parent_action,
-            )
-            return bi_result
-
-        def _mat_bwd(args):
-            bi_result, meeting_state = args
-            meeting0 = bi_result.meeting
-            sr, hidx = _materialize_side(
-                bi_result.backward,
-                meeting_state,
-                meeting0.bwd_parent_hashidx,
-                meeting0.bwd_parent_action,
-                meeting0.bwd_cost,
-            )
-            bi_result.backward = sr
-            bi_result.meeting = MeetingPoint(
-                fwd_hashidx=meeting0.fwd_hashidx,
-                bwd_hashidx=hidx,
-                fwd_cost=meeting0.fwd_cost,
-                bwd_cost=meeting0.bwd_cost,
-                total_cost=meeting0.total_cost,
-                found=meeting0.found,
-                fwd_has_hashidx=meeting0.fwd_has_hashidx,
-                bwd_has_hashidx=jnp.array(True),
-                fwd_parent_hashidx=meeting0.fwd_parent_hashidx,
-                fwd_parent_action=meeting0.fwd_parent_action,
-                bwd_parent_hashidx=dummy_hashidx,
-                bwd_parent_action=dummy_action,
-            )
-            return bi_result
-
-        bi_result = jax.lax.cond(
-            jnp.logical_and(meeting.found, jnp.logical_not(meeting.fwd_has_hashidx)),
-            _mat_fwd,
-            lambda x: x[0],
-            (bi_result, meeting_state),
-        )
-        meeting = bi_result.meeting
-        bi_result = jax.lax.cond(
-            jnp.logical_and(meeting.found, jnp.logical_not(meeting.bwd_has_hashidx)),
-            _mat_bwd,
-            lambda x: x[0],
-            (bi_result, meeting_state),
-        )
-
-        # Refresh costs from tables for consistency.
-        meeting = bi_result.meeting
-
-        def _refresh(_):
-            fwd_cost = bi_result.forward.get_cost(meeting.fwd_hashidx)
-            bwd_cost = bi_result.backward.get_cost(meeting.bwd_hashidx)
-            total = (fwd_cost + bwd_cost).astype(KEY_DTYPE)
-            return MeetingPoint(
-                fwd_hashidx=meeting.fwd_hashidx,
-                bwd_hashidx=meeting.bwd_hashidx,
-                fwd_cost=fwd_cost.astype(KEY_DTYPE),
-                bwd_cost=bwd_cost.astype(KEY_DTYPE),
-                total_cost=total,
-                found=meeting.found,
-                fwd_has_hashidx=jnp.array(True),
-                bwd_has_hashidx=jnp.array(True),
-                fwd_parent_hashidx=dummy_hashidx,
-                fwd_parent_action=dummy_action,
-                bwd_parent_hashidx=dummy_hashidx,
-                bwd_parent_action=dummy_action,
-            )
-
-        bi_result.meeting = jax.lax.cond(
-            meeting.found,
-            _refresh,
-            lambda _: meeting,
-            None,
-        )
-        return bi_result
-
-    return jax.lax.cond(bi_result.meeting.found, _materialize_if_needed, lambda x: x, bi_result)
+    return jax.lax.cond(record, _update_meeting, _keep_meeting, None)
 
 
 def stamp_bi_solved_from_meeting(
@@ -625,9 +429,8 @@ def stamp_bi_solved_from_meeting(
 ) -> BiDirectionalSearchResult:
     """Stamp solved fields (`solved`, `solved_idx`) from `bi_result.meeting`.
 
-    Contract:
-        - For deferred variants, call this after `materialize_meeting_point_hashidxs(...)`
-          so `meeting.{fwd,bwd}_hashidx` is valid in both directions.
+    With a shared table the meeting always carries valid slots in both directions
+    (both frontiers committed the state), so no materialization step is needed.
     """
 
     found = bi_result.meeting.found
@@ -758,9 +561,8 @@ def common_bi_loop_condition(
     fwd_has_nodes = filled_forward.any()
     bwd_has_nodes = filled_backward.any()
 
-    # Check hash table capacity per direction.
-    # If one direction is full, we can still expand the other direction and
-    # potentially intersect with the already-built frontier.
+    # Check shared hash table capacity. Both directions share one table, so
+    # `generated_size` is the shared total; when it is full neither can insert more.
     fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
     bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
     has_work = jnp.logical_or(
@@ -787,16 +589,30 @@ def initialize_bi_loop_common(
 ) -> tuple[chex.Array, Current, Puzzle.State, chex.Array, Current, Puzzle.State]:
     """
     Common initialization logic for bidirectional search loop state.
-    Initializes forward (from start) and backward (from goal) frontiers.
+    Initializes forward (from start) and backward (from goal) frontiers in the
+    shared hash table and marks each root as registered in its direction.
 
     Returns:
        (fwd_filled, fwd_current, fwd_states, bwd_filled, bwd_current, bwd_states)
     """
     sr_batch_size = bi_result.batch_size
 
-    # Initialize forward search (from start)
+    # Forward root: insert start into the shared table.
     bi_result.forward.hashtable, _, fwd_hash_idx = bi_result.forward.hashtable.insert(start)
     bi_result.forward.cost = bi_result.forward.cost.at[fwd_hash_idx.index].set(0)
+
+    # Backward root: adopt the shared table (now holding start), then insert goal.
+    bi_result = _adopt_shared_hashtable(bi_result, from_forward=True)
+    goal = puzzle.solve_config_to_state_transform(solve_config, key=jax.random.PRNGKey(0))
+    bi_result.backward.hashtable, _, bwd_hash_idx = bi_result.backward.hashtable.insert(goal)
+    bi_result.backward.cost = bi_result.backward.cost.at[bwd_hash_idx.index].set(0)
+
+    # Re-sync forward to the shared table (now holding both roots).
+    bi_result = _adopt_shared_hashtable(bi_result, from_forward=False)
+
+    # Register roots in their respective directions.
+    bi_result.seen_forward = bi_result.seen_forward.at[fwd_hash_idx.index].set(True)
+    bi_result.seen_backward = bi_result.seen_backward.at[bwd_hash_idx.index].set(True)
 
     fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
     # Safety parity with `JAxtar.stars.search_base.init_base_loop_state_current`:
@@ -806,24 +622,14 @@ def initialize_bi_loop_common(
     fwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
     fwd_current = Current(hashidx=fwd_hash_idxs, cost=fwd_costs)
 
-    # Initialize backward search (from goal)
-    # Use puzzle-level transform to obtain a concrete goal state.
-    goal = puzzle.solve_config_to_state_transform(solve_config, key=jax.random.PRNGKey(0))
-    bi_result.backward.hashtable, _, bwd_hash_idx = bi_result.backward.hashtable.insert(goal)
-    bi_result.backward.cost = bi_result.backward.cost.at[bwd_hash_idx.index].set(0)
-
     bwd_hash_idxs = xnp.pad(bwd_hash_idx, (0, sr_batch_size - 1))
     bwd_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     bwd_states = xnp.pad(goal, (0, sr_batch_size - 1))
     bwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
     bwd_current = Current(hashidx=bwd_hash_idxs, cost=bwd_costs)
 
-    # Check if start == goal (cost = 0 case)
-    start_in_bwd_idx, start_in_bwd_found = bi_result.backward.hashtable.lookup(start)
-    is_same = jnp.logical_and(start_in_bwd_found, start_in_bwd_idx.index == bwd_hash_idx.index)
-
-    dummy_hashidx = fwd_hash_idx
-    dummy_action = jnp.array(0, dtype=ACTION_DTYPE)
+    # start == goal ⟹ both roots land in the same shared slot.
+    is_same = fwd_hash_idx.index == bwd_hash_idx.index
 
     bi_result.meeting = jax.lax.cond(
         is_same,
@@ -834,12 +640,6 @@ def initialize_bi_loop_common(
             bwd_cost=jnp.array(0.0, dtype=KEY_DTYPE),
             total_cost=jnp.array(0.0, dtype=KEY_DTYPE),
             found=jnp.array(True),
-            fwd_has_hashidx=jnp.array(True),
-            bwd_has_hashidx=jnp.array(True),
-            fwd_parent_hashidx=dummy_hashidx,
-            fwd_parent_action=dummy_action,
-            bwd_parent_hashidx=dummy_hashidx,
-            bwd_parent_action=dummy_action,
         ),
         lambda _: bi_result.meeting,
         None,
@@ -930,7 +730,7 @@ def build_bi_deferred_expand_direction(
         - optimal_mask: (action_size, batch), bool
 
         The bidirectional helper owns only orchestration:
-        PQ insertion -> pop_full_with_actions -> post-pop intersection + meeting update.
+        PQ insertion -> pop_full_with_actions -> post-pop meeting detection.
     """
     action_size = puzzle.action_size
 
@@ -945,11 +745,9 @@ def build_bi_deferred_expand_direction(
     ) -> tuple[BiDirectionalSearchResult, Current, Puzzle.State, chex.Array]:
         if is_forward:
             search_result = bi_result.forward
-            opposite_sr = bi_result.backward
             current_solve_config = solve_config
         else:
             search_result = bi_result.backward
-            opposite_sr = bi_result.forward
             current_solve_config = inverse_solveconfig
 
         sr_batch_size = search_result.batch_size
@@ -1007,7 +805,8 @@ def build_bi_deferred_expand_direction(
             optimal_mask_reshaped,
         )
 
-        # Step 3: Pop and Verify True Intersection
+        # Step 3: Pop and commit into the shared hash table. The returned hashidxs are
+        # shared-table slots, so meeting detection needs no extra hash probe.
         search_result, new_current, new_states, new_filled = search_result.pop_full_with_actions(
             puzzle=puzzle,
             solve_config=current_solve_config,
@@ -1020,28 +819,25 @@ def build_bi_deferred_expand_direction(
         else:
             bi_result.backward = search_result
 
-        (
-            new_found_mask,
-            new_opposite_hashidx,
-            new_opposite_costs,
-            new_total_costs,
-        ) = check_intersection(
-            new_states,
-            new_current.cost,
+        found_mask, opposite_costs, total_costs = detect_meeting(
+            bi_result,
+            new_current.hashidx,
             new_filled,
-            opposite_sr,
+            new_current.cost,
+            is_forward,
         )
 
         bi_result.meeting = update_meeting_point(
             bi_result.meeting,
-            new_found_mask,
+            found_mask,
             new_current.hashidx,
-            new_opposite_hashidx,
             new_current.cost,
-            new_opposite_costs,
-            new_total_costs,
+            opposite_costs,
+            total_costs,
             is_forward,
         )
+
+        bi_result = register_seen(bi_result, new_current.hashidx, new_filled, is_forward)
 
         return bi_result, new_current, new_states, new_filled
 

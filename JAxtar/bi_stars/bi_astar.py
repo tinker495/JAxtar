@@ -35,10 +35,12 @@ from JAxtar.search_build_spec import (
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopState,
+    _adopt_shared_hashtable,
     build_bi_search_result,
-    check_intersection,
     common_bi_loop_condition,
+    detect_meeting,
     initialize_bi_loop_common,
+    register_seen,
     stamp_bi_solved_from_meeting,
     update_meeting_point,
 )
@@ -179,12 +181,10 @@ def _bi_astar_loop_builder(
         """
         if is_forward:
             search_result = bi_result.forward
-            opposite_sr = bi_result.backward
             current_solve_config = solve_config
             get_neighbours_fn = puzzle.batched_get_neighbours
         else:
             search_result = bi_result.backward
-            opposite_sr = bi_result.forward
             current_solve_config = inverse_solveconfig
             get_neighbours_fn = puzzle.batched_get_inverse_neighbours
 
@@ -222,14 +222,23 @@ def _bi_astar_loop_builder(
         flatten_nextcosts = nextcosts.flatten()
         flatten_parents = parent.flatten()
 
-        # Insert into hash table
+        # Insert into the shared hash table. Under the shared-table design `hash_idx`
+        # is the common slot for each neighbour regardless of which direction owns it.
         (
             search_result.hashtable,
-            flatten_new_states_mask,
+            _,
             cheapest_uniques_mask,
             hash_idx,
         ) = search_result.hashtable.parallel_insert(
             flatten_neighbours, flatten_filleds, flatten_nextcosts
+        )
+
+        # "New to THIS direction" must be judged from this direction's own seen flags,
+        # not from the shared-table insert mask: a state the opposite frontier already
+        # inserted is not new to us and its heuristic still needs computing.
+        seen_this = bi_result.seen_forward if is_forward else bi_result.seen_backward
+        flatten_is_new = jnp.logical_and(
+            flatten_filleds, jnp.logical_not(seen_this[hash_idx.index])
         )
 
         # Check optimality
@@ -250,47 +259,45 @@ def _bi_astar_loop_builder(
             flatten_parents,
         )
 
-        # Check intersection with opposite frontier
-        # IMPORTANT: Use flatten_filleds (all valid neighbors), not final_process_mask
-        # We need to check ALL valid expanded states against the opposite hash table,
-        # not just the ones that were newly inserted with optimal costs.
-        # This is because a state might already exist in our hash table but
-        # was just added to the opposite hash table in the current iteration.
-        found_mask, opposite_hashidx, opposite_costs, _ = check_intersection(
-            flatten_neighbours,
-            flatten_nextcosts,
-            flatten_filleds,
-            opposite_sr,
-        )
-
-        # Update meeting point
-        # IMPORTANT: use the g-values stored in this direction's hash table.
-        # `flatten_nextcosts` is the candidate expansion cost and can differ from the
-        # stored (cheapest known) g-value due to duplicates / re-discovery.
+        # Meeting detection via the shared table + per-direction seen flags.
+        # IMPORTANT: check ALL valid neighbours (flatten_filleds), not just newly
+        # committed ones — a state may already live in our table while the opposite
+        # frontier reached it. `hash_idx` are shared slots, so this is a pure gather.
+        # Use the g-values stored in this direction's table (the cheapest known),
+        # which can differ from the candidate `flatten_nextcosts` for re-discoveries.
         this_costs = search_result.get_cost(hash_idx)
-        total_costs = this_costs + opposite_costs
+        found_mask, opposite_costs, total_costs = detect_meeting(
+            bi_result,
+            hash_idx,
+            flatten_filleds,
+            this_costs,
+            is_forward,
+        )
         bi_result.meeting = update_meeting_point(
             bi_result.meeting,
             found_mask,
             hash_idx,
-            opposite_hashidx,
             this_costs,
             opposite_costs,
             total_costs,
             is_forward,
         )
 
+        # Register the states this direction committed so the opposite frontier can
+        # detect the meeting on its own pass.
+        bi_result = register_seen(bi_result, hash_idx, final_process_mask, is_forward)
+
         # Stable partition for efficiency
-        invperm = stable_partition_three(flatten_new_states_mask, final_process_mask)
+        invperm = stable_partition_three(flatten_is_new, final_process_mask)
         flatten_final_process_mask = final_process_mask[invperm]
-        flatten_new_states_mask = flatten_new_states_mask[invperm]
+        flatten_is_new = flatten_is_new[invperm]
         flatten_neighbours = flatten_neighbours[invperm]
         flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)[invperm]
         hash_idx = hash_idx[invperm]
 
         vals = Current(hashidx=hash_idx, cost=flatten_nextcosts).reshape(unflatten_shape)
         neighbours_reshaped = flatten_neighbours.reshape(unflatten_shape)
-        new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
+        new_states_mask = flatten_is_new.reshape(unflatten_shape)
         final_process_mask_reshaped = flatten_final_process_mask.reshape(unflatten_shape)
 
         # Compute heuristic and insert into priority queue
@@ -387,7 +394,8 @@ def _bi_astar_loop_builder(
                 use_heuristic=use_backward_heuristic,
             )
 
-        # Expand both directions
+        # Expand both directions, baton-passing the shared hash table between them so
+        # each direction inserts into the table already holding the other's states.
         bi_result, new_fwd_current, new_fwd_filled = jax.lax.cond(
             jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
             _expand_forward,
@@ -395,12 +403,16 @@ def _bi_astar_loop_builder(
             bi_result,
         )
 
+        bi_result = _adopt_shared_hashtable(bi_result, from_forward=True)
+
         bi_result, new_bwd_current, new_bwd_filled = jax.lax.cond(
             jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
             _expand_backward,
             lambda br: (br, loop_state.current_backward, loop_state.filled_backward),
             bi_result,
         )
+
+        bi_result = _adopt_shared_hashtable(bi_result, from_forward=False)
 
         return BiLoopState(
             bi_result=bi_result,

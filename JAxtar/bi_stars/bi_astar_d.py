@@ -30,10 +30,10 @@ from JAxtar.search_build_spec import (
 from JAxtar.bi_stars.bi_search_base import (
     BiDirectionalSearchResult,
     BiLoopStateWithStates,
+    _adopt_shared_hashtable,
     build_bi_search_result,
     common_bi_loop_condition,
     initialize_bi_loop_common,
-    materialize_meeting_point_hashidxs,
     stamp_bi_solved_from_meeting,
     build_bi_deferred_expand_direction,
 )
@@ -199,12 +199,16 @@ def _bi_astar_d_loop_builder(
                 optimal_mask = optimal_mask_flat.reshape(action_size, sr_batch_size)
 
                 if use_heuristic:
-                    found_reshaped = found.reshape(action_size, sr_batch_size)
                     old_dists = search_result.get_dist(current_hash_idxs).reshape(
                         action_size, sr_batch_size
                     )
+                    # Reuse a stored heuristic only when THIS direction already
+                    # evaluated the state. Under the shared table `found` also fires
+                    # for states seen only by the opposite frontier, whose this-side
+                    # dist is still +inf, so gate on a finite stored dist instead.
+                    this_seen = jnp.isfinite(old_dists)
 
-                    need_compute = optimal_mask & ~found_reshaped
+                    need_compute = optimal_mask & ~this_seen
                     flat_states = neighbour_look_a_head.flatten()
                     flat_need_compute = need_compute.flatten()
 
@@ -217,7 +221,7 @@ def _bi_astar_d_loop_builder(
                     ).reshape(action_size, sr_batch_size)
 
                     heuristic_vals = jnp.where(
-                        found_reshaped,
+                        this_seen,
                         old_dists,
                         computed_heuristic_vals,
                     )
@@ -349,7 +353,8 @@ def _bi_astar_d_loop_builder(
                 loop_state.filled_backward,
             )
 
-        # Expand both directions
+        # Expand both directions, baton-passing the shared hash table between them so
+        # each direction inserts into the table already holding the other's states.
         bi_result, new_fwd_current, new_fwd_states, new_fwd_filled = jax.lax.cond(
             jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
             _expand_forward,
@@ -362,6 +367,8 @@ def _bi_astar_d_loop_builder(
             bi_result,
         )
 
+        bi_result = _adopt_shared_hashtable(bi_result, from_forward=True)
+
         bi_result, new_bwd_current, new_bwd_states, new_bwd_filled = jax.lax.cond(
             jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
             _expand_backward,
@@ -373,6 +380,8 @@ def _bi_astar_d_loop_builder(
             ),
             bi_result,
         )
+
+        bi_result = _adopt_shared_hashtable(bi_result, from_forward=False)
 
         return BiLoopStateWithStates(
             bi_result=bi_result,
@@ -473,17 +482,10 @@ def bi_astar_d_builder(
         loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 
-        inverse_solveconfig = loop_state.inverse_solveconfig
         bi_result = loop_state.bi_result
 
-        # Materialize meeting hashidxs if the best meeting was found via edge-only tracking.
-        bi_result = materialize_meeting_point_hashidxs(
-            bi_result,
-            puzzle,
-            solve_config,
-            inverse_solveconfig=inverse_solveconfig,
-        )
-
+        # With the shared table a meeting always carries valid slots on both sides, so
+        # no edge-only materialization is needed before stamping solved fields.
         return stamp_bi_solved_from_meeting(bi_result)
 
     return compile_search_builder(bi_astar_d, puzzle, spec.show_compile_time, spec.warmup_inputs)
