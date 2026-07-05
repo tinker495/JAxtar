@@ -61,7 +61,8 @@ def _bi_astar_d_loop_builder(
         puzzle: Puzzle instance
         heuristic: Heuristic instance (used for both directions)
         batch_size: Batch size for parallel processing
-        max_nodes: Maximum number of nodes to explore per direction
+        max_nodes: Combined shared hash-table capacity for BOTH directions (forward and
+            backward share one table; this is the total node budget, not per-direction)
         pop_ratio: Ratio controlling beam width
         cost_weight: Weight for path cost in f = cost_weight * g + h
         look_ahead_pruning: Enable look-ahead pruning optimization
@@ -422,7 +423,8 @@ def bi_astar_d_builder(
         puzzle: Puzzle instance (must support batched_get_inverse_neighbours)
         heuristic: Heuristic instance
         batch_size: Number of states to process in parallel per direction
-        max_nodes: Maximum number of nodes to explore per direction
+        max_nodes: Combined shared hash-table capacity for BOTH directions (forward and
+            backward share one table; this is the total node budget, not per-direction)
         pop_ratio: Ratio controlling beam width
         cost_weight: Weight for path cost in f = cost_weight * g + h
         show_compile_time: If True, displays compilation time

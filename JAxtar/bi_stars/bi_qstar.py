@@ -61,7 +61,8 @@ def _bi_qstar_loop_builder(
         puzzle: Puzzle instance
         q_fn: QFunction instance (used for both directions)
         batch_size: Batch size for parallel processing
-        max_nodes: Maximum number of nodes to explore per direction
+        max_nodes: Combined shared hash-table capacity for BOTH directions (forward and
+            backward share one table; this is the total node budget, not per-direction)
         pop_ratio: Ratio controlling beam width
         cost_weight: Weight for path cost in f = cost_weight * g + Q(s,a)
         look_ahead_pruning: Enable look-ahead pruning optimization
@@ -233,9 +234,14 @@ def _bi_qstar_loop_builder(
 
                     dists_flat = q_vals.flatten()
                     if use_q:
-                        distinct_score = (
-                            flattened_look_ahead_costs + dist_sign * 1e-5 * dists_flat
-                        ).astype(KEY_DTYPE)
+                        # Tie-break duplicate states by Q in float32. The 1e-5*Q term sits far
+                        # below the float16 ULP at typical path costs, so a KEY_DTYPE score
+                        # collapses to plain look-ahead cost and the pessimistic (max-Q)
+                        # duplicate choice becomes arbitrary. unique_mask uses this only as a
+                        # sort key, so the wider dtype is free downstream.
+                        distinct_score = flattened_look_ahead_costs.astype(
+                            jnp.float32
+                        ) + dist_sign * 1e-5 * dists_flat.astype(jnp.float32)
                     else:
                         distinct_score = flattened_look_ahead_costs
 
@@ -425,7 +431,8 @@ def bi_qstar_builder(
         puzzle: Puzzle instance (must support batched_get_inverse_neighbours)
         q_fn: QFunction instance for state-action value estimation
         batch_size: Number of states to process in parallel per direction
-        max_nodes: Maximum number of nodes to explore per direction
+        max_nodes: Combined shared hash-table capacity for BOTH directions (forward and
+            backward share one table; this is the total node budget, not per-direction)
         pop_ratio: Ratio controlling beam width
         cost_weight: Weight for path cost in f = cost_weight * g + Q(s,a)
         show_compile_time: If True, displays compilation time

@@ -308,9 +308,15 @@ class IDSearchResult:
 
         new_stack, popped_items = self.stack.pop(batch_size)
 
+        # Stack.pop packs survivors at the TAIL of the popped array on a partial pop:
+        # it gathers indices = size - arange(batch, 0, -1), so when size < batch_size the
+        # low (negative) indices wrap to unwritten default slots at the array head and the
+        # real items land in the last `size` positions. The valid mask must therefore mark
+        # the TAIL, not the head; a head-aligned mask selects default garbage and drops the
+        # real DFS nodes. Reduces to all-True when size >= batch_size.
         valid_count = jnp.minimum(current_size, batch_size)
         indices_range = jnp.arange(batch_size, dtype=jnp.int32)
-        valid_mask = indices_range < valid_count
+        valid_mask = indices_range >= (batch_size - valid_count)
 
         # Recast back to stack native size type if needed
         actual_new_size = jnp.maximum(0, current_size - batch_size).astype(self.stack.size.dtype)

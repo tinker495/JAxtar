@@ -71,7 +71,8 @@ def _bi_astar_loop_builder(
         puzzle: Puzzle instance
         heuristic: Heuristic instance (used for both directions)
         batch_size: Batch size for parallel processing
-        max_nodes: Maximum number of nodes to explore per direction
+        max_nodes: Combined shared hash-table capacity for BOTH directions (forward and
+            backward share one table; this is the total node budget, not per-direction)
         pop_ratio: Ratio controlling beam width
         cost_weight: Weight for path cost in f = cost_weight * g + h
 
@@ -450,7 +451,8 @@ def bi_astar_builder(
                 Must support batched_get_inverse_neighbours for backward search.
         heuristic: Heuristic instance that provides state evaluation.
         batch_size: Number of states to process in parallel per direction.
-        max_nodes: Maximum number of nodes to explore per direction.
+        max_nodes: Combined shared hash-table capacity for BOTH directions (forward and
+            backward share one table; this is the total node budget, not per-direction).
         spec: Shared build-time tuning knobs for search construction.
 
     Returns:

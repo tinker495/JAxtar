@@ -343,21 +343,12 @@ def _id_qstar_loop_builder(
         f_vals = (cost_weight * parent_costs[jnp.newaxis, :] + q_vals).astype(KEY_DTYPE)
         flat_f = f_vals.reshape((flat_size,))
 
-        # --- Optimization: Pruning by Bound (f > bound) ---
-        active_bound = sr.bound
-        f_prune_mask = flat_f > active_bound + 1e-6
-
-        valid_f_pruned = jnp.logical_and(flat_valid, f_prune_mask)
-        min_f_pruned = jnp.min(jnp.where(valid_f_pruned, flat_f, jnp.inf)).astype(KEY_DTYPE)
-
-        # Update next_bound in SR
-        new_next_bound_f = jnp.minimum(sr.next_bound, min_f_pruned).astype(KEY_DTYPE)
-        sr = sr.replace(next_bound=new_next_bound_f)
-        sr_solved = sr_solved.replace(next_bound=new_next_bound_f)
-
-        flat_valid = jnp.logical_and(flat_valid, flat_f <= active_bound + 1e-6)
-
-        # --- Optimization: Deduplication ---
+        # --- Optimization: Deduplication (before the bound split, matching id_astar) ---
+        # Dedup/backtracking must run before deriving next_bound, otherwise duplicate and
+        # backtracking children with f > bound would drag next_bound below the true minimum
+        # f of genuinely-expandable pruned nodes, causing wasted re-expansion thresholds.
+        # expand_and_push(update_next_bound=True) below applies the keep split (f <= bound)
+        # and computes next_bound from the POST-dedup pruned set.
         flat_valid = apply_standard_deduplication(
             flat_neighbours,
             flat_g,
@@ -392,7 +383,7 @@ def _id_qstar_loop_builder(
         return_sr = jax.lax.cond(
             any_solved,
             lambda s: s,
-            lambda s: s.expand_and_push(flat_batch, flat_f, flat_valid, update_next_bound=False),
+            lambda s: s.expand_and_push(flat_batch, flat_f, flat_valid, update_next_bound=True),
             sr_solved,
         )
 
