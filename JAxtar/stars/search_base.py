@@ -618,9 +618,15 @@ class SearchResult:
 
             # Optimization: deduplicate before lookup to avoid redundant hash lookups.
             unique_mask = xnp.unique_mask(current_states, current_costs, filled)
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                current_states, unique_mask
-            )
+            # Capture the hash-pass probe here so the later parallel_insert of these
+            # same states can reuse it instead of hashing them a second time. The probe
+            # is per-state and independent of the mask, so it stays valid as the states
+            # are permuted/merged before insertion (we carry it through identically).
+            (
+                current_hash_idxs,
+                found,
+                current_probe,
+            ) = search_result.hashtable.lookup_parallel_with_probe(current_states, unique_mask)
 
             def _update_lookup(sr: "SearchResult"):
                 return sr.replace(
@@ -646,7 +652,14 @@ class SearchResult:
             # Mask unoptimal keys with infinity
             filtered_key = jnp.where(optimal_mask, key, jnp.inf)
 
-            return search_result, current_states, current_costs, current_dists, filtered_key
+            return (
+                search_result,
+                current_states,
+                current_costs,
+                current_dists,
+                filtered_key,
+                current_probe,
+            )
 
         # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
@@ -655,9 +668,14 @@ class SearchResult:
         stack_size = batch_size * 2
 
         # Initial expansion and filtering
-        search_result, current_states, current_costs, current_dists, min_key = _expand_and_filter(
-            search_result, min_key, min_val
-        )
+        (
+            search_result,
+            current_states,
+            current_costs,
+            current_dists,
+            min_key,
+            current_probe,
+        ) = _expand_and_filter(search_result, min_key, min_val)
         popped0 = jnp.sum(jnp.isfinite(min_key)).astype(jnp.int32)
 
         # Apply unique mask to initial batch to maintain invariant
@@ -668,10 +686,13 @@ class SearchResult:
         # Initialize buffer for overflow (inf)
         buffer_key = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
         buffer_val = Parant_with_Costs.default((batch_size,))
+        # Carry the per-state hash probe alongside states through the merge/sort loop
+        # so the final batch's probe stays aligned with final_states for reuse at insert.
+        buffer_probe = jax.tree.map(jnp.zeros_like, current_probe)
 
         # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
-            search_result, _, _, _, key, _, _, _, _, _ = state
+            search_result, _, _, _, key, _, _, _, _, _, _, _ = state
             pq_not_empty = search_result.priority_queue.size > 0
 
             # Optimization: Stop if batch is mostly full (e.g. 90%)
@@ -692,6 +713,8 @@ class SearchResult:
                 _,
                 delete_calls,
                 popped_total,
+                probe,
+                _buffer_probe,
             ) = state
 
             # Pop new nodes from PQ
@@ -702,9 +725,14 @@ class SearchResult:
             ) = search_result.priority_queue.delete_mins()
 
             # Expand and filter new nodes
-            search_result, new_states, new_costs, new_dists, new_key = _expand_and_filter(
-                search_result, new_key, new_val
-            )
+            (
+                search_result,
+                new_states,
+                new_costs,
+                new_dists,
+                new_key,
+                new_probe,
+            ) = _expand_and_filter(search_result, new_key, new_val)
             new_popped = jnp.sum(jnp.isfinite(new_key)).astype(jnp.int32)
 
             # Merge with existing batch
@@ -713,6 +741,8 @@ class SearchResult:
             stack_dists = jnp.concatenate((dists, new_dists))
             stack_key = jnp.concatenate((key, new_key))
             stack_val = xnp.concatenate((val, new_val))
+            # Concatenate the hash probes in lockstep with the states.
+            stack_probe = jax.tree.map(lambda a, b: jnp.concatenate([a, b]), probe, new_probe)
 
             # Deduplicate across the entire stack (old + new)
             stack_filled = jnp.isfinite(stack_key)
@@ -725,6 +755,8 @@ class SearchResult:
             sorted_states = stack_states[sorted_idx]
             sorted_costs = stack_costs[sorted_idx]
             sorted_dists = stack_dists[sorted_idx]
+            # Permute the probe by the same order so probe[i] stays the hash of states[i].
+            sorted_probe = jax.tree.map(lambda a: a[sorted_idx], stack_probe)
 
             # Split back into current batch and overflow buffer
             return (
@@ -738,6 +770,8 @@ class SearchResult:
                 sorted_val[batch_size:],  # New buffer val
                 delete_calls + jnp.array(1, dtype=jnp.int32),
                 popped_total + new_popped,
+                jax.tree.map(lambda a: a[:batch_size], sorted_probe),
+                jax.tree.map(lambda a: a[batch_size:], sorted_probe),
             )
 
         # Run the loop until we have a full batch of the best available nodes
@@ -752,6 +786,8 @@ class SearchResult:
             overflow_vals,
             delete_calls,
             popped_total,
+            final_probe,
+            _final_buffer_probe,
         ) = jax.lax.while_loop(
             _cond,
             _body,
@@ -766,6 +802,8 @@ class SearchResult:
                 buffer_val,
                 delete_calls0,
                 popped0,
+                current_probe,
+                buffer_probe,
             ),
         )
 
@@ -812,12 +850,16 @@ class SearchResult:
         final_costs = jnp.where(final_process_mask, final_costs, jnp.inf)
         search_result.priority_queue = search_result.priority_queue.insert(return_keys, final_val)
 
+        # Reuse the probe captured during the lookup of these same states (threaded
+        # through the merge/sort loop) so parallel_insert skips its redundant hash pass.
         (
             search_result.hashtable,
             inserted_mask,
             _,
             hash_idx,
-        ) = search_result.hashtable.parallel_insert(final_states, final_process_mask)
+        ) = search_result.hashtable.parallel_insert(
+            final_states, final_process_mask, probe=final_probe
+        )
 
         def _update_inserted(sr: "SearchResult"):
             return sr.replace(
