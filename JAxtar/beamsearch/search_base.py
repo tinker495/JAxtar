@@ -19,6 +19,7 @@ from puxle import Puzzle
 from xtructure import Xtructurable, base_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE
+from JAxtar.expansion_trace import ExpansionTrace
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
@@ -181,6 +182,10 @@ class BeamSearchResult:
             states.append(self.trace_state[node_idx])
         states.reverse()
         return states
+
+    def to_expansion_trace(self) -> ExpansionTrace | None:
+        """This family records no per-node expansion order; adapters skip expansion analysis."""
+        return None
 
     def to_solution_trace(
         self,

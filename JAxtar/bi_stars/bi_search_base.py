@@ -29,6 +29,7 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, HashIdx, base_dataclass, xtructure_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.expansion_trace import ExpansionTrace
 from JAxtar.parent_chain import walk_parent_chain
 from JAxtar.solution_trace import (
     SolutionTrace,
@@ -116,6 +117,10 @@ class BiDirectionalSearchResult:
         `backward.generated_size`).
         """
         return self.forward.generated_size
+
+    def to_expansion_trace(self) -> ExpansionTrace | None:
+        """This family records no per-node expansion order; adapters skip expansion analysis."""
+        return None
 
     def to_solution_trace(
         self,

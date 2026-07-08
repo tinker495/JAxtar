@@ -34,6 +34,7 @@ from .comparison_generator import ComparisonGenerator
 from .config_utils import enrich_config
 from .search_outcome import (
     apply_benchmark_verification,
+    attach_expansion_analysis,
     build_deferred_payload,
     build_evaluation_result_item,
     normalise_search_result,
@@ -41,6 +42,7 @@ from .search_outcome import (
 )
 from .verification import (
     BenchmarkVerification,
+    benchmark_verification_from_exception,
     build_benchmark_action_strings,
     verify_benchmark_path,
 )
@@ -479,82 +481,7 @@ class EvaluationRunner:
             benchmark_sample=benchmark_sample,
         )
 
-        # Extract expansion data for plotting node value distributions
-        if hasattr(search_result, "pop_generation"):
-            expanded_nodes_mask = search_result.pop_generation > -1
-            # Use np.asarray to handle potential JAX arrays on different devices
-            if np.any(np.asarray(expanded_nodes_mask)):
-                pop_generations = np.asarray(search_result.pop_generation[expanded_nodes_mask])
-                costs = np.asarray(search_result.cost[expanded_nodes_mask])
-                dists = np.asarray(search_result.dist[expanded_nodes_mask])
-
-                if pop_generations.size > 0:
-                    analysis_data = {
-                        "pop_generation": pop_generations,
-                        "cost": costs,
-                        "dist": dists,
-                    }
-
-                    # Try to extract states and graph structure (parent indices)
-                    try:
-                        # Extract states
-                        all_states = search_result.hashtable.table
-                        expanded_states = jax.tree_util.tree_map(
-                            lambda x: x[expanded_nodes_mask], all_states
-                        )
-                        expanded_states_np = jax.tree_util.tree_map(
-                            lambda x: np.asarray(x), expanded_states
-                        )
-
-                        # Flatten structured states to a single 2D array (N, -1) for visualization/analysis
-                        leaves = jax.tree_util.tree_leaves(expanded_states_np)
-                        if leaves:
-                            N = leaves[0].shape[0]
-                            flat_states_np = np.concatenate(
-                                [x.reshape(N, -1) for x in leaves], axis=1
-                            )
-                            analysis_data["states"] = flat_states_np
-                        else:
-                            analysis_data["states"] = expanded_states_np
-
-                        # Extract parent structure for graph visualization
-                        # Original indices in the hashtable (0 to capacity)
-                        capacity = expanded_nodes_mask.shape[0]
-                        original_indices = np.arange(capacity)[np.asarray(expanded_nodes_mask)]
-                        analysis_data["original_indices"] = original_indices
-
-                        # Parent indices (pointing to hashtable slots)
-                        if hasattr(search_result, "parent") and hasattr(
-                            search_result.parent, "hashidx"
-                        ):
-                            parents = search_result.parent.hashidx.index
-                            expanded_parents = parents[expanded_nodes_mask]
-                            analysis_data["parent_indices"] = np.asarray(expanded_parents)
-                        if outcome.solved:
-                            try:
-                                solved_hash = int(
-                                    np.asarray(
-                                        jax.device_get(search_result.solved_idx.hashidx.index)
-                                    )
-                                )
-                                analysis_data["solved_index"] = solved_hash
-                            except (
-                                AttributeError,
-                                KeyError,
-                                ValueError,
-                                TypeError,
-                            ) as exc:
-                                self.console.print(
-                                    f"[yellow]Warning: Could not extract solved index: {exc}[/yellow]"
-                                )
-
-                    except (AttributeError, KeyError, ValueError, TypeError) as e:
-                        self.console.print(
-                            f"[yellow]Warning: Could not extract states/parents for "
-                            f"expansion analysis: {e}[/yellow]"
-                        )
-
-                    result_item["expansion_analysis"] = analysis_data
+        attach_expansion_analysis(result_item, search_result)
 
         return result_item, deferred_payload
 
@@ -649,9 +576,7 @@ class EvaluationRunner:
                     try:
                         verify_results[idx] = future.result()
                     except Exception as exc:  # noqa: BLE001
-                        verify_results[idx] = BenchmarkVerification(
-                            benchmark_verification_error=str(exc)
-                        )
+                        verify_results[idx] = benchmark_verification_from_exception(exc)
 
         batched_actual = None
         batched_estimated = None

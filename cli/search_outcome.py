@@ -185,6 +185,26 @@ def build_evaluation_result_item(
     return result_item
 
 
+def attach_expansion_analysis(result_item: dict, search_result: Any) -> None:
+    """Populate ``result_item["expansion_analysis"]`` from the result's Expansion Trace.
+
+    Result families without expansion facts return ``None`` from
+    ``to_expansion_trace`` and leave the item untouched. The dict keys are the
+    legacy plot contract consumed by ``helpers.plots``.
+    """
+    trace = search_result.to_expansion_trace()
+    if trace is None:
+        return
+    result_item["expansion_analysis"] = {
+        "pop_generation": trace.pop_generation,
+        "cost": trace.cost,
+        "dist": trace.dist,
+        "original_indices": trace.original_indices,
+        "parent_indices": trace.parent_indices,
+        "solved_index": trace.solved_index,
+    }
+
+
 def build_deferred_payload(
     *,
     result_item: dict,

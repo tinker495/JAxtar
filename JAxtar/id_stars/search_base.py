@@ -16,6 +16,7 @@ from xtructure.stack import Stack
 
 from helpers.jax_compile import compile_with_example
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
+from JAxtar.expansion_trace import ExpansionTrace
 from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
 from JAxtar.solution_trace import (
     SolutionTrace,
@@ -260,6 +261,10 @@ class IDSearchResult:
         """
         valid_mask = self.solution_actions_arr != ACTION_PAD
         return self.solution_actions_arr[valid_mask]
+
+    def to_expansion_trace(self) -> ExpansionTrace | None:
+        """This family records no per-node expansion order; adapters skip expansion analysis."""
+        return None
 
     def to_solution_trace(
         self,

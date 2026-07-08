@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
 import numpy as np
+
+from JAxtar.expansion_trace import ExpansionTrace
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,16 @@ class SolutionTrace:
             dists=dists,
             requires_replay=requires_replay,
         )
+
+
+class SearchAlgorithmResult(Protocol):
+    """Static seam every search Result class implements for CLI/evaluation adapters."""
+
+    def to_solution_trace(self, *, puzzle: Any | None = None) -> SolutionTrace:
+        ...
+
+    def to_expansion_trace(self) -> ExpansionTrace | None:
+        ...
 
 
 def action_pad_int(action_dtype: Any) -> int:

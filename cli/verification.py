@@ -45,6 +45,11 @@ def build_benchmark_action_strings(
     return labels
 
 
+def benchmark_verification_from_exception(exc: BaseException) -> BenchmarkVerification:
+    """Only sanctioned exception->fact conversion; callers must not construct the fact directly."""
+    return BenchmarkVerification(benchmark_verification_error=str(exc))
+
+
 def _can_verify(benchmark: Any, benchmark_sample: Any, states: Sequence[Any] | None) -> bool:
     return (
         benchmark is not None

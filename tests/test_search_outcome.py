@@ -1,11 +1,14 @@
 import jax.numpy as jnp
+import numpy as np
 
 from cli.search_outcome import (
+    attach_expansion_analysis,
     build_deferred_payload,
     build_evaluation_result_item,
     normalise_search_result,
     with_solution_path,
 )
+from JAxtar.expansion_trace import ExpansionTrace
 from JAxtar.solution_trace import SolutionTrace
 
 
@@ -143,3 +146,44 @@ def test_solution_path_and_verification_facts_cross_outcome_seam():
     assert payload["actual_actions"] == [0]
     assert payload["verify_result"] is True
     assert benchmark.calls == [(sample, ["start", "goal"], ["act-0"])]
+
+
+def test_attach_expansion_analysis_preserves_legacy_keys():
+    trace = ExpansionTrace.from_raw(
+        pop_generation=jnp.array([-1, 0, 1]),
+        cost=jnp.array([9.0, 1.0, 2.0]),
+        dist=jnp.array([9.0, 3.0, 4.0]),
+        parent_indices=jnp.array([5, 0, 1]),
+        solved_index=2,
+    )
+
+    class TracingResult:
+        def to_expansion_trace(self):
+            return trace
+
+    result_item = {"expansion_analysis": None}
+    attach_expansion_analysis(result_item, TracingResult())
+
+    analysis = result_item["expansion_analysis"]
+    assert set(analysis) == {
+        "pop_generation",
+        "cost",
+        "dist",
+        "original_indices",
+        "parent_indices",
+        "solved_index",
+    }
+    np.testing.assert_array_equal(analysis["pop_generation"], [0, 1])
+    np.testing.assert_array_equal(analysis["original_indices"], [1, 2])
+    np.testing.assert_array_equal(analysis["parent_indices"], [0, 1])
+    assert analysis["solved_index"] == 2
+
+
+def test_attach_expansion_analysis_leaves_item_untouched_without_trace():
+    class NoTraceResult:
+        def to_expansion_trace(self):
+            return None
+
+    result_item = {"expansion_analysis": None}
+    attach_expansion_analysis(result_item, NoTraceResult())
+    assert result_item["expansion_analysis"] is None

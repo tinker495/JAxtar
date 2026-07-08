@@ -101,3 +101,26 @@ def test_verify_benchmark_path_noops_when_required_facts_are_missing(
     assert verification == BenchmarkVerification()
     if isinstance(benchmark, RecordingBenchmark):
         assert benchmark.calls == []
+
+
+def test_benchmark_verification_from_exception_wraps_message():
+    from cli.verification import benchmark_verification_from_exception
+
+    fact = benchmark_verification_from_exception(RuntimeError("boom"))
+    assert fact.benchmark_verification_error == "boom"
+    assert fact.matches_optimal_path is None
+    assert fact.path_action_strings is None
+
+
+def test_benchmark_verification_not_constructed_outside_module():
+    """Targeted guard: this contract regressed once (2026-07-09), see ADR-0005."""
+    from pathlib import Path
+
+    cli_dir = Path(__file__).resolve().parents[1] / "cli"
+    offenders = []
+    for source_file in sorted(cli_dir.rglob("*.py")):
+        if source_file.name == "verification.py":
+            continue
+        if "BenchmarkVerification(" in source_file.read_text():
+            offenders.append(source_file.name)
+    assert not offenders, f"direct BenchmarkVerification construction in: {offenders}"

@@ -32,6 +32,7 @@ from JAxtar.annotate import (
     HASH_SIZE_MULTIPLIER,
     KEY_DTYPE,
 )
+from JAxtar.expansion_trace import ExpansionTrace
 from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
@@ -1006,6 +1007,19 @@ class SearchResult:
             states=states,
             costs=costs,
             dists=dists,
+        )
+
+    def to_expansion_trace(search_result) -> ExpansionTrace | None:
+        """Return the host-side expansion trace for evaluation adapters."""
+        solved_index = None
+        if bool(jax.device_get(search_result.solved)):
+            solved_index = int(jax.device_get(search_result.solved_idx.hashidx.index))
+        return ExpansionTrace.from_raw(
+            pop_generation=search_result.pop_generation,
+            cost=search_result.cost,
+            dist=search_result.dist,
+            parent_indices=search_result.parent.hashidx.index,
+            solved_index=solved_index,
         )
 
     def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:
