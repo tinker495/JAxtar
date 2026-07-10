@@ -1,5 +1,4 @@
 import functools
-import inspect
 from typing import Any
 
 import jax
@@ -82,37 +81,19 @@ def get_int8_weight_only_config():
     cfg.fwd.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
     cfg.dlhs.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
     cfg.drhs.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
+    # int32 accumulation is only valid when BOTH inputs are int8; with an
+    # unquantized lhs the dot is bf16 x int8, so let lax pick the accumulator.
+    aqt_config.set_accumulator_dtype(cfg, fwd_dtype=None, dlhs_dtype=None, drhs_dtype=None)
     return cfg
-
-
-def _resolve_freezer_mode(quant_mode):
-    freezer_mode = getattr(aqt_flax, "FreezerMode", None)
-    if freezer_mode is None:
-        return None
-    if quant_mode == aqt_flax.QuantMode.CONVERT:
-        for name in ("CALIBRATION", "CALIBRATE", "WRITE", "CONVERT"):
-            if hasattr(freezer_mode, name):
-                return getattr(freezer_mode, name)
-    if quant_mode == aqt_flax.QuantMode.SERVE:
-        for name in (
-            "CALIBRATION_AND_VALUE",
-            "FREEZE",
-            "FROZEN",
-            "READ",
-            "SERVE",
-            "INFERENCE",
-        ):
-            if hasattr(freezer_mode, name):
-                return getattr(freezer_mode, name)
-    for name in ("NONE",):
-        if hasattr(freezer_mode, name):
-            return getattr(freezer_mode, name)
-    return None
 
 
 def build_aqt_dot_general(aqt_cfg, quant_mode):
     """
-    Build an AqtDotGeneral partial with quant/freezer modes wired for the active AQT version.
+    Build an AqtDotGeneral partial with quant/freezer modes wired.
+
+    CONVERT must freeze with CALIBRATION_AND_VALUE so the int8 weights (qvalue)
+    are stored alongside the scales; CALIBRATION strips the qvalue at store time,
+    which forces SERVE to re-quantize the f32 master weights on every forward.
     """
     if isinstance(aqt_cfg, str):
         aqt_cfg = get_aqt_cfg(aqt_cfg)
@@ -121,17 +102,17 @@ def build_aqt_dot_general(aqt_cfg, quant_mode):
     if quant_mode == aqt_flax.QuantMode.TRAIN:
         aqt_cfg = set_stochastic_rounding(aqt_cfg)
 
-    kwargs = {
-        "rhs_quant_mode": quant_mode,
-    }
-    freezer_mode = _resolve_freezer_mode(quant_mode)
-    if freezer_mode is not None:
-        sig = inspect.signature(aqt_flax.AqtDotGeneral)
-        if "rhs_freeze_mode" in sig.parameters:
-            kwargs["rhs_freeze_mode"] = freezer_mode
-        if "freezer_mode" in sig.parameters and "rhs_freeze_mode" not in kwargs:
-            kwargs["freezer_mode"] = freezer_mode
-    return functools.partial(aqt_flax.AqtDotGeneral, aqt_cfg, **kwargs)
+    if quant_mode in (aqt_flax.QuantMode.CONVERT, aqt_flax.QuantMode.SERVE):
+        rhs_freeze_mode = aqt_flax.FreezerMode.CALIBRATION_AND_VALUE
+    else:
+        rhs_freeze_mode = aqt_flax.FreezerMode.NONE
+
+    return functools.partial(
+        aqt_flax.AqtDotGeneral,
+        aqt_cfg,
+        rhs_quant_mode=quant_mode,
+        rhs_freeze_mode=rhs_freeze_mode,
+    )
 
 
 def convert_to_serving(model_cls, params, sample_input, **model_kwargs):

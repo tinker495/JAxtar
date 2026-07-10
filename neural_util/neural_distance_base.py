@@ -101,6 +101,15 @@ class NeuralDistanceBase(ABC):
                     self._sample_input(),
                     **self.model_kwargs,
                 )
+                if INFERENCE_PARAM_DTYPE is not None:
+                    # Downcast everything except the frozen 'aqt' collection: its int8
+                    # qvalues must stay int8 and its scale dtypes drive dequant dtypes.
+                    params = {
+                        col: tree
+                        if col == "aqt"
+                        else align_params_dtype(tree, INFERENCE_PARAM_DTYPE)
+                        for col, tree in params.items()
+                    }
             elif INFERENCE_PARAM_DTYPE is not None:
                 params = align_params_dtype(params, INFERENCE_PARAM_DTYPE)
 
