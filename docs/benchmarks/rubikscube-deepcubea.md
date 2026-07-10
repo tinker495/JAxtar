@@ -20,7 +20,8 @@ The following model configurations are used throughout the benchmark results. Ea
 
 # DeepCubeA Configuration
 - Batch Size: 10K / Max Node Size: 20M / Cost Weight: 0.6 / Pop Ratio: inf
-- Hardware: NVIDIA RTX 4080Ti GPU
+- Hardware: NVIDIA GeForce RTX 4080 SUPER
+- Software: JAX 0.8.1 / JAxtar `97d1bc72` / PuXle `b522d057` / Xtructure `b1844d4c`
 
 | Algorithm | Model | Success Rate / Optimal Rate | Avg Time (s) | Avg Nodes | Avg Path Cost | R² (Heuristic) | CCC (Heuristic) | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |

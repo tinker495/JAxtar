@@ -42,7 +42,9 @@ runs/rubikscube_astar_sweep_<timestamp>/
 
 ### `config.json`
 
-Contains the exact parameters used for the run, including puzzle settings, model metadata, and search options. This ensures reproducibility.
+Contains the exact parameters used for the run, including puzzle settings, model metadata,
+search options, JAX backend/devices, and the revision plus dirty state of JAxtar, PuXle, and
+Xtructure. A package installed without Git metadata records `N/A` for its revision.
 
 ### `results.csv`
 

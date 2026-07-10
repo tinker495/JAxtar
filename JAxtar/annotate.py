@@ -2,6 +2,7 @@ import os
 
 import jax.numpy as jnp
 
+# Search state and loop carries use KEY_DTYPE; cast Puzzle float32 costs at those boundaries.
 KEY_DTYPE = jnp.float16
 ACTION_DTYPE = jnp.uint8
 ACTION_PAD = jnp.array(jnp.iinfo(ACTION_DTYPE).max, dtype=ACTION_DTYPE)

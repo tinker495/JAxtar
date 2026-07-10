@@ -615,7 +615,7 @@ class SearchResult:
                 )  # [batch_size]
 
             current_costs = (parent_costs + ncosts).astype(KEY_DTYPE)
-            current_dists = val.dist if use_heuristic else (val.dist - ncosts)
+            current_dists = (val.dist if use_heuristic else (val.dist - ncosts)).astype(KEY_DTYPE)
 
             # Optimization: deduplicate before lookup to avoid redundant hash lookups.
             unique_mask = xnp.unique_mask(current_states, current_costs, filled)

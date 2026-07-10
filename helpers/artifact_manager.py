@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -7,6 +8,47 @@ import pandas as pd
 
 from helpers.logger import BaseLogger
 from helpers.util import convert_to_serializable_dict
+
+
+def _git_provenance(repo: Path) -> dict:
+    try:
+        output = subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "--show-toplevel", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+        ).splitlines()
+        if len(output) != 2 or Path(output[0]).resolve() != repo.resolve():
+            return {"revision": "N/A", "dirty": None}
+        dirty = bool(
+            subprocess.check_output(
+                ["git", "-C", str(repo), "status", "--porcelain"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=5,
+            ).strip()
+        )
+        return {"revision": output[1], "dirty": dirty}
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return {"revision": "N/A", "dirty": None}
+
+
+def _runtime_provenance() -> dict:
+    import jax
+    import puxle
+    import xtructure
+
+    repo_roots = {
+        "jaxtar": Path(__file__).resolve().parents[1],
+        "puxle": Path(puxle.__file__).resolve().parents[1],
+        "xtructure": Path(xtructure.__file__).resolve().parents[1],
+    }
+    return {
+        "jax_version": jax.__version__,
+        "jax_backend": jax.default_backend(),
+        "jax_devices": [f"{device.platform}:{device.device_kind}" for device in jax.devices()],
+        "git": {name: _git_provenance(root) for name, root in repo_roots.items()},
+    }
 
 
 class ArtifactManager:
@@ -26,6 +68,7 @@ class ArtifactManager:
     def save_config(self, config: dict):
         """Saves the configuration dictionary to a JSON file."""
         with open(self.run_dir / "config.json", "w") as f:
+            config = {**config, "runtime_provenance": _runtime_provenance()}
             serializable_config = convert_to_serializable_dict(config)
             json.dump(serializable_config, f, indent=4)
 

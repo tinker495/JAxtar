@@ -1,9 +1,10 @@
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from helpers.artifact_manager import ArtifactManager
+from helpers.artifact_manager import ArtifactManager, _git_provenance
 
 
 def test_save_config_writes_readable_serialized_json(tmp_path):
@@ -15,6 +16,22 @@ def test_save_config_writes_readable_serialized_json(tmp_path):
     payload = pd.read_json(run_dir / "config.json", typ="series")
     assert payload["callable"].startswith("<function")
     assert payload["type_obj"] == "int"
+
+
+def test_save_config_records_runtime_provenance(tmp_path):
+    run_dir = tmp_path / "run"
+
+    ArtifactManager(run_dir).save_config({})
+
+    provenance = json.loads((run_dir / "config.json").read_text())["runtime_provenance"]
+    assert provenance["jax_devices"]
+    assert set(provenance["git"]) == {"jaxtar", "puxle", "xtructure"}
+    assert set(provenance["git"]["jaxtar"]) == {"revision", "dirty"}
+
+
+def test_git_provenance_handles_non_repository(tmp_path, capfd):
+    assert _git_provenance(tmp_path) == {"revision": "N/A", "dirty": None}
+    assert capfd.readouterr().err == ""
 
 
 def test_save_results_writes_csv_for_results_records(tmp_path):
