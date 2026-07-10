@@ -98,6 +98,7 @@ def _qbeam_loop_builder(
             vals = vals.transpose().astype(KEY_DTYPE)
             return jnp.where(child_valid, vals, jnp.inf)
 
+        # Q(s,a) = h(s') + c(s,a), so h(s') = Q(s,a) - c(s,a).
         q_vals = (
             jax.lax.cond(
                 jnp.any(child_valid),
@@ -106,7 +107,7 @@ def _qbeam_loop_builder(
                 None,
             )
             - transition_cost
-        )  # Q(s,a) = h(s') + c(s,a) / h(s') = Q(s,a) - c(s,a)
+        ).astype(KEY_DTYPE)
 
         scores = (cost_weight * child_costs + q_vals).astype(KEY_DTYPE)
         scores = jnp.where(child_valid, scores, jnp.inf)

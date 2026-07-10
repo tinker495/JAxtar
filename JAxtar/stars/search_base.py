@@ -614,7 +614,7 @@ class SearchResult:
                     solve_config, parent_states, parent_actions, filled
                 )  # [batch_size]
 
-            current_costs = parent_costs + ncosts
+            current_costs = (parent_costs + ncosts).astype(KEY_DTYPE)
             current_dists = val.dist if use_heuristic else (val.dist - ncosts)
 
             # Optimization: deduplicate before lookup to avoid redundant hash lookups.
