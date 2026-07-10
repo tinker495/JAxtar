@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import jax.numpy as jnp
+
 _EXPECTED_DICT_KEYS = frozenset(
     {
         "solve_configs",
@@ -80,3 +82,46 @@ def test_neural_builders_consume_adapter():
             builder.create_hindsight_target_triangular_shuffled_path
             is create_hindsight_target_triangular_shuffled_path
         )
+
+
+def test_world_model_consumers_only_adapt_puxle_trajectories():
+    from puxle.core.trajectory import PuzzleTrajectory
+    from puxle.puzzles.slidepuzzle import SlidePuzzle
+    from world_model_puzzle import world_model_ds
+
+    state_cls = SlidePuzzle(size=3).State
+    transition_traj = PuzzleTrajectory(
+        solve_configs=None,
+        states=state_cls(board=jnp.arange(40, dtype=jnp.uint8).reshape(4, 2, 5)),
+        move_costs=None,
+        move_costs_tm1=None,
+        actions=jnp.arange(6).reshape(3, 2),
+        action_costs=None,
+    )
+    eval_traj = PuzzleTrajectory(
+        solve_configs=None,
+        states=state_cls(board=jnp.arange(20, dtype=jnp.uint8).reshape(4, 1, 5)),
+        move_costs=None,
+        move_costs_tm1=None,
+        actions=jnp.arange(3).reshape(3, 1),
+        action_costs=None,
+    )
+    key = jnp.array([0, 1], dtype=jnp.uint32)
+    calls = []
+
+    class PuzzleStub:
+        def batched_get_random_trajectory(self, k_max, shuffle_parallel, call_key):
+            calls.append((k_max, shuffle_parallel, call_key))
+            return transition_traj if shuffle_parallel == 2 else eval_traj
+
+    puzzle = PuzzleStub()
+    states, actions, next_states = world_model_ds.create_shuffled_path(puzzle, 3, 2, 5, key)
+    eval_states, eval_actions = world_model_ds.create_eval_trajectory(puzzle, 3, key)
+
+    assert jnp.array_equal(states.board, transition_traj.states.board[:-1].reshape(6, 5)[:5])
+    assert jnp.array_equal(actions, transition_traj.actions.reshape(6)[:5])
+    assert jnp.array_equal(next_states.board, transition_traj.states.board[1:].reshape(6, 5)[:5])
+    assert jnp.array_equal(eval_states.board, eval_traj.states.board.reshape(4, 5))
+    assert jnp.array_equal(eval_actions, eval_traj.actions.reshape(3))
+    assert [(k_max, parallel) for k_max, parallel, _ in calls] == [(3, 2), (3, 1)]
+    assert all(jnp.array_equal(call_key, key) for _, _, call_key in calls)

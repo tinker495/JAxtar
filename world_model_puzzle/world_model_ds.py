@@ -8,6 +8,10 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.rich_progress import trange
+from train_util.trajectory_dataset_adapter import (
+    trajectory_to_eval_trajectory,
+    trajectory_to_transition_dataset,
+)
 
 
 def get_world_model_dataset_builder(
@@ -45,40 +49,8 @@ def create_shuffled_path(
     dataset_minibatch_size: int,
     key: chex.PRNGKey,
 ):
-    solve_configs, initial_states = jax.vmap(puzzle.get_inits)(
-        jax.random.split(key, shuffle_parallel)
-    )
-
-    def get_trajectory_key(initial_states: Puzzle.State, key: chex.PRNGKey):
-        def _scan(carry, _):
-            state, key = carry
-            neighbor_states, cost = jax.vmap(puzzle.get_neighbours, in_axes=(0, 0))(
-                solve_configs, state
-            )
-            key, subkey = jax.random.split(key)
-            choices = jnp.arange(cost.shape[1])
-            action = jax.vmap(lambda key: jax.random.choice(key, choices), in_axes=(0,))(
-                jax.random.split(subkey, cost.shape[0])
-            )
-            next_state = jax.vmap(lambda x, y: x[y], in_axes=(0, 0))(neighbor_states, action)
-            return (next_state, key), (state, action, next_state)
-
-        _, (states, actions, next_states) = jax.lax.scan(
-            _scan, (initial_states, key), None, length=shuffle_length
-        )
-        return states, actions, next_states
-
-    states, actions, next_states = get_trajectory_key(
-        initial_states, key
-    )  # [batch_size, shuffle_length][state...]
-    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (shuffle_length, 1))
-    states = states.flatten()
-    actions = actions.flatten()
-    next_states = next_states.flatten()
-    states = states[:dataset_minibatch_size]
-    actions = actions[:dataset_minibatch_size]
-    next_states = next_states[:dataset_minibatch_size]
-    return states, actions, next_states
+    trajectory = puzzle.batched_get_random_trajectory(shuffle_length, shuffle_parallel, key)
+    return trajectory_to_transition_dataset(trajectory, dataset_minibatch_size)
 
 
 def get_sample_data_builder(
@@ -122,23 +94,5 @@ def create_eval_trajectory(
     shuffle_length: int,
     key: chex.PRNGKey,
 ):
-    solve_config, initial_state = puzzle.get_inits(key)
-
-    def _scan(carry, _):
-        state, key = carry
-        neighbor_states, cost = puzzle.get_neighbours(solve_config, state)
-        key, subkey = jax.random.split(key)
-        choices = jnp.arange(cost.shape[0])
-        action = jax.random.choice(subkey, choices)
-        next_state = neighbor_states[action]
-        return (next_state, key), (state, action)
-
-    (next_state, _), (states, actions) = jax.lax.scan(
-        _scan, (initial_state, key), None, length=shuffle_length
-    )
-    next_state = next_state[jnp.newaxis, ...]
-    states = jax.tree_util.tree_map(
-        lambda x, y: jnp.concatenate([x, y], axis=0), states, next_state
-    )
-
-    return states, actions
+    trajectory = puzzle.batched_get_random_trajectory(shuffle_length, 1, key)
+    return trajectory_to_eval_trajectory(trajectory)

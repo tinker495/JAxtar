@@ -1,11 +1,7 @@
 """JAxtar-owned adapter at the **Puzzle Trajectory Module** seam.
 
-PuXle's ``puxle.core.trajectory`` is the single source of truth for
-target-shuffled-path generation; it returns ``PuzzleTrajectory`` records.
-JAxtar's neural heuristic and Q-function dataset builders need the flat
-``dict[str, chex.Array]`` shape that their JIT'd training step consumes, so
-this Module wraps each creator with ``trajectory_to_dataset_dict`` while
-keeping PuXle agnostic of the dict shape.
+PuXle's ``puxle.core.trajectory`` is the single source of truth for trajectory
+generation. JAxtar only adapts ``PuzzleTrajectory`` records to training shapes.
 
 The three wrapped names re-export the PuXle creators with the same parameter
 order so call sites (``partial(create_target_shuffled_path, puzzle, ...)``)
@@ -39,6 +35,24 @@ def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> dict[str, chex.Array]:
         "trajectory_indices": traj.trajectory_indices,
         "step_indices": traj.step_indices,
     }
+
+
+def trajectory_to_transition_dataset(
+    traj: PuzzleTrajectory, limit: int
+) -> tuple[chex.ArrayTree, chex.Array, chex.ArrayTree]:
+    """Flatten time/batch axes and truncate aligned transition triples."""
+    return (
+        traj.states[:-1].flatten()[:limit],
+        traj.actions.reshape(-1)[:limit],
+        traj.states[1:].flatten()[:limit],
+    )
+
+
+def trajectory_to_eval_trajectory(
+    traj: PuzzleTrajectory,
+) -> tuple[chex.ArrayTree, chex.Array]:
+    """Remove the singleton parallel axis from an evaluation trajectory."""
+    return traj.states.flatten(), traj.actions.reshape(-1)
 
 
 def create_target_shuffled_path(
@@ -103,6 +117,8 @@ def create_hindsight_target_triangular_shuffled_path(
 
 __all__ = [
     "trajectory_to_dataset_dict",
+    "trajectory_to_transition_dataset",
+    "trajectory_to_eval_trajectory",
     "create_target_shuffled_path",
     "create_hindsight_target_shuffled_path",
     "create_hindsight_target_triangular_shuffled_path",
