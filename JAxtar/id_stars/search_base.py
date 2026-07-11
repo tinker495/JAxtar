@@ -98,21 +98,12 @@ def merge_frontier_solution(
     found_sol_cost: chex.Array,
     found_sol_actions: chex.Array,
 ):
+    # Pure value selection: where instead of lax.cond (host predicate sync).
     return (
         jnp.logical_or(frontier.solved, any_solved),
-        jax.lax.cond(
-            any_solved,
-            lambda _: found_sol_state,
-            lambda _: frontier.solution_state,
-            None,
-        ),
-        jax.lax.cond(any_solved, lambda _: found_sol_cost, lambda _: frontier.solution_cost, None),
-        jax.lax.cond(
-            any_solved,
-            lambda _: found_sol_actions,
-            lambda _: frontier.solution_actions_arr,
-            None,
-        ),
+        xnp.where(any_solved, found_sol_state, frontier.solution_state),
+        jnp.where(any_solved, found_sol_cost, frontier.solution_cost),
+        jnp.where(any_solved, found_sol_actions, frontier.solution_actions_arr),
     )
 
 
@@ -599,21 +590,11 @@ class IDSearchResult:
         """
         Mark search as solved and store solution info.
         """
-        new_solution_state = jax.lax.cond(
-            any_solved, lambda _: solved_state, lambda _: self.solution_state, None
-        )
-        new_solution_cost = jax.lax.cond(
-            any_solved,
-            lambda _: solved_cost.astype(KEY_DTYPE),
-            lambda _: self.solution_cost,
-            None,
-        )
-        new_solution_actions = jax.lax.cond(
-            any_solved,
-            lambda _: solved_actions,
-            lambda _: self.solution_actions_arr,
-            None,
-        )
+        # Pure value selection: where instead of lax.cond — on GPU every cond
+        # predicate is a host readback (sync) paid once per search iteration.
+        new_solution_state = xnp.where(any_solved, solved_state, self.solution_state)
+        new_solution_cost = jnp.where(any_solved, solved_cost.astype(KEY_DTYPE), self.solution_cost)
+        new_solution_actions = jnp.where(any_solved, solved_actions, self.solution_actions_arr)
 
         return self.replace(
             solved=jnp.logical_or(self.solved, any_solved),
