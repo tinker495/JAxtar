@@ -12,6 +12,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
+from xtructure.core.packing import pack_rows
 from xtructure.stack import Stack
 
 from helpers.jax_compile import compile_with_example
@@ -401,10 +402,11 @@ class IDSearchResult:
             action_history=action_histories[perm],
         )
 
-        new_val_store = jax.tree_util.tree_map(
-            lambda s, u: _bounded_scatter_leaf(s, u, current_ptr, safe_n_push),
+        new_val_store = _bounded_scatter_leaf(
             self.stack.val_store,
-            items_sorted,
+            pack_rows(self.stack.value_class, items_sorted),
+            current_ptr,
+            safe_n_push,
         )
 
         new_ptr = (current_ptr + safe_n_push).astype(self.stack.size.dtype)
@@ -454,10 +456,11 @@ class IDSearchResult:
             action_history=action_histories,
         )
 
-        new_val_store = jax.tree_util.tree_map(
-            lambda s, u: _bounded_scatter_leaf(s, u, current_ptr, safe_n_push),
+        new_val_store = _bounded_scatter_leaf(
             self.stack.val_store,
-            items,
+            pack_rows(self.stack.value_class, items),
+            current_ptr,
+            safe_n_push,
         )
 
         new_ptr = (current_ptr + safe_n_push).astype(self.stack.size.dtype)
