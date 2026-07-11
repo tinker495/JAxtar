@@ -380,11 +380,12 @@ def _id_qstar_loop_builder(
             root_index=flat_root_indices,
         )
 
-        return_sr = jax.lax.cond(
-            any_solved,
-            lambda s: s,
-            lambda s: s.expand_and_push(flat_batch, flat_f, flat_valid, update_next_bound=True),
-            sr_solved,
+        # Same unconditional masked push as id_astar.py: lax.cond here costs a
+        # full pass-through copy of the packed stack store per iteration plus a
+        # host predicate sync; the all-False mask path is a bit-exact no-op.
+        push_valid = jnp.logical_and(flat_valid, jnp.logical_not(any_solved))
+        return_sr = sr_solved.expand_and_push(
+            flat_batch, flat_f, push_valid, update_next_bound=True
         )
 
         return loop_state.replace(search_result=return_sr)

@@ -398,11 +398,14 @@ def _id_astar_loop_builder(
             root_index=flat_root_indices,
         )
 
-        return_sr = jax.lax.cond(
-            any_solved,
-            lambda s: s,
-            lambda s: s.expand_and_push(flat_batch, flat_f, flat_valid, update_next_bound=True),
-            sr_solved,
+        # Unconditional masked push instead of lax.cond: the conditional forces
+        # XLA pass-through copies of the whole packed stack store (299MB per
+        # iteration at 1e6 nodes) plus a host predicate sync, while an all-False
+        # mask makes expand_and_push a bit-exact no-op (scatter drops every row,
+        # next_bound takes min with inf, ptr/count advance by zero).
+        push_valid = jnp.logical_and(flat_valid, jnp.logical_not(any_solved))
+        return_sr = sr_solved.expand_and_push(
+            flat_batch, flat_f, push_valid, update_next_bound=True
         )
 
         return loop_state.replace(search_result=return_sr)
