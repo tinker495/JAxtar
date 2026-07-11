@@ -96,9 +96,7 @@ def _plot_per_seed_expansion(
         plot_search_tree_semantic,
     )
 
-    for r in results[:max_plots]:
-        if not r.get("expansion_analysis"):
-            continue
+    for r in [r for r in results if r.get("expansion_analysis")][:max_plots]:
         fig = plot_expansion_distribution([r], scatter_max_points=scatter_max_points)
         artifact_manager.save_and_log_plot(
             f"expansion_dist_seed_{r['seed']}",
@@ -429,6 +427,7 @@ class EvaluationRunner:
         search_fn,
         heuristic_model,
         qfunction_model,
+        collect_expansion_trace: bool,
     ) -> tuple[dict, Optional[dict]]:
         benchmark_sample = None
         if self.benchmark is not None:
@@ -481,7 +480,8 @@ class EvaluationRunner:
             benchmark_sample=benchmark_sample,
         )
 
-        attach_expansion_analysis(result_item, search_result)
+        if collect_expansion_trace and (self.eval_options.plot_unsolved or outcome.solved):
+            attach_expansion_analysis(result_item, search_result)
 
         return result_item, deferred_payload
 
@@ -680,6 +680,12 @@ class EvaluationRunner:
         results = []
         deferred_payloads = []
 
+        # An expansion trace costs O(expanded nodes) host memory per sample and
+        # only the first `max_expansion_plots` plotted samples ever consume one
+        # (see _plot_per_seed_expansion); retaining one for every sample OOMs
+        # long benchmark runs, so collection stops once the budget is spent.
+        expansion_trace_budget = self.eval_options.max_expansion_plots
+
         pbar = trange(
             num_puzzles,
             desc="Running Evaluations",
@@ -696,7 +702,10 @@ class EvaluationRunner:
                 search_fn=search_fn,
                 heuristic_model=heuristic_model,
                 qfunction_model=qfunction_model,
+                collect_expansion_trace=expansion_trace_budget > 0,
             )
+            if result_item["expansion_analysis"] is not None:
+                expansion_trace_budget -= 1
 
             results.append(result_item)
             if deferred_payload is not None:

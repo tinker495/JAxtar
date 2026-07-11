@@ -75,7 +75,10 @@ class EvalOptions(BaseModel):
     )
     max_expansion_plots: int = Field(
         3,
-        description="Maximum number of individual expansion plots to generate per run. Set to 0 to disable.",
+        description=(
+            "Maximum number of individual expansion plots to generate per run. Also bounds how "
+            "many per-sample expansion traces are retained in host memory. Set to 0 to disable."
+        ),
     )
     use_early_stopping: bool = Field(
         True, description="Enable early stopping based on success rate threshold."
