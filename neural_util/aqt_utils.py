@@ -168,11 +168,11 @@ def convert_to_serving(model_cls, params, sample_input, **model_kwargs):
             rngs={"params": jax.random.PRNGKey(0)},
         )
     except (RuntimeError, ValueError) as e:
-        if "INTERNAL: requested functionality is not supported" in str(e):
+        if "requested functionality is not supported" in str(e):
             raise RuntimeError(
-                "AQT Quantization failed. This is likely due to model dimensions not being aligned "
-                "with XLA requirements (e.g. using prime numbers for hidden dimensions). "
-                "Please ensure hidden_dim and other dimensions are multiples of 32 or 128."
+                "AQT Quantization failed: cuBLASLt has no int8 kernel for a quantized GEMM. "
+                "Ensure every quantized dimension (hidden_dim etc.) is a multiple of 4 "
+                "(32 recommended for tensor-core efficiency)."
             ) from e
         raise
 

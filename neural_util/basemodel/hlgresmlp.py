@@ -125,16 +125,15 @@ class HLGResMLPModel(DistanceHLGModel):
                 )
             )
         self.tail_head_resblocks = tail_head_resblocks_list
+        # Head stays unquantized: cuBLASLt int8 GEMMs require 4-aligned dims and
+        # action_size * categorial_n usually isn't. See ResMLPModel.final_dense.
         self.final_dense = (
-            preactivation_MLP(
-                self.action_size * self.categorial_n, dtype=HEAD_DTYPE, dot_general_cls=aqt_dg
-            )
+            preactivation_MLP(self.action_size * self.categorial_n, dtype=HEAD_DTYPE)
             if self.resblock_fn == PreActivationResBlock
             else nn.Dense(
                 self.action_size * self.categorial_n,
                 dtype=HEAD_DTYPE,
                 kernel_init=nn.initializers.normal(stddev=0.01),
-                dot_general_cls=aqt_dg,
             )
         )
 

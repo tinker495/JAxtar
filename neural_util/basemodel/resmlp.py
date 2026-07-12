@@ -126,14 +126,16 @@ class ResMLPModel(DistanceModel):
                 )
             )
         self.tail_head_resblocks = tail_head_resblocks_list
+        # Head stays unquantized: cuBLASLt int8 GEMMs require 4-aligned dims and
+        # action_size (e.g. 18) isn't, which crashes compilation on GPUs where XLA
+        # can't fall back to Triton. The head is a negligible share of FLOPs anyway.
         self.final_dense = (
-            preactivation_MLP(self.action_size, dtype=HEAD_DTYPE, dot_general_cls=aqt_dg)
+            preactivation_MLP(self.action_size, dtype=HEAD_DTYPE)
             if self.resblock_fn == PreActivationResBlock
             else nn.Dense(
                 self.action_size,
                 dtype=HEAD_DTYPE,
                 kernel_init=nn.initializers.normal(stddev=0.01),
-                dot_general_cls=aqt_dg,
             )
         )
 
