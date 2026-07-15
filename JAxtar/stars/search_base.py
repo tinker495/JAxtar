@@ -60,15 +60,20 @@ def insert_priority_queue_batches(
     keys,
     vals,
     masks: chex.Array,
+    *,
+    presorted: bool = False,
 ) -> "SearchResult":
     """Insert action-major candidate batches into the priority queue.
 
     This is shared by deferred variants (single and bidirectional) to keep
     insertion semantics identical before calling `pop_full_with_actions`.
+    ``presorted`` skips BGPQ's per-row sort when the flattened candidate set
+    was already sorted before being split into rows.
     """
 
     def _insert(sr: "SearchResult", key_row, val_row):
-        sr.priority_queue = sr.priority_queue.insert(key_row, val_row)
+        insert = sr.priority_queue.insert_sorted if presorted else sr.priority_queue.insert
+        sr.priority_queue = insert(key_row, val_row)
         return sr
 
     def _scan(sr: "SearchResult", row):
@@ -1221,6 +1226,7 @@ def build_deferred_loop_body(
             neighbour_keys_out,
             vals_out,
             optimal_mask_out,
+            presorted=True,
         )
         search_result, min_val, next_states, next_filled = search_result.pop_full_with_actions(
             puzzle=puzzle, solve_config=solve_config, use_heuristic=use_heuristic

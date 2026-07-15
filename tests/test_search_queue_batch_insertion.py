@@ -11,6 +11,7 @@ class _DummyPriorityQueue:
     inserted_keys: chex.Array
     inserted_vals: chex.Array
     call_count: chex.Array
+    sorted_call_count: chex.Array
 
     def insert(self, key_row: chex.Array, val_row: chex.Array) -> "_DummyPriorityQueue":
         idx = self.call_count.astype(jnp.int32)
@@ -18,7 +19,16 @@ class _DummyPriorityQueue:
             inserted_keys=self.inserted_keys.at[idx].set(key_row),
             inserted_vals=self.inserted_vals.at[idx].set(val_row),
             call_count=idx + 1,
+            sorted_call_count=self.sorted_call_count,
         )
+
+    def insert_sorted(
+        self,
+        key_row: chex.Array,
+        val_row: chex.Array,
+    ) -> "_DummyPriorityQueue":
+        inserted = self.insert(key_row, val_row)
+        return inserted.replace(sorted_call_count=self.sorted_call_count + 1)
 
 
 @base_dataclass
@@ -34,6 +44,7 @@ def _build_dummy_search_result(max_calls: int, row_width: int) -> _DummySearchRe
         inserted_keys=jnp.full((max_calls, row_width), -1.0, dtype=jnp.float32),
         inserted_vals=jnp.full((max_calls, row_width), -1, dtype=jnp.int32),
         call_count=jnp.array(0, dtype=jnp.int32),
+        sorted_call_count=jnp.array(0, dtype=jnp.int32),
     )
     return _DummySearchResult(
         priority_queue=pq,
@@ -112,3 +123,15 @@ def test_insert_priority_queue_batches_noop_when_all_rows_masked_out():
     assert out.priority_queue.inserted_vals.tolist() == [[-1, -1], [-1, -1]]
     assert int(out.xtr_pq_insert_calls) == 0
     assert int(out.xtr_pq_insert_items) == 0
+
+
+def test_insert_priority_queue_batches_uses_sorted_insert_when_preordered():
+    keys = jnp.array([[1.0, 2.0], [3.0, jnp.inf]], dtype=jnp.float32)
+    vals = jnp.array([[10, 11], [20, 0]], dtype=jnp.int32)
+    masks = jnp.isfinite(keys)
+
+    sr = _build_dummy_search_result(max_calls=2, row_width=2)
+    out = insert_priority_queue_batches(sr, keys, vals, masks, presorted=True)
+
+    assert int(out.priority_queue.call_count) == 2
+    assert int(out.priority_queue.sorted_call_count) == 2

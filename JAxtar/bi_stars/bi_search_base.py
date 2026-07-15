@@ -808,6 +808,7 @@ def build_bi_deferred_expand_direction(
             neighbour_keys_reshaped,
             vals_reshaped,
             optimal_mask_reshaped,
+            presorted=True,
         )
 
         # Step 3: Pop and commit into the shared hash table. The returned hashidxs are
