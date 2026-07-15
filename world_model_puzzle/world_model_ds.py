@@ -85,7 +85,7 @@ def create_sample_data(
     solve_configs, initial_states = jax.vmap(puzzle.get_inits)(
         jax.random.split(key, shuffle_parallel)
     )
-    target_states = solve_configs.TargetState
+    target_states = solve_configs.GoalSpec
     return target_states, initial_states
 
 

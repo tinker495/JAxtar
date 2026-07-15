@@ -14,7 +14,7 @@ class LightsOutHeuristic(Heuristic):
         """
         neq_state = jnp.not_equal(
             current.board_unpacked,
-            solve_config.TargetState.board_unpacked,
+            solve_config.GoalSpec.board_unpacked,
         )
         sum_neq_state = jnp.sum(neq_state)
         return sum_neq_state / 5 * 2

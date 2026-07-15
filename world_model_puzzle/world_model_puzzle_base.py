@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import numpy as np
 from flax import linen as nn
 from puxle import Puzzle
-from puxle.core.puzzle_state import FieldDescriptor, PuzzleState, state_dataclass
 from puxle.utils import IMG_SIZE
+from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 from xtructure import numpy as xnp
 
 from helpers.formatting import img_to_colored_str
@@ -113,12 +113,12 @@ class WorldModelPuzzleBase(Puzzle):
     str_parse_img_size: int = 16
     str_parse_img: bool = True
 
-    def define_state_class(self) -> PuzzleState:
+    def define_state_class(self) -> type[Xtructurable]:
         """Defines the state class for WorldModelPuzzleBase using xtructure."""
         str_parser = self.get_string_parser()
         latent_shape = self.latent_shape
 
-        @state_dataclass
+        @xtructure_dataclass
         class State:
             latent: FieldDescriptor.packed_tensor(shape=latent_shape, packed_bits=1)
 
@@ -345,7 +345,7 @@ class WorldModelPuzzleBase(Puzzle):
             else:
                 img = data
             if solve_config is not None and show_target_state_img:
-                latent = solve_config.TargetState.latent_unpacked
+                latent = solve_config.GoalSpec.latent_unpacked
                 latent = jnp.expand_dims(latent, axis=0)
                 data = self.model.apply(
                     self.params, latent, training=False, method=self.model.decode
@@ -385,7 +385,10 @@ class WorldModelPuzzleBase(Puzzle):
             self.params, target_data, training=False, method=self.model.encode
         ).squeeze(0)
         latent = jnp.round(latent).astype(jnp.bool_)
-        return self.SolveConfig(TargetState=self.State.from_unpacked(latent=latent))
+        return self.SolveConfig(
+            InstanceContext=self.InstanceContext(),
+            GoalSpec=self.State.from_unpacked(latent=latent),
+        )
 
     def get_initial_state(
         self, solve_config: Puzzle.SolveConfig, key=None, data=None
@@ -496,16 +499,6 @@ class WorldModelPuzzleBase(Puzzle):
             return jax.vmap(self.is_solved, in_axes=(0, 0))(solve_configs, states)
         else:
             return jax.vmap(self.is_solved, in_axes=(None, 0))(solve_configs, states)
-
-    def is_solved(self, solve_config: Puzzle.SolveConfig, state: Puzzle.State) -> bool:
-        """
-        This function should return True if the state is the target state.
-        if the puzzle has multiple target states, this function should return
-        True if the state is one of the target conditions.
-        e.g sokoban puzzle has multiple target states. box's position should
-        be the same as the target position but the player's position can be different.
-        """
-        return state == solve_config.TargetState
 
     def get_inverse_neighbours(
         self, solve_config: Puzzle.SolveConfig, state: Puzzle.State, filled: bool = True

@@ -22,7 +22,7 @@ class PancakeHeuristic(Heuristic):
             float: Estimated number of flip operations needed to reach the target state
         """
         current_stack = current.stack
-        target_stack = solve_config.TargetState.stack
+        target_stack = solve_config.GoalSpec.stack
 
         # Count the gaps (adjacent pancakes that are not in the correct relative order)
         # In a sorted stack, each pancake should be 1 smaller than the one below it

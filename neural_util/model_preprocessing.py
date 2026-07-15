@@ -20,7 +20,7 @@ class LightsOutPreProcessMixin:
     is_fixed: bool = True
 
     def pre_process(self, solve_config, current) -> chex.Array:
-        target_board = solve_config.TargetState.board_unpacked
+        target_board = solve_config.GoalSpec.board_unpacked
         return lightsout_pre_process(current.board_unpacked, target_board, self.is_fixed)
 
 
@@ -31,7 +31,7 @@ class LightsOutConvPreProcessMixin:
         super().__init__(puzzle, model=self.network_model, **kwargs)
 
     def pre_process(self, solve_config, current) -> chex.Array:
-        x = self.to_2d(self._diff(current, solve_config.TargetState))
+        x = self.to_2d(self._diff(current, solve_config.GoalSpec))
         return ((x - 0.5) * 2.0).astype(DTYPE)
 
     def to_2d(self, x: chex.Array) -> chex.Array:
@@ -47,7 +47,7 @@ class PancakePreProcessMixin:
     is_fixed: bool = True
 
     def pre_process(self, solve_config, current) -> chex.Array:
-        target_stack = solve_config.TargetState.stack
+        target_stack = solve_config.GoalSpec.stack
         return pancake_pre_process(current.stack, target_stack, self.puzzle.size, self.is_fixed)
 
 
@@ -76,7 +76,7 @@ class RubiksCubeRandomPreProcessMixin(RubiksCubePreProcessMixin):
 
     def pre_process(self, solve_config, current) -> chex.Array:
         current_flatten_face = current.faces_unpacked.flatten()
-        target_flatten_face = solve_config.TargetState.faces_unpacked.flatten()
+        target_flatten_face = solve_config.GoalSpec.faces_unpacked.flatten()
         return rubikscube_random_pre_process(
             self._one_hot_faces,
             self.metric,
@@ -96,7 +96,7 @@ class SlidePuzzlePreProcessMixin:
     def pre_process(self, solve_config, current) -> chex.Array:
         return slidepuzzle_pre_process(
             current.board_unpacked,
-            solve_config.TargetState.board_unpacked,
+            solve_config.GoalSpec.board_unpacked,
             self.size_square,
             self.is_fixed,
         )
@@ -114,9 +114,9 @@ class SlidePuzzleConvPreProcessMixin:
         super().__init__(puzzle, model=self.network_model, **kwargs)
 
     def pre_process(self, solve_config, current) -> chex.Array:
-        diff = self.to_2d(self._diff_pos(current, solve_config.TargetState))
+        diff = self.to_2d(self._diff_pos(current, solve_config.GoalSpec))
         c_zero = self.to_2d(self._zero_pos(current))
-        t_zero = self.to_2d(self._zero_pos(solve_config.TargetState))
+        t_zero = self.to_2d(self._zero_pos(solve_config.GoalSpec))
         return jnp.concatenate([diff, c_zero, t_zero], axis=-1).astype(DTYPE)
 
     def to_2d(self, x: chex.Array) -> chex.Array:
@@ -133,7 +133,7 @@ class SlidePuzzleConvPreProcessMixin:
 
 class SokobanPreProcessMixin:
     def pre_process(self, solve_config, current) -> chex.Array:
-        target_board = solve_config.TargetState.board_unpacked
+        target_board = solve_config.GoalSpec.board_unpacked
         current_board = current.board_unpacked
         stacked_board = jnp.concatenate([current_board, target_board], axis=-1)
         one_hot_board = jax.nn.one_hot(stacked_board, num_classes=4)
@@ -143,7 +143,7 @@ class SokobanPreProcessMixin:
 
 class WorldModelPreProcessMixin:
     def pre_process(self, solve_config, current) -> chex.Array:
-        target_latent = solve_config.TargetState.latent_unpacked.astype(jnp.float32)
+        target_latent = solve_config.GoalSpec.latent_unpacked.astype(jnp.float32)
         current_latent = current.latent_unpacked.astype(jnp.float32)
         latent_stack = jnp.concatenate([current_latent, target_latent], axis=-1)
         latent_stack = jnp.reshape(latent_stack, (-1,))

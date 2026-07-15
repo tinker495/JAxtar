@@ -16,7 +16,7 @@ class SokobanHeuristic(Heuristic):
         Assumes that boxes are represented by 1 in both current and target arrays.
         """
         # Count the total number of boxes in the target state
-        target_board = solve_config.TargetState.board_unpacked
+        target_board = solve_config.GoalSpec.board_unpacked
         target_box_count = jnp.sum(target_board == Sokoban.Object.BOX.value)
 
         # Count the number of boxes in the same position in both current and target

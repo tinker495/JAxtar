@@ -50,7 +50,7 @@ def search_samples(
     qfunction: QFunction | None = None,
 ):
     console = Console()
-    has_target = puzzle.has_target
+    has_goal_data = puzzle.has_goal_data
 
     total_search_times = []
     total_states = []
@@ -76,7 +76,7 @@ def search_samples(
             console.print(
                 build_seed_setup_panel(
                     puzzle=puzzle,
-                    has_target=has_target,
+                    has_goal_data=has_goal_data,
                     solve_config=solve_config,
                     state=state,
                     dist_text=dist_fn_format(puzzle, dist_values),
@@ -112,7 +112,7 @@ def search_samples(
                 )
             return outcome
 
-        if (not has_target) and outcome.solved:
+        if (not has_goal_data) and outcome.solved:
             path_outcome = ensure_path_outcome()
             if path_outcome.solution_state is not None:
                 console.print(
@@ -211,13 +211,17 @@ def vmapped_search_samples(
     single_search_time: float,
 ):
     console = Console()
-    has_target = puzzle.has_target
+    has_goal_data = puzzle.has_goal_data
     vmap_size = search_options.vmap_size
 
     solve_configs, states = vmapping_init_target(puzzle, vmap_size, seeds)
 
     console.print(
-        build_vmapped_setup_panel(has_target=has_target, solve_configs=solve_configs, states=states)
+        build_vmapped_setup_panel(
+            has_goal_data=has_goal_data,
+            solve_configs=solve_configs,
+            states=states,
+        )
     )
 
     start = time.time()
@@ -226,7 +230,7 @@ def vmapped_search_samples(
     end = time.time()
     vmapped_search_time = end - start
 
-    if not has_target and solved.any():
+    if not has_goal_data and solved.any():
         solved_st = jax.vmap(SearchResult.get_state, in_axes=(0, 0))(
             search_result, search_result.solved_idx
         )

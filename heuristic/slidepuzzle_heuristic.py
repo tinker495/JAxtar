@@ -23,7 +23,7 @@ class SlidePuzzleHeuristic(Heuristic):
         """
         This function should return the distance between the state and the target.
         """
-        diff, tpos = diff_pos(current, solve_config.TargetState, self.puzzle.size, self.base_xy)
+        diff, tpos = diff_pos(current, solve_config.GoalSpec, self.puzzle.size, self.base_xy)
         not_empty = current.board_unpacked != 0
         return (
             jnp.sum(not_empty * jnp.sum(jnp.abs(diff), axis=1))

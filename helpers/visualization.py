@@ -44,15 +44,15 @@ cv2 = None  # type: ignore[assignment]
 _CV2_IMPORT_ERROR: Exception | None = None
 
 
-def build_human_play_setup_panel(has_target, solve_config, init_state) -> Panel:
+def build_human_play_setup_panel(has_goal_data, solve_config, init_state) -> Panel:
     grid = Table.grid(expand=False)
-    if has_target:
+    if has_goal_data:
         grid.add_column(justify="center")
         states_grid = Table.grid(expand=False)
         states_grid.add_row(
             Align.center("[bold blue]Start State[/bold blue]"),
             "",
-            Align.center("[bold blue]Target State[/bold blue]"),
+            Align.center("[bold blue]Goal[/bold blue]"),
         )
         states_grid.add_row(
             init_state.str(solve_config=solve_config),
@@ -121,7 +121,7 @@ def build_human_play_layout(
 
 def build_seed_setup_panel(
     puzzle,
-    has_target: bool,
+    has_goal_data: bool,
     solve_config,
     state,
     dist_text: Text,
@@ -129,13 +129,13 @@ def build_seed_setup_panel(
 ) -> Panel:
     grid = Table.grid(expand=False)
 
-    if has_target:
+    if has_goal_data:
         grid.add_column(justify="center")
         states_grid = Table.grid(expand=False)
         states_grid.add_row(
             Align.center("[bold blue]Start State[/bold blue]"),
             "",
-            Align.center("[bold blue]Target State[/bold blue]"),
+            Align.center("[bold blue]Goal[/bold blue]"),
         )
         states_grid.add_row(
             Text.from_ansi(state.str(solve_config=solve_config)),
@@ -362,10 +362,10 @@ def save_solution_animation_and_frames(
     return gif_path
 
 
-def build_vmapped_setup_panel(has_target, solve_configs, states) -> Panel:
+def build_vmapped_setup_panel(has_goal_data, solve_configs, states) -> Panel:
     grid = Table.grid(expand=False)
     grid.add_row(Text.from_ansi(states.str(solve_config=solve_configs)))
-    if has_target:
+    if has_goal_data:
         grid.add_row(Align.center("[bold blue]↓[/bold blue]\n", vertical="middle"))
         grid.add_row(Text.from_ansi(str(solve_configs)))
     return Panel(grid, title="[bold blue]Vmapped Search Setup[/bold blue]", expand=False)

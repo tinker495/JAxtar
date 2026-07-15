@@ -14,6 +14,6 @@ class PDDLHeuristic(Heuristic):
         h(s) = |{ g in GoalMask | g is False in s }|
         """
         atoms = current.unpacked_atoms
-        goal_mask = solve_config.GoalMask
+        goal_mask = solve_config.GoalSpec.GoalMask
         missing = jnp.logical_and(goal_mask, jnp.logical_not(atoms))
         return jnp.sum(missing).astype(jnp.float32)

@@ -16,7 +16,7 @@ from .options import human_play_options, puzzle_options
 @human_play_options
 def human_play(puzzle: Puzzle, seed: int, **kwargs):
     console = Console()
-    has_target = puzzle.has_target
+    has_goal_data = puzzle.has_goal_data
 
     solve_config, init_state = puzzle.get_inits(jax.random.PRNGKey(seed))
     _, costs = puzzle.get_neighbours(solve_config, init_state)
@@ -29,7 +29,9 @@ def human_play(puzzle: Puzzle, seed: int, **kwargs):
 
     console.print(
         build_human_play_setup_panel(
-            has_target=has_target, solve_config=solve_config, init_state=init_state
+            has_goal_data=has_goal_data,
+            solve_config=solve_config,
+            init_state=init_state,
         )
     )
 

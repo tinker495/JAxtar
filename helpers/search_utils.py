@@ -1,7 +1,6 @@
 import time
 
 import jax
-import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
@@ -11,17 +10,12 @@ _VMAPPED_STAR_CACHE: dict[tuple[int, int], callable] = {}
 def vmapping_init_target(
     puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]
 ) -> tuple[Puzzle.SolveConfig, Puzzle.State]:
-    start_state_seed = start_state_seeds[0]
-    solve_configs, states = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
-    solve_configs = xnp.tile(solve_configs[jnp.newaxis, ...], (vmap_size, 1))
-    states = xnp.tile(states[jnp.newaxis, ...], (vmap_size, 1))
-
-    if len(start_state_seeds) > 1:
-        for i, start_state_seed in enumerate(start_state_seeds[1:vmap_size]):
-            new_solve_configs, new_states = puzzle.get_inits(jax.random.PRNGKey(start_state_seed))
-            states = states.at[i + 1].set(new_states)
-            solve_configs = solve_configs.at[i + 1].set(new_solve_configs)
-    return solve_configs, states
+    init_rows = [
+        puzzle.get_inits(jax.random.PRNGKey(seed)) for seed in start_state_seeds[:vmap_size]
+    ]
+    init_rows.extend([init_rows[0]] * (vmap_size - len(init_rows)))
+    solve_configs, states = zip(*init_rows)
+    return xnp.stack(solve_configs, axis=0), xnp.stack(states, axis=0)
 
 
 def vmapping_search(

@@ -24,10 +24,10 @@ class TSPHeuristic(Heuristic):
         """
         # Unpack visited mask and point index.
         visited = current.mask_unpacked.astype(jnp.bool_)
-        current_idx = current.point_unpacked
+        current_idx = current.point
 
-        distance_matrix = solve_config.distance_matrix
-        start_idx = solve_config.start
+        distance_matrix = solve_config.InstanceContext.distance_matrix
+        start_idx = solve_config.InstanceContext.start
 
         # If every city has been visited, heuristic is simply the cost of
         # returning to the start city (or 0 if we are already at the start).

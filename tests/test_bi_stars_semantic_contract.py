@@ -35,7 +35,10 @@ def _make_valid_slide_solve_config(puzzle: SlidePuzzle):
         axis=0,
     )
     goal = puzzle.State.default().set_unpacked(board=board)
-    solve_config = puzzle.SolveConfig(TargetState=goal)
+    solve_config = puzzle.SolveConfig(
+        InstanceContext=puzzle.InstanceContext(),
+        GoalSpec=goal,
+    )
     return solve_config, goal
 
 

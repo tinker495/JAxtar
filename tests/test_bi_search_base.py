@@ -25,7 +25,13 @@ def _make_valid_slide_solve_config(puzzle: SlidePuzzle):
         axis=0,
     )
     goal = puzzle.State.default().set_unpacked(board=board)
-    return puzzle.SolveConfig(TargetState=goal), goal
+    return (
+        puzzle.SolveConfig(
+            InstanceContext=puzzle.InstanceContext(),
+            GoalSpec=goal,
+        ),
+        goal,
+    )
 
 
 def _states_equal(left, right) -> bool:
