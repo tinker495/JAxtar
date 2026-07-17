@@ -246,7 +246,7 @@ class AimLogger(BaseLogger):
                 "original_path": artifact_path,
                 "size": (os.path.getsize(dest_path) if os.path.isfile(dest_path) else "directory"),
             }
-            self.aim_run.track(artifact_info, name=f"artifacts/{artifact_type}/{artifact_name}")
+            self.aim_run.set(("artifacts", artifact_type, artifact_name), artifact_info)
 
     def close(self):
         if self.aim_run:
