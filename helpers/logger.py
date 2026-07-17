@@ -385,7 +385,9 @@ class WandbLogger(BaseLogger):
 
 
 class NoOpLogger(BaseLogger):
-    def __init__(self):
+    def __init__(self, log_dir_base: str, config: dict):
+        # Keep the BaseLogger contract (log_dir) so checkpoint saving still works.
+        super().__init__(log_dir_base, config)
         print("Logging is disabled.")
 
     def _log_hyperparameters(self):
@@ -426,6 +428,6 @@ def create_logger(logger_type: str, log_dir_base: str, config: dict) -> BaseLogg
     elif logger_type == "wandb":
         return WandbLogger(log_dir_base, config)
     elif logger_type == "none":
-        return NoOpLogger()
+        return NoOpLogger(log_dir_base, config)
     else:
         raise ValueError(f"Unknown logger type: {logger_type}")

@@ -1,5 +1,6 @@
 import importlib.abc
 import sys
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -57,7 +58,8 @@ def test_base_cli_help_does_not_import_logging_or_plot_stack(monkeypatch):
     assert "eval" in result.output
 
 
-def test_noop_logger_does_not_import_logging_backends(monkeypatch):
+def test_noop_logger_does_not_import_logging_backends(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     _purge_modules(monkeypatch, "helpers.logger")
     sys.meta_path.insert(0, _BlockOptionalStack())
     try:
@@ -70,3 +72,6 @@ def test_noop_logger_does_not_import_logging_backends(monkeypatch):
         ]
 
     assert isinstance(logger, NoOpLogger)
+    checkpoint = Path(logger.log_dir) / "checkpoint.pkl"
+    checkpoint.write_bytes(b"checkpoint")
+    assert checkpoint.is_file()
