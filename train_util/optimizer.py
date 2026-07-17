@@ -7,13 +7,14 @@ PyTree = Any
 
 
 def adamw_cwd(**kwargs: Any) -> optax.GradientTransformation:
-    return optax.chain(
-        optax.scale_by_adam(**kwargs),
-        optax.contrib.add_cautious_weight_decay(
-            kwargs.get("weight_decay", None), kwargs.get("weight_decay_mask", None)
-        ),
-        optax.scale_by_learning_rate(kwargs.get("learning_rate", None)),
-    )
+    learning_rate = kwargs.pop("learning_rate", None)
+    weight_decay = kwargs.pop("weight_decay", None)
+    weight_decay_mask = kwargs.pop("weight_decay_mask", None)
+    transforms = [optax.scale_by_adam(**kwargs)]
+    if weight_decay is not None:
+        transforms.append(optax.contrib.add_cautious_weight_decay(weight_decay, weight_decay_mask))
+    transforms.append(optax.scale_by_learning_rate(learning_rate))
+    return optax.chain(*transforms)
 
 
 def adoptw_cwd(
