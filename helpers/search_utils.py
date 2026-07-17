@@ -4,6 +4,8 @@ import jax
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
+from helpers.jax_compile import compile_with_example, warmup_with_example
+
 _VMAPPED_STAR_CACHE: dict[tuple[int, int], callable] = {}
 
 
@@ -39,10 +41,11 @@ def vmapping_search(
     if show_compile_time:
         print("initializing vmapped jit")
         start = time.time()
-    vmapped_star(empty_solve_configs, empty_states)
+    compile_with_example(vmapped_star, empty_solve_configs, empty_states)
     if show_compile_time:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")
         print("JIT compiled\n\n")
+    warmup_with_example(vmapped_star, empty_solve_configs, empty_states)
     _VMAPPED_STAR_CACHE[cache_key] = vmapped_star
     return vmapped_star

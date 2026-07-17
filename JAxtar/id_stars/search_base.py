@@ -15,7 +15,7 @@ from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_d
 from xtructure.core.packing import pack_rows
 from xtructure.stack import Stack
 
-from helpers.jax_compile import compile_with_example
+from helpers.jax_compile import compile_with_example, warmup_with_example
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.expansion_trace import ExpansionTrace
 from JAxtar.id_stars.id_frontier import ACTION_PAD, IDFrontier, compact_by_valid
@@ -775,16 +775,14 @@ def finalize_builder(
         start_t = time.time()
 
     if warmup_inputs is None:
-        empty_solve_config = puzzle.SolveConfig.default()
-        empty_states = puzzle.State.default()
-        jitted_fn(empty_solve_config, empty_states)
-    else:
-        compile_with_example(jitted_fn, *warmup_inputs)
+        warmup_inputs = (puzzle.SolveConfig.default(), puzzle.State.default())
+    compile_with_example(jitted_fn, *warmup_inputs)
 
     if show_compile_time:
         print(f"{name} JIT compile time: {time.time() - start_t:.2f}s")
         print("JIT compiled\n\n")
 
+    warmup_with_example(jitted_fn, *warmup_inputs)
     return jitted_fn
 
 

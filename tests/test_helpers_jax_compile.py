@@ -1,3 +1,5 @@
+from typing import NamedTuple
+
 import jax
 import jax.numpy as jnp
 
@@ -5,6 +7,7 @@ from helpers.jax_compile import (
     compile_search_builder,
     compile_with_example,
 )
+from JAxtar.id_stars.search_base import finalize_builder
 
 
 def test_compile_with_example_prints_warmup_log_when_enabled(monkeypatch, capsys):
@@ -68,3 +71,68 @@ def test_compile_search_builder_builds_jitted_callable_for_puzzle_defaults():
     out = compiled_fn(_Puzzle.SolveConfig.default(), _Puzzle.State.default())
 
     assert (jax.device_get(out) == jnp.array([4.0, 6.0])).all()
+
+
+def test_compile_search_builder_executes_warmup_before_return():
+    executions = []
+
+    class _Puzzle:
+        class State:
+            @staticmethod
+            def default():
+                return jnp.array([0], dtype=jnp.int32)
+
+        class SolveConfig:
+            @staticmethod
+            def default():
+                return jnp.array([0], dtype=jnp.int32)
+
+    def add(cfg, state):
+        jax.debug.callback(lambda value: executions.append(int(value[0])), state)
+        return cfg + state
+
+    compile_search_builder(
+        add,
+        _Puzzle(),
+        warmup_inputs=(
+            jnp.array([3], dtype=jnp.int32),
+            jnp.array([7], dtype=jnp.int32),
+        ),
+    )
+
+    assert executions == [7]
+
+
+def test_id_search_builder_executes_warmup_before_return():
+    executions = []
+
+    class _Puzzle:
+        class State:
+            @staticmethod
+            def default():
+                return jnp.array([0], dtype=jnp.int32)
+
+        class SolveConfig:
+            @staticmethod
+            def default():
+                return jnp.array([0], dtype=jnp.int32)
+
+    class _LoopState(NamedTuple):
+        search_result: jax.Array
+
+    def init_loop(cfg, state):
+        jax.debug.callback(lambda value: executions.append(int(value[0])), state)
+        return _LoopState(cfg + state)
+
+    finalize_builder(
+        _Puzzle(),
+        init_loop=init_loop,
+        cond=lambda _: jnp.array(False),
+        body=lambda loop_state: loop_state,
+        warmup_inputs=(
+            jnp.array([3], dtype=jnp.int32),
+            jnp.array([7], dtype=jnp.int32),
+        ),
+    )
+
+    assert executions == [7]

@@ -8,6 +8,7 @@ Bidirectional, or Iterative Deepening result internals.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from typing import Any, Mapping, Sequence
 
@@ -63,6 +64,21 @@ class SearchOutcome:
         return self.path_steps[-1].state
 
 
+def measure_search(search_fn: Any, *args: Any) -> tuple[Any, float]:
+    """Run one compiled search and measure only its synchronized execution."""
+
+    start_time = time.time()
+    search_result = search_fn(*args)
+    ready_value = (
+        search_result.meeting.found
+        if _is_bidirectional_result(search_result)
+        else search_result.solved
+    )
+    if hasattr(ready_value, "block_until_ready"):
+        ready_value.block_until_ready()
+    return search_result, time.time() - start_time
+
+
 def normalise_search_result(
     search_result: Any,
     *,
@@ -70,8 +86,8 @@ def normalise_search_result(
 ) -> SearchOutcome:
     """Extract cheap runner facts while hiding Result implementation variants.
 
-    This function intentionally does not materialise path steps. Callers can
-    measure search time after this blocking normalisation, then opt into
+    This function intentionally does not materialise path steps. Callers measure
+    synchronized search execution first, then use this function and optionally
     `with_solution_path(...)` for trace / artifact / verification facts.
     """
 

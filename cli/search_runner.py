@@ -1,5 +1,4 @@
 import json
-import time
 
 import jax
 import jax.numpy as jnp
@@ -34,7 +33,7 @@ from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
 from .config_utils import enrich_config
-from .search_outcome import normalise_search_result, with_solution_path
+from .search_outcome import measure_search, normalise_search_result, with_solution_path
 
 
 def search_samples(
@@ -88,14 +87,11 @@ def search_samples(
             console.print("[yellow]Profiling enabled, starting trace...[/yellow]")
             jax.profiler.start_trace("tmp/tensorboard")
 
-        start = time.time()
-        search_result = search_fn(solve_config, state)
+        search_result, single_search_time = measure_search(search_fn, solve_config, state)
         outcome = normalise_search_result(
             search_result,
             emit_workload_signature=getattr(search_options, "emit_workload_signature", False),
         )
-        end = time.time()
-        single_search_time = end - start
         states_per_second = outcome.generated_size / single_search_time
 
         def ensure_path_outcome():
@@ -224,11 +220,8 @@ def vmapped_search_samples(
         )
     )
 
-    start = time.time()
-    search_result = vmapped_search(solve_configs, states)
-    solved = search_result.solved.block_until_ready()
-    end = time.time()
-    vmapped_search_time = end - start
+    search_result, vmapped_search_time = measure_search(vmapped_search, solve_configs, states)
+    solved = search_result.solved
 
     if not has_goal_data and solved.any():
         solved_st = jax.vmap(SearchResult.get_state, in_axes=(0, 0))(

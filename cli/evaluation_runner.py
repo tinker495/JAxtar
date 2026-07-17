@@ -2,7 +2,6 @@ import concurrent.futures
 import itertools
 import json
 import os
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Union
@@ -37,6 +36,7 @@ from .search_outcome import (
     attach_expansion_analysis,
     build_deferred_payload,
     build_evaluation_result_item,
+    measure_search,
     normalise_search_result,
     with_solution_path,
 )
@@ -441,15 +441,11 @@ class EvaluationRunner:
             solve_config, state = self.puzzle.get_inits(jax.random.PRNGKey(seed))
             run_identifier = seed
 
-        start_time = time.time()
-        search_result = search_fn(solve_config, state)
+        search_result, search_time = measure_search(search_fn, solve_config, state)
         outcome = normalise_search_result(
             search_result,
             emit_workload_signature=self.eval_options.emit_workload_signature,
         )
-        end_time = time.time()
-
-        search_time = end_time - start_time
 
         if outcome.solved:
             outcome = with_solution_path(

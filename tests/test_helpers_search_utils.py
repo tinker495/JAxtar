@@ -7,6 +7,7 @@ import pytest
 from puxle import PDDL, TSP
 from xtructure import StructuredType
 
+from helpers import search_utils
 from helpers.search_utils import vmapping_init_target, vmapping_search
 
 
@@ -120,3 +121,24 @@ def test_vmapping_search_prints_compile_time_when_requested():
     assert "initializing vmapped jit" in out
     assert "Compile Time" in out
     assert "JIT compiled" in out
+
+
+def test_vmapping_search_reports_compile_before_execution_warmup(monkeypatch):
+    clock = {"now": 0.0}
+    executions = []
+    monkeypatch.setattr(search_utils.time, "time", lambda: clock["now"])
+
+    def _fresh_fn(solve_config, state):
+        def record(value):
+            executions.append(int(value))
+            clock["now"] += 5.0
+
+        jax.debug.callback(record, state)
+        return solve_config + state
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        vmapping_search(_VmapPuzzle(), _fresh_fn, vmap_size=1, show_compile_time=True)
+
+    assert "Compile Time:   0.00 seconds" in buf.getvalue()
+    assert executions == [0]
