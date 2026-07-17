@@ -199,7 +199,9 @@ def compute_diffusion_targets(
         current_v = unique_v[inverse_indices]
 
         if inverse_state_indices is not None and num_unique_states is not None:
-            # Q-learning: combine global state-min info and trajectory info
+            # Q-learning: propagate V(s') = min over all rows at the parent's state.
+            # The trajectory parent's own row is a member of that state group, so its
+            # value is always >= the group min; no separate parent-row lookup needed.
             state_min_v = _collapse(current_v, inverse_state_indices, num_unique_states)
             padded_state_min_v = jnp.pad(state_min_v, ((0, 1), (0, 0)), constant_values=jnp.inf)
 
@@ -207,11 +209,7 @@ def compute_diffusion_targets(
                 inverse_state_indices, (0, 1), constant_values=num_unique_states
             )
             parent_state_group = inverse_state_indices_padded[safe_parent_indices]
-            v_parents_optimal = padded_state_min_v[parent_state_group]
-
-            collapsed_padded_v = jnp.pad(current_v, ((0, 1), (0, 0)), constant_values=jnp.inf)
-            v_parents_prop = collapsed_padded_v[safe_parent_indices]
-            v_parents = jnp.minimum(v_parents_optimal, v_parents_prop)
+            v_parents = padded_state_min_v[parent_state_group]
         else:
             # Heuristic: simple propagation
             collapsed_padded_v = jnp.pad(current_v, ((0, 1), (0, 0)), constant_values=jnp.inf)
