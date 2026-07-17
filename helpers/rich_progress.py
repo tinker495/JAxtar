@@ -92,6 +92,9 @@ class RichProgressBar:
             self.metrics_column,
             console=self.console,
             refresh_per_second=10,
+            # rich's default 30s speed window goes empty when a single step
+            # takes longer than that, collapsing the ETA to "-:--:--".
+            speed_estimate_period=24 * 60 * 60,
         )
 
         self.task_id: Optional[TaskID] = None
