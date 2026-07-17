@@ -856,15 +856,18 @@ class SearchResult:
         final_costs = jnp.where(final_process_mask, final_costs, jnp.inf)
         search_result.priority_queue = search_result.priority_queue.insert(return_keys, final_val)
 
-        # Reuse the probe captured during the lookup of these same states (threaded
-        # through the merge/sort loop) so parallel_insert skips its redundant hash pass.
+        # The merge loop already deduplicated these states. Reuse its probe and
+        # skip both redundant hashing and intra-batch deduplication at insertion.
         (
             search_result.hashtable,
             inserted_mask,
             _,
             hash_idx,
         ) = search_result.hashtable.parallel_insert(
-            final_states, final_process_mask, probe=final_probe
+            final_states,
+            final_process_mask,
+            probe=final_probe,
+            assume_unique=True,
         )
 
         def _update_inserted(sr: "SearchResult"):
