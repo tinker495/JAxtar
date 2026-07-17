@@ -214,8 +214,7 @@ def _run_distance_training(
     dataset_kwargs = {
         "n_devices": n_devices,
         "temperature": train_options.temperature,
-        "use_diffusion_distance": train_options.use_diffusion_distance,
-        "use_diffusion_distance_mixture": train_options.use_diffusion_distance_mixture,
+        "label": train_options.label,
         "use_diffusion_distance_warmup": train_options.use_diffusion_distance_warmup,
         "diffusion_distance_warmup_steps": train_options.diffusion_distance_warmup_steps,
         "non_backtracking_steps": train_options.sampling_non_backtracking_steps,

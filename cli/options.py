@@ -793,18 +793,14 @@ def dist_train_options(
         @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
         @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
         @click.option(
-            "-dd",
-            "--use_diffusion_distance",
-            is_flag=True,
+            "--label",
+            type=click.Choice(["td", "diffusion", "diffusion_mixture"]),
             default=None,
-            help="Enable diffusion distance features in dataset creation.",
-        )
-        @click.option(
-            "-ddm",
-            "--use_diffusion_distance_mixture",
-            is_flag=True,
-            default=None,
-            help="Enable diffusion distance mixture features in dataset creation.",
+            help=(
+                "Training target generation: 'td' bootstrap targets (DAVI / Q-learning), "
+                "'diffusion' trajectory Bellman propagation, or 'diffusion_mixture' "
+                "combining both. Default: 'td'."
+            ),
         )
         @click.option(
             "--use_diffusion_distance_warmup",

@@ -70,10 +70,9 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `Flag`
 -   `-ts, --using_triangular_sampling`: Use triangular sampling for generating states.
     -   Type: `Flag`
--   `-dd, --use_diffusion_distance`: Enable diffusion distance features in dataset creation.
-    -   Type: `Flag`
--   `-ddm, --use_diffusion_distance_mixture`: Enable diffusion distance mixture features in dataset creation.
-    -   Type: `Flag`
+-   `--label`: Selects how training targets are generated: `td` (bootstrap targets; DAVI), `diffusion` (trajectory Bellman propagation), or `diffusion_mixture` (combining both).
+    -   Type: `Choice`
+    -   Default: `td`
 -   `--use_diffusion_distance_warmup`: Enable warmup schedule when using diffusion distance features.
     -   Type: `Flag`
 -   `--diffusion_distance_warmup_steps`: Number of iterations to run before enabling diffusion distance features.

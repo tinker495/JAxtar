@@ -1,4 +1,4 @@
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -174,8 +174,13 @@ class DistTrainOptions(BaseModel):
     use_double_dqn: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
-    use_diffusion_distance: bool = False
-    use_diffusion_distance_mixture: bool = False
+    label: Literal["td", "diffusion", "diffusion_mixture"] = Field(
+        "td",
+        description=(
+            "Training target generation: 'td' bootstrap targets (DAVI / Q-learning), "
+            "'diffusion' trajectory Bellman propagation, or 'diffusion_mixture' combining both."
+        ),
+    )
     use_diffusion_distance_warmup: bool = False
     diffusion_distance_warmup_steps: int = 0
     debug: bool = False

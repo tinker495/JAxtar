@@ -253,12 +253,13 @@ def get_heuristic_dataset_builder(
     using_triangular_sampling: bool = False,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
-    use_diffusion_distance: bool = False,
-    use_diffusion_distance_mixture: bool = False,
+    label: str = "td",
     use_diffusion_distance_warmup: bool = False,
     diffusion_distance_warmup_steps: int = 0,
     non_backtracking_steps: int = 3,
 ):
+    if label not in ("td", "diffusion", "diffusion_mixture"):
+        raise ValueError(f"Unknown training label: {label!r}")
     (
         nn_minibatch_size,
         shuffle_parallel,
@@ -289,7 +290,7 @@ def get_heuristic_dataset_builder(
         temperature=temperature,
     )
 
-    use_diffusion_features = use_diffusion_distance or use_diffusion_distance_mixture
+    use_diffusion_features = label in ("diffusion", "diffusion_mixture")
 
     if use_diffusion_features:
 
@@ -298,7 +299,7 @@ def get_heuristic_dataset_builder(
             solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
             states: FieldDescriptor.scalar(dtype=puzzle.State)
 
-        if use_diffusion_distance_mixture:
+        if label == "diffusion_mixture":
             diffusion_get_datasets = partial(
                 _get_datasets_with_diffusion_distance_mixture,
                 puzzle,
