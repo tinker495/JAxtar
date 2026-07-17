@@ -1,30 +1,30 @@
-# Q-Learning Training Command (`distance_train qfunction`)
+# DAVI Heuristic Training Command (`distance_train heuristic`)
 
-The `distance_train qfunction` command is used to train a neural network to serve as a Q-function. The goal of the model is to estimate the expected cost (Q-value) of taking a specific action from a given state. This is a fundamental concept in reinforcement learning and can be used to guide search algorithms like Q\*.
+The `distance_train heuristic` command is used to train a neural network heuristic model. It implements a variant of the "learning from demonstration" paradigm, specifically tailored for heuristic search, which can be thought of as Dynamic A* Value Iteration (DAVI). The goal is to train a model that can accurately predict the distance (cost) from any given state to the goal state.
 
-This command is intended for users interested in reinforcement learning, Q-functions, or training custom models for puzzles.
+This command is intended for users interested in research on neural heuristics or training custom models for puzzles.
 
 ## Usage
 
-The basic syntax for the `distance_train qfunction` command is:
+The basic syntax for the `distance_train heuristic` command is:
 
 ```bash
-python main.py distance_train qfunction [OPTIONS]
+python main.py distance_train heuristic [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py distance_train qfunction -p rubikscube -pre default -s 10000
+python main.py distance_train heuristic -p rubikscube -pre default -s 10000 -db 1000 -dmb 200 -tmb 200
 ```
 
 ## Options
 
-The `distance_train qfunction` command uses several option groups to configure the training process.
+The `distance_train heuristic` command uses several option groups to configure the training process.
 
 ### Puzzle Options (`@dist_puzzle_options`)
 
-These options define the puzzle environment for which the Q-function is being trained.
+These options define the puzzle environment for which the heuristic is being trained.
 
 -   `-p, --puzzle`: Specifies the puzzle to use for training.
     -   Type: `Choice`
@@ -70,13 +70,12 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `Flag`
 -   `-ts, --using_triangular_sampling`: Use triangular sampling for generating states.
     -   Type: `Flag`
--   `--label`: Selects how training targets are generated: `td` (bootstrap targets; Q-learning), `diffusion` (trajectory Bellman propagation), or `diffusion_mixture` (combining both).
+-   `--label`: Selects how training targets are generated: `td` (bootstrap targets; DAVI — always min-capped by deduplicated trajectory/diffusion distances to suppress overestimation), `diffusion` (trajectory Bellman propagation), or `warmup_td` (diffusion targets for the first `--warmup_ratio` of steps, then `td`).
     -   Type: `Choice`
     -   Default: `td`
--   `--use_diffusion_distance_warmup`: Enable warmup schedule when using diffusion distance features.
-    -   Type: `Flag`
--   `--diffusion_distance_warmup_steps`: Number of iterations to run before enabling diffusion distance features.
-    -   Type: `Integer`
+-   `--warmup_ratio`: Fraction of total training steps that use diffusion targets before switching to `td`. Only used with `--label warmup_td`.
+    -   Type: `Float`
+    -   Default: `0.2`
 -   `--sampling-non-backtracking-steps`: Number of previous states to avoid revisiting during dataset sampling.
     -   Type: `Integer`
 -   `-tp, --temperature`: Boltzmann temperature for action selection.
@@ -111,11 +110,11 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `Choice`
     -   Choices: `aim`, `tensorboard`, `wandb`, `none`
 
-### Q-Function Model Options (`@dist_qfunction_options`)
+### Heuristic Model Options (`@dist_heuristic_options`)
 
-This group contains options specific to the Q-function model being trained.
+This group contains options for specifying the neural network model to be trained.
 
--   `--param-path`: Path to the Q-function parameter file.
+-   `--param-path`: Path to the heuristic parameter file.
     -   Type: `String`
 -   `-nc, --neural_config`: Neural configuration JSON string. Overrides the default configuration.
     -   Type: `String`

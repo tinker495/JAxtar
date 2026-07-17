@@ -26,12 +26,15 @@ from train_util.util import boltzmann_action_selection
 def _get_datasets_with_policy(
     puzzle: Puzzle,
     preproc_fn: Callable,
+    SolveConfigsAndStatesAndActions: Xtructurable,
+    SolveConfigsAndStates: Xtructurable,
     q_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_q_params: Any,
     q_params: Any,
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
+    k_max: int,
     temperature: float = 1.0 / 3.0,
     use_double_dqn: bool = False,
 ):
@@ -145,9 +148,10 @@ def _get_datasets_with_policy(
             states,
             target_q,
             actions,
+            solved,
         )
 
-    _, (solve_configs, states, target_q, actions,) = jax.lax.scan(
+    _, (solve_configs, states, target_q, actions, solved) = jax.lax.scan(
         get_minibatched_datasets,
         key,
         (minibatched_solve_configs, minibatched_states),
@@ -157,6 +161,25 @@ def _get_datasets_with_policy(
     states = states.reshape((-1,))
     target_q = target_q.reshape((-1, 1))
     actions = actions.reshape((-1, 1))
+    is_solved = solved.reshape((-1,))
+
+    trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
+    diffusion_q = _compute_diffusion_q(
+        solve_configs,
+        states,
+        is_solved,
+        trajectory_actions,
+        shuffled_path["move_costs"],
+        shuffled_path["action_costs"].reshape((-1, 1)),
+        shuffled_path["parent_indices"],
+        SolveConfigsAndStatesAndActions,
+        SolveConfigsAndStates,
+        k_max,
+    )
+    # Diffusion Q values describe the trajectory action; cap only rows where the
+    # sampled action matches it, so targets of unrelated actions stay untouched.
+    same_action = actions == trajectory_actions
+    target_q = jnp.where(same_action, jnp.minimum(target_q, diffusion_q), target_q)
 
     return {
         "solve_config": solve_configs,
@@ -234,7 +257,6 @@ def _get_datasets_with_diffusion_distance(
     shuffled_path: dict[str, chex.Array],
     key: chex.PRNGKey,
     k_max: int,
-    shuffle_parallel: int,
     temperature: float = 1.0 / 3.0,
     use_double_dqn: bool = False,
 ):
@@ -274,78 +296,6 @@ def _get_datasets_with_diffusion_distance(
     }
 
 
-def _get_datasets_with_diffusion_distance_mixture(
-    puzzle: Puzzle,
-    preproc_fn: Callable,
-    SolveConfigsAndStatesAndActions: Xtructurable,
-    SolveConfigsAndStates: Xtructurable,
-    q_model: DistanceModel | DistanceHLGModel,
-    minibatch_size: int,
-    target_q_params: Any,
-    q_params: Any,
-    shuffled_path: dict[str, chex.Array],
-    key: chex.PRNGKey,
-    k_max: int,
-    shuffle_parallel: int,
-    temperature: float = 1.0 / 3.0,
-    use_double_dqn: bool = False,
-):
-    trajectory_actions = shuffled_path["actions"].reshape((-1, 1))
-    return_dict = _get_datasets_with_policy(
-        puzzle,
-        preproc_fn,
-        q_model,
-        minibatch_size,
-        target_q_params,
-        q_params,
-        shuffled_path,
-        key,
-        temperature,
-        use_double_dqn,
-    )
-    cost = shuffled_path["move_costs"].reshape((-1,))
-    target_q = return_dict["distance"]
-
-    # Prepare for propagation
-    action_costs = shuffled_path["action_costs"].reshape((-1, 1))
-    parent_indices = shuffled_path["parent_indices"]
-    solve_configs = return_dict["solve_config"]
-    states = return_dict["state"]
-
-    # Already flattened in return_dict of _get_datasets_with_policy?
-    # Yes, solve_configs.reshape((-1,)) at end of _get_datasets_with_policy
-
-    is_solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True).reshape(
-        (-1,)
-    )
-
-    diffusion_q = _compute_diffusion_q(
-        solve_configs,
-        states,
-        is_solved,
-        trajectory_actions,
-        cost,  # Use cost (move_costs) as initial estimate
-        action_costs,
-        parent_indices,
-        SolveConfigsAndStatesAndActions,
-        SolveConfigsAndStates,
-        k_max,
-    )
-
-    target_q = jnp.concatenate(
-        (target_q, diffusion_q),
-        axis=1,
-    )  # [dataset_size, 2]
-    return_dict["distance"] = target_q
-    actions = return_dict["action"]
-    actions = jnp.concatenate(
-        (actions, trajectory_actions),
-        axis=1,
-    )  # [dataset_size, 2]
-    return_dict["action"] = actions
-    return return_dict
-
-
 def get_qfunction_dataset_builder(
     puzzle: Puzzle,
     preproc_fn: Callable,
@@ -359,18 +309,14 @@ def get_qfunction_dataset_builder(
     temperature: float = 1.0 / 3.0,
     use_double_dqn: bool = False,
     label: str = "td",
-    use_diffusion_distance_warmup: bool = False,
-    diffusion_distance_warmup_steps: int = 0,
+    diffusion_warmup_steps: int = 0,
     non_backtracking_steps: int = 3,
 ):
-    if label not in ("td", "diffusion", "diffusion_mixture"):
+    if label not in ("td", "diffusion", "warmup_td"):
         raise ValueError(f"Unknown training label: {label!r}")
-    (
-        nn_minibatch_size,
-        shuffle_parallel,
-        steps,
-        jited_create_shuffled_path,
-    ) = prepare_shuffled_path_sampling(
+    if label == "warmup_td" and diffusion_warmup_steps <= 0:
+        raise ValueError("label='warmup_td' requires diffusion_warmup_steps > 0")
+    (nn_minibatch_size, _, steps, jited_create_shuffled_path,) = prepare_shuffled_path_sampling(
         puzzle=puzzle,
         dataset_size=dataset_size,
         k_max=k_max,
@@ -387,61 +333,41 @@ def get_qfunction_dataset_builder(
         fixed_target_error="Fixed target is not supported for hindsight target",
     )
 
+    @xtructure_dataclass
+    class SolveConfigsAndStatesAndActions:
+        solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
+        states: FieldDescriptor.scalar(dtype=puzzle.State)
+        actions: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))
+
+    @xtructure_dataclass
+    class SolveConfigsAndStates:
+        solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
+        states: FieldDescriptor.scalar(dtype=puzzle.State)
+
     base_get_datasets = partial(
         _get_datasets_with_policy,
         puzzle,
         preproc_fn,
+        SolveConfigsAndStatesAndActions,
+        SolveConfigsAndStates,
         q_model,
         nn_minibatch_size,
+        k_max=k_max,
         temperature=temperature,
         use_double_dqn=use_double_dqn,
     )
-
-    use_diffusion_features = label in ("diffusion", "diffusion_mixture")
-
-    if use_diffusion_features:
-
-        @xtructure_dataclass
-        class SolveConfigsAndStatesAndActions:
-            solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-            states: FieldDescriptor.scalar(dtype=puzzle.State)
-            actions: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))
-
-        @xtructure_dataclass
-        class SolveConfigsAndStates:
-            solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-            states: FieldDescriptor.scalar(dtype=puzzle.State)
-
-        if label == "diffusion_mixture":
-            diffusion_get_datasets = partial(
-                _get_datasets_with_diffusion_distance_mixture,
-                puzzle,
-                preproc_fn,
-                SolveConfigsAndStatesAndActions,
-                SolveConfigsAndStates,
-                q_model,
-                nn_minibatch_size,
-                k_max=k_max,
-                shuffle_parallel=shuffle_parallel,
-                temperature=temperature,
-                use_double_dqn=use_double_dqn,
-            )
-        else:
-            diffusion_get_datasets = partial(
-                _get_datasets_with_diffusion_distance,
-                puzzle,
-                preproc_fn,
-                SolveConfigsAndStatesAndActions,
-                SolveConfigsAndStates,
-                q_model,
-                nn_minibatch_size,
-                k_max=k_max,
-                shuffle_parallel=shuffle_parallel,
-                temperature=temperature,
-                use_double_dqn=use_double_dqn,
-            )
-    else:
-        diffusion_get_datasets = base_get_datasets
+    diffusion_get_datasets = partial(
+        _get_datasets_with_diffusion_distance,
+        puzzle,
+        preproc_fn,
+        SolveConfigsAndStatesAndActions,
+        SolveConfigsAndStates,
+        q_model,
+        nn_minibatch_size,
+        k_max=k_max,
+        temperature=temperature,
+        use_double_dqn=use_double_dqn,
+    )
 
     return wrap_dataset_runner(
         dataset_size=dataset_size,
@@ -450,9 +376,8 @@ def get_qfunction_dataset_builder(
         base_get_datasets=base_get_datasets,
         diffusion_get_datasets=diffusion_get_datasets,
         should_use_diffusion_fn=make_diffusion_step_selector(
-            use_diffusion_features=use_diffusion_features,
-            use_diffusion_distance_warmup=use_diffusion_distance_warmup,
-            diffusion_distance_warmup_steps=diffusion_distance_warmup_steps,
+            label=label,
+            diffusion_warmup_steps=diffusion_warmup_steps,
         ),
         n_devices=n_devices,
     )

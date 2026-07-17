@@ -174,15 +174,21 @@ class DistTrainOptions(BaseModel):
     use_double_dqn: bool = False
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
-    label: Literal["td", "diffusion", "diffusion_mixture"] = Field(
+    label: Literal["td", "diffusion", "warmup_td"] = Field(
         "td",
         description=(
-            "Training target generation: 'td' bootstrap targets (DAVI / Q-learning), "
-            "'diffusion' trajectory Bellman propagation, or 'diffusion_mixture' combining both."
+            "Training target generation: 'td' bootstrap targets (DAVI / Q-learning) "
+            "min-capped by deduplicated trajectory (diffusion) distances, 'diffusion' "
+            "pure trajectory Bellman propagation, or 'warmup_td' diffusion targets for "
+            "the first warmup_ratio of steps, then td."
         ),
     )
-    use_diffusion_distance_warmup: bool = False
-    diffusion_distance_warmup_steps: int = 0
+    warmup_ratio: float = Field(
+        0.2,
+        gt=0.0,
+        lt=1.0,
+        description="Fraction of training steps using diffusion targets when label='warmup_td'.",
+    )
     debug: bool = False
     multi_device: bool = True
     reset_interval: int = int(1e6)  # just large enough

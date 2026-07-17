@@ -794,25 +794,20 @@ def dist_train_options(
         @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
         @click.option(
             "--label",
-            type=click.Choice(["td", "diffusion", "diffusion_mixture"]),
+            type=click.Choice(["td", "diffusion", "warmup_td"]),
             default=None,
             help=(
-                "Training target generation: 'td' bootstrap targets (DAVI / Q-learning), "
-                "'diffusion' trajectory Bellman propagation, or 'diffusion_mixture' "
-                "combining both. Default: 'td'."
+                "Training target generation: 'td' bootstrap targets (DAVI / Q-learning) "
+                "min-capped by diffusion trajectory distances, 'diffusion' trajectory "
+                "Bellman propagation, or 'warmup_td' diffusion targets for the first "
+                "--warmup_ratio of steps before switching to td. Default: 'td'."
             ),
         )
         @click.option(
-            "--use_diffusion_distance_warmup",
-            is_flag=True,
+            "--warmup_ratio",
+            type=HUMAN_FLOAT,
             default=None,
-            help="Enable warmup schedule when using diffusion distance features.",
-        )
-        @click.option(
-            "--diffusion_distance_warmup_steps",
-            type=HUMAN_INT,
-            default=None,
-            help="Number of iterations to run before enabling diffusion distance features.",
+            help="Fraction of training steps using diffusion targets with --label warmup_td.",
         )
         @click.option(
             "-tp",

@@ -32,17 +32,30 @@ def test_training_labels_route_and_validate(monkeypatch):
         monkeypatch.setattr(module, "xtructure_dataclass", lambda cls: cls)
         monkeypatch.setattr(module, "wrap_dataset_runner", lambda **kwargs: kwargs)
 
-        expected_by_label = {
-            "td": base_name,
-            "diffusion": "_get_datasets_with_diffusion_distance",
-            "diffusion_mixture": "_get_datasets_with_diffusion_distance_mixture",
-        }
-        for label, expected in expected_by_label.items():
-            runner_config = builder(_Puzzle(), lambda: None, object(), 1, 1, 1, label=label)
-            assert runner_config["diffusion_get_datasets"].func is getattr(module, expected)
+        for label in ("td", "diffusion", "warmup_td"):
+            kwargs = {"label": label}
+            if label == "warmup_td":
+                kwargs["diffusion_warmup_steps"] = 2
+            runner_config = builder(_Puzzle(), lambda: None, object(), 1, 1, 1, **kwargs)
 
-        with pytest.raises(ValueError, match="Unknown training label"):
-            builder(None, None, None, 1, 1, 1, label="unknown")
+            # td runs the diffusion-min-capped bootstrap extractor; the pure diffusion
+            # extractor backs 'diffusion' and the warmup phase of 'warmup_td'
+            assert runner_config["base_get_datasets"].func is getattr(module, base_name)
+            assert runner_config["diffusion_get_datasets"].func is getattr(
+                module, "_get_datasets_with_diffusion_distance"
+            )
+
+            # warmup_td: diffusion targets during warmup, td after; others are static
+            selector = runner_config["should_use_diffusion_fn"]
+            assert selector(0) is (label != "td")
+            assert selector(2) is (label == "diffusion")
+
+        for retired_label in ("diffusion_mixture", "unknown"):
+            with pytest.raises(ValueError, match="Unknown training label"):
+                builder(None, None, None, 1, 1, 1, label=retired_label)
+
+        with pytest.raises(ValueError, match="diffusion_warmup_steps"):
+            builder(None, None, None, 1, 1, 1, label="warmup_td")
 
 
 @pytest.mark.parametrize(("override", "expected"), [(None, "diffusion"), ("td", "td")])

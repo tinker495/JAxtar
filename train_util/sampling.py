@@ -107,21 +107,13 @@ def prepare_shuffled_path_sampling(
 
 def make_diffusion_step_selector(
     *,
-    use_diffusion_features: bool,
-    use_diffusion_distance_warmup: bool,
-    diffusion_distance_warmup_steps: int,
+    label: str,
+    diffusion_warmup_steps: int,
 ) -> Callable[[int], bool]:
-    warmup_steps = max(int(diffusion_distance_warmup_steps), 0)
-    warmup_enabled = use_diffusion_features and use_diffusion_distance_warmup and warmup_steps > 0
-
-    def should_use_diffusion(step: int) -> bool:
-        if not use_diffusion_features:
-            return False
-        if warmup_enabled:
-            return step < warmup_steps
-        return True
-
-    return should_use_diffusion
+    if label == "warmup_td":
+        return lambda step: step < diffusion_warmup_steps
+    use_diffusion = label == "diffusion"
+    return lambda _step: use_diffusion
 
 
 def compute_diffusion_targets(

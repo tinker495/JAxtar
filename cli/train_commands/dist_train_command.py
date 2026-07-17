@@ -132,12 +132,16 @@ def _run_distance_training(
         enable_jit_hard_update=enable_jit_hard_update,
     )
 
+    diffusion_warmup_steps = 0
+    if train_options.label == "warmup_td":
+        # max(1, ...) keeps a warmup phase even in tiny smoke runs
+        diffusion_warmup_steps = max(1, int(steps * train_options.warmup_ratio))
+
     dataset_kwargs = {
         "n_devices": n_devices,
         "temperature": train_options.temperature,
         "label": train_options.label,
-        "use_diffusion_distance_warmup": train_options.use_diffusion_distance_warmup,
-        "diffusion_distance_warmup_steps": train_options.diffusion_distance_warmup_steps,
+        "diffusion_warmup_steps": diffusion_warmup_steps,
         "non_backtracking_steps": train_options.sampling_non_backtracking_steps,
     }
     if dataset_extra_kwargs:
