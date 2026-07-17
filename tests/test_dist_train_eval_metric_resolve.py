@@ -1,11 +1,11 @@
 import click
 
-from cli.train_commands.dist_train_command import _resolve_eval_search_entry
+from cli.train_commands.train_session import resolve_eval_search_entry
 from config.pydantic_models import DistTrainOptions
 
 
 def test_resolve_eval_metric_supports_bidirectional_heuristic_variants():
-    run_label, builder_fn, extra_kwargs = _resolve_eval_search_entry(
+    run_label, builder_fn, extra_kwargs = resolve_eval_search_entry(
         train_options=DistTrainOptions(eval_search_metric="bi_astar"),
         search_model_name="heuristic",
     )
@@ -13,7 +13,7 @@ def test_resolve_eval_metric_supports_bidirectional_heuristic_variants():
     assert builder_fn.__name__ == "bi_astar_builder"
     assert extra_kwargs == {}
 
-    run_label, builder_fn, extra_kwargs = _resolve_eval_search_entry(
+    run_label, builder_fn, extra_kwargs = resolve_eval_search_entry(
         train_options=DistTrainOptions(eval_search_metric="bi_astar_d"),
         search_model_name="heuristic",
     )
@@ -23,7 +23,7 @@ def test_resolve_eval_metric_supports_bidirectional_heuristic_variants():
 
 
 def test_resolve_eval_metric_supports_bidirectional_q_variant():
-    run_label, builder_fn, extra_kwargs = _resolve_eval_search_entry(
+    run_label, builder_fn, extra_kwargs = resolve_eval_search_entry(
         train_options=DistTrainOptions(eval_search_metric="bi_qstar"),
         search_model_name="qfunction",
     )
@@ -34,7 +34,7 @@ def test_resolve_eval_metric_supports_bidirectional_q_variant():
 
 def test_resolve_eval_metric_rejects_invalid_cross_family_metric():
     try:
-        _resolve_eval_search_entry(
+        resolve_eval_search_entry(
             train_options=DistTrainOptions(eval_search_metric="bi_qstar"),
             search_model_name="heuristic",
         )

@@ -37,7 +37,6 @@ def _get_datasets_with_policy(
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
-    move_costs = shuffled_path["move_costs"]
 
     minibatched_solve_configs = solve_configs.reshape((-1, minibatch_size))
     minibatched_states = states.reshape((-1, minibatch_size))
@@ -158,14 +157,12 @@ def _get_datasets_with_policy(
     states = states.reshape((-1,))
     target_q = target_q.reshape((-1, 1))
     actions = actions.reshape((-1, 1))
-    cost = move_costs.reshape((-1,))
 
     return {
-        "solveconfigs": solve_configs,
-        "states": states,
-        "target_q": target_q,
-        "actions": actions,
-        "cost": cost,
+        "solve_config": solve_configs,
+        "state": states,
+        "distance": target_q,
+        "action": actions,
     }
 
 
@@ -269,13 +266,11 @@ def _get_datasets_with_diffusion_distance(
         k_max,
     )
 
-    zeros = jnp.zeros_like(target_q)
     return {
-        "solveconfigs": solve_configs_flat,
-        "states": states_flat,
-        "target_q": target_q,
-        "actions": trajectory_actions,
-        "cost": zeros,
+        "solve_config": solve_configs_flat,
+        "state": states_flat,
+        "distance": target_q,
+        "action": trajectory_actions,
     }
 
 
@@ -308,14 +303,14 @@ def _get_datasets_with_diffusion_distance_mixture(
         temperature,
         use_double_dqn,
     )
-    cost = return_dict["cost"]
-    target_q = return_dict["target_q"]
+    cost = shuffled_path["move_costs"].reshape((-1,))
+    target_q = return_dict["distance"]
 
     # Prepare for propagation
     action_costs = shuffled_path["action_costs"].reshape((-1, 1))
     parent_indices = shuffled_path["parent_indices"]
-    solve_configs = return_dict["solveconfigs"]
-    states = return_dict["states"]
+    solve_configs = return_dict["solve_config"]
+    states = return_dict["state"]
 
     # Already flattened in return_dict of _get_datasets_with_policy?
     # Yes, solve_configs.reshape((-1,)) at end of _get_datasets_with_policy
@@ -341,13 +336,13 @@ def _get_datasets_with_diffusion_distance_mixture(
         (target_q, diffusion_q),
         axis=1,
     )  # [dataset_size, 2]
-    return_dict["target_q"] = target_q
-    actions = return_dict["actions"]
+    return_dict["distance"] = target_q
+    actions = return_dict["action"]
     actions = jnp.concatenate(
         (actions, trajectory_actions),
         axis=1,
     )  # [dataset_size, 2]
-    return_dict["actions"] = actions
+    return_dict["action"] = actions
     return return_dict
 
 

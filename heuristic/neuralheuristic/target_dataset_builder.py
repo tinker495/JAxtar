@@ -75,10 +75,9 @@ def _get_datasets(
             solve_configs,
             states,
             target_heuristic,
-            move_costs,
         )
 
-    _, (solve_configs, states, target_heuristic, cost,) = jax.lax.scan(
+    _, (solve_configs, states, target_heuristic) = jax.lax.scan(
         get_minibatched_datasets,
         None,
         (minibatched_solve_configs, minibatched_states, minibatched_move_costs),
@@ -87,13 +86,11 @@ def _get_datasets(
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
     target_heuristic = target_heuristic.reshape((-1,))
-    cost = cost.reshape((-1,))
 
     return {
-        "solveconfigs": solve_configs,
-        "states": states,
-        "target_heuristic": target_heuristic,
-        "cost": cost,
+        "solve_config": solve_configs,
+        "state": states,
+        "distance": target_heuristic,
     }
 
 
@@ -173,13 +170,10 @@ def _get_datasets_with_diffusion_distance(
         k_max,
     )
 
-    cost = move_costs.reshape((-1,))
-
     return {
-        "solveconfigs": solve_configs,
-        "states": states,
-        "target_heuristic": target_heuristic,
-        "cost": cost,
+        "solve_config": solve_configs,
+        "state": states,
+        "distance": target_heuristic,
     }
 
 
@@ -208,7 +202,7 @@ def _get_datasets_with_diffusion_distance_mixture(
         key,
         temperature,
     )
-    target_heuristic = return_dict["target_heuristic"]
+    target_heuristic = return_dict["distance"]
 
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -237,7 +231,7 @@ def _get_datasets_with_diffusion_distance_mixture(
 
     # Mixture: target_heuristic = max(target_heuristic, diffusion_heuristic * 0.8 - 2.0)
     target_heuristic = jnp.maximum(target_heuristic, diffusion_heuristic * 0.8 - 2.0)
-    return_dict["target_heuristic"] = target_heuristic
+    return_dict["distance"] = target_heuristic
 
     return return_dict
 

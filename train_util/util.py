@@ -49,6 +49,52 @@ def boltzmann_action_selection(
     return probs
 
 
+def build_distance_train_loss(
+    model: Any,
+    preproc_fn: Callable,
+    loss_type: str,
+    loss_args: Any,
+    n_devices: int = 1,
+) -> Callable:
+    """Build the per-minibatch train loss shared by distance-style trainers.
+
+    The returned function has signature
+    ``(params, batch_stats, solve_configs, states, *loss_inputs, key)`` and
+    routes through ``model.train_loss`` with conditionally mutable batch_stats,
+    returning ``(mean_loss, (new_batch_stats, log_infos))``.
+    """
+
+    def train_loss(
+        params: Any,
+        batch_stats: Any,
+        solve_configs: chex.Array,
+        states: chex.Array,
+        *loss_inputs_and_key: Any,
+    ):
+        *loss_inputs, key = loss_inputs_and_key
+        full_params = {"params": params}
+        if batch_stats is not None:
+            full_params["batch_stats"] = batch_stats
+
+        preproc = jax.vmap(preproc_fn)(solve_configs, states)
+        (per_sample_loss, log_infos), variable_updates = apply_with_conditional_batch_stats(
+            model.apply,
+            full_params,
+            preproc,
+            *loss_inputs,
+            training=True,
+            n_devices=n_devices,
+            method=model.train_loss,
+            loss_type=loss_type,
+            loss_args=loss_args,
+            rngs={"params": key},
+        )
+        new_batch_stats = variable_updates.get("batch_stats", batch_stats)
+        return jnp.mean(per_sample_loss), (new_batch_stats, log_infos)
+
+    return train_loss
+
+
 def apply_with_conditional_batch_stats(
     apply_fn: Callable,
     params: Any,

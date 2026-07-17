@@ -5,11 +5,8 @@ from typing import Any, Callable, Dict
 import click
 import jax
 import jax.numpy as jnp
-import numpy as np
 from puxle import Puzzle
 
-from cli.evaluation_runner import run_evaluation_sweep
-from config import benchmark_bundles, resolve_algorithm_for_component
 from config.pydantic_models import DistTrainOptions, PuzzleOptions
 from helpers.config_printer import print_config
 from helpers.jax_compile import compile_with_example
@@ -22,10 +19,8 @@ from heuristic.neuralheuristic.target_dataset_builder import (
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
 from train_util.distance_train_builder import distance_train_builder
-from train_util.optimizer import get_learning_rate, setup_optimizer
+from train_util.optimizer import get_learning_rate
 from train_util.target_update import scaled_by_reset
-from train_util.train_logs import TrainLogInfo
-from train_util.train_state import TrainStateExtended
 
 from ..config_utils import enrich_config
 from ..options import (
@@ -34,69 +29,14 @@ from ..options import (
     dist_qfunction_options,
     dist_train_options,
 )
-
-
-def _resolve_eval_context(
-    puzzle: Puzzle,
-    puzzle_name: str,
-    puzzle_opts: PuzzleOptions,
-    puzzle_bundle,
-):
-    eval_benchmark = getattr(puzzle_bundle, "eval_benchmark", None) if puzzle_bundle else None
-    if not eval_benchmark:
-        return puzzle, puzzle_name, puzzle_opts, {}
-
-    benchmark_bundle = benchmark_bundles.get(eval_benchmark)
-    if benchmark_bundle is None:
-        raise click.UsageError(
-            f"Eval benchmark '{eval_benchmark}' is not registered for puzzle '{puzzle_name}'."
-        )
-
-    benchmark_args = dict(benchmark_bundle.benchmark_args or {})
-    benchmark_instance = benchmark_bundle.benchmark(**benchmark_args)
-
-    eval_kwargs = {
-        "benchmark": benchmark_instance,
-        "benchmark_name": eval_benchmark,
-        "benchmark_bundle": benchmark_bundle,
-        "benchmark_cli_options": {
-            "sample_limit": None,
-            "sample_ids": None,
-        },
-    }
-    return (
-        benchmark_instance.puzzle,
-        eval_benchmark,
-        PuzzleOptions(puzzle=eval_benchmark),
-        eval_kwargs,
-    )
-
-
-def _resolve_eval_search_entry(
-    *,
-    train_options: DistTrainOptions,
-    search_model_name: str,
-) -> tuple[str, callable, dict]:
-    metric = (train_options.eval_search_metric or "").strip()
-    if search_model_name == "heuristic":
-        metric = metric or "astar_d"
-        expected_component = "heuristic"
-    elif search_model_name == "qfunction":
-        metric = metric or "qstar"
-        expected_component = "qfunction"
-    else:
-        raise click.UsageError(f"Unknown search model name '{search_model_name}'.")
-
-    try:
-        resolution = resolve_algorithm_for_component(metric, expected_component)
-    except KeyError as exc:
-        raise click.UsageError(f"Invalid --eval-search-metric '{metric}'.") from exc
-    except ValueError as exc:
-        raise click.UsageError(
-            f"Invalid --eval-search-metric '{metric}' for {search_model_name} training."
-        ) from exc
-
-    return resolution
+from .train_session import (
+    finalize_training,
+    init_train_key,
+    log_train_leaves,
+    resolve_eval_context,
+    run_training_eval,
+    setup_train_state,
+)
 
 
 def _run_distance_training(
@@ -111,7 +51,6 @@ def _run_distance_training(
     train_options: DistTrainOptions,
     k_max: int,
     target_keys: tuple[str, ...],
-    target_key: str,
     dataset_builder: Callable,
     steps: int,
     gradient_updates_per_iteration: int,
@@ -125,7 +64,7 @@ def _run_distance_training(
     **kwargs,
 ):
     eval_options = train_options.eval_options
-    eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = _resolve_eval_context(
+    eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = resolve_eval_context(
         puzzle, puzzle_name, puzzle_opts, puzzle_bundle
     )
     update_interval = train_options.update_interval
@@ -158,37 +97,19 @@ def _run_distance_training(
     }
     print_config(config_title, enrich_config(config))
     logger = create_logger(train_options.logger, f"{puzzle_name}-{logger_suffix}", config)
-    key = jax.random.PRNGKey(
-        np.random.randint(0, 1000000) if train_options.key == 0 else train_options.key
-    )
+    key = init_train_key(train_options)
     key, _ = jax.random.split(key)
-
-    model = search_model.model
-    model_params = search_model.params
 
     if train_options.multi_device and n_devices > 1:
         print(f"Training with {n_devices} devices")
 
-    params = model_params.get("params", model_params)
-    batch_stats = model_params.get("batch_stats", None)
-
-    optimizer, opt_state = setup_optimizer(
-        params,
-        n_devices,
-        steps,
-        train_options.dataset_batch_size // train_options.train_minibatch_size,
-        train_options.optimizer,
-        lr_init=train_options.learning_rate,
-        weight_decay_size=train_options.weight_decay_size,
+    model, optimizer, state = setup_train_state(
+        search_model,
+        train_options,
+        n_devices=n_devices,
+        steps=steps,
+        one_iter_size=train_options.dataset_batch_size // train_options.train_minibatch_size,
     )
-
-    state = TrainStateExtended.create(
-        apply_fn=model.apply,
-        params=params,
-        tx=optimizer,
-        batch_stats=batch_stats,
-        target_params=params,
-    ).replace(opt_state=opt_state)
 
     soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
     enable_jit_hard_update = (
@@ -244,19 +165,28 @@ def _run_distance_training(
         eval_interval = max(1, steps // train_options.eval_count)
 
     pbar = trange(steps)
+    eval_ctx = dict(
+        train_options=train_options,
+        search_model=search_model,
+        search_model_name=search_model_name,
+        eval_puzzle=eval_puzzle,
+        eval_puzzle_name=eval_puzzle_name,
+        eval_puzzle_opts=eval_puzzle_opts,
+        eval_kwargs=eval_kwargs,
+        logger=logger,
+        pbar=pbar,
+    )
     last_reset_time = 0
     last_update_step = -1
 
     for i in pbar:
         key, subkey = jax.random.split(key)
         dataset = get_datasets(state, subkey, i)
-        target = dataset[target_key]
+        target = dataset["distance"]
         mean_target = jnp.mean(target)
         state, loss, log_infos = train_fn(key, dataset, state)
         lr = get_learning_rate(state.opt_state)
-        log_info_leaves = jax.tree_util.tree_leaves(
-            log_infos, is_leaf=lambda x: isinstance(x, TrainLogInfo)
-        )
+        log_info_leaves = log_train_leaves(logger, log_infos, i)
 
         if include_loss_in_progress:
             discription_logs = {
@@ -275,11 +205,6 @@ def _run_distance_training(
 
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Metrics/Mean Target", mean_target, i)
-        for v in log_info_leaves:
-            if v.log_mean:
-                logger.log_scalar(v.mean_name, v.mean, i)
-            if v.log_histogram and i % 100 == 0:
-                logger.log_histogram(v.histogram_name, v.data, i)
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target, i)
 
@@ -323,58 +248,22 @@ def _run_distance_training(
             backup_path = os.path.join(logger.log_dir, f"{save_prefix}_{i}.pkl")
             search_model.save_model(path=backup_path)
             if eval_options.num_eval > 0:
-                light_eval_options = eval_options.light_eval_options
-                eval_run_dir = Path(logger.log_dir) / "evaluation" / f"step_{i}"
-                run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
-                    train_options=train_options, search_model_name=search_model_name
+                run_training_eval(
+                    step=i,
+                    eval_options=eval_options.light_eval_options,
+                    output_dir=Path(logger.log_dir) / "evaluation" / f"step_{i}",
+                    **eval_ctx,
+                    **kwargs,
                 )
-                with pbar.pause():
-                    run_evaluation_sweep(
-                        puzzle=eval_puzzle,
-                        puzzle_name=eval_puzzle_name,
-                        search_model=search_model,
-                        search_model_name=search_model_name,
-                        run_label=run_label,
-                        search_builder_fn=search_builder_fn,
-                        eval_options=light_eval_options,
-                        puzzle_opts=eval_puzzle_opts,
-                        output_dir=eval_run_dir,
-                        logger=logger,
-                        step=i,
-                        **eval_builder_kwargs,
-                        **eval_kwargs,
-                        **kwargs,
-                    )
 
-    search_model.params = state.get_full_eval_params()
-    backup_path = os.path.join(logger.log_dir, f"{save_prefix}_final.pkl")
-    search_model.save_model(path=backup_path)
-    logger.log_artifact(backup_path, f"{save_prefix}_final", "model")
-
-    if eval_options.num_eval > 0 and train_options.eval_count > 0:
-        eval_run_dir = Path(logger.log_dir) / "evaluation"
-        run_label, search_builder_fn, eval_builder_kwargs = _resolve_eval_search_entry(
-            train_options=train_options, search_model_name=search_model_name
-        )
-        with pbar.pause():
-            run_evaluation_sweep(
-                puzzle=eval_puzzle,
-                puzzle_name=eval_puzzle_name,
-                search_model=search_model,
-                search_model_name=search_model_name,
-                run_label=run_label,
-                search_builder_fn=search_builder_fn,
-                eval_options=eval_options,
-                puzzle_opts=eval_puzzle_opts,
-                output_dir=eval_run_dir,
-                logger=logger,
-                step=steps,
-                **eval_builder_kwargs,
-                **eval_kwargs,
-                **kwargs,
-            )
-
-    logger.close()
+    finalize_training(
+        state=state,
+        save_prefix=save_prefix,
+        steps=steps,
+        eval_options=eval_options,
+        **eval_ctx,
+        **kwargs,
+    )
 
 
 @click.command()
@@ -403,8 +292,7 @@ def heuristic_train_command(
         puzzle_bundle=puzzle_bundle,
         train_options=train_options,
         k_max=k_max,
-        target_keys=("target_heuristic",),
-        target_key="target_heuristic",
+        target_keys=("distance",),
         dataset_builder=get_heuristic_dataset_builder,
         steps=steps,
         gradient_updates_per_iteration=train_options.replay_ratio,
@@ -443,8 +331,7 @@ def qfunction_train_command(
         puzzle_bundle=puzzle_bundle,
         train_options=train_options,
         k_max=k_max,
-        target_keys=("target_q", "actions"),
-        target_key="target_q",
+        target_keys=("distance", "action"),
         dataset_builder=get_qfunction_dataset_builder,
         steps=steps,
         gradient_updates_per_iteration=1,
