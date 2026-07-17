@@ -142,10 +142,10 @@ class BiDirectionalSearchResult:
 
         return SolutionTrace.from_raw(
             solved=True,
-            raw_actions=(action for action, _ in path[1:]),
+            raw_actions=(action for action, _, _ in path[1:]),
             action_pad=action_pad,
-            states=tuple(state for _, state in path),
-            costs=None,
+            states=tuple(state for _, state, _ in path),
+            costs=tuple(cost for _, _, cost in path),
             dists=None,
         )
 
@@ -656,21 +656,22 @@ def initialize_bi_loop_common(
 def reconstruct_bidirectional_path(
     bi_result: BiDirectionalSearchResult,
     puzzle: Puzzle,
-) -> list[tuple[int, Puzzle.State]]:
+) -> list[tuple[int, Puzzle.State, float]]:
     """
     Reconstruct the full path from start to goal using the meeting point.
 
-    The return value is a sequence of (action, state) pairs along the solution.
-    The first element corresponds to the start state and uses action = -1.
-    For i >= 1, `action` is the forward action taken to reach `state` from the
-    previous state.
+    The return value is a sequence of (action, state, cost) triples along the
+    solution, where `cost` is the path cost (g-value) measured from the start
+    state. The first element corresponds to the start state and uses
+    action = -1. For i >= 1, `action` is the forward action taken to reach
+    `state` from the previous state.
 
     Args:
         bi_result: BiDirectionalSearchResult from bidirectional search
         puzzle: Puzzle instance
 
     Returns:
-        List of (action, state) pairs from start to goal.
+        List of (action, state, cost) triples from start to goal.
     """
     if not bi_result.meeting.found:
         return []
@@ -698,6 +699,13 @@ def reconstruct_bidirectional_path(
     bwd_indices, bwd_actions = _walk(bi_result.backward, bi_result.meeting.bwd_hashidx)
     bwd_states = [bi_result.backward.hashtable[HashIdx(index=jnp.uint32(i))] for i in bwd_indices]
 
+    # g-from-start for every node: the forward half reads its own cost table;
+    # the backward table stores g-from-goal, converted through the meeting
+    # point as cost(s) = g_fwd(meet) + g_bwd(meet) - g_bwd(s).
+    fwd_g = [float(v) for v in jax.device_get(bi_result.forward.cost[jnp.array(fwd_indices)])]
+    bwd_g = [float(v) for v in jax.device_get(bi_result.backward.cost[jnp.array(bwd_indices)])]
+    costs = fwd_g + [fwd_g[-1] + (bwd_g[0] - g) for g in bwd_g[1:]]
+
     # Merge, dropping the duplicated meeting state in the backward half.
     states = fwd_states + bwd_states[1:]
     actions = fwd_actions + bwd_actions
@@ -705,9 +713,9 @@ def reconstruct_bidirectional_path(
     if len(states) == 0:
         return []
 
-    path: list[tuple[int, Puzzle.State]] = [(-1, states[0])]
-    for a, s in zip(actions, states[1:]):
-        path.append((int(a), s))
+    path: list[tuple[int, Puzzle.State, float]] = [(-1, states[0], costs[0])]
+    for a, s, c in zip(actions, states[1:], costs[1:]):
+        path.append((int(a), s, float(c)))
     return path
 
 

@@ -70,7 +70,7 @@ def _assert_path_replays_to_goal(puzzle: SlidePuzzle, solve_config, path, goal):
     assert len(path) >= 2
 
     state = path[0][1]
-    for action, expected_state in path[1:]:
+    for action, expected_state, _ in path[1:]:
         state_b = jax.tree_util.tree_map(lambda x: x[jnp.newaxis, ...], state)
         next_state, _ = puzzle.batched_get_actions(
             solve_config,
@@ -242,7 +242,8 @@ def test_meeting_via_shared_slot_reconstructs_path():
     path = reconstruct_bidirectional_path(bi_result, puzzle)
     assert _states_equal(path[0][1], start)
     assert _states_equal(path[-1][1], goal)
-    assert [a for a, _ in path] == [-1, action]
+    assert [a for a, _, _ in path] == [-1, action]
+    assert [c for _, _, c in path] == [0.0, float(jax.device_get(step_cost))]
     _assert_path_replays_to_goal(puzzle, solve_config, path, goal)
 
 

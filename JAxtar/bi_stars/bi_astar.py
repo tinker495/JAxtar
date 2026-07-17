@@ -288,6 +288,15 @@ def _bi_astar_loop_builder(
         # detect the meeting on its own pass.
         bi_result = register_seen(bi_result, hash_idx, final_process_mask, is_forward)
 
+        if terminate_on_first_solution:
+            # A meeting ends the search after this body, so the heuristic scan and
+            # PQ insert below would only feed iterations that never run. Gate them
+            # with a scalar mask, not lax.cond — identity cond branches force D2D
+            # copies of the carried buffers.
+            tail_live = jnp.logical_not(bi_result.meeting.found)
+            flatten_is_new = jnp.logical_and(flatten_is_new, tail_live)
+            final_process_mask = jnp.logical_and(final_process_mask, tail_live)
+
         # Stable partition for efficiency
         invperm = stable_partition_three(flatten_is_new, final_process_mask)
         flatten_final_process_mask = final_process_mask[invperm]
@@ -362,55 +371,47 @@ def _bi_astar_loop_builder(
         """
         Main loop body for bidirectional A*.
 
-        Strategy: Expand both directions in each iteration.
+        Strategy: expand both directions unconditionally each iteration,
+        baton-passing the shared hash table between them so each direction
+        inserts into the table already holding the other's states. Emptiness
+        and the post-meeting tail are handled by masking `filled`, never by
+        lax.cond — identity cond branches force full D2D copies of the carried
+        buffers every iteration. An exhausted direction's PQ can never refill
+        (each direction feeds only its own queue), so a masked no-op expansion
+        is equivalent to skipping it.
         """
         bi_result = loop_state.bi_result
         solve_config = loop_state.solve_config
         inverse_solveconfig = loop_state.inverse_solveconfig
 
-        fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
-        bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
-
-        def _expand_forward(bi_result):
-            return _expand_direction(
-                bi_result,
-                solve_config,
-                inverse_solveconfig,
-                loop_state.params_forward,
-                loop_state.current_forward,
-                loop_state.filled_forward,
-                is_forward=True,
-                use_heuristic=True,
-            )
-
-        def _expand_backward(bi_result):
-            return _expand_direction(
-                bi_result,
-                solve_config,
-                inverse_solveconfig,
-                loop_state.params_backward,
-                loop_state.current_backward,
-                loop_state.filled_backward,
-                is_forward=False,
-                use_heuristic=use_backward_heuristic,
-            )
-
-        # Expand both directions, baton-passing the shared hash table between them so
-        # each direction inserts into the table already holding the other's states.
-        bi_result, new_fwd_current, new_fwd_filled = jax.lax.cond(
-            jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
-            _expand_forward,
-            lambda br: (br, loop_state.current_forward, loop_state.filled_forward),
+        bi_result, new_fwd_current, new_fwd_filled = _expand_direction(
             bi_result,
+            solve_config,
+            inverse_solveconfig,
+            loop_state.params_forward,
+            loop_state.current_forward,
+            loop_state.filled_forward,
+            is_forward=True,
+            use_heuristic=True,
         )
 
         bi_result = _adopt_shared_hashtable(bi_result, from_forward=True)
 
-        bi_result, new_bwd_current, new_bwd_filled = jax.lax.cond(
-            jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
-            _expand_backward,
-            lambda br: (br, loop_state.current_backward, loop_state.filled_backward),
+        bwd_filled = loop_state.filled_backward
+        if terminate_on_first_solution:
+            # A meeting found by the forward pass ends the loop after this body;
+            # the whole backward expansion would be dead work, so mask it off.
+            bwd_filled = jnp.logical_and(bwd_filled, jnp.logical_not(bi_result.meeting.found))
+
+        bi_result, new_bwd_current, new_bwd_filled = _expand_direction(
             bi_result,
+            solve_config,
+            inverse_solveconfig,
+            loop_state.params_backward,
+            loop_state.current_backward,
+            bwd_filled,
+            is_forward=False,
+            use_heuristic=use_backward_heuristic,
         )
 
         bi_result = _adopt_shared_hashtable(bi_result, from_forward=False)

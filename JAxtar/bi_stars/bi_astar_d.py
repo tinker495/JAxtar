@@ -324,62 +324,46 @@ def _bi_astar_d_loop_builder(
     )
 
     def loop_body(loop_state: BiLoopStateWithStates) -> BiLoopStateWithStates:
-        """Main loop body for bidirectional A* deferred."""
+        """Main loop body for bidirectional A* deferred.
+
+        Both directions run unconditionally each iteration, baton-passing the
+        shared hash table so each direction inserts into the table already
+        holding the other's states. Emptiness and the post-meeting tail are
+        gated by masking `filled`, never by lax.cond — identity cond branches
+        force full D2D copies of the carried buffers. An exhausted direction's
+        PQ can never refill (each direction feeds only its own queue), so a
+        masked no-op expansion is equivalent to skipping it.
+        """
         bi_result = loop_state.bi_result
         solve_config = loop_state.solve_config
         inverse_solveconfig = loop_state.inverse_solveconfig
 
-        fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
-        bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
-
-        def _expand_forward(bi_result):
-            return expand_forward_direction(
-                bi_result,
-                solve_config,
-                inverse_solveconfig,
-                loop_state.params_forward,
-                loop_state.current_forward,
-                loop_state.states_forward,
-                loop_state.filled_forward,
-            )
-
-        def _expand_backward(bi_result):
-            return expand_backward_direction(
-                bi_result,
-                solve_config,
-                inverse_solveconfig,
-                loop_state.params_backward,
-                loop_state.current_backward,
-                loop_state.states_backward,
-                loop_state.filled_backward,
-            )
-
-        # Expand both directions, baton-passing the shared hash table between them so
-        # each direction inserts into the table already holding the other's states.
-        bi_result, new_fwd_current, new_fwd_states, new_fwd_filled = jax.lax.cond(
-            jnp.logical_and(loop_state.filled_forward.any(), fwd_not_full),
-            _expand_forward,
-            lambda br: (
-                br,
-                loop_state.current_forward,
-                loop_state.states_forward,
-                loop_state.filled_forward,
-            ),
+        bi_result, new_fwd_current, new_fwd_states, new_fwd_filled = expand_forward_direction(
             bi_result,
+            solve_config,
+            inverse_solveconfig,
+            loop_state.params_forward,
+            loop_state.current_forward,
+            loop_state.states_forward,
+            loop_state.filled_forward,
         )
 
         bi_result = _adopt_shared_hashtable(bi_result, from_forward=True)
 
-        bi_result, new_bwd_current, new_bwd_states, new_bwd_filled = jax.lax.cond(
-            jnp.logical_and(loop_state.filled_backward.any(), bwd_not_full),
-            _expand_backward,
-            lambda br: (
-                br,
-                loop_state.current_backward,
-                loop_state.states_backward,
-                loop_state.filled_backward,
-            ),
+        bwd_filled = loop_state.filled_backward
+        if terminate_on_first_solution:
+            # A meeting found by the forward pass ends the loop after this body;
+            # the backward eval/PQ-insert would be dead work, so mask it off.
+            bwd_filled = jnp.logical_and(bwd_filled, jnp.logical_not(bi_result.meeting.found))
+
+        bi_result, new_bwd_current, new_bwd_states, new_bwd_filled = expand_backward_direction(
             bi_result,
+            solve_config,
+            inverse_solveconfig,
+            loop_state.params_backward,
+            loop_state.current_backward,
+            loop_state.states_backward,
+            bwd_filled,
         )
 
         bi_result = _adopt_shared_hashtable(bi_result, from_forward=False)

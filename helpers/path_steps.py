@@ -1,15 +1,55 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List
 
+import jax
 import jax.numpy as jnp
 import numpy as np
+import xtructure.numpy as xnp
 
 from JAxtar.annotate import ACTION_DTYPE
 from JAxtar.solution_trace import SolutionTrace
 
 ACTION_PAD_INT = int(np.iinfo(np.dtype(ACTION_DTYPE)).max)
+
+# Bucketed batch size for one-shot path dist evaluation; padding to the bucket
+# keeps the jit cache at one entry across varying path lengths.
+_PATH_DIST_BUCKET = 32
+
+
+@lru_cache(maxsize=8)
+def _jitted_batched_distance(heuristic):
+    return jax.jit(heuristic.batched_distance)
+
+
+@lru_cache(maxsize=8)
+def _jitted_batched_q_value(q_fn):
+    return jax.jit(q_fn.batched_q_value)
+
+
+def _batched_path_dists(heuristic, heuristic_params, states: List) -> List[float]:
+    """Evaluate h for a whole path in one jitted batched call.
+
+    Per-state `heuristic.distance` calls re-trace the model (and bitpacked
+    state unpacking) eagerly at every step; one compiled call replaces them.
+    """
+    n = len(states)
+    pad = -n % _PATH_DIST_BUCKET
+    batch = xnp.concatenate(list(states) + [states[-1]] * pad)
+    dists = _jitted_batched_distance(heuristic)(heuristic_params, batch)
+    return [float(v) for v in jax.device_get(dists)[:n]]
+
+
+def _batched_path_q_dists(q_fn, q_params, states: List) -> List[float]:
+    """Evaluate min-a Q(s, a) for a whole path in one jitted batched call."""
+    n = len(states)
+    pad = -n % _PATH_DIST_BUCKET
+    batch = xnp.concatenate(list(states) + [states[-1]] * pad)
+    q_vals = _jitted_batched_q_value(q_fn)(q_params, batch)
+    mins = jnp.min(jnp.asarray(q_vals), axis=-1)
+    return [float(v) for v in jax.device_get(mins)[:n]]
 
 
 @dataclass
@@ -71,6 +111,11 @@ def build_path_steps_from_actions(
 
     states_list = list(states) if states is not None else None
     costs_arr = np.asarray(costs) if costs is not None else None
+    if dists is None and states_list and len(states_list) >= len(action_sequence) + 1:
+        if heuristic is not None:
+            dists = _batched_path_dists(heuristic, heuristic_params, states_list)
+        elif q_fn is not None:
+            dists = _batched_path_q_dists(q_fn, q_fn_params, states_list)
     can_use_trace = (
         states_list is not None
         and costs_arr is not None
