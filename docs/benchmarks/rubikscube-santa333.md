@@ -6,31 +6,31 @@
 # DeepCubeA Configuration
 - Batch Size: 10K / Max Node Size: 20M / Cost Weight: 0.6 / Pop Ratio: inf
 - Hardware: NVIDIA GeForce RTX 4080 SUPER
-- Software: JAX 0.8.1 / JAxtar `22ca3bc0` / PuXle `e50627c` / Xtructure `3a5953a`
+- Software: JAX 0.8.1 / JAxtar `0e8054df` / PuXle `c07dc28` / Xtructure `7a6598a`
 
 | Algorithm | Model | Success Rate | Avg Time (s) | Avg Nodes | Avg Path Cost | R² (Heuristic) | CCC (Heuristic) | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| A* | Diffusion Distance - 14.7M params | 100% | 1.655 | 2.61M | 20.32 | 0.940 | 0.973 | - |
-| A* | Diffusion Distance - 14.7M params(int8) | 100% | 1.292 | 2.61M | 20.32 | 0.942 | 0.974 | - |
-| A* | Diffusion Distance - 4M params | 100% | 0.878 | 2.66M | 20.63 | 0.948 | 0.976 | - |
-| A* | Diffusion Distance - 4M params(int8) | 100% | 0.856 | 2.67M | 20.63 | 0.948 | 0.975 | - |
-| A* Deferred | Diffusion Distance - 14.7M params | 100% | 1.671 | 177K | 20.29 | 0.939 | 0.973 | - |
-| A* Deferred | Diffusion Distance - 14.7M params(int8) | 100% | 1.417 | 177K | 20.29 | 0.942 | 0.974 | - |
-| A* Deferred | Diffusion Distance - 4M params | 100% | 0.831 | 180K | 20.66 | 0.948 | 0.976 | - |
-| A* Deferred | Diffusion Distance - 4M params(int8) | 100% | 0.781 | 180K | 20.63 | 0.950 | 0.976 | - |
-| Q* | Diffusion Distance warmup - 14.7M params | 100% | 0.473 | 179K | 20.46 | 0.939 | 0.972 | - |
-| Q* | Diffusion Distance warmup - 14.7M params(int8) | 100% | 0.471 | 179K | 20.49 | 0.941 | 0.973 | - |
-| Q* | Diffusion Distance warmup - 4M params | 100% | 0.519 | 183K | 20.90 | 0.940 | 0.971 | - |
-| Q* | Diffusion Distance warmup - 4M params(int8) | 100% | 0.490 | 184K | 20.98 | 0.942 | 0.972 | - |
-| Beam Search | Diffusion Distance - 14.7M params | 100% | 1.265 | 177K | 20.34 | 0.945 | 0.975 | - |
-| Beam Search | Diffusion Distance - 14.7M params(int8) | 100% | 1.050 | 178K | 20.37 | 0.948 | 0.976 | - |
-| Beam Search | Diffusion Distance - 4M params | 100% | 0.449 | 181K | 20.66 | 0.953 | 0.978 | - |
-| Beam Search | Diffusion Distance - 4M params(int8) | 100% | 0.368 | 181K | 20.71 | 0.952 | 0.977 | - |
-| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% | 0.086 | 138K | 20.71 | 0.455 | 0.742 | - |
-| Q-Beam Search | Diffusion Distance warmup - 14.7M params(int8) | 100% | 0.067 | 138K | 20.68 | 0.454 | 0.742 | - |
-| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% | 0.054 | 142K | 21.12 | 0.461 | 0.736 | - |
-| Q-Beam Search | Diffusion Distance warmup - 4M params(int8) | 100% | 0.051 | 143K | 21.17 | 0.459 | 0.734 | - |
-서
+| A* | Diffusion Distance - 14.7M params | 100% | 1.566 | 2.61M | 20.32 | 0.940 | 0.973 | - |
+| A* | Diffusion Distance - 14.7M params(int8) | 100% | 1.285 | 2.61M | 20.34 | 0.944 | 0.975 | - |
+| A* | Diffusion Distance - 4M params | 100% | 0.917 | 2.66M | 20.63 | 0.948 | 0.976 | - |
+| A* | Diffusion Distance - 4M params(int8) | 100% | 0.781 | 2.68M | 20.73 | 0.948 | 0.975 | - |
+| A* Deferred | Diffusion Distance - 14.7M params | 100% | 1.472 | 177K | 20.29 | 0.939 | 0.972 | - |
+| A* Deferred | Diffusion Distance - 14.7M params(int8) | 100% | 1.224 | 178K | 20.37 | 0.945 | 0.975 | - |
+| A* Deferred | Diffusion Distance - 4M params | 100% | 0.789 | 180K | 20.66 | 0.948 | 0.976 | - |
+| A* Deferred | Diffusion Distance - 4M params(int8) | 100% | 0.656 | 181K | 20.68 | 0.951 | 0.977 | - |
+| Q* | Diffusion Distance warmup - 14.7M params | 100% | 0.438 | 179K | 20.46 | 0.939 | 0.972 | - |
+| Q* | Diffusion Distance warmup - 14.7M params(int8) | 100% | 0.421 | 179K | 20.51 | 0.943 | 0.974 | - |
+| Q* | Diffusion Distance warmup - 4M params | 100% | 0.400 | 183K | 20.90 | 0.940 | 0.971 | - |
+| Q* | Diffusion Distance warmup - 4M params(int8) | 100% | 0.407 | 183K | 20.93 | 0.941 | 0.971 | - |
+| Beam Search | Diffusion Distance - 14.7M params | 100% | 1.176 | 177K | 20.34 | 0.945 | 0.975 | - |
+| Beam Search | Diffusion Distance - 14.7M params(int8) | 100% | 0.913 | 177K | 20.29 | 0.946 | 0.976 | - |
+| Beam Search | Diffusion Distance - 4M params | 100% | 0.363 | 181K | 20.66 | 0.953 | 0.978 | - |
+| Beam Search | Diffusion Distance - 4M params(int8) | 100% | 0.276 | 181K | 20.73 | 0.953 | 0.977 | - |
+| Q-Beam Search | Diffusion Distance warmup - 14.7M params | 100% | 0.078 | 138K | 20.71 | 0.455 | 0.742 | - |
+| Q-Beam Search | Diffusion Distance warmup - 14.7M params(int8) | 100% | 0.067 | 138K | 20.66 | 0.452 | 0.741 | - |
+| Q-Beam Search | Diffusion Distance warmup - 4M params | 100% | 0.067 | 142K | 21.12 | 0.461 | 0.736 | - |
+| Q-Beam Search | Diffusion Distance warmup - 4M params(int8) | 100% | 0.060 | 143K | 21.20 | 0.459 | 0.733 | - |
+
 # CayleyPy Batch Size Configuration
 - Batch Size: 2^18 / Max Node Size: 20M / Cost Weight: 0.9 / Pop Ratio: inf
 - Hardware: NVIDIA RTX 5090 GPU
