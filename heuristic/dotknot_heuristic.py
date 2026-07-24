@@ -19,4 +19,4 @@ class DotKnotHeuristic(Heuristic):
                 current, color_idx, self.puzzle.size, self.puzzle.color_num
             )
         )(jnp.arange(self.puzzle.color_num))
-        return jnp.sum(color_distances)
+        return jnp.sum(color_distances).astype(jnp.float32)
