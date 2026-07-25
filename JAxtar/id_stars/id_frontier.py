@@ -7,7 +7,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 
-from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE
+from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE, TRACE_INDEX_DTYPE
 
 
 def validate_non_backtracking_steps(steps: int) -> int:
@@ -127,7 +127,23 @@ def compact_by_valid(
     return packed_values, packed_valid, valid_count, valid_idx
 
 
-def build_id_node_batch(statecls, non_backtracking_steps: int, max_path_len: int):
+def build_frontier_node_batch(statecls, non_backtracking_steps: int, max_path_len: int):
+    """Frontier BFS nodes. The frontier is one `batch_size`-wide array that never enters
+    the stack, so it can afford to carry the full action history inline."""
+    trail_shape = (int(non_backtracking_steps),) if non_backtracking_steps > 0 else (0,)
+
+    @xtructure_dataclass
+    class FrontierNodeBatch:
+        state: FieldDescriptor.scalar(dtype=statecls)
+        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+        depth: FieldDescriptor.scalar(dtype=jnp.int32)
+        trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+        action_history: FieldDescriptor.tensor(dtype=ACTION_DTYPE, shape=(max_path_len,))
+
+    return FrontierNodeBatch
+
+
+def build_id_node_batch(statecls, non_backtracking_steps: int):
     trail_shape = (int(non_backtracking_steps),) if non_backtracking_steps > 0 else (0,)
 
     @xtructure_dataclass
@@ -136,10 +152,9 @@ def build_id_node_batch(statecls, non_backtracking_steps: int, max_path_len: int
         cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
         depth: FieldDescriptor.scalar(dtype=jnp.int32)
         trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
-        action_history: FieldDescriptor.tensor(dtype=ACTION_DTYPE, shape=(max_path_len,))
-        action: FieldDescriptor.scalar(dtype=jnp.int32)
-        parent_index: FieldDescriptor.scalar(dtype=jnp.int32)
-        root_index: FieldDescriptor.scalar(dtype=jnp.int32)
+        # Path is one arena row per node: who my parent is, and how I got here.
+        parent_trace: FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)
+        action: FieldDescriptor.scalar(dtype=ACTION_DTYPE)
 
     return IDNodeBatch
 
@@ -170,7 +185,11 @@ def update_action_history(
     batch_size: int,
     flat_size: int,
     max_path_len: int,
-):
+) -> chex.Array:
+    """Append each child's own action to a copy of its parent's history.
+
+    Frontier-only: stack nodes carry a trace-arena index instead of an inline history.
+    """
     flat_action_history = jnp.broadcast_to(
         action_history[None, :, :], (action_size, batch_size, max_path_len)
     )
@@ -186,7 +205,7 @@ def update_action_history(
         flat_actions.astype(ACTION_DTYPE)
     )
 
-    return flat_action_history, flat_actions, flat_depth_flat
+    return flat_action_history
 
 
 def build_flat_children(
@@ -196,13 +215,10 @@ def build_flat_children(
     parent_depths: chex.Array,
     parent_states: Xtructurable,
     parent_trails: Xtructurable,
-    parent_action_history: chex.Array,
-    action_ids: chex.Array,
     action_size: int,
     batch_size: int,
     flat_size: int,
     non_backtracking_steps: int,
-    max_path_len: int,
     empty_trail_flat: Xtructurable,
     parent_valid: chex.Array,
 ):
@@ -218,16 +234,6 @@ def build_flat_children(
         empty_trail_flat,
     )
 
-    flat_action_history, flat_actions, flat_depth_flat = update_action_history(
-        parent_action_history,
-        parent_depths,
-        action_ids,
-        action_size,
-        batch_size,
-        flat_size,
-        max_path_len,
-    )
-
     flat_states = xnp.reshape(neighbours, (flat_size,))
     flat_g = child_g.reshape((flat_size,))
     flat_depth = jnp.broadcast_to(child_depth, (action_size, batch_size)).reshape((flat_size,))
@@ -237,18 +243,4 @@ def build_flat_children(
     )
     flat_valid = jnp.logical_and(flat_parent_valid, jnp.isfinite(flat_g))
 
-    flat_action_history = jnp.where(
-        flat_valid[:, None],
-        flat_action_history,
-        jnp.full_like(flat_action_history, ACTION_PAD),
-    )
-
-    return (
-        flat_states,
-        flat_g,
-        flat_depth,
-        flat_trail,
-        flat_action_history,
-        flat_actions,
-        flat_valid,
-    )
+    return flat_states, flat_g, flat_depth, flat_trail, flat_valid

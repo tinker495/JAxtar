@@ -4,17 +4,18 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.search_build_spec import (
     DEFAULT_SEARCH_BUILD_SPEC,
     SearchBuildSpec,
     _require_no_workload_signature,
 )
 from JAxtar.id_stars.id_frontier import (
-    ACTION_PAD,
     IDFrontier,
     build_flat_children,
+    build_frontier_node_batch,
     build_id_node_batch,
+    update_action_history,
     validate_non_backtracking_steps,
 )
 from JAxtar.id_stars.search_base import (
@@ -80,7 +81,7 @@ def _id_astar_frontier_builder(
 
     non_backtracking_steps = validate_non_backtracking_steps(non_backtracking_steps)
 
-    IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
+    IDNodeBatch = build_frontier_node_batch(statecls, non_backtracking_steps, max_path_len)
 
     variable_heuristic = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -126,30 +127,36 @@ def _id_astar_frontier_builder(
 
             neighbours, step_costs = puzzle.batched_get_neighbours(solve_config, states, valid)
 
-            (
-                flat_states,
-                flat_g,
-                flat_depth,
-                flat_trail,
-                flat_action_history,
-                flat_actions,
-                flat_valid,
-            ) = build_flat_children(
+            (flat_states, flat_g, flat_depth, flat_trail, flat_valid,) = build_flat_children(
                 neighbours,
                 step_costs,
                 gs,
                 depth,
                 states,
                 trail,
-                action_history,
-                action_ids,
                 action_size,
                 batch_size,
                 flat_size,
                 non_backtracking_steps,
-                max_path_len,
                 empty_trail_flat,
                 valid,
+            )
+
+            # The frontier keeps the inline history: it is one batch-wide array that never
+            # reaches the stack, and it seeds the arena's immutable prefix.
+            flat_action_history = update_action_history(
+                action_history,
+                depth,
+                action_ids,
+                action_size,
+                batch_size,
+                flat_size,
+                max_path_len,
+            )
+            flat_action_history = jnp.where(
+                flat_valid[:, None],
+                flat_action_history,
+                jnp.full_like(flat_action_history, ACTION_PAD),
             )
 
             (
@@ -196,19 +203,12 @@ def _id_astar_frontier_builder(
             flat_f = (cost_weight * flat_g + flat_h).astype(KEY_DTYPE)
             f_safe = jnp.where(flat_valid, jnp.nan_to_num(flat_f, nan=1e5, posinf=1e5), jnp.inf)
 
-            flat_parent_indices = jnp.tile(jnp.arange(batch_size, dtype=jnp.int32), action_size)
-            flat_parent_indices = jnp.where(flat_valid, flat_parent_indices, -1)
-            flat_root_indices = flat_parent_indices
-
             flat_batch = IDNodeBatch(
                 state=flat_states,
                 cost=flat_g,
                 depth=flat_depth,
                 trail=flat_trail,
                 action_history=flat_action_history,
-                action=flat_actions,
-                parent_index=flat_parent_indices,
-                root_index=flat_root_indices,
             )
 
             new_frontier = frontier.select_top_k(
@@ -240,6 +240,7 @@ def _id_astar_loop_builder(
     cost_weight: float = 1.0,
     non_backtracking_steps: int = 0,
     max_path_len: int = 256,
+    bound_step: float = 0.0,
 ):
     statecls = puzzle.State
     action_size = puzzle.action_size
@@ -248,9 +249,8 @@ def _id_astar_loop_builder(
     non_backtracking_steps = validate_non_backtracking_steps(non_backtracking_steps)
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
     action_ids = jnp.arange(action_size, dtype=jnp.int32)
-    frontier_actions = jnp.full((batch_size,), ACTION_PAD, dtype=jnp.int32)
 
-    IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps, max_path_len)
+    IDNodeBatch = build_id_node_batch(statecls, non_backtracking_steps)
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -281,6 +281,7 @@ def _id_astar_loop_builder(
             action_size,
             non_backtracking_steps,
             max_path_len,
+            batch_size,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
 
@@ -291,7 +292,6 @@ def _id_astar_loop_builder(
             cost_weight,
             variable_heuristic_batch_switcher,
             heuristic_parameters,
-            frontier_actions,
         )
 
         return IDLoopState(
@@ -319,46 +319,30 @@ def _id_astar_loop_builder(
             parent_costs,
             parent_depths,
             parent_trails,
-            parent_action_histories,
+            parent_traces,
             valid_mask,
-            parent_trace_indices,
-            parent_root_indices,
             neighbours,
             step_costs,
         ) = sr.prepare_for_expansion(puzzle, solve_config, batch_size)
 
-        (
-            flat_neighbours,
-            flat_g,
-            flat_depth,
-            flat_trail,
-            flat_action_history,
-            flat_actions,
-            flat_valid,
-        ) = build_flat_children(
+        (flat_neighbours, flat_g, flat_depth, flat_trail, flat_valid,) = build_flat_children(
             neighbours,
             step_costs,
             parent_costs,
             parent_depths,
             parents,
             parent_trails,
-            parent_action_histories,
-            action_ids,
             action_size,
             batch_size,
             flat_size,
             non_backtracking_steps,
-            max_path_len,
             empty_trail_flat,
             valid_mask,
         )
+        flat_parent_trace = jnp.tile(parent_traces, action_size)
+        flat_action = jnp.repeat(action_ids.astype(ACTION_DTYPE), batch_size)
 
         flat_valid = jnp.logical_and(flat_valid, flat_depth <= max_path_len)
-
-        flat_parent_indices = jnp.tile(parent_trace_indices, action_size)
-        flat_parent_indices = jnp.where(flat_valid, flat_parent_indices, -1)
-        flat_root_indices = jnp.tile(parent_root_indices, action_size)
-        flat_root_indices = jnp.where(flat_valid, flat_root_indices, -1)
 
         # --- Optimization: Deduplication ---
         flat_valid = apply_standard_deduplication(
@@ -375,11 +359,6 @@ def _id_astar_loop_builder(
             batch_size,
         )
 
-        flat_action_history = jnp.where(
-            flat_valid[:, None],
-            flat_action_history,
-            jnp.full_like(flat_action_history, ACTION_PAD),
-        )
         # ----------------------------------------------------
 
         # Heuristic Evaluation (No Caching - Re-compute Always)
@@ -391,11 +370,9 @@ def _id_astar_loop_builder(
             state=flat_neighbours,
             cost=flat_g,
             depth=flat_depth,
-            action=flat_actions,
             trail=flat_trail,
-            action_history=flat_action_history,
-            parent_index=flat_parent_indices,
-            root_index=flat_root_indices,
+            parent_trace=flat_parent_trace,
+            action=flat_action,
         )
 
         # Unconditional masked push instead of lax.cond: the conditional forces
@@ -410,7 +387,7 @@ def _id_astar_loop_builder(
 
         return loop_state.replace(search_result=return_sr)
 
-    outer_cond, outer_body = build_outer_loop(inner_cond, inner_body, statecls, frontier_actions)
+    outer_cond, outer_body = build_outer_loop(inner_cond, inner_body, bound_step)
 
     return init_loop_state, outer_cond, outer_body
 
@@ -422,10 +399,11 @@ def id_astar_builder(
     max_nodes: int = int(1e6),
     spec: SearchBuildSpec = DEFAULT_SEARCH_BUILD_SPEC,
     *,
-    non_backtracking_steps: int = 0,
-    max_path_len: int = 256,
+    non_backtracking_steps: int = 1,
+    max_path_len: int | None = None,
 ):
     _require_no_workload_signature(spec)
+    max_path_len = spec.max_path_len if max_path_len is None else max_path_len
     init_loop, cond, body = _id_astar_loop_builder(
         puzzle,
         heuristic,
@@ -434,6 +412,7 @@ def id_astar_builder(
         spec.cost_weight,
         non_backtracking_steps=non_backtracking_steps,
         max_path_len=max_path_len,
+        bound_step=spec.bound_step,
     )
 
     return finalize_builder(

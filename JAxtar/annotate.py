@@ -13,3 +13,9 @@ DEDUPE_MODE = os.environ.get(
 )
 os.environ["XTRUCTURE_HASHTABLE_DEDUPE_MODE"] = DEDUPE_MODE
 MIN_BATCH_SIZE = 128
+
+# Parent-pointer trace arena (id_stars). TRACE_INVALID marks a chain root and doubles as
+# an out-of-bounds scatter target, so `mode="drop"` discards writes past the arena.
+TRACE_INDEX_DTYPE = jnp.uint32
+TRACE_INVALID_INT = int(jnp.iinfo(TRACE_INDEX_DTYPE).max)
+TRACE_INVALID = jnp.array(TRACE_INVALID_INT, dtype=TRACE_INDEX_DTYPE)

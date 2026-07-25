@@ -259,6 +259,8 @@ class EvaluationRunner:
             spec = SearchBuildSpec(
                 pop_ratio=pr,
                 cost_weight=cw,
+                bound_step=current_eval_opts.bound_step,
+                max_path_len=current_eval_opts.max_path_len,
                 show_compile_time=current_eval_opts.show_compile_time,
                 warmup_inputs=warmup_inputs,
                 emit_workload_signature=current_eval_opts.emit_workload_signature,
