@@ -289,6 +289,8 @@ def run_search_command(
     spec = SearchBuildSpec(
         pop_ratio=search_options.pop_ratio,
         cost_weight=search_options.cost_weight,
+        bound_step=search_options.bound_step,
+        max_path_len=search_options.max_path_len,
         show_compile_time=search_options.show_compile_time,
         warmup_inputs=(warmup_config, warmup_state),
         emit_workload_signature=getattr(search_options, "emit_workload_signature", False),

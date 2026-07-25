@@ -117,12 +117,20 @@ def test_id_search_builder_executes_warmup_before_return():
             def default():
                 return jnp.array([0], dtype=jnp.int32)
 
+    class _SearchResult(NamedTuple):
+        # finalize_builder walks the trace arena once after the loop, so the stand-in
+        # has to honour that part of the IDSearchResult contract.
+        value: jax.Array
+
+        def reconstruct_solution_actions(self):
+            return self
+
     class _LoopState(NamedTuple):
-        search_result: jax.Array
+        search_result: _SearchResult
 
     def init_loop(cfg, state):
         jax.debug.callback(lambda value: executions.append(int(value[0])), state)
-        return _LoopState(cfg + state)
+        return _LoopState(_SearchResult(cfg + state))
 
     finalize_builder(
         _Puzzle(),

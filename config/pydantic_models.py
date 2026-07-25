@@ -23,6 +23,21 @@ class SearchOptions(BaseModel):
     batch_size: int = Field(10000, description="Batch size for search.")
     max_node_size: int = Field(2000000, description="Maximum number of nodes to search.")
     cost_weight: float = Field(0.6, description="Weight for cost in search.")
+    bound_step: float = Field(
+        1.0,
+        description=(
+            "ID{}* only: rounds each iterative-deepening threshold up onto a grid of this "
+            "size. 0 restores the exact ladder, which under a real-valued heuristic advances "
+            "by one float16 ULP per pass and re-derives the whole tree each time."
+        ),
+    )
+    max_path_len: int = Field(
+        256,
+        description=(
+            "ID{}* only: per-node action-history length and hard depth cutoff. Dominates "
+            "stack memory; lower it only above the puzzle's solution depth."
+        ),
+    )
     pop_ratio: float = Field(
         float("inf"),
         description=(
@@ -58,6 +73,20 @@ class EvalOptions(BaseModel):
     cost_weight: Union[float, List[float]] = Field(
         0.6,
         description="Weight for cost in search. Can be a single float or a list of floats.",
+    )
+    bound_step: float = Field(
+        1.0,
+        description=(
+            "ID{}* only: rounds each iterative-deepening threshold up onto a grid of this "
+            "size. 0 restores the exact ladder."
+        ),
+    )
+    max_path_len: int = Field(
+        256,
+        description=(
+            "ID{}* only: per-node action-history length and hard depth cutoff. Dominates "
+            "stack memory; lower it only above the puzzle's solution depth."
+        ),
     )
     pop_ratio: Union[float, List[float]] = Field(
         float("inf"),

@@ -327,6 +327,18 @@ def search_options(func=None, *, variant: str = "default") -> callable:
             type=HUMAN_FLOAT,
             help="Ratio for popping nodes from the priority queue.",
         )
+        @click.option(
+            "--bound_step",
+            default=None,
+            type=HUMAN_FLOAT,
+            help="ID{}* threshold grid size. 0 uses the exact next_bound ladder.",
+        )
+        @click.option(
+            "--max_path_len",
+            default=None,
+            type=HUMAN_INT,
+            help="ID{}* action-history length; also caps search depth. Dominates stack memory.",
+        )
         @click.option("-vm", "--vmap_size", default=None, type=HUMAN_INT, help="Size for the vmap")
         @click.option("--debug", is_flag=True, default=None, help="Debug mode")
         @click.option("--profile", is_flag=True, default=None, help="Profile mode")
@@ -426,6 +438,18 @@ def eval_options(func=None, *, variant: str = "default") -> callable:
             default=None,
             help="Ratio(s) for popping nodes from the priority queue. Can be a single float, "
             "'inf', or a comma-separated list (e.g., 'inf,0.4,0.3').",
+        )
+        @click.option(
+            "--bound_step",
+            type=HUMAN_FLOAT,
+            default=None,
+            help="ID{}* threshold grid size. 0 uses the exact next_bound ladder.",
+        )
+        @click.option(
+            "--max_path_len",
+            default=None,
+            type=HUMAN_INT,
+            help="ID{}* action-history length; also caps search depth. Dominates stack memory.",
         )
         @click.option(
             "-ne",
