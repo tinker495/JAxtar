@@ -85,6 +85,80 @@ def build_path_steps_from_trace(
     )
 
 
+def _materialise_path(
+    puzzle,
+    solve_config,
+    initial_state,
+    action_sequence: List[int],
+    states_list,
+    costs_list,
+) -> tuple[list, List[float], List[int]]:
+    """Resolve the state and cost at every path index.
+
+    Trace-supplied states / costs win wherever they reach; the remaining indices are
+    replayed one action at a time through the puzzle. Replay stops at an unreachable
+    transition, so the action sequence is truncated to the states actually produced.
+    """
+
+    def _traced(seq, idx):
+        return seq[idx] if seq is not None and idx < len(seq) else None
+
+    state = _traced(states_list, 0)
+    if state is None:
+        state = initial_state
+    running_cost = _traced(costs_list, 0)
+    if running_cost is None:
+        running_cost = 0.0
+
+    path_states = [state]
+    path_costs = [running_cost]
+
+    for depth, action_val in enumerate(action_sequence):
+        next_state = _traced(states_list, depth + 1)
+        traced_cost = _traced(costs_list, depth + 1)
+
+        if next_state is None or traced_cost is None:
+            neighbours, transition_cost = puzzle.get_neighbours(solve_config, state, True)
+            step_cost = float(transition_cost[action_val])
+            if not np.isfinite(step_cost):
+                return path_states, path_costs, action_sequence[:depth]
+            running_cost += step_cost
+            if next_state is None:
+                next_state = neighbours[action_val]
+        if traced_cost is not None:
+            running_cost = traced_cost
+
+        path_states.append(next_state)
+        path_costs.append(running_cost)
+        state = next_state
+
+    return path_states, path_costs, action_sequence
+
+
+def _path_dists(
+    dists,
+    states: List,
+    heuristic,
+    heuristic_params,
+    q_fn,
+    q_fn_params,
+) -> List[float | None] | None:
+    """Resolve h (or min-a Q) for every path state in one batched, jitted call.
+
+    Per-state `heuristic.distance` / `q_fn.q_value` are eager model applies -- ~62 ms
+    each on the 14.5M-param rubikscube net -- so a search family whose trace carries no
+    dists (ID-*, bi-*) paid ~1.4 s of pure dispatch per solved sample, an order of
+    magnitude more than the search it was reporting.
+    """
+    if dists is not None and len(dists) >= len(states):
+        return [None if v is None else float(v) for v in list(dists)[: len(states)]]
+    if heuristic is not None:
+        return _batched_path_dists(heuristic, heuristic_params, states)
+    if q_fn is not None:
+        return _batched_path_q_dists(q_fn, q_fn_params, states)
+    return None
+
+
 def build_path_steps_from_actions(
     puzzle,
     solve_config,
@@ -96,7 +170,6 @@ def build_path_steps_from_actions(
     costs=None,
     dists=None,
 ) -> List[PathStep]:
-    steps: List[PathStep] = []
     heuristic_params = (
         heuristic.prepare_heuristic_parameters(solve_config) if heuristic is not None else None
     )
@@ -109,78 +182,30 @@ def build_path_steps_from_actions(
             break
         action_sequence.append(action_val)
 
-    states_list = list(states) if states is not None else None
-    costs_arr = np.asarray(costs) if costs is not None else None
-    if dists is None and states_list and len(states_list) >= len(action_sequence) + 1:
-        if heuristic is not None:
-            dists = _batched_path_dists(heuristic, heuristic_params, states_list)
-        elif q_fn is not None:
-            dists = _batched_path_q_dists(q_fn, q_fn_params, states_list)
-    can_use_trace = (
-        states_list is not None
-        and costs_arr is not None
-        and len(costs_arr) >= (len(action_sequence) + 1)
+    path_states, path_costs, action_sequence = _materialise_path(
+        puzzle=puzzle,
+        solve_config=solve_config,
+        initial_state=initial_state,
+        action_sequence=action_sequence,
+        states_list=list(states) if states is not None else None,
+        costs_list=[float(c) for c in costs] if costs is not None else None,
     )
-    state = states_list[0] if states_list else initial_state
-    running_cost = 0.0
 
-    def _trace_cost(idx: int, default_val: float) -> float:
-        if costs is not None and idx < len(costs):
-            return float(costs[idx])
-        return default_val
+    path_dists = _path_dists(
+        dists=dists,
+        states=path_states,
+        heuristic=heuristic,
+        heuristic_params=heuristic_params,
+        q_fn=q_fn,
+        q_fn_params=q_fn_params,
+    )
 
-    def _trace_dist(idx: int, current_state) -> float | None:
-        if dists is not None and idx < len(dists):
-            val = dists[idx]
-            if val is None:
-                return None
-            if isinstance(val, jnp.ndarray):
-                val = float(val)
-            return float(val)
-        if heuristic is not None:
-            params = heuristic_params if heuristic_params is not None else solve_config
-            return float(heuristic.distance(params, current_state))
-        if q_fn is not None:
-            params = q_fn_params if q_fn_params is not None else solve_config
-            q_vals = q_fn.q_value(params, current_state)
-            return float(jnp.min(jnp.asarray(q_vals)))
-        return None
-
-    start_action = action_sequence[0] if action_sequence else None
-    start_cost = _trace_cost(0, running_cost)
-    start_dist = _trace_dist(0, state)
-    steps.append(PathStep(state=state, cost=start_cost, dist=start_dist, action=start_action))
-
-    for depth, action_val in enumerate(action_sequence):
-        if can_use_trace and depth + 1 < len(states_list):
-            next_state = states_list[depth + 1]
-            next_cost = float(costs_arr[depth + 1])
-            running_cost = next_cost
-        else:
-            neighbours, transition_cost = puzzle.get_neighbours(solve_config, state, True)
-            step_cost = float(transition_cost[action_val])
-            if not np.isfinite(step_cost):
-                break
-            running_cost += step_cost
-            next_state = neighbours[action_val]
-            if states_list is not None and depth + 1 < len(states_list):
-                next_state = states_list[depth + 1]
-
-        cost_val = _trace_cost(depth + 1, running_cost)
-        dist_val = _trace_dist(depth + 1, next_state)
-
-        next_action: int | None = None
-        if depth + 1 < len(action_sequence):
-            next_action = action_sequence[depth + 1]
-
-        steps.append(
-            PathStep(
-                state=next_state,
-                cost=cost_val,
-                dist=dist_val,
-                action=next_action,
-            )
+    return [
+        PathStep(
+            state=path_states[idx],
+            cost=path_costs[idx],
+            dist=path_dists[idx] if path_dists is not None else None,
+            action=action_sequence[idx] if idx < len(action_sequence) else None,
         )
-        state = next_state
-
-    return steps
+        for idx in range(len(path_states))
+    ]
