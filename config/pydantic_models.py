@@ -1,4 +1,4 @@
-from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -259,20 +259,6 @@ class DistTrainOptions(BaseModel):
     )
 
 
-class WMDatasetOptions(BaseModel):
-    dataset_size: int = 300000
-    dataset_minibatch_size: int = 30000
-    shuffle_length: int = 30
-    img_size: Tuple[int, int] = (32, 32)
-    key: int = 0
-
-
-class WMTrainOptions(BaseModel):
-    train_epochs: int = 2000
-    mini_batch_size: int = 1000
-    optimizer: str = "adam"
-
-
 class NeuralCallableConfig(BaseModel):
     callable: Callable
     param_path: Optional[str] = None
@@ -280,23 +266,14 @@ class NeuralCallableConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class WorldModelPuzzleConfig(BaseModel):
-    callable: Callable
-    path: str
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
 class PuzzleConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
     callable: Callable
     initial_shuffle: Optional[int] = None
     kwargs: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PuzzleBundle(BaseModel):
-    puzzle: Optional[Union[Callable, PuzzleConfig, WorldModelPuzzleConfig]] = None
+    puzzle: Optional[Union[Callable, PuzzleConfig]] = None
     puzzle_hard: Optional[Union[Callable, PuzzleConfig]] = None
     eval_benchmark: Optional[str] = None
     heuristic: Callable = EmptyHeuristic
@@ -321,13 +298,5 @@ class BenchmarkBundle(BaseModel):
     search_options_configs: Dict[str, SearchOptions] = Field(
         default_factory=_default_search_configs
     )
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
-class WorldModelBundle(BaseModel):
-    world_model: Callable
-    dataset_path: str
-    puzzle_for_ds_gen: Callable
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

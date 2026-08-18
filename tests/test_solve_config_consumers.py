@@ -11,7 +11,6 @@ from heuristic.pddl_heuristic import PDDLHeuristic
 from heuristic.slidepuzzle_heuristic import SlidePuzzleHeuristic
 from heuristic.tsp_heuristic import TSPHeuristic
 from neural_util.model_preprocessing import SlidePuzzlePreProcessMixin
-from world_model_puzzle.world_model_ds import create_sample_data
 
 
 def _render_setup(puzzle) -> str:
@@ -89,12 +88,3 @@ def test_pddl_goal_mask_and_generic_display_use_goal_data():
     for puzzle in (TSP(size=3), DotKnot(size=4, color_num=2)):
         assert not puzzle.has_goal_data
         assert "Goal" not in _render_setup(puzzle)
-
-
-def test_world_model_sample_data_extracts_goal_spec():
-    puzzle = SlidePuzzle(size=2)
-    key = jax.random.PRNGKey(0)
-    targets, _ = create_sample_data(puzzle, shuffle_parallel=2, key=key)
-    solve_configs, _ = jax.vmap(puzzle.get_inits)(jax.random.split(key, 2))
-
-    assert jnp.array_equal(targets.board, solve_configs.GoalSpec.board)

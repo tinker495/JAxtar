@@ -5,7 +5,6 @@ from _lazy_imports import lazy_dir, load_lazy_export
 __all__ = [
     "puzzle_bundles",
     "benchmark_bundles",
-    "world_model_bundles",
     "train_presets",
     "PuzzleOptions",
     "SearchOptions",
@@ -13,11 +12,7 @@ __all__ = [
     "HeuristicOptions",
     "QFunctionOptions",
     "DistTrainOptions",
-    "WMDatasetOptions",
-    "WMTrainOptions",
     "PuzzleBundle",
-    "WorldModelBundle",
-    "WorldModelPuzzleConfig",
     "NeuralCallableConfig",
     "PuzzleConfig",
     "SEARCH_ALGORITHM_CATALOG",
@@ -32,7 +27,6 @@ _EXPORTS = {
     "benchmark_bundles": ".benchmark_registry",
     "puzzle_bundles": ".puzzle_registry",
     "train_presets": ".train_presets",
-    "world_model_bundles": ".world_model_registry",
     "DistTrainOptions": ".pydantic_models",
     "HeuristicOptions": ".pydantic_models",
     "NeuralCallableConfig": ".pydantic_models",
@@ -42,10 +36,6 @@ _EXPORTS = {
     "QFunctionOptions": ".pydantic_models",
     "SearchOptions": ".pydantic_models",
     "VisualizeOptions": ".pydantic_models",
-    "WMDatasetOptions": ".pydantic_models",
-    "WMTrainOptions": ".pydantic_models",
-    "WorldModelBundle": ".pydantic_models",
-    "WorldModelPuzzleConfig": ".pydantic_models",
 }
 
 

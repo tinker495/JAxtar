@@ -52,7 +52,7 @@ This project features specially written components, including:
   - a hashtable for parallel lookup and insertion operations
   - a priority queue that supports batching, push, and pop operations
 - [`PuXle`](https://github.com/tinker495/PuXle): All puzzle implementations have been moved to this separate high-performance library for parallelized puzzle environments built on JAX
-- World model implementations based on PuXle for discrete world model learning and heuristic search
+- PuXle world models registered for latent-space heuristic search
 - Network heuristics and Q-functions designed for JIT-compilable integration with A\* & Q\* algorithm
 - a fully JIT-compiled A\* & Q\* algorithm for puzzles
 
@@ -229,7 +229,7 @@ These types of puzzles are not strictly the kind that are typically solved with 
 
 ### World Model Puzzle
 
-This is an implementation of learning a world model, as introduced in the paper ["Learning Discrete World Models for Heuristic Search"](https://rlj.cs.umass.edu/2024/papers/RLJ_RLC_2024_225.pdf), and performing A\* & Q\* search within that world model.
+The world-model implementation and training APIs live in PuXle. JAxtar registers those models to perform A\* & Q\* search in the learned latent space, following ["Learning Discrete World Models for Heuristic Search"](https://rlj.cs.umass.edu/2024/papers/RLJ_RLC_2024_225.pdf).
 
 <!-- Currently, this implementation achieves node search speeds that are basically more than 10 times faster than those presented in the paper. -->
 

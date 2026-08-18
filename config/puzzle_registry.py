@@ -67,16 +67,7 @@ from qfunction.neuralq import (
     SokobanNeuralQ,
     WorldModelNeuralQ,
 )
-from world_model_puzzle import (
-    RubiksCubeWorldModel,
-    RubiksCubeWorldModel_reversed,
-    RubiksCubeWorldModel_test,
-    RubiksCubeWorldModelOptimized,
-    RubiksCubeWorldModelOptimized_reversed,
-    RubiksCubeWorldModelOptimized_test,
-    SokobanWorldModel,
-    SokobanWorldModelOptimized,
-)
+from puxle.world_model import trained_world_model_registry
 
 from .pydantic_models import (
     EvalOptions,
@@ -84,7 +75,6 @@ from .pydantic_models import (
     PuzzleBundle,
     PuzzleConfig,
     SearchOptions,
-    WorldModelPuzzleConfig,
 )
 
 
@@ -457,11 +447,8 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function=_q_from_heuristic(PDDLHeuristic),
     ),
     "rubikscube_world_model": PuzzleBundle(
-        puzzle=WorldModelPuzzleConfig(
-            callable=RubiksCubeWorldModel,
-            path="world_model_puzzle/model/params/rubikscube_v2.pkl",
-        ),
-        k_max=30,
+        puzzle=trained_world_model_registry.RubiksCubeWorldModel,
+        k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -476,11 +463,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_test": PuzzleBundle(
-        puzzle=WorldModelPuzzleConfig(
-            callable=RubiksCubeWorldModel_test,
-            path="world_model_puzzle/model/params/rubikscube_v2.pkl",
-        ),
-        k_max=30,
+        puzzle=trained_world_model_registry.RubiksCubeWorldModel_test,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -495,10 +478,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_reversed": PuzzleBundle(
-        puzzle=WorldModelPuzzleConfig(
-            callable=RubiksCubeWorldModel_reversed,
-            path="world_model_puzzle/model/params/rubikscube_v2.pkl",
-        ),
+        puzzle=trained_world_model_registry.RubiksCubeWorldModel_reversed,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -513,10 +493,8 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_optimized": PuzzleBundle(
-        puzzle=WorldModelPuzzleConfig(
-            callable=RubiksCubeWorldModelOptimized,
-            path="world_model_puzzle/model/params/rubikscube_optimized_v2.pkl",
-        ),
+        puzzle=trained_world_model_registry.RubiksCubeWorldModelOptimized,
+        k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -531,10 +509,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_optimized_test": PuzzleBundle(
-        puzzle=WorldModelPuzzleConfig(
-            callable=RubiksCubeWorldModelOptimized_test,
-            path="world_model_puzzle/model/params/rubikscube_optimized_v2.pkl",
-        ),
+        puzzle=trained_world_model_registry.RubiksCubeWorldModelOptimized_test,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -549,10 +524,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_optimized_reversed": PuzzleBundle(
-        puzzle=WorldModelPuzzleConfig(
-            callable=RubiksCubeWorldModelOptimized_reversed,
-            path="world_model_puzzle/model/params/rubikscube_optimized_v2.pkl",
-        ),
+        puzzle=trained_world_model_registry.RubiksCubeWorldModelOptimized_reversed,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -567,10 +539,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "sokoban_world_model": PuzzleBundle(
-        puzzle=WorldModelPuzzleConfig(
-            callable=SokobanWorldModel,
-            path="world_model_puzzle/model/params/sokoban_v2.pkl",
-        ),
+        puzzle=trained_world_model_registry.SokobanWorldModel,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -585,10 +554,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "sokoban_world_model_optimized": PuzzleBundle(
-        puzzle=WorldModelPuzzleConfig(
-            callable=SokobanWorldModelOptimized,
-            path="world_model_puzzle/model/params/sokoban_optimized_v2.pkl",
-        ),
+        puzzle=trained_world_model_registry.SokobanWorldModelOptimized,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,

@@ -21,20 +21,15 @@ These commands are used to solve puzzles using different search algorithms.
 -   [**`id_qstar`**](./id_qstar.md): Solves a puzzle using the Iterative Deepening Q\* search algorithm.
 -   [**`qbeam`**](./qbeam.md): Solves a puzzle using the Q-Beam search algorithm.
 
-### Interactive Commands
-
--   [**`human_play`**](./human_play.md): Allows you to play a puzzle interactively in the terminal.
-
 ### Training Commands
 
 These commands are used to train neural network models for heuristic search.
 
 -   [**`distance_train heuristic`**](./heuristic_train.md): Trains a neural network to act as a heuristic function by predicting the distance to the goal.
 -   [**`distance_train qfunction`**](./qfunction_train.md): Trains a neural network to serve as a Q-function for estimating action costs.
--   [**`world_model_train train`**](./world_model_train.md): Trains a discrete world model that learns the puzzle's transition dynamics.
--   [**`world_model_train make_transition_dataset`**](./world_model_dataset.md): Generates a dataset of state transitions for training world models.
--   [**`world_model_train make_sample_data`**](./world_model_dataset.md): Generates a dataset of initial and target state pairs.
--   [**`world_model_train make_eval_trajectory`**](./world_model_dataset.md): Generates a long trajectory for evaluating world model predictions.
+
+Interactive puzzle play and world-model training are provided by the `PuXle` CLI;
+JAxtar only selects PuXle's zero-argument trained-model factories for search.
 
 ### Evaluation and Benchmark Commands
 

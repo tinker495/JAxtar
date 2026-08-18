@@ -13,9 +13,6 @@ from config.pydantic_models import (
     QFunctionOptions,
     SearchOptions,
     VisualizeOptions,
-    WMDatasetOptions,
-    WMTrainOptions,
-    WorldModelPuzzleConfig,
 )
 from helpers.formatting import HUMAN_FLOAT, HUMAN_INT
 from helpers.param_stats import attach_runtime_metadata
@@ -41,12 +38,6 @@ def _train_presets():
     from config import train_presets
 
     return train_presets
-
-
-def _world_model_bundles():
-    from config import world_model_bundles
-
-    return world_model_bundles
 
 
 def _setup_neural_component(
@@ -116,7 +107,6 @@ def create_puzzle_options(
     default_puzzle: str,
     default_hard=False,
     use_hard_flag=False,
-    puzzle_ds_flag=False,
     use_seeds_flag=False,
 ):
     def decorator(func):
@@ -126,8 +116,7 @@ def create_puzzle_options(
             puzzle_opts = PuzzleOptions(**puzzle_kwargs)
 
             puzzle_name = puzzle_opts.puzzle
-            bundles = _world_model_bundles() if puzzle_ds_flag else _puzzle_bundles()
-            puzzle_bundle = bundles[puzzle_name]
+            puzzle_bundle = _puzzle_bundles()[puzzle_name]
 
             input_args = {}
             if puzzle_opts.puzzle_args:
@@ -139,9 +128,7 @@ def create_puzzle_options(
             else:
                 puzzle_callable = puzzle_bundle.puzzle
 
-            if isinstance(puzzle_callable, WorldModelPuzzleConfig):
-                puzzle_instance = puzzle_callable.callable(path=puzzle_callable.path, **input_args)
-            elif isinstance(puzzle_callable, PuzzleConfig):
+            if isinstance(puzzle_callable, PuzzleConfig):
                 puzzle_kwargs = {**puzzle_callable.kwargs, **input_args}
                 if (
                     puzzle_callable.initial_shuffle is not None
@@ -189,16 +176,11 @@ def create_puzzle_options(
                 "-h", "--hard", default=False, is_flag=True, help="Use the hard puzzle"
             )(wrapper)
 
-        if puzzle_ds_flag:
-            choices = list(_world_model_bundles().keys())
-        else:
-            choices = list(_puzzle_bundles().keys())
-
         wrapper = click.option(
             "-p",
             "--puzzle",
             default=default_puzzle,
-            type=click.Choice(choices),
+            type=click.Choice(list(_puzzle_bundles().keys())),
             help="Puzzle to solve",
         )(wrapper)
         return wrapper
@@ -293,8 +275,6 @@ eval_puzzle_options = create_puzzle_options(default_puzzle="rubikscube", default
 
 # dist training shares the eval puzzle option surface.
 dist_puzzle_options = eval_puzzle_options
-
-wm_puzzle_ds_options = create_puzzle_options(default_puzzle="rubikscube", puzzle_ds_flag=True)
 
 
 def search_options(func=None, *, variant: str = "default") -> callable:
@@ -762,20 +742,6 @@ def visualize_options(func: callable) -> callable:
     return wrapper
 
 
-def human_play_options(func: callable) -> callable:
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        kwargs.pop("puzzle_bundle")
-        kwargs.pop("puzzle_name")
-        seeds = kwargs.pop("seeds")
-        if len(seeds) > 1:
-            raise ValueError("human play is not supported multiple initial state")
-        kwargs["seed"] = seeds[0]
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
 def dist_train_options(
     func: callable = None, *, preset_category: str, default_preset: str | None = None
 ) -> callable:
@@ -1099,104 +1065,6 @@ def dist_qfunction_options(func: callable) -> callable:
             aqt_cfg=aqt_cfg,
         )
         kwargs.update(result)
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def wm_get_ds_options(func: callable) -> callable:
-    @click.option(
-        "-ds",
-        "--dataset",
-        default="rubikscube",
-        type=click.Choice(list(_world_model_bundles().keys())),
-        help="Dataset to use",
-    )
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        dataset_name = kwargs.pop("dataset")
-        wm_bundle = _world_model_bundles()[dataset_name]
-        dataset_path = wm_bundle.dataset_path
-
-        datas = jax.numpy.load(dataset_path + "/images.npy")
-        next_datas = jax.numpy.load(dataset_path + "/next_images.npy")
-        actions = jax.numpy.load(dataset_path + "/actions.npy")
-        kwargs["datas"] = datas
-        kwargs["next_datas"] = next_datas
-        kwargs["actions"] = actions
-
-        eval_trajectory = jax.numpy.load(dataset_path + "/eval_traj_images.npy")
-        eval_actions = jax.numpy.load(dataset_path + "/eval_actions.npy")
-        kwargs["eval_trajectory"] = (eval_trajectory, eval_actions)
-        kwargs["dataset_name"] = dataset_name
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def wm_get_world_model_options(func: callable) -> callable:
-    @click.option(
-        "--world_model",
-        default="rubikscube",
-        type=click.Choice(list(_world_model_bundles().keys())),
-        help="World model to use",
-    )
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        world_model_name = kwargs.pop("world_model")
-        wm_bundle = _world_model_bundles()[world_model_name]
-        world_model = wm_bundle.world_model(reset=True)
-        kwargs["world_model"] = world_model
-        kwargs["world_model_name"] = world_model_name
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def wm_train_options(func: callable) -> callable:
-    @click.option("--train_epochs", type=HUMAN_INT, default=2000, help="Number of training steps")
-    @click.option("--mini_batch_size", type=HUMAN_INT, default=1000, help="Batch size")
-    @click.option(
-        "--optimizer",
-        type=click.Choice(list(OPTIMIZERS.keys())),
-        default="adam",
-        help="Optimizer to use",
-    )
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        wm_train_kwargs = map_kwargs_to_pydantic(WMTrainOptions, kwargs)
-        wm_train_opts = WMTrainOptions(**wm_train_kwargs)
-        kwargs["wm_train_options"] = wm_train_opts
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def wm_dataset_options(func: callable) -> callable:
-    @click.option("--dataset_size", type=HUMAN_INT, default=300000)
-    @click.option("--dataset_minibatch_size", type=HUMAN_INT, default=30000)
-    @click.option("--shuffle_length", type=HUMAN_INT, default=30)
-    @click.option("--img_size", nargs=2, type=click.Tuple([int, int]), default=(32, 32))
-    @click.option("--key", type=int, default=0)
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # This decorator passes puzzle_name from another decorator,
-        # but the puzzle object itself is what we need now.
-        # Overwriting the puzzle in kwargs with the one for dataset generation
-        puzzle_name = kwargs["puzzle_name"]
-        bundles = _world_model_bundles()
-        if puzzle_name not in bundles:
-            raise click.UsageError(
-                f"World model dataset generation is not defined for '{puzzle_name}'"
-            )
-
-        wm_bundle = bundles[puzzle_name]
-        puzzle_callable = wm_bundle.puzzle_for_ds_gen
-        kwargs["puzzle"] = puzzle_callable()
-
-        wm_dataset_kwargs = map_kwargs_to_pydantic(WMDatasetOptions, kwargs)
-        wm_dataset_opts = WMDatasetOptions(**wm_dataset_kwargs)
-        kwargs["wm_dataset_options"] = wm_dataset_opts
         return func(*args, **kwargs)
 
     return wrapper
