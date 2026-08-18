@@ -54,6 +54,7 @@ def _qstar_loop_builder(
             min_pop=min_pop,
             parant_with_costs=True,
             emit_workload_signature=emit_workload_signature,
+            is_reversible=puzzle.is_reversible,
         )
         q_parameters = q_fn.prepare_q_parameters(solve_config, **kwargs)
         return init_base_loop_state(

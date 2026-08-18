@@ -96,6 +96,7 @@ def _bi_astar_d_loop_builder(
             pop_ratio=pop_ratio,
             min_pop=min_pop,
             parant_with_costs=True,
+            is_reversible=puzzle.is_reversible,
         )
 
         heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)

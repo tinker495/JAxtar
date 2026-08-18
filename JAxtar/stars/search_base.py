@@ -218,7 +218,7 @@ class LoopStateWithStates:
     filled: chex.Array
 
 
-@base_dataclass(static_fields=("action_size",))
+@base_dataclass(static_fields=("action_size", "branching_factor"))
 class SearchResult:
     """
     A dataclass containing the data structures used in the A*/Q* search algorithms.
@@ -235,6 +235,9 @@ class SearchResult:
         hashtable (HashTable): Stores all encountered states for efficient lookup
         priority_queue (BGPQ): Priority queue for ordering state expansions
         action_size (int): Number of actions available from each state
+        branching_factor (int): Distinct children an expansion generates, i.e.
+                `action_size` minus the parent for reversible puzzles. Only used to
+                scale the deferred families' generated-state metric.
         pop_ratio (float): The final pop ratio for the search, controlling the
                 beam width. It is used to calculate a multiplier `M = max(1.0 + pop_ratio, 1.01)`.
                 The search beam will include all nodes with a cost up to `min_cost * M`.
@@ -249,6 +252,7 @@ class SearchResult:
     hashtable: HashTable  # hash table
     priority_queue: BGPQ  # priority queue
     action_size: int  # number of actions available from each state
+    branching_factor: int  # distinct children per expansion (action_size - 1 if reversible)
     pop_ratio: float  # ratio of states to pop from the priority queue
     min_pop: int  # minimum number of states to pop from the priority queue
     cost: chex.Array  # cost array - g value
@@ -278,7 +282,11 @@ class SearchResult:
     xtr_pq_size_samples: chex.Array
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3), static_argnames=("parant_with_costs",))
+    @partial(
+        jax.jit,
+        static_argnums=(0, 1, 2, 3),
+        static_argnames=("parant_with_costs", "is_reversible"),
+    )
     def build(
         statecls: Puzzle.State,
         batch_size: int,
@@ -289,6 +297,7 @@ class SearchResult:
         seed=42,
         parant_with_costs: bool = False,
         emit_workload_signature: bool = False,
+        is_reversible: bool = False,
     ):
         """
         Creates a new instance of SearchResult with initialized data structures.
@@ -308,6 +317,9 @@ class SearchResult:
                                  available nodes in the batch.
             min_pop (int): Minimum number of nodes to pop from the priority queue.
             seed (int): Random seed for hash function initialization
+            is_reversible (bool): Whether one of the `action_size` children of an
+                expansion is its own parent, which the deferred generated-state
+                metric discounts.
 
         Returns:
             SearchResult: A new instance with initialized data structures
@@ -339,6 +351,7 @@ class SearchResult:
             hashtable=hashtable,
             priority_queue=priority_queue,
             action_size=action_size,
+            branching_factor=action_size - 1 if is_reversible else action_size,
             pop_ratio=jnp.maximum(1.0 + pop_ratio, 1.01),
             min_pop=min_pop,
             cost=cost,
@@ -380,8 +393,16 @@ class SearchResult:
 
     @property
     def generated_size(self) -> int:
-        """Current number of states stored in the founded set.
-        This is the number of states in the founded set."""
+        """Number of states the search generated.
+
+        Eager expansion (A*) inserts every child into the hash table, so hash usage
+        already is the generated count. Deferred expansion (A*_d, Q*) only inserts
+        the nodes it pops and processes, so hash usage counts *expansions*; scale it
+        by the branching factor to keep the metric comparable across both families.
+        Use `hashtable.size` directly wherever hash occupancy itself is meant.
+        """
+        if isinstance(self.priority_queue.val_store, Parant_with_Costs):
+            return self.hashtable.size * self.branching_factor
         return self.hashtable.size
 
     def pop_full(search_result, **kwargs) -> tuple["SearchResult", Current, chex.Array]:
@@ -919,7 +940,7 @@ class SearchResult:
         assert search_result.solved
         solved_idx = search_result.solved_idx
         solved_index = int(jax.device_get(solved_idx.hashidx.index))
-        max_steps = max(1, int(jax.device_get(search_result.generated_size)) + 1)
+        max_steps = max(1, int(jax.device_get(search_result.hashtable.size)) + 1)
 
         (
             path_idx,
@@ -1150,7 +1171,7 @@ def base_loop_condition(
     search_result = loop_state.search_result
     solve_config = loop_state.solve_config
     filled = loop_state.filled
-    hash_size = search_result.generated_size
+    hash_size = search_result.hashtable.size
     size_cond1 = filled.any()  # queue is not empty
     size_cond2 = hash_size < search_result.capacity  # hash table is not full
     size_cond = jnp.logical_and(size_cond1, size_cond2)
@@ -1280,7 +1301,7 @@ def base_loop_condition_current(puzzle: Puzzle, loop_state: LoopState):
     solve_config = loop_state.solve_config
     states = search_result.get_state(loop_state.current)
     filled = loop_state.filled
-    hash_size = search_result.generated_size
+    hash_size = search_result.hashtable.size
     size_cond1 = filled.any()  # queue is not empty
     size_cond2 = hash_size < search_result.capacity  # hash table is not full
     size_cond = jnp.logical_and(size_cond1, size_cond2)

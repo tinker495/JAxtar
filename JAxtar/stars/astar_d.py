@@ -52,6 +52,7 @@ def _astar_d_loop_builder(
             min_pop=min_pop,
             parant_with_costs=True,
             emit_workload_signature=emit_workload_signature,
+            is_reversible=puzzle.is_reversible,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
         return init_base_loop_state(

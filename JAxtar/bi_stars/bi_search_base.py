@@ -110,10 +110,10 @@ class BiDirectionalSearchResult:
 
     @property
     def total_generated(self) -> int:
-        """Distinct states generated across both directions.
+        """States generated across both directions.
 
-        Forward and backward share one hash table, so its size already counts the
-        union of states from both frontiers (`forward.generated_size` equals
+        Forward and backward share one hash table, so it already covers the union of
+        states from both frontiers (`forward.generated_size` equals
         `backward.generated_size`).
         """
         return self.forward.generated_size
@@ -158,6 +158,7 @@ def build_bi_search_result(
     pop_ratio: float = jnp.inf,
     min_pop: int = 1,
     parant_with_costs: bool = False,
+    is_reversible: bool = False,
 ) -> BiDirectionalSearchResult:
     """
     Creates a new BiDirectionalSearchResult with initialized forward and backward
@@ -175,6 +176,8 @@ def build_bi_search_result(
         pop_ratio: Controls beam width
         min_pop: Minimum nodes to pop per batch
         parant_with_costs: Whether to use Parant_with_Costs for PQ values
+        is_reversible: Whether an expansion's children include its own parent, which
+            the deferred generated-state metric discounts
 
     Returns:
         BiDirectionalSearchResult with initialized data structures
@@ -187,6 +190,7 @@ def build_bi_search_result(
         pop_ratio,
         min_pop,
         parant_with_costs=parant_with_costs,
+        is_reversible=is_reversible,
     )
     backward = SearchResult.build(
         statecls,
@@ -196,6 +200,7 @@ def build_bi_search_result(
         pop_ratio,
         min_pop,
         parant_with_costs=parant_with_costs,
+        is_reversible=is_reversible,
     )
     # Share ONE hash table between both directions so a state maps to a single slot
     # index across the whole search. Backward's own table (same seed/geometry) is
@@ -567,9 +572,9 @@ def common_bi_loop_condition(
     bwd_has_nodes = filled_backward.any()
 
     # Check shared hash table capacity. Both directions share one table, so
-    # `generated_size` is the shared total; when it is full neither can insert more.
-    fwd_not_full = bi_result.forward.generated_size < bi_result.forward.capacity
-    bwd_not_full = bi_result.backward.generated_size < bi_result.backward.capacity
+    # `hashtable.size` is the shared total; when it is full neither can insert more.
+    fwd_not_full = bi_result.forward.hashtable.size < bi_result.forward.capacity
+    bwd_not_full = bi_result.backward.hashtable.size < bi_result.backward.capacity
     has_work = jnp.logical_or(
         jnp.logical_and(fwd_has_nodes, fwd_not_full),
         jnp.logical_and(bwd_has_nodes, bwd_not_full),
@@ -677,7 +682,7 @@ def reconstruct_bidirectional_path(
         return []
 
     def _walk(sr: SearchResult, target: HashIdx) -> tuple[list[int], list[int]]:
-        max_steps = max(1, int(jax.device_get(sr.generated_size)) + 1)
+        max_steps = max(1, int(jax.device_get(sr.hashtable.size)) + 1)
         return walk_parent_chain(
             sr.parent,
             int(jax.device_get(target.index)),

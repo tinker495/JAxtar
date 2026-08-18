@@ -106,6 +106,7 @@ def _bi_qstar_loop_builder(
             pop_ratio=pop_ratio,
             min_pop=min_pop,
             parant_with_costs=True,
+            is_reversible=puzzle.is_reversible,
         )
 
         q_params_forward = q_fn.prepare_q_parameters(solve_config, **kwargs)
