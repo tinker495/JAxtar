@@ -26,7 +26,7 @@ def _require_cv2():  # pragma: no cover
     if _CV2_IMPORT_ERROR is not None:
         raise ImportError(
             "OpenCV (cv2) is required for saving solution animations/frames. "
-            "Install a NumPy-compatible build (e.g., downgrade to `numpy<2` or reinstall `opencv-python`)."
+            "Install a NumPy-compatible build (e.g., downgrade to `numpy<2` or reinstall `opencv-python-headless`)."
         ) from _CV2_IMPORT_ERROR
     try:
         import cv2 as cv2_mod  # type: ignore
@@ -34,7 +34,7 @@ def _require_cv2():  # pragma: no cover
         _CV2_IMPORT_ERROR = exc
         raise ImportError(
             "OpenCV (cv2) is required for saving solution animations/frames. "
-            "Install a NumPy-compatible build (e.g., downgrade to `numpy<2` or reinstall `opencv-python`)."
+            "Install a NumPy-compatible build (e.g., downgrade to `numpy<2` or reinstall `opencv-python-headless`)."
         ) from exc
     cv2 = cv2_mod
     return cv2_mod
