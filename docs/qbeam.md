@@ -7,13 +7,13 @@ The `qbeam` command solves a puzzle using a variation of Beam Search guided by a
 The basic syntax for the `qbeam` command is:
 
 ```bash
-python main.py qbeam [OPTIONS]
+uv run qbeam [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py qbeam -p rubikscube -nn -b 5000
+uv run qbeam -p rubikscube -nn -b 5000
 ```
 
 ## Options

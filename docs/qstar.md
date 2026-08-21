@@ -13,13 +13,13 @@ The `qstar` command solves a puzzle using the Q\* search algorithm. Q\* is a var
 The basic syntax for the `qstar` command is:
 
 ```bash
-python main.py qstar [OPTIONS]
+uv run qstar [OPTIONS]
 ```
 
 A common use case is to solve a specific puzzle with a neural Q-function:
 
 ```bash
-python main.py qstar -p rubikscube -nn
+uv run qstar -p rubikscube -nn
 ```
 
 ## Options
@@ -36,7 +36,7 @@ These options define the puzzle environment to be solved.
     -   Choices: `n-puzzle`, `rubikscube`, `slidepuzzle`, etc. (depends on configuration).
 -   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
     -   Type: `String`
-    -   Example: `python main.py qstar -pargs '{"size": 4}'`
+    -   Example: `uv run qstar -pargs '{"size": 4}'`
 -   `-h, --hard`: If available, use a "hard" version of the puzzle.
     -   Type: `Flag`
 -   `-s, --seeds`: A comma-separated list of seeds for generating initial puzzle states. Using multiple seeds will run the solver multiple times.

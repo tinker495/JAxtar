@@ -7,13 +7,13 @@ The `bi_qstar` command solves a puzzle using the Bidirectional Q\* search algori
 The basic syntax for the `bi_qstar` command is:
 
 ```bash
-python main.py bi-qstar [OPTIONS]
+uv run bi_qstar [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py bi-qstar -p rubikscube -nn
+uv run bi_qstar -p rubikscube -nn
 ```
 
 ## Options
@@ -56,14 +56,14 @@ The `bi_qstar` command uses similar option groups to the `qstar` command.
 ## Related Commands
 
 ```bash
-python main.py eval bi-qstar [OPTIONS]
-python main.py benchmark bi-qstar [OPTIONS]
+uv run benchmark bi-qstar --puzzle rubikscube [OPTIONS]
+uv run benchmark bi-qstar --benchmark rubikscube-deepcubea [OPTIONS]
 ```
 
 Training-time evaluation can also use this algorithm via:
 
 ```bash
-python main.py distance-train qfunction --eval-search-metric bi_qstar
+uv run distance_train qfunction --eval-search-metric bi_qstar
 ```
 
 ## Low-memory benchmark fallback profile
@@ -71,7 +71,7 @@ python main.py distance-train qfunction --eval-search-metric bi_qstar
 If default benchmark settings trigger OOM on your machine, start with:
 
 ```bash
-python main.py benchmark bi-qstar \
+uv run benchmark bi-qstar \
   --benchmark rubikscube-deepcubea \
   --num-eval 1 \
   --batch-size 16 \

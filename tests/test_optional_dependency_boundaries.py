@@ -1,15 +1,12 @@
 import importlib.abc
+import os
 import sys
 from pathlib import Path
 
 from click.testing import CliRunner
 
-
 OPTIONAL_STACK = {
     "aim",
-    "matplotlib",
-    "pandas",
-    "seaborn",
     "tensorboardX",
     "wandb",
 }
@@ -31,17 +28,15 @@ def _purge_modules(monkeypatch, *module_prefixes: str) -> None:
             monkeypatch.delitem(sys.modules, module_name, raising=False)
 
 
-def test_base_cli_help_does_not_import_logging_or_plot_stack(monkeypatch):
+def test_base_cli_help_does_not_import_logging_backends(monkeypatch):
     _purge_modules(
         monkeypatch,
         "cli.main",
         "cli.benchmark_commands",
-        "cli.eval_commands",
         "cli.evaluation_runner",
-        "cli.comparison_generator",
-        "helpers.artifact_manager",
-        "helpers.plots",
+        "helpers.logger",
     )
+    monkeypatch.delenv("TF_CPP_MIN_LOG_LEVEL", raising=False)
     monkeypatch.syspath_prepend(".")
     sys.meta_path.insert(0, _BlockOptionalStack())
     try:
@@ -55,7 +50,8 @@ def test_base_cli_help_does_not_import_logging_or_plot_stack(monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "benchmark" in result.output
-    assert "eval" in result.output
+    assert "eval" not in result.output
+    assert "TF_CPP_MIN_LOG_LEVEL" not in os.environ
 
 
 def test_noop_logger_does_not_import_logging_backends(monkeypatch, tmp_path):

@@ -1,7 +1,7 @@
 """Search Algorithm Catalog.
 
 Single source of truth for the `(name → builder_fn, component_kind, beam variant,
-surface labels)` mapping consumed by every CLI surface (search, eval, benchmark).
+surface labels)` mapping consumed by the search and benchmark CLI surfaces.
 See CONTEXT.md "Search Algorithm Catalog".
 """
 
@@ -26,7 +26,7 @@ ComponentKind = Literal["heuristic", "qfunction"]
 
 @dataclass(frozen=True, slots=True)
 class SearchAlgorithmEntry:
-    """One algorithm's facts shared across the three CLI surfaces."""
+    """One algorithm's facts shared by the search and benchmark CLI surfaces."""
 
     python_id: str
     cli_subcommand: str

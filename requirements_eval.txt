@@ -1,4 +1,0 @@
-# Optional evaluation and plotting dependencies.
-pandas
-matplotlib
-seaborn

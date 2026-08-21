@@ -33,7 +33,7 @@ def test_search_commands_smoke_executes_without_error():
     ]
 
     for command in commands:
-        result = runner.invoke(cli, [command] + base_args)
+        result = runner.invoke(cli, ["test", command] + base_args)
         assert result.exit_code == 0, result.output
         assert result.exception is None
         assert "Traceback (most recent call last)" not in result.output

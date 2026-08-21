@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import inspect
+import tomllib
 from dataclasses import is_dataclass
+from pathlib import Path
 
 import pytest
 
+from cli.benchmark_commands import benchmark
+from cli.main import cli, search_test
 from config import (
     SEARCH_ALGORITHM_CATALOG,
     SearchAlgorithmEntry,
     resolve_algorithm_for_component,
 )
-
-from cli.benchmark_commands import benchmark
-from cli.eval_commands import evaluation
-from cli.main import cli
 from JAxtar.search_build_spec import SearchBuildSpec
 
 CATALOG_KEBAB = {entry.cli_subcommand for entry in SEARCH_ALGORITHM_CATALOG}
@@ -74,25 +74,30 @@ def test_catalog_rejects_cross_component_resolution():
         resolve_algorithm_for_component("qstar", "heuristic")
 
 
-def test_search_surface_command_set_matches_catalog():
-    """Top-level CLI must expose every Catalog algorithm as a kebab-case command."""
-    top_level_names = set(cli.commands.keys())
-    missing = CATALOG_KEBAB - top_level_names
-    assert not missing, f"Catalog algorithms missing from top-level CLI: {missing}"
+def test_search_test_surface_command_set_matches_catalog():
+    """`test` must expose every Catalog algorithm as a kebab-case subcommand."""
+    assert set(search_test.commands) == CATALOG_KEBAB
 
 
-def test_eval_surface_command_set_matches_catalog():
-    """`eval` group must expose every Catalog algorithm as a kebab-case subcommand."""
-    eval_names = set(evaluation.commands.keys())
-    algorithm_names = eval_names - {"compare"}
-    assert (
-        algorithm_names == CATALOG_KEBAB
-    ), f"eval algorithm subcommands {algorithm_names} != Catalog {CATALOG_KEBAB}"
+def test_search_commands_are_not_registered_at_top_level():
+    assert "test" in cli.commands
+    assert "eval" not in cli.commands
+    assert not CATALOG_KEBAB.intersection(cli.commands)
 
 
 def test_benchmark_surface_command_set_matches_catalog():
     """`benchmark` group must expose every Catalog algorithm as a kebab-case subcommand."""
-    bench_names = set(benchmark.commands.keys())
+    assert "compare" in benchmark.commands
+    bench_names = set(benchmark.commands) - {"compare"}
     assert (
         bench_names == CATALOG_KEBAB
     ), f"benchmark subcommands {bench_names} != Catalog {CATALOG_KEBAB}"
+
+
+def test_direct_script_set_matches_catalog():
+    config = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    expected = {"jaxtar", "benchmark", "distance_train"} | {
+        entry.python_id for entry in SEARCH_ALGORITHM_CATALOG
+    }
+
+    assert set(config["project"]["scripts"]) == expected

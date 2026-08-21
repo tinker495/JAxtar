@@ -2,28 +2,24 @@ from __future__ import annotations
 
 import click
 
+from .benchmark_commands import benchmark
 from .commands import SEARCH_COMMANDS
-from .lazy_group import LazyGroup
 from .train_commands import distance_train
 
-_LAZY_COMMANDS: dict[str, tuple[str, str, str]] = {
-    "benchmark": (
-        ".benchmark_commands",
-        "benchmark",
-        "Benchmark search strategies with registered configs.",
-    ),
-    "eval": (".eval_commands", "evaluation", "Evaluation commands."),
-}
 
-
-@click.group(cls=LazyGroup, lazy_commands=_LAZY_COMMANDS, import_package=__package__)
+@click.group()
 def cli():
     """JAxtar: A JAX-based A* and Q* search library for solving puzzles."""
     pass
 
 
+search_test = click.Group(name="test", help="Run individual search algorithms.")
+
+
 for _cmd in SEARCH_COMMANDS:
-    cli.add_command(_cmd)
+    search_test.add_command(_cmd)
+cli.add_command(search_test)
+cli.add_command(benchmark)
 cli.add_command(distance_train)
 
 

@@ -58,6 +58,26 @@ This project features specially written components, including:
 
 This project was quite challenging to develop, and it felt like performing acrobatics with JAX. However, I managed to create a fully functional version, and hopefully it will inspire you to discover something amazing as you delve into JAX.
 
+## Installation
+
+JAxtar uses `pyproject.toml` for installation and command registration. This checkout must live
+next to the `PuXle/` and `Xtructure/` sibling repositories referenced by `tool.uv.sources`. From
+the JAxtar repository:
+
+```bash
+uv sync --extra gpu
+uv run jaxtar --help
+uv run jaxtar test --help
+uv run astar_d --help
+```
+
+The console commands are checkout-only. External distributions intentionally contain only the
+`JAxtar` core package; generic top-level modules such as `cli`, `config`, and `helpers` are not
+packaged.
+
+Omit `--extra gpu` for CPU-only use, or replace it with `--extra tpu` on TPU. Benchmark
+plots are installed by default; external logging backends are available through the `logging` extra.
+
 ## Usage and Documentation
 
 For detailed information on all available commands and their options, please refer to the official documentation.
@@ -77,7 +97,7 @@ You can easily test it yourself with the colab link below.
 ### Test Run
 
 ```bash
-$ python main.py astar
+$ uv run astar
 ╭─────────────── Seed 0 ────────────────╮
 │    Start State        Target State    │
 │ ┏━━━┳━━━┳━━━┳━━━┓   ┏━━━┳━━━┳━━━┳━━━┓ │
@@ -106,7 +126,7 @@ $ python main.py astar
 ### Test vmapped run
 
 ```bash
-$ python main.py astar --vmap_size 20
+$ uv run astar --vmap_size 20
 ╭──────────────────────────────── Vmapped Search Setup ─────────────────────────────────╮
 │ ╭────────────────────────────────── Batched State ──────────────────────────────────╮ │
 │ │  ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓       ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  │ │
@@ -149,7 +169,7 @@ $ python main.py astar --vmap_size 20
 ### A\* with neural heuristic model
 
 ```bash
-$ python main.py astar -nn -h -p rubikscube -w 0.2
+$ uv run astar -nn -h -p rubikscube -w 0.2
 
 ...
 
@@ -168,7 +188,7 @@ $ python main.py astar -nn -h -p rubikscube -w 0.2
 ### Q\* with neural Q model
 
 ```bash
-$ python main.py qstar -nn -h -p rubikscube -w 0.2
+$ uv run qstar -nn -h -p rubikscube -w 0.2
 
 ...
 
@@ -187,7 +207,7 @@ $ python main.py qstar -nn -h -p rubikscube -w 0.2
 ### World Model Puzzle with A\* & Q\*
 
 ```bash
-$ python main.py qstar -p rubikscube_world_model_optimized -nn -w 0.6
+$ uv run qstar -p rubikscube_world_model_optimized -nn -w 0.6
 
 ...
 

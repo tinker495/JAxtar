@@ -103,6 +103,33 @@ def _setup_neural_component(
     return {comp_key: component, config_key: final_neural_config}
 
 
+def _build_puzzle(puzzle_opts: PuzzleOptions, *, default_hard: bool):
+    puzzle_name = puzzle_opts.puzzle
+    puzzle_bundle = _puzzle_bundles()[puzzle_name]
+
+    input_args = json.loads(puzzle_opts.puzzle_args) if puzzle_opts.puzzle_args else {}
+    puzzle_opts.hard = default_hard or puzzle_opts.hard
+    if puzzle_opts.hard and puzzle_bundle.puzzle_hard is not None:
+        puzzle_callable = puzzle_bundle.puzzle_hard
+    else:
+        puzzle_callable = puzzle_bundle.puzzle
+
+    if isinstance(puzzle_callable, PuzzleConfig):
+        puzzle_kwargs = {**puzzle_callable.kwargs, **input_args}
+        if puzzle_callable.initial_shuffle is not None and "initial_shuffle" not in puzzle_kwargs:
+            puzzle_kwargs["initial_shuffle"] = puzzle_callable.initial_shuffle
+        puzzle_instance = puzzle_callable.callable(**puzzle_kwargs)
+    elif puzzle_callable is None:
+        raise click.UsageError(
+            f"Puzzle type for '{puzzle_name}'"
+            f"{' (hard)' if puzzle_opts.hard else ''} is not defined."
+        )
+    else:
+        puzzle_instance = puzzle_callable(**input_args)
+
+    return puzzle_name, puzzle_bundle, puzzle_instance
+
+
 def create_puzzle_options(
     default_puzzle: str,
     default_hard=False,
@@ -114,35 +141,9 @@ def create_puzzle_options(
         def wrapper(*args, **kwargs):
             puzzle_kwargs = map_kwargs_to_pydantic(PuzzleOptions, kwargs)
             puzzle_opts = PuzzleOptions(**puzzle_kwargs)
-
-            puzzle_name = puzzle_opts.puzzle
-            puzzle_bundle = _puzzle_bundles()[puzzle_name]
-
-            input_args = {}
-            if puzzle_opts.puzzle_args:
-                input_args = json.loads(puzzle_opts.puzzle_args)
-
-            puzzle_opts.hard = default_hard or puzzle_opts.hard
-            if puzzle_opts.hard and puzzle_bundle.puzzle_hard is not None:
-                puzzle_callable = puzzle_bundle.puzzle_hard
-            else:
-                puzzle_callable = puzzle_bundle.puzzle
-
-            if isinstance(puzzle_callable, PuzzleConfig):
-                puzzle_kwargs = {**puzzle_callable.kwargs, **input_args}
-                if (
-                    puzzle_callable.initial_shuffle is not None
-                    and "initial_shuffle" not in puzzle_kwargs
-                ):
-                    puzzle_kwargs["initial_shuffle"] = puzzle_callable.initial_shuffle
-                puzzle_instance = puzzle_callable.callable(**puzzle_kwargs)
-            elif puzzle_callable is None:
-                raise click.UsageError(
-                    f"Puzzle type for '{puzzle_name}'"
-                    f"{' (hard)' if puzzle_opts.hard else ''} is not defined."
-                )
-            else:
-                puzzle_instance = puzzle_callable(**input_args)
+            puzzle_name, puzzle_bundle, puzzle_instance = _build_puzzle(
+                puzzle_opts, default_hard=default_hard
+            )
 
             kwargs["puzzle"] = puzzle_instance
             kwargs["puzzle_name"] = puzzle_name
@@ -198,9 +199,24 @@ def benchmark_options(func: callable) -> callable:
     @click.option(
         "--benchmark",
         "benchmark_key",
-        default=default_benchmark,
+        default=None,
         type=click.Choice(list(bundles.keys())),
-        help="Benchmark dataset to evaluate.",
+        help=f"Exact benchmark dataset. Defaults to '{default_benchmark}' unless --puzzle is set.",
+    )
+    @click.option(
+        "-p",
+        "--puzzle",
+        "puzzle_key",
+        default=None,
+        type=click.Choice(list(_puzzle_bundles().keys())),
+        help="Generate benchmark samples from a puzzle without an exact dataset.",
+    )
+    @click.option(
+        "-pargs",
+        "--puzzle-args",
+        default="",
+        type=str,
+        help="Arguments for the generated puzzle.",
     )
     @click.option(
         "--benchmark-args",
@@ -223,10 +239,42 @@ def benchmark_options(func: callable) -> callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
         benchmark_key = kwargs.pop("benchmark_key")
+        puzzle_key = kwargs.pop("puzzle_key")
+        puzzle_args = kwargs.pop("puzzle_args")
+        benchmark_args_override = kwargs.pop("benchmark_args")
+        sample_ids_raw = kwargs.pop("sample_ids")
+        sample_limit = kwargs.pop("sample_limit")
+
+        if benchmark_key and puzzle_key:
+            raise click.UsageError("Use either --benchmark or --puzzle, not both.")
+        if puzzle_args and not puzzle_key:
+            raise click.UsageError("--puzzle-args requires --puzzle.")
+
+        if puzzle_key:
+            if benchmark_args_override or sample_ids_raw or sample_limit is not None:
+                raise click.UsageError(
+                    "--benchmark-args, --sample-ids, and --sample-limit require --benchmark."
+                )
+            puzzle_opts = PuzzleOptions(puzzle=puzzle_key, puzzle_args=puzzle_args)
+            puzzle_name, puzzle_bundle, puzzle_instance = _build_puzzle(
+                puzzle_opts, default_hard=True
+            )
+            kwargs.update(
+                benchmark=None,
+                benchmark_name=None,
+                benchmark_bundle=None,
+                benchmark_cli_options={},
+                puzzle=puzzle_instance,
+                puzzle_name=puzzle_name,
+                puzzle_bundle=puzzle_bundle,
+                puzzle_opts=puzzle_opts,
+            )
+            return func(*args, **kwargs)
+
+        benchmark_key = benchmark_key or default_benchmark
         benchmark_bundle = _benchmark_bundles()[benchmark_key]
 
         benchmark_args = dict(benchmark_bundle.benchmark_args or {})
-        benchmark_args_override = kwargs.pop("benchmark_args")
         if benchmark_args_override:
             try:
                 benchmark_args.update(json.loads(benchmark_args_override))
@@ -237,7 +285,6 @@ def benchmark_options(func: callable) -> callable:
 
         benchmark_instance = benchmark_bundle.benchmark(**benchmark_args)
 
-        sample_ids_raw = kwargs.pop("sample_ids")
         sample_ids = None
         if sample_ids_raw:
             try:
@@ -248,9 +295,6 @@ def benchmark_options(func: callable) -> callable:
                 raise click.BadParameter(
                     "Invalid value in --sample-ids. Expected comma-separated integers."
                 ) from exc
-
-        sample_limit = kwargs.pop("sample_limit")
-
         kwargs["benchmark"] = benchmark_instance
         kwargs["benchmark_name"] = benchmark_key
         kwargs["benchmark_bundle"] = benchmark_bundle
@@ -259,8 +303,9 @@ def benchmark_options(func: callable) -> callable:
             "sample_ids": sample_ids,
         }
         kwargs["puzzle"] = benchmark_instance.puzzle
-        if "puzzle_bundle" not in kwargs:
-            kwargs["puzzle_bundle"] = benchmark_bundle
+        kwargs["puzzle_name"] = benchmark_key
+        kwargs["puzzle_bundle"] = benchmark_bundle
+        kwargs["puzzle_opts"] = PuzzleOptions(puzzle=benchmark_key)
         return func(*args, **kwargs)
 
     return wrapper

@@ -13,13 +13,13 @@ The `bi_astar_d` command solves a puzzle using the Bidirectional A\* Deferred se
 The basic syntax for the `bi_astar_d` command is:
 
 ```bash
-python main.py bi-astar-d [OPTIONS]
+uv run bi_astar_d [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py bi-astar-d -p rubikscube -nn
+uv run bi_astar_d -p rubikscube -nn
 ```
 
 ## Options
@@ -62,14 +62,14 @@ The `bi_astar_d` command uses the same option groups as `bi_astar`.
 ## Related Commands
 
 ```bash
-python main.py eval bi-astar-d [OPTIONS]
-python main.py benchmark bi-astar-d [OPTIONS]
+uv run benchmark bi-astar-d --puzzle rubikscube [OPTIONS]
+uv run benchmark bi-astar-d --benchmark rubikscube-deepcubea [OPTIONS]
 ```
 
 Training-time evaluation can also use this algorithm via:
 
 ```bash
-python main.py distance-train heuristic --eval-search-metric bi_astar_d
+uv run distance_train heuristic --eval-search-metric bi_astar_d
 ```
 
 ## Low-memory benchmark fallback profile
@@ -77,7 +77,7 @@ python main.py distance-train heuristic --eval-search-metric bi_astar_d
 If default benchmark settings trigger OOM on your machine, start with:
 
 ```bash
-python main.py benchmark bi-astar-d \
+uv run benchmark bi-astar-d \
   --benchmark rubikscube-deepcubea \
   --num-eval 1 \
   --batch-size 16 \

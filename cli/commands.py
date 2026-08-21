@@ -55,9 +55,11 @@ def _build_search_command(entry: SearchAlgorithmEntry) -> click.Command:
     return click.command(name=entry.cli_subcommand)(inner)
 
 
-SEARCH_COMMANDS: tuple[click.Command, ...] = tuple(
-    _build_search_command(entry) for entry in SEARCH_ALGORITHM_CATALOG
-)
+_SEARCH_COMMANDS_BY_ID = {
+    entry.python_id: _build_search_command(entry) for entry in SEARCH_ALGORITHM_CATALOG
+}
+globals().update(_SEARCH_COMMANDS_BY_ID)
+SEARCH_COMMANDS: tuple[click.Command, ...] = tuple(_SEARCH_COMMANDS_BY_ID.values())
 
 
-__all__ = ["SEARCH_COMMANDS"]
+__all__ = ["SEARCH_COMMANDS", *_SEARCH_COMMANDS_BY_ID]

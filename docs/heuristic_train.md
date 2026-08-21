@@ -9,13 +9,13 @@ This command is intended for users interested in research on neural heuristics o
 The basic syntax for the `distance_train heuristic` command is:
 
 ```bash
-python main.py distance_train heuristic [OPTIONS]
+uv run distance_train heuristic [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py distance_train heuristic -p rubikscube -pre default -s 10000 -db 1000 -dmb 200 -tmb 200
+uv run distance_train heuristic -p rubikscube -pre default -s 10000 -db 1000 -dmb 200 -tmb 200
 ```
 
 ## Options

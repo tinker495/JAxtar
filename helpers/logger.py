@@ -18,7 +18,7 @@ def _optional_module(module_name: str, feature: str):
     except ImportError as exc:
         raise ImportError(
             f"{feature} requires optional logging dependencies. "
-            "Install them with `pip install -r requirements_logging.txt`."
+            "Install them with `uv sync --extra logging`."
         ) from exc
 
 

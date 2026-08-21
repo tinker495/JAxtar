@@ -7,13 +7,13 @@ The `id_qstar` command solves a puzzle using the Iterative Deepening Q\* (ID-Q\*
 The basic syntax for the `id_qstar` command is:
 
 ```bash
-python main.py id_qstar [OPTIONS]
+uv run id_qstar [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py id_qstar -p rubikscube -nn
+uv run id_qstar -p rubikscube -nn
 ```
 
 ## Options

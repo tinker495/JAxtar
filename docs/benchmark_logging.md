@@ -71,14 +71,14 @@ This is the raw data file containing one row per evaluated puzzle sample. Key co
 
 ## Comparing Runs
 
-You can compare multiple completed runs using the `eval compare` command. This generates a report highlighting configuration differences and performance metrics.
+You can compare multiple completed runs using the `benchmark compare` command. This generates a report highlighting configuration differences and performance metrics.
 
 ```bash
 # Compare two specific run directories
-python main.py eval compare runs/run_A runs/run_B
+uv run benchmark compare runs/run_A runs/run_B
 
 # Compare all sub-runs within a sweep directory
-python main.py eval compare runs/my_sweep_dir
+uv run benchmark compare runs/my_sweep_dir
 ```
 
 ## Metrics Glossary

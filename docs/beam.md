@@ -7,13 +7,13 @@ The `beam` command solves a puzzle using Beam Search. Beam Search is a heuristic
 The basic syntax for the `beam` command is:
 
 ```bash
-python main.py beam [OPTIONS]
+uv run beam [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py beam -p rubikscube -nn -b 10000
+uv run beam -p rubikscube -nn -b 10000
 ```
 
 ## Options

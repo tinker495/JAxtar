@@ -7,13 +7,13 @@ The `astar` command solves a puzzle using the A\* search algorithm. A\* is a cla
 The basic syntax for the `astar` command is:
 
 ```bash
-python main.py astar [OPTIONS]
+uv run astar [OPTIONS]
 ```
 
 A common use case is to solve a specific puzzle with a neural network heuristic:
 
 ```bash
-python main.py astar -p rubikscube -nn
+uv run astar -p rubikscube -nn
 ```
 
 ## Options
@@ -30,7 +30,7 @@ These options define the puzzle environment to be solved.
     -   Choices: `n-puzzle`, `rubikscube`, `slidepuzzle`, etc. (depends on configuration).
 -   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
     -   Type: `String`
-    -   Example: `python main.py astar -pargs '{"size": 4}'`
+    -   Example: `uv run astar -pargs '{"size": 4}'`
 -   `-h, --hard`: If available, use a "hard" version of the puzzle.
     -   Type: `Flag`
 -   `-s, --seeds`: A comma-separated list of seeds for generating initial puzzle states. Using multiple seeds will run the solver multiple times.

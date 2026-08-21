@@ -9,13 +9,13 @@ This command is intended for users interested in reinforcement learning, Q-funct
 The basic syntax for the `distance_train qfunction` command is:
 
 ```bash
-python main.py distance_train qfunction [OPTIONS]
+uv run distance_train qfunction [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py distance_train qfunction -p rubikscube -pre default -s 10000
+uv run distance_train qfunction -p rubikscube -pre default -s 10000
 ```
 
 ## Options

@@ -13,13 +13,13 @@ The `astar_d` command solves a puzzle using the A\* Deferred search algorithm. T
 The basic syntax for the `astar_d` command is:
 
 ```bash
-python main.py astar_d [OPTIONS]
+uv run astar_d [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py astar_d -p rubikscube -nn
+uv run astar_d -p rubikscube -nn
 ```
 
 ## Options

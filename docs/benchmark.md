@@ -1,25 +1,31 @@
 # Benchmark Command
 
-The `benchmark` command is designed to evaluate search algorithms against standardized benchmark datasets. This ensures consistent and comparable results across different experiments and configurations. It allows you to run any of the supported search algorithms (`astar`, `astar_d`, `beam`, `qstar`, `qbeam`) on a registered benchmark.
+The `benchmark` command measures search algorithms against either a registered exact dataset or generated puzzle instances when no exact dataset exists.
 
 ## Usage
 
 The basic syntax for the `benchmark` command is:
 
 ```bash
-python main.py benchmark <algorithm> [OPTIONS]
+uv run benchmark <algorithm> [OPTIONS]
 ```
 
 Example: Run A* benchmark on the default benchmark dataset.
 
 ```bash
-python main.py benchmark astar
+uv run benchmark astar
 ```
 
-Example: Run Q* benchmark on the `sokoban` benchmark with a specific sample limit.
+Example: Run Q* benchmark on the `rubikscube-deepcubea` benchmark with a specific sample limit.
 
 ```bash
-python main.py benchmark qstar --benchmark sokoban --sample-limit 100
+uv run benchmark qstar --benchmark rubikscube-deepcubea --sample-limit 100
+```
+
+Example: Generate Rubik's Cube samples when no exact dataset is available.
+
+```bash
+uv run benchmark qstar --puzzle rubikscube --num-eval 200
 ```
 
 ## Subcommands
@@ -27,7 +33,7 @@ python main.py benchmark qstar --benchmark sokoban --sample-limit 100
 The available subcommands correspond to the search algorithms:
 
 -   `astar`: Benchmark A* Search.
--   `astar_d`: Benchmark A* Deferred Search.
+-   `astar-d`: Benchmark A* Deferred Search.
 -   `qstar`: Benchmark Q* Search.
 -   `beam`: Benchmark Beam Search.
 -   `qbeam`: Benchmark Q-Beam Search.
@@ -36,11 +42,15 @@ The available subcommands correspond to the search algorithms:
 
 The `benchmark` command uses a set of options to select the benchmark dataset and configure the evaluation.
 
-### Benchmark Options (`@benchmark_options`)
+### Benchmark Target Options (`@benchmark_options`)
 
--   `--benchmark`: The key of the benchmark dataset to evaluate.
+-   `--benchmark`: The exact benchmark dataset to evaluate.
     -   Type: `Choice`
-    -   Default: (depends on registered bundles, e.g., `n-puzzle`)
+    -   Default: the first registered benchmark when neither target option is supplied
+-   `-p, --puzzle`: Generate samples from this puzzle instead of using an exact dataset.
+    -   Type: `Choice`
+-   `-pargs, --puzzle-args`: JSON string containing puzzle constructor arguments.
+    -   Type: `String`
 -   `--benchmark-args`: JSON string containing keyword arguments for the benchmark constructor.
     -   Type: `String`
 -   `--sample-limit`: The maximum number of samples to evaluate from the benchmark dataset.
@@ -50,7 +60,7 @@ The `benchmark` command uses a set of options to select the benchmark dataset an
 
 ### Evaluation Options (`@eval_options`)
 
-These options control the evaluation process, similar to the `eval` command.
+These options control the benchmark run for either target type.
 
 -   `-ne, --num-eval`: Number of puzzles to evaluate (often overridden by benchmark settings, but can be used to limit the run).
     -   Type: `Integer`

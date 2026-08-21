@@ -68,6 +68,7 @@ def test_only_explicit_puzzle_args_reach_puzzle_constructor(monkeypatch):
     result = CliRunner().invoke(
         cli,
         [
+            "test",
             "astar-d",
             "-p",
             "n-puzzle",
@@ -127,11 +128,12 @@ def test_neural_heuristic_flag_does_not_change_world_model_puzzle_serving(
     runner = CliRunner()
     without_nn = runner.invoke(
         cli,
-        ["astar-d", "-p", "rubikscube_world_model_test"],
+        ["test", "astar-d", "-p", "rubikscube_world_model_test"],
     )
     with_nn = runner.invoke(
         cli,
         [
+            "test",
             "astar-d",
             "-p",
             "rubikscube_world_model_test",

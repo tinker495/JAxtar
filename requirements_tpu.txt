@@ -1,5 +1,0 @@
---find-links https://storage.googleapis.com/jax-releases/libtpu_releases.html
--r requirements_common.txt
-numpy
-jax[tpu]
-optax @ git+https://github.com/tinker495/optax.git@feature/add-normuon

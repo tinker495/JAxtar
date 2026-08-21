@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jaxtar"
+version = "0.1.0"
+description = "GPU-accelerated batched A* and Q* search in JAX."
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "tinker495", email = "wjdrbtjr495@gmail.com" },
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "aqtp",
+    "chex",
+    "click",
+    "dm-haiku",
+    "dm-pix",
+    "flax",
+    "huggingface-hub",
+    "imageio",
+    "jax<=0.8.1",
+    "matplotlib",
+    "numpy>=2.2.0",
+    "opencv-python-headless",
+    "optax",
+    "pandas",
+    "puxle",
+    "pydantic",
+    "rich",
+    "seaborn",
+    "xtructure",
+]
+
+[project.urls]
+Homepage = "https://github.com/tinker495/JAxtar"
+Repository = "https://github.com/tinker495/JAxtar"
+Issues = "https://github.com/tinker495/JAxtar/issues"
+
+[project.scripts]
+jaxtar = "JAxtar.entrypoints:cli"
+astar = "JAxtar.entrypoints:astar"
+astar_d = "JAxtar.entrypoints:astar_d"
+beam = "JAxtar.entrypoints:beam"
+benchmark = "JAxtar.entrypoints:benchmark"
+bi_astar = "JAxtar.entrypoints:bi_astar"
+bi_astar_d = "JAxtar.entrypoints:bi_astar_d"
+bi_qstar = "JAxtar.entrypoints:bi_qstar"
+distance_train = "JAxtar.entrypoints:distance_train"
+id_astar = "JAxtar.entrypoints:id_astar"
+id_qstar = "JAxtar.entrypoints:id_qstar"
+qbeam = "JAxtar.entrypoints:qbeam"
+qstar = "JAxtar.entrypoints:qstar"
+
+[project.optional-dependencies]
+gpu = [
+    "jax[cuda]<=0.8.1",
+]
+logging = [
+    "aim",
+    "tensorboardX",
+    "wandb",
+]
+tpu = [
+    "jax[tpu]<=0.8.1",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit",
+    "pytest",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["JAxtar*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.uv]
+override-dependencies = ["xtructure"]
+conflicts = [
+    [
+        { extra = "gpu" },
+        { extra = "tpu" },
+    ],
+]
+
+[tool.uv.sources]
+optax = { git = "https://github.com/tinker495/optax.git", rev = "3a4f4325d2b2b8fdcb86865bc4e4c479b7000afd" }
+puxle = { path = "../PuXle", editable = true }
+xtructure = { path = "../Xtructure", editable = true }

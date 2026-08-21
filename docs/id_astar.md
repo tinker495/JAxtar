@@ -7,13 +7,13 @@ The `id_astar` command solves a puzzle using the Iterative Deepening A\* (IDA\*)
 The basic syntax for the `id_astar` command is:
 
 ```bash
-python main.py id_astar [OPTIONS]
+uv run id_astar [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py id_astar -p rubikscube -nn
+uv run id_astar -p rubikscube -nn
 ```
 
 ## Options

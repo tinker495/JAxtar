@@ -1,4 +1,0 @@
--r requirements_common.txt
-numpy>=2.2.0
-jax[cuda]<=0.8.1
-optax @ git+https://github.com/tinker495/optax.git@dev/merge-all-custom

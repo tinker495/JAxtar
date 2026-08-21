@@ -7,13 +7,13 @@ The `bi_astar` command solves a puzzle using the Bidirectional A\* search algori
 The basic syntax for the `bi_astar` command is:
 
 ```bash
-python main.py bi-astar [OPTIONS]
+uv run bi_astar [OPTIONS]
 ```
 
 Example:
 
 ```bash
-python main.py bi-astar -p rubikscube -nn
+uv run bi_astar -p rubikscube -nn
 ```
 
 ## Options
@@ -83,14 +83,14 @@ These options control the behavior of the search algorithm.
 ## Related Commands
 
 ```bash
-python main.py eval bi-astar [OPTIONS]
-python main.py benchmark bi-astar [OPTIONS]
+uv run benchmark bi-astar --puzzle rubikscube [OPTIONS]
+uv run benchmark bi-astar --benchmark rubikscube-deepcubea [OPTIONS]
 ```
 
 Training-time evaluation can also use this algorithm via:
 
 ```bash
-python main.py distance-train heuristic --eval-search-metric bi_astar
+uv run distance_train heuristic --eval-search-metric bi_astar
 ```
 
 ## Low-memory benchmark fallback profile
@@ -98,7 +98,7 @@ python main.py distance-train heuristic --eval-search-metric bi_astar
 If default benchmark settings trigger OOM on your machine, start with:
 
 ```bash
-python main.py benchmark bi-astar \
+uv run benchmark bi-astar \
   --benchmark rubikscube-deepcubea \
   --num-eval 1 \
   --batch-size 16 \
