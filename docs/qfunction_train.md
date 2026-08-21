@@ -54,13 +54,13 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `Integer`
 -   `-k, --key`: Seed for the random number generator used in training.
     -   Type: `Integer`
--   `-r, --reset`: If flagged, resets the model weights before starting training.
+-   `-r, --reset`: Initialize new model parameters instead of loading the configured checkpoint at training startup.
     -   Type: `Boolean`
 -   `-lt, --loss_threshold`: A loss value threshold that can trigger updates or other events during training.
     -   Type: `Float`
--   `-ui, --update_interval`: The interval (in steps) for updating the target network.
+-   `-ui, --update_interval`: The single-device-equivalent target update interval. Hard-update cadence is divided by the active device count; soft updates use the equivalent compounded Polyak rate.
     -   Type: `Integer`
--   `-fui, --force_update_interval`: The interval (in steps) to force update the target network.
+-   `-fui, --force_update_interval`: The single-device-equivalent interval to force update the target network; divided by the active device count.
     -   Type: `Integer`
 -   `-su, --use_soft_update`: Use soft updates (Polyak averaging) for the target network instead of hard updates.
     -   Type: `Flag`
@@ -84,12 +84,8 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `Flag`
 -   `-md, --multi_device`: Enables training across multiple JAX devices (e.g., multiple GPUs).
     -   Type: `Boolean`
--   `-ri, --reset_interval`: The interval (in steps) at which to reset the model's weights to a previous state.
-    -   Type: `Integer`
 -   `-osr, --opt_state_reset`: Reset optimizer state when target network is updated.
     -   Type: `Boolean`
--   `--tau`: Tau parameter for soft updates or scaled reset.
-    -   Type: `Float`
 -   `--optimizer`: The optimization algorithm to use.
     -   Type: `Choice`
     -   Default: `adam`

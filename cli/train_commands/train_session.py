@@ -120,6 +120,7 @@ def setup_train_state(
         tx=optimizer,
         batch_stats=batch_stats,
         target_params=params,
+        target_batch_stats=batch_stats,
     ).replace(opt_state=opt_state)
     return model, optimizer, state
 

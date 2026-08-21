@@ -20,7 +20,7 @@ from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
 from train_util.distance_train_builder import distance_train_builder
 from train_util.optimizer import get_learning_rate
-from train_util.target_update import scaled_by_reset
+from train_util.train_state import hard_update_target, soft_update_target
 
 from ..config_utils import enrich_config
 from ..options import (
@@ -37,6 +37,32 @@ from .train_session import (
     run_training_eval,
     setup_train_state,
 )
+
+
+def _should_update_hard_target(
+    *,
+    iteration: int,
+    last_update_iteration: int,
+    update_interval: int,
+    force_update_interval: int,
+    loss,
+    loss_threshold: float,
+) -> bool:
+    regular_update = iteration > 0 and iteration % update_interval == 0
+    force_update = iteration - last_update_iteration >= force_update_interval
+    return force_update or (regular_update and bool(loss <= loss_threshold))
+
+
+def _effective_update_interval(
+    update_interval: int,
+    *,
+    n_devices: int,
+) -> int:
+    return max(1, update_interval // n_devices)
+
+
+def _soft_update_tau(update_interval: int, *, n_devices: int) -> float:
+    return 1.0 - (1.0 - 1.0 / update_interval) ** n_devices
 
 
 def _run_distance_training(
@@ -67,17 +93,24 @@ def _run_distance_training(
     eval_puzzle, eval_puzzle_name, eval_puzzle_opts, eval_kwargs = resolve_eval_context(
         puzzle, puzzle_name, puzzle_opts, puzzle_bundle
     )
-    update_interval = train_options.update_interval
-    reset_interval = train_options.reset_interval
-    n_devices = jax.device_count()
+    n_devices = jax.local_device_count() if train_options.multi_device else 1
+    update_interval = _effective_update_interval(
+        train_options.update_interval,
+        n_devices=n_devices,
+    )
+    force_update_interval = _effective_update_interval(
+        train_options.force_update_interval,
+        n_devices=n_devices,
+    )
 
-    if train_options.multi_device and n_devices > 1:
+    if n_devices > 1:
         steps = steps // n_devices
 
-    total_gradient_updates = (
-        steps * gradient_updates_per_iteration * n_devices
-        if train_options.multi_device
-        else steps * gradient_updates_per_iteration
+    total_gradient_updates = steps * gradient_updates_per_iteration * n_devices
+    soft_update_tau = (
+        _soft_update_tau(train_options.update_interval, n_devices=n_devices)
+        if train_options.use_soft_update
+        else 0.0
     )
 
     config = {
@@ -90,8 +123,13 @@ def _run_distance_training(
         "derived_parameters": {
             "training_loop_iterations": steps,
             "total_gradient_updates": total_gradient_updates,
-            "update_interval_gradient_steps": update_interval,
-            "reset_interval_gradient_steps": reset_interval,
+            "configured_update_interval_outer_iterations": train_options.update_interval,
+            "update_interval_outer_iterations": update_interval,
+            "configured_force_update_interval_outer_iterations": (
+                train_options.force_update_interval
+            ),
+            "force_update_interval_outer_iterations": force_update_interval,
+            "soft_update_tau": soft_update_tau,
             "n_devices": n_devices,
         },
     }
@@ -100,7 +138,7 @@ def _run_distance_training(
     key = init_train_key(train_options)
     key, _ = jax.random.split(key)
 
-    if train_options.multi_device and n_devices > 1:
+    if n_devices > 1:
         print(f"Training with {n_devices} devices")
 
     model, optimizer, state = setup_train_state(
@@ -109,11 +147,6 @@ def _run_distance_training(
         n_devices=n_devices,
         steps=steps,
         one_iter_size=train_options.dataset_batch_size // train_options.train_minibatch_size,
-    )
-
-    soft_update_tau = 1.0 / update_interval if train_options.use_soft_update else 0.0
-    enable_jit_hard_update = (
-        not train_options.use_soft_update and train_options.loss_threshold == float("inf")
     )
 
     train_fn = distance_train_builder(
@@ -126,10 +159,6 @@ def _run_distance_training(
         loss_type=train_options.loss,
         loss_args=train_options.loss_args,
         replay_ratio=train_options.replay_ratio,
-        use_soft_update=train_options.use_soft_update,
-        update_interval=update_interval,
-        soft_update_tau=soft_update_tau,
-        enable_jit_hard_update=enable_jit_hard_update,
     )
 
     diffusion_warmup_steps = 0
@@ -180,8 +209,7 @@ def _run_distance_training(
         logger=logger,
         pbar=pbar,
     )
-    last_reset_time = 0
-    last_update_step = -1
+    last_update_iteration = 0
 
     for i in pbar:
         key, subkey = jax.random.split(key)
@@ -212,40 +240,20 @@ def _run_distance_training(
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target, i)
 
-        current_step = int(state.step)
         if train_options.use_soft_update:
-            last_update_step = current_step
-        elif not enable_jit_hard_update:
-            is_regular_update_step = (current_step % update_interval == 0) and (current_step > 0)
-            should_force_update = (
-                current_step - last_update_step >= train_options.force_update_interval
-            )
-            should_regular_update = is_regular_update_step and (
-                loss <= train_options.loss_threshold
-            )
-            if should_force_update or should_regular_update:
-                state = state.update_target_params(state.get_full_eval_params()["params"])
-                if train_options.opt_state_reset:
-                    state = state.replace(opt_state=optimizer.init(state.params))
-                last_update_step = current_step
-        elif current_step > 0:
-            last_update_step = (current_step // update_interval) * update_interval
-
-        if (
-            (current_step - last_reset_time >= reset_interval)
-            and (current_step > 0)
-            and (current_step < total_gradient_updates * 2 / 3)
-            and (last_update_step >= last_reset_time)
+            state = soft_update_target(state, soft_update_tau)
+        elif _should_update_hard_target(
+            iteration=i,
+            last_update_iteration=last_update_iteration,
+            update_interval=update_interval,
+            force_update_interval=force_update_interval,
+            loss=loss,
+            loss_threshold=train_options.loss_threshold,
         ):
-            last_reset_time = current_step
-            reset_params = {"params": state.params}
-            if state.batch_stats is not None:
-                reset_params["batch_stats"] = state.batch_stats
-            reset_params = scaled_by_reset(reset_params, key, train_options.tau)
-            state = state.replace(
-                params=reset_params["params"],
-                opt_state=optimizer.init(reset_params["params"]),
-            )
+            state = hard_update_target(state)
+            if train_options.opt_state_reset:
+                state = state.replace(opt_state=optimizer.init(state.params))
+            last_update_iteration = i
 
         if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
             search_model.params = state.get_full_eval_params()

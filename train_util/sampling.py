@@ -250,7 +250,7 @@ def wrap_dataset_runner(
     """Wrap dataset extraction into a runner that handles pmap and diffusion warmup.
 
     The returned function accepts a TrainStateExtended object and extracts:
-    - target_params from state.target_params (with batch_stats if present)
+    - target_params from state.target_params and state.target_batch_stats
     - eval_params from state.params (with batch_stats if present)
     """
     from train_util.optimizer import get_eval_params
@@ -261,8 +261,10 @@ def wrap_dataset_runner(
         target_params = {"params": state.target_params}
         eval_params = {"params": get_eval_params(state.opt_state, state.params)}
 
+        if state.target_batch_stats is not None:
+            target_params["batch_stats"] = state.target_batch_stats
         if state.batch_stats is not None:
-            target_params["batch_stats"] = eval_params["batch_stats"] = state.batch_stats
+            eval_params["batch_stats"] = state.batch_stats
         return target_params, eval_params
 
     def build_runner(dataset_extractor: Callable):

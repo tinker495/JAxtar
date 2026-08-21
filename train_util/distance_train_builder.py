@@ -12,7 +12,7 @@ import optax
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import minibatch_datasets
-from train_util.train_state import TrainStateExtended, hard_update_target, soft_update_target
+from train_util.train_state import TrainStateExtended
 from train_util.util import build_distance_train_loss
 
 
@@ -27,10 +27,6 @@ def distance_train_builder(
     loss_type: str = "mse",
     loss_args: dict[str, Any] | None = None,
     replay_ratio: int = 1,
-    use_soft_update: bool = False,
-    update_interval: int = 100,
-    soft_update_tau: float = 0.005,
-    enable_jit_hard_update: bool = True,
 ):
     """Build the shared train loop for heuristic and Q-function distance models."""
     train_loss = build_distance_train_loss(
@@ -71,12 +67,6 @@ def distance_train_builder(
                 opt_state=opt_state,
                 step=state.step + 1,
             )
-
-            if use_soft_update:
-                new_state = soft_update_target(new_state, soft_update_tau)
-            elif enable_jit_hard_update:
-                should_update = (new_state.step % update_interval == 0) & (new_state.step > 0)
-                new_state = jax.lax.cond(should_update, hard_update_target, lambda s: s, new_state)
 
             return (new_state, key), (loss, log_infos)
 

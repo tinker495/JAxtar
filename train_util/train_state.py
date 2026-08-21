@@ -18,10 +18,12 @@ class TrainStateExtended(train_state.TrainState):
     Attributes:
         batch_stats: Non-trainable statistics used in BatchNormalization, etc.
         target_params: Target network parameters (used in DAVI, DQN, etc.).
+        target_batch_stats: Frozen target-network BatchNorm statistics.
     """
 
     batch_stats: Any = None
     target_params: Any = None
+    target_batch_stats: Any = None
 
     @classmethod
     def create(
@@ -32,6 +34,7 @@ class TrainStateExtended(train_state.TrainState):
         tx: optax.GradientTransformation,
         batch_stats=None,
         target_params=None,
+        target_batch_stats=None,
         **kwargs,
     ):
         """
@@ -43,6 +46,7 @@ class TrainStateExtended(train_state.TrainState):
             tx: Optax optimizer.
             batch_stats: BatchNorm statistics (optional).
             target_params: Target network parameters (optional, defaults to a copy of params).
+            target_batch_stats: Target BatchNorm statistics (defaults to batch_stats).
 
         Returns:
             A TrainStateExtended instance.
@@ -50,6 +54,8 @@ class TrainStateExtended(train_state.TrainState):
         opt_state = tx.init(params)
         if target_params is None:
             target_params = jax.tree_util.tree_map(lambda x: x, params)  # Deep copy
+        if target_batch_stats is None and batch_stats is not None:
+            target_batch_stats = jax.tree_util.tree_map(lambda x: x, batch_stats)
         return cls(
             step=0,
             apply_fn=apply_fn,
@@ -58,6 +64,7 @@ class TrainStateExtended(train_state.TrainState):
             opt_state=opt_state,
             batch_stats=batch_stats,
             target_params=target_params,
+            target_batch_stats=target_batch_stats,
             **kwargs,
         )
 
@@ -100,6 +107,7 @@ class TrainStateExtended(train_state.TrainState):
         return new_state.replace(
             batch_stats=self.batch_stats,
             target_params=self.target_params,
+            target_batch_stats=self.target_batch_stats,
         )
 
     def update_batch_stats(self, batch_stats):
@@ -113,7 +121,7 @@ class TrainStateExtended(train_state.TrainState):
 
 def soft_update_target(state: TrainStateExtended, tau: float) -> TrainStateExtended:
     """
-    Soft target update: target_params = tau * params + (1 - tau) * target_params.
+    Polyak-average target params and copy the current BatchNorm statistics.
 
     Args:
         state: Current TrainStateExtended.
@@ -126,12 +134,15 @@ def soft_update_target(state: TrainStateExtended, tau: float) -> TrainStateExten
 
     eval_params = get_eval_params(state.opt_state, state.params)
     new_target_params = optax.incremental_update(eval_params, state.target_params, tau)
-    return state.update_target_params(new_target_params)
+    return state.replace(
+        target_params=new_target_params,
+        target_batch_stats=state.batch_stats,
+    )
 
 
 def hard_update_target(state: TrainStateExtended) -> TrainStateExtended:
     """
-    Hard target update: target_params = params.
+    Copy the current evaluation params and BatchNorm statistics to the target network.
 
     Args:
         state: Current TrainStateExtended.
@@ -142,4 +153,7 @@ def hard_update_target(state: TrainStateExtended) -> TrainStateExtended:
     from train_util.optimizer import get_eval_params
 
     eval_params = get_eval_params(state.opt_state, state.params)
-    return state.update_target_params(eval_params)
+    return state.replace(
+        target_params=eval_params,
+        target_batch_stats=state.batch_stats,
+    )

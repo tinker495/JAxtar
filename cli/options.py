@@ -853,9 +853,7 @@ def dist_train_options(
         )
         @click.option("-d", "--debug", is_flag=True, default=None)
         @click.option("-md", "--multi_device", type=bool, default=None)
-        @click.option("-ri", "--reset_interval", type=HUMAN_INT, default=None)
         @click.option("-osr", "--opt_state_reset", type=bool, default=None)
-        @click.option("--tau", type=HUMAN_FLOAT, default=None)
         @click.option(
             "--optimizer",
             type=click.Choice(list(OPTIMIZERS.keys())),

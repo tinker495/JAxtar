@@ -220,8 +220,6 @@ class DistTrainOptions(BaseModel):
     )
     debug: bool = False
     multi_device: bool = True
-    reset_interval: int = int(1e6)  # just large enough
-    tau: float = 0.2
     learning_rate: float = 1e-3
     weight_decay_size: Optional[float] = 0.01
     opt_state_reset: bool = False
