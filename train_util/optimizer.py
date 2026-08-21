@@ -4,6 +4,7 @@ import jax
 import optax
 
 PyTree = Any
+GRADIENT_CLIP_NORM = 1.0
 
 
 def adamw_cwd(**kwargs: Any) -> optax.GradientTransformation:
@@ -133,7 +134,7 @@ def setup_optimizer(
                 weight_decay=weight_decay_size,
                 weight_decay_mask=mask_tree,
             )
-        return optax.chain(optax.clip_by_global_norm(1.0), scaler)
+        return optax.chain(optax.clip_by_global_norm(GRADIENT_CLIP_NORM), scaler)
 
     optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
     opt_state = optimizer.init(params)
@@ -152,9 +153,12 @@ def get_learning_rate(optimizer_state: optax.OptState):
 
 
 def get_eval_params(optimizer_state: optax.OptState, params: PyTree):
-    b1 = getattr(optimizer_state.inner_state, "b1", None)
-    z = getattr(optimizer_state.inner_state, "z", None)
+    inner_state = getattr(optimizer_state, "inner_state", None)
+    if inner_state is None:
+        return params
+    b1 = getattr(inner_state, "b1", None)
+    z = getattr(inner_state, "z", None)
     if b1 is None or z is None:
         return params
-    params_for_eval = optax.contrib.schedule_free_eval_params(optimizer_state.inner_state, params)
+    params_for_eval = optax.contrib.schedule_free_eval_params(inner_state, params)
     return params_for_eval

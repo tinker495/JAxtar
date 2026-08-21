@@ -18,8 +18,9 @@ from heuristic.neuralheuristic.target_dataset_builder import (
 )
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
-from train_util.distance_train_builder import distance_train_builder
+from train_util.distance_train_builder import distance_train_builder, target_online_gap
 from train_util.optimizer import get_learning_rate
+from train_util.train_logs import TrainLogInfo
 from train_util.train_state import hard_update_target, soft_update_target
 
 from ..config_utils import enrich_config
@@ -63,6 +64,34 @@ def _effective_update_interval(
 
 def _soft_update_tau(update_interval: int, *, n_devices: int) -> float:
     return 1.0 - (1.0 - 1.0 / update_interval) ** n_devices
+
+
+def _find_log_data(log_infos, name: str):
+    for log_info in jax.tree_util.tree_leaves(
+        log_infos, is_leaf=lambda value: isinstance(value, TrainLogInfo)
+    ):
+        if isinstance(log_info, TrainLogInfo) and log_info.name == name:
+            return log_info.data
+    return None
+
+
+def _log_distance_diagnostics(logger, diagnostics, log_infos, step: int) -> None:
+    for name, value in diagnostics["scalars"].items():
+        logger.log_scalar(name, value, step)
+
+    if step % 100 == 0:
+        for name, values in diagnostics["histograms"].items():
+            logger.log_histogram(name, values, step)
+
+    td_error = _find_log_data(log_infos, "Losses/diff")
+    if td_error is not None:
+        logger.log_scalar("Metrics/TD Error RMS", jnp.sqrt(jnp.mean(jnp.square(td_error))), step)
+        logger.log_scalar("Metrics/TD Error P95", jnp.percentile(jnp.abs(td_error), 95), step)
+
+    prediction = _find_log_data(log_infos, "Metrics/pred")
+    if prediction is not None:
+        logger.log_scalar("Metrics/Prediction Std", jnp.std(prediction), step)
+        logger.log_scalar("Metrics/Prediction P95", jnp.percentile(prediction, 95), step)
 
 
 def _run_distance_training(
@@ -216,9 +245,10 @@ def _run_distance_training(
         dataset = get_datasets(state, subkey, i)
         target = dataset["distance"]
         mean_target = jnp.mean(target)
-        state, loss, log_infos = train_fn(key, dataset, state)
+        state, loss, log_infos, diagnostics = train_fn(key, dataset, state)
         lr = get_learning_rate(state.opt_state)
         log_info_leaves = log_train_leaves(logger, log_infos, i)
+        _log_distance_diagnostics(logger, diagnostics, log_infos, i)
 
         if include_loss_in_progress:
             discription_logs = {
@@ -237,6 +267,8 @@ def _run_distance_training(
 
         logger.log_scalar("Metrics/Learning Rate", lr, i)
         logger.log_scalar("Metrics/Mean Target", mean_target, i)
+        logger.log_scalar("Metrics/Target Std", jnp.std(target), i)
+        logger.log_scalar("Metrics/Target P95", jnp.percentile(target, 95), i)
         if i % 100 == 0:
             logger.log_histogram("Metrics/Target", target, i)
 
@@ -254,6 +286,7 @@ def _run_distance_training(
             if train_options.opt_state_reset:
                 state = state.replace(opt_state=optimizer.init(state.params))
             last_update_iteration = i
+        logger.log_scalar("Metrics/TD Target Online Gap After Update", target_online_gap(state), i)
 
         if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
             search_model.params = state.get_full_eval_params()
