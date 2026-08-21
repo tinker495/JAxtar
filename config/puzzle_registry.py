@@ -464,6 +464,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "rubikscube_world_model_test": PuzzleBundle(
         puzzle=trained_world_model_registry.RubiksCubeWorldModel_test,
+        k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -479,6 +480,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "rubikscube_world_model_reversed": PuzzleBundle(
         puzzle=trained_world_model_registry.RubiksCubeWorldModel_reversed,
+        k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -510,6 +512,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "rubikscube_world_model_optimized_test": PuzzleBundle(
         puzzle=trained_world_model_registry.RubiksCubeWorldModelOptimized_test,
+        k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -525,6 +528,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "rubikscube_world_model_optimized_reversed": PuzzleBundle(
         puzzle=trained_world_model_registry.RubiksCubeWorldModelOptimized_reversed,
+        k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -540,6 +544,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "sokoban_world_model": PuzzleBundle(
         puzzle=trained_world_model_registry.SokobanWorldModel,
+        k_max=500,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
@@ -555,6 +560,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
     "sokoban_world_model_optimized": PuzzleBundle(
         puzzle=trained_world_model_registry.SokobanWorldModelOptimized,
+        k_max=500,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
                 callable=WorldModelNeuralHeuristic,
