@@ -12,7 +12,7 @@ conflicts = [[
 ]]
 
 [manifest]
-overrides = [{ name = "xtructure", editable = "../Xtructure" }]
+overrides = [{ name = "xtructure", git = "https://github.com/tinker495/Xtructure.git?rev=e281391cf052af4359f232b7e4720755b51c4c9c" }]
 
 [[package]]
 name = "absl-py"
@@ -820,13 +820,13 @@ requires-dist = [
     { name = "opencv-python-headless" },
     { name = "optax", git = "https://github.com/tinker495/optax.git?rev=3a4f4325d2b2b8fdcb86865bc4e4c479b7000afd" },
     { name = "pandas" },
-    { name = "puxle", editable = "../PuXle" },
+    { name = "puxle", git = "https://github.com/tinker495/PuXle.git?rev=dcc0ee4cda1696ebdfe12d255db90868710c3ab4" },
     { name = "pydantic" },
     { name = "rich" },
     { name = "seaborn" },
     { name = "tensorboardx", marker = "extra == 'logging'" },
     { name = "wandb", marker = "extra == 'logging'" },
-    { name = "xtructure", editable = "../Xtructure" },
+    { name = "xtructure", git = "https://github.com/tinker495/Xtructure.git?rev=e281391cf052af4359f232b7e4720755b51c4c9c" },
 ]
 provides-extras = ["gpu", "logging", "tpu"]
 
@@ -1481,7 +1481,7 @@ wheels = [
 [[package]]
 name = "puxle"
 version = "0.2.0"
-source = { editable = "../PuXle" }
+source = { git = "https://github.com/tinker495/PuXle.git?rev=dcc0ee4cda1696ebdfe12d255db90868710c3ab4#dcc0ee4cda1696ebdfe12d255db90868710c3ab4" }
 dependencies = [
     { name = "chex" },
     { name = "jax" },
@@ -1490,36 +1490,6 @@ dependencies = [
     { name = "pddl" },
     { name = "xtructure" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "aqtp", marker = "extra == 'dev'", specifier = ">=0.9.0" },
-    { name = "aqtp", marker = "extra == 'world-model'", specifier = ">=0.9.0" },
-    { name = "cayleypy", marker = "extra == 'cayley'", specifier = "==0.1.0" },
-    { name = "chex", specifier = ">=0.1.0" },
-    { name = "flax", marker = "extra == 'dev'", specifier = ">=0.10.0" },
-    { name = "flax", marker = "extra == 'world-model'", specifier = ">=0.10.0" },
-    { name = "furo", marker = "extra == 'docs'" },
-    { name = "huggingface-hub", marker = "extra == 'dev'", specifier = ">=0.20.0" },
-    { name = "huggingface-hub", marker = "extra == 'world-model'", specifier = ">=0.20.0" },
-    { name = "jax", specifier = ">=0.4.0" },
-    { name = "jax", extras = ["cuda"], marker = "extra == 'cuda'", specifier = ">=0.4.0" },
-    { name = "myst-parser", marker = "extra == 'docs'" },
-    { name = "numpy", specifier = ">=2.2.0" },
-    { name = "opencv-python-headless", specifier = ">=4.10.0" },
-    { name = "optax", marker = "extra == 'dev'", specifier = ">=0.2.0" },
-    { name = "optax", marker = "extra == 'world-model'", specifier = ">=0.2.0" },
-    { name = "pddl", specifier = ">=0.4.3" },
-    { name = "pillow", marker = "extra == 'visualization'", specifier = ">=9.0.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
-    { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7.0" },
-    { name = "sphinx-autodoc-typehints", marker = "extra == 'docs'" },
-    { name = "xtructure", git = "https://github.com/tinker495/xtructure.git" },
-]
-provides-extras = ["dev", "docs", "visualization", "cuda", "cayley", "world-model"]
 
 [[package]]
 name = "pycparser"
@@ -2101,26 +2071,12 @@ wheels = [
 [[package]]
 name = "xtructure"
 version = "0.1.3"
-source = { editable = "../Xtructure" }
+source = { git = "https://github.com/tinker495/Xtructure.git?rev=e281391cf052af4359f232b7e4720755b51c4c9c#e281391cf052af4359f232b7e4720755b51c4c9c" }
 dependencies = [
     { name = "chex" },
     { name = "jax" },
     { name = "numpy" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "chex", specifier = ">=0.1.0" },
-    { name = "jax", specifier = ">=0.4.0" },
-    { name = "jax", extras = ["cuda"], marker = "extra == 'cuda'", specifier = ">=0.4.0" },
-    { name = "jax", extras = ["tpu"], marker = "extra == 'tpu'", specifier = ">=0.4.0" },
-    { name = "myst-parser", marker = "extra == 'dev'", specifier = ">=2.0.0" },
-    { name = "numpy", specifier = ">=2.2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "sphinx", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "sphinx-rtd-theme", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-]
-provides-extras = ["cuda", "tpu", "dev"]
 
 [[package]]
 name = "zipp"

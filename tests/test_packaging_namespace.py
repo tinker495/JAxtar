@@ -22,6 +22,15 @@ def test_distribution_excludes_generic_top_level_packages():
     assert config["tool"]["setuptools"]["packages"]["find"]["include"] == ["JAxtar*"]
 
 
+def test_external_dependencies_use_pinned_git_sources():
+    sources = _load_pyproject()["tool"]["uv"]["sources"]
+
+    for name in ("puxle", "xtructure"):
+        assert sources[name]["git"].startswith("https://github.com/tinker495/")
+        assert len(sources[name]["rev"]) == 40
+        assert "path" not in sources[name]
+
+
 def test_xtructure_base_dependency_does_not_force_an_accelerator():
     lock = tomllib.loads(Path("uv.lock").read_text(encoding="utf-8"))
     xtructure = next(package for package in lock["package"] if package["name"] == "xtructure")

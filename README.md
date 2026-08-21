@@ -60,9 +60,8 @@ This project was quite challenging to develop, and it felt like performing acrob
 
 ## Installation
 
-JAxtar uses `pyproject.toml` for installation and command registration. This checkout must live
-next to the `PuXle/` and `Xtructure/` sibling repositories referenced by `tool.uv.sources`. From
-the JAxtar repository:
+JAxtar uses `pyproject.toml` for installation and command registration. PuXle and Xtructure are
+installed from the pinned Git revisions in `tool.uv.sources`. From the JAxtar repository:
 
 ```bash
 uv sync --extra gpu
