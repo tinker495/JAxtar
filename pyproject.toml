@@ -63,6 +63,12 @@ logging = [
     "tensorboardX",
     "wandb",
 ]
+train = [
+    "aim",
+    "jax[cuda]<=0.8.1",
+    "tensorboardX",
+    "wandb",
+]
 tpu = [
     "jax[tpu]<=0.8.1",
 ]
@@ -87,6 +93,10 @@ override-dependencies = ["xtructure"]
 conflicts = [
     [
         { extra = "gpu" },
+        { extra = "tpu" },
+    ],
+    [
+        { extra = "train" },
         { extra = "tpu" },
     ],
 ]

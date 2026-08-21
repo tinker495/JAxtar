@@ -9,6 +9,9 @@ resolution-markers = [
 conflicts = [[
     { package = "jaxtar", extra = "gpu" },
     { package = "jaxtar", extra = "tpu" },
+], [
+    { package = "jaxtar", extra = "tpu" },
+    { package = "jaxtar", extra = "train" },
 ]]
 
 [manifest]
@@ -220,7 +223,7 @@ name = "cffi"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz", hash = "sha256:dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be", size = 530807, upload-time = "2026-08-03T21:21:18.939Z" }
 wheels = [
@@ -310,7 +313,7 @@ name = "click"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/76/d4/81420972a676e8ffea40450d8c8c92943e7218a78fe9b64359836cc9876b/click-8.4.2.tar.gz", hash = "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6", size = 338000, upload-time = "2026-06-24T17:45:15.148Z" }
 wheels = [
@@ -353,7 +356,7 @@ name = "cryptography"
 version = "50.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/de/41/6cbdcf9142d00fe82836fbb51e503e58088575cf7a0fe1dbff6695bf0840/cryptography-50.0.0.tar.gz", hash = "sha256:eeac2acb5a20ed25e0ad6d1df9891a520b78b404266b6d11778f25d5d691a6c9", size = 880201, upload-time = "2026-07-31T14:25:10.11Z" }
 wheels = [
@@ -614,7 +617,7 @@ dependencies = [
     { name = "click" },
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
     { name = "httpx" },
     { name = "packaging" },
     { name = "pyyaml" },
@@ -693,7 +696,7 @@ wheels = [
 
 [package.optional-dependencies]
 cuda = [
-    { name = "jax-cuda12-plugin", extra = ["with-cuda"], marker = "extra == 'extra-6-jaxtar-gpu'" },
+    { name = "jax-cuda12-plugin", extra = ["with-cuda"], marker = "extra == 'extra-6-jaxtar-gpu' or extra == 'extra-6-jaxtar-train'" },
     { name = "jaxlib" },
 ]
 tpu = [
@@ -783,7 +786,7 @@ dependencies = [
 
 [package.optional-dependencies]
 gpu = [
-    { name = "jax", extra = ["cuda"], marker = "extra == 'extra-6-jaxtar-gpu'" },
+    { name = "jax", extra = ["cuda"], marker = "extra == 'extra-6-jaxtar-gpu' or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
 ]
 logging = [
     { name = "aim" },
@@ -792,6 +795,12 @@ logging = [
 ]
 tpu = [
     { name = "jax", extra = ["tpu"], marker = "extra == 'extra-6-jaxtar-tpu'" },
+]
+train = [
+    { name = "aim" },
+    { name = "jax", extra = ["cuda"], marker = "(extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra != 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train') or (extra != 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-train')" },
+    { name = "tensorboardx" },
+    { name = "wandb" },
 ]
 
 [package.dev-dependencies]
@@ -804,6 +813,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aim", marker = "extra == 'logging'" },
+    { name = "aim", marker = "extra == 'train'" },
     { name = "aqtp" },
     { name = "chex" },
     { name = "click" },
@@ -814,6 +824,7 @@ requires-dist = [
     { name = "imageio" },
     { name = "jax", specifier = "<=0.8.1" },
     { name = "jax", extras = ["cuda"], marker = "extra == 'gpu'", specifier = "<=0.8.1" },
+    { name = "jax", extras = ["cuda"], marker = "extra == 'train'", specifier = "<=0.8.1" },
     { name = "jax", extras = ["tpu"], marker = "extra == 'tpu'", specifier = "<=0.8.1" },
     { name = "matplotlib" },
     { name = "numpy", specifier = ">=2.2.0" },
@@ -825,10 +836,12 @@ requires-dist = [
     { name = "rich" },
     { name = "seaborn" },
     { name = "tensorboardx", marker = "extra == 'logging'" },
+    { name = "tensorboardx", marker = "extra == 'train'" },
     { name = "wandb", marker = "extra == 'logging'" },
+    { name = "wandb", marker = "extra == 'train'" },
     { name = "xtructure", git = "https://github.com/tinker495/Xtructure.git?rev=e281391cf052af4359f232b7e4720755b51c4c9c" },
 ]
-provides-extras = ["gpu", "logging", "tpu"]
+provides-extras = ["gpu", "logging", "train", "tpu"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1307,7 +1320,7 @@ dependencies = [
     { name = "humanize" },
     { name = "jax" },
     { name = "msgpack" },
-    { name = "nest-asyncio", marker = "sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "nest-asyncio", marker = "sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
     { name = "numpy" },
     { name = "prometheus-client" },
     { name = "protobuf" },
@@ -1316,7 +1329,7 @@ dependencies = [
     { name = "simplejson" },
     { name = "tensorstore" },
     { name = "typing-extensions" },
-    { name = "uvloop", marker = "sys_platform != 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "uvloop", marker = "sys_platform != 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d6/b2/7f709a61337465826c7d2acdb98285fa6270e90ba59b76a1f42bcb18bfe2/orbax_checkpoint-0.12.4.tar.gz", hash = "sha256:5e6e14b6ca4a7979e04e6769afa0a39dd535bb4b9bf9af64bdf5b55ca44eb795", size = 749838, upload-time = "2026-08-12T21:05:15.856Z" }
 wheels = [
@@ -1359,7 +1372,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "python-dateutil" },
-    { name = "tzdata", marker = "sys_platform == 'emscripten' or sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "tzdata", marker = "sys_platform == 'emscripten' or sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/be/4f/5f3422a2afec5ffc46308b79e53291365a93748b498ac2e58bead0197916/pandas-3.0.5.tar.gz", hash = "sha256:dca3734d6ab7c906e6730f0788b0a1dbb9f2467731f9711f77995c8e9d62d712", size = 4658219, upload-time = "2026-07-22T22:19:28.819Z" }
 wheels = [
@@ -1568,7 +1581,7 @@ name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -1786,7 +1799,7 @@ name = "sqlalchemy"
 version = "2.0.52"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "greenlet", marker = "platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "greenlet", marker = "platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3b/21/77b4c147963073040dc3c3a5cb7a8c3001a1893c0209432cb77f9df836aa/sqlalchemy-2.0.52.tar.gz", hash = "sha256:5e2d46356ac2ccb7d268ab6c2319ac6a2b42f1b8d5fd8bd3d46855cd82abee97", size = 9945637, upload-time = "2026-08-11T19:07:09.829Z" }
@@ -1868,7 +1881,7 @@ name = "tqdm"
 version = "4.70.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-6-jaxtar-gpu' and extra == 'extra-6-jaxtar-tpu') or (extra == 'extra-6-jaxtar-tpu' and extra == 'extra-6-jaxtar-train')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/21/3b/6c24bec5be5e743ffd99576daa5cc077722fc7d5bbc00bd133fa0c698dc6/tqdm-4.70.0.tar.gz", hash = "sha256:55b0b0dbd97462d06ebee91e4dac24ed4d4702be82b24f07e6c1d27e08cea220", size = 795438, upload-time = "2026-07-27T11:33:15.271Z" }
 wheels = [

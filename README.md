@@ -70,12 +70,19 @@ uv run jaxtar test --help
 uv run astar_d --help
 ```
 
+For the complete GPU training pipeline, including logging backends and evaluation tools:
+
+```bash
+uv sync --extra train
+```
+
 The console commands are checkout-only. External distributions intentionally contain only the
 `JAxtar` core package; generic top-level modules such as `cli`, `config`, and `helpers` are not
 packaged.
 
-Omit `--extra gpu` for CPU-only use, or replace it with `--extra tpu` on TPU. Benchmark
-plots are installed by default; external logging backends are available through the `logging` extra.
+Omit `--extra gpu` for CPU-only use, or replace it with `--extra tpu` on TPU. Evaluation tools are
+installed by default. The `train` extra adds the GPU runtime and all logging backends, so it
+conflicts with `tpu`.
 
 ## Usage and Documentation
 
