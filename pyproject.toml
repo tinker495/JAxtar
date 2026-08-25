@@ -102,6 +102,5 @@ conflicts = [
 ]
 
 [tool.uv.sources]
-optax = { git = "https://github.com/tinker495/optax.git", rev = "3a4f4325d2b2b8fdcb86865bc4e4c479b7000afd" }
 puxle = { git = "https://github.com/tinker495/PuXle.git", rev = "dcc0ee4cda1696ebdfe12d255db90868710c3ab4" }
 xtructure = { git = "https://github.com/tinker495/Xtructure.git", rev = "e281391cf052af4359f232b7e4720755b51c4c9c" }

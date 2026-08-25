@@ -7,22 +7,21 @@ PyTree = Any
 GRADIENT_CLIP_NORM = 1.0
 
 
-def adamw_cwd(**kwargs: Any) -> optax.GradientTransformation:
+def adamw(**kwargs: Any) -> optax.GradientTransformation:
     learning_rate = kwargs.pop("learning_rate", None)
     weight_decay = kwargs.pop("weight_decay", None)
     weight_decay_mask = kwargs.pop("weight_decay_mask", None)
     transforms = [optax.scale_by_adam(**kwargs)]
     if weight_decay is not None:
-        transforms.append(optax.contrib.add_cautious_weight_decay(weight_decay, weight_decay_mask))
+        transforms.append(optax.add_decayed_weights(weight_decay, weight_decay_mask))
     transforms.append(optax.scale_by_learning_rate(learning_rate))
     return optax.chain(*transforms)
 
 
-def adoptw_cwd(
+def adoptw(
     learning_rate: float,
     weight_decay: float = None,
     weight_decay_mask: Optional[PyTree] = None,
-    cautious_weight_decay: bool = True,
     **adopt_kwargs: Any,
 ) -> optax.GradientTransformation:
     if weight_decay is not None:
@@ -30,11 +29,7 @@ def adoptw_cwd(
             optax.contrib.scale_by_adopt(
                 **adopt_kwargs,
             ),
-            (
-                optax.contrib.add_cautious_weight_decay(weight_decay, weight_decay_mask)
-                if cautious_weight_decay
-                else optax.add_decayed_weights(weight_decay, weight_decay_mask)
-            ),
+            optax.add_decayed_weights(weight_decay, weight_decay_mask),
             optax.scale_by_learning_rate(learning_rate),
         )
     else:
@@ -47,18 +42,15 @@ def adoptw_cwd(
 
 
 OPTIMIZERS = {
-    "adam": adamw_cwd,
+    "adam": adamw,
     "schedule_free_adamw": optax.contrib.schedule_free_adamw,
-    "nadam": lambda **kwargs: adamw_cwd(
+    "nadam": lambda **kwargs: adamw(
         nesterov=True,
         **kwargs,
     ),
-    "adopt": adoptw_cwd,
-    "nadopt": lambda **kwargs: adoptw_cwd(nesterov=True, **kwargs),
+    "adopt": adoptw,
+    "nadopt": lambda **kwargs: adoptw(nesterov=True, **kwargs),
     "muon": optax.contrib.muon,
-    "normuon": optax.contrib.normuon,
-    "prism": optax.contrib.prism,
-    "norprism": optax.contrib.norprism,
     "rmsprop": optax.rmsprop,
     "prodigy": optax.contrib.prodigy,
     "lamb_adam": optax.lamb,
