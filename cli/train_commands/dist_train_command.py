@@ -198,6 +198,7 @@ def _run_distance_training(
     dataset_kwargs = {
         "n_devices": n_devices,
         "temperature": train_options.temperature,
+        "munchausen": train_options.munchausen,
         "label": train_options.label,
         "diffusion_warmup_steps": diffusion_warmup_steps,
         "non_backtracking_steps": train_options.sampling_non_backtracking_steps,

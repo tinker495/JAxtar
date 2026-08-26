@@ -20,7 +20,41 @@ from train_util.trajectory_dataset_adapter import (
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
-from train_util.util import boltzmann_action_selection
+from train_util.util import (
+    MUNCHAUSEN_ALPHA,
+    MUNCHAUSEN_CLIP_MIN,
+    MUNCHAUSEN_TAU,
+    boltzmann_action_selection,
+    scaled_log_softmin_policy,
+)
+
+
+def _munchausen_cost_target(
+    *,
+    current_q: chex.Array,
+    next_q: chex.Array,
+    actions: chex.Array,
+    selected_cost: chex.Array,
+    current_valid_mask: chex.Array,
+    next_valid_mask: chex.Array,
+    next_solved: chex.Array,
+    alpha: float = MUNCHAUSEN_ALPHA,
+    tau: float = MUNCHAUSEN_TAU,
+    clip_min: float = MUNCHAUSEN_CLIP_MIN,
+) -> chex.Array:
+    """Compute the lower-is-better log-distance form of the Munchausen target."""
+    current_log_policy = scaled_log_softmin_policy(current_q, current_valid_mask, tau)
+    selected_log_policy = jnp.take_along_axis(
+        current_log_policy, actions[:, jnp.newaxis], axis=1
+    ).squeeze(1)
+    munchausen_penalty = -alpha * jnp.clip(selected_log_policy, clip_min, 0.0)
+
+    next_log_policy = scaled_log_softmin_policy(next_q, next_valid_mask, tau)
+    next_policy = jnp.where(next_valid_mask, jnp.exp(next_log_policy / tau), 0.0)
+    soft_next_q = jnp.sum(next_policy * (next_q + next_log_policy), axis=1)
+    soft_next_q = jnp.where(jnp.any(next_valid_mask, axis=1), soft_next_q, jnp.inf)
+
+    return selected_cost + munchausen_penalty + jnp.where(next_solved, 0.0, soft_next_q)
 
 
 def _get_datasets_with_policy(
@@ -37,6 +71,7 @@ def _get_datasets_with_policy(
     k_max: int,
     temperature: float = 1.0 / 3.0,
     use_double_dqn: bool = False,
+    munchausen: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -98,9 +133,6 @@ def _get_datasets_with_policy(
         selected_neighbors_solved = puzzle.batched_is_solved(
             solve_configs, selected_neighbors, multi_solve_config=True
         )
-        selected_neighbors_solved = jnp.logical_or(
-            selected_neighbors_solved, jnp.logical_not(has_valid_action)
-        )
 
         # Preprocess the next states (s') for neural network input.
         preproc_neighbors = jax.vmap(preproc_fn, in_axes=(0, 0))(solve_configs, selected_neighbors)
@@ -116,32 +148,54 @@ def _get_datasets_with_policy(
         # Invalidate actions that are not reachable from the next state.
         valid_neighbor_cost = jnp.where(neighbor_valid_mask, neighbor_cost, jnp.inf)
 
-        # Modified for Q(s,a) = c(s,a) + min_a'(Q(s',a'))
-        q_next = jnp.where(neighbor_valid_mask, q, jnp.inf)
-
-        if use_double_dqn:
-            q_online = q_model.apply(q_params, preproc_neighbors, training=False)
-            q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
-            q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
-            best_actions = jnp.argmin(q_online, axis=1)
-            min_next_q = jnp.take_along_axis(q_next, best_actions[:, jnp.newaxis], axis=1).squeeze(
-                1
-            )
-        else:
-            min_next_q = jnp.min(q_next, axis=1)
-
-        # Ensure non-negative future cost
-        min_next_q = jnp.maximum(min_next_q, 0.0)
-        min_next_q = jnp.where(has_valid_neighbor, min_next_q, 0.0)
-
-        # Base case: If the next state (s') is the solution, the future cost is 0.
-        # Q(s,a) = c(s,a) + (0 if solved else min Q(s',a'))
         selected_cost = jnp.take_along_axis(cost, actions[:, jnp.newaxis], axis=1).squeeze(1)
         selected_cost = jnp.where(has_valid_action, selected_cost, 0.0)
-        target_q = selected_cost + jnp.where(selected_neighbors_solved, 0.0, min_next_q)
+
+        if munchausen:
+            current_target_q = q_model.apply(target_q_params, preproc, training=False)
+            current_target_q = jnp.nan_to_num(current_target_q, posinf=1e6, neginf=-1e6)
+            target_q = _munchausen_cost_target(
+                current_q=current_target_q,
+                next_q=q,
+                actions=actions,
+                selected_cost=selected_cost,
+                current_valid_mask=valid_action_mask,
+                next_valid_mask=neighbor_valid_mask,
+                next_solved=selected_neighbors_solved,
+            )
+        else:
+            # Modified for Q(s,a) = c(s,a) + min_a'(Q(s',a'))
+            q_next = jnp.where(neighbor_valid_mask, q, jnp.inf)
+
+            if use_double_dqn:
+                q_online = q_model.apply(q_params, preproc_neighbors, training=False)
+                q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
+                q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
+                best_actions = jnp.argmin(q_online, axis=1)
+                min_next_q = jnp.take_along_axis(
+                    q_next, best_actions[:, jnp.newaxis], axis=1
+                ).squeeze(1)
+            else:
+                min_next_q = jnp.min(q_next, axis=1)
+
+            # Ensure non-negative future cost
+            min_next_q = jnp.maximum(min_next_q, 0.0)
+            min_next_q = jnp.where(has_valid_neighbor, min_next_q, 0.0)
+
+            # Base case: If the next state (s') is the solution, the future cost is 0.
+            # Q(s,a) = c(s,a) + (0 if solved else min Q(s',a'))
+            bootstrap_terminal = jnp.logical_or(
+                selected_neighbors_solved, jnp.logical_not(has_valid_action)
+            )
+            target_q = selected_cost + jnp.where(bootstrap_terminal, 0.0, min_next_q)
+
         # If the current state (s) was already solved, its Q-value should also be 0.
         target_q = jnp.where(solved, 0.0, target_q)
-        target_q = jnp.where(has_valid_action, target_q, 0.0)
+        target_q = jnp.where(
+            jnp.logical_or(has_valid_action, solved),
+            target_q,
+            jnp.inf if munchausen else 0.0,
+        )
 
         return key, (
             solve_configs,
@@ -177,7 +231,7 @@ def _get_datasets_with_policy(
         k_max,
     )
     # Diffusion Q values describe the trajectory action; cap only rows where the
-    # sampled action matches it, so targets of unrelated actions stay untouched.
+    # sampled action matches it, including the Munchausen hybrid target.
     same_action = actions == trajectory_actions
     target_q = jnp.where(same_action, jnp.minimum(target_q, diffusion_q), target_q)
 
@@ -308,6 +362,7 @@ def get_qfunction_dataset_builder(
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
     use_double_dqn: bool = False,
+    munchausen: bool = False,
     label: str = "td",
     diffusion_warmup_steps: int = 0,
     non_backtracking_steps: int = 3,
@@ -316,6 +371,10 @@ def get_qfunction_dataset_builder(
         raise ValueError(f"Unknown training label: {label!r}")
     if label == "warmup_td" and diffusion_warmup_steps <= 0:
         raise ValueError("label='warmup_td' requires diffusion_warmup_steps > 0")
+    if munchausen and use_double_dqn:
+        raise ValueError("Munchausen TD and Double DQN targets cannot be enabled together")
+    if munchausen and label == "diffusion":
+        raise ValueError("Munchausen applies to TD targets, not label='diffusion'")
     (nn_minibatch_size, _, steps, jited_create_shuffled_path,) = prepare_shuffled_path_sampling(
         puzzle=puzzle,
         dataset_size=dataset_size,
@@ -355,6 +414,7 @@ def get_qfunction_dataset_builder(
         k_max=k_max,
         temperature=temperature,
         use_double_dqn=use_double_dqn,
+        munchausen=munchausen,
     )
     diffusion_get_datasets = partial(
         _get_datasets_with_diffusion_distance,

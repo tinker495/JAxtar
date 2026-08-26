@@ -825,6 +825,12 @@ def dist_train_options(
             default=None,
             help="Enable Double DQN target computation.",
         )
+        @click.option(
+            "--munchausen",
+            is_flag=True,
+            default=None,
+            help="Use lower-is-better Munchausen log-distance targets during TD training.",
+        )
         @click.option("-her", "--using_hindsight_target", is_flag=True, default=None)
         @click.option("-ts", "--using_triangular_sampling", is_flag=True, default=None)
         @click.option(
@@ -832,8 +838,8 @@ def dist_train_options(
             type=click.Choice(["td", "diffusion", "warmup_td"]),
             default=None,
             help=(
-                "Training target generation: 'td' bootstrap targets (DAVI / Q-learning) "
-                "min-capped by diffusion trajectory distances, 'diffusion' trajectory "
+                "Training target generation: 'td' bootstrap targets (min-capped by "
+                "diffusion distances), 'diffusion' trajectory "
                 "Bellman propagation, or 'warmup_td' diffusion targets for the first "
                 "--warmup_ratio of steps before switching to td. Default: 'td'."
             ),

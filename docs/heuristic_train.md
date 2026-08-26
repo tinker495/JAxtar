@@ -66,11 +66,13 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `Flag`
 -   `-ddn, --use_double_dqn`: Enable Double DQN target computation.
     -   Type: `Flag`
+-   `--munchausen`: Enable default-off Munchausen log-distance targets for `td` and the TD phase of `warmup_td`. The heuristic variant applies a two-ply softmin backup, projects it to a lower-is-better scalar with `min`, and retains the physical diffusion-distance cap. This is a hybrid target and is not guaranteed admissible.
+    -   Type: `Flag`
 -   `-her, --using_hindsight_target`: Use Hindsight Experience Replay (HER) for generating target values.
     -   Type: `Flag`
 -   `-ts, --using_triangular_sampling`: Use triangular sampling for generating states.
     -   Type: `Flag`
--   `--label`: Selects how training targets are generated: `td` (bootstrap targets; DAVI — always min-capped by deduplicated trajectory/diffusion distances to suppress overestimation), `diffusion` (trajectory Bellman propagation), or `warmup_td` (diffusion targets for the first `--warmup_ratio` of steps, then `td`).
+-   `--label`: Selects how training targets are generated: `td` (bootstrap targets, including `--munchausen`, min-capped by deduplicated trajectory/diffusion distances), `diffusion` (trajectory Bellman propagation), or `warmup_td` (diffusion targets for the first `--warmup_ratio` of steps, then `td`).
     -   Type: `Choice`
     -   Default: `td`
 -   `--warmup_ratio`: Fraction of total training steps that use diffusion targets before switching to `td`. Only used with `--label warmup_td`.

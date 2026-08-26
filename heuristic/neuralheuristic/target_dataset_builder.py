@@ -20,6 +20,12 @@ from train_util.trajectory_dataset_adapter import (
     create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path,
 )
+from train_util.util import (
+    MUNCHAUSEN_ALPHA,
+    MUNCHAUSEN_CLIP_MIN,
+    MUNCHAUSEN_TAU,
+    scaled_log_softmin_policy,
+)
 
 
 def _get_datasets(
@@ -34,6 +40,7 @@ def _get_datasets(
     key: chex.PRNGKey,
     k_max: int,
     temperature: float = 1.0 / 3.0,
+    munchausen: bool = False,
 ):
     solve_configs = shuffled_path["solve_configs"]
     states = shuffled_path["states"]
@@ -49,22 +56,91 @@ def _get_datasets(
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
-        preproc_neighbors = jax.vmap(jax.vmap(preproc_fn, in_axes=(0, 0)), in_axes=(None, 0))(
-            solve_configs, neighbors
-        )
-        # preproc_neighbors: [action_size, batch_size, ...]
 
         def compute_heur_for_action(carry, preproc_neighbor):
             heur = heuristic_model.apply(target_heuristic_params, preproc_neighbor, training=False)
             return None, heur.squeeze()
 
-        _, heur = jax.lax.scan(
-            compute_heur_for_action,
-            None,
-            preproc_neighbors,
-        )  # [action_size, batch_size]
-        backup = heur + cost  # [action_size, batch_size]
-        target_heuristic = jnp.min(jnp.maximum(backup, cost), axis=0)
+        def evaluate_heuristic(action_states):
+            preproc_states = jax.vmap(jax.vmap(preproc_fn, in_axes=(0, 0)), in_axes=(None, 0))(
+                solve_configs, action_states
+            )
+            _, values = jax.lax.scan(compute_heur_for_action, None, preproc_states)
+            return values
+
+        def evaluate_solved(action_states):
+            def is_solved_for_action(_, action_state):
+                action_solved = puzzle.batched_is_solved(
+                    solve_configs, action_state, multi_solve_config=True
+                )
+                return None, action_solved
+
+            _, action_solved = jax.lax.scan(is_solved_for_action, None, action_states)
+            return action_solved
+
+        heur = evaluate_heuristic(neighbors)
+        # heur: [action_size, batch_size]
+        raw_backup = heur + cost  # [action_size, batch_size]
+        if munchausen:
+            neighbors_solved = evaluate_solved(neighbors)
+            induced_action_costs = jnp.where(neighbors_solved, cost, raw_backup)
+            valid_action_mask = jnp.isfinite(cost)
+            current_log_policy = jnp.transpose(
+                scaled_log_softmin_policy(
+                    jnp.nan_to_num(jnp.transpose(induced_action_costs), posinf=1e6, neginf=-1e6),
+                    jnp.transpose(valid_action_mask),
+                )
+            )
+
+            def update_target(target, vals):
+                neighbor, transition_cost, action_log_policy, action_valid, neighbor_solved = vals
+                successor_states, successor_cost = puzzle.batched_get_neighbours(
+                    solve_configs,
+                    neighbor,
+                    filleds=jnp.ones(minibatch_size),
+                    multi_solve_config=True,
+                )
+                successor_heur = evaluate_heuristic(successor_states)
+                successor_solved = evaluate_solved(successor_states)
+                successor_backup = successor_heur + successor_cost
+                successor_backup = jnp.where(successor_solved, successor_cost, successor_backup)
+                successor_valid = jnp.transpose(jnp.isfinite(successor_cost))
+                successor_backup = jnp.nan_to_num(
+                    jnp.transpose(successor_backup), posinf=1e6, neginf=-1e6
+                )
+                successor_log_policy = scaled_log_softmin_policy(successor_backup, successor_valid)
+                successor_policy = jnp.where(
+                    successor_valid,
+                    jnp.exp(successor_log_policy / MUNCHAUSEN_TAU),
+                    0.0,
+                )
+                soft_continuation = jnp.sum(
+                    successor_policy
+                    * jnp.where(
+                        successor_valid,
+                        successor_backup + successor_log_policy,
+                        0.0,
+                    ),
+                    axis=1,
+                )
+                soft_continuation = jnp.where(
+                    jnp.any(successor_valid, axis=1), soft_continuation, jnp.inf
+                )
+                action_target = (
+                    jnp.nan_to_num(transition_cost, posinf=1e6, neginf=-1e6)
+                    - MUNCHAUSEN_ALPHA * jnp.clip(action_log_policy, MUNCHAUSEN_CLIP_MIN, 0.0)
+                    + jnp.where(neighbor_solved, 0.0, soft_continuation)
+                )
+                return jnp.minimum(target, jnp.where(action_valid, action_target, jnp.inf)), None
+
+            target_heuristic, _ = jax.lax.scan(
+                update_target,
+                jnp.full((minibatch_size,), jnp.inf),
+                (neighbors, cost, current_log_policy, valid_action_mask, neighbors_solved),
+            )
+        else:
+            backup = jnp.maximum(raw_backup, cost)
+            target_heuristic = jnp.min(backup, axis=0)
         target_heuristic = jnp.where(
             solved, 0.0, target_heuristic
         )  # if the puzzle is already solved, the heuristic is 0
@@ -87,8 +163,6 @@ def _get_datasets(
     target_heuristic = target_heuristic.reshape((-1,))
     is_solved = solved.reshape((-1,))
 
-    # Cap bootstrap targets with deduplicated trajectory (diffusion) distances to
-    # suppress overestimation; strictly tighter than the old min(target, move_costs).
     diffusion_heuristic = _compute_diffusion_distance(
         solve_configs,
         states,
@@ -201,6 +275,7 @@ def get_heuristic_dataset_builder(
     using_triangular_sampling: bool = False,
     n_devices: int = 1,
     temperature: float = 1.0 / 3.0,
+    munchausen: bool = False,
     label: str = "td",
     diffusion_warmup_steps: int = 0,
     non_backtracking_steps: int = 3,
@@ -209,6 +284,8 @@ def get_heuristic_dataset_builder(
         raise ValueError(f"Unknown training label: {label!r}")
     if label == "warmup_td" and diffusion_warmup_steps <= 0:
         raise ValueError("label='warmup_td' requires diffusion_warmup_steps > 0")
+    if munchausen and label == "diffusion":
+        raise ValueError("Munchausen applies to TD targets, not label='diffusion'")
     (nn_minibatch_size, _, steps, jited_create_shuffled_path,) = prepare_shuffled_path_sampling(
         puzzle=puzzle,
         dataset_size=dataset_size,
@@ -239,6 +316,7 @@ def get_heuristic_dataset_builder(
         nn_minibatch_size,
         k_max=k_max,
         temperature=temperature,
+        munchausen=munchausen,
     )
     diffusion_get_datasets = partial(
         _get_datasets_with_diffusion_distance,

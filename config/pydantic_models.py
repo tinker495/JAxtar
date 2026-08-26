@@ -201,13 +201,17 @@ class DistTrainOptions(BaseModel):
     force_update_interval: int = 2048
     use_soft_update: bool = False
     use_double_dqn: bool = False
+    munchausen: bool = Field(
+        False,
+        description="Use lower-is-better Munchausen log-distance targets during TD training.",
+    )
     using_hindsight_target: bool = False
     using_triangular_sampling: bool = False
     label: Literal["td", "diffusion", "warmup_td"] = Field(
         "td",
         description=(
-            "Training target generation: 'td' bootstrap targets (DAVI / Q-learning) "
-            "min-capped by deduplicated trajectory (diffusion) distances, 'diffusion' "
+            "Training target generation: 'td' bootstrap targets (DAVI / Q-learning, "
+            "min-capped by diffusion distances), 'diffusion' "
             "pure trajectory Bellman propagation, or 'warmup_td' diffusion targets for "
             "the first warmup_ratio of steps, then td."
         ),

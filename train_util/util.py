@@ -1,8 +1,18 @@
+import math
 from typing import Any, Callable
 
 import chex
 import jax
 import jax.numpy as jnp
+
+
+MUNCHAUSEN_ALPHA = 0.9
+MUNCHAUSEN_LOG_DISTANCE_SCALE = 1.0
+MUNCHAUSEN_LOG_DISCOUNT = math.exp(-MUNCHAUSEN_LOG_DISTANCE_SCALE)
+MUNCHAUSEN_LOG_TAU = 0.03
+MUNCHAUSEN_LOG_CLIP_MIN = -1.0
+MUNCHAUSEN_TAU = MUNCHAUSEN_LOG_TAU / MUNCHAUSEN_LOG_DISTANCE_SCALE
+MUNCHAUSEN_CLIP_MIN = MUNCHAUSEN_LOG_CLIP_MIN / MUNCHAUSEN_LOG_DISTANCE_SCALE
 
 
 def round_through_gradient(x: chex.Array) -> chex.Array:
@@ -47,6 +57,18 @@ def boltzmann_action_selection(
     probs = probs * (1.0 - epsilon) + uniform_valid * epsilon
     probs = probs / (jnp.sum(probs, axis=1, keepdims=True) + 1e-8)
     return probs
+
+
+def scaled_log_softmin_policy(
+    costs: chex.Array,
+    valid_mask: chex.Array,
+    tau: float = MUNCHAUSEN_TAU,
+) -> chex.Array:
+    """Return ``tau * log softmax(-distance / tau)`` over valid actions."""
+    logits = jnp.where(valid_mask, -costs / tau, -jnp.inf)
+    logits = jnp.where(jnp.any(valid_mask, axis=1, keepdims=True), logits, 0.0)
+    scaled_log_policy = tau * jax.nn.log_softmax(logits, axis=1)
+    return jnp.where(valid_mask, scaled_log_policy, 0.0)
 
 
 def build_distance_train_loss(
