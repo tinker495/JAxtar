@@ -283,7 +283,8 @@ def save_solution_animation_and_frames(
     fps = 4
     if num_frames / fps > max_animation_time:
         fps = num_frames / max_animation_time
-    imageio.mimsave(gif_path, imgs, fps=fps)
+    durations = [1000 / fps] * (num_frames - 1) + [3000]
+    imageio.mimsave(gif_path, imgs, duration=durations, loop=0)
     return gif_path
 
 
