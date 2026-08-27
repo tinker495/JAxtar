@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import optax
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
-from train_util.optimizer import GRADIENT_CLIP_NORM, get_eval_params
+from train_util.optimizer import get_eval_params
 from train_util.sampling import minibatch_datasets
 from train_util.train_state import TrainStateExtended
 from train_util.util import build_distance_train_loss
@@ -119,7 +119,6 @@ def distance_train_builder(
                 "relative_update": update_rms / (parameter_rms_before + _METRIC_EPSILON),
                 "relative_update_leaf": update_leaf_rms
                 / (parameter_leaf_rms_before + _METRIC_EPSILON),
-                "was_clipped": aggregate_grad_norm > GRADIENT_CLIP_NORM,
                 "nonfinite_count": (
                     _tree_nonfinite_count(grads)
                     + _tree_nonfinite_count(updates)
@@ -170,7 +169,6 @@ def distance_train_builder(
                 ),
                 "Optimizer/Update RMS": jnp.mean(metrics["update_rms"]),
                 "Optimizer/Update to Parameter Ratio": jnp.mean(metrics["relative_update"]),
-                "Optimizer/Clip Fraction": jnp.mean(metrics["was_clipped"]),
                 "Health/Nonfinite Count": jnp.max(metrics["nonfinite_count"]),
                 "Metrics/TD Target Online Gap Before Update": target_online_gap(new_state),
             },
