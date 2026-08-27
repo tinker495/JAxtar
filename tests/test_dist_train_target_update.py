@@ -69,7 +69,7 @@ def test_distance_train_builder_reports_model_health_metrics(monkeypatch):
         "build_distance_train_loss",
         lambda *args, **kwargs: train_loss,
     )
-    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.sgd(0.1))
+    optimizer = optax.sgd(0.1)
     state = TrainStateExtended.create(
         apply_fn=None,
         params={"w": jnp.array(2.0)},
@@ -92,13 +92,12 @@ def test_distance_train_builder_reports_model_health_metrics(monkeypatch):
     new_state, _, _, diagnostics = train(jax.random.PRNGKey(0), dataset, state)
     scalars = diagnostics["scalars"]
 
-    assert math.isclose(float(new_state.params["w"]), 1.9, rel_tol=1e-6)
-    assert math.isclose(float(scalars["Model/Parameter RMS"]), 1.9, rel_tol=1e-6)
+    assert math.isclose(float(new_state.params["w"]), 1.6, rel_tol=1e-6)
+    assert math.isclose(float(scalars["Model/Parameter RMS"]), 1.6, rel_tol=1e-6)
     assert math.isclose(float(scalars["Optimizer/Gradient Global Norm Mean"]), 4.0, rel_tol=1e-6)
     assert math.isclose(float(scalars["Optimizer/Gradient Global Norm Max"]), 4.0, rel_tol=1e-6)
-    assert math.isclose(float(scalars["Optimizer/Update RMS"]), 0.1, rel_tol=1e-6)
-    assert math.isclose(float(scalars["Optimizer/Update to Parameter Ratio"]), 0.05, rel_tol=1e-6)
-    assert float(scalars["Optimizer/Clip Fraction"]) == 1.0
+    assert math.isclose(float(scalars["Optimizer/Update RMS"]), 0.4, rel_tol=1e-6)
+    assert math.isclose(float(scalars["Optimizer/Update to Parameter Ratio"]), 0.2, rel_tol=1e-6)
     assert math.isclose(float(scalars["Metrics/TD Target Online Gap Before Update"]), 1.0)
     assert float(scalars["Health/Nonfinite Count"]) == 0.0
     assert diagnostics["histograms"]["Model/Layer Parameter RMS"].shape == (1,)

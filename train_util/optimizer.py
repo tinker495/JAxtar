@@ -4,7 +4,6 @@ import jax
 import optax
 
 PyTree = Any
-GRADIENT_CLIP_NORM = 1.0
 
 
 def adamw(**kwargs: Any) -> optax.GradientTransformation:
@@ -126,7 +125,7 @@ def setup_optimizer(
                 weight_decay=weight_decay_size,
                 weight_decay_mask=mask_tree,
             )
-        return optax.chain(optax.clip_by_global_norm(GRADIENT_CLIP_NORM), scaler)
+        return scaler
 
     optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
     opt_state = optimizer.init(params)
