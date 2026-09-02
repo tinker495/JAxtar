@@ -1274,12 +1274,15 @@ def build_deferred_loop_body(
         vals_out = sorted_vals.reshape((action_size, sr_batch_size))
         optimal_mask_out = optimal_mask_sorted.reshape(action_size, sr_batch_size)
 
+        # The global sort put every finite key first, so the rows holding
+        # candidates are a prefix: bounded while instead of a lax.cond per row.
         search_result = insert_priority_queue_batches(
             search_result,
             neighbour_keys_out,
             vals_out,
             optimal_mask_out,
             presorted=True,
+            prefix_rows=True,
         )
         search_result, min_val, next_states, next_filled = search_result.pop_full_with_actions(
             puzzle=puzzle, solve_config=solve_config, use_heuristic=use_heuristic
