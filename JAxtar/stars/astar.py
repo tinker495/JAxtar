@@ -22,6 +22,64 @@ from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
 
+def _row_heuristics(
+    heuristic_fn,
+    switcher,
+    params,
+    neighbours,
+    vals: Current,
+    new_states_mask,
+    dist,
+    batch_size: int,
+    action_size: int,
+):
+    """Heuristic values for every action row, calling the network only where states are new.
+
+    New states sit at the front of the partitioned batch, so the rows that need the
+    network are a prefix: ``n_full`` all-new rows, then at most one mixed row when
+    ``n_new % batch_size != 0``. Full rows call ``heuristic_fn`` directly inside a
+    bounded while_loop (one host predicate readback per row instead of a lax.cond
+    plus the batch switcher's lax.switch); the mixed row keeps the switcher (its
+    ``inf`` padding past the evaluated slice is the existing behaviour); every other
+    row reads the cached ``dist`` values. A row without new states must keep its
+    cached values: the switcher has no zero branch (``MIN_BATCH_SIZE``), so an
+    all-False mask would evaluate the first ``MIN_BATCH_SIZE`` entries and pad the
+    rest with ``inf``, dropping improved old candidates from the queue.
+
+    Returns the updated ``dist`` cache and ``heurs`` of shape ``(action_size, batch_size)``.
+    """
+    n_new = jnp.sum(new_states_mask, dtype=jnp.int32)
+    n_full = n_new // batch_size
+    heurs = dist[vals.hashidx.index]
+
+    def _full_cond(carry):
+        j, _, _ = carry
+        return j < n_full
+
+    def _full_body(carry):
+        j, dist, heurs = carry
+        row_heur = heuristic_fn(params, xnp.take(neighbours, j, axis=0)).astype(KEY_DTYPE)
+        # cache the heuristic value; each newly inserted state owns one index
+        dist = xnp.update_on_condition(
+            dist, vals.hashidx.index[j], new_states_mask[j], row_heur, unique_indices=True
+        )
+        return j + 1, dist, heurs.at[j].set(row_heur)
+
+    _, dist, heurs = jax.lax.while_loop(
+        _full_cond, _full_body, (jnp.array(0, dtype=jnp.int32), dist, heurs)
+    )
+
+    has_mixed_row = jnp.logical_and(n_full < action_size, n_new % batch_size != 0)
+    mixed = jnp.minimum(n_full, action_size - 1)
+    mixed_mask = jnp.logical_and(new_states_mask[mixed], has_mixed_row)
+    mixed_heur = switcher(params, xnp.take(neighbours, mixed, axis=0), mixed_mask).astype(KEY_DTYPE)
+    dist = xnp.update_on_condition(
+        dist, vals.hashidx.index[mixed], mixed_mask, mixed_heur, unique_indices=True
+    )
+    heurs = heurs.at[mixed].set(jnp.where(has_mixed_row, mixed_heur, heurs[mixed]))
+    return dist, heurs
+
+
 def _astar_loop_builder(
     puzzle: Puzzle,
     heuristic: Heuristic,
@@ -189,50 +247,24 @@ def _astar_loop_builder(
         new_states_mask = flatten_new_states_mask.reshape(unflatten_shape)
         final_process_mask = flatten_final_process_mask.reshape(unflatten_shape)
 
-        def _new_states(search_result: SearchResult, vals, neighbour, new_states_mask):
-            neighbour_heur = variable_heuristic_batch_switcher(
-                heuristic_parameters, neighbour, new_states_mask
-            ).astype(KEY_DTYPE)
-            # cache the heuristic value; each newly inserted state owns one index
-            search_result.dist = xnp.update_on_condition(
-                search_result.dist,
-                vals.hashidx.index,
-                new_states_mask,
-                neighbour_heur,
-                unique_indices=True,
-            )
-            return search_result, neighbour_heur
-
-        def _old_states(search_result: SearchResult, vals, neighbour, new_states_mask):
-            neighbour_heur = search_result.dist[vals.hashidx.index]
-            return search_result, neighbour_heur
-
-        def _scan(search_result: SearchResult, val):
-            vals, neighbour, new_states_mask = val
-
-            search_result, neighbour_heur = jax.lax.cond(
-                jnp.any(new_states_mask),
-                _new_states,
-                _old_states,
-                search_result,
-                vals,
-                neighbour,
-                new_states_mask,
-            )
-
-            neighbour_key = (cost_weight * vals.cost + neighbour_heur).astype(KEY_DTYPE)
-            return search_result, neighbour_key
-
-        search_result, neighbour_keys = jax.lax.scan(
-            _scan,
-            search_result,
-            (vals, neighbours, new_states_mask),
+        search_result.dist, neighbour_heurs = _row_heuristics(
+            heuristic.batched_distance,
+            variable_heuristic_batch_switcher,
+            heuristic_parameters,
+            neighbours,
+            vals,
+            new_states_mask,
+            search_result.dist,
+            sr_batch_size,
+            action_size,
         )
+        neighbour_keys = (cost_weight * vals.cost + neighbour_heurs).astype(KEY_DTYPE)
         search_result = insert_priority_queue_batches(
             search_result,
             neighbour_keys,
             vals,
             final_process_mask,
+            prefix_rows=True,
         )
         search_result, current, filled = search_result.pop_full()
         return LoopState(

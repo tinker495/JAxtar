@@ -62,6 +62,7 @@ def insert_priority_queue_batches(
     masks: chex.Array,
     *,
     presorted: bool = False,
+    prefix_rows: bool = False,
 ) -> "SearchResult":
     """Insert action-major candidate batches into the priority queue.
 
@@ -69,6 +70,11 @@ def insert_priority_queue_batches(
     insertion semantics identical before calling `pop_full_with_actions`.
     ``presorted`` skips BGPQ's per-row sort when the flattened candidate set
     was already sorted before being split into rows.
+    ``prefix_rows`` is the caller's promise that the selected entries occupy a
+    prefix of the flattened batch (eager A* partitions candidates that way), so
+    the rows with work are the first ``ceil(count / row_width)``. They are
+    inserted by a bounded while_loop: one host predicate readback per inserted
+    row instead of a lax.cond readback for every row.
     """
 
     def _insert(sr: "SearchResult", key_row, val_row):
@@ -88,7 +94,23 @@ def insert_priority_queue_batches(
         )
         return sr, None
 
-    search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
+    if prefix_rows:
+        row_width = keys.shape[1]
+        n_rows = (jnp.sum(masks, dtype=jnp.int32) + row_width - 1) // row_width
+
+        def _row_cond(carry):
+            j, _ = carry
+            return j < n_rows
+
+        def _row_body(carry):
+            j, sr = carry
+            return j + 1, _insert(sr, keys[j], vals[j])
+
+        _, search_result = jax.lax.while_loop(
+            _row_cond, _row_body, (jnp.array(0, dtype=jnp.int32), search_result)
+        )
+    else:
+        search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
 
     def _update_pq_insert(sr: "SearchResult"):
         row_any = jnp.any(masks, axis=1)

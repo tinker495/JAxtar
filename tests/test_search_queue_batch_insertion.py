@@ -135,3 +135,28 @@ def test_insert_priority_queue_batches_uses_sorted_insert_when_preordered():
 
     assert int(out.priority_queue.call_count) == 2
     assert int(out.priority_queue.sorted_call_count) == 2
+
+
+def test_insert_priority_queue_batches_prefix_rows_matches_scan_path():
+    keys = jnp.array([[1.0, 1.1], [2.0, 2.1], [3.0, 3.1]], dtype=jnp.float32)
+    vals = jnp.array([[10, 11], [20, 21], [30, 31]], dtype=jnp.int32)
+    masks = jnp.array([[True, True], [True, False], [False, False]])
+
+    scan_out = insert_priority_queue_batches(
+        _build_dummy_search_result(max_calls=3, row_width=2), keys, vals, masks
+    )
+    prefix_out = insert_priority_queue_batches(
+        _build_dummy_search_result(max_calls=3, row_width=2),
+        keys,
+        vals,
+        masks,
+        prefix_rows=True,
+    )
+
+    assert int(prefix_out.priority_queue.call_count) == 2
+    assert jnp.array_equal(
+        prefix_out.priority_queue.inserted_keys, scan_out.priority_queue.inserted_keys
+    )
+    assert jnp.array_equal(
+        prefix_out.priority_queue.inserted_vals, scan_out.priority_queue.inserted_vals
+    )
