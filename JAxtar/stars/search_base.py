@@ -102,15 +102,14 @@ def insert_priority_queue_batches(
             j, _ = carry
             return j < n_rows
 
-        # Carry only the priority queue: other SearchResult buffers passed through
-        # a nested while_loop are copied by XLA at the loop boundary.
+        # Carry the whole SearchResult: carrying only the priority queue made XLA
+        # copy the 220 MB deferred store in and out of the loop (qstar +5.5%).
         def _row_body(carry):
-            j, pq = carry
-            insert = pq.insert_sorted if presorted else pq.insert
-            return j + 1, insert(keys[j], vals[j])
+            j, sr = carry
+            return j + 1, _insert(sr, keys[j], vals[j])
 
-        _, search_result.priority_queue = jax.lax.while_loop(
-            _row_cond, _row_body, (jnp.array(0, dtype=jnp.int32), search_result.priority_queue)
+        _, search_result = jax.lax.while_loop(
+            _row_cond, _row_body, (jnp.array(0, dtype=jnp.int32), search_result)
         )
     else:
         search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
