@@ -265,6 +265,7 @@ def _astar_loop_builder(
             vals,
             final_process_mask,
             prefix_rows=True,
+            slim_carry=True,
         )
         search_result, current, filled = search_result.pop_full()
         return LoopState(

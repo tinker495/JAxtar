@@ -63,6 +63,7 @@ def insert_priority_queue_batches(
     *,
     presorted: bool = False,
     prefix_rows: bool = False,
+    slim_carry: bool = False,
 ) -> "SearchResult":
     """Insert action-major candidate batches into the priority queue.
 
@@ -75,6 +76,11 @@ def insert_priority_queue_batches(
     the rows with work are the first ``ceil(count / row_width)``. They are
     inserted by a bounded while_loop: one host predicate readback per inserted
     row instead of a lax.cond readback for every row.
+    ``slim_carry`` carries only the priority queue through that while_loop.
+    Measured (BAAB, RTX 4080 SUPER): with eager A* (``Current`` PQ) the slim
+    carry avoids XLA's pass-through copies of the PQ store (K1 −4%), while for
+    the deferred store (``Parant_with_Costs``) it makes XLA copy the 220 MB
+    store in and out of the loop instead (qstar +5.5%) — so the caller picks.
     """
 
     def _insert(sr: "SearchResult", key_row, val_row):
@@ -102,15 +108,27 @@ def insert_priority_queue_batches(
             j, _ = carry
             return j < n_rows
 
-        # Carry the whole SearchResult: carrying only the priority queue made XLA
-        # copy the 220 MB deferred store in and out of the loop (qstar +5.5%).
-        def _row_body(carry):
-            j, sr = carry
-            return j + 1, _insert(sr, keys[j], vals[j])
+        if slim_carry:
 
-        _, search_result = jax.lax.while_loop(
-            _row_cond, _row_body, (jnp.array(0, dtype=jnp.int32), search_result)
-        )
+            def _pq_body(carry):
+                j, pq = carry
+                insert = pq.insert_sorted if presorted else pq.insert
+                return j + 1, insert(keys[j], vals[j])
+
+            _, search_result.priority_queue = jax.lax.while_loop(
+                _row_cond,
+                _pq_body,
+                (jnp.array(0, dtype=jnp.int32), search_result.priority_queue),
+            )
+        else:
+
+            def _sr_body(carry):
+                j, sr = carry
+                return j + 1, _insert(sr, keys[j], vals[j])
+
+            _, search_result = jax.lax.while_loop(
+                _row_cond, _sr_body, (jnp.array(0, dtype=jnp.int32), search_result)
+            )
     else:
         search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
 
