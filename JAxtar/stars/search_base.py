@@ -546,11 +546,11 @@ class SearchResult:
             (search_result, min_key, min_val, buffer, buffer_val, delete_calls0, popped0),
         )
 
-        # Put overflow nodes back into the PQ so they are never lost
-        search_result.priority_queue = jax.lax.cond(
-            jnp.any(jnp.isfinite(overflow_keys)),
-            lambda: search_result.priority_queue.insert(overflow_keys, overflow_vals),
-            lambda: search_result.priority_queue,
+        # Put overflow nodes back into the PQ so they are never lost. Unconditional:
+        # an all-inf block is a cheap no-op for BGPQ.insert, whereas the lax.cond cost
+        # a host predicate readback plus a pass-through copy of the whole store per pop.
+        search_result.priority_queue = search_result.priority_queue.insert(
+            overflow_keys, overflow_vals
         )
 
         # 3. Apply pop_ratio to the full batch
@@ -860,11 +860,11 @@ class SearchResult:
 
         final_parents = final_val.parent
 
-        # Put overflow nodes back into the PQ so they are never lost
-        search_result.priority_queue = jax.lax.cond(
-            jnp.any(jnp.isfinite(overflow_keys)),
-            lambda: search_result.priority_queue.insert(overflow_keys, overflow_vals),
-            lambda: search_result.priority_queue,
+        # Put overflow nodes back into the PQ so they are never lost. Unconditional:
+        # an all-inf block is a cheap no-op for BGPQ.insert, whereas the lax.cond cost
+        # a host predicate readback plus a pass-through copy of the whole store per pop.
+        search_result.priority_queue = search_result.priority_queue.insert(
+            overflow_keys, overflow_vals
         )
 
         # 3. Apply pop_ratio to the merged/sorted final batch.
