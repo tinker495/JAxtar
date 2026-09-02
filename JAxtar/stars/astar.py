@@ -154,17 +154,21 @@ def _astar_loop_builder(
 
         # Update the cost (g-value) for the newly found optimal paths before they are
         # masked out. This ensures the cost table is always up-to-date.
+        # cheapest_uniques_mask selects at most one entry per hash index, so the
+        # masked scatter needs no first-true-wins resolution (unique_indices).
         search_result.cost = xnp.update_on_condition(
             search_result.cost,
             hash_idx.index,
             final_process_mask,
             flatten_nextcosts,  # Use costs before they are set to inf
+            unique_indices=True,
         )
         search_result.parent = xnp.update_on_condition(
             search_result.parent,
             hash_idx.index,
             final_process_mask,
             flatten_parents,
+            unique_indices=True,
         )
 
         # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
@@ -189,12 +193,13 @@ def _astar_loop_builder(
             neighbour_heur = variable_heuristic_batch_switcher(
                 heuristic_parameters, neighbour, new_states_mask
             ).astype(KEY_DTYPE)
-            # cache the heuristic value
+            # cache the heuristic value; each newly inserted state owns one index
             search_result.dist = xnp.update_on_condition(
                 search_result.dist,
                 vals.hashidx.index,
                 new_states_mask,
                 neighbour_heur,
+                unique_indices=True,
             )
             return search_result, neighbour_heur
 
