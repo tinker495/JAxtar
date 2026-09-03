@@ -62,6 +62,8 @@ def insert_priority_queue_batches(
     masks: chex.Array,
     *,
     presorted: bool = False,
+    prefix_rows: bool = False,
+    slim_carry: bool = False,
 ) -> "SearchResult":
     """Insert action-major candidate batches into the priority queue.
 
@@ -69,6 +71,16 @@ def insert_priority_queue_batches(
     insertion semantics identical before calling `pop_full_with_actions`.
     ``presorted`` skips BGPQ's per-row sort when the flattened candidate set
     was already sorted before being split into rows.
+    ``prefix_rows`` is the caller's promise that the selected entries occupy a
+    prefix of the flattened batch (eager A* partitions candidates that way), so
+    the rows with work are the first ``ceil(count / row_width)``. They are
+    inserted by a bounded while_loop: one host predicate readback per inserted
+    row instead of a lax.cond readback for every row.
+    ``slim_carry`` carries only the priority queue through that while_loop.
+    Measured (BAAB, RTX 4080 SUPER): with eager A* (``Current`` PQ) the slim
+    carry avoids XLA's pass-through copies of the PQ store (K1 −4%), while for
+    the deferred store (``Parant_with_Costs``) it makes XLA copy the 220 MB
+    store in and out of the loop instead (qstar +5.5%) — so the caller picks.
     """
 
     def _insert(sr: "SearchResult", key_row, val_row):
@@ -88,7 +100,37 @@ def insert_priority_queue_batches(
         )
         return sr, None
 
-    search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
+    if prefix_rows:
+        row_width = keys.shape[1]
+        n_rows = (jnp.sum(masks, dtype=jnp.int32) + row_width - 1) // row_width
+
+        def _row_cond(carry):
+            j, _ = carry
+            return j < n_rows
+
+        if slim_carry:
+
+            def _pq_body(carry):
+                j, pq = carry
+                insert = pq.insert_sorted if presorted else pq.insert
+                return j + 1, insert(keys[j], vals[j])
+
+            _, search_result.priority_queue = jax.lax.while_loop(
+                _row_cond,
+                _pq_body,
+                (jnp.array(0, dtype=jnp.int32), search_result.priority_queue),
+            )
+        else:
+
+            def _sr_body(carry):
+                j, sr = carry
+                return j + 1, _insert(sr, keys[j], vals[j])
+
+            _, search_result = jax.lax.while_loop(
+                _row_cond, _sr_body, (jnp.array(0, dtype=jnp.int32), search_result)
+            )
+    else:
+        search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
 
     def _update_pq_insert(sr: "SearchResult"):
         row_any = jnp.any(masks, axis=1)
@@ -524,11 +566,11 @@ class SearchResult:
             (search_result, min_key, min_val, buffer, buffer_val, delete_calls0, popped0),
         )
 
-        # Put overflow nodes back into the PQ so they are never lost
-        search_result.priority_queue = jax.lax.cond(
-            jnp.any(jnp.isfinite(overflow_keys)),
-            lambda: search_result.priority_queue.insert(overflow_keys, overflow_vals),
-            lambda: search_result.priority_queue,
+        # Put overflow nodes back into the PQ so they are never lost. Unconditional:
+        # an all-inf block is a cheap no-op for BGPQ.insert, whereas the lax.cond cost
+        # a host predicate readback plus a pass-through copy of the whole store per pop.
+        search_result.priority_queue = search_result.priority_queue.insert(
+            overflow_keys, overflow_vals
         )
 
         # 3. Apply pop_ratio to the full batch
@@ -838,11 +880,11 @@ class SearchResult:
 
         final_parents = final_val.parent
 
-        # Put overflow nodes back into the PQ so they are never lost
-        search_result.priority_queue = jax.lax.cond(
-            jnp.any(jnp.isfinite(overflow_keys)),
-            lambda: search_result.priority_queue.insert(overflow_keys, overflow_vals),
-            lambda: search_result.priority_queue,
+        # Put overflow nodes back into the PQ so they are never lost. Unconditional:
+        # an all-inf block is a cheap no-op for BGPQ.insert, whereas the lax.cond cost
+        # a host predicate readback plus a pass-through copy of the whole store per pop.
+        search_result.priority_queue = search_result.priority_queue.insert(
+            overflow_keys, overflow_vals
         )
 
         # 3. Apply pop_ratio to the merged/sorted final batch.
@@ -1252,12 +1294,15 @@ def build_deferred_loop_body(
         vals_out = sorted_vals.reshape((action_size, sr_batch_size))
         optimal_mask_out = optimal_mask_sorted.reshape(action_size, sr_batch_size)
 
+        # The global sort put every finite key first, so the rows holding
+        # candidates are a prefix: bounded while instead of a lax.cond per row.
         search_result = insert_priority_queue_batches(
             search_result,
             neighbour_keys_out,
             vals_out,
             optimal_mask_out,
             presorted=True,
+            prefix_rows=True,
         )
         search_result, min_val, next_states, next_filled = search_result.pop_full_with_actions(
             puzzle=puzzle, solve_config=solve_config, use_heuristic=use_heuristic
