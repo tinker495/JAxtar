@@ -564,11 +564,13 @@ class SearchResult:
         return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
         search_result.priority_queue = search_result.priority_queue.insert(return_keys, min_val)
 
+        # Same scalar for every selected index, so duplicates cannot disagree.
         search_result.pop_generation = xnp.update_on_condition(
             search_result.pop_generation,
             min_val.hashidx.index,
             final_process_mask,
             search_result.pop_count,
+            unique_indices=True,
         )
         search_result.pop_count += 1
 
@@ -905,17 +907,21 @@ class SearchResult:
 
         final_currents = Current(hashidx=hash_idx, cost=final_costs)
 
+        # The merge loop deduplicated final_states (assume_unique above), so each
+        # selected hash index appears once: masked scatter without first-true-wins.
         search_result.cost = xnp.update_on_condition(
             search_result.cost,
             hash_idx.index,
             final_process_mask,
             final_costs,
+            unique_indices=True,
         )
         search_result.dist = xnp.update_on_condition(
             search_result.dist,
             hash_idx.index,
             final_process_mask,
             final_dists,
+            unique_indices=True,
         )
         search_result.parent = search_result.parent.at[hash_idx.index].set_as_condition(
             final_process_mask, final_parents
@@ -925,6 +931,7 @@ class SearchResult:
             hash_idx.index,
             final_process_mask,
             search_result.pop_count,
+            unique_indices=True,
         )
         search_result.pop_count += 1
 
