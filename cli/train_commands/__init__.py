@@ -1,40 +1,54 @@
-from __future__ import annotations
+"""Lightweight tyro training entry points; load training backends on execution."""
 
-from _lazy_imports import lazy_dir, load_lazy_export
+from dataclasses import asdict
 
-from ..lazy_group import LazyGroup
+import tyro
 
-__all__ = [
-    "distance_train",
-    "heuristic_train_command",
-    "qfunction_train_command",
-]
-
-_COMMAND_EXPORTS = {
-    "heuristic_train_command": (
-        "cli.train_commands.dist_train_command",
-        "heuristic_train_command",
-    ),
-    "qfunction_train_command": (
-        "cli.train_commands.dist_train_command",
-        "qfunction_train_command",
-    ),
-}
-
-
-distance_train = LazyGroup(
-    name="distance-train",
-    help="Train neural heuristic and Q-function distance estimators.",
-    lazy_commands={
-        "heuristic": _COMMAND_EXPORTS["heuristic_train_command"],
-        "qfunction": _COMMAND_EXPORTS["qfunction_train_command"],
-    },
+from ..options import (
+    HeuristicTrainArgs,
+    QFunctionTrainArgs,
+    resolve_puzzle,
+    resolve_train,
+    resolve_train_heuristic,
+    resolve_train_qfunction,
 )
+from ..runtime import run_cli
+
+distance_train_app = tyro.extras.SubcommandApp()
 
 
-def __getattr__(name: str):
-    return load_lazy_export(name, __name__, _COMMAND_EXPORTS, globals())
+@distance_train_app.command(name="heuristic")
+def _heuristic(options: HeuristicTrainArgs):
+    kwargs = resolve_puzzle(asdict(options), default_hard=True, use_seeds_flag=False)
+    kwargs = resolve_train(kwargs, preset_category="heuristic_train")
+    kwargs = resolve_train_heuristic(kwargs)
+    from .dist_train_command import run_heuristic_training
+
+    return run_heuristic_training(**kwargs)
 
 
-def __dir__() -> list[str]:
-    return lazy_dir(globals(), __all__)
+@distance_train_app.command(name="qfunction")
+def _qfunction(options: QFunctionTrainArgs):
+    kwargs = resolve_puzzle(asdict(options), default_hard=True, use_seeds_flag=False)
+    kwargs = resolve_train(kwargs, preset_category="qfunction_train")
+    kwargs = resolve_train_qfunction(kwargs)
+    from .dist_train_command import run_qfunction_training
+
+    return run_qfunction_training(**kwargs)
+
+
+def heuristic_train_command(args=None):
+    return run_cli(lambda **kwargs: tyro.cli(_heuristic, **kwargs), args)
+
+
+def qfunction_train_command(args=None):
+    return run_cli(lambda **kwargs: tyro.cli(_qfunction, **kwargs), args)
+
+
+def distance_train(args=None):
+    return run_cli(
+        distance_train_app.cli,
+        args,
+        prog="distance-train",
+        description="Train neural heuristic and Q-function distance estimators.",
+    )

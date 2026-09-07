@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Dict
 
-import click
 import jax
 import jax.numpy as jnp
 from puxle import Puzzle
@@ -24,12 +23,6 @@ from train_util.train_logs import TrainLogInfo
 from train_util.train_state import hard_update_target, soft_update_target
 
 from ..config_utils import enrich_config
-from ..options import (
-    dist_heuristic_options,
-    dist_puzzle_options,
-    dist_qfunction_options,
-    dist_train_options,
-)
 from .train_session import (
     finalize_training,
     init_train_key,
@@ -311,11 +304,7 @@ def _run_distance_training(
     )
 
 
-@click.command()
-@dist_puzzle_options
-@dist_train_options(preset_category="heuristic_train", default_preset="davi")
-@dist_heuristic_options
-def heuristic_train_command(
+def run_heuristic_training(
     puzzle: Puzzle,
     puzzle_opts: PuzzleOptions,
     heuristic: NeuralHeuristicBase,
@@ -350,11 +339,7 @@ def heuristic_train_command(
     )
 
 
-@click.command()
-@dist_puzzle_options
-@dist_train_options(preset_category="qfunction_train", default_preset="qlearning")
-@dist_qfunction_options
-def qfunction_train_command(
+def run_qfunction_training(
     puzzle: Puzzle,
     puzzle_opts: PuzzleOptions,
     qfunction: NeuralQFunctionBase,

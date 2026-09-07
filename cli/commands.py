@@ -1,32 +1,36 @@
-"""Search Click commands generated from the Search Algorithm Catalog.
+"""Tyro search commands generated from the Search Algorithm Catalog."""
 
-See CONTEXT.md "Search Algorithm Catalog". The 10 algorithm-specific commands
-(`astar`, `astar_d`, `bi_astar`, ...) are built by iterating
-`SEARCH_ALGORITHM_CATALOG` and applying a single surface-specific factory.
-"""
+from dataclasses import asdict
+from functools import partial
 
-from __future__ import annotations
-
-import click
+import tyro
 
 from config.algorithm_registry import SEARCH_ALGORITHM_CATALOG, SearchAlgorithmEntry
 from helpers import heuristic_dist_format, qfunction_dist_format
 
 from .options import (
-    heuristic_options,
-    puzzle_options,
-    qfunction_options,
-    search_options,
-    visualize_options,
+    HeuristicSearchArgs,
+    QFunctionSearchArgs,
+    resolve_heuristic,
+    resolve_puzzle,
+    resolve_qfunction,
+    resolve_search,
+    resolve_visualize,
 )
+from .runtime import run_cli
 from .search_runner import run_search_command
 
+search_app = tyro.extras.SubcommandApp()
 
-def _build_search_command(entry: SearchAlgorithmEntry) -> click.Command:
-    component_dec = heuristic_options if entry.component_kind == "heuristic" else qfunction_options
-    search_dec = search_options(variant="beam") if entry.is_beam else search_options
 
-    def inner(**kwargs):
+def _build_search_command(entry: SearchAlgorithmEntry):
+    schema = HeuristicSearchArgs if entry.component_kind == "heuristic" else QFunctionSearchArgs
+
+    def run(options):
+        kwargs = resolve_puzzle(asdict(options))
+        kwargs = resolve_search(kwargs, variant="beam" if entry.is_beam else "default")
+        resolver = resolve_heuristic if entry.component_kind == "heuristic" else resolve_qfunction
+        kwargs = resolve_visualize(resolver(kwargs))
         component = kwargs[entry.component_kind]
         if entry.component_kind == "heuristic":
             dist_fn = component.distance
@@ -48,18 +52,17 @@ def _build_search_command(entry: SearchAlgorithmEntry) -> click.Command:
             entry.search_title,
         )
 
-    inner = visualize_options(inner)
-    inner = component_dec(inner)
-    inner = search_dec(inner)
-    inner = puzzle_options(inner)
-    return click.command(name=entry.cli_subcommand)(inner)
+    run.__annotations__ = {"options": schema}
+    run.__name__ = entry.python_id
+    run.__doc__ = entry.search_title
+    search_app.command(run, name=entry.cli_subcommand)
+    return partial(run_cli, partial(tyro.cli, run), prog=entry.cli_subcommand)
 
 
 _SEARCH_COMMANDS_BY_ID = {
     entry.python_id: _build_search_command(entry) for entry in SEARCH_ALGORITHM_CATALOG
 }
 globals().update(_SEARCH_COMMANDS_BY_ID)
-SEARCH_COMMANDS: tuple[click.Command, ...] = tuple(_SEARCH_COMMANDS_BY_ID.values())
+SEARCH_COMMANDS = tuple(_SEARCH_COMMANDS_BY_ID.values())
 
-
-__all__ = ["SEARCH_COMMANDS", *_SEARCH_COMMANDS_BY_ID]
+__all__ = ["SEARCH_COMMANDS", "search_app", *_SEARCH_COMMANDS_BY_ID]

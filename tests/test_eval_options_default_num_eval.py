@@ -1,12 +1,7 @@
 from types import SimpleNamespace
 
-from cli.options import eval_options
+from cli.options import resolve_eval
 from config.pydantic_models import EvalOptions
-
-
-@eval_options
-def _capture_eval_options(**kwargs):
-    return kwargs["eval_options"]
 
 
 def _invoke_eval_options(
@@ -31,7 +26,7 @@ def _invoke_eval_options(
     }
     if benchmark is not None:
         kwargs["benchmark"] = benchmark
-    return _capture_eval_options(**kwargs)
+    return resolve_eval(kwargs)["eval_options"]
 
 
 def test_eval_options_defaults_to_200_without_benchmark():

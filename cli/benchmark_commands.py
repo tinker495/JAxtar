@@ -1,15 +1,10 @@
-"""Benchmark commands generated from the Search Algorithm Catalog.
+"""Tyro benchmark commands for exact datasets and generated workloads."""
 
-Each algorithm accepts either an exact ``--benchmark`` dataset or a generated
-``--puzzle`` workload when no exact dataset exists.
-"""
-
-from __future__ import annotations
-
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-import click
+import tyro
 from rich.console import Console
 
 from config.algorithm_registry import SEARCH_ALGORITHM_CATALOG, SearchAlgorithmEntry
@@ -17,26 +12,31 @@ from config.algorithm_registry import SEARCH_ALGORITHM_CATALOG, SearchAlgorithmE
 from .comparison_generator import ComparisonGenerator
 from .evaluation_runner import run_evaluation_sweep
 from .options import (
-    benchmark_options,
-    eval_options,
-    heuristic_options,
-    qfunction_options,
+    HeuristicBenchmarkArgs,
+    QFunctionBenchmarkArgs,
+    resolve_benchmark,
+    resolve_eval,
+    resolve_heuristic,
+    resolve_qfunction,
 )
+from .runtime import run_cli
 
-benchmark = click.Group(
-    name="benchmark",
-    help="Benchmark search strategies with exact or generated workloads.",
-)
+benchmark_app = tyro.extras.SubcommandApp()
 
 
-def _build_benchmark_command(entry: SearchAlgorithmEntry) -> click.Command:
-    component_dec = heuristic_options if entry.component_kind == "heuristic" else qfunction_options
-    eval_dec = eval_options(variant="beam") if entry.is_beam else eval_options
+def _build_benchmark_command(entry: SearchAlgorithmEntry):
+    schema = (
+        HeuristicBenchmarkArgs if entry.component_kind == "heuristic" else QFunctionBenchmarkArgs
+    )
     extra_sweep_kwargs = (
         {"node_metric_label": entry.node_metric_label} if entry.node_metric_label else {}
     )
 
-    def inner(**kwargs):
+    def run(options):
+        kwargs = resolve_benchmark(asdict(options))
+        kwargs = resolve_eval(kwargs, variant="beam" if entry.is_beam else "default")
+        resolver = resolve_heuristic if entry.component_kind == "heuristic" else resolve_qfunction
+        kwargs = resolver(kwargs)
         run_evaluation_sweep(
             puzzle=kwargs["puzzle"],
             puzzle_name=kwargs["puzzle_name"],
@@ -54,44 +54,32 @@ def _build_benchmark_command(entry: SearchAlgorithmEntry) -> click.Command:
             **extra_sweep_kwargs,
         )
 
-    inner.__doc__ = entry.eval_description
-    inner = click.option(
-        "--output-dir",
-        type=click.Path(path_type=Path),
-        default=None,
-        help="Directory to store run artifacts (defaults to runs/<timestamp>).",
-    )(inner)
-    inner = component_dec(inner)
-    inner = eval_dec(inner)
-    inner = benchmark_options(inner)
-    return click.command(name=entry.cli_subcommand, help=entry.eval_description)(inner)
+    run.__annotations__ = {"options": schema}
+    run.__name__ = entry.python_id
+    run.__doc__ = entry.eval_description
+    benchmark_app.command(run, name=entry.cli_subcommand)
 
 
 for _entry in SEARCH_ALGORITHM_CATALOG:
-    benchmark.add_command(_build_benchmark_command(_entry))
+    _build_benchmark_command(_entry)
 
 
-@benchmark.command(name="compare")
-@click.argument(
-    "run_dirs",
-    nargs=-1,
-    required=True,
-    type=click.Path(exists=True, file_okay=False),
-)
-@click.option(
-    "--scatter-max-points",
-    type=int,
-    default=2000,
-    help="Maximum number of points to display on scatter plots.",
-)
-def benchmark_compare(run_dirs: list[str], scatter_max_points: int):
+@benchmark_app.command(name="compare")
+def benchmark_compare(
+    run_dirs: tyro.conf.Positional[tuple[Path, ...]], scatter_max_points: int = 2000
+):
     """Compare multiple benchmark runs."""
+    if not run_dirs:
+        raise ValueError("At least one run directory is required.")
+    for directory in run_dirs:
+        if not directory.is_dir():
+            raise ValueError(f"Run directory does not exist: {directory}")
     console = Console()
     actual_run_dirs = []
     for run_dir_str in run_dirs:
         run_dir = Path(run_dir_str)
         if (run_dir / "results.csv").exists():
-            actual_run_dirs.append(run_dir_str)
+            actual_run_dirs.append(str(run_dir_str))
             continue
         sub_dirs_found = [
             str(sub_dir)
@@ -127,4 +115,13 @@ def benchmark_compare(run_dirs: list[str], scatter_max_points: int):
     console.print(f"Comparison report saved in [bold]{output_dir}[/bold]")
 
 
-__all__ = ["benchmark"]
+def benchmark(args=None):
+    return run_cli(
+        benchmark_app.cli,
+        args,
+        prog="benchmark",
+        description="Benchmark search strategies with exact or generated workloads.",
+    )
+
+
+__all__ = ["benchmark", "benchmark_app"]

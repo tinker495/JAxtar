@@ -1,37 +1,20 @@
-import click
 import numpy as np
 from rich.text import Text
 
 
-class HumanIntParamType(click.ParamType):
-    name = "human_int"
-
-    def convert(self, value, param, ctx):
-        if isinstance(value, int):
-            return value
-        try:
-            return int(human_format_to_float(str(value)))
-        except (ValueError, TypeError):
-            self.fail(f"{value} is not a valid human-formatted integer", param, ctx)
-
-
-class HumanFloatParamType(click.ParamType):
-    name = "human_float"
-
-    def convert(self, value, param, ctx):
-        if isinstance(value, float):
-            return value
-        try:
-            return human_format_to_float(str(value))
-        except (ValueError, TypeError):
-            self.fail(f"{value} is not a valid human-formatted float", param, ctx)
-
-
-HUMAN_INT = HumanIntParamType()
-HUMAN_FLOAT = HumanFloatParamType()
+def parse_human_int(value: str | int) -> int:
+    """Parse integers with the CLI's suffix and power notation."""
+    if isinstance(value, int):
+        return value
+    try:
+        return int(human_format_to_float(str(value)))
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise ValueError(f"{value!r} is not a valid human-formatted integer") from exc
 
 
 def human_format_to_float(num_str):
+    if isinstance(num_str, (int, float)):
+        return float(num_str)
     num_str = num_str.upper()  # convert to uppercase
     if "^" in num_str:
         parts = num_str.split("^")

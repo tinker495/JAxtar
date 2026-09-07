@@ -15,7 +15,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "aqtp",
     "chex",
-    "click",
+    "tyro>=1.0.16,<2",
     "dm-haiku",
     "dm-pix",
     "flax",
@@ -27,11 +27,11 @@ dependencies = [
     "opencv-python-headless",
     "optax",
     "pandas",
-    "puxle",
+    "puxle @ git+https://github.com/tinker495/PuXle.git",
     "pydantic",
     "rich",
     "seaborn",
-    "xtructure",
+    "xtructure @ git+https://github.com/tinker495/xtructure.git",
 ]
 
 [project.urls]
@@ -89,7 +89,6 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 
 [tool.uv]
-override-dependencies = ["xtructure"]
 conflicts = [
     [
         { extra = "gpu" },
@@ -100,7 +99,3 @@ conflicts = [
         { extra = "tpu" },
     ],
 ]
-
-[tool.uv.sources]
-puxle = { git = "https://github.com/tinker495/PuXle.git"}
-xtructure = { git = "https://github.com/tinker495/Xtructure.git"}

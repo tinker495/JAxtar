@@ -1,10 +1,7 @@
-from click.testing import CliRunner
-
 from cli.main import cli
 
 
 def test_search_commands_smoke_executes_without_error():
-    runner = CliRunner()
     base_args = [
         "--puzzle",
         "n-puzzle",
@@ -33,7 +30,4 @@ def test_search_commands_smoke_executes_without_error():
     ]
 
     for command in commands:
-        result = runner.invoke(cli, ["test", command] + base_args)
-        assert result.exit_code == 0, result.output
-        assert result.exception is None
-        assert "Traceback (most recent call last)" not in result.output
+        assert cli(args=["test", command] + base_args) is None

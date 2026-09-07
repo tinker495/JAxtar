@@ -1,12 +1,11 @@
 from types import SimpleNamespace
 
 import pytest
-from click.testing import CliRunner
 
 import heuristic.neuralheuristic.target_dataset_builder as heuristic_builder
 import qfunction.neuralq.target_dataset_builder as qfunction_builder
-from cli.options import dist_train_options
-from cli.train_commands.dist_train_command import heuristic_train_command
+from cli.options import resolve_train
+from cli.train_commands import heuristic_train_command
 
 
 class _Puzzle:
@@ -60,22 +59,22 @@ def test_training_labels_route_and_validate(monkeypatch):
 
 @pytest.mark.parametrize(("override", "expected"), [(None, "diffusion"), ("td", "td")])
 def test_cli_label_overrides_preset_only_when_provided(override, expected):
-    def command(**kwargs):
-        return kwargs["train_options"]
-
-    wrapped = dist_train_options(preset_category="heuristic_train")(command)
-    options = wrapped(
-        puzzle_bundle=SimpleNamespace(k_max=1),
-        k_max=None,
-        preset="diffusion_distance",
-        label=override,
-    )
+    options = resolve_train(
+        {
+            "puzzle_bundle": SimpleNamespace(k_max=1),
+            "k_max": None,
+            "preset": "diffusion_distance",
+            "label": override,
+        },
+        preset_category="heuristic_train",
+    )["train_options"]
 
     assert options.label == expected
 
 
-def test_training_label_help_shows_effective_default():
-    result = CliRunner().invoke(heuristic_train_command, ["--help"])
+def test_training_label_help_shows_effective_default(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        heuristic_train_command(args=["--help"])
 
-    assert result.exit_code == 0, result.output
-    assert "Default: 'td'." in " ".join(result.output.split())
+    assert exc_info.value.code == 0
+    assert "Default: 'td'." in " ".join(capsys.readouterr().out.split())

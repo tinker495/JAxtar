@@ -48,7 +48,7 @@ To address these challenges, I decided to develop code based on the following pr
 
 This project features specially written components, including:
 
-- [`Xtructure`](https://github.com/tinker495/Xtructure): A pip package providing JAX-compatible hash and priority queue implementations, originally developed as part of this project and later separated. This package includes:
+- [`Xtructure`](https://github.com/tinker495/Xtructure): A library providing JAX-compatible hash and priority queue implementations, originally developed as part of this project and later separated. This package includes:
   - a hashtable for parallel lookup and insertion operations
   - a priority queue that supports batching, push, and pop operations
 - [`PuXle`](https://github.com/tinker495/PuXle): All puzzle implementations have been moved to this separate high-performance library for parallelized puzzle environments built on JAX
@@ -60,11 +60,24 @@ This project was quite challenging to develop, and it felt like performing acrob
 
 ## Installation
 
-JAxtar uses `pyproject.toml` for installation and command registration. PuXle and Xtructure are
-installed from the pinned Git revisions in `tool.uv.sources`. From the JAxtar repository:
+Add JAxtar directly from GitHub to another uv project:
 
 ```bash
+uv add "jaxtar @ git+https://github.com/tinker495/JAxtar.git"
+```
+
+For development or to use the checkout-only CLI, clone the repository and sync its environment:
+
+```bash
+git clone https://github.com/tinker495/JAxtar.git
+cd JAxtar
 uv sync --extra gpu
+```
+
+JAxtar uses `pyproject.toml` for installation and command registration. PuXle and Xtructure are
+declared as Git dependencies and resolved to the revisions in `uv.lock`. From the synced checkout:
+
+```bash
 uv run jaxtar --help
 uv run jaxtar test --help
 uv run astar_d --help
@@ -85,6 +98,11 @@ installed by default. The `train` extra adds the GPU runtime and all logging bac
 conflicts with `tpu`.
 
 ## Usage and Documentation
+
+The CLI uses **tyro** with typed options. Existing flat flags, short aliases, and
+`10M` / `2^20` numeric notation are supported. Both `--batch-size` and
+`--batch_size` work. Use `--help` for help; `-h` retains its `--hard` meaning.
+Omitted options inherit puzzle and training preset defaults.
 
 For detailed information on all available commands and their options, please refer to the official documentation.
 

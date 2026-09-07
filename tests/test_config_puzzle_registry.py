@@ -40,8 +40,6 @@ def test_world_model_bundle_exists_for_optimized_sokoban():
 
 
 def test_only_explicit_puzzle_args_reach_puzzle_constructor(monkeypatch):
-    from click.testing import CliRunner
-
     from cli.main import cli
 
     constructed_with = []
@@ -65,33 +63,32 @@ def test_only_explicit_puzzle_args_reach_puzzle_constructor(monkeypatch):
     monkeypatch.setattr(bundle, "heuristic", FakeHeuristic)
     monkeypatch.setattr("cli.commands.run_search_command", lambda *_args: None)
 
-    result = CliRunner().invoke(
-        cli,
-        [
-            "test",
-            "astar-d",
-            "-p",
-            "n-puzzle",
-            "--puzzle_args",
-            '{"size": 2}',
-            "--seeds",
-            "7",
-            "--batch_size",
-            "16",
-            "--max_node_size",
-            "64",
-        ],
+    assert (
+        cli(
+            args=[
+                "test",
+                "astar-d",
+                "-p",
+                "n-puzzle",
+                "--puzzle_args",
+                '{"size": 2}',
+                "--seeds",
+                "7",
+                "--batch_size",
+                "16",
+                "--max_node_size",
+                "64",
+            ]
+        )
+        is None
     )
 
-    assert result.exit_code == 0, result.output
     assert constructed_with == [{"size": 2}]
 
 
 def test_neural_heuristic_flag_does_not_change_world_model_puzzle_serving(
     monkeypatch,
 ):
-    from click.testing import CliRunner
-
     from cli.main import cli
     from config.pydantic_models import NeuralCallableConfig
     from puxle.world_model import RubiksCubeWorldModel_test
@@ -125,27 +122,23 @@ def test_neural_heuristic_flag_does_not_change_world_model_puzzle_serving(
     )
     monkeypatch.setattr("cli.commands.run_search_command", lambda *args: searches.append(args))
 
-    runner = CliRunner()
-    without_nn = runner.invoke(
-        cli,
-        ["test", "astar-d", "-p", "rubikscube_world_model_test"],
-    )
-    with_nn = runner.invoke(
-        cli,
-        [
-            "test",
-            "astar-d",
-            "-p",
-            "rubikscube_world_model_test",
-            "-nn",
-            "-q",
-            "--quant-type",
-            "int4",
-        ],
+    assert cli(args=["test", "astar-d", "-p", "rubikscube_world_model_test"]) is None
+    assert (
+        cli(
+            args=[
+                "test",
+                "astar-d",
+                "-p",
+                "rubikscube_world_model_test",
+                "-nn",
+                "-q",
+                "--quant-type",
+                "int4",
+            ]
+        )
+        is None
     )
 
-    assert without_nn.exit_code == 0, without_nn.output
-    assert with_nn.exit_code == 0, with_nn.output
     assert [kwargs["aqt_cfg"] for _, kwargs in constructed] == ["int8", "int8"]
     assert [kwargs["init_params"] for _, kwargs in constructed] == [False, False]
     assert searches[0][0] is constructed[0][0]

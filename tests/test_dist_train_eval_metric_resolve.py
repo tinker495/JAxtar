@@ -1,4 +1,4 @@
-import click
+import pytest
 
 from cli.train_commands.train_session import resolve_eval_search_entry
 from config.pydantic_models import DistTrainOptions
@@ -33,12 +33,8 @@ def test_resolve_eval_metric_supports_bidirectional_q_variant():
 
 
 def test_resolve_eval_metric_rejects_invalid_cross_family_metric():
-    try:
+    with pytest.raises(ValueError, match="Invalid --eval-search-metric"):
         resolve_eval_search_entry(
             train_options=DistTrainOptions(eval_search_metric="bi_qstar"),
             search_model_name="heuristic",
         )
-    except click.UsageError as exc:
-        assert "Invalid --eval-search-metric" in str(exc)
-    else:
-        raise AssertionError("Expected click.UsageError for invalid heuristic eval metric")

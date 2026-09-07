@@ -9,7 +9,6 @@ eval sweeps, TrainLogInfo emission and final checkpointing.
 import os
 from pathlib import Path
 
-import click
 import jax
 import numpy as np
 from puxle import Puzzle
@@ -34,7 +33,7 @@ def resolve_eval_context(
 
     benchmark_bundle = benchmark_bundles.get(eval_benchmark)
     if benchmark_bundle is None:
-        raise click.UsageError(
+        raise ValueError(
             f"Eval benchmark '{eval_benchmark}' is not registered for puzzle '{puzzle_name}'."
         )
 
@@ -71,14 +70,14 @@ def resolve_eval_search_entry(
         metric = metric or "qstar"
         expected_component = "qfunction"
     else:
-        raise click.UsageError(f"Unknown search model name '{search_model_name}'.")
+        raise ValueError(f"Unknown search model name '{search_model_name}'.")
 
     try:
         resolution = resolve_algorithm_for_component(metric, expected_component)
     except KeyError as exc:
-        raise click.UsageError(f"Invalid --eval-search-metric '{metric}'.") from exc
+        raise ValueError(f"Invalid --eval-search-metric '{metric}'.") from exc
     except ValueError as exc:
-        raise click.UsageError(
+        raise ValueError(
             f"Invalid --eval-search-metric '{metric}' for {search_model_name} training."
         ) from exc
 

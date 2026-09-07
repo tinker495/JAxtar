@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 
-from click.testing import CliRunner
+import pytest
 
 OPTIONAL_STACK = {
     "aim",
@@ -28,12 +28,14 @@ def _purge_modules(monkeypatch, *module_prefixes: str) -> None:
             monkeypatch.delitem(sys.modules, module_name, raising=False)
 
 
-def test_base_cli_help_does_not_import_logging_backends(monkeypatch):
+def test_base_cli_help_does_not_import_logging_backends(monkeypatch, capsys):
     _purge_modules(
         monkeypatch,
         "cli.main",
         "cli.benchmark_commands",
         "cli.evaluation_runner",
+        "cli.train_commands",
+        "cli.train_commands.dist_train_command",
         "helpers.logger",
     )
     monkeypatch.delenv("TF_CPP_MIN_LOG_LEVEL", raising=False)
@@ -42,16 +44,28 @@ def test_base_cli_help_does_not_import_logging_backends(monkeypatch):
     try:
         from cli.main import cli
 
-        result = CliRunner().invoke(cli, ["--help"])
+        with pytest.raises(SystemExit) as exc_info:
+            cli(args=["--help"])
+        assert exc_info.value.code == 0
+        base_output = capsys.readouterr().out
+
+        for args in (
+            ["distance-train", "heuristic", "--help"],
+            ["distance-train", "qfunction", "--help"],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                cli(args=args)
+            assert exc_info.value.code == 0
     finally:
         sys.meta_path = [
             finder for finder in sys.meta_path if not isinstance(finder, _BlockOptionalStack)
         ]
 
-    assert result.exit_code == 0, result.output
-    assert "benchmark" in result.output
-    assert "eval" not in result.output
+    capsys.readouterr()
+    assert "benchmark" in base_output
+    assert "eval" not in base_output
     assert "TF_CPP_MIN_LOG_LEVEL" not in os.environ
+    assert "cli.train_commands.dist_train_command" not in sys.modules
 
 
 def test_noop_logger_does_not_import_logging_backends(monkeypatch, tmp_path):

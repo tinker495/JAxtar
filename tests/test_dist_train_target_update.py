@@ -224,7 +224,7 @@ def test_update_interval_scales_with_multi_device():
 
 
 def test_training_component_options_preserve_startup_initialization_choice():
-    from cli.options import dist_heuristic_options, dist_qfunction_options
+    from cli.options import resolve_train_heuristic, resolve_train_qfunction
     from config.pydantic_models import DistTrainOptions
 
     constructed = []
@@ -251,7 +251,7 @@ def test_training_component_options_preserve_startup_initialization_choice():
         "quant_type": "int8",
     }
 
-    for decorator in (dist_heuristic_options, dist_qfunction_options):
-        decorator(lambda **kwargs: kwargs)(**common_kwargs)
+    for resolver in (resolve_train_heuristic, resolve_train_qfunction):
+        resolver(dict(common_kwargs))
 
     assert [kwargs["init_params"] for kwargs in constructed] == [False, False]
