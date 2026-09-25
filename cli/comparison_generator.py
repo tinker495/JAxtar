@@ -42,14 +42,14 @@ class ComparisonGenerator:
             results_path = run_dir / "results.csv"
             if not results_path.exists():
                 self.console.print(
-                    f"[bold red]Warning: Cannot find results.csv in {run_dir_str}. Skipping.[/bold red]"
+                    f"[yellow]Warning: Cannot find results.csv in {run_dir_str}. Skipping.[/yellow]"
                 )
                 continue
 
             config_path = run_dir / "config.json"
             if not config_path.exists():
                 self.console.print(
-                    f"[bold red]Warning: Cannot find config.json in {run_dir_str}. Skipping.[/bold red]"
+                    f"[yellow]Warning: Cannot find config.json in {run_dir_str}. Skipping.[/yellow]"
                 )
                 continue
 

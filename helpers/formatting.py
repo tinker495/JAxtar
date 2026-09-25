@@ -37,6 +37,8 @@ def human_format(num):
     if not np.isfinite(num_float):
         return str(num_float)
 
+    # Round before picking the suffix so 999,999 prints as "1M", not "1e+03K".
+    num_float = float(f"{num_float:.3g}")
     suffixes = ["", "K", "M", "B", "T"]
     magnitude = 0
 
