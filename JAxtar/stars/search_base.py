@@ -936,8 +936,12 @@ class SearchResult:
             final_dists,
             unique_indices=True,
         )
-        search_result.parent = search_result.parent.at[hash_idx.index].set_as_condition(
-            final_process_mask, final_parents
+        search_result.parent = xnp.update_on_condition(
+            search_result.parent,
+            hash_idx.index,
+            final_process_mask,
+            final_parents,
+            unique_indices=True,
         )
         search_result.pop_generation = xnp.update_on_condition(
             search_result.pop_generation,
