@@ -63,7 +63,6 @@ def insert_priority_queue_batches(
     *,
     presorted: bool = False,
     prefix_rows: bool = False,
-    slim_carry: bool = False,
 ) -> "SearchResult":
     """Insert action-major candidate batches into the priority queue.
 
@@ -72,15 +71,10 @@ def insert_priority_queue_batches(
     ``presorted`` skips BGPQ's per-row sort when the flattened candidate set
     was already sorted before being split into rows.
     ``prefix_rows`` is the caller's promise that the selected entries occupy a
-    prefix of the flattened batch (eager A* partitions candidates that way), so
-    the rows with work are the first ``ceil(count / row_width)``. They are
-    inserted by a bounded while_loop: one host predicate readback per inserted
-    row instead of a lax.cond readback for every row.
-    ``slim_carry`` carries only the priority queue through that while_loop.
-    Measured (BAAB, RTX 4080 SUPER): with eager A* (``Current`` PQ) the slim
-    carry avoids XLA's pass-through copies of the PQ store (K1 −4%), while for
-    the deferred store (``Parant_with_Costs``) it makes XLA copy the 220 MB
-    store in and out of the loop instead (qstar +5.5%) — so the caller picks.
+    prefix of the flattened batch (eager A* partitions candidates that way, Q*
+    sorts them globally), so the rows with work are the first
+    ``ceil(count / row_width)``. They go through BGPQ's multi-row insert, which
+    sinks all rows in one batched wavefront instead of one full insert per row.
     """
 
     def _insert(sr: "SearchResult", key_row, val_row):
@@ -103,32 +97,9 @@ def insert_priority_queue_batches(
     if prefix_rows:
         row_width = keys.shape[1]
         n_rows = (jnp.sum(masks, dtype=jnp.int32) + row_width - 1) // row_width
-
-        def _row_cond(carry):
-            j, _ = carry
-            return j < n_rows
-
-        if slim_carry:
-
-            def _pq_body(carry):
-                j, pq = carry
-                insert = pq.insert_sorted if presorted else pq.insert
-                return j + 1, insert(keys[j], vals[j])
-
-            _, search_result.priority_queue = jax.lax.while_loop(
-                _row_cond,
-                _pq_body,
-                (jnp.array(0, dtype=jnp.int32), search_result.priority_queue),
-            )
-        else:
-
-            def _sr_body(carry):
-                j, sr = carry
-                return j + 1, _insert(sr, keys[j], vals[j])
-
-            _, search_result = jax.lax.while_loop(
-                _row_cond, _sr_body, (jnp.array(0, dtype=jnp.int32), search_result)
-            )
+        pq = search_result.priority_queue
+        insert_rows = pq.insert_sorted_rows if presorted else pq.insert_rows
+        search_result.priority_queue = insert_rows(keys, vals, n_rows)
     else:
         search_result, _ = jax.lax.scan(_scan, search_result, (keys, vals, masks))
 
@@ -965,8 +936,12 @@ class SearchResult:
             final_dists,
             unique_indices=True,
         )
-        search_result.parent = search_result.parent.at[hash_idx.index].set_as_condition(
-            final_process_mask, final_parents
+        search_result.parent = xnp.update_on_condition(
+            search_result.parent,
+            hash_idx.index,
+            final_process_mask,
+            final_parents,
+            unique_indices=True,
         )
         search_result.pop_generation = xnp.update_on_condition(
             search_result.pop_generation,
@@ -1295,7 +1270,7 @@ def build_deferred_loop_body(
         optimal_mask_out = optimal_mask_sorted.reshape(action_size, sr_batch_size)
 
         # The global sort put every finite key first, so the rows holding
-        # candidates are a prefix: bounded while instead of a lax.cond per row.
+        # candidates are a prefix: one multi-row insert of those rows.
         search_result = insert_priority_queue_batches(
             search_result,
             neighbour_keys_out,
