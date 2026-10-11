@@ -45,6 +45,9 @@ SEARCH_COMPILER_OPTIONS = {
     "xla_gpu_enable_command_buffer": (
         "FUSION,CUBLAS,CUBLASLT,CUSTOM_CALL,CUDNN,DYNAMIC_SLICE_FUSION,CONDITIONAL,WHILE"
     ),
+    # XLA 91888df drops the async-done join of these copy fusions at command-buffer
+    # boundaries (fixed upstream in openxla/xla bb767807); keep the copies synchronous.
+    "xla_disable_hlo_passes": "dynamic-slice-copy-fusion-async-wrapper",
 }
 
 
