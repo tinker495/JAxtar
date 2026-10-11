@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Any, Callable
 
@@ -45,10 +46,27 @@ SEARCH_COMPILER_OPTIONS = {
     "xla_gpu_enable_command_buffer": (
         "FUSION,CUBLAS,CUBLASLT,CUSTOM_CALL,CUDNN,DYNAMIC_SLICE_FUSION,CONDITIONAL,WHILE"
     ),
-    # XLA 91888df drops the async-done join of these copy fusions at command-buffer
-    # boundaries (fixed upstream in openxla/xla bb767807); keep the copies synchronous.
-    "xla_disable_hlo_passes": "dynamic-slice-copy-fusion-async-wrapper",
 }
+
+
+def _search_compiler_options() -> dict[str, Any]:
+    # A per-jit option replaces xla_disable_hlo_passes instead of extending it, so carry over the
+    # passes already disabled via XLA_FLAGS or by JAX (jax_compiler_enable_remat_pass=False).
+    disabled = [
+        name
+        for value in re.findall(r"--xla_disable_hlo_passes=(\S+)", os.environ.get("XLA_FLAGS", ""))
+        for name in value.split(",")
+        if name
+    ]
+    if not jax.config.jax_compiler_enable_remat_pass:
+        disabled.append("rematerialization")
+    # XLA 91888df drops the async-done join of these copy fusions at command-buffer boundaries
+    # (fixed upstream in openxla/xla bb767807); keep the copies synchronous.
+    disabled.append("dynamic-slice-copy-fusion-async-wrapper")
+    return {
+        **SEARCH_COMPILER_OPTIONS,
+        "xla_disable_hlo_passes": ",".join(dict.fromkeys(disabled)),
+    }
 
 
 def compile_search_builder(
@@ -57,7 +75,7 @@ def compile_search_builder(
     show_compile_time: bool = False,
     warmup_inputs=None,
 ):
-    fn = jax.jit(fn, compiler_options=SEARCH_COMPILER_OPTIONS)
+    fn = jax.jit(fn, compiler_options=_search_compiler_options())
     if show_compile_time:
         print("initializing jit")
         start = time.time()
