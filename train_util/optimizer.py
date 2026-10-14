@@ -136,10 +136,11 @@ def setup_optimizer(
     return optimizer, opt_state
 
 
-def get_learning_rate(optimizer_state: optax.OptState):
+@jax.jit
+def get_learning_rate(optimizer_state: optax.InjectStatefulHyperparamsState):
     estim_lr = optax.tree_utils.tree_get(optimizer_state, "estim_lr")
     if estim_lr is not None:
-        return float(estim_lr)
+        return estim_lr
     return optimizer_state.hyperparams["learning_rate"]
 
 

@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from puxle import Puzzle
 
 from config.pydantic_models import DistTrainOptions, PuzzleOptions
@@ -17,7 +18,8 @@ from heuristic.neuralheuristic.target_dataset_builder import (
 )
 from qfunction.neuralq.neuralq_base import NeuralQFunctionBase
 from qfunction.neuralq.target_dataset_builder import get_qfunction_dataset_builder
-from train_util.distance_train_builder import distance_train_builder, target_online_gap
+from train_util.distance_train_builder import distance_train_builder
+from train_util.distance_train_builder import target_online_gap as _target_online_gap
 from train_util.optimizer import get_learning_rate
 from train_util.train_logs import TrainLogInfo
 from train_util.train_state import hard_update_target, soft_update_target
@@ -26,11 +28,13 @@ from ..config_utils import enrich_config
 from .train_session import (
     finalize_training,
     init_train_key,
-    log_train_leaves,
     resolve_eval_context,
     run_training_eval,
     setup_train_state,
 )
+
+# Compile the host-side diagnostic without changing the training graph.
+target_online_gap = jax.jit(_target_online_gap)
 
 
 def _should_update_hard_target(
@@ -59,32 +63,57 @@ def _soft_update_tau(update_interval: int, *, n_devices: int) -> float:
     return 1.0 - (1.0 - 1.0 / update_interval) ** n_devices
 
 
-def _find_log_data(log_infos, name: str):
-    for log_info in jax.tree_util.tree_leaves(
-        log_infos, is_leaf=lambda value: isinstance(value, TrainLogInfo)
-    ):
-        if isinstance(log_info, TrainLogInfo) and log_info.name == name:
-            return log_info.data
-    return None
-
-
-def _log_distance_diagnostics(logger, diagnostics, log_infos, step: int) -> None:
-    for name, value in diagnostics["scalars"].items():
-        logger.log_scalar(name, value, step)
-
-    if step % 100 == 0:
-        for name, values in diagnostics["histograms"].items():
-            logger.log_histogram(name, values, step)
-
-    td_error = _find_log_data(log_infos, "Losses/diff")
+@jax.jit
+def _distance_scalars(
+    log_info_leaves: list[TrainLogInfo], target: jax.Array
+) -> tuple[dict[str, jax.Array], tuple[jax.Array, ...]]:
+    scalars = {
+        "Metrics/Mean Target": jnp.mean(target),
+        "Metrics/Target Std": jnp.std(target),
+        "Metrics/Target P95": jnp.percentile(target, 95),
+    }
+    td_error = next((info.data for info in log_info_leaves if info.name == "Losses/diff"), None)
     if td_error is not None:
-        logger.log_scalar("Metrics/TD Error RMS", jnp.sqrt(jnp.mean(jnp.square(td_error))), step)
-        logger.log_scalar("Metrics/TD Error P95", jnp.percentile(jnp.abs(td_error), 95), step)
-
-    prediction = _find_log_data(log_infos, "Metrics/pred")
+        scalars["Metrics/TD Error RMS"] = jnp.sqrt(jnp.mean(jnp.square(td_error)))
+        scalars["Metrics/TD Error P95"] = jnp.percentile(jnp.abs(td_error), 95)
+    prediction = next((info.data for info in log_info_leaves if info.name == "Metrics/pred"), None)
     if prediction is not None:
-        logger.log_scalar("Metrics/Prediction Std", jnp.std(prediction), step)
-        logger.log_scalar("Metrics/Prediction P95", jnp.percentile(prediction, 95), step)
+        scalars["Metrics/Prediction Std"] = jnp.std(prediction)
+        scalars["Metrics/Prediction P95"] = jnp.percentile(prediction, 95)
+    return scalars, tuple(info.mean for info in log_info_leaves if info.log_mean)
+
+
+@jax.jit
+def _pack_scalar_values(groups: tuple[tuple[jax.Array, ...], ...]) -> tuple[jax.Array, ...]:
+    return tuple(jnp.stack(values) for values in groups)
+
+
+def _get_scalar_values(
+    values: tuple[
+        jax.Array,
+        jax.Array,
+        dict[str, jax.Array],
+        dict[str, jax.Array],
+        tuple[jax.Array, ...],
+    ],
+) -> tuple[
+    np.ndarray, np.ndarray, dict[str, np.ndarray], dict[str, np.ndarray], tuple[np.ndarray, ...]
+]:
+    leaves, structure = jax.tree.flatten(values)
+    groups: dict[np.dtype, list[int]] = {}
+    for index, leaf in enumerate(leaves):
+        if leaf.shape != ():
+            raise ValueError(f"Expected a scalar at logging boundary, got {leaf.shape}")
+        groups.setdefault(np.dtype(leaf.dtype), []).append(index)
+    # Keep integer diagnostics exact and enqueue every dtype group before transferring.
+    host_vectors = jax.device_get(
+        _pack_scalar_values(tuple(tuple(leaves[index] for index in ids) for ids in groups.values()))
+    )
+    host_leaves: dict[int, np.ndarray] = {}
+    for vector, indices in zip(host_vectors, groups.values(), strict=True):
+        for position, index in enumerate(indices):
+            host_leaves[index] = vector[position : position + 1].reshape(())
+    return structure.unflatten([host_leaves[index] for index in range(len(leaves))])
 
 
 def _run_distance_training(
@@ -237,36 +266,53 @@ def _run_distance_training(
         key, subkey = jax.random.split(key)
         dataset = get_datasets(state, subkey, i)
         target = dataset["distance"]
-        mean_target = jnp.mean(target)
         state, loss, log_infos, diagnostics = train_fn(key, dataset, state)
-        lr = get_learning_rate(state.opt_state)
-        log_info_leaves = log_train_leaves(logger, log_infos, i)
-        _log_distance_diagnostics(logger, diagnostics, log_infos, i)
+        log_info_leaves = jax.tree_util.tree_leaves(
+            log_infos, is_leaf=lambda value: isinstance(value, TrainLogInfo)
+        )
+        loss_value, lr, diagnostic_scalars, scalars, means = _get_scalar_values(
+            (
+                loss,
+                get_learning_rate(state.opt_state),
+                diagnostics["scalars"],
+                *_distance_scalars(log_info_leaves, target),
+            )
+        )
+        mean_log_infos = [info for info in log_info_leaves if info.log_mean]
+        for info, value in zip(mean_log_infos, means, strict=True):
+            logger.log_scalar(info.mean_name, float(value), i)
+        for name, value in diagnostic_scalars.items():
+            logger.log_scalar(name, float(value), i)
+        for name, value in scalars.items():
+            logger.log_scalar(name, float(value), i)
 
+        discription_logs = {"lr": lr}
         if include_loss_in_progress:
-            discription_logs = {
-                "lr": lr,
-                "loss": float(loss),
-                "target": float(mean_target),
-                **{v.short_name: float(v.mean) for v in log_info_leaves if v.log_mean},
+            discription_logs["loss"] = float(loss_value)
+        discription_logs.update(
+            {
+                "target": float(scalars["Metrics/Mean Target"]),
+                **{
+                    info.short_name: float(value)
+                    for info, value in zip(mean_log_infos, means, strict=True)
+                },
             }
-        else:
-            discription_logs = {
-                "lr": lr,
-                "target": float(mean_target),
-                **{v.short_name: float(v.mean) for v in log_info_leaves if v.log_mean},
-            }
+        )
         pbar.set_description(desc=progress_title, desc_dict=discription_logs)
 
-        logger.log_scalar("Metrics/Learning Rate", lr, i)
-        logger.log_scalar("Metrics/Mean Target", mean_target, i)
-        logger.log_scalar("Metrics/Target Std", jnp.std(target), i)
-        logger.log_scalar("Metrics/Target P95", jnp.percentile(target, 95), i)
+        logger.log_scalar("Metrics/Learning Rate", float(lr), i)
         if i % 100 == 0:
+            for v in log_info_leaves:
+                if v.log_histogram:
+                    logger.log_histogram(v.histogram_name, v.data, i)
+            for name, values in diagnostics["histograms"].items():
+                logger.log_histogram(name, values, i)
             logger.log_histogram("Metrics/Target", target, i)
 
+        target_updated = False
         if train_options.use_soft_update:
             state = soft_update_target(state, soft_update_tau)
+            target_updated = True
         elif _should_update_hard_target(
             iteration=i,
             last_update_iteration=last_update_iteration,
@@ -279,7 +325,17 @@ def _run_distance_training(
             if train_options.opt_state_reset:
                 state = state.replace(opt_state=optimizer.init(state.params))
             last_update_iteration = i
-        logger.log_scalar("Metrics/TD Target Online Gap After Update", target_online_gap(state), i)
+            target_updated = True
+        # Warm the diagnostic on iteration zero; unchanged targets reuse the existing gap.
+        logger.log_scalar(
+            "Metrics/TD Target Online Gap After Update",
+            float(
+                target_online_gap(state)
+                if target_updated or i == 0
+                else diagnostic_scalars["Metrics/TD Target Online Gap Before Update"]
+            ),
+            i,
+        )
 
         if train_options.eval_count > 0 and i % eval_interval == 0 and i != 0:
             search_model.params = state.get_full_eval_params()

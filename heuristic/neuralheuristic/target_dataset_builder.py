@@ -9,6 +9,14 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
+from neural_util.basemodel.hlgresmlp import HLGResMLPModel
+from neural_util.basemodel.resmlp import ResMLPModel
+from neural_util.modules import (
+    ACTIVATION_FN_REGISTRY,
+    DEFAULT_NORM_FN,
+    NORM_FN_REGISTRY,
+    RESBLOCK_REGISTRY,
+)
 from train_util.sampling import (
     compute_diffusion_targets,
     make_diffusion_step_selector,
@@ -22,10 +30,88 @@ from train_util.trajectory_dataset_adapter import (
 )
 
 
+def _infer_neighbor_heuristics(
+    model: DistanceModel | DistanceHLGModel,
+    inputs: jax.Array,
+    solve_configs: Xtructurable,
+    neighbors: Xtructurable,
+    SolveConfigsAndStates: type[Xtructurable],
+    infer: Callable,
+) -> tuple[None, jax.Array]:
+    # Custom modules and quantization can depend on other rows or rounding RNGs.
+    if not isinstance(model, (ResMLPModel, HLGResMLPModel)) or type(model) not in (
+        ResMLPModel,
+        HLGResMLPModel,
+    ):
+        return jax.lax.scan(infer, None, inputs)
+    if (
+        model.aqt_cfg is not None
+        or not any(
+            model.norm_fn is fn for fn in (None, DEFAULT_NORM_FN, *NORM_FN_REGISTRY.values())
+        )
+        or not any(model.activation is fn for fn in ACTIVATION_FN_REGISTRY.values())
+        or not any(model.resblock_fn is fn for fn in RESBLOCK_REGISTRY.values())
+    ):
+        return jax.lax.scan(infer, None, inputs)
+
+    actions, rows = inputs.shape[:2]
+    total = actions * rows
+    pairs = SolveConfigsAndStates(
+        solveconfigs=jax.tree.map(
+            lambda leaf: jnp.broadcast_to(leaf, (actions, *leaf.shape)).reshape(
+                (total, *leaf.shape[1:])
+            ),
+            solve_configs,
+        ),
+        states=neighbors.reshape((-1,)),
+    )
+    mask, indices, inverse = xnp.unique_mask(pairs, return_index=True, return_inverse=True)
+    count = jnp.sum(mask, dtype=jnp.int32)
+    keys = pairs.uint32ed
+    representatives = indices[jnp.clip(inverse, 0, total - 1)]
+    safe_representatives = jnp.clip(representatives, 0, total - 1)
+    flat_inputs = inputs.reshape((total, *inputs.shape[2:]))
+    comparison_inputs = flat_inputs.reshape((total, -1))
+    # Keep sub-byte rows byte-aligned only in the comparison copy.
+    comparison_inputs = jnp.pad(comparison_inputs, ((0, 0), (0, (-comparison_inputs.shape[1]) % 8)))
+    input_bytes = comparison_inputs.view(jnp.uint8)
+    # Custom preprocessing can give equal keys different input rows.
+    mapping_valid = (
+        (count >= 1)
+        & (count <= total)
+        & jnp.all(
+            (inverse >= 0) & (inverse < count) & (representatives >= 0) & (representatives < total)
+        )
+        & jnp.all(keys == keys[safe_representatives])
+        & jnp.all(input_bytes == input_bytes[safe_representatives])
+    )
+    identity = jnp.arange(total, dtype=jnp.int32)
+    count = jnp.where(mapping_valid, count, total)
+    indices = jnp.where(mapping_valid, indices, identity)
+    inverse = jnp.where(mapping_valid, inverse, identity)
+    prediction_spec = jax.eval_shape(infer, None, inputs[0])[1]
+
+    def condition(carry):
+        index, _ = carry
+        return index * rows < count
+
+    def body(carry):
+        index, result = carry
+        selected = jax.lax.dynamic_slice(indices, (index * rows,), (rows,))
+        _, prediction = infer(None, flat_inputs[jnp.clip(selected, 0, total - 1)])
+        result = jax.lax.dynamic_update_slice(result, prediction.reshape((rows,)), (index * rows,))
+        return index + 1, result
+
+    _, result = jax.lax.while_loop(
+        condition, body, (jnp.int32(0), jnp.zeros((total,), dtype=prediction_spec.dtype))
+    )
+    return None, result[inverse].reshape((actions, *prediction_spec.shape))
+
+
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStates: type[Xtructurable],
     heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
@@ -58,10 +144,13 @@ def _get_datasets(
             heur = heuristic_model.apply(target_heuristic_params, preproc_neighbor, training=False)
             return None, heur.squeeze()
 
-        _, heur = jax.lax.scan(
-            compute_heur_for_action,
-            None,
+        _, heur = _infer_neighbor_heuristics(
+            heuristic_model,
             preproc_neighbors,
+            solve_configs,
+            neighbors,
+            SolveConfigsAndStates,
+            compute_heur_for_action,
         )  # [action_size, batch_size]
         backup = heur + cost  # [action_size, batch_size]
         target_heuristic = jnp.min(jnp.maximum(backup, cost), axis=0)
@@ -115,7 +204,7 @@ def _compute_diffusion_distance(
     move_costs: chex.Array,
     action_costs: chex.Array,
     parent_indices: chex.Array,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStates: type[Xtructurable],
     k_max: int,
 ):
     raw_move_costs = move_costs.reshape((-1,))
@@ -147,7 +236,7 @@ def _compute_diffusion_distance(
 def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStates: type[Xtructurable],
     heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
