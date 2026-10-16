@@ -156,7 +156,8 @@ def build_bi_search_result(
     max_nodes: int,
     action_size: int,
     pop_ratio: float = jnp.inf,
-    min_pop: int = 1,
+    min_pop_forward: int = 1,
+    min_pop_backward: int = 1,
     parant_with_costs: bool = False,
     is_reversible: bool = False,
 ) -> BiDirectionalSearchResult:
@@ -174,7 +175,8 @@ def build_bi_search_result(
         max_nodes: Shared hash-table capacity (both directions share this budget)
         action_size: Number of actions
         pop_ratio: Controls beam width
-        min_pop: Minimum nodes to pop per batch
+        min_pop_forward: Minimum nodes to process per forward batch
+        min_pop_backward: Minimum nodes to process per backward batch
         parant_with_costs: Whether to use Parant_with_Costs for PQ values
         is_reversible: Whether an expansion's children include its own parent, which
             the deferred generated-state metric discounts
@@ -188,7 +190,7 @@ def build_bi_search_result(
         max_nodes,
         action_size,
         pop_ratio,
-        min_pop,
+        min_pop=min_pop_forward,
         parant_with_costs=parant_with_costs,
         is_reversible=is_reversible,
     )
@@ -198,7 +200,7 @@ def build_bi_search_result(
         max_nodes,
         action_size,
         pop_ratio,
-        min_pop,
+        min_pop=min_pop_backward,
         parant_with_costs=parant_with_costs,
         is_reversible=is_reversible,
     )

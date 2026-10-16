@@ -74,8 +74,7 @@ def _bi_qstar_loop_builder(
     statecls = puzzle.State
     action_size = puzzle.action_size
     dist_sign = -1.0 if pessimistic_update else 1.0
-    denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    min_pop = min(batch_size, MIN_BATCH_SIZE)
 
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
@@ -91,6 +90,13 @@ def _bi_qstar_loop_builder(
         backward_mode == "value_v" or (backward_mode == "auto" and (not has_inverse_action_map))
     )
     backward_use_q = backward_use_edge_q or backward_use_value_heuristic
+    if not backward_use_q:
+        backward_min_pop = 1
+    elif backward_use_value_heuristic and look_ahead_pruning:
+        estimated_successors = max(1, action_size - int(puzzle.is_reversible))
+        backward_min_pop = (min_pop + estimated_successors - 1) // estimated_successors
+    else:
+        backward_min_pop = min_pop
 
     def init_loop_state(
         solve_config: Puzzle.SolveConfig,
@@ -104,7 +110,8 @@ def _bi_qstar_loop_builder(
             max_nodes,
             action_size,
             pop_ratio=pop_ratio,
-            min_pop=min_pop,
+            min_pop_forward=min_pop,
+            min_pop_backward=backward_min_pop,
             parant_with_costs=True,
             is_reversible=puzzle.is_reversible,
         )
