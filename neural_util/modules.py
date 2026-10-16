@@ -441,6 +441,41 @@ RESBLOCK_REGISTRY = {
 }
 
 
+# New registry entries require a separate review before allowing evaluation regrouping.
+_ROW_INDEPENDENT_NORM_FNS = (
+    None,
+    DEFAULT_NORM_FN,
+    NORM_FN_REGISTRY["batch"],
+    NORM_FN_REGISTRY["batch0999"],
+    NORM_FN_REGISTRY["batchrenorm"],
+    NORM_FN_REGISTRY["batchrenorm0999"],
+    NORM_FN_REGISTRY["instance"],
+    NORM_FN_REGISTRY["layer"],
+    NORM_FN_REGISTRY["group"],
+    NORM_FN_REGISTRY["rms"],
+    NORM_FN_REGISTRY["dytan"],
+)
+_ROW_INDEPENDENT_ACTIVATION_FNS = (
+    ACTIVATION_FN_REGISTRY["relu"],
+    ACTIVATION_FN_REGISTRY["leaky_relu"],
+    ACTIVATION_FN_REGISTRY["gelu"],
+    ACTIVATION_FN_REGISTRY["swish"],
+    ACTIVATION_FN_REGISTRY["hard_swish"],
+    ACTIVATION_FN_REGISTRY["silu"],
+    ACTIVATION_FN_REGISTRY["tanh"],
+    ACTIVATION_FN_REGISTRY["relu6"],
+)
+_ROW_INDEPENDENT_RESBLOCK_FNS = (ResBlock, PreActivationResBlock, DeltaResBlock, KeelResBlock)
+
+
+def is_row_independent_mlp(norm_fn: object, activation: object, resblock_fn: object) -> bool:
+    return (
+        any(norm_fn is fn for fn in _ROW_INDEPENDENT_NORM_FNS)
+        and any(activation is fn for fn in _ROW_INDEPENDENT_ACTIVATION_FNS)
+        and any(resblock_fn is fn for fn in _ROW_INDEPENDENT_RESBLOCK_FNS)
+    )
+
+
 # Conv Residual Block
 class ConvResBlock(nn.Module):
     filters: int

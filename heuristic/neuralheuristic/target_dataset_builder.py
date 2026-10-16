@@ -9,14 +9,6 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
-from neural_util.basemodel.hlgresmlp import HLGResMLPModel
-from neural_util.basemodel.resmlp import ResMLPModel
-from neural_util.modules import (
-    ACTIVATION_FN_REGISTRY,
-    DEFAULT_NORM_FN,
-    NORM_FN_REGISTRY,
-    RESBLOCK_REGISTRY,
-)
 from train_util.sampling import (
     compute_diffusion_targets,
     make_diffusion_step_selector,
@@ -38,20 +30,7 @@ def _infer_neighbor_heuristics(
     SolveConfigsAndStates: type[Xtructurable],
     infer: Callable,
 ) -> tuple[None, jax.Array]:
-    # Custom modules and quantization can depend on other rows or rounding RNGs.
-    if not isinstance(model, (ResMLPModel, HLGResMLPModel)) or type(model) not in (
-        ResMLPModel,
-        HLGResMLPModel,
-    ):
-        return jax.lax.scan(infer, None, inputs)
-    if (
-        model.aqt_cfg is not None
-        or not any(
-            model.norm_fn is fn for fn in (None, DEFAULT_NORM_FN, *NORM_FN_REGISTRY.values())
-        )
-        or not any(model.activation is fn for fn in ACTIVATION_FN_REGISTRY.values())
-        or not any(model.resblock_fn is fn for fn in RESBLOCK_REGISTRY.values())
-    ):
+    if not model.supports_row_independent_inference:
         return jax.lax.scan(infer, None, inputs)
 
     actions, rows = inputs.shape[:2]
