@@ -101,8 +101,8 @@ def _astar_loop_builder(
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
     )
-    denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    estimated_successors = max(1, action_size - int(puzzle.is_reversible))
+    min_pop = (min(batch_size, MIN_BATCH_SIZE) + estimated_successors - 1) // estimated_successors
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
         search_result: SearchResult = SearchResult.build(

@@ -72,8 +72,10 @@ def _bi_astar_d_loop_builder(
     """
     statecls = puzzle.State
     action_size = puzzle.action_size
-    denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    min_pop = min(batch_size, MIN_BATCH_SIZE)
+    if look_ahead_pruning:
+        estimated_successors = max(1, action_size - int(puzzle.is_reversible))
+        min_pop = (min_pop + estimated_successors - 1) // estimated_successors
 
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
@@ -94,7 +96,8 @@ def _bi_astar_d_loop_builder(
             max_nodes,
             action_size,
             pop_ratio=pop_ratio,
-            min_pop=min_pop,
+            min_pop_forward=min_pop,
+            min_pop_backward=min_pop if use_backward_heuristic else 1,
             parant_with_costs=True,
             is_reversible=puzzle.is_reversible,
         )

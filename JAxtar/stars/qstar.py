@@ -34,8 +34,7 @@ def _qstar_loop_builder(
     action_size = puzzle.action_size
 
     dist_sign = -1.0 if pessimistic_update else 1.0
-    denom = max(1, puzzle.action_size // 2)
-    min_pop = max(1, MIN_BATCH_SIZE // denom)
+    min_pop = min(batch_size, MIN_BATCH_SIZE)
 
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
