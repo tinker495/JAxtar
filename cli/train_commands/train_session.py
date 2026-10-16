@@ -3,7 +3,7 @@
 Everything here is identical between the dataset-driven trainer
 (`dist_train_command`) and the replay-driven WBS trainer
 (`wbs_train_command`): eval resolution, optimizer/state setup, in-training
-eval sweeps, TrainLogInfo emission and final checkpointing.
+eval sweeps and final checkpointing.
 """
 
 import os
@@ -17,7 +17,6 @@ from cli.evaluation_runner import run_evaluation_sweep
 from config import benchmark_bundles, resolve_algorithm_for_component
 from config.pydantic_models import DistTrainOptions, PuzzleOptions
 from train_util.optimizer import setup_optimizer
-from train_util.train_logs import TrainLogInfo
 from train_util.train_state import TrainStateExtended
 
 
@@ -160,19 +159,6 @@ def run_training_eval(
             **eval_kwargs,
             **kwargs,
         )
-
-
-def log_train_leaves(logger, log_infos, step: int) -> list[TrainLogInfo]:
-    """Emit TrainLogInfo scalars/histograms and return the leaves for progress display."""
-    log_info_leaves = jax.tree_util.tree_leaves(
-        log_infos, is_leaf=lambda x: isinstance(x, TrainLogInfo)
-    )
-    for v in log_info_leaves:
-        if v.log_mean:
-            logger.log_scalar(v.mean_name, v.mean, step)
-        if v.log_histogram and step % 100 == 0:
-            logger.log_histogram(v.histogram_name, v.data, step)
-    return log_info_leaves
 
 
 def finalize_training(

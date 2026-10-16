@@ -13,6 +13,11 @@ from train_util.train_logs import TrainLogInfo
 class DistanceModel(ABC, nn.Module):
     action_size: int = 1
 
+    @property
+    def supports_row_independent_inference(self) -> bool:
+        """Whether regrouping evaluation rows preserves each prediction; opt in explicitly."""
+        return False
+
     @abstractmethod
     def __call__(self, x, training=False):
         pass
@@ -43,6 +48,11 @@ class DistanceHLGModel(ABC, nn.Module):
     vmin: float = -1.0
     vmax: float = 30.0
     _sigma: float = 1.5
+
+    @property
+    def supports_row_independent_inference(self) -> bool:
+        """Whether regrouping evaluation rows preserves each prediction; opt in explicitly."""
+        return False
 
     def setup(self):
         self.categorial_bins = np.linspace(

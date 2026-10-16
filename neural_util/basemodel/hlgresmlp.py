@@ -14,6 +14,7 @@ from neural_util.modules import (
     PreActivationResBlock,
     ResBlock,
     Swiglu,
+    is_row_independent_mlp,
     preactivation_MLP,
 )
 
@@ -31,6 +32,14 @@ class HLGResMLPModel(DistanceHLGModel):
     tail_head_precision: int = 0
     aqt_cfg: Any = None
     quant_mode: Any = None
+
+    @property
+    def supports_row_independent_inference(self) -> bool:
+        return (
+            type(self) is HLGResMLPModel
+            and self.aqt_cfg is None
+            and is_row_independent_mlp(self.norm_fn, self.activation, self.resblock_fn)
+        )
 
     def setup(self):
         super().setup()
