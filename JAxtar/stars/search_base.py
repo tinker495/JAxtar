@@ -22,9 +22,9 @@ from xtructure import (
     HashIdx,
     HashTable,
     Xtructurable,
-    base_dataclass,
     xtructure_dataclass,
 )
+from xtructure.core.dataclass import base_dataclass
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -41,18 +41,34 @@ from JAxtar.solution_trace import (
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
 
-def _compute_pop_process_mask(
+def _select_pop_batch(
+    priority_queue: BGPQ,
     key: chex.Array,
-    pop_ratio: float,
+    value: "Current | Parant_with_Costs",
+    *,
+    pop_ratio: jax.Array,
     min_pop: int,
-) -> chex.Array:
-    """Compute which popped entries are processed now vs. re-queued."""
+    fixed_batch_pop: bool,
+) -> tuple[BGPQ, chex.Array]:
+    """Select valid candidates and retain any ratio-rejected entries in the queue."""
     filled = jnp.isfinite(key)
+    if fixed_batch_pop:
+        return priority_queue, filled
+
     threshold = key[0] * pop_ratio + 1e-6
     process_mask = jnp.less_equal(key, threshold)
-    base_process_mask = jnp.logical_and(filled, process_mask)
-    min_pop_mask = jnp.logical_and(jnp.cumsum(filled) <= min_pop, filled)
-    return jnp.logical_or(base_process_mask, min_pop_mask)
+
+    def _limited_pop(queue: BGPQ):
+        min_pop_mask = jnp.cumsum(filled) <= min_pop
+        selected = filled & (process_mask | min_pop_mask)
+        return queue.insert(jnp.where(selected, jnp.inf, key), value), selected
+
+    return jax.lax.cond(
+        jnp.all(~filled | process_mask),
+        lambda queue: (queue, filled),
+        _limited_pop,
+        priority_queue,
+    )
 
 
 def insert_priority_queue_batches(
@@ -199,7 +215,7 @@ class Parant_with_Costs:
     dist: FieldDescriptor.scalar(dtype=KEY_DTYPE)
 
 
-@base_dataclass(static_fields=("params"))
+@base_dataclass
 class LoopState:
     """
     Unified loop state for search loops (A*, Q*, A*_d).
@@ -213,7 +229,7 @@ class LoopState:
     filled: chex.Array
 
 
-@base_dataclass(static_fields=("params"))
+@base_dataclass
 class LoopStateWithStates:
     """
     Loop state that carries the already-expanded current states.
@@ -231,7 +247,7 @@ class LoopStateWithStates:
     filled: chex.Array
 
 
-@base_dataclass(static_fields=("action_size", "branching_factor"))
+@base_dataclass(static_fields=("action_size", "branching_factor", "fixed_batch_pop"))
 class SearchResult:
     """
     A dataclass containing the data structures used in the A*/Q* search algorithms.
@@ -266,8 +282,9 @@ class SearchResult:
     priority_queue: BGPQ  # priority queue
     action_size: int  # number of actions available from each state
     branching_factor: int  # distinct children per expansion (action_size - 1 if reversible)
-    pop_ratio: float  # ratio of states to pop from the priority queue
+    pop_ratio: jax.Array  # normalized multiplier for the candidate score threshold
     min_pop: int  # minimum number of states to pop from the priority queue
+    fixed_batch_pop: bool  # process every valid candidate without a ratio limit
     cost: chex.Array  # cost array - g value
     dist: chex.Array  # distance array - calculated heuristic or Q value
     parent: Xtructurable | Parent  # parent array
@@ -297,8 +314,8 @@ class SearchResult:
     @staticmethod
     @partial(
         jax.jit,
-        static_argnums=(0, 1, 2, 3),
-        static_argnames=("parant_with_costs", "is_reversible"),
+        static_argnums=(0, 1, 2, 3, 4),
+        static_argnames=("pop_ratio", "parant_with_costs", "is_reversible"),
     )
     def build(
         statecls: Puzzle.State,
@@ -320,7 +337,7 @@ class SearchResult:
             batch_size (int): Size of batches for parallel processing
             max_nodes (int): Maximum number of nodes to store
             action_size (int): Number of actions available from each state
-            pop_ratio (float): Controls the search beam width. It is used to calculate
+            pop_ratio (float): Compile-time search beam width. It is used to calculate
                 a multiplier `M = max(1.0 + pop_ratio, 1.01)`. The search beam will
                 include all nodes with a cost up to `min_cost * M`.
                 - `pop_ratio = 0`: Results in a narrow beam (`M=1.01`).
@@ -365,8 +382,9 @@ class SearchResult:
             priority_queue=priority_queue,
             action_size=action_size,
             branching_factor=action_size - 1 if is_reversible else action_size,
-            pop_ratio=jnp.maximum(1.0 + pop_ratio, 1.01),
+            pop_ratio=jnp.maximum(1.0 + jnp.asarray(pop_ratio), 1.01),
             min_pop=min_pop,
+            fixed_batch_pop=pop_ratio == float("inf"),
             cost=cost,
             dist=dist,
             parent=parent,
@@ -544,11 +562,13 @@ class SearchResult:
             overflow_keys, overflow_vals
         )
 
-        # 3. Apply pop_ratio to the full batch
-        final_process_mask = _compute_pop_process_mask(
+        next_queue, final_process_mask = _select_pop_batch(
+            search_result.priority_queue,
             min_key,
+            min_val,
             pop_ratio=search_result.pop_ratio,
             min_pop=search_result.min_pop,
+            fixed_batch_pop=search_result.fixed_batch_pop,
         )
 
         def _update_pq_pop(sr: "SearchResult"):
@@ -573,9 +593,7 @@ class SearchResult:
             search_result,
         )
 
-        # Separate the nodes to be returned and re-insert them into the PQ
-        return_keys = jnp.where(final_process_mask, jnp.inf, min_key)
-        search_result.priority_queue = search_result.priority_queue.insert(return_keys, min_val)
+        search_result.priority_queue = next_queue
 
         # Same scalar for every selected index, so duplicates cannot disagree.
         search_result.pop_generation = xnp.update_on_condition(
@@ -858,11 +876,13 @@ class SearchResult:
             overflow_keys, overflow_vals
         )
 
-        # 3. Apply pop_ratio to the merged/sorted final batch.
-        final_process_mask = _compute_pop_process_mask(
+        next_queue, final_process_mask = _select_pop_batch(
+            search_result.priority_queue,
             final_key,
+            final_val,
             pop_ratio=search_result.pop_ratio,
             min_pop=search_result.min_pop,
+            fixed_batch_pop=search_result.fixed_batch_pop,
         )
 
         def _update_deferred(sr: "SearchResult"):
@@ -887,10 +907,8 @@ class SearchResult:
             search_result,
         )
 
-        # Separate the nodes to be returned and re-insert them into the PQ
-        return_keys = jnp.where(final_process_mask, jnp.inf, final_key)
         final_costs = jnp.where(final_process_mask, final_costs, jnp.inf)
-        search_result.priority_queue = search_result.priority_queue.insert(return_keys, final_val)
+        search_result.priority_queue = next_queue
 
         # The merge loop already deduplicated these states. Reuse its probe and
         # skip both redundant hashing and intra-batch deduplication at insertion.
