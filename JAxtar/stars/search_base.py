@@ -37,6 +37,7 @@ from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
 )
+from JAxtar.utils.array_ops import stable_partition_three
 
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
@@ -45,7 +46,7 @@ def _compute_pop_process_mask(
     key: chex.Array,
     pop_ratio: float,
     min_pop: int,
-) -> chex.Array:
+) -> jax.Array:
     """Compute which popped entries are processed now vs. re-queued."""
     filled = jnp.isfinite(key)
     threshold = key[0] * pop_ratio + 1e-6
@@ -952,8 +953,12 @@ class SearchResult:
         )
         search_result.pop_count += 1
 
+        # Filtering can leave holes when the refill loop does not execute.
+        valid_order = stable_partition_three(final_process_mask, jnp.zeros_like(final_process_mask))
+        final_currents = xnp.take(final_currents, valid_order, axis=0)
+        final_process_mask = final_process_mask[valid_order]
         if return_states:
-            return search_result, final_currents, final_states, final_process_mask
+            return search_result, final_currents, final_states[valid_order], final_process_mask
 
         return search_result, final_currents, final_process_mask
 

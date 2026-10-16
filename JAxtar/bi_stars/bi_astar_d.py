@@ -21,7 +21,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE, MIN_INFERENCE_BATCH_SIZE
 from JAxtar.search_build_spec import (
     DEFAULT_SEARCH_BUILD_SPEC,
     SearchBuildSpec,
@@ -78,7 +78,7 @@ def _bi_astar_d_loop_builder(
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
+        min_batch_size=MIN_INFERENCE_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
@@ -250,6 +250,12 @@ def _bi_astar_d_loop_builder(
                     k = min(k, sr_batch_size, flat_size)
                     sel_idx = sorted_idx[:k]
                     sel_valid = jnp.isfinite(sorted_keys[:k])
+                    backup_switcher = variable_batch_switcher_builder(
+                        heuristic.batched_distance,
+                        max_batch_size=k,
+                        min_batch_size=MIN_INFERENCE_BATCH_SIZE,
+                        pad_value=jnp.inf,
+                    )
 
                     sel_states = flattened_neighbour_look_head[sel_idx]
                     succ_states, succ_costs = puzzle.batched_get_neighbours(
@@ -258,9 +264,9 @@ def _bi_astar_d_loop_builder(
 
                     def _scan_backup(carry, inputs):
                         succ_slice, cost_slice = inputs
-                        h_succ = variable_heuristic_batch_switcher(
-                            heuristic_params, succ_slice, sel_valid
-                        ).astype(KEY_DTYPE)
+                        h_succ = backup_switcher(heuristic_params, succ_slice, sel_valid).astype(
+                            KEY_DTYPE
+                        )
                         q_est = h_succ + cost_slice.astype(KEY_DTYPE)
                         return carry, q_est
 

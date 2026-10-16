@@ -28,6 +28,9 @@ def variable_batch_switcher_builder(
     Build a callable that dynamically selects a pre-JITed branch based on how many
     entries in ``filled`` are active.
 
+    ``filled`` must be a boolean mask of length ``max_batch_size`` whose active
+    entries form a contiguous prefix. Callers must compact states and masks together.
+
     Args:
         eval_fn: Callable taking ``(solve_config, current_states)`` and returning an
             array whose leading dimension corresponds to the batch size.
@@ -84,6 +87,9 @@ def variable_batch_switcher_builder(
                 break
 
         next_batch = max(current_batch >> 1, min_batch_size)
+        # Keep the 128-entry bucket when extending a non-power-of-two ladder downward.
+        if next_batch < 128 < current_batch:
+            next_batch = 128
         if next_batch == current_batch:
             # Halving stalled at min_batch_size; drop to 0 only if 0 is allowed.
             if min_batch_size == 0 and current_batch > 0:
@@ -93,19 +99,18 @@ def variable_batch_switcher_builder(
 
         current_batch = next_batch
 
-    batch_sizes_array = jnp.array(batch_sizes, dtype=jnp.int32)
-    num_branches = len(branches)
-
     def variable_batch_switcher(
         distance_fn_parameters,
         current,
-        filled: chex.Array,
+        filled: jax.Array,
     ):
-        filled_count = jnp.sum(filled.astype(jnp.int32), axis=0)
-        filled_count = jnp.clip(filled_count, 0, max_batch_size)
-        eligible = filled_count <= batch_sizes_array
-        num_eligible = jnp.sum(eligible.astype(jnp.int32))
-        branch_index = jnp.clip(num_eligible - 1, 0, num_branches - 1)
+        if filled.shape != (max_batch_size,):
+            raise ValueError(f"filled must have shape ({max_batch_size},)")
+        if filled.dtype != jnp.bool_:
+            raise TypeError("filled must be a boolean mask")
+
+        # For a valid prefix, count <= size exactly when filled[size] is false.
+        branch_index = sum((~filled[size]).astype(jnp.int32) for size in batch_sizes[1:])
         return jax.lax.switch(
             branch_index,
             tuple(branches),

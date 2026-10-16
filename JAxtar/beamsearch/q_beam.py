@@ -4,7 +4,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_INFERENCE_BATCH_SIZE
 from JAxtar.search_build_spec import (
     DEFAULT_SEARCH_BUILD_SPEC,
     SearchBuildSpec,
@@ -18,6 +18,7 @@ from JAxtar.beamsearch.search_base import (
     non_backtracking_mask,
     select_beam,
 )
+from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
 
@@ -41,7 +42,7 @@ def _qbeam_loop_builder(
     variable_q_batch_switcher = variable_batch_switcher_builder(
         q_fn.batched_q_value,
         max_batch_size=beam_width,
-        min_batch_size=MIN_BATCH_SIZE,
+        min_batch_size=MIN_INFERENCE_BATCH_SIZE,
         pad_value=jnp.inf,
     )
 
@@ -154,14 +155,15 @@ def _qbeam_loop_builder(
         selected_scores = jnp.where(selected_valid, selected_scores, jnp.inf)
         selected_actions = selected_actions.astype(ACTION_DTYPE)
 
+        valid_order = stable_partition_three(selected_valid, jnp.zeros_like(selected_valid))
         search_result = search_result.advance(
-            selected_states,
-            selected_costs,
-            selected_q,
-            selected_scores,
-            selected_actions,
-            selected_parents,
-            selected_valid,
+            selected_states[valid_order],
+            selected_costs[valid_order],
+            selected_q[valid_order],
+            selected_scores[valid_order],
+            selected_actions[valid_order],
+            selected_parents[valid_order],
+            selected_valid[valid_order],
         )
 
         return BeamSearchLoopState(

@@ -7,7 +7,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE, MIN_INFERENCE_BATCH_SIZE
 from JAxtar.search_build_spec import DEFAULT_SEARCH_BUILD_SPEC, SearchBuildSpec
 from JAxtar.stars.search_base import (
     Current,
@@ -39,12 +39,9 @@ def _row_heuristics(
     network are a prefix: ``n_full`` all-new rows, then at most one mixed row when
     ``n_new % batch_size != 0``. Full rows call ``heuristic_fn`` directly inside a
     bounded while_loop (one host predicate readback per row instead of a lax.cond
-    plus the batch switcher's lax.switch); the mixed row keeps the switcher (its
-    ``inf`` padding past the evaluated slice is the existing behaviour); every other
-    row reads the cached ``dist`` values. A row without new states must keep its
-    cached values: the switcher has no zero branch (``MIN_BATCH_SIZE``), so an
-    all-False mask would evaluate the first ``MIN_BATCH_SIZE`` entries and pad the
-    rest with ``inf``, dropping improved old candidates from the queue.
+    plus the batch switcher's lax.switch); the mixed row uses the switcher. Every
+    old state retains its cached ``dist``, including positions past the switcher's
+    evaluated slice.
 
     Returns the updated ``dist`` cache and ``heurs`` of shape ``(action_size, batch_size)``.
     """
@@ -76,7 +73,7 @@ def _row_heuristics(
     dist = xnp.update_on_condition(
         dist, vals.hashidx.index[mixed], mixed_mask, mixed_heur, unique_indices=True
     )
-    heurs = heurs.at[mixed].set(jnp.where(has_mixed_row, mixed_heur, heurs[mixed]))
+    heurs = heurs.at[mixed].set(jnp.where(mixed_mask, mixed_heur, heurs[mixed]))
     return dist, heurs
 
 
@@ -98,7 +95,7 @@ def _astar_loop_builder(
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
+        min_batch_size=MIN_INFERENCE_BATCH_SIZE,
         pad_value=jnp.inf,
     )
     denom = max(1, puzzle.action_size // 2)

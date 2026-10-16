@@ -26,7 +26,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
-from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
+from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE, MIN_INFERENCE_BATCH_SIZE
 from JAxtar.search_build_spec import (
     DEFAULT_SEARCH_BUILD_SPEC,
     SearchBuildSpec,
@@ -85,7 +85,7 @@ def _bi_astar_loop_builder(
     variable_heuristic_batch_switcher = variable_batch_switcher_builder(
         heuristic.batched_distance,
         max_batch_size=batch_size,
-        min_batch_size=MIN_BATCH_SIZE,
+        min_batch_size=MIN_INFERENCE_BATCH_SIZE,
         pad_value=jnp.inf,
     )
     denom = max(1, puzzle.action_size // 2)
@@ -324,7 +324,7 @@ def _bi_astar_loop_builder(
                 new_states_mask,
                 neighbour_heur,
             )
-            return sr, neighbour_heur
+            return sr, jnp.where(new_states_mask, neighbour_heur, sr.dist[vals.hashidx.index])
 
         def _old_states(sr: SearchResult, vals, neighbour, new_states_mask):
             neighbour_heur = sr.dist[vals.hashidx.index]

@@ -13,6 +13,7 @@ DEDUPE_MODE = os.environ.get(
 )
 os.environ["XTRUCTURE_HASHTABLE_DEDUPE_MODE"] = DEDUPE_MODE
 MIN_BATCH_SIZE = 128
+MIN_INFERENCE_BATCH_SIZE = 64
 
 # Parent-pointer trace arena (id_stars). TRACE_INVALID marks a chain root and doubles as
 # an out-of-bounds scatter target, so `mode="drop"` discards writes past the arena.
