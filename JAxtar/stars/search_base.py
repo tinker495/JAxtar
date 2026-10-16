@@ -63,8 +63,9 @@ def _select_pop_batch(
         selected = filled & (process_mask | min_pop_mask)
         return queue.insert(jnp.where(selected, jnp.inf, key), value), selected
 
+    # Valid entries in the first min_pop slots always satisfy the count-based floor.
     return jax.lax.cond(
-        jnp.all(~filled | process_mask),
+        jnp.all(~filled | process_mask | (jnp.arange(key.shape[0]) < min_pop)),
         lambda queue: (queue, filled),
         _limited_pop,
         priority_queue,
