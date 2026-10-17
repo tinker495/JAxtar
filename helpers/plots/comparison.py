@@ -134,7 +134,7 @@ def plot_comparison_analysis(
 
         for ax in fig.axes:
             plt.setp(ax.get_xticklabels(), rotation=30, ha="right", fontsize=10)
-        fig.tight_layout(rect=[0, 0, 1, 0.97])
+        fig.tight_layout(rect=(0, 0, 1, 0.97))
         return fig
 
     # Generate plots for each metric

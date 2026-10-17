@@ -140,7 +140,7 @@ def plot_expansion_distribution(
     axes[2].legend()
     axes[2].grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
     return fig
 
 
