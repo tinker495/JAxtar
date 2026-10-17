@@ -1,0 +1,14 @@
+project-includes = [
+    "JAxtar/**/*.py",
+    "cli/**/*.py",
+    "config/**/*.py",
+    "helpers/**/*.py",
+    "heuristic/**/*.py",
+    "neural_util/**/*.py",
+    "qfunction/**/*.py",
+    "train_util/**/*.py",
+    "_lazy_imports.py",
+]
+python-version = "3.12"
+search-path = ["."]
+disable-search-path-heuristics = true
