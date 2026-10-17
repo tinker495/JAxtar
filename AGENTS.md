@@ -1,115 +1,87 @@
-<!-- Parent: ../AGENTS.md -->
+# Repository Guidelines
 
-## Documentation Language
+## Language and Review
 
-Write all repository documentation in English, including `docs/`, README files,
-design documents, glossaries, and `AGENTS.md`. This rule applies to every
-subdirectory. Keep user-facing conversation and code-review comments in Korean.
+Write repository documentation in English, including nested AGENTS.md files.
+Use Korean for conversation, review comments, PR bodies, and local reports;
+keep code, comments, identifiers, and commit messages in English.
 
-## Code Review Rules
-
-These rules apply to both human and AI reviewers. CI owns mechanical checks such
-as formatting and linting; do not include them in code review.
-
-The suggestions below about changing or removing tests and migrating them with
-the implementation are review criteria, not permission for an agent to change
-tests. Execution permissions are defined under "Test Ownership and Change
-Permissions" in this document.
-
-### Review Language and Terminology
-
-- Write review comments and findings in Korean. Keep code identifiers and
-  architecture terms in their original English form.
-
-### Structural Change Proposals
-
-- Go beyond minimal edits to diff lines. When a change exposes structural
-  problems such as duplicated concept ownership, shotgun surgery, wrappers that
-  only delegate, or eroded stage boundaries, explicitly propose deeper changes
-  such as moving, merging, or deleting modules and reassigning ownership.
-- Optimize for minimum context, not minimum diff: reduce the number of concepts a
-  maintainer must understand through deep modules with narrow interfaces. Favor
-  changes that solve problems by deleting code over adding it.
-- Flag speculative generality immediately as a deletion candidate: interfaces
-  with a single implementation, configuration nobody sets, and hand-written
-  replacements for standard-library functionality.
-- Support structural proposals with evidence of the current maintenance cost
-  and present them in severity order.
+CI owns formatting and linting; omit those findings from code review. Review
+structural problems beyond the edited lines: duplicated ownership, shotgun
+surgery, delegation-only wrappers, and eroded stage boundaries. Propose moving,
+merging, or deleting modules when evidence supports it. Prefer deep modules with
+narrow interfaces and fewer concepts. Flag single-implementation interfaces,
+unused configuration, and standard-library replacements as deletion candidates.
+Present evidence and consequences in severity order. Re-review code added after
+the reviewed commit before merging. Review suggestions do not authorize changes
+to tests or acceptance assets.
 
 ## Test Ownership and Change Permissions
 
-### Core Principle
-
-Tests are executable product specifications owned by the user, not accessories
-to the implementation. The agent implements the product; it does not decide what
-qualifies as correct behavior.
-
-Agents may read and run tests, but may not create, modify, or delete them.
-Instructions to implement a feature, fix a bug, refactor, or make tests pass do
-not authorize changes to tests or acceptance criteria.
+Tests are executable product specifications owned by the user. Agents may read
+and run them. Creating, modifying, deleting, moving, or regenerating tests or
+acceptance assets requires explicit user authorization for the affected scope
+and expected behavior. A feature, bug fix, refactor, or request to make tests pass
+does not by itself grant that authorization.
 
 Every test must name its author, who must be the user rather than an agent, and
 include comments explaining in detail why the test was added.
 
-### Protected Assets
+Protected assets include assertions, cases, parameters, expected values,
+fixtures, snapshots, golden data, reference results, independent validators and
+oracles, evaluation data, acceptance thresholds and tolerances, test collection,
+execution and exclusion settings, and CI validation steps. Internal unit tests,
+regression tests, and test enhancements receive the same protection.
 
-Treat all repository tests and assets that determine product acceptance as
-protected, regardless of their path or name. These include:
+Agents may modify product implementations, propose test inputs and behavior
+with a basis for expected results, and create temporary reproduction code or
+observation logs outside formal test directories. Keep temporary validation
+code out of commits, CI, and formal tests. Passing temporary checks does not
+constitute user approval or satisfaction of acceptance criteria.
 
-- Test code, assertions, test cases, and parameters.
-- Expected values, fixtures, snapshots, golden data, and reference results.
-- Independent validators and oracles, evaluation data, acceptance thresholds,
-  and tolerances.
-- Test collection, execution, and exclusion settings, and CI validation steps.
+Do not derive expected values from current implementation output, weaken
+assertions, widen tolerances, remove cases, add skip/xfail, change fixtures, or
+bypass validation to make tests pass. Do not detect test environments or specific
+inputs to hard-code answers or hide failures, violations, or omissions. Do not
+relax these protections for convenience.
 
-Agents may not exempt an asset by labeling it an internal unit test, regression
-test, or test enhancement.
+Investigate implementation defects first when tests fail. A failure alone does
+not prove a test is wrong; a test's existence alone does not prove the user
+approved it. If requirements conflict or expected behavior is uncertain, report
+the reproduction input, actual result, conflicting requirements, and the user's
+decision needed. Preserve the tests and pause only dependent changes. Do not
+preserve incorrect product behavior to satisfy a conflicting test. Implement
+new tests only after the user authorizes their scope and expected behavior.
 
-### Permitted Actions
+## Repository Independence and Validation
 
-- Read and run existing tests and validation assets to analyze requirements and
-  failure causes.
-- Modify product implementations to meet user requirements.
-- Create temporary reproduction code, exploratory scripts, and observation logs
-  for debugging.
-- Propose needed test cases, counterexamples, and specification ambiguities to
-  the user in text.
+This repository owns its dependency updates and CI configuration. Related
+repositories' latest versions mean their main branches; explicitly select a
+branch or commit when needed. A sibling editable checkout is not required.
 
-Temporary validation code belongs only in temporary locations outside formal
-test directories. Do not commit it, register it in CI, or incorporate it into
-formal tests. Passing temporary checks does not constitute user approval or
-satisfaction of product acceptance criteria.
+Run the existing lint/format hooks, Pyrefly new-diagnostics comparison, and CPU
+tests on each PR's latest commit as merge-required checks. Compare types against
+the actual PR target revision, including a stacked PR's parent. Existing errors
+remain visible: a passing new-diagnostics gate is distinct from a full type-check
+pass. Product code is the initial typing scope; tests and documentation examples
+are deferred.
 
-### Prohibited Actions
+Performance benchmarks and GPU/kernel/compiler validation run manually when the
+user chooses, outside merge-required CI. For a performance experiment, agree on
+inputs, settings, and quality/time/memory limits before measurement. Distinguish
+main and PR-target baselines by commit SHA. Present search-policy changes and
+their solution-quality tradeoffs for separate approval.
 
-- Creating, modifying, deleting, moving, or automatically regenerating tests.
-- Treating current implementation output as the correct answer when establishing
-  expected values or snapshots.
-- Weakening assertions, widening tolerances, removing cases, adding skip or xfail
-  markers, changing fixtures, or bypassing validation steps to make tests pass.
-- Detecting test environments or specific test inputs to hard-code answers, or
-  hiding failures, violations, or omissions to pass validation.
-- Relaxing this policy or related protections for convenience.
+Keep reproduction scripts, independent validation tools, traces, diffs, and
+reports in Git-excluded local storage; do not commit or upload them. Report tests
+actually run, unverified scope, remaining failures, and decisions needed from
+the user. Include a short normal CLI verification command and a local record.
 
-### Test Failures and Specification Conflicts
+## Source Navigation
 
-Investigate implementation defects first when a test fails. Failure alone does
-not establish that the test is wrong.
-
-Conversely, a test's existence alone does not establish that it is a correct
-product specification approved by the user.
-
-When tests conflict with user requirements, or evidence is insufficient to
-determine expected behavior, do not change the tests or preserve incorrect
-behavior in the implementation. Report the conflicting requirements,
-reproduction input, actual result, and decision needed from the user. Pause only
-the changes that depend on that decision.
-
-Even when a new test is needed, do not add it yourself. Propose its input
-conditions, behavior to verify, and the basis for its expected result to the
-user.
-
-### Completion Report
-
-Distinguish the scope and results of tests actually run, validation that could
-not be run, remaining failures, and decisions needed from the user.
+Consult an available `graft/` graph first: `graft ask "<task>" --source` for
+context, `graft grep "<literal>"` for all indexed occurrences, `graft skeleton
+<file>` for an API, or `graft callers <symbol> --depth all` for refactor impact.
+Read exact source spans when more detail is needed. Use Probe for unindexed
+source relationships when available and `rg` as the fallback. Use `rg` directly
+for filenames, configuration, documentation, and local output.
