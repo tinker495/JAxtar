@@ -23,7 +23,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
-      - run: uvx pre-commit run --all-files
+      - run: uv sync --locked --group dev
+      - run: uv run --no-sync pre-commit run --all-files
 
   types:
     name: Pyrefly new diagnostics

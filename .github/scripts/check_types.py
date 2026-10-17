@@ -3,9 +3,11 @@
 import argparse
 import io
 import json
+import os
 import subprocess
 import sys
 import tarfile
+import tomllib
 from collections import Counter
 from importlib.metadata import version
 from pathlib import Path
@@ -23,7 +25,7 @@ class Diagnostic(TypedDict):
     baselined: bool
 
 
-def check(root: Path) -> list[Diagnostic]:
+def check(root: Path, interpreter: Path) -> list[Diagnostic]:
     command = [
         sys.executable,
         "-m",
@@ -32,7 +34,7 @@ def check(root: Path) -> list[Diagnostic]:
         "--config",
         "pyrefly.toml",
         "--python-interpreter-path",
-        sys.executable,
+        str(interpreter),
         "--output-format=json",
     ]
     result = subprocess.run(command, cwd=root, capture_output=True, text=True, check=False)
@@ -59,7 +61,7 @@ def check(root: Path) -> list[Diagnostic]:
                 column=error["column"],
                 name=error["name"],
                 description=error["description"]
-                .replace(sys.prefix, "<python-environment>")
+                .replace(str(interpreter.parent.parent), "<python-environment>")
                 .replace(str(root), "<repository>"),
                 severity=error["severity"],
                 baselined=False,
@@ -68,6 +70,30 @@ def check(root: Path) -> list[Diagnostic]:
     if result.returncode == 1 and not errors:
         raise RuntimeError("Pyrefly failed without reporting diagnostics")
     return diagnostics
+
+
+def target_interpreter(target: Path) -> Path:
+    manifest = tomllib.loads((target / "pyproject.toml").read_text())
+    command = ["uv", "sync", "--project", str(target), "--python", sys.executable]
+    if (target / "uv.lock").is_file():
+        command.append("--locked")
+        print("Target dependencies: using the target revision's uv.lock", flush=True)
+    else:
+        print("Target has no uv.lock; resolving its dependency declarations", flush=True)
+    if "dependency-groups" in manifest and "dev" in manifest["dependency-groups"]:
+        command.extend(["--group", "dev"])
+    elif (
+        "optional-dependencies" in manifest["project"]
+        and "dev" in manifest["project"]["optional-dependencies"]
+    ):
+        command.extend(["--extra", "dev"])
+    subprocess.run(
+        command,
+        cwd=target,
+        env={**os.environ, "UV_PROJECT_ENVIRONMENT": str(target / ".venv")},
+        check=True,
+    )
+    return target / ".venv" / "bin" / "python"
 
 
 def main() -> int:
@@ -88,10 +114,19 @@ def main() -> int:
         archive = subprocess.check_output(["git", "archive", base], cwd=root)
         with tarfile.open(fileobj=io.BytesIO(archive)) as source:
             source.extractall(target, filter="data")
-        # Both revisions use the PR configuration and the same dependency environment.
+        # Keep the checker/config fixed while loading each revision's dependencies.
         (target / "pyrefly.toml").write_bytes((root / "pyrefly.toml").read_bytes())
-        previous = check(target)
-        current = check(root)
+        previous = check(target, target_interpreter(target))
+        current = check(root, Path(sys.executable))
+    renamed = subprocess.check_output(
+        ["git", "diff", "--name-status", "-z", "--find-renames", "--diff-filter=R", base, head],
+        cwd=root,
+        text=True,
+    ).split("\0")[:-1]
+    paths = dict(zip(renamed[1::3], renamed[2::3], strict=True))
+    for error in previous:
+        if error["path"] in paths:
+            error["path"] = paths[error["path"]]
     # Count identical diagnostics: line movement is harmless, additional copies are new.
     remaining = Counter(
         (error["path"], error["name"], error["description"], error["severity"])
