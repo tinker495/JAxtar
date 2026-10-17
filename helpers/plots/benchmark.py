@@ -112,5 +112,5 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
     ax_len.grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
     fig.suptitle("Benchmark Solution Quality", fontsize=16)
-    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+    fig.tight_layout(rect=(0, 0.03, 1, 0.95))
     return fig
