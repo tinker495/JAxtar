@@ -58,7 +58,9 @@ def check(root: Path) -> list[Diagnostic]:
                 line=error["line"],
                 column=error["column"],
                 name=error["name"],
-                description=error["description"].replace(str(root), "<repository>"),
+                description=error["description"]
+                .replace(sys.prefix, "<python-environment>")
+                .replace(str(root), "<repository>"),
                 severity=error["severity"],
                 baselined=False,
             )
