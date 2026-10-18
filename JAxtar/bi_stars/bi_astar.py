@@ -163,7 +163,7 @@ def _bi_astar_loop_builder(
         inverse_solveconfig: Puzzle.SolveConfig,
         heuristic_params: Any,
         current: Current,
-        filled: chex.Array,
+        filled: jax.Array,
         is_forward: bool,
         use_heuristic: bool,
     ) -> tuple[BiDirectionalSearchResult, Current, jax.Array]:
