@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from puxle import Maze
 
@@ -8,7 +9,7 @@ class MazeHeuristic(Heuristic):
     def __init__(self, puzzle: Maze):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: Maze.SolveConfig, current: Maze.State) -> float:
+    def distance(self, solve_config: Maze.SolveConfig, current: Maze.State) -> jax.Array:
         """
         Get distance between current state and target state.
         """

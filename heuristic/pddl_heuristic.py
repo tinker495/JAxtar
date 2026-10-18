@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from puxle import PDDL
 
@@ -8,7 +9,7 @@ class PDDLHeuristic(Heuristic):
     def __init__(self, puzzle: PDDL):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: PDDL.SolveConfig, current: PDDL.State) -> float:
+    def distance(self, solve_config: PDDL.SolveConfig, current: PDDL.State) -> jax.Array:
         """
         Simple admissible heuristic for PDDL: number of goal atoms not yet satisfied.
         h(s) = |{ g in GoalMask | g is False in s }|

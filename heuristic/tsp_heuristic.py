@@ -9,7 +9,7 @@ class TSPHeuristic(Heuristic):
     def __init__(self, puzzle):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> float:
+    def distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> jax.Array:
         """Computes MST + 2-edge heuristic for the Traveling Salesman Problem (TSP).
 
         Step-by-step explanation:
@@ -36,7 +36,7 @@ class TSPHeuristic(Heuristic):
         if_distance = jnp.where(all_visited, return_to_start, 0.0)
 
         # Helper to compute MST weight of the remaining (unvisited) nodes.
-        def _mst_weight(dist_matrix: jnp.ndarray, remaining_mask: jnp.ndarray) -> float:
+        def _mst_weight(dist_matrix: jax.Array, remaining_mask: jax.Array) -> jax.Array:
             """Compute the MST weight of the sub-graph induced by `remaining_mask`.
 
             The implementation uses a fixed-size Prim's algorithm so that it is

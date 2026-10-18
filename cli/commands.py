@@ -41,7 +41,7 @@ def _build_search_command(entry: SearchAlgorithmEntry):
         run_search_command(
             kwargs["puzzle"],
             kwargs["puzzle_name"],
-            kwargs.get("seeds"),
+            kwargs["seeds"],
             kwargs["search_options"],
             kwargs["visualize_options"],
             entry.builder_fn,
@@ -55,7 +55,7 @@ def _build_search_command(entry: SearchAlgorithmEntry):
     run.__annotations__ = {"options": schema}
     run.__name__ = entry.python_id
     run.__doc__ = entry.search_title
-    search_app.command(run, name=entry.cli_subcommand)
+    search_app.command(name=entry.cli_subcommand)(run)
     return partial(run_cli, partial(tyro.cli, run), prog=entry.cli_subcommand)
 
 

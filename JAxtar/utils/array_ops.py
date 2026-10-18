@@ -27,6 +27,7 @@ def batched_state_equal(lhs: object, rhs: object) -> chex.Array:
             # Leading axis is the batch; every other axis belongs to the state itself.
             equal = jnp.all(equal, axis=tuple(range(1, equal.ndim)))
         result = equal if result is None else jnp.logical_and(result, equal)
+    assert result is not None
     return result
 
 

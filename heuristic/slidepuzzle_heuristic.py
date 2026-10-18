@@ -19,7 +19,9 @@ class SlidePuzzleHeuristic(Heuristic):
         )
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
 
-    def distance(self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State) -> float:
+    def distance(
+        self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
+    ) -> jax.Array:
         """
         This function should return the distance between the state and the target.
         """
