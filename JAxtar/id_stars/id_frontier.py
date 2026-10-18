@@ -5,7 +5,8 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
+from xtructure.core.dataclass import base_dataclass
 from xtructure.core.protocol import Xtructurable as XtructurableProtocol
 
 from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE, TRACE_INDEX_DTYPE
