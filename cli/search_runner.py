@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from typing import Callable
 
 import jax
@@ -203,7 +204,7 @@ def vmapped_search_samples(
     puzzle: Puzzle,
     seeds: list[int],
     search_options: SearchOptions,
-    total_search_times: jnp.ndarray,
+    total_search_times: Sequence[float],
     states_per_second: float,
     single_search_time: float,
 ):

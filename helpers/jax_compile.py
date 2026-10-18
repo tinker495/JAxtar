@@ -76,6 +76,7 @@ def compile_search_builder(
     warmup_inputs=None,
 ):
     fn = jax.jit(fn, compiler_options=_search_compiler_options())
+    start = None
     if show_compile_time:
         print("initializing jit")
         start = time.time()
@@ -84,7 +85,7 @@ def compile_search_builder(
         warmup_inputs = (puzzle.SolveConfig.default(), puzzle.State.default())
     compile_with_example(fn, *warmup_inputs)
 
-    if show_compile_time:
+    if start is not None:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")
         print("JIT compiled\n\n")
