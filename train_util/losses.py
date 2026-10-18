@@ -16,7 +16,7 @@ def logcosh_loss(diff: jnp.ndarray) -> jnp.ndarray:
     return optax.losses.log_cosh(diff)
 
 
-def _quantile_weight(diff: jnp.ndarray, tau: float | jax.Array) -> jnp.ndarray:
+def _quantile_weight(diff: jax.Array, tau: float | jax.Array) -> jax.Array:
     tau = jnp.clip(tau, 1e-6, 1.0 - 1e-6)
     indicator = (diff < 0).astype(diff.dtype)
     return jnp.abs(tau - indicator)
