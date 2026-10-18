@@ -145,10 +145,10 @@ class IDSearchResult:
     trace_prefix: int  # arena rows reserved for the immutable frontier chains
 
     # Global search state
-    bound: chex.Array  # Current cost bound (scalar)
-    next_bound: chex.Array  # Next cost bound (scalar)
-    solved: chex.Array  # Boolean scalar
-    solved_idx: chex.Array  # Index in the stack of the solution (if found)
+    bound: jax.Array  # Current cost bound (scalar)
+    next_bound: jax.Array  # Next cost bound (scalar)
+    solved: jax.Array  # Boolean scalar
+    solved_idx: jax.Array  # Index in the stack of the solution (if found)
 
     # Stack storage (Fixed size = capacity)
     # Allows LIFO access for DFS
@@ -156,17 +156,17 @@ class IDSearchResult:
 
     # Parent-pointer arena. Rows [0, trace_prefix) are the frontier chains, written once
     # and never reset; [trace_prefix, len) is refilled from scratch at each threshold.
-    trace_parent: chex.Array  # [trace_capacity] uint32, TRACE_INVALID at a chain root
-    trace_action: chex.Array  # [trace_capacity] ACTION_DTYPE
-    trace_ptr: chex.Array  # Scalar - next free dynamic arena row
-    trace_overflow: chex.Array  # Scalar - nodes dropped because the arena was full
+    trace_parent: jax.Array  # [trace_capacity] uint32, TRACE_INVALID at a chain root
+    trace_action: jax.Array  # [trace_capacity] ACTION_DTYPE
+    trace_ptr: jax.Array  # Scalar - next free dynamic arena row
+    trace_overflow: jax.Array  # Scalar - nodes dropped because the arena was full
 
     solution_state: Xtructurable  # Single state
     start_state: Xtructurable  # Single state (start)
-    solution_cost: chex.Array  # Scalar - cost of solution
-    generated_count: chex.Array  # Scalar - count of generated nodes
-    solution_actions_arr: chex.Array  # [max_path_len]
-    solved_trace_index: chex.Array  # Scalar - arena row of the solution node
+    solution_cost: jax.Array  # Scalar - cost of solution
+    generated_count: jax.Array  # Scalar - count of generated nodes
+    solution_actions_arr: jax.Array  # [max_path_len]
+    solved_trace_index: jax.Array  # Scalar - arena row of the solution node
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5, 6))
@@ -383,11 +383,11 @@ class IDSearchResult:
     ) -> tuple[
         "IDSearchResult",
         Puzzle.State,
-        chex.Array,
-        chex.Array,
+        jax.Array,
+        jax.Array,
         Puzzle.State,
-        chex.Array,
-        chex.Array,
+        jax.Array,
+        jax.Array,
     ]:
         """
         Pop the top `batch_size` items from the stack.
@@ -565,7 +565,7 @@ class IDSearchResult:
         self,
         node_batch: Xtructurable,
         fs: chex.Array,
-        valid: chex.Array,
+        valid: jax.Array,
         update_next_bound: bool = True,
     ) -> "IDSearchResult":
         """
@@ -737,9 +737,9 @@ class IDSearchResult:
         puzzle: Puzzle,
         solve_config: Puzzle.SolveConfig,
         states: Puzzle.State,
-        costs: chex.Array,
-        payload: chex.Array,
-        valid_mask: chex.Array,
+        costs: jax.Array,
+        payload: jax.Array,
+        valid_mask: jax.Array,
     ):
         """Find the first solved state. ``payload`` is whatever identifies its path --
         an action history row for the frontier, an arena trace index for the stack."""
@@ -806,13 +806,13 @@ def apply_standard_deduplication(
     flat_valid: chex.Array,
     parents: Xtructurable,
     parent_trails: Xtructurable,
-    parent_depths: chex.Array,
+    parent_depths: jax.Array,
     non_backtracking_steps: int,
     action_size: int,
     flat_size: int,
     trail_indices: jnp.ndarray,
     batch_size: int,
-) -> chex.Array:
+) -> jax.Array:
     """Apply in-batch deduplication and non-backtracking; return the filtered valid mask."""
     unique_mask = xnp.unique_mask(
         flat_neighbours,

@@ -31,7 +31,7 @@ class IDFrontier:
     solved: jax.Array
     solution_state: Xtructurable
     solution_cost: jax.Array
-    solution_actions_arr: Xtructurable
+    solution_actions_arr: jax.Array
 
     @staticmethod
     def initialize_from_start(
@@ -83,7 +83,7 @@ class IDFrontier:
         self,
         flat_batch: Any,
         flat_valid: chex.Array,
-        f_safe: chex.Array,
+        f_safe: jax.Array,
         batch_size: int,
         new_solved: chex.Array,
         new_sol_state: Xtructurable,
@@ -185,14 +185,14 @@ def build_child_trail(
 
 
 def update_action_history(
-    action_history: chex.Array,
-    depth: chex.Array,
-    action_ids: chex.Array,
+    action_history: jax.Array,
+    depth: jax.Array,
+    action_ids: jax.Array,
     action_size: int,
     batch_size: int,
     flat_size: int,
     max_path_len: int,
-) -> chex.Array:
+) -> jax.Array:
     """Append each child's own action to a copy of its parent's history.
 
     Frontier-only: stack nodes carry a trace-arena index instead of an inline history.
