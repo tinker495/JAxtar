@@ -1,4 +1,5 @@
 import time
+from typing import Callable
 
 import jax
 import xtructure.numpy as xnp
@@ -6,7 +7,7 @@ from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example, warmup_with_example
 
-_VMAPPED_STAR_CACHE: dict[tuple[int, int], callable] = {}
+_VMAPPED_STAR_CACHE: dict[tuple[int, int], Callable] = {}
 
 
 def vmapping_init_target(
@@ -22,7 +23,7 @@ def vmapping_init_target(
 
 def vmapping_search(
     puzzle: Puzzle,
-    star_fn: callable,
+    star_fn: Callable,
     vmap_size: int,
     show_compile_time: bool = False,
 ):

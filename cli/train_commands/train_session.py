@@ -8,6 +8,7 @@ eval sweeps and final checkpointing.
 
 import os
 from pathlib import Path
+from typing import Callable
 
 import jax
 import numpy as np
@@ -60,7 +61,7 @@ def resolve_eval_search_entry(
     *,
     train_options: DistTrainOptions,
     search_model_name: str,
-) -> tuple[str, callable, dict]:
+) -> tuple[str, Callable, dict]:
     metric = (train_options.eval_search_metric or "").strip()
     if search_model_name == "heuristic":
         metric = metric or "astar_d"
