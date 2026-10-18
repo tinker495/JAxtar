@@ -100,10 +100,10 @@ def build_frontier_cond(batch_size: int, max_steps: int = 100):
 
 def merge_frontier_solution(
     frontier: "IDFrontier",
-    any_solved: chex.Array,
+    any_solved: jax.Array,
     found_sol_state: Xtructurable,
-    found_sol_cost: chex.Array,
-    found_sol_actions: chex.Array,
+    found_sol_cost: jax.Array,
+    found_sol_actions: jax.Array,
 ) -> tuple[jax.Array, XtructurableProtocol, jax.Array, jax.Array]:
     # Pure value selection: where instead of lax.cond (host predicate sync).
     return (
