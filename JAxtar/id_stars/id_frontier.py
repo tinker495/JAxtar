@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Annotated, Any
 
 import chex
 import jax
@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
+from xtructure.core.protocol import Xtructurable as XtructurableProtocol
 
 from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE, TRACE_INDEX_DTYPE
 
@@ -20,16 +21,16 @@ def validate_non_backtracking_steps(steps: int) -> int:
 @base_dataclass
 class IDFrontier:
     states: Xtructurable
-    costs: chex.Array
-    depths: chex.Array
-    valid_mask: chex.Array
-    f_scores: chex.Array
+    costs: jax.Array
+    depths: jax.Array
+    valid_mask: jax.Array
+    f_scores: jax.Array
     trail: Xtructurable
-    action_history: chex.Array
+    action_history: jax.Array
 
-    solved: chex.Array
+    solved: jax.Array
     solution_state: Xtructurable
-    solution_cost: chex.Array
+    solution_cost: jax.Array
     solution_actions_arr: Xtructurable
 
     @staticmethod
@@ -134,11 +135,15 @@ def build_frontier_node_batch(statecls, non_backtracking_steps: int, max_path_le
 
     @xtructure_dataclass
     class FrontierNodeBatch:
-        state: FieldDescriptor.scalar(dtype=statecls)
-        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-        depth: FieldDescriptor.scalar(dtype=jnp.int32)
-        trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
-        action_history: FieldDescriptor.tensor(dtype=ACTION_DTYPE, shape=(max_path_len,))
+        state: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=statecls)]
+        cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+        depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
+        trail: Annotated[
+            XtructurableProtocol, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+        ]
+        action_history: Annotated[
+            jax.Array, FieldDescriptor.tensor(dtype=ACTION_DTYPE, shape=(max_path_len,))
+        ]
 
     return FrontierNodeBatch
 
@@ -148,13 +153,15 @@ def build_id_node_batch(statecls, non_backtracking_steps: int):
 
     @xtructure_dataclass
     class IDNodeBatch:
-        state: FieldDescriptor.scalar(dtype=statecls)
-        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-        depth: FieldDescriptor.scalar(dtype=jnp.int32)
-        trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+        state: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=statecls)]
+        cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+        depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
+        trail: Annotated[
+            XtructurableProtocol, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+        ]
         # Path is one arena row per node: who my parent is, and how I got here.
-        parent_trace: FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)
-        action: FieldDescriptor.scalar(dtype=ACTION_DTYPE)
+        parent_trace: Annotated[jax.Array, FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)]
+        action: Annotated[jax.Array, FieldDescriptor.scalar(dtype=ACTION_DTYPE)]
 
     return IDNodeBatch
 
@@ -209,10 +216,10 @@ def update_action_history(
 
 
 def build_flat_children(
-    neighbours: Xtructurable,
-    step_costs: chex.Array,
-    parent_costs: chex.Array,
-    parent_depths: chex.Array,
+    neighbours: XtructurableProtocol,
+    step_costs: jax.Array,
+    parent_costs: jax.Array,
+    parent_depths: jax.Array,
     parent_states: Xtructurable,
     parent_trails: Xtructurable,
     action_size: int,
@@ -220,7 +227,7 @@ def build_flat_children(
     flat_size: int,
     non_backtracking_steps: int,
     empty_trail_flat: Xtructurable,
-    parent_valid: chex.Array,
+    parent_valid: jax.Array,
 ):
     child_g = (parent_costs[jnp.newaxis, :] + step_costs).astype(KEY_DTYPE)
     child_depth = parent_depths + 1
@@ -234,7 +241,7 @@ def build_flat_children(
         empty_trail_flat,
     )
 
-    flat_states = xnp.reshape(neighbours, (flat_size,))
+    flat_states = neighbours.reshape((flat_size,))
     flat_g = child_g.reshape((flat_size,))
     flat_depth = jnp.broadcast_to(child_depth, (action_size, batch_size)).reshape((flat_size,))
 
