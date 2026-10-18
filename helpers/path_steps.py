@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import List
@@ -142,7 +143,7 @@ def _path_dists(
     heuristic_params,
     q_fn,
     q_fn_params,
-) -> List[float | None] | None:
+) -> Sequence[float | None] | None:
     """Resolve h (or min-a Q) for every path state in one batched, jitted call.
 
     Per-state `heuristic.distance` / `q_fn.q_value` are eager model applies -- ~62 ms
