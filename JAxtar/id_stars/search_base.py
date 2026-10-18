@@ -273,7 +273,7 @@ class IDSearchResult:
         )
         return self.replace(trace_parent=trace_parent, trace_action=trace_action)
 
-    def frontier_trace_indices(self, frontier: IDFrontier) -> chex.Array:
+    def frontier_trace_indices(self, frontier: IDFrontier) -> jax.Array:
         """Arena row of each frontier node: the last row of its block, or INVALID at depth 0."""
         frontier_size = frontier.valid_mask.shape[0]
         block = jnp.arange(frontier_size, dtype=jnp.int32) * self.max_path_len
@@ -425,11 +425,11 @@ class IDSearchResult:
     def push_batch(
         self,
         states: Xtructurable,
-        costs: chex.Array,
-        depths: chex.Array,
+        costs: jax.Array,
+        depths: jax.Array,
         trails: Xtructurable,
-        trace_indices: chex.Array,
-        valid_mask: chex.Array,
+        trace_indices: jax.Array,
+        valid_mask: jax.Array,
         count_generated: bool = True,
     ) -> "IDSearchResult":
         """
