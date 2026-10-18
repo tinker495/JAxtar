@@ -25,7 +25,8 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, HashIdx, base_dataclass, xtructure_dataclass
+from xtructure import FieldDescriptor, HashIdx, xtructure_dataclass
+from xtructure.core.dataclass import base_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.expansion_trace import ExpansionTrace
