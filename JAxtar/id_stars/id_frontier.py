@@ -82,13 +82,13 @@ class IDFrontier:
     def select_top_k(
         self,
         flat_batch: Any,
-        flat_valid: chex.Array,
+        flat_valid: jax.Array,
         f_safe: jax.Array,
         batch_size: int,
-        new_solved: chex.Array,
+        new_solved: jax.Array,
         new_sol_state: Xtructurable,
-        new_sol_cost: chex.Array,
-        new_sol_actions: chex.Array,
+        new_sol_cost: jax.Array,
+        new_sol_actions: jax.Array,
     ) -> "IDFrontier":
         packed_batch, packed_valid, _, packed_idx = compact_by_valid(flat_batch, flat_valid)
         packed_f = jnp.where(packed_valid, f_safe[packed_idx], jnp.inf)
