@@ -40,10 +40,10 @@ def diff_pos(
 
 def linear_conflict(
     tpos: chex.Array,
-    not_empty: chex.Array,
+    not_empty: jax.Array,
     diff: chex.Array,
     puzzle_size: int,
-) -> int:
+) -> jax.Array:
     """Compute the linear conflict count for the slide puzzle.
 
     Args:

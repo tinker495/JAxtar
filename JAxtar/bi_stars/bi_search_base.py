@@ -19,7 +19,7 @@ this state?" is just `seen_opposite[slot]`, and the opposite g-value is
 `opposite.cost[slot]`. No second hash-table probe is needed.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
 import chex
 import jax
@@ -62,12 +62,12 @@ class MeetingPoint:
         found: Whether a valid meeting point has been discovered
     """
 
-    fwd_hashidx: FieldDescriptor.scalar(dtype=HashIdx)
-    bwd_hashidx: FieldDescriptor.scalar(dtype=HashIdx)
-    fwd_cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-    bwd_cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-    total_cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-    found: FieldDescriptor.scalar(dtype=jnp.bool_)
+    fwd_hashidx: Annotated[HashIdx, FieldDescriptor.scalar(dtype=HashIdx)]
+    bwd_hashidx: Annotated[HashIdx, FieldDescriptor.scalar(dtype=HashIdx)]
+    fwd_cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+    bwd_cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+    total_cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+    found: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.bool_)]
 
 
 @base_dataclass(static_fields=("action_size",))
