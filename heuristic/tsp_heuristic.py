@@ -36,7 +36,7 @@ class TSPHeuristic(Heuristic):
         if_distance = jnp.where(all_visited, return_to_start, 0.0)
 
         # Helper to compute MST weight of the remaining (unvisited) nodes.
-        def _mst_weight(dist_matrix: jnp.ndarray, remaining_mask: jnp.ndarray) -> jax.Array:
+        def _mst_weight(dist_matrix: jax.Array, remaining_mask: jax.Array) -> jax.Array:
             """Compute the MST weight of the sub-graph induced by `remaining_mask`.
 
             The implementation uses a fixed-size Prim's algorithm so that it is
