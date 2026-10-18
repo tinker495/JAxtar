@@ -1,4 +1,4 @@
-import chex
+import jax
 import jax.numpy as jnp
 from puxle import SlidePuzzle
 
@@ -7,7 +7,7 @@ from heuristic.slidepuzzle_utils import diff_pos, linear_conflict
 
 
 class SlidePuzzleHeuristic(Heuristic):
-    base_xy: chex.Array  # The coordinates of the numbers in the puzzle
+    base_xy: jax.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle):
         super().__init__(puzzle)
