@@ -29,7 +29,7 @@ class NeuralDistanceBase(ABC):
         puzzle: Puzzle,
         model: DistanceModel | DistanceHLGModel = ResMLPModel,
         init_params: bool = True,
-        path: str = None,
+        path: str | None = None,
         **kwargs,
     ):
         self.puzzle = puzzle
@@ -130,7 +130,7 @@ class NeuralDistanceBase(ABC):
         ) as e:
             raise ValueError(f"Error loading {self.load_error_name} model: {e}") from e
 
-    def save_model(self, path: str = None, metadata: dict = None):
+    def save_model(self, path: str = None, metadata: dict | None = None):
         path = path or self.path
         if metadata is None:
             metadata = {}
