@@ -111,7 +111,7 @@ class SlidePuzzlePreProcessMixin(NeuralDistanceBase):
 
 class SlidePuzzleConvPreProcessMixin(NeuralDistanceBase):
     puzzle: SlidePuzzle
-    base_xy: chex.Array
+    base_xy: jax.Array
     network_model: Any = None
 
     def __init__(self, puzzle, **kwargs):
