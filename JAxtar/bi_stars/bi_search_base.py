@@ -21,7 +21,6 @@ this state?" is just `seen_opposite[slot]`, and the opposite g-value is
 
 from typing import Annotated, Any
 
-import chex
 import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
@@ -93,8 +92,8 @@ class BiDirectionalSearchResult:
     backward: SearchResult
     action_size: int
     meeting: MeetingPoint
-    seen_forward: chex.Array
-    seen_backward: chex.Array
+    seen_forward: jax.Array
+    seen_backward: jax.Array
 
     @property
     def forward_capacity(self) -> int:
@@ -261,8 +260,8 @@ class BiLoopState:
     params_backward: Any
     current_forward: Current
     current_backward: Current
-    filled_forward: chex.Array
-    filled_backward: chex.Array
+    filled_forward: jax.Array
+    filled_backward: jax.Array
 
 
 @base_dataclass
@@ -296,8 +295,8 @@ class BiLoopStateWithStates:
     current_backward: Current
     states_forward: Puzzle.State
     states_backward: Puzzle.State
-    filled_forward: chex.Array
-    filled_backward: chex.Array
+    filled_forward: jax.Array
+    filled_backward: jax.Array
 
 
 def _adopt_shared_hashtable(bi_result: BiDirectionalSearchResult, from_forward: bool):
@@ -318,10 +317,10 @@ def _adopt_shared_hashtable(bi_result: BiDirectionalSearchResult, from_forward: 
 def detect_meeting(
     bi_result: BiDirectionalSearchResult,
     hashidxs: HashIdx,
-    mask: chex.Array,
-    this_costs: chex.Array,
+    mask: jax.Array,
+    this_costs: jax.Array,
     is_forward: bool,
-) -> tuple[chex.Array, chex.Array, chex.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Detect frontier meetings using the shared table + per-direction seen flags.
 
     `hashidxs` are shared-table slots for states this direction just registered. A
@@ -350,7 +349,7 @@ def detect_meeting(
 def register_seen(
     bi_result: BiDirectionalSearchResult,
     hashidxs: HashIdx,
-    mask: chex.Array,
+    mask: jax.Array,
     is_forward: bool,
 ) -> BiDirectionalSearchResult:
     """Mark the given shared slots as registered in this direction (monotone OR)."""
@@ -364,11 +363,11 @@ def register_seen(
 
 def update_meeting_point(
     meeting: MeetingPoint,
-    found_mask: chex.Array,
+    found_mask: jax.Array,
     hashidxs: HashIdx,
-    this_costs: chex.Array,
-    opposite_costs: chex.Array,
-    total_costs: chex.Array,
+    this_costs: jax.Array,
+    opposite_costs: jax.Array,
+    total_costs: jax.Array,
     is_forward: bool,
 ) -> MeetingPoint:
     """
@@ -461,11 +460,11 @@ def stamp_bi_solved_from_meeting(
 
 def bi_termination_condition(
     bi_result: BiDirectionalSearchResult,
-    fwd_min_f: chex.Array,
-    bwd_min_f: chex.Array,
+    fwd_min_f: jax.Array,
+    bwd_min_f: jax.Array,
     cost_weight: float = 1.0,
     terminate_on_first_solution: bool = True,
-) -> chex.Array:
+) -> jax.Array:
     """
     Check the termination condition for bidirectional search.
 
@@ -511,9 +510,9 @@ def bi_termination_condition(
 def get_min_f_value(
     sr: SearchResult,
     current: Current,
-    filled: chex.Array,
+    filled: jax.Array,
     cost_weight: float = 1.0,
-) -> chex.Array:
+) -> jax.Array:
     """Get the minimum f-value from the current batch.
 
     For bidirectional search, we need a per-direction lower bound consistent with
@@ -555,13 +554,13 @@ def get_min_f_value(
 
 def common_bi_loop_condition(
     bi_result: BiDirectionalSearchResult,
-    filled_forward: chex.Array,
-    filled_backward: chex.Array,
+    filled_forward: jax.Array,
+    filled_backward: jax.Array,
     current_forward: Current,
     current_backward: Current,
     cost_weight: float,
     terminate_on_first_solution: bool,
-) -> chex.Array:
+) -> jax.Array:
     """
     Common loop condition for bidirectional search.
 
@@ -598,7 +597,7 @@ def initialize_bi_loop_common(
     puzzle: Puzzle,
     solve_config: Puzzle.SolveConfig,
     start: Puzzle.State,
-) -> tuple[chex.Array, Current, Puzzle.State, chex.Array, Current, Puzzle.State]:
+) -> tuple[jax.Array, Current, Puzzle.State, jax.Array, Current, Puzzle.State]:
     """
     Common initialization logic for bidirectional search loop state.
     Initializes forward (from start) and backward (from goal) frontiers in the
@@ -761,8 +760,8 @@ def build_bi_deferred_expand_direction(
         params: Any,
         current: Current,
         states: Puzzle.State,
-        filled: chex.Array,
-    ) -> tuple[BiDirectionalSearchResult, Current, Puzzle.State, chex.Array]:
+        filled: jax.Array,
+    ) -> tuple[BiDirectionalSearchResult, Current, Puzzle.State, jax.Array]:
         if is_forward:
             search_result = bi_result.forward
             current_solve_config = solve_config
