@@ -1,6 +1,5 @@
 """Shared utility functions for SlidePuzzle heuristic and Q-function."""
 
-import chex
 import jax
 import jax.numpy as jnp
 from puxle import SlidePuzzle
@@ -10,8 +9,8 @@ def diff_pos(
     current: SlidePuzzle.State,
     target: SlidePuzzle.State,
     puzzle_size: int,
-    base_xy: chex.Array,
-) -> tuple[chex.Array, chex.Array]:
+    base_xy: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """Compute positional difference between current and target board states.
 
     Args:
@@ -39,11 +38,11 @@ def diff_pos(
 
 
 def linear_conflict(
-    tpos: chex.Array,
-    not_empty: chex.Array,
-    diff: chex.Array,
+    tpos: jax.Array,
+    not_empty: jax.Array,
+    diff: jax.Array,
     puzzle_size: int,
-) -> int:
+) -> jax.Array:
     """Compute the linear conflict count for the slide puzzle.
 
     Args:

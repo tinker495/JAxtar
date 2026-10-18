@@ -1,6 +1,6 @@
 from typing import Any
 
-import chex
+import jax
 from puxle import Puzzle
 
 from neural_util.neural_distance_base import NeuralDistanceBase
@@ -26,13 +26,13 @@ class NeuralQFunctionBase(NeuralDistanceBase, QFunction):
 
     def batched_q_value(
         self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State
-    ) -> chex.Array:
+    ) -> jax.Array:
         params, solve_config = q_parameters
         return self.batched_param_q_value(params, solve_config, current)
 
     def batched_param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
-    ) -> chex.Array:
+    ) -> jax.Array:
         return self._batched_model_values(params, solve_config, current)
 
     def q_value(self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State):
@@ -41,5 +41,5 @@ class NeuralQFunctionBase(NeuralDistanceBase, QFunction):
 
     def param_q_value(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
-    ) -> chex.Array:
+    ) -> jax.Array:
         return self._model_values(params, solve_config, current)

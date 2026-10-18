@@ -152,12 +152,14 @@ class NeuralDistanceBase(ABC):
 
     def _batched_model_values(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
-    ) -> chex.Array:
+    ) -> jax.Array:
         x = self.batched_pre_process(solve_config, current)
         x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
         return self.post_process(x)
 
-    def _model_values(self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State):
+    def _model_values(
+        self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+    ) -> jax.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
         x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
@@ -172,7 +174,7 @@ class NeuralDistanceBase(ABC):
     def pre_process(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
         pass
 
-    def post_process(self, x: chex.Array):
+    def post_process(self, x: jax.Array) -> jax.Array:
         return x
 
     def _preload_metadata(self):

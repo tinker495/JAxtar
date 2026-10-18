@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 
 import chex
 import jax
@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
+from xtructure.core.protocol import Xtructurable as XtructurableProtocol
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import (
@@ -295,8 +296,10 @@ def get_heuristic_dataset_builder(
 
     @xtructure_dataclass
     class SolveConfigsAndStates:
-        solveconfigs: FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        states: FieldDescriptor.scalar(dtype=puzzle.State)
+        solveconfigs: Annotated[
+            XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
+        ]
+        states: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.State)]
 
     base_get_datasets = partial(
         _get_datasets,

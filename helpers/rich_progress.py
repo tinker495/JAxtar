@@ -37,7 +37,7 @@ def _format_metric_value(value: Any) -> str:
 class MetricsColumn(ProgressColumn):
     """Custom column for displaying training metrics."""
 
-    def __init__(self, metrics: Dict[str, Any] = None):
+    def __init__(self, metrics: Dict[str, Any] | None = None):
         super().__init__()
         self.metrics = metrics or {}
 
