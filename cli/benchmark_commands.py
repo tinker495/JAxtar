@@ -28,9 +28,6 @@ def _build_benchmark_command(entry: SearchAlgorithmEntry):
     schema = (
         HeuristicBenchmarkArgs if entry.component_kind == "heuristic" else QFunctionBenchmarkArgs
     )
-    extra_sweep_kwargs = (
-        {"node_metric_label": entry.node_metric_label} if entry.node_metric_label else {}
-    )
 
     def run(options):
         kwargs = resolve_benchmark(asdict(options))
@@ -51,13 +48,13 @@ def _build_benchmark_command(entry: SearchAlgorithmEntry):
             benchmark_bundle=kwargs.get("benchmark_bundle"),
             benchmark_cli_options=kwargs.get("benchmark_cli_options", {}),
             output_dir=kwargs["output_dir"],
-            **extra_sweep_kwargs,
+            node_metric_label=entry.node_metric_label,
         )
 
     run.__annotations__ = {"options": schema}
     run.__name__ = entry.python_id
     run.__doc__ = entry.eval_description
-    benchmark_app.command(run, name=entry.cli_subcommand)
+    benchmark_app.command(name=entry.cli_subcommand)(run)
 
 
 for _entry in SEARCH_ALGORITHM_CATALOG:

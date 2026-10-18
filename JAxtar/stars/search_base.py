@@ -9,7 +9,7 @@ Key features:
 """
 
 from functools import partial
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any, Callable, Literal, overload
 
 import jax
 import jax.numpy as jnp
@@ -607,6 +607,45 @@ class SearchResult:
 
         return search_result, min_val, final_process_mask
 
+    @overload
+    def _pop_full_with_parent_with_costs(
+        search_result,
+        puzzle: Puzzle,
+        solve_config: Puzzle.SolveConfig,
+        use_heuristic: bool = False,
+        return_states: Literal[False] = False,
+        is_backward: bool = False,
+        **kwargs,
+    ) -> tuple["SearchResult", Current, jax.Array]:
+        ...
+
+    @overload
+    def _pop_full_with_parent_with_costs(
+        search_result,
+        puzzle: Puzzle,
+        solve_config: Puzzle.SolveConfig,
+        use_heuristic: bool,
+        return_states: Literal[True],
+        is_backward: bool = False,
+        **kwargs,
+    ) -> tuple["SearchResult", Current, Puzzle.State, jax.Array]:
+        ...
+
+    @overload
+    def _pop_full_with_parent_with_costs(
+        search_result,
+        puzzle: Puzzle,
+        solve_config: Puzzle.SolveConfig,
+        use_heuristic: bool = False,
+        return_states: bool = False,
+        is_backward: bool = False,
+        **kwargs,
+    ) -> (
+        tuple["SearchResult", Current, jax.Array]
+        | tuple["SearchResult", Current, Puzzle.State, jax.Array]
+    ):
+        ...
+
     def _pop_full_with_parent_with_costs(
         search_result,
         puzzle: Puzzle,
@@ -975,7 +1014,7 @@ class SearchResult:
 
         return search_result, final_currents, final_process_mask
 
-    def _get_solved_path(search_result) -> list[Parent]:
+    def _get_solved_path(search_result) -> list[Parent | Current]:
         """
         Get the path to the solved state.
         """
@@ -1003,7 +1042,7 @@ class SearchResult:
         loop_detected = bool(jax.device_get(loop_detected))
         corruption_detected = bool(jax.device_get(corruption_detected))
 
-        path = [solved_idx]
+        path: list[Parent | Current] = [solved_idx]
         steps_added = 0
         for step in range(max(0, length - 1)):
             parent_idx = int(path_idx[step + 1])

@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from puxle import LightsOut
 
@@ -8,7 +9,7 @@ class LightsOutHeuristic(Heuristic):
     def __init__(self, puzzle: LightsOut):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: LightsOut.SolveConfig, current: LightsOut.State) -> float:
+    def distance(self, solve_config: LightsOut.SolveConfig, current: LightsOut.State) -> jax.Array:
         """
         Get distance between current state and target state.
         """

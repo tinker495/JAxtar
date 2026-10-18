@@ -3,6 +3,7 @@ from typing import Any, Union
 
 import chex
 import jax
+import jax.numpy as jnp
 from puxle import Puzzle
 
 
@@ -53,12 +54,14 @@ class Heuristic(ABC):
             The distance between the state and the target.
             shape : (batch_size,)
         """
-        return jax.vmap(self.distance, in_axes=(None, 0))(heuristic_parameters, current)
+        return jnp.asarray(
+            jax.vmap(self.distance, in_axes=(None, 0))(heuristic_parameters, current)
+        )
 
     @abstractmethod
     def distance(
-        self, heuristic_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State
-    ) -> float:
+        self, heuristic_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State, /
+    ) -> float | jax.Array:
         """
         This function should return the distance between the state and the target.
 
