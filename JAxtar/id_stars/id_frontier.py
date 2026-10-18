@@ -21,7 +21,7 @@ def validate_non_backtracking_steps(steps: int) -> int:
 @base_dataclass
 class IDFrontier:
     states: Xtructurable
-    costs: chex.Array
+    costs: jax.Array
     depths: chex.Array
     valid_mask: chex.Array
     f_scores: chex.Array
