@@ -208,7 +208,7 @@ def slidepuzzle_zero_pos(board_unpacked: chex.Array) -> chex.Array:
 
 
 def slidepuzzle_diff_pos(
-    current_board_unpacked: chex.Array,
+    current_board_unpacked: jax.Array,
     target_board_unpacked: chex.Array,
     base_xy: chex.Array,
     puzzle_size: int,

@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import xtructure.numpy as xnp
+from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE
 from JAxtar.solution_trace import SolutionTrace
@@ -55,7 +56,7 @@ def _batched_path_q_dists(q_fn, q_params, states: List) -> List[float]:
 
 @dataclass
 class PathStep:
-    state: object
+    state: Puzzle.State
     cost: float
     dist: float | None
     action: int | None
