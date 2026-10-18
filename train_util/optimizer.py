@@ -19,7 +19,7 @@ def adamw(**kwargs: Any) -> optax.GradientTransformation:
 
 def adoptw(
     learning_rate: float,
-    weight_decay: float = None,
+    weight_decay: float | None = None,
     weight_decay_mask: Optional[PyTree] = None,
     **adopt_kwargs: Any,
 ) -> optax.GradientTransformation:
