@@ -1,10 +1,13 @@
 """Shared utility functions for DotKnot heuristic and Q-function."""
 
+import jax
 import jax.numpy as jnp
 from puxle import DotKnot
 
 
-def get_color_distances(current: DotKnot.State, color_idx: int, size: int, color_num: int) -> float:
+def get_color_distances(
+    current: DotKnot.State, color_idx: int, size: int, color_num: int
+) -> jax.Array:
     """
     Get distance for a single color pair in the DotKnot puzzle.
 

@@ -6,7 +6,7 @@ import numpy as np
 import optax
 from flax import linen as nn
 
-from train_util.losses import loss_from_diff
+from train_util.losses import LossName, loss_from_diff
 from train_util.train_logs import TrainLogInfo
 
 
@@ -19,10 +19,12 @@ class DistanceModel(ABC, nn.Module):
         return False
 
     @abstractmethod
-    def __call__(self, x, training=False):
+    def __call__(self, x, training=False) -> jax.Array:
         pass
 
-    def train_loss(self, x, target, actions=None, loss_type="mse", loss_args=None, **kwargs):
+    def train_loss(
+        self, x, target, actions=None, loss_type: LossName = "mse", loss_args=None, **kwargs
+    ):
         pred = self(x, training=True)
         if actions is not None:
             pred = jnp.take_along_axis(pred, actions, axis=1)
@@ -65,7 +67,7 @@ class DistanceHLGModel(ABC, nn.Module):
         self.sigma = self._sigma * (self.categorial_bins[1] - self.categorial_bins[0])
 
     @abstractmethod
-    def get_logits(self, x, training=False):
+    def get_logits(self, x, training=False) -> jax.Array:
         pass
 
     def logit_to_values(self, logits):
@@ -74,7 +76,7 @@ class DistanceHLGModel(ABC, nn.Module):
         x = jnp.sum(softmax * categorial_centers, axis=-1)  # (batch_size, action_size)
         return x
 
-    def __call__(self, x, training=False):
+    def __call__(self, x, training=False) -> jax.Array:
         logits = self.get_logits(x, training)
         return self.logit_to_values(logits)
 

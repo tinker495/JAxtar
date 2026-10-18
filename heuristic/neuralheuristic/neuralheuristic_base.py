@@ -1,6 +1,6 @@
 from typing import Any
 
-import chex
+import jax
 from puxle import Puzzle
 
 from heuristic.heuristic_base import Heuristic
@@ -19,13 +19,13 @@ class NeuralHeuristicBase(NeuralDistanceBase, Heuristic):
         self,
         heuristic_parameters: tuple[Any, Puzzle.SolveConfig],
         current: Puzzle.State,
-    ) -> chex.Array:
+    ) -> jax.Array:
         params, solve_config = heuristic_parameters
         return self.batched_param_distance(params, solve_config, current)
 
     def batched_param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
-    ) -> chex.Array:
+    ) -> jax.Array:
         return self._batched_model_values(params, solve_config, current)
 
     def distance(
@@ -38,8 +38,8 @@ class NeuralHeuristicBase(NeuralDistanceBase, Heuristic):
 
     def param_distance(
         self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
-    ) -> chex.Array:
+    ) -> jax.Array:
         return self._model_values(params, solve_config, current)
 
-    def post_process(self, x: chex.Array) -> chex.Array:
+    def post_process(self, x: jax.Array) -> jax.Array:
         return x.squeeze(1)
