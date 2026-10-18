@@ -166,7 +166,7 @@ def _bi_astar_loop_builder(
         filled: chex.Array,
         is_forward: bool,
         use_heuristic: bool,
-    ) -> tuple[BiDirectionalSearchResult, Current, chex.Array]:
+    ) -> tuple[BiDirectionalSearchResult, Current, jax.Array]:
         """
         Expand one direction (forward or backward).
 
