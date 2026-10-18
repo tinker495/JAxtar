@@ -11,7 +11,8 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
+from xtructure.core.dataclass import base_dataclass
 from xtructure.core.packing import pack_rows
 from xtructure.stack import Stack
 from xtructure.core.protocol import Xtructurable as XtructurableProtocol
@@ -103,7 +104,7 @@ def merge_frontier_solution(
     found_sol_state: Xtructurable,
     found_sol_cost: chex.Array,
     found_sol_actions: chex.Array,
-):
+) -> tuple[jax.Array, Xtructurable, jax.Array, jax.Array]:
     # Pure value selection: where instead of lax.cond (host predicate sync).
     return (
         jnp.logical_or(frontier.solved, any_solved),
