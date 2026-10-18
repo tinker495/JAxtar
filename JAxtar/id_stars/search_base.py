@@ -14,6 +14,7 @@ from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 from xtructure.core.packing import pack_rows
 from xtructure.stack import Stack
+from xtructure.core.protocol import Xtructurable as XtructurableProtocol
 
 from helpers.jax_compile import compile_with_example, warmup_with_example
 from JAxtar.annotate import (
@@ -189,11 +190,11 @@ class IDSearchResult:
 
         @xtructure_dataclass
         class IDStackItem:
-            state: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=statecls)]
+            state: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=statecls)]
             cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
             depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
             trail: Annotated[
-                Xtructurable, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+                XtructurableProtocol, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
             ]
             trace_index: Annotated[jax.Array, FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)]
 
@@ -701,7 +702,7 @@ class IDSearchResult:
         self,
         frontier: IDFrontier,
         cost_weight: float,
-        eval_fn: Callable[[Any, Xtructurable, chex.Array], jax.Array],
+        eval_fn: Callable[[Any, XtructurableProtocol, chex.Array], jax.Array],
         params: Any,
     ) -> tuple["IDSearchResult", IDFrontier]:
         """
