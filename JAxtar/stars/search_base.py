@@ -8,6 +8,7 @@ Key features:
 - Generic puzzle-agnostic implementation
 """
 
+from dataclasses import replace
 from functools import partial
 from typing import Annotated, Any, Callable, Literal, overload
 
@@ -121,7 +122,8 @@ def insert_priority_queue_batches(
 
     def _update_pq_insert(sr: "SearchResult"):
         row_any = jnp.any(masks, axis=1)
-        return sr.replace(
+        return replace(
+            sr,
             xtr_pq_insert_calls=sr.xtr_pq_insert_calls + jnp.sum(row_any).astype(jnp.int32),
             xtr_pq_insert_items=sr.xtr_pq_insert_items + jnp.sum(masks).astype(jnp.int32),
         )
@@ -573,7 +575,8 @@ class SearchResult:
 
         def _update_pq_pop(sr: "SearchResult"):
             processed = jnp.sum(final_process_mask).astype(jnp.int32)
-            return sr.replace(
+            return replace(
+                sr,
                 xtr_steps=sr.xtr_steps + jnp.array(1, dtype=jnp.int32),
                 xtr_pq_delete_calls=sr.xtr_pq_delete_calls + delete_calls,
                 xtr_pq_popped_items=sr.xtr_pq_popped_items + popped_total,
@@ -728,7 +731,8 @@ class SearchResult:
             ) = search_result.hashtable.lookup_parallel_with_probe(current_states, unique_mask)
 
             def _update_lookup(sr: "SearchResult"):
-                return sr.replace(
+                return replace(
+                    sr,
                     xtr_ht_lookup=sr.xtr_ht_lookup + jnp.sum(unique_mask).astype(jnp.int32),
                     xtr_ht_found=sr.xtr_ht_found
                     + jnp.sum(jnp.logical_and(found, unique_mask)).astype(jnp.int32),
@@ -926,7 +930,8 @@ class SearchResult:
 
         def _update_deferred(sr: "SearchResult"):
             processed = jnp.sum(final_process_mask).astype(jnp.int32)
-            return sr.replace(
+            return replace(
+                sr,
                 xtr_steps=sr.xtr_steps + jnp.array(1, dtype=jnp.int32),
                 xtr_pq_delete_calls=sr.xtr_pq_delete_calls + delete_calls,
                 xtr_pq_popped_items=sr.xtr_pq_popped_items + popped_total,
@@ -964,8 +969,8 @@ class SearchResult:
         )
 
         def _update_inserted(sr: "SearchResult"):
-            return sr.replace(
-                xtr_ht_inserted=sr.xtr_ht_inserted + jnp.sum(inserted_mask).astype(jnp.int32)
+            return replace(
+                sr, xtr_ht_inserted=sr.xtr_ht_inserted + jnp.sum(inserted_mask).astype(jnp.int32)
             )
 
         search_result = jax.lax.cond(
