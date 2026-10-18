@@ -3,6 +3,9 @@ from typing import Any
 import chex
 import jax
 import jax.numpy as jnp
+from puxle import LightsOut, PancakeSorting, RubiksCube, SlidePuzzle
+
+from neural_util.neural_distance_base import NeuralDistanceBase
 
 from neural_util.dtypes import DTYPE
 from neural_util.preprocessing import (
@@ -24,7 +27,8 @@ class LightsOutPreProcessMixin:
         return lightsout_pre_process(current.board_unpacked, target_board, self.is_fixed)
 
 
-class LightsOutConvPreProcessMixin:
+class LightsOutConvPreProcessMixin(NeuralDistanceBase):
+    puzzle: LightsOut
     network_model: Any = None
 
     def __init__(self, puzzle, **kwargs):
@@ -44,6 +48,7 @@ class LightsOutConvPreProcessMixin:
 
 
 class PancakePreProcessMixin:
+    puzzle: PancakeSorting
     is_fixed: bool = True
 
     def pre_process(self, solve_config, current) -> chex.Array:
@@ -51,7 +56,8 @@ class PancakePreProcessMixin:
         return pancake_pre_process(current.stack, target_stack, self.puzzle.size, self.is_fixed)
 
 
-class RubiksCubePreProcessMixin:
+class RubiksCubePreProcessMixin(NeuralDistanceBase):
+    puzzle: RubiksCube
     is_fixed: bool = True
 
     def __init__(self, puzzle, **kwargs):
@@ -86,7 +92,8 @@ class RubiksCubeRandomPreProcessMixin(RubiksCubePreProcessMixin):
         )
 
 
-class SlidePuzzlePreProcessMixin:
+class SlidePuzzlePreProcessMixin(NeuralDistanceBase):
+    puzzle: SlidePuzzle
     is_fixed: bool = True
 
     def __init__(self, puzzle, **kwargs):
@@ -102,8 +109,9 @@ class SlidePuzzlePreProcessMixin:
         )
 
 
-class SlidePuzzleConvPreProcessMixin:
-    base_xy: chex.Array
+class SlidePuzzleConvPreProcessMixin(NeuralDistanceBase):
+    puzzle: SlidePuzzle
+    base_xy: jax.Array
     network_model: Any = None
 
     def __init__(self, puzzle, **kwargs):

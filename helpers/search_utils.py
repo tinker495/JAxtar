@@ -39,11 +39,12 @@ def vmapping_search(
     empty_states = puzzle.State.default((vmap_size,))
     empty_solve_configs = puzzle.SolveConfig.default((vmap_size,))
     vmapped_star = jax.jit(jax.vmap(star_fn, in_axes=(0, 0)))
+    start = None
     if show_compile_time:
         print("initializing vmapped jit")
         start = time.time()
     compile_with_example(vmapped_star, empty_solve_configs, empty_states)
-    if show_compile_time:
+    if start is not None:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")
         print("JIT compiled\n\n")
