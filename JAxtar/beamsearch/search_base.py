@@ -33,10 +33,10 @@ TRACE_INVALID = jnp.array(TRACE_INVALID_INT, dtype=TRACE_INDEX_DTYPE)
 
 @partial(jax.jit, static_argnames=("max_steps",))
 def _reconstruct_trace_indices(
-    trace_parent: chex.Array,
-    start_node: chex.Array,
+    trace_parent: jax.Array,
+    start_node: jax.Array,
     max_steps: int,
-) -> tuple[chex.Array, chex.Array]:
+) -> tuple[jax.Array, jax.Array]:
     path_idx = jnp.full((max_steps,), TRACE_INVALID, dtype=trace_parent.dtype)
 
     def _cond(carry):
@@ -72,22 +72,22 @@ class BeamSearchResult:
     beam_width: int
     max_depth: int
     action_size: int
-    cost: chex.Array
-    dist: chex.Array
-    scores: chex.Array
-    depth: chex.Array
-    parent_index: chex.Array
+    cost: jax.Array
+    dist: jax.Array
+    scores: jax.Array
+    depth: jax.Array
+    parent_index: jax.Array
     beam: Xtructurable
-    solved: chex.Array
-    solved_idx: chex.Array
-    generated_size: chex.Array
-    trace_parent: chex.Array
-    trace_action: chex.Array
-    trace_cost: chex.Array
-    trace_dist: chex.Array
-    trace_depth: chex.Array
+    solved: jax.Array
+    solved_idx: jax.Array
+    generated_size: jax.Array
+    trace_parent: jax.Array
+    trace_action: jax.Array
+    trace_cost: jax.Array
+    trace_dist: jax.Array
+    trace_depth: jax.Array
     trace_state: Xtructurable
-    active_trace: chex.Array
+    active_trace: jax.Array
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3))
@@ -139,18 +139,18 @@ class BeamSearchResult:
             active_trace=active_trace,
         )
 
-    def filled_mask(self) -> chex.Array:
+    def filled_mask(self) -> jax.Array:
         return jnp.isfinite(self.cost)
 
     def get_state(self, idx: int) -> Puzzle.State:
         """Return the state at `idx` in the current beam."""
         return self.beam[int(idx)]
 
-    def get_cost(self, idx: int) -> chex.Array:
+    def get_cost(self, idx: int) -> jax.Array:
         """Return the accumulated path cost for the slot."""
         return self.cost[int(idx)]
 
-    def get_dist(self, idx: int) -> chex.Array:
+    def get_dist(self, idx: int) -> jax.Array:
         """Return the cached heuristic/Q distance for the slot."""
         return self.dist[int(idx)]
 
@@ -251,7 +251,7 @@ class BeamSearchResult:
         actions = list(reversed(actions_rev))
         return costs, dists, actions
 
-    def seed_start(self, start: Puzzle.State, dist: chex.Array, score: chex.Array):
+    def seed_start(self, start: Puzzle.State, dist: jax.Array, score: jax.Array):
         self.beam = self.beam.at[0].set(start)
         self.cost = self.cost.at[0].set(0)
         self.dist = self.dist.at[0].set(dist)
@@ -268,12 +268,12 @@ class BeamSearchResult:
     def advance(
         self,
         selected_states: Xtructurable,
-        selected_costs: chex.Array,
-        selected_dists: chex.Array,
-        selected_scores: chex.Array,
-        selected_actions: chex.Array,
-        selected_parents: chex.Array,
-        selected_valid: chex.Array,
+        selected_costs: jax.Array,
+        selected_dists: jax.Array,
+        selected_scores: jax.Array,
+        selected_actions: jax.Array,
+        selected_parents: jax.Array,
+        selected_valid: jax.Array,
     ) -> "BeamSearchResult":
         parent_trace_ids = self.active_trace[selected_parents]
         invalid_parent = jnp.full_like(parent_trace_ids, TRACE_INVALID)
@@ -350,11 +350,11 @@ def finalize_beam_result(
 
 
 def select_beam(
-    scores: chex.Array,
+    scores: jax.Array,
     beam_width: int,
     pop_ratio: float = jnp.inf,
     min_keep: int = 1,
-) -> tuple[chex.Array, chex.Array, chex.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Select the top-scoring candidates for the next beam.
 
     Args:
@@ -399,11 +399,11 @@ def select_beam(
 
 def non_backtracking_mask(
     candidate_states: Xtructurable,
-    parent_trace_ids: chex.Array,
+    parent_trace_ids: jax.Array,
     trace_state: Xtructurable,
-    trace_parent: chex.Array,
+    trace_parent: jax.Array,
     lookback: int,
-) -> chex.Array:
+) -> jax.Array:
     if lookback <= 0:
         return jnp.ones(parent_trace_ids.shape, dtype=jnp.bool_)
 
