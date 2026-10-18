@@ -218,7 +218,7 @@ def update_action_history(
 def build_flat_children(
     neighbours: XtructurableProtocol,
     step_costs: chex.Array,
-    parent_costs: chex.Array,
+    parent_costs: jax.Array,
     parent_depths: chex.Array,
     parent_states: Xtructurable,
     parent_trails: Xtructurable,
