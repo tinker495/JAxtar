@@ -564,7 +564,7 @@ class IDSearchResult:
     def expand_and_push(
         self,
         node_batch: Xtructurable,
-        fs: chex.Array,
+        fs: jax.Array,
         valid: jax.Array,
         update_next_bound: bool = True,
     ) -> "IDSearchResult":
@@ -802,15 +802,15 @@ class IDSearchResult:
 
 def apply_standard_deduplication(
     flat_neighbours: Xtructurable,
-    flat_g: chex.Array,
-    flat_valid: chex.Array,
+    flat_g: jax.Array,
+    flat_valid: jax.Array,
     parents: Xtructurable,
     parent_trails: Xtructurable,
     parent_depths: jax.Array,
     non_backtracking_steps: int,
     action_size: int,
     flat_size: int,
-    trail_indices: jnp.ndarray,
+    trail_indices: jax.Array,
     batch_size: int,
 ) -> jax.Array:
     """Apply in-batch deduplication and non-backtracking; return the filtered valid mask."""
