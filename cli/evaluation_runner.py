@@ -618,6 +618,9 @@ class EvaluationRunner:
                     batched_estimated = np.asarray(estimated_arr)
                     batched_valid = np.asarray(valid_mask)
 
+                assert batched_actual is not None
+                assert batched_estimated is not None
+                assert batched_valid is not None
                 length = batched_lengths[batch_index]
                 actual_np = batched_actual[batch_index, :length]
                 estimated_np = batched_estimated[batch_index, :length]

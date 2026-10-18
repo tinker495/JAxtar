@@ -11,6 +11,8 @@ duplicates.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 import chex
 from puxle.core.trajectory import (
     PuzzleTrajectory,
@@ -18,9 +20,22 @@ from puxle.core.trajectory import (
     create_hindsight_target_triangular_shuffled_path as _create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path as _create_target_shuffled_path,
 )
+from xtructure import Xtructurable
 
 
-def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> dict[str, chex.Array]:
+class TrajectoryDataset(TypedDict):
+    solve_configs: Xtructurable
+    states: Xtructurable
+    move_costs: chex.Array
+    move_costs_tm1: chex.Array
+    actions: chex.Array
+    action_costs: chex.Array
+    parent_indices: chex.Array | None
+    trajectory_indices: chex.Array | None
+    step_indices: chex.Array | None
+
+
+def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
     """Translate a ``PuzzleTrajectory`` into the flat dict shape consumed by
     JAxtar's JIT'd training step. Field names match the legacy dict keys.
     """
@@ -62,7 +77,7 @@ def create_target_shuffled_path(
     include_solved_states: bool,
     key: chex.PRNGKey,
     non_backtracking_steps: int = 3,
-) -> dict[str, chex.Array]:
+) -> TrajectoryDataset:
     return trajectory_to_dataset_dict(
         _create_target_shuffled_path(
             puzzle,
@@ -82,7 +97,7 @@ def create_hindsight_target_shuffled_path(
     include_solved_states: bool,
     key: chex.PRNGKey,
     non_backtracking_steps: int = 3,
-) -> dict[str, chex.Array]:
+) -> TrajectoryDataset:
     return trajectory_to_dataset_dict(
         _create_hindsight_target_shuffled_path(
             puzzle,
@@ -102,7 +117,7 @@ def create_hindsight_target_triangular_shuffled_path(
     include_solved_states: bool,
     key: chex.PRNGKey,
     non_backtracking_steps: int = 3,
-) -> dict[str, chex.Array]:
+) -> TrajectoryDataset:
     return trajectory_to_dataset_dict(
         _create_hindsight_target_triangular_shuffled_path(
             puzzle,

@@ -4,6 +4,7 @@ from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from datetime import datetime
 from io import TextIOBase
 from pathlib import Path
+from typing import TextIO
 
 _CSI_RE = re.compile(r"\x1B\[([0-?]*)[ -/]*([@-~])")
 # A CSI sequence split across two write() calls must be carried over, or its
@@ -136,7 +137,7 @@ class _LogCapture:
 class _TeeStream(TextIOBase):
     """Mirror writes to the primary stream and capture sanitized output."""
 
-    def __init__(self, primary: TextIOBase, capture: _LogCapture):
+    def __init__(self, primary: TextIO, capture: _LogCapture):
         self._primary = primary
         self._capture = capture
 
@@ -150,11 +151,11 @@ class _TeeStream(TextIOBase):
         self._capture.flush()
 
     @property
-    def encoding(self):
-        return getattr(self._primary, "encoding", "utf-8")
+    def encoding(self) -> str | None:
+        return self._primary.encoding
 
     def isatty(self):
-        return getattr(self._primary, "isatty", lambda: False)()
+        return self._primary.isatty()
 
 
 @contextmanager
