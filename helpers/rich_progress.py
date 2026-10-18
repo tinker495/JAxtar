@@ -6,6 +6,7 @@ real-time progress display with enhanced metrics visualization.
 """
 
 import threading
+from collections.abc import Sized
 from contextlib import contextmanager
 from typing import Any, Dict, Iterable, Optional
 
@@ -106,7 +107,7 @@ class RichProgressBar:
         if iterable is not None:
             if total is None:
                 try:
-                    self.total = len(iterable)
+                    self.total = len(iterable) if isinstance(iterable, Sized) else None
                 except (TypeError, AttributeError):
                     self.total = None
             self.iterable = iterable
