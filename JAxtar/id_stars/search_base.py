@@ -702,7 +702,7 @@ class IDSearchResult:
         self,
         frontier: IDFrontier,
         cost_weight: float,
-        eval_fn: Callable[[Any, XtructurableProtocol, chex.Array], jax.Array],
+        eval_fn: Callable[[Any, XtructurableProtocol, jax.Array], jax.Array],
         params: Any,
     ) -> tuple["IDSearchResult", IDFrontier]:
         """

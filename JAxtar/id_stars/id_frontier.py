@@ -22,15 +22,15 @@ def validate_non_backtracking_steps(steps: int) -> int:
 class IDFrontier:
     states: Xtructurable
     costs: jax.Array
-    depths: chex.Array
-    valid_mask: chex.Array
-    f_scores: chex.Array
+    depths: jax.Array
+    valid_mask: jax.Array
+    f_scores: jax.Array
     trail: Xtructurable
-    action_history: chex.Array
+    action_history: jax.Array
 
-    solved: chex.Array
+    solved: jax.Array
     solution_state: Xtructurable
-    solution_cost: chex.Array
+    solution_cost: jax.Array
     solution_actions_arr: Xtructurable
 
     @staticmethod
@@ -217,9 +217,9 @@ def update_action_history(
 
 def build_flat_children(
     neighbours: XtructurableProtocol,
-    step_costs: chex.Array,
+    step_costs: jax.Array,
     parent_costs: jax.Array,
-    parent_depths: chex.Array,
+    parent_depths: jax.Array,
     parent_states: Xtructurable,
     parent_trails: Xtructurable,
     action_size: int,
@@ -227,7 +227,7 @@ def build_flat_children(
     flat_size: int,
     non_backtracking_steps: int,
     empty_trail_flat: Xtructurable,
-    parent_valid: chex.Array,
+    parent_valid: jax.Array,
 ):
     child_g = (parent_costs[jnp.newaxis, :] + step_costs).astype(KEY_DTYPE)
     child_depth = parent_depths + 1
