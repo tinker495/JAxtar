@@ -11,7 +11,6 @@ Key features:
 from functools import partial
 from typing import Annotated, Any, Callable
 
-import chex
 import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
@@ -43,13 +42,13 @@ POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
 def _select_pop_batch(
     priority_queue: BGPQ,
-    key: chex.Array,
+    key: jax.Array,
     value: "Current | Parant_with_Costs",
     *,
     pop_ratio: jax.Array,
     min_pop: int,
     fixed_batch_pop: bool,
-) -> tuple[BGPQ, chex.Array]:
+) -> tuple[BGPQ, jax.Array]:
     """Select valid candidates and retain any ratio-rejected entries in the queue."""
     filled = jnp.isfinite(key)
     if fixed_batch_pop:
@@ -76,7 +75,7 @@ def insert_priority_queue_batches(
     search_result: "SearchResult",
     keys,
     vals,
-    masks: chex.Array,
+    masks: jax.Array,
     *,
     presorted: bool = False,
     prefix_rows: bool = False,
@@ -138,12 +137,12 @@ def insert_priority_queue_batches(
 
 @partial(jax.jit, static_argnames=("max_steps",))
 def _reconstruct_path_arrays(
-    parent_indices: chex.Array,
-    costs: chex.Array,
-    dists: chex.Array,
-    solved_index: chex.Array,
+    parent_indices: jax.Array,
+    costs: jax.Array,
+    dists: jax.Array,
+    solved_index: jax.Array,
     max_steps: int,
-) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
     parent_indices = parent_indices.astype(jnp.int32)
     path_idx = jnp.full((max_steps,), -1, dtype=jnp.int32)
     path_costs = jnp.full((max_steps,), jnp.nan, dtype=costs.dtype)
@@ -227,7 +226,7 @@ class LoopState:
     solve_config: Puzzle.SolveConfig
     params: Any
     current: Current
-    filled: chex.Array
+    filled: jax.Array
 
 
 @base_dataclass
@@ -245,7 +244,7 @@ class LoopStateWithStates:
     params: Any
     current: Current
     states: Puzzle.State
-    filled: chex.Array
+    filled: jax.Array
 
 
 @base_dataclass(static_fields=("action_size", "branching_factor", "fixed_batch_pop"))
@@ -272,10 +271,10 @@ class SearchResult:
                 beam width. It is used to calculate a multiplier `M = max(1.0 + pop_ratio, 1.01)`.
                 The search beam will include all nodes with a cost up to `min_cost * M`.
         min_pop (int): Minimum number of states to pop from the priority queue
-        cost (chex.Array): Cost array tracking path costs to each state (g value)
-        dist (chex.Array): Distance array storing calculated heuristic or Q values
+        cost (jax.Array): Cost array tracking path costs to each state (g value)
+        dist (jax.Array): Distance array storing calculated heuristic or Q values
         parent (Parent): Array storing parent state indices for path reconstruction
-        solved (chex.Array): Boolean flag indicating if a solution has been found
+        solved (jax.Array): Boolean flag indicating if a solution has been found
         solved_idx (Current): Index of the solved state in the hash table
     """
 
@@ -286,31 +285,31 @@ class SearchResult:
     pop_ratio: jax.Array  # normalized multiplier for the candidate score threshold
     min_pop: int  # minimum number of states to pop from the priority queue
     fixed_batch_pop: bool  # process every valid candidate without a ratio limit
-    cost: chex.Array  # cost array - g value
-    dist: chex.Array  # distance array - calculated heuristic or Q value
+    cost: jax.Array  # cost array - g value
+    dist: jax.Array  # distance array - calculated heuristic or Q value
     parent: Xtructurable | Parent  # parent array
-    solved: chex.Array  # solved array
+    solved: jax.Array  # solved array
     solved_idx: Xtructurable | Current  # solved index
-    pop_generation: chex.Array  # records which pop generation a node was expanded in
-    pop_count: chex.Array  # counter for pop_full calls
-    xtr_enabled: chex.Array  # enables xtr_* workload counters
-    xtr_steps: chex.Array
-    xtr_cand_total: chex.Array
-    xtr_cand_valid: chex.Array
-    xtr_cand_unique: chex.Array
-    xtr_accept: chex.Array
-    xtr_ht_inserted: chex.Array
-    xtr_ht_lookup: chex.Array
-    xtr_ht_found: chex.Array
-    xtr_pq_insert_calls: chex.Array
-    xtr_pq_insert_items: chex.Array
-    xtr_pq_delete_calls: chex.Array
-    xtr_pq_popped_items: chex.Array
-    xtr_pq_processed_items: chex.Array
-    xtr_pq_requeued_items: chex.Array
-    xtr_pq_heap_size_sum: chex.Array
-    xtr_pq_buffer_size_sum: chex.Array
-    xtr_pq_size_samples: chex.Array
+    pop_generation: jax.Array  # records which pop generation a node was expanded in
+    pop_count: jax.Array  # counter for pop_full calls
+    xtr_enabled: jax.Array  # enables xtr_* workload counters
+    xtr_steps: jax.Array
+    xtr_cand_total: jax.Array
+    xtr_cand_valid: jax.Array
+    xtr_cand_unique: jax.Array
+    xtr_accept: jax.Array
+    xtr_ht_inserted: jax.Array
+    xtr_ht_lookup: jax.Array
+    xtr_ht_found: jax.Array
+    xtr_pq_insert_calls: jax.Array
+    xtr_pq_insert_items: jax.Array
+    xtr_pq_delete_calls: jax.Array
+    xtr_pq_popped_items: jax.Array
+    xtr_pq_processed_items: jax.Array
+    xtr_pq_requeued_items: jax.Array
+    xtr_pq_heap_size_sum: jax.Array
+    xtr_pq_buffer_size_sum: jax.Array
+    xtr_pq_size_samples: jax.Array
 
     @staticmethod
     @partial(
@@ -437,7 +436,7 @@ class SearchResult:
             return self.hashtable.size * self.branching_factor
         return self.hashtable.size
 
-    def pop_full(search_result, **kwargs) -> tuple["SearchResult", Current, chex.Array]:
+    def pop_full(search_result, **kwargs) -> tuple["SearchResult", Current, jax.Array]:
         if isinstance(search_result.priority_queue.val_store, Current):
             return search_result._pop_full_with_current(**kwargs)
         else:
@@ -450,7 +449,7 @@ class SearchResult:
         use_heuristic: bool = False,
         is_backward: bool = False,
         **kwargs,
-    ) -> tuple["SearchResult", Current, Puzzle.State, chex.Array]:
+    ) -> tuple["SearchResult", Current, Puzzle.State, jax.Array]:
         """
         Pop a full batch and also return the corresponding materialized states.
 
@@ -476,7 +475,7 @@ class SearchResult:
 
     def _pop_full_with_current(
         search_result, **kwargs
-    ) -> tuple["SearchResult", Current, chex.Array]:
+    ) -> tuple["SearchResult", Current, jax.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
@@ -617,8 +616,8 @@ class SearchResult:
         is_backward: bool = False,
         **kwargs,
     ) -> (
-        tuple["SearchResult", Current, chex.Array]
-        | tuple["SearchResult", Current, Puzzle.State, chex.Array]
+        tuple["SearchResult", Current, jax.Array]
+        | tuple["SearchResult", Current, Puzzle.State, jax.Array]
     ):
         """
         Removes and returns the minimum elements from the priority queue while maintaining
@@ -1105,7 +1104,7 @@ class SearchResult:
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_cost(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
+    def get_cost(search_result, idx: HashIdx | Current | Parent) -> jax.Array:
         """
         Get the cost of the state from the cost array.
         """
@@ -1116,7 +1115,7 @@ class SearchResult:
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def get_dist(search_result, idx: HashIdx | Current | Parent) -> chex.Array:
+    def get_dist(search_result, idx: HashIdx | Current | Parent) -> jax.Array:
         """
         Get the distance of the state from the distance array.
         """
@@ -1127,7 +1126,7 @@ class SearchResult:
         else:
             raise ValueError(f"Invalid index type: {type(idx)}")
 
-    def mask_unoptimal(search_result, min_key: chex.Array, min_current: Current) -> chex.Array:
+    def mask_unoptimal(search_result, min_key: jax.Array, min_current: Current) -> jax.Array:
         """
         Mask the unoptimal states.
         """
@@ -1135,20 +1134,18 @@ class SearchResult:
         return jnp.where(optimal, min_key, jnp.inf)
 
 
-def unique_sort(
-    key: chex.Array, val: Current, size: int | None = None
-) -> tuple[chex.Array, Current]:
+def unique_sort(key: jax.Array, val: Current, size: int | None = None) -> tuple[jax.Array, Current]:
     """
     Sorts the keys and corresponding values.
 
     Args:
-        key (chex.Array): Array of keys.
+        key (jax.Array): Array of keys.
         val (Current): Array of values.
         size (int | None): Optional static length for the sort index array.
 
     Returns:
         tuple:
-            - sorted_key (chex.Array): Sorted array of keys.
+            - sorted_key (jax.Array): Sorted array of keys.
             - sorted_val (Current): Values corresponding to the sorted keys.
     """
     n = key.shape[-1] if size is None else size
