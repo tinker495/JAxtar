@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Annotated, Any
 
 import chex
 import jax
@@ -134,11 +134,13 @@ def build_frontier_node_batch(statecls, non_backtracking_steps: int, max_path_le
 
     @xtructure_dataclass
     class FrontierNodeBatch:
-        state: FieldDescriptor.scalar(dtype=statecls)
-        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-        depth: FieldDescriptor.scalar(dtype=jnp.int32)
-        trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
-        action_history: FieldDescriptor.tensor(dtype=ACTION_DTYPE, shape=(max_path_len,))
+        state: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=statecls)]
+        cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+        depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
+        trail: Annotated[Xtructurable, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)]
+        action_history: Annotated[
+            jax.Array, FieldDescriptor.tensor(dtype=ACTION_DTYPE, shape=(max_path_len,))
+        ]
 
     return FrontierNodeBatch
 
@@ -148,13 +150,13 @@ def build_id_node_batch(statecls, non_backtracking_steps: int):
 
     @xtructure_dataclass
     class IDNodeBatch:
-        state: FieldDescriptor.scalar(dtype=statecls)
-        cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-        depth: FieldDescriptor.scalar(dtype=jnp.int32)
-        trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+        state: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=statecls)]
+        cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+        depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
+        trail: Annotated[Xtructurable, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)]
         # Path is one arena row per node: who my parent is, and how I got here.
-        parent_trace: FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)
-        action: FieldDescriptor.scalar(dtype=ACTION_DTYPE)
+        parent_trace: Annotated[jax.Array, FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)]
+        action: Annotated[jax.Array, FieldDescriptor.scalar(dtype=ACTION_DTYPE)]
 
     return IDNodeBatch
 

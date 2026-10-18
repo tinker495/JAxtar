@@ -4,7 +4,7 @@ Search Base for Iterative Deepening Algorithms (IDA* / ID-Q*)
 
 import time
 from functools import partial
-from typing import Any
+from typing import Annotated, Any, Callable
 
 import chex
 import jax
@@ -189,11 +189,13 @@ class IDSearchResult:
 
         @xtructure_dataclass
         class IDStackItem:
-            state: FieldDescriptor.scalar(dtype=statecls)
-            cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-            depth: FieldDescriptor.scalar(dtype=jnp.int32)
-            trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
-            trace_index: FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)
+            state: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=statecls)]
+            cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+            depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
+            trail: Annotated[
+                Xtructurable, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+            ]
+            trace_index: Annotated[jax.Array, FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)]
 
         bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
         next_bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
@@ -699,9 +701,9 @@ class IDSearchResult:
         self,
         frontier: IDFrontier,
         cost_weight: float,
-        eval_fn: callable,
+        eval_fn: Callable[[Any, Xtructurable, chex.Array], jax.Array],
         params: Any,
-    ) -> "IDSearchResult":
+    ) -> tuple["IDSearchResult", IDFrontier]:
         """
         Initialize bound and stack from a pre-computed frontier.
         """
@@ -834,9 +836,9 @@ def apply_standard_deduplication(
 
 def finalize_builder(
     puzzle: Puzzle,
-    init_loop: callable,
-    cond: callable,
-    body: callable,
+    init_loop: Callable[..., IDLoopState],
+    cond: Callable[[IDLoopState], jax.Array],
+    body: Callable[[IDLoopState], IDLoopState],
     name: str = "ID-Search",
     show_compile_time: bool = False,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,

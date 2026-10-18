@@ -9,7 +9,7 @@ Key features:
 """
 
 from functools import partial
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 
 import chex
 import jax
@@ -193,15 +193,15 @@ def _reconstruct_path_arrays(
 @xtructure_dataclass
 class Parent:
 
-    hashidx: FieldDescriptor.scalar(dtype=HashIdx)
-    action: FieldDescriptor.scalar(dtype=ACTION_DTYPE)
+    hashidx: Annotated[HashIdx, FieldDescriptor.scalar(dtype=HashIdx)]
+    action: Annotated[jax.Array, FieldDescriptor.scalar(dtype=ACTION_DTYPE)]
 
 
 @xtructure_dataclass
 class Current:
 
-    hashidx: FieldDescriptor.scalar(dtype=HashIdx)
-    cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+    hashidx: Annotated[HashIdx, FieldDescriptor.scalar(dtype=HashIdx)]
+    cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
 
 
 @xtructure_dataclass
@@ -211,9 +211,9 @@ class Parant_with_Costs:
     This class maintains the mapping between states in the hash table and their positions.
     """
 
-    parent: FieldDescriptor.scalar(dtype=Parent)
-    cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-    dist: FieldDescriptor.scalar(dtype=KEY_DTYPE)
+    parent: Annotated[Parent, FieldDescriptor.scalar(dtype=Parent)]
+    cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+    dist: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
 
 
 @base_dataclass
