@@ -39,6 +39,10 @@ def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
     """Translate a ``PuzzleTrajectory`` into the flat dict shape consumed by
     JAxtar's JIT'd training step. Field names match the legacy dict keys.
     """
+    if not isinstance(traj.solve_configs, Xtructurable) or not isinstance(
+        traj.states, Xtructurable
+    ):
+        raise TypeError("Trajectory solve_configs and states must be Xtructurable values")
     return {
         "solve_configs": traj.solve_configs,
         "states": traj.states,
