@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from puxle import RubiksCube
 
@@ -16,7 +17,9 @@ class RubiksCubeHeuristic(Heuristic):
         self._tile_count = puzzle.size * puzzle.size
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
 
-    def distance(self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State) -> float:
+    def distance(
+        self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
+    ) -> jax.Array:
         """
         Get distance between current state and target state.
         """

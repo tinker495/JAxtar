@@ -43,7 +43,7 @@ class QFunction(ABC):
 
     @abstractmethod
     def q_value(
-        self, q_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State
+        self, q_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State, /
     ) -> chex.Array:
         """
         Get q value of the current state and target state.
@@ -59,7 +59,7 @@ class QFunction(ABC):
         pass
 
     def batched_q_value(
-        self, q_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State
+        self, q_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State, /
     ) -> chex.Array:
         """
         Get q value of the current state and target state.
