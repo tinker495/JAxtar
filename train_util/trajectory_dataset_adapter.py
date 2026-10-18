@@ -20,7 +20,7 @@ from puxle.core.trajectory import (
     create_hindsight_target_triangular_shuffled_path as _create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path as _create_target_shuffled_path,
 )
-from xtructure import Xtructurable
+from xtructure.core.protocol import Xtructurable
 
 
 class TrajectoryDataset(TypedDict):
