@@ -104,7 +104,7 @@ def merge_frontier_solution(
     found_sol_state: Xtructurable,
     found_sol_cost: chex.Array,
     found_sol_actions: chex.Array,
-) -> tuple[jax.Array, Xtructurable, jax.Array, jax.Array]:
+) -> tuple[jax.Array, XtructurableProtocol, jax.Array, jax.Array]:
     # Pure value selection: where instead of lax.cond (host predicate sync).
     return (
         jnp.logical_or(frontier.solved, any_solved),
