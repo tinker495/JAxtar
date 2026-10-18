@@ -2,6 +2,8 @@
 Iterative Deepening Q* (ID-Q*) Search Implementation
 """
 
+from dataclasses import replace
+
 import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
@@ -364,7 +366,7 @@ def _id_qstar_loop_builder(
             flat_batch, flat_f, push_valid, update_next_bound=True
         )
 
-        return loop_state.replace(search_result=return_sr)
+        return replace(loop_state, search_result=return_sr)
 
     outer_cond, outer_body = build_outer_loop(inner_cond, inner_body, bound_step)
 

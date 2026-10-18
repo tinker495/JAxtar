@@ -3,6 +3,7 @@ Search Base for Iterative Deepening Algorithms (IDA* / ID-Q*)
 """
 
 import time
+from dataclasses import replace
 from functools import partial
 from typing import Annotated, Any, Callable
 
@@ -272,7 +273,7 @@ class IDSearchResult:
         trace_action = self.trace_action.at[rows].set(
             frontier.action_history.reshape(-1), mode="drop"
         )
-        return self.replace(trace_parent=trace_parent, trace_action=trace_action)
+        return replace(self, trace_parent=trace_parent, trace_action=trace_action)
 
     def frontier_trace_indices(self, frontier: IDFrontier) -> jax.Array:
         """Arena row of each frontier node: the last row of its block, or INVALID at depth 0."""
@@ -299,7 +300,8 @@ class IDSearchResult:
             parent_trace.astype(TRACE_INDEX_DTYPE), mode="drop"
         )
         trace_action = self.trace_action.at[targets].set(actions.astype(ACTION_DTYPE), mode="drop")
-        sr = self.replace(
+        sr = replace(
+            self,
             trace_parent=trace_parent,
             trace_action=trace_action,
             trace_ptr=self.trace_ptr + writable,
@@ -414,7 +416,7 @@ class IDSearchResult:
         new_stack = new_stack.replace(size=actual_new_size)
 
         return (
-            self.replace(stack=new_stack),
+            replace(self, stack=new_stack),
             popped_items.state,
             popped_items.cost,
             popped_items.depth,
@@ -470,7 +472,8 @@ class IDSearchResult:
 
         new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
 
-        return self.replace(
+        return replace(
+            self,
             stack=new_stack,
             generated_count=new_generated_count,
         )
@@ -514,7 +517,8 @@ class IDSearchResult:
 
         new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
 
-        return self.replace(
+        return replace(
+            self,
             stack=new_stack,
             generated_count=new_generated_count,
         )
@@ -550,7 +554,7 @@ class IDSearchResult:
         min_pruned = jnp.min(pruned_fs).astype(KEY_DTYPE)
 
         new_next_bound = jnp.minimum(self.next_bound, min_pruned).astype(KEY_DTYPE)
-        sr = self.replace(next_bound=new_next_bound)
+        sr = replace(self, next_bound=new_next_bound)
 
         return sr.push_batch(
             frontier.states,
@@ -610,7 +614,7 @@ class IDSearchResult:
             pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
             min_pruned_f = jnp.min(pruned_fs).astype(KEY_DTYPE)
             new_next_bound = jnp.minimum(self.next_bound, min_pruned_f).astype(KEY_DTYPE)
-            sr = self.replace(next_bound=new_next_bound)
+            sr = replace(self, next_bound=new_next_bound)
 
         # Reserve the arena rows first: a full arena caps how many of these children can
         # be pushed at all, since a stack entry without its trace row has no path.
@@ -651,7 +655,8 @@ class IDSearchResult:
         new_solution_cost = jnp.where(first, solved_cost.astype(KEY_DTYPE), self.solution_cost)
         new_solved_trace = jnp.where(first, solved_trace, self.solved_trace_index)
 
-        return self.replace(
+        return replace(
+            self,
             solved=jnp.logical_or(self.solved, any_solved),
             solution_state=new_solution_state,
             solution_cost=new_solution_cost,
@@ -693,10 +698,11 @@ class IDSearchResult:
         # A frontier-solved search never reaches the stack, so it has no arena row; keep
         # the action history the frontier already produced.
         has_trace = self.solved_trace_index != TRACE_INVALID
-        return self.replace(
+        return replace(
+            self,
             solution_actions_arr=jnp.where(
                 has_trace, actions.astype(ACTION_DTYPE), self.solution_actions_arr
-            )
+            ),
         )
 
     def initialize_from_frontier(
@@ -712,14 +718,15 @@ class IDSearchResult:
         # Calculate F values for the frontier
         frontier_h = eval_fn(params, frontier.states, frontier.valid_mask).astype(KEY_DTYPE)
         frontier_f = (cost_weight * frontier.costs + frontier_h).astype(KEY_DTYPE)
-        frontier = frontier.replace(f_scores=frontier_f)
+        frontier = replace(frontier, f_scores=frontier_f)
 
         # Initial Bound = min(f) of valid frontier nodes
         valid_fs = jnp.where(frontier.valid_mask, frontier.f_scores, jnp.inf)
         start_bound = jnp.min(valid_fs).astype(KEY_DTYPE)
 
         # Update search result with bound and solution from frontier
-        sr = self.replace(
+        sr = replace(
+            self,
             bound=start_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             solved=frontier.solved,
@@ -922,7 +929,8 @@ def build_outer_loop(
         if quantize_bound:
             new_bound = (jnp.ceil(new_bound / bound_step) * bound_step).astype(KEY_DTYPE)
 
-        reset_sr = sr.replace(
+        reset_sr = replace(
+            sr,
             bound=new_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
@@ -934,6 +942,6 @@ def build_outer_loop(
             loop_state.frontier, new_bound, count_generated=False
         )
 
-        return loop_state.replace(search_result=reset_sr)
+        return replace(loop_state, search_result=reset_sr)
 
     return outer_cond, outer_body
