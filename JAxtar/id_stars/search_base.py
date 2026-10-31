@@ -3,17 +3,20 @@ Search Base for Iterative Deepening Algorithms (IDA* / ID-Q*)
 """
 
 import time
+from dataclasses import replace
 from functools import partial
-from typing import Any
+from typing import Annotated, Any, Callable
 
 import chex
 import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
+from xtructure.core.dataclass import base_dataclass
 from xtructure.core.packing import pack_rows
 from xtructure.stack import Stack
+from xtructure.core.protocol import Xtructurable as XtructurableProtocol
 
 from helpers.jax_compile import compile_with_example, warmup_with_example
 from JAxtar.annotate import (
@@ -98,11 +101,11 @@ def build_frontier_cond(batch_size: int, max_steps: int = 100):
 
 def merge_frontier_solution(
     frontier: "IDFrontier",
-    any_solved: chex.Array,
+    any_solved: jax.Array,
     found_sol_state: Xtructurable,
-    found_sol_cost: chex.Array,
-    found_sol_actions: chex.Array,
-):
+    found_sol_cost: jax.Array,
+    found_sol_actions: jax.Array,
+) -> tuple[jax.Array, XtructurableProtocol, jax.Array, jax.Array]:
     # Pure value selection: where instead of lax.cond (host predicate sync).
     return (
         jnp.logical_or(frontier.solved, any_solved),
@@ -144,10 +147,10 @@ class IDSearchResult:
     trace_prefix: int  # arena rows reserved for the immutable frontier chains
 
     # Global search state
-    bound: chex.Array  # Current cost bound (scalar)
-    next_bound: chex.Array  # Next cost bound (scalar)
-    solved: chex.Array  # Boolean scalar
-    solved_idx: chex.Array  # Index in the stack of the solution (if found)
+    bound: jax.Array  # Current cost bound (scalar)
+    next_bound: jax.Array  # Next cost bound (scalar)
+    solved: jax.Array  # Boolean scalar
+    solved_idx: jax.Array  # Index in the stack of the solution (if found)
 
     # Stack storage (Fixed size = capacity)
     # Allows LIFO access for DFS
@@ -155,17 +158,17 @@ class IDSearchResult:
 
     # Parent-pointer arena. Rows [0, trace_prefix) are the frontier chains, written once
     # and never reset; [trace_prefix, len) is refilled from scratch at each threshold.
-    trace_parent: chex.Array  # [trace_capacity] uint32, TRACE_INVALID at a chain root
-    trace_action: chex.Array  # [trace_capacity] ACTION_DTYPE
-    trace_ptr: chex.Array  # Scalar - next free dynamic arena row
-    trace_overflow: chex.Array  # Scalar - nodes dropped because the arena was full
+    trace_parent: jax.Array  # [trace_capacity] uint32, TRACE_INVALID at a chain root
+    trace_action: jax.Array  # [trace_capacity] ACTION_DTYPE
+    trace_ptr: jax.Array  # Scalar - next free dynamic arena row
+    trace_overflow: jax.Array  # Scalar - nodes dropped because the arena was full
 
     solution_state: Xtructurable  # Single state
     start_state: Xtructurable  # Single state (start)
-    solution_cost: chex.Array  # Scalar - cost of solution
-    generated_count: chex.Array  # Scalar - count of generated nodes
-    solution_actions_arr: chex.Array  # [max_path_len]
-    solved_trace_index: chex.Array  # Scalar - arena row of the solution node
+    solution_cost: jax.Array  # Scalar - cost of solution
+    generated_count: jax.Array  # Scalar - count of generated nodes
+    solution_actions_arr: jax.Array  # [max_path_len]
+    solved_trace_index: jax.Array  # Scalar - arena row of the solution node
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5, 6))
@@ -189,11 +192,13 @@ class IDSearchResult:
 
         @xtructure_dataclass
         class IDStackItem:
-            state: FieldDescriptor.scalar(dtype=statecls)
-            cost: FieldDescriptor.scalar(dtype=KEY_DTYPE)
-            depth: FieldDescriptor.scalar(dtype=jnp.int32)
-            trail: FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
-            trace_index: FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)
+            state: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=statecls)]
+            cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
+            depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
+            trail: Annotated[
+                XtructurableProtocol, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+            ]
+            trace_index: Annotated[jax.Array, FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)]
 
         bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
         next_bound = jnp.array(jnp.inf, dtype=KEY_DTYPE)
@@ -268,9 +273,9 @@ class IDSearchResult:
         trace_action = self.trace_action.at[rows].set(
             frontier.action_history.reshape(-1), mode="drop"
         )
-        return self.replace(trace_parent=trace_parent, trace_action=trace_action)
+        return replace(self, trace_parent=trace_parent, trace_action=trace_action)
 
-    def frontier_trace_indices(self, frontier: IDFrontier) -> chex.Array:
+    def frontier_trace_indices(self, frontier: IDFrontier) -> jax.Array:
         """Arena row of each frontier node: the last row of its block, or INVALID at depth 0."""
         frontier_size = frontier.valid_mask.shape[0]
         block = jnp.arange(frontier_size, dtype=jnp.int32) * self.max_path_len
@@ -295,7 +300,8 @@ class IDSearchResult:
             parent_trace.astype(TRACE_INDEX_DTYPE), mode="drop"
         )
         trace_action = self.trace_action.at[targets].set(actions.astype(ACTION_DTYPE), mode="drop")
-        sr = self.replace(
+        sr = replace(
+            self,
             trace_parent=trace_parent,
             trace_action=trace_action,
             trace_ptr=self.trace_ptr + writable,
@@ -380,11 +386,11 @@ class IDSearchResult:
     ) -> tuple[
         "IDSearchResult",
         Puzzle.State,
-        chex.Array,
-        chex.Array,
+        jax.Array,
+        jax.Array,
         Puzzle.State,
-        chex.Array,
-        chex.Array,
+        jax.Array,
+        jax.Array,
     ]:
         """
         Pop the top `batch_size` items from the stack.
@@ -410,7 +416,7 @@ class IDSearchResult:
         new_stack = new_stack.replace(size=actual_new_size)
 
         return (
-            self.replace(stack=new_stack),
+            replace(self, stack=new_stack),
             popped_items.state,
             popped_items.cost,
             popped_items.depth,
@@ -422,11 +428,11 @@ class IDSearchResult:
     def push_batch(
         self,
         states: Xtructurable,
-        costs: chex.Array,
-        depths: chex.Array,
+        costs: jax.Array,
+        depths: jax.Array,
         trails: Xtructurable,
-        trace_indices: chex.Array,
-        valid_mask: chex.Array,
+        trace_indices: jax.Array,
+        valid_mask: jax.Array,
         count_generated: bool = True,
     ) -> "IDSearchResult":
         """
@@ -466,7 +472,8 @@ class IDSearchResult:
 
         new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
 
-        return self.replace(
+        return replace(
+            self,
             stack=new_stack,
             generated_count=new_generated_count,
         )
@@ -510,7 +517,8 @@ class IDSearchResult:
 
         new_stack = self.stack.replace(val_store=new_val_store, size=new_ptr)
 
-        return self.replace(
+        return replace(
+            self,
             stack=new_stack,
             generated_count=new_generated_count,
         )
@@ -546,7 +554,7 @@ class IDSearchResult:
         min_pruned = jnp.min(pruned_fs).astype(KEY_DTYPE)
 
         new_next_bound = jnp.minimum(self.next_bound, min_pruned).astype(KEY_DTYPE)
-        sr = self.replace(next_bound=new_next_bound)
+        sr = replace(self, next_bound=new_next_bound)
 
         return sr.push_batch(
             frontier.states,
@@ -561,8 +569,8 @@ class IDSearchResult:
     def expand_and_push(
         self,
         node_batch: Xtructurable,
-        fs: chex.Array,
-        valid: chex.Array,
+        fs: jax.Array,
+        valid: jax.Array,
         update_next_bound: bool = True,
     ) -> "IDSearchResult":
         """
@@ -606,7 +614,7 @@ class IDSearchResult:
             pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
             min_pruned_f = jnp.min(pruned_fs).astype(KEY_DTYPE)
             new_next_bound = jnp.minimum(self.next_bound, min_pruned_f).astype(KEY_DTYPE)
-            sr = self.replace(next_bound=new_next_bound)
+            sr = replace(self, next_bound=new_next_bound)
 
         # Reserve the arena rows first: a full arena caps how many of these children can
         # be pushed at all, since a stack entry without its trace row has no path.
@@ -647,7 +655,8 @@ class IDSearchResult:
         new_solution_cost = jnp.where(first, solved_cost.astype(KEY_DTYPE), self.solution_cost)
         new_solved_trace = jnp.where(first, solved_trace, self.solved_trace_index)
 
-        return self.replace(
+        return replace(
+            self,
             solved=jnp.logical_or(self.solved, any_solved),
             solution_state=new_solution_state,
             solution_cost=new_solution_cost,
@@ -689,33 +698,35 @@ class IDSearchResult:
         # A frontier-solved search never reaches the stack, so it has no arena row; keep
         # the action history the frontier already produced.
         has_trace = self.solved_trace_index != TRACE_INVALID
-        return self.replace(
+        return replace(
+            self,
             solution_actions_arr=jnp.where(
                 has_trace, actions.astype(ACTION_DTYPE), self.solution_actions_arr
-            )
+            ),
         )
 
     def initialize_from_frontier(
         self,
         frontier: IDFrontier,
         cost_weight: float,
-        eval_fn: callable,
+        eval_fn: Callable[[Any, XtructurableProtocol, jax.Array], jax.Array],
         params: Any,
-    ) -> "IDSearchResult":
+    ) -> tuple["IDSearchResult", IDFrontier]:
         """
         Initialize bound and stack from a pre-computed frontier.
         """
         # Calculate F values for the frontier
         frontier_h = eval_fn(params, frontier.states, frontier.valid_mask).astype(KEY_DTYPE)
         frontier_f = (cost_weight * frontier.costs + frontier_h).astype(KEY_DTYPE)
-        frontier = frontier.replace(f_scores=frontier_f)
+        frontier = replace(frontier, f_scores=frontier_f)
 
         # Initial Bound = min(f) of valid frontier nodes
         valid_fs = jnp.where(frontier.valid_mask, frontier.f_scores, jnp.inf)
         start_bound = jnp.min(valid_fs).astype(KEY_DTYPE)
 
         # Update search result with bound and solution from frontier
-        sr = self.replace(
+        sr = replace(
+            self,
             bound=start_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             solved=frontier.solved,
@@ -734,9 +745,9 @@ class IDSearchResult:
         puzzle: Puzzle,
         solve_config: Puzzle.SolveConfig,
         states: Puzzle.State,
-        costs: chex.Array,
-        payload: chex.Array,
-        valid_mask: chex.Array,
+        costs: jax.Array,
+        payload: jax.Array,
+        valid_mask: jax.Array,
     ):
         """Find the first solved state. ``payload`` is whatever identifies its path --
         an action history row for the frontier, an arena trace index for the stack."""
@@ -799,17 +810,17 @@ class IDSearchResult:
 
 def apply_standard_deduplication(
     flat_neighbours: Xtructurable,
-    flat_g: chex.Array,
-    flat_valid: chex.Array,
+    flat_g: jax.Array,
+    flat_valid: jax.Array,
     parents: Xtructurable,
     parent_trails: Xtructurable,
-    parent_depths: chex.Array,
+    parent_depths: jax.Array,
     non_backtracking_steps: int,
     action_size: int,
     flat_size: int,
-    trail_indices: jnp.ndarray,
+    trail_indices: jax.Array,
     batch_size: int,
-) -> chex.Array:
+) -> jax.Array:
     """Apply in-batch deduplication and non-backtracking; return the filtered valid mask."""
     unique_mask = xnp.unique_mask(
         flat_neighbours,
@@ -834,9 +845,9 @@ def apply_standard_deduplication(
 
 def finalize_builder(
     puzzle: Puzzle,
-    init_loop: callable,
-    cond: callable,
-    body: callable,
+    init_loop: Callable[..., IDLoopState],
+    cond: Callable[[IDLoopState], jax.Array],
+    body: Callable[[IDLoopState], IDLoopState],
     name: str = "ID-Search",
     show_compile_time: bool = False,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
@@ -918,7 +929,8 @@ def build_outer_loop(
         if quantize_bound:
             new_bound = (jnp.ceil(new_bound / bound_step) * bound_step).astype(KEY_DTYPE)
 
-        reset_sr = sr.replace(
+        reset_sr = replace(
+            sr,
             bound=new_bound,
             next_bound=jnp.array(jnp.inf, dtype=KEY_DTYPE),
             stack=sr.stack.replace(size=jnp.array(0, dtype=jnp.uint32)),
@@ -930,6 +942,6 @@ def build_outer_loop(
             loop_state.frontier, new_bound, count_generated=False
         )
 
-        return loop_state.replace(search_result=reset_sr)
+        return replace(loop_state, search_result=reset_sr)
 
     return outer_cond, outer_body

@@ -5,8 +5,9 @@ from datetime import datetime
 from typing import List
 
 import numpy as np
+import jax
 from rich.align import Align
-from rich.console import Console, Group
+from rich.console import Console, ConsoleRenderable, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -231,7 +232,7 @@ def build_solution_path_panel(
     for i in range(0, len(solution_panels), states_per_row):
         chunk = solution_panels[i : i + states_per_row]
         row_grid = Table.grid(expand=False)
-        row_widgets = []
+        row_widgets: list[ConsoleRenderable | str] = []
 
         if i > 0:
             row_widgets.append(Align.center("[bold blue]↓[/bold blue]", vertical="middle"))
@@ -302,7 +303,7 @@ def build_vmapped_results_table_multi(
     total_search_times,
     vmap_size: int,
     sizes,
-    vmapped_states_per_second: float,
+    vmapped_states_per_second: float | jax.Array,
     states_per_second: float,
     solved,
 ) -> Table:
@@ -333,8 +334,8 @@ def build_vmapped_results_table_single(
     vmapped_search_time: float,
     single_search_time: float,
     vmap_size: int,
-    search_states: int,
-    vmapped_states_per_second: float,
+    search_states: int | jax.Array,
+    vmapped_states_per_second: float | jax.Array,
     states_per_second: float,
     solved_mean: float,
 ) -> Table:

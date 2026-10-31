@@ -6,14 +6,14 @@ import chex
 import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
-from xtructure.core.type_utils import is_xtructure_dataclass_instance
+from xtructure.core.protocol import Xtructurable
 
 
 def minibatch_datasets(
-    *train_datasets: dict[str, chex.Array],
-    data_size: int = None,
-    batch_size: int = None,
-    minibatch_size: int = None,
+    *train_datasets: Xtructurable | chex.Array,
+    data_size: int,
+    batch_size: int,
+    minibatch_size: int,
     key: chex.PRNGKey = jax.random.PRNGKey(0),
 ):
     key_perm_replay, key_fill_replay = jax.random.split(key)
@@ -34,7 +34,7 @@ def minibatch_datasets(
 
     batched_train_datasets = []
     for train_dataset in train_datasets:
-        if is_xtructure_dataclass_instance(train_dataset):
+        if isinstance(train_dataset, Xtructurable):
             batched_train_dataset = xnp.take(train_dataset, batch_indexs_replay, axis=0)
         else:
             batched_train_dataset = jnp.take(train_dataset, batch_indexs_replay, axis=0)
@@ -125,13 +125,17 @@ def compute_diffusion_targets(
     k_max: int,
     inverse_indices: chex.Array,  # [N] mapping row to unique group
     num_unique: int,
-    inverse_state_indices: chex.Array = None,  # [N] mapping row to unique state group
-    num_unique_states: int = None,
+    inverse_state_indices: chex.Array | None = None,  # [N] mapping row to unique state group
+    num_unique_states: int | None = None,
 ):
     """Compute diffusion targets using Bellman propagation along trajectories.
 
     This unifies the logic for state-based (heuristic) and state-action-based (Q) diffusion.
     """
+    initial_values = jnp.asarray(initial_values)
+    is_solved = jnp.asarray(is_solved)
+    action_costs = jnp.asarray(action_costs)
+    raw_move_costs = jnp.asarray(raw_move_costs)
     dataset_size = initial_values.shape[0]
 
     # Ensure values are at least 2D [N, D] for consistent handling

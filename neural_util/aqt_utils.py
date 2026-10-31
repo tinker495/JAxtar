@@ -1,9 +1,11 @@
+import dataclasses
 import functools
 from typing import Any
 
 import jax
 from aqt.jax.v2 import config as aqt_config
 from aqt.jax.v2 import stochastic_rounding
+from aqt.jax.v2.aqt_dot_general import DefaultDotGeneralQuantizer
 from aqt.jax.v2.flax import aqt_flax
 from aqt.jax.v2.numerics import no_numerics
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
@@ -68,9 +70,12 @@ def get_int4_weight_int8_act_config():
     cfg = aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
     # RHS is typically weights in nn.Dense
     # Update bits in the quantizers
-    cfg.fwd.dg_quantizer.rhs.numerics = cfg.fwd.dg_quantizer.rhs.numerics.replace(bits=4)
-    cfg.dlhs.dg_quantizer.rhs.numerics = cfg.dlhs.dg_quantizer.rhs.numerics.replace(bits=4)
-    cfg.drhs.dg_quantizer.rhs.numerics = cfg.drhs.dg_quantizer.rhs.numerics.replace(bits=4)
+    for dot_general in (cfg.fwd, cfg.dlhs, cfg.drhs):
+        quantizer = dot_general.dg_quantizer
+        assert isinstance(quantizer, DefaultDotGeneralQuantizer)
+        numerics = quantizer.rhs.numerics
+        assert dataclasses.is_dataclass(numerics) and not isinstance(numerics, type)
+        quantizer.rhs.numerics = dataclasses.replace(numerics, bits=4)
     return cfg
 
 
@@ -78,9 +83,10 @@ def get_int8_weight_only_config():
     """Returns a configuration where only weights are quantized to 8-bit."""
     cfg = aqt_config.fully_quantized(fwd_bits=8, bwd_bits=8)
     # LHS is activations, RHS is weights
-    cfg.fwd.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
-    cfg.dlhs.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
-    cfg.drhs.dg_quantizer.lhs.numerics = no_numerics.NoNumerics()
+    for dot_general in (cfg.fwd, cfg.dlhs, cfg.drhs):
+        quantizer = dot_general.dg_quantizer
+        assert isinstance(quantizer, DefaultDotGeneralQuantizer)
+        quantizer.lhs.numerics = no_numerics.NoNumerics()
     # int32 accumulation is only valid when BOTH inputs are int8; with an
     # unquantized lhs the dot is bf16 x int8, so let lax pick the accumulator.
     aqt_config.set_accumulator_dtype(cfg, fwd_dtype=None, dlhs_dtype=None, drhs_dtype=None)

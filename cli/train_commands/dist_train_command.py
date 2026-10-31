@@ -286,7 +286,7 @@ def _run_distance_training(
         for name, value in scalars.items():
             logger.log_scalar(name, float(value), i)
 
-        discription_logs = {"lr": lr}
+        discription_logs: dict[str, np.ndarray | float] = {"lr": lr}
         if include_loss_in_progress:
             discription_logs["loss"] = float(loss_value)
         discription_logs.update(

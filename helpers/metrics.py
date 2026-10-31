@@ -99,8 +99,8 @@ def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
             np.mean([r["benchmark_optimal_path_cost"] for r in solved_with_opt_cost])
         )
         path_costs = [r["path_cost"] for r in solved_with_opt_cost]
-        avg_path_cost = float(np.mean(path_costs)) if path_costs else None
-        cost_gap = avg_path_cost - avg_optimal if avg_path_cost is not None else None
+        avg_path_cost = float(np.mean(path_costs))
+        cost_gap = avg_path_cost - avg_optimal
         metrics.update(
             {
                 "avg_optimal_cost": avg_optimal,

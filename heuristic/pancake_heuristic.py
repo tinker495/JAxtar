@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from puxle import PancakeSorting
 
@@ -10,7 +11,7 @@ class PancakeHeuristic(Heuristic):
 
     def distance(
         self, solve_config: PancakeSorting.SolveConfig, current: PancakeSorting.State
-    ) -> float:
+    ) -> jax.Array:
         """
         Gap heuristic for pancake sorting.
 
@@ -19,7 +20,7 @@ class PancakeHeuristic(Heuristic):
         an admissible heuristic (it never overestimates the true distance).
 
         Returns:
-            float: Estimated number of flip operations needed to reach the target state
+            jax.Array: Estimated number of flip operations needed to reach the target state
         """
         current_stack = current.stack
         target_stack = solve_config.GoalSpec.stack
