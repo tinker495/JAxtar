@@ -1,4 +1,5 @@
 import json
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -267,7 +268,7 @@ def run_search_command(
     seeds: list[int],
     search_options: SearchOptions,
     visualize_options: VisualizeOptions,
-    builder_fn: callable,
+    builder_fn: Callable,
     component_name: str,
     component,
     dist_fn,

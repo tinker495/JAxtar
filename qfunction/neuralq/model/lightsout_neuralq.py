@@ -1,3 +1,5 @@
+from typing import Callable
+
 import jax.numpy as jnp
 from flax import linen as nn
 
@@ -17,7 +19,7 @@ class LightsOutRandomNeuralQ(LightsOutNeuralQ):
 
 
 class Model(DistanceModel):
-    norm_fn: callable = DEFAULT_NORM_FN
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
 
     @nn.compact
     def __call__(self, x, training=False):

@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from datetime import datetime
+from types import ModuleType
 from typing import Optional
 
 import imageio.v2 as imageio
@@ -63,7 +64,7 @@ class BaseLogger(ABC):
     def _save_artifact_local(
         self,
         artifact_path: str,
-        artifact_name: str = None,
+        artifact_name: str | None = None,
         artifact_type: str = "model",
     ) -> Optional[str]:
         if not os.path.exists(artifact_path):
@@ -111,7 +112,7 @@ class BaseLogger(ABC):
     def log_artifact(
         self,
         artifact_path: str,
-        artifact_name: str = None,
+        artifact_name: str | None = None,
         artifact_type: str = "model",
     ):
         pass
@@ -155,7 +156,7 @@ class TensorboardLogger(BaseLogger):
     def log_artifact(
         self,
         artifact_path: str,
-        artifact_name: str = None,
+        artifact_name: str | None = None,
         artifact_type: str = "model",
     ):
         dest_path = self._save_artifact_local(artifact_path, artifact_name, artifact_type)
@@ -172,7 +173,7 @@ class AimLogger(BaseLogger):
     def __init__(self, log_dir_base: str, config: dict):
         super().__init__(log_dir_base, config)
         self.aim_run = None
-        self._aim = None
+        self._aim: ModuleType
         try:
             self._aim = _optional_module("aim", "Aim logging")
             self.aim_run = self._aim.Run(experiment=log_dir_base)
@@ -232,7 +233,7 @@ class AimLogger(BaseLogger):
     def log_artifact(
         self,
         artifact_path: str,
-        artifact_name: str = None,
+        artifact_name: str | None = None,
         artifact_type: str = "model",
     ):
         dest_path = self._save_artifact_local(artifact_path, artifact_name, artifact_type)
@@ -257,7 +258,7 @@ class WandbLogger(BaseLogger):
     def __init__(self, log_dir_base: str, config: dict):
         super().__init__(log_dir_base, config)
         self.wandb_run = None
-        self._wandb = None
+        self._wandb: ModuleType
         try:
             self._wandb = _optional_module("wandb", "Wandb logging")
             # Initialize wandb with project name and config
@@ -332,9 +333,9 @@ class WandbLogger(BaseLogger):
     def log_artifact(
         self,
         artifact_path: str,
-        artifact_name: str = None,
+        artifact_name: str | None = None,
         artifact_type: str = "model",
-        aliases: list = None,
+        aliases: list[str] | None = None,
     ):
         """
         Log artifact to Wandb using native artifact support.
@@ -411,7 +412,7 @@ class NoOpLogger(BaseLogger):
     def log_artifact(
         self,
         artifact_path: str,
-        artifact_name: str = None,
+        artifact_name: str | None = None,
         artifact_type: str = "model",
     ):
         pass
