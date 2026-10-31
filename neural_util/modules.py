@@ -2,7 +2,9 @@ from functools import partial
 from typing import Any, Callable
 
 import flax.linen as nn
+import jax
 import jax.numpy as jnp
+from jax.typing import DTypeLike
 
 from .dtypes import DTYPE, PARAM_DTYPE
 from .norm import BatchReNorm, DyTan
@@ -58,11 +60,11 @@ class Trueswish(nn.Module):
 
 
 class Swiglu(nn.Module):
-    node_size: int = None
+    node_size: int | None = None
     param_size_equal: bool = True
-    norm_fn: nn.Module = None
-    dtype: any = DTYPE
-    param_dtype: any = None
+    norm_fn: Callable[[], nn.Module] | None = None
+    dtype: DTypeLike = DTYPE
+    param_dtype: DTypeLike | None = None
     dot_general_cls: Any = None
 
     @nn.compact
@@ -138,9 +140,9 @@ def get_resblock_fn(resblock_name_or_fn=None):
 class MLP(nn.Module):
 
     hidden_dim: int = 1000
-    norm_fn: nn.Module = DEFAULT_NORM_FN
-    activation: str = nn.relu
-    param_dtype: any = PARAM_DTYPE
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
+    activation: Callable[[jax.Array], jax.Array] = nn.relu
+    param_dtype: DTypeLike = PARAM_DTYPE
     dot_general_cls: Any = None
 
     @nn.compact
@@ -159,9 +161,9 @@ class MLP(nn.Module):
 # Pre-activation Multi-layer Perceptron
 class preactivation_MLP(nn.Module):
     hidden_dim: int = 1000
-    norm_fn: nn.Module = DEFAULT_NORM_FN
-    activation: str = nn.relu
-    dtype: any = jnp.float32
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
+    activation: Callable[[jax.Array], jax.Array] = nn.relu
+    dtype: DTypeLike = jnp.float32
     dot_general_cls: Any = None
 
     @nn.compact
@@ -181,11 +183,11 @@ class preactivation_MLP(nn.Module):
 class ResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
-    norm_fn: nn.Module = DEFAULT_NORM_FN
-    activation: str = nn.relu
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
+    activation: Callable[[jax.Array], jax.Array] = nn.relu
     use_swiglu: bool = False
-    dtype: any = DTYPE
-    param_dtype: any = None
+    dtype: DTypeLike = DTYPE
+    param_dtype: DTypeLike | None = None
     dot_general_cls: Any = None
 
     @nn.compact
@@ -225,12 +227,12 @@ class ResBlock(nn.Module):
 class PreActivationResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
-    norm_fn: nn.Module = DEFAULT_NORM_FN
-    activation: Callable = nn.relu
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
+    activation: Callable[[jax.Array], jax.Array] = nn.relu
     use_swiglu: bool = False
     zero_init_last: bool = True
-    dtype: any = DTYPE
-    param_dtype: any = None
+    dtype: DTypeLike = DTYPE
+    param_dtype: DTypeLike | None = None
     dot_general_cls: Any = None
 
     @nn.compact
@@ -282,13 +284,13 @@ class PreActivationResBlock(nn.Module):
 class DeltaResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
-    norm_fn: nn.Module = DEFAULT_NORM_FN
-    activation: Callable = nn.relu
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
+    activation: Callable[[jax.Array], jax.Array] = nn.relu
     use_swiglu: bool = False
     gate_hidden_dim: int = 128
     eps_k: float = 1e-6
-    dtype: any = DTYPE
-    param_dtype: any = None
+    dtype: DTypeLike = DTYPE
+    param_dtype: DTypeLike | None = None
     dot_general_cls: Any = None
 
     def _branch_mlp(self, x, out_dim, training):
@@ -370,11 +372,11 @@ class DeltaResBlock(nn.Module):
 class KeelResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
-    norm_fn: nn.Module = DEFAULT_NORM_FN
-    activation: Callable = nn.relu
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
+    activation: Callable[[jax.Array], jax.Array] = nn.relu
     use_swiglu: bool = False
-    dtype: any = DTYPE
-    param_dtype: any = None
+    dtype: DTypeLike = DTYPE
+    param_dtype: DTypeLike | None = None
     dot_general_cls: Any = None
 
     # Keel specific arguments
@@ -479,12 +481,12 @@ def is_row_independent_mlp(norm_fn: object, activation: object, resblock_fn: obj
 # Conv Residual Block
 class ConvResBlock(nn.Module):
     filters: int
-    kernel_size: int
+    kernel_size: int | tuple[int, ...]
     strides: int
     hidden_N: int = 1
-    norm_fn: nn.Module = DEFAULT_NORM_FN
-    activation: str = nn.relu
-    param_dtype: any = PARAM_DTYPE
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
+    activation: Callable[[jax.Array], jax.Array] = nn.relu
+    param_dtype: DTypeLike = PARAM_DTYPE
 
     @nn.compact
     def __call__(self, x0, training=False):

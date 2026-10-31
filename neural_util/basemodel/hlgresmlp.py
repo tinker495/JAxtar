@@ -1,5 +1,7 @@
 from functools import partial
-from typing import Any
+from typing import Any, Callable
+
+import jax
 
 from aqt.jax.v2.flax import aqt_flax
 from flax import linen as nn
@@ -24,9 +26,9 @@ class HLGResMLPModel(DistanceHLGModel):
     initial_dim: int = 5000
     hidden_N: int = 1
     hidden_dim: int = 1000
-    norm_fn: nn.Module = DEFAULT_NORM_FN
-    activation: str = nn.relu
-    resblock_fn: callable = ResBlock
+    norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
+    activation: Callable[[jax.Array], jax.Array] = nn.relu
+    resblock_fn: Callable[..., nn.Module] = ResBlock
     use_swiglu: bool = False
     hidden_node_multiplier: int = 1
     tail_head_precision: int = 0
