@@ -1,11 +1,9 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import chex
 import jax
 import jax.numpy as jnp
-from puxle import LightsOut, PancakeSorting, RubiksCube, SlidePuzzle
-
-from neural_util.neural_distance_base import NeuralDistanceBase
+from puxle import LightsOut, PancakeSorting, Puzzle, RubiksCube, SlidePuzzle
 
 from neural_util.dtypes import DTYPE
 from neural_util.preprocessing import (
@@ -19,6 +17,16 @@ from neural_util.preprocessing import (
 )
 
 
+if TYPE_CHECKING:
+    # Describe the next cooperative initializer without changing the runtime MRO.
+    class _PreProcessParent:
+        def __init__(self, puzzle: Puzzle, **kwargs: Any) -> None:
+            ...
+
+else:
+    _PreProcessParent = object
+
+
 class LightsOutPreProcessMixin:
     is_fixed: bool = True
 
@@ -27,7 +35,7 @@ class LightsOutPreProcessMixin:
         return lightsout_pre_process(current.board_unpacked, target_board, self.is_fixed)
 
 
-class LightsOutConvPreProcessMixin(NeuralDistanceBase):
+class LightsOutConvPreProcessMixin(_PreProcessParent):
     puzzle: LightsOut
     network_model: Any = None
 
@@ -56,7 +64,7 @@ class PancakePreProcessMixin:
         return pancake_pre_process(current.stack, target_stack, self.puzzle.size, self.is_fixed)
 
 
-class RubiksCubePreProcessMixin(NeuralDistanceBase):
+class RubiksCubePreProcessMixin(_PreProcessParent):
     puzzle: RubiksCube
     is_fixed: bool = True
 
@@ -92,7 +100,7 @@ class RubiksCubeRandomPreProcessMixin(RubiksCubePreProcessMixin):
         )
 
 
-class SlidePuzzlePreProcessMixin(NeuralDistanceBase):
+class SlidePuzzlePreProcessMixin(_PreProcessParent):
     puzzle: SlidePuzzle
     is_fixed: bool = True
 
@@ -109,7 +117,7 @@ class SlidePuzzlePreProcessMixin(NeuralDistanceBase):
         )
 
 
-class SlidePuzzleConvPreProcessMixin(NeuralDistanceBase):
+class SlidePuzzleConvPreProcessMixin(_PreProcessParent):
     puzzle: SlidePuzzle
     base_xy: jax.Array
     network_model: Any = None
