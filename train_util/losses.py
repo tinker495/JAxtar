@@ -1,7 +1,11 @@
 from typing import Any, Literal, Mapping, Optional
 
+import jax
 import jax.numpy as jnp
 import optax
+
+
+LossName = Literal["mse", "huber", "logcosh", "asymmetric_huber", "asymmetric_logcosh"]
 
 
 def huber_loss(diff: jnp.ndarray, delta: float = 0.1) -> jnp.ndarray:
@@ -12,7 +16,7 @@ def logcosh_loss(diff: jnp.ndarray) -> jnp.ndarray:
     return optax.losses.log_cosh(diff)
 
 
-def _quantile_weight(diff: jnp.ndarray, tau: float) -> jnp.ndarray:
+def _quantile_weight(diff: jax.Array, tau: float | jax.Array) -> jax.Array:
     tau = jnp.clip(tau, 1e-6, 1.0 - 1e-6)
     indicator = (diff < 0).astype(diff.dtype)
     return jnp.abs(tau - indicator)
@@ -36,13 +40,7 @@ def asymmetric_logcosh_loss(diff: jnp.ndarray, tau: float = 0.25) -> jnp.ndarray
 
 def loss_from_diff(
     diff: jnp.ndarray,
-    loss: Literal[
-        "mse",
-        "huber",
-        "logcosh",
-        "asymmetric_huber",
-        "asymmetric_logcosh",
-    ] = "mse",
+    loss: LossName = "mse",
     loss_args: Optional[Mapping[str, Any]] = None,
 ) -> jnp.ndarray:
     args = loss_args or {}
