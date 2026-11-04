@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
-from xtructure.core.protocol import Xtructurable as XtructurableProtocol
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import (
@@ -28,7 +27,7 @@ def _infer_neighbor_heuristics(
     inputs: jax.Array,
     solve_configs: Xtructurable,
     neighbors: Xtructurable,
-    SolveConfigsAndStates: type[Xtructurable],
+    SolveConfigsAndStates: Callable[..., Xtructurable],
     infer: Callable,
 ) -> tuple[None, jax.Array]:
     if not model.supports_row_independent_inference:
@@ -91,7 +90,7 @@ def _infer_neighbor_heuristics(
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStates: type[Xtructurable],
+    SolveConfigsAndStates: Callable[..., Xtructurable],
     heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
@@ -184,7 +183,7 @@ def _compute_diffusion_distance(
     move_costs: chex.Array,
     action_costs: chex.Array,
     parent_indices: chex.Array,
-    SolveConfigsAndStates: type[Xtructurable],
+    SolveConfigsAndStates: Callable[..., Xtructurable],
     k_max: int,
 ):
     raw_move_costs = move_costs.reshape((-1,))
@@ -216,7 +215,7 @@ def _compute_diffusion_distance(
 def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStates: type[Xtructurable],
+    SolveConfigsAndStates: Callable[..., Xtructurable],
     heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
@@ -295,11 +294,9 @@ def get_heuristic_dataset_builder(
     )
 
     @xtructure_dataclass
-    class SolveConfigsAndStates:
-        solveconfigs: Annotated[
-            XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        ]
-        states: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.State)]
+    class SolveConfigsAndStates(Xtructurable):
+        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
+        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
 
     base_get_datasets = partial(
         _get_datasets,

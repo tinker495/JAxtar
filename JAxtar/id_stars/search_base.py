@@ -16,7 +16,6 @@ from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 from xtructure.core.dataclass import base_dataclass
 from xtructure.core.packing import pack_rows
 from xtructure.stack import Stack
-from xtructure.core.protocol import Xtructurable as XtructurableProtocol
 
 from helpers.jax_compile import compile_with_example, warmup_with_example
 from JAxtar.annotate import (
@@ -105,7 +104,7 @@ def merge_frontier_solution(
     found_sol_state: Xtructurable,
     found_sol_cost: jax.Array,
     found_sol_actions: jax.Array,
-) -> tuple[jax.Array, XtructurableProtocol, jax.Array, jax.Array]:
+) -> tuple[jax.Array, Xtructurable, jax.Array, jax.Array]:
     # Pure value selection: where instead of lax.cond (host predicate sync).
     return (
         jnp.logical_or(frontier.solved, any_solved),
@@ -191,12 +190,12 @@ class IDSearchResult:
         trail_shape = (int(non_backtracking_steps),)
 
         @xtructure_dataclass
-        class IDStackItem:
-            state: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=statecls)]
+        class IDStackItem(Xtructurable):
+            state: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=statecls)]
             cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
             depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
             trail: Annotated[
-                XtructurableProtocol, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
+                Xtructurable, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
             ]
             trace_index: Annotated[jax.Array, FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)]
 
@@ -709,7 +708,7 @@ class IDSearchResult:
         self,
         frontier: IDFrontier,
         cost_weight: float,
-        eval_fn: Callable[[Any, XtructurableProtocol, jax.Array], jax.Array],
+        eval_fn: Callable[[Any, Xtructurable, jax.Array], jax.Array],
         params: Any,
     ) -> tuple["IDSearchResult", IDFrontier]:
         """

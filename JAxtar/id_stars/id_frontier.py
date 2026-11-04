@@ -7,7 +7,6 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
 from xtructure.core.dataclass import base_dataclass
-from xtructure.core.protocol import Xtructurable as XtructurableProtocol
 
 from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE, TRACE_INDEX_DTYPE
 
@@ -135,13 +134,11 @@ def build_frontier_node_batch(statecls, non_backtracking_steps: int, max_path_le
     trail_shape = (int(non_backtracking_steps),) if non_backtracking_steps > 0 else (0,)
 
     @xtructure_dataclass
-    class FrontierNodeBatch:
-        state: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=statecls)]
+    class FrontierNodeBatch(Xtructurable):
+        state: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=statecls)]
         cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
         depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
-        trail: Annotated[
-            XtructurableProtocol, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
-        ]
+        trail: Annotated[Xtructurable, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)]
         action_history: Annotated[
             jax.Array, FieldDescriptor.tensor(dtype=ACTION_DTYPE, shape=(max_path_len,))
         ]
@@ -153,13 +150,11 @@ def build_id_node_batch(statecls, non_backtracking_steps: int):
     trail_shape = (int(non_backtracking_steps),) if non_backtracking_steps > 0 else (0,)
 
     @xtructure_dataclass
-    class IDNodeBatch:
-        state: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=statecls)]
+    class IDNodeBatch(Xtructurable):
+        state: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=statecls)]
         cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
         depth: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
-        trail: Annotated[
-            XtructurableProtocol, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)
-        ]
+        trail: Annotated[Xtructurable, FieldDescriptor.tensor(dtype=statecls, shape=trail_shape)]
         # Path is one arena row per node: who my parent is, and how I got here.
         parent_trace: Annotated[jax.Array, FieldDescriptor.scalar(dtype=TRACE_INDEX_DTYPE)]
         action: Annotated[jax.Array, FieldDescriptor.scalar(dtype=ACTION_DTYPE)]
@@ -217,7 +212,7 @@ def update_action_history(
 
 
 def build_flat_children(
-    neighbours: XtructurableProtocol,
+    neighbours: Xtructurable,
     step_costs: jax.Array,
     parent_costs: jax.Array,
     parent_depths: jax.Array,
