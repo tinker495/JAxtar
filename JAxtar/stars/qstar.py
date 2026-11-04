@@ -8,12 +8,12 @@ from puxle import Puzzle
 from helpers.jax_compile import compile_search_builder
 from JAxtar.annotate import KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.search_build_spec import DEFAULT_SEARCH_BUILD_SPEC, SearchBuildSpec
-from JAxtar.stars.search_base import (
+from JAxtar.stars.search_base_deferred import (
+    DeferredSearchResult,
     LoopStateWithStates,
-    SearchResult,
-    init_base_loop_state,
     base_loop_condition,
     build_deferred_loop_body,
+    init_base_loop_state,
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
@@ -44,14 +44,13 @@ def _qstar_loop_builder(
     )
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
-        search_result: SearchResult = SearchResult.build(
+        search_result = DeferredSearchResult.build(
             statecls,
             batch_size,
             max_nodes,
             action_size,
             pop_ratio=pop_ratio,
             min_pop=min_pop,
-            parant_with_costs=True,
             emit_workload_signature=emit_workload_signature,
             is_reversible=puzzle.is_reversible,
         )
@@ -66,7 +65,7 @@ def _qstar_loop_builder(
         )
 
     def loop_condition(loop_state: LoopStateWithStates):
-        return base_loop_condition(puzzle, loop_state, loop_state.states)
+        return base_loop_condition(puzzle, loop_state)
 
     def eval_fn(
         puzzle,
@@ -184,7 +183,7 @@ def qstar_builder(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
         **kwargs: Any,
-    ) -> SearchResult:
+    ) -> DeferredSearchResult:
         """
         qstar is the implementation of the Q* algorithm.
         """

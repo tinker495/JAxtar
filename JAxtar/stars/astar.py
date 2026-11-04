@@ -10,14 +10,12 @@ from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.search_build_spec import DEFAULT_SEARCH_BUILD_SPEC, SearchBuildSpec
+from JAxtar.stars.common import Current, Parent, insert_priority_queue_batches
 from JAxtar.stars.search_base import (
-    Current,
+    EagerSearchResult,
     LoopState,
-    Parent,
-    SearchResult,
-    insert_priority_queue_batches,
-    init_base_loop_state_current,
-    base_loop_condition_current,
+    base_loop_condition,
+    init_base_loop_state,
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
@@ -106,7 +104,7 @@ def _astar_loop_builder(
     min_pop = (min(batch_size, MIN_BATCH_SIZE) + estimated_successors - 1) // estimated_successors
 
     def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
-        search_result: SearchResult = SearchResult.build(
+        search_result = EagerSearchResult.build(
             statecls,
             batch_size,
             max_nodes,
@@ -116,7 +114,7 @@ def _astar_loop_builder(
             emit_workload_signature=emit_workload_signature,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
-        return init_base_loop_state_current(
+        return init_base_loop_state(
             puzzle,
             search_result,
             solve_config,
@@ -126,7 +124,7 @@ def _astar_loop_builder(
         )
 
     def loop_condition(loop_state: LoopState):
-        return base_loop_condition_current(puzzle, loop_state)
+        return base_loop_condition(puzzle, loop_state)
 
     def loop_body(loop_state: LoopState):
         search_result = loop_state.search_result
@@ -173,7 +171,7 @@ def _astar_loop_builder(
             flatten_neighbours, flatten_filleds, flatten_nextcosts
         )
 
-        def _update_insert_stats(sr: SearchResult):
+        def _update_insert_stats(sr: EagerSearchResult):
             cand_total_delta = jnp.sum(jnp.ones_like(flatten_filleds, dtype=jnp.int32)).astype(
                 jnp.int32
             )
@@ -200,7 +198,7 @@ def _astar_loop_builder(
         # Combine all conditions for the final decision.
         final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
 
-        def _update_accept_stats(sr: SearchResult):
+        def _update_accept_stats(sr: EagerSearchResult):
             return replace(
                 sr, xtr_accept=sr.xtr_accept + jnp.sum(final_process_mask).astype(jnp.int32)
             )
@@ -315,7 +313,7 @@ def astar_builder(
         solve_config: Puzzle.SolveConfig,
         start: Puzzle.State,
         **kwargs: Any,
-    ) -> SearchResult:
+    ) -> EagerSearchResult:
         """
         astar is the implementation of the A* algorithm.
         """
