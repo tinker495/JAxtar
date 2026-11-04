@@ -48,6 +48,8 @@ from JAxtar.stars.common import Current, Parent, insert_priority_queue_batches
 from JAxtar.stars.search_base import EagerSearchResult
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _bi_astar_loop_builder(
@@ -88,8 +90,8 @@ def _bi_astar_loop_builder(
     min_pop = (min(batch_size, MIN_BATCH_SIZE) + estimated_successors - 1) // estimated_successors
 
     def init_loop_state(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> BiLoopState:
         """Initialize bidirectional search from start and goal states."""
@@ -158,8 +160,8 @@ def _bi_astar_loop_builder(
 
     def _expand_direction(
         bi_result: BiDirectionalSearchResult,
-        solve_config: Puzzle.SolveConfig,
-        inverse_solveconfig: Puzzle.SolveConfig,
+        solve_config: SolveConfigView,
+        inverse_solveconfig: SolveConfigView,
         heuristic_params: Any,
         current: Current,
         filled: jax.Array,
@@ -474,8 +476,8 @@ def bi_astar_builder(
     )
 
     def bi_astar(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
         """

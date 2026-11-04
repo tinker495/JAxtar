@@ -31,6 +31,7 @@ from JAxtar.solution_trace import (
     action_pad_int,
 )
 from JAxtar.utils.array_ops import batched_state_equal, stable_partition_three
+from puxle.core.puzzle_base import SolveConfigView
 
 
 def _bounded_scatter_leaf(stack_arr, update_arr, start, n_write):
@@ -47,9 +48,9 @@ def _bounded_scatter_leaf(stack_arr, update_arr, start, n_write):
 
 
 def apply_non_backtracking(
-    candidate_states: Puzzle.State,
-    parent_states: Puzzle.State,
-    parent_trail: Puzzle.State,
+    candidate_states: Xtructurable,
+    parent_states: Xtructurable,
+    parent_trail: Xtructurable,
     parent_depths: jnp.ndarray,
     valid_mask: jnp.ndarray,
     non_backtracking_steps: int,
@@ -121,7 +122,7 @@ class IDLoopState:
     """
 
     search_result: "IDSearchResult"
-    solve_config: Puzzle.SolveConfig
+    solve_config: SolveConfigView
     params: Any
     frontier: IDFrontier
 
@@ -172,7 +173,7 @@ class IDSearchResult:
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5, 6))
     def build(
-        statecls: Puzzle.State,
+        statecls: type[Xtructurable],
         capacity: int,
         action_size: int,
         non_backtracking_steps: int = 0,
@@ -307,7 +308,7 @@ class IDSearchResult:
         )
         return sr, targets.astype(TRACE_INDEX_DTYPE), writable
 
-    def _get_solved_path(self, puzzle: Puzzle = None, solve_config: Puzzle.SolveConfig = None):
+    def _get_solved_path(self, puzzle: Puzzle = None, solve_config: SolveConfigView | None = None):
         """
         Return the solved path.
         Requires 'puzzle' and 'solve_config' to reconstruct the path by replaying actions.
@@ -383,10 +384,10 @@ class IDSearchResult:
         self, batch_size: int
     ) -> tuple[
         "IDSearchResult",
-        Puzzle.State,
+        Xtructurable,
         jax.Array,
         jax.Array,
-        Puzzle.State,
+        Xtructurable,
         jax.Array,
         jax.Array,
     ]:
@@ -741,8 +742,8 @@ class IDSearchResult:
     @staticmethod
     def detect_solution(
         puzzle: Puzzle,
-        solve_config: Puzzle.SolveConfig,
-        states: Puzzle.State,
+        solve_config: SolveConfigView,
+        states: Xtructurable,
         costs: jax.Array,
         payload: jax.Array,
         valid_mask: jax.Array,
@@ -762,7 +763,7 @@ class IDSearchResult:
     def prepare_for_expansion(
         self,
         puzzle: Puzzle,
-        solve_config: Puzzle.SolveConfig,
+        solve_config: SolveConfigView,
         batch_size: int,
     ):
         """
@@ -848,13 +849,13 @@ def finalize_builder(
     body: Callable[[IDLoopState], IDLoopState],
     name: str = "ID-Search",
     show_compile_time: bool = False,
-    warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
+    warmup_inputs: tuple[SolveConfigView, Xtructurable] | None = None,
 ):
     """
     Finalize the search builder by JIT-compiling and optionally warming up.
     """
 
-    def search_fn(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
+    def search_fn(solve_config: SolveConfigView, start: Xtructurable, **kwargs):
         loop_state = init_loop(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(cond, body, loop_state)
         # One arena walk for the whole search, instead of a path copy per node.

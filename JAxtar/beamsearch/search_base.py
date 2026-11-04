@@ -25,6 +25,7 @@ from JAxtar.solution_trace import (
     action_pad_int,
 )
 from JAxtar.utils.array_ops import batched_state_equal
+from puxle.core.puzzle_base import SolveConfigView
 
 TRACE_INDEX_DTYPE = jnp.uint32
 TRACE_INVALID_INT = int(jnp.iinfo(TRACE_INDEX_DTYPE).max)
@@ -61,7 +62,7 @@ def _reconstruct_trace_indices(
 @base_dataclass
 class BeamSearchLoopState:
     search_result: "BeamSearchResult"
-    solve_config: Puzzle.SolveConfig
+    solve_config: SolveConfigView
     params: Any
 
 
@@ -92,7 +93,7 @@ class BeamSearchResult:
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3))
     def build(
-        statecls: Puzzle.State,
+        statecls: type[Xtructurable],
         beam_width: int,
         max_depth: int,
         action_size: int,
@@ -142,7 +143,7 @@ class BeamSearchResult:
     def filled_mask(self) -> jax.Array:
         return jnp.isfinite(self.cost)
 
-    def get_state(self, idx: int) -> Puzzle.State:
+    def get_state(self, idx: int) -> Xtructurable:
         """Return the state at `idx` in the current beam."""
         return self.beam[int(idx)]
 
@@ -251,7 +252,7 @@ class BeamSearchResult:
         actions = list(reversed(actions_rev))
         return costs, dists, actions
 
-    def seed_start(self, start: Puzzle.State, dist: jax.Array, score: jax.Array):
+    def seed_start(self, start: Xtructurable, dist: jax.Array, score: jax.Array):
         self.beam = self.beam.at[0].set(start)
         self.cost = self.cost.at[0].set(0)
         self.dist = self.dist.at[0].set(dist)
@@ -333,7 +334,7 @@ def build_beam_loop_condition(puzzle: Puzzle):
 
 def finalize_beam_result(
     puzzle: Puzzle,
-    solve_config: Puzzle.SolveConfig,
+    solve_config: SolveConfigView,
     search_result: BeamSearchResult,
 ) -> BeamSearchResult:
     filled_mask = search_result.filled_mask()

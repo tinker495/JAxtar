@@ -36,6 +36,8 @@ from JAxtar.id_stars.search_base import (
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _id_qstar_frontier_builder(
@@ -68,7 +70,7 @@ def _id_qstar_frontier_builder(
     )
 
     def generate_frontier(
-        solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs
+        solve_config: SolveConfigView, start: Xtructurable, **kwargs
     ) -> IDFrontier:
         if "h_params" in kwargs:
             q_params = kwargs["h_params"]
@@ -254,7 +256,7 @@ def _id_qstar_loop_builder(
         max_path_len=max_path_len,
     )
 
-    def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
+    def init_loop_state(solve_config: SolveConfigView, start: Xtructurable, **kwargs):
         search_result = IDSearchResult.build(
             statecls,
             capacity=max_nodes,

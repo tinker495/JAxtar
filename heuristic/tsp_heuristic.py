@@ -1,15 +1,15 @@
 import jax
 import jax.numpy as jnp
-from puxle import TSP
 
 from heuristic.heuristic_base import Heuristic
+from puxle.puzzles.tsp import TSPGoalSpec, TSPInstanceContext, TSPSolveConfig, TSPState
 
 
-class TSPHeuristic(Heuristic):
+class TSPHeuristic(Heuristic[TSPState, TSPInstanceContext, TSPGoalSpec]):
     def __init__(self, puzzle):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> jax.Array:
+    def distance(self, solve_config: TSPSolveConfig, current: TSPState) -> jax.Array:
         """Computes MST + 2-edge heuristic for the Traveling Salesman Problem (TSP).
 
         Step-by-step explanation:

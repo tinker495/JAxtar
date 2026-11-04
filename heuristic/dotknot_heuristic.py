@@ -4,13 +4,15 @@ from puxle import DotKnot
 
 from heuristic.dotknot_utils import get_color_distances
 from heuristic.heuristic_base import Heuristic
+from puxle.core.puzzle_base import EmptyInstanceContext
+from puxle.puzzles.dotknot import DotKnotGoalSpec, DotKnotSolveConfig, DotKnotState
 
 
-class DotKnotHeuristic(Heuristic):
+class DotKnotHeuristic(Heuristic[DotKnotState, EmptyInstanceContext, DotKnotGoalSpec]):
     def __init__(self, puzzle: DotKnot):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: "DotKnot.SolveConfig", current: DotKnot.State) -> jax.Array:
+    def distance(self, solve_config: DotKnotSolveConfig, current: DotKnotState) -> jax.Array:
         """
         Get distance for solving puzzle.
         """

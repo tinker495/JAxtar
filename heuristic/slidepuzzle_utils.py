@@ -2,12 +2,12 @@
 
 import jax
 import jax.numpy as jnp
-from puxle import SlidePuzzle
+from puxle.puzzles.slidepuzzle import SlidePuzzleState
 
 
 def diff_pos(
-    current: SlidePuzzle.State,
-    target: SlidePuzzle.State,
+    current: SlidePuzzleState,
+    target: SlidePuzzleState,
     puzzle_size: int,
     base_xy: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:

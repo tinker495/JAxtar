@@ -33,6 +33,8 @@ from JAxtar.id_stars.search_base import (
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from JAxtar.utils.chunked_eval import chunked_masked_eval
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _build_chunked_heuristic_eval(
@@ -49,8 +51,8 @@ def _build_chunked_heuristic_eval(
     """
 
     def _chunked_heuristic_eval(
-        h_params: Puzzle.SolveConfig,
-        flat_states: Puzzle.State,
+        h_params: SolveConfigView,
+        flat_states: Xtructurable,
         flat_valid: jnp.ndarray,
     ) -> jnp.ndarray:
         return chunked_masked_eval(
@@ -98,7 +100,7 @@ def _id_astar_frontier_builder(
     )
 
     def generate_frontier(
-        solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs
+        solve_config: SolveConfigView, start: Xtructurable, **kwargs
     ) -> IDFrontier:
         if "h_params" in kwargs:
             h_params = kwargs["h_params"]
@@ -276,7 +278,7 @@ def _id_astar_loop_builder(
         batch_size,
     )
 
-    def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
+    def init_loop_state(solve_config: SolveConfigView, start: Xtructurable, **kwargs):
         search_result: IDSearchResult = IDSearchResult.build(
             statecls,
             max_nodes,

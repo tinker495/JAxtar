@@ -19,6 +19,8 @@ from neural_util.param_manager import (
     save_params_with_metadata,
 )
 from neural_util.util import download_model, is_model_downloaded, resolve_model_path
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 class NeuralDistanceBase(ABC):
@@ -146,19 +148,19 @@ class NeuralDistanceBase(ABC):
         return self.params
 
     def batched_pre_process(
-        self, solve_configs: Puzzle.SolveConfig, current: Puzzle.State
+        self, solve_configs: SolveConfigView, current: Xtructurable
     ) -> chex.Array:
         return jax.vmap(self.pre_process, in_axes=(None, 0))(solve_configs, current)
 
     def _batched_model_values(
-        self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, params, solve_config: SolveConfigView, current: Xtructurable
     ) -> jax.Array:
         x = self.batched_pre_process(solve_config, current)
         x = self.model.apply(params, x, training=False, rngs={"params": jax.random.PRNGKey(0)})
         return self.post_process(x)
 
     def _model_values(
-        self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, params, solve_config: SolveConfigView, current: Xtructurable
     ) -> jax.Array:
         x = self.pre_process(solve_config, current)
         x = jnp.expand_dims(x, axis=0)
@@ -171,7 +173,7 @@ class NeuralDistanceBase(ABC):
         return jnp.expand_dims(self.pre_process(dummy_solve_config, dummy_current), axis=0)
 
     @abstractmethod
-    def pre_process(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
+    def pre_process(self, solve_config: SolveConfigView, current: Xtructurable) -> chex.Array:
         pass
 
     def post_process(self, x: jax.Array) -> jax.Array:

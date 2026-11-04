@@ -19,6 +19,8 @@ from JAxtar.stars.search_base import (
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _row_heuristics(
@@ -103,7 +105,7 @@ def _astar_loop_builder(
     estimated_successors = max(1, action_size - int(puzzle.is_reversible))
     min_pop = (min(batch_size, MIN_BATCH_SIZE) + estimated_successors - 1) // estimated_successors
 
-    def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
+    def init_loop_state(solve_config: SolveConfigView, start: Xtructurable, **kwargs):
         search_result = EagerSearchResult.build(
             statecls,
             batch_size,
@@ -310,8 +312,8 @@ def astar_builder(
     )
 
     def astar(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> EagerSearchResult:
         """

@@ -1,15 +1,16 @@
 import chex
 import jax.numpy as jnp
-from puxle import Puzzle
 
 from qfunction.q_base import QFunction
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 class EmptyQFunction(QFunction):
     def __init__(self, puzzle):
         super().__init__(puzzle)
 
-    def q_value(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> chex.Array:
+    def q_value(self, solve_config: SolveConfigView, current: Xtructurable) -> chex.Array:
         """
         Get q values for all possible actions from the current state.
         For EmptyQFunction, this returns an array of zeros for each available move.

@@ -9,10 +9,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import xtructure.numpy as xnp
-from puxle import Puzzle
 
 from JAxtar.annotate import ACTION_DTYPE
 from JAxtar.solution_trace import SolutionTrace
+from puxle.core.puzzle_base import RenderedStateView
 
 ACTION_PAD_INT = int(np.iinfo(np.dtype(ACTION_DTYPE)).max)
 
@@ -56,7 +56,7 @@ def _batched_path_q_dists(q_fn, q_params, states: List) -> List[float]:
 
 @dataclass
 class PathStep:
-    state: Puzzle.State
+    state: RenderedStateView
     cost: float
     dist: float | None
     action: int | None

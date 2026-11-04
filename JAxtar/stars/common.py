@@ -263,7 +263,7 @@ class SearchResult:
     def _build_with_queue(
         cls,
         queue_value: type[Xtructurable],
-        statecls: Puzzle.State,
+        statecls: type[Xtructurable],
         batch_size: int,
         max_nodes: int,
         action_size: int,
@@ -487,7 +487,7 @@ class SearchResult:
             solved_index=solved_index,
         )
 
-    def get_state(search_result, idx: HashIdx | Current | Parent) -> Puzzle.State:
+    def get_state(search_result, idx: HashIdx | Current | Parent) -> Xtructurable:
         """
         Get the state from the hash table.
         """

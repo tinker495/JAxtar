@@ -40,6 +40,8 @@ from JAxtar.stars.search_base_deferred import DeferredSearchResult
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from JAxtar.utils.chunked_eval import chunked_masked_eval
 from qfunction.q_base import QFunction
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _bi_qstar_loop_builder(
@@ -100,8 +102,8 @@ def _bi_qstar_loop_builder(
         backward_min_pop = min_pop
 
     def init_loop_state(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional Q* search from start and goal states."""
@@ -183,9 +185,9 @@ def _bi_qstar_loop_builder(
         def _eval_deferred_q(
             puzzle: Puzzle,
             search_result: Any,
-            solve_config: Puzzle.SolveConfig,
+            solve_config: SolveConfigView,
             q_params: Any,
-            states: Puzzle.State,
+            states: Xtructurable,
             costs: chex.Array,
             filled_tiles: chex.Array,
             filled: chex.Array,
@@ -501,8 +503,8 @@ def bi_qstar_builder(
     )
 
     def bi_qstar(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
         """Perform bidirectional Q* search."""

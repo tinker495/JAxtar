@@ -23,6 +23,8 @@ from JAxtar.beamsearch.search_base import (
 )
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _heuristic_beam_loop_builder(
@@ -53,7 +55,7 @@ def _heuristic_beam_loop_builder(
         raise ValueError("non_backtracking_steps must be non-negative")
     non_backtracking_steps = int(non_backtracking_steps)
 
-    def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
+    def init_loop_state(solve_config: SolveConfigView, start: Xtructurable, **kwargs):
         result = BeamSearchResult.build(
             statecls,
             beam_width,
@@ -244,8 +246,8 @@ def beam_builder(
     )
 
     def beam(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> BeamSearchResult:
         loop_state = init_loop_state(solve_config, start, **kwargs)

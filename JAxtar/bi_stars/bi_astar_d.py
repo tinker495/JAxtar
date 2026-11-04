@@ -40,6 +40,8 @@ from JAxtar.bi_stars.bi_search_base import (
 from JAxtar.stars.search_base_deferred import DeferredSearchResult
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from JAxtar.utils.chunked_eval import chunked_masked_eval
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _bi_astar_d_loop_builder(
@@ -86,8 +88,8 @@ def _bi_astar_d_loop_builder(
     )
 
     def init_loop_state(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional deferred search from start and goal states."""
@@ -169,9 +171,9 @@ def _bi_astar_d_loop_builder(
         def _eval_deferred_heuristic(
             puzzle: Puzzle,
             search_result: Any,
-            solve_config: Puzzle.SolveConfig,
+            solve_config: SolveConfigView,
             params: Any,
-            states: Puzzle.State,
+            states: Xtructurable,
             costs: chex.Array,
             filled_tiles: chex.Array,
             filled: chex.Array,
@@ -474,8 +476,8 @@ def bi_astar_d_builder(
     )
 
     def bi_astar_d(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
         """Perform bidirectional A* deferred search."""
