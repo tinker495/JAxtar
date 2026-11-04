@@ -30,7 +30,7 @@ from helpers.visualization import (
     save_solution_animation_and_frames,
 )
 from JAxtar.search_build_spec import SearchBuildSpec
-from JAxtar.stars.search_base import SearchResult
+from JAxtar.stars.common import SearchResult
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 

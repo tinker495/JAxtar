@@ -35,13 +35,13 @@ from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
 )
-from JAxtar.stars.search_base import (
+from JAxtar.stars.common import (
     Current,
-    Parant_with_Costs,
     Parent,
     SearchResult,
     insert_priority_queue_batches,
 )
+from JAxtar.stars.search_base_deferred import DeferredSearchResult, ParentWithCosts
 
 
 class MeetingPoint(Xtructurable):
@@ -150,59 +150,25 @@ class BiDirectionalSearchResult:
 
 
 def build_bi_search_result(
-    statecls: Puzzle.State,
-    batch_size: int,
-    max_nodes: int,
-    action_size: int,
-    pop_ratio: float = jnp.inf,
-    min_pop_forward: int = 1,
-    min_pop_backward: int = 1,
-    parant_with_costs: bool = False,
-    is_reversible: bool = False,
+    forward: SearchResult,
+    backward: SearchResult,
 ) -> BiDirectionalSearchResult:
     """
-    Creates a new BiDirectionalSearchResult with initialized forward and backward
-    SearchResult instances backed by a single shared hash table.
+    Pairs freshly built forward and backward search results of one family into a
+    BiDirectionalSearchResult backed by a single shared hash table.
 
     NOTE: This helper is JAX-traceable and can be called inside a jitted
     `init_loop_state(...)` (mirroring `JAxtar.stars` patterns). Keep in mind it
     allocates full search buffers sized by `max_nodes`.
 
     Args:
-        statecls: The state class for the puzzle
-        batch_size: Batch size for parallel processing
-        max_nodes: Shared hash-table capacity (both directions share this budget)
-        action_size: Number of actions
-        pop_ratio: Controls beam width
-        min_pop_forward: Minimum nodes to process per forward batch
-        min_pop_backward: Minimum nodes to process per backward batch
-        parant_with_costs: Whether to use Parant_with_Costs for PQ values
-        is_reversible: Whether an expansion's children include its own parent, which
-            the deferred generated-state metric discounts
+        forward: Search result for the start -> goal direction
+        backward: Search result for the goal -> start direction, built with the same
+            state class and `max_nodes` (both directions share this budget)
 
     Returns:
         BiDirectionalSearchResult with initialized data structures
     """
-    forward = SearchResult.build(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio,
-        min_pop=min_pop_forward,
-        parant_with_costs=parant_with_costs,
-        is_reversible=is_reversible,
-    )
-    backward = SearchResult.build(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio,
-        min_pop=min_pop_backward,
-        parant_with_costs=parant_with_costs,
-        is_reversible=is_reversible,
-    )
     # Share ONE hash table between both directions so a state maps to a single slot
     # index across the whole search. Backward's own table (same seed/geometry) is
     # discarded; its cost/dist/parent buffers stay valid because they are sized by the
@@ -226,7 +192,7 @@ def build_bi_search_result(
     return BiDirectionalSearchResult(
         forward=forward,
         backward=backward,
-        action_size=action_size,
+        action_size=forward.action_size,
         meeting=meeting,
         seen_forward=seen_forward,
         seen_backward=seen_backward,
@@ -626,7 +592,7 @@ def initialize_bi_loop_common(
     bi_result.seen_backward = bi_result.seen_backward.at[bwd_hash_idx.index].set(True)
 
     fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
-    # Safety parity with `JAxtar.stars.search_base.init_base_loop_state_current`:
+    # Safety parity with `JAxtar.stars.search_base.init_base_loop_state`:
     # pad non-filled entries with +inf so an accidental read cannot produce work.
     fwd_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     fwd_states = xnp.pad(start, (0, sr_batch_size - 1))
@@ -768,6 +734,7 @@ def build_bi_deferred_expand_direction(
         else:
             search_result = bi_result.backward
             current_solve_config = inverse_solveconfig
+        assert isinstance(search_result, DeferredSearchResult)
 
         sr_batch_size = search_result.batch_size
         flat_size = action_size * sr_batch_size
@@ -798,7 +765,7 @@ def build_bi_deferred_expand_direction(
         )
 
         # Step 2: Priority Queue Insertion
-        flattened_vals = Parant_with_Costs(
+        flattened_vals = ParentWithCosts(
             parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
             cost=costs.flatten(),
             dist=dists.flatten(),

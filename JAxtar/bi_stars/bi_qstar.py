@@ -36,6 +36,7 @@ from JAxtar.bi_stars.bi_search_base import (
     stamp_bi_solved_from_meeting,
     build_bi_deferred_expand_direction,
 )
+from JAxtar.stars.search_base_deferred import DeferredSearchResult
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from JAxtar.utils.chunked_eval import chunked_masked_eval
 from qfunction.q_base import QFunction
@@ -105,15 +106,24 @@ def _bi_qstar_loop_builder(
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional Q* search from start and goal states."""
         bi_result = build_bi_search_result(
-            statecls,
-            batch_size,
-            max_nodes,
-            action_size,
-            pop_ratio=pop_ratio,
-            min_pop_forward=min_pop,
-            min_pop_backward=backward_min_pop,
-            parant_with_costs=True,
-            is_reversible=puzzle.is_reversible,
+            DeferredSearchResult.build(
+                statecls,
+                batch_size,
+                max_nodes,
+                action_size,
+                pop_ratio,
+                min_pop=min_pop,
+                is_reversible=puzzle.is_reversible,
+            ),
+            DeferredSearchResult.build(
+                statecls,
+                batch_size,
+                max_nodes,
+                action_size,
+                pop_ratio,
+                min_pop=backward_min_pop,
+                is_reversible=puzzle.is_reversible,
+            ),
         )
 
         q_params_forward = q_fn.prepare_q_parameters(solve_config, **kwargs)
