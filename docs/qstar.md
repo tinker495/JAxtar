@@ -5,6 +5,7 @@ The `qstar` command solves a puzzle using the Q\* search algorithm. Q\* is a var
 ## Search Correctness Notes
 
 - Deferred-style Q* queueing paths use a shared action-major batch insertion helper for consistent PQ insertion behavior across single and bidirectional variants.
+- With look-ahead pruning (the default), single-direction Q* does not queue a child again when an earlier step already queued it with an equal or lower cost and an equal or lower key. Q* keys depend on the edge (parent cost + Q), so both are compared, in the search key dtype (`KEY_DTYPE`). The fixed-size cache of recently queued children (`JAxtar/stars/open_cache.py`) compares full state encodings; equal-key ties may expand through a different parent, which changes node counts and stored Q values but not path cost. See `OpenCache` for how the cache retires when the queue fills; `xtr_open_dedup_dropped` and `xtr_open_cache_live_steps` report its effect. Bidirectional Q* does not use it.
 - Deferred pop selection applies `pop_ratio`/`min_pop` to the final merged key batch.
 - Path reconstruction consistency checks raise a structured diagnostic payload when monotonic-cost assumptions are violated.
 

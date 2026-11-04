@@ -54,6 +54,7 @@ def _qstar_loop_builder(
             parant_with_costs=True,
             emit_workload_signature=emit_workload_signature,
             is_reversible=puzzle.is_reversible,
+            use_open_cache=look_ahead_pruning,
         )
         q_parameters = q_fn.prepare_q_parameters(solve_config, **kwargs)
         return init_base_loop_state(
@@ -107,7 +108,7 @@ def _qstar_loop_builder(
                 distinct_score,
                 flattened_filled_tiles,
             )
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+            current_hash_idxs, found, probe = search_result.hashtable.lookup_parallel_with_probe(
                 flattened_neighbour_look_head, unique_mask
             )
             old_costs = search_result.get_cost(current_hash_idxs)
@@ -126,10 +127,23 @@ def _qstar_loop_builder(
 
             better_cost_mask = jnp.less(flattened_look_a_head_costs, old_costs)
             optimal_mask = unique_mask & (jnp.logical_or(~found, better_cost_mask))
+            # The key is per edge (parent cost + Q), so a twin must also be no later in the queue.
+            flattened_keys = neighbour_keys.flatten()
+            queued_before = search_result.open_cache.hits(
+                probe, flattened_look_a_head_costs, flattened_keys, optimal_mask
+            )
+            optimal_mask = optimal_mask & ~queued_before
+            search_result.xtr_open_dedup_dropped = search_result.xtr_open_dedup_dropped + jnp.where(
+                search_result.xtr_enabled, jnp.sum(queued_before, dtype=jnp.int32), 0
+            )
+            search_result.open_cache = search_result.open_cache.record(
+                probe, flattened_look_a_head_costs, flattened_keys, optimal_mask
+            )
         else:
             optimal_mask = flattened_filled_tiles
 
         return (
+            search_result,
             neighbour_keys,
             dists.reshape(action_size, sr_batch_size),
             optimal_mask.reshape(action_size, sr_batch_size),
