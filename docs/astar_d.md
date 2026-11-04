@@ -6,6 +6,7 @@ The `astar_d` command solves a puzzle using the A\* Deferred search algorithm. T
 
 - Deferred pop selection is computed from the merged final key batch, not from the pre-merge pop batch.
 - Candidate insertion into the priority queue uses a shared action-major batch helper so deferred variants follow identical insertion semantics.
+- With look-ahead pruning (the default), a child that an earlier step already queued at an equal or lower cost is not queued again, and its heuristic is not evaluated. The check uses a fixed-size cache of recently queued children (`JAxtar/stars/open_cache.py`) that compares full state encodings, so it only drops an edge whose state is already queued at a cost no worse; equal-cost ties may expand through a different parent. Costs are compared in the search key dtype (`KEY_DTYPE`), like the pop-time hash-table cost check. See `OpenCache` for how the cache retires when the queue fills; `xtr_open_dedup_dropped` and `xtr_open_cache_live_steps` report its effect. Bidirectional variants do not use it.
 - Path reconstruction failures raise a structured diagnostic message (`PATH_RECONSTRUCTION_DIAGNOSTIC`) with loop/cost-drop details.
 
 ## Usage

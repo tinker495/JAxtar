@@ -55,6 +55,7 @@ def _astar_d_loop_builder(
             parant_with_costs=True,
             emit_workload_signature=emit_workload_signature,
             is_reversible=puzzle.is_reversible,
+            use_open_cache=look_ahead_pruning,
         )
         heuristic_parameters = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
         return init_base_loop_state(
@@ -94,7 +95,7 @@ def _astar_d_loop_builder(
             flattened_neighbour_look_head = neighbour_look_a_head.flatten()
             flattened_look_a_head_costs = look_a_head_costs.flatten()
 
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+            current_hash_idxs, found, probe = search_result.hashtable.lookup_parallel_with_probe(
                 flattened_neighbour_look_head, flattened_filled_tiles
             )
 
@@ -112,6 +113,14 @@ def _astar_d_loop_builder(
                     candidate_mask,
                 )
                 & candidate_mask
+            )
+            # Skip children an earlier step already queued before paying for their heuristic.
+            queued_before = search_result.open_cache.hits(
+                probe, flattened_look_a_head_costs, None, optimal_mask
+            )
+            optimal_mask = optimal_mask & ~queued_before
+            search_result.xtr_open_dedup_dropped = search_result.xtr_open_dedup_dropped + jnp.where(
+                search_result.xtr_enabled, jnp.sum(queued_before, dtype=jnp.int32), 0
             )
 
             found_reshaped = found.reshape(action_size, sr_batch_size)
@@ -141,6 +150,9 @@ def _astar_d_loop_builder(
             heuristic_vals = jnp.where(filled_tiles, heuristic_vals, jnp.inf).astype(KEY_DTYPE)
 
             neighbour_keys = (cost_weight * look_a_head_costs + heuristic_vals).astype(KEY_DTYPE)
+            search_result.open_cache = search_result.open_cache.record(
+                probe, flattened_look_a_head_costs, neighbour_keys.flatten(), optimal_mask
+            )
         else:
             heuristic_vals = variable_heuristic_batch_switcher(params, states, filled)
             heuristic_vals = jnp.where(filled, heuristic_vals, jnp.inf)
@@ -151,7 +163,7 @@ def _astar_d_loop_builder(
             optimal_mask = flattened_filled_tiles.reshape(action_size, sr_batch_size)
             neighbour_keys = (cost_weight * costs + heuristic_vals).astype(KEY_DTYPE)
 
-        return neighbour_keys, heuristic_vals, optimal_mask
+        return search_result, neighbour_keys, heuristic_vals, optimal_mask
 
     loop_body = build_deferred_loop_body(
         puzzle, look_ahead_pruning, cost_weight, eval_fn, use_heuristic=True

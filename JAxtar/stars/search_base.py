@@ -37,6 +37,7 @@ from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
 )
+from JAxtar.stars.open_cache import OpenCache
 
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
@@ -294,6 +295,9 @@ class SearchResult:
     solved_idx: Xtructurable | Current  # solved index
     pop_generation: jax.Array  # records which pop generation a node was expanded in
     pop_count: jax.Array  # counter for pop_full calls
+    open_cache: OpenCache  # deferred look-ahead's cache of queued, unexpanded children
+    xtr_open_dedup_dropped: jax.Array  # children skipped because they were already queued
+    xtr_open_cache_live_steps: jax.Array  # deferred steps before the open cache retired
     xtr_enabled: jax.Array  # enables xtr_* workload counters
     xtr_steps: jax.Array
     xtr_cand_total: jax.Array
@@ -317,7 +321,7 @@ class SearchResult:
     @partial(
         jax.jit,
         static_argnums=(0, 1, 2, 3, 4),
-        static_argnames=("pop_ratio", "parant_with_costs", "is_reversible"),
+        static_argnames=("pop_ratio", "parant_with_costs", "is_reversible", "use_open_cache"),
     )
     def build(
         statecls: Puzzle.State,
@@ -330,6 +334,7 @@ class SearchResult:
         parant_with_costs: bool = False,
         emit_workload_signature: bool = False,
         is_reversible: bool = False,
+        use_open_cache: bool = False,
     ):
         """
         Creates a new instance of SearchResult with initialized data structures.
@@ -352,6 +357,8 @@ class SearchResult:
             is_reversible (bool): Whether one of the `action_size` children of an
                 expansion is its own parent, which the deferred generated-state
                 metric discounts.
+            use_open_cache (bool): Allocate the deferred look-ahead's `OpenCache`;
+                otherwise it is empty.
 
         Returns:
             SearchResult: A new instance with initialized data structures
@@ -394,6 +401,9 @@ class SearchResult:
             solved_idx=solved_idx,
             pop_generation=pop_generation,
             pop_count=pop_count,
+            open_cache=OpenCache.build(statecls, max_nodes * action_size if use_open_cache else 0),
+            xtr_open_dedup_dropped=xtr_zero,
+            xtr_open_cache_live_steps=xtr_zero,
             xtr_enabled=xtr_enabled,
             xtr_steps=jnp.array(0, dtype=jnp.int32),
             xtr_cand_total=xtr_zero,
@@ -1269,7 +1279,8 @@ def build_deferred_loop_body(
     puzzle: Puzzle,
     look_ahead_pruning: bool,
     cost_weight: float,
-    eval_fn: Callable,  # Returns neighbour_keys, dists, optimal_mask (or handles its own pruning)
+    # (..., cost_weight) -> (search_result, neighbour_keys, dists, optimal_mask)
+    eval_fn: Callable[..., tuple["SearchResult", jax.Array, jax.Array, jax.Array]],
     use_heuristic: bool = False,
 ):
     def loop_body(loop_state: LoopStateWithStates):
@@ -1294,8 +1305,17 @@ def build_deferred_loop_body(
             filled[jnp.newaxis, :], (action_size, 1)
         )  # [action_size, batch_size]
 
+        if look_ahead_pruning:
+            # This step queues at most flat_size children; popping never grows the queue.
+            search_result.open_cache = search_result.open_cache.retire_if_full(
+                search_result.priority_queue, flat_size
+            )
+            search_result.xtr_open_cache_live_steps = search_result.xtr_open_cache_live_steps + (
+                search_result.xtr_enabled & search_result.open_cache.intact
+            ).astype(jnp.int32)
+
         # Inject standard computations, delegate to eval_fn for Q-value / Heuristic specific logic
-        neighbour_keys, dists, optimal_mask = eval_fn(
+        search_result, neighbour_keys, dists, optimal_mask = eval_fn(
             puzzle,
             search_result,
             solve_config,

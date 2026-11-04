@@ -54,6 +54,8 @@ def extract_xtructure_signature(search_result: Any) -> Dict[str, Any]:
     pq_heap_sum = get("xtr_pq_heap_size_sum")
     pq_buffer_sum = get("xtr_pq_buffer_size_sum")
     pq_samples = get("xtr_pq_size_samples")
+    open_dedup_dropped = get("xtr_open_dedup_dropped")
+    open_cache_live_steps = get("xtr_open_cache_live_steps")
 
     dup_ratio = 0.0 if cand_valid == 0 else (1.0 - (cand_unique / cand_valid))
     hit_ratio = 0.0 if ht_lookup == 0 else (ht_found / ht_lookup)
@@ -90,6 +92,8 @@ def extract_xtructure_signature(search_result: Any) -> Dict[str, Any]:
         "xtr_pq_heap_size_sum": pq_heap_sum,
         "xtr_pq_buffer_size_sum": pq_buffer_sum,
         "xtr_pq_size_samples": pq_samples,
+        "xtr_open_dedup_dropped": open_dedup_dropped,
+        "xtr_open_cache_live_steps": open_cache_live_steps,
         "xtr_dup_ratio_eff": _as_float(dup_ratio),
         "xtr_hit_ratio_eff": _as_float(hit_ratio),
         "xtr_accept_ratio": _as_float(accept_ratio),
