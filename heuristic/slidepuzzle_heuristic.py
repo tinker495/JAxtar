@@ -4,9 +4,11 @@ from puxle import SlidePuzzle
 
 from heuristic.heuristic_base import Heuristic
 from heuristic.slidepuzzle_utils import diff_pos, linear_conflict
+from puxle.core.puzzle_base import EmptyInstanceContext
+from puxle.puzzles.slidepuzzle import SlidePuzzleSolveConfig, SlidePuzzleState
 
 
-class SlidePuzzleHeuristic(Heuristic):
+class SlidePuzzleHeuristic(Heuristic[SlidePuzzleState, EmptyInstanceContext, SlidePuzzleState]):
     base_xy: jax.Array  # The coordinates of the numbers in the puzzle
 
     def __init__(self, puzzle: SlidePuzzle):
@@ -20,7 +22,7 @@ class SlidePuzzleHeuristic(Heuristic):
         self.base_xy = jnp.stack([x, y], axis=2).reshape(-1, 2)
 
     def distance(
-        self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
+        self, solve_config: SlidePuzzleSolveConfig, current: SlidePuzzleState
     ) -> jax.Array:
         """
         This function should return the distance between the state and the target.

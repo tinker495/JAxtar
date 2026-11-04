@@ -42,6 +42,7 @@ from JAxtar.stars.common import (
     insert_priority_queue_batches,
 )
 from JAxtar.stars.search_base_deferred import DeferredSearchResult, ParentWithCosts
+from puxle.core.puzzle_base import SolveConfigView
 
 
 class MeetingPoint(Xtructurable):
@@ -220,8 +221,8 @@ class BiLoopState:
     """
 
     bi_result: BiDirectionalSearchResult
-    solve_config: Puzzle.SolveConfig
-    inverse_solveconfig: Puzzle.SolveConfig
+    solve_config: SolveConfigView
+    inverse_solveconfig: SolveConfigView
     params_forward: Any
     params_backward: Any
     current_forward: Current
@@ -253,14 +254,14 @@ class BiLoopStateWithStates:
     """
 
     bi_result: BiDirectionalSearchResult
-    solve_config: Puzzle.SolveConfig
-    inverse_solveconfig: Puzzle.SolveConfig
+    solve_config: SolveConfigView
+    inverse_solveconfig: SolveConfigView
     params_forward: Any
     params_backward: Any
     current_forward: Current
     current_backward: Current
-    states_forward: Puzzle.State
-    states_backward: Puzzle.State
+    states_forward: Xtructurable
+    states_backward: Xtructurable
     filled_forward: jax.Array
     filled_backward: jax.Array
 
@@ -561,9 +562,9 @@ def common_bi_loop_condition(
 def initialize_bi_loop_common(
     bi_result: BiDirectionalSearchResult,
     puzzle: Puzzle,
-    solve_config: Puzzle.SolveConfig,
-    start: Puzzle.State,
-) -> tuple[jax.Array, Current, Puzzle.State, jax.Array, Current, Puzzle.State]:
+    solve_config: SolveConfigView,
+    start: Xtructurable,
+) -> tuple[jax.Array, Current, Xtructurable, jax.Array, Current, Xtructurable]:
     """
     Common initialization logic for bidirectional search loop state.
     Initializes forward (from start) and backward (from goal) frontiers in the
@@ -628,7 +629,7 @@ def initialize_bi_loop_common(
 def reconstruct_bidirectional_path(
     bi_result: BiDirectionalSearchResult,
     puzzle: Puzzle,
-) -> list[tuple[int, Puzzle.State, float]]:
+) -> list[tuple[int, Xtructurable, float]]:
     """
     Reconstruct the full path from start to goal using the meeting point.
 
@@ -685,7 +686,7 @@ def reconstruct_bidirectional_path(
     if len(states) == 0:
         return []
 
-    path: list[tuple[int, Puzzle.State, float]] = [(-1, states[0], costs[0])]
+    path: list[tuple[int, Xtructurable, float]] = [(-1, states[0], costs[0])]
     for a, s, c in zip(actions, states[1:], costs[1:]):
         path.append((int(a), s, float(c)))
     return path
@@ -721,13 +722,13 @@ def build_bi_deferred_expand_direction(
 
     def _expand_direction(
         bi_result: BiDirectionalSearchResult,
-        solve_config: Puzzle.SolveConfig,
-        inverse_solveconfig: Puzzle.SolveConfig,
+        solve_config: SolveConfigView,
+        inverse_solveconfig: SolveConfigView,
         params: Any,
         current: Current,
-        states: Puzzle.State,
+        states: Xtructurable,
         filled: jax.Array,
-    ) -> tuple[BiDirectionalSearchResult, Current, Puzzle.State, jax.Array]:
+    ) -> tuple[BiDirectionalSearchResult, Current, Xtructurable, jax.Array]:
         if is_forward:
             search_result = bi_result.forward
             current_solve_config = solve_config

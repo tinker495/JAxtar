@@ -3,9 +3,11 @@ import jax.numpy as jnp
 from puxle import RubiksCube
 
 from heuristic.heuristic_base import Heuristic
+from puxle.core.puzzle_base import EmptyInstanceContext
+from puxle.puzzles.rubikscube import RubiksCubeSolveConfig, RubiksCubeState
 
 
-class RubiksCubeHeuristic(Heuristic):
+class RubiksCubeHeuristic(Heuristic[RubiksCubeState, EmptyInstanceContext, RubiksCubeState]):
     heur_modify: float
 
     def __init__(self, puzzle: RubiksCube):
@@ -17,9 +19,7 @@ class RubiksCubeHeuristic(Heuristic):
         self._tile_count = puzzle.size * puzzle.size
         self._use_color_embedding = getattr(puzzle, "color_embedding", True)
 
-    def distance(
-        self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
-    ) -> jax.Array:
+    def distance(self, solve_config: RubiksCubeSolveConfig, current: RubiksCubeState) -> jax.Array:
         """
         Get distance between current state and target state.
         """

@@ -1,16 +1,17 @@
 import jax
 import jax.numpy as jnp
-from puxle import PancakeSorting
 
 from heuristic.heuristic_base import Heuristic
+from puxle.core.puzzle_base import EmptyInstanceContext
+from puxle.puzzles.pancake import PancakeSortingSolveConfig, PancakeSortingState
 
 
-class PancakeHeuristic(Heuristic):
+class PancakeHeuristic(Heuristic[PancakeSortingState, EmptyInstanceContext, PancakeSortingState]):
     def __init__(self, puzzle):
         super().__init__(puzzle)
 
     def distance(
-        self, solve_config: PancakeSorting.SolveConfig, current: PancakeSorting.State
+        self, solve_config: PancakeSortingSolveConfig, current: PancakeSortingState
     ) -> jax.Array:
         """
         Gap heuristic for pancake sorting.

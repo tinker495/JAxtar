@@ -23,6 +23,8 @@ from JAxtar.stars.common import (
     SearchResult,
     select_pop_batch,
 )
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 @base_dataclass
@@ -33,7 +35,7 @@ class LoopState:
     """
 
     search_result: "EagerSearchResult"
-    solve_config: Puzzle.SolveConfig
+    solve_config: SolveConfigView
     params: Any
     current: Current
     filled: jax.Array
@@ -50,7 +52,7 @@ class EagerSearchResult(SearchResult):
         static_argnames=("pop_ratio",),
     )
     def build(
-        statecls: Puzzle.State,
+        statecls: type[Xtructurable],
         batch_size: int,
         max_nodes: int,
         action_size: int,
@@ -256,8 +258,8 @@ def _unique_sort_merge_and_split(k1, v1, k2, v2, batch_size: int):
 def init_base_loop_state(
     puzzle: Puzzle,
     search_result: EagerSearchResult,
-    solve_config: Puzzle.SolveConfig,
-    start: Puzzle.State,
+    solve_config: SolveConfigView,
+    start: Xtructurable,
     params: Any,
     sr_batch_size: int,
 ):

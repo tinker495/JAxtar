@@ -27,6 +27,7 @@ from JAxtar.stars.common import (
     insert_priority_queue_batches,
     select_pop_batch,
 )
+from puxle.core.puzzle_base import SolveConfigView
 
 
 class ParentWithCosts(Xtructurable):
@@ -51,10 +52,10 @@ class LoopStateWithStates:
     """
 
     search_result: "DeferredSearchResult"
-    solve_config: Puzzle.SolveConfig
+    solve_config: SolveConfigView
     params: Any
     current: Current
-    states: Puzzle.State
+    states: Xtructurable
     filled: jax.Array
 
 
@@ -78,7 +79,7 @@ class DeferredSearchResult(SearchResult):
         static_argnames=("pop_ratio", "is_reversible"),
     )
     def build(
-        statecls: Puzzle.State,
+        statecls: type[Xtructurable],
         batch_size: int,
         max_nodes: int,
         action_size: int,
@@ -123,10 +124,10 @@ class DeferredSearchResult(SearchResult):
     def pop_full_with_actions(
         search_result,
         puzzle: Puzzle,
-        solve_config: Puzzle.SolveConfig,
+        solve_config: SolveConfigView,
         use_heuristic: bool = False,
         is_backward: bool = False,
-    ) -> tuple["DeferredSearchResult", Current, Puzzle.State, jax.Array]:
+    ) -> tuple["DeferredSearchResult", Current, Xtructurable, jax.Array]:
         """
         Removes and returns the minimum elements from the priority queue while maintaining
         the heap property. This function handles batched operations efficiently,
@@ -486,8 +487,8 @@ class DeferredSearchResult(SearchResult):
 def init_base_loop_state(
     puzzle: Puzzle,
     search_result: DeferredSearchResult,
-    solve_config: Puzzle.SolveConfig,
-    start: Puzzle.State,
+    solve_config: SolveConfigView,
+    start: Xtructurable,
     params: Any,
     sr_batch_size: int,
 ):

@@ -2,11 +2,11 @@
 
 import jax
 import jax.numpy as jnp
-from puxle import DotKnot
+from puxle.puzzles.dotknot import DotKnotState
 
 
 def get_color_distances(
-    current: DotKnot.State, color_idx: int, size: int, color_num: int
+    current: DotKnotState, color_idx: int, size: int, color_num: int
 ) -> jax.Array:
     """
     Get distance for a single color pair in the DotKnot puzzle.

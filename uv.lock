@@ -1451,13 +1451,15 @@ wheels = [
 [[package]]
 name = "puxle"
 version = "0.2.0"
-source = { git = "https://github.com/tinker495/PuXle.git#dcc0ee4cda1696ebdfe12d255db90868710c3ab4" }
+source = { git = "https://github.com/tinker495/PuXle.git#16beaa7c702aea77c7af599cddf7e8ef18f00f2e" }
 dependencies = [
     { name = "chex" },
     { name = "jax" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pddl" },
+    { name = "typing-extensions" },
+    { name = "tyro" },
     { name = "xtructure" },
 ]
 

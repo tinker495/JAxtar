@@ -17,6 +17,8 @@ from JAxtar.stars.search_base_deferred import (
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from qfunction.q_base import QFunction
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _qstar_loop_builder(
@@ -43,7 +45,7 @@ def _qstar_loop_builder(
         pad_value=jnp.inf,
     )
 
-    def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
+    def init_loop_state(solve_config: SolveConfigView, start: Xtructurable, **kwargs):
         search_result = DeferredSearchResult.build(
             statecls,
             batch_size,
@@ -180,8 +182,8 @@ def qstar_builder(
     )
 
     def qstar(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> DeferredSearchResult:
         """

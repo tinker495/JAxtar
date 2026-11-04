@@ -9,6 +9,7 @@ from xtructure import FieldDescriptor, Xtructurable
 from xtructure.core.dataclass import base_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE, TRACE_INDEX_DTYPE
+from puxle.core.puzzle_base import SolveConfigView
 
 
 def validate_non_backtracking_steps(steps: int) -> int:
@@ -36,8 +37,8 @@ class IDFrontier:
     @staticmethod
     def initialize_from_start(
         puzzle: Puzzle,
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         batch_size: int,
         non_backtracking_steps: int,
         max_path_len: int,

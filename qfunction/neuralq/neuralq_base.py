@@ -5,6 +5,8 @@ from puxle import Puzzle
 
 from neural_util.neural_distance_base import NeuralDistanceBase
 from qfunction.q_base import QFunction
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 class NeuralQFunctionBase(NeuralDistanceBase, QFunction):
@@ -20,26 +22,26 @@ class NeuralQFunctionBase(NeuralDistanceBase, QFunction):
         return model(self.action_size, **resolved_kwargs)
 
     def prepare_q_parameters(
-        self, solve_config: Puzzle.SolveConfig, **kwargs: Any
-    ) -> tuple[Any, Puzzle.SolveConfig]:
+        self, solve_config: SolveConfigView, **kwargs: Any
+    ) -> tuple[Any, SolveConfigView]:
         return (self._params_from_kwargs(**kwargs), solve_config)
 
     def batched_q_value(
-        self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State
+        self, q_parameters: tuple[Any, SolveConfigView], current: Xtructurable
     ) -> jax.Array:
         params, solve_config = q_parameters
         return self.batched_param_q_value(params, solve_config, current)
 
     def batched_param_q_value(
-        self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, params, solve_config: SolveConfigView, current: Xtructurable
     ) -> jax.Array:
         return self._batched_model_values(params, solve_config, current)
 
-    def q_value(self, q_parameters: tuple[Any, Puzzle.SolveConfig], current: Puzzle.State):
+    def q_value(self, q_parameters: tuple[Any, SolveConfigView], current: Xtructurable):
         params, solve_config = q_parameters
         return self.param_q_value(params, solve_config, current)[0]
 
     def param_q_value(
-        self, params, solve_config: Puzzle.SolveConfig, current: Puzzle.State
+        self, params, solve_config: SolveConfigView, current: Xtructurable
     ) -> jax.Array:
         return self._model_values(params, solve_config, current)

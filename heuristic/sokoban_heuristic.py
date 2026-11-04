@@ -3,13 +3,15 @@ import jax.numpy as jnp
 from puxle import Sokoban
 
 from heuristic.heuristic_base import Heuristic
+from puxle.core.puzzle_base import EmptyInstanceContext
+from puxle.puzzles.sokoban import SokobanSolveConfig, SokobanState
 
 
-class SokobanHeuristic(Heuristic):
+class SokobanHeuristic(Heuristic[SokobanState, EmptyInstanceContext, SokobanState]):
     def __init__(self, puzzle: Sokoban):
         super().__init__(puzzle)
 
-    def distance(self, solve_config: Sokoban.SolveConfig, current: Sokoban.State) -> jax.Array:
+    def distance(self, solve_config: SokobanSolveConfig, current: SokobanState) -> jax.Array:
         """
         Simple heuristic for the Sokoban puzzle.
         It computes the distance as the total number of boxes in the target state

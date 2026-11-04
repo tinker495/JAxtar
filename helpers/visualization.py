@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List
 
 import numpy as np
+from numpy.typing import ArrayLike
 import jax
 from rich.align import Align
 from rich.console import Console, ConsoleRenderable, Group
@@ -263,7 +264,7 @@ def save_solution_animation_and_frames(
     import imageio
 
     cv2_mod = _require_cv2()
-    imgs = []
+    imgs: list[ArrayLike] = []  # imageio.mimsave takes list[ArrayLike] (invariant)
     logging_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     logging_name = f"{puzzle_name}_{logging_time}"
     os.makedirs(f"tmp/{logging_name}", exist_ok=True)

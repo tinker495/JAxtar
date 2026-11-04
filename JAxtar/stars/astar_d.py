@@ -18,6 +18,8 @@ from JAxtar.stars.search_base_deferred import (
 )
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 from JAxtar.utils.chunked_eval import chunked_masked_eval
+from puxle.core.puzzle_base import SolveConfigView
+from xtructure import Xtructurable
 
 
 def _astar_d_loop_builder(
@@ -44,7 +46,7 @@ def _astar_d_loop_builder(
         estimated_successors = max(1, action_size - int(puzzle.is_reversible))
         min_pop = (min_pop + estimated_successors - 1) // estimated_successors
 
-    def init_loop_state(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
+    def init_loop_state(solve_config: SolveConfigView, start: Xtructurable, **kwargs):
         search_result = DeferredSearchResult.build(
             statecls,
             batch_size,
@@ -211,8 +213,8 @@ def astar_d_builder(
     )
 
     def astar_d(
-        solve_config: Puzzle.SolveConfig,
-        start: Puzzle.State,
+        solve_config: SolveConfigView,
+        start: Xtructurable,
         **kwargs: Any,
     ) -> DeferredSearchResult:
         """

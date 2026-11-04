@@ -1,25 +1,26 @@
 from abc import ABC, abstractmethod
-from typing import Any, Union
+from typing import Any, Generic
 
 import chex
 import jax
 import jax.numpy as jnp
 from puxle import Puzzle
+from puxle.core.puzzle_base import ContextT, GoalT, SolveConfigView, StateT
 
 
-class Heuristic(ABC):
-    puzzle: Puzzle  # The puzzle rule object
+class Heuristic(ABC, Generic[StateT, ContextT, GoalT]):
+    puzzle: Puzzle[StateT, ContextT, GoalT]  # The puzzle rule object
     is_fixed: bool = (
         False  # True if this heuristic is only valid for a fixed target (i.e. it does not
     )
     # support arbitrary solve_config targets / retargeting).
 
-    def __init__(self, puzzle: Puzzle):
+    def __init__(self, puzzle: Puzzle[StateT, ContextT, GoalT]):
         self.puzzle = puzzle
 
     def prepare_heuristic_parameters(
-        self, solve_config: Puzzle.SolveConfig, **kwargs: Any
-    ) -> Union[Puzzle.SolveConfig, Any]:
+        self, solve_config: SolveConfigView[ContextT, GoalT], **kwargs: Any
+    ) -> Any:
         """
         This function prepares the parameters for use in distance calculations.
         By default, it returns the solve config unchanged. Subclasses can override
@@ -40,9 +41,7 @@ class Heuristic(ABC):
         """
         return solve_config
 
-    def batched_distance(
-        self, heuristic_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State
-    ) -> chex.Array:
+    def batched_distance(self, heuristic_parameters: Any, current: StateT) -> chex.Array:
         """
         This function should return the distance between the state and the target.
 
@@ -59,9 +58,7 @@ class Heuristic(ABC):
         )
 
     @abstractmethod
-    def distance(
-        self, heuristic_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State, /
-    ) -> float | jax.Array:
+    def distance(self, heuristic_parameters: Any, current: StateT, /) -> float | jax.Array:
         """
         This function should return the distance between the state and the target.
 

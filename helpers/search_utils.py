@@ -6,13 +6,14 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_with_example, warmup_with_example
+from puxle.core.puzzle_base import RenderedStateView, SolveConfigView
 
 _VMAPPED_STAR_CACHE: dict[tuple[int, int], Callable] = {}
 
 
 def vmapping_init_target(
     puzzle: Puzzle, vmap_size: int, start_state_seeds: list[int]
-) -> tuple[Puzzle.SolveConfig, Puzzle.State]:
+) -> tuple[SolveConfigView, RenderedStateView]:
     init_rows = [
         puzzle.get_inits(jax.random.PRNGKey(seed)) for seed in start_state_seeds[:vmap_size]
     ]
