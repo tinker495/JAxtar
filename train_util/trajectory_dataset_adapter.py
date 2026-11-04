@@ -35,6 +35,14 @@ class TrajectoryDataset(TypedDict):
     step_indices: chex.Array | None
 
 
+def require_parent_indices(dataset: TrajectoryDataset) -> chex.Array:
+    """Return the trajectory parent indices that diffusion targets need."""
+    parent_indices = dataset["parent_indices"]
+    if parent_indices is None:
+        raise ValueError("Diffusion targets need the trajectory parent indices.")
+    return parent_indices
+
+
 def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
     """Translate a ``PuzzleTrajectory`` into the flat dict shape consumed by
     JAxtar's JIT'd training step. Field names match the legacy dict keys.
