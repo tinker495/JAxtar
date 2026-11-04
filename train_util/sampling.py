@@ -6,7 +6,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
-from xtructure.core.protocol import Xtructurable
+from xtructure import Xtructurable, is_xtructure_dataclass_instance
 
 
 def minibatch_datasets(
@@ -34,7 +34,7 @@ def minibatch_datasets(
 
     batched_train_datasets = []
     for train_dataset in train_datasets:
-        if isinstance(train_dataset, Xtructurable):
+        if is_xtructure_dataclass_instance(train_dataset):
             batched_train_dataset = xnp.take(train_dataset, batch_indexs_replay, axis=0)
         else:
             batched_train_dataset = jnp.take(train_dataset, batch_indexs_replay, axis=0)

@@ -2073,7 +2073,7 @@ wheels = [
 [[package]]
 name = "xtructure"
 version = "0.1.3"
-source = { git = "https://github.com/tinker495/xtructure.git#b391f7d75cf2ca57b1245f3ba61a9922ee5852c2" }
+source = { git = "https://github.com/tinker495/xtructure.git#e794a80d500a7c7e949a3d1bf76f793fbcaf7934" }
 dependencies = [
     { name = "absl-py" },
     { name = "chex" },

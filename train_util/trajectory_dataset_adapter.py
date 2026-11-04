@@ -20,7 +20,7 @@ from puxle.core.trajectory import (
     create_hindsight_target_triangular_shuffled_path as _create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path as _create_target_shuffled_path,
 )
-from xtructure.core.protocol import Xtructurable
+from xtructure import Xtructurable, is_xtructure_dataclass_instance
 
 
 class TrajectoryDataset(TypedDict):
@@ -39,9 +39,9 @@ def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
     """Translate a ``PuzzleTrajectory`` into the flat dict shape consumed by
     JAxtar's JIT'd training step. Field names match the legacy dict keys.
     """
-    if not isinstance(traj.solve_configs, Xtructurable) or not isinstance(
-        traj.states, Xtructurable
-    ):
+    if not is_xtructure_dataclass_instance(
+        traj.solve_configs
+    ) or not is_xtructure_dataclass_instance(traj.states):
         raise TypeError("Trajectory solve_configs and states must be Xtructurable values")
     return {
         "solve_configs": traj.solve_configs,
