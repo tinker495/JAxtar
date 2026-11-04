@@ -6,8 +6,8 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
-from xtructure.core.protocol import Xtructurable as XtructurableProtocol
+from train_util.trajectory_dataset_adapter import TrajectoryDataset, require_parent_indices
+from xtructure import FieldDescriptor, Xtructurable
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import (
@@ -24,16 +24,31 @@ from train_util.trajectory_dataset_adapter import (
 from train_util.util import boltzmann_action_selection
 
 
+class SolveConfigsAndStatesAndActionsView(Xtructurable, abstract=True):
+    """Typed view of the per-puzzle (solve config, state, action) triple class."""
+
+    solveconfigs: Xtructurable
+    states: Xtructurable
+    actions: chex.Array
+
+
+class SolveConfigsAndStatesView(Xtructurable, abstract=True):
+    """Typed view of the per-puzzle (solve config, state) pair class."""
+
+    solveconfigs: Xtructurable
+    states: Xtructurable
+
+
 def _get_datasets_with_policy(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStatesAndActions: Xtructurable,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStatesAndActions: type[SolveConfigsAndStatesAndActionsView],
+    SolveConfigsAndStates: type[SolveConfigsAndStatesView],
     q_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_q_params: Any,
     q_params: Any,
-    shuffled_path: dict[str, chex.Array],
+    shuffled_path: TrajectoryDataset,
     key: chex.PRNGKey,
     k_max: int,
     temperature: float = 1.0 / 3.0,
@@ -172,7 +187,7 @@ def _get_datasets_with_policy(
         trajectory_actions,
         shuffled_path["move_costs"],
         shuffled_path["action_costs"].reshape((-1, 1)),
-        shuffled_path["parent_indices"],
+        require_parent_indices(shuffled_path),
         SolveConfigsAndStatesAndActions,
         SolveConfigsAndStates,
         k_max,
@@ -191,15 +206,15 @@ def _get_datasets_with_policy(
 
 
 def _compute_diffusion_q(
-    solve_configs: chex.Array,
-    states: chex.Array,
+    solve_configs: Xtructurable,
+    states: Xtructurable,
     is_solved: chex.Array,
     trajectory_actions: chex.Array,
     move_costs: chex.Array,
     action_costs: chex.Array,
     parent_indices: chex.Array,
-    SolveConfigsAndStatesAndActions: Xtructurable,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStatesAndActions: type[SolveConfigsAndStatesAndActionsView],
+    SolveConfigsAndStates: type[SolveConfigsAndStatesView],
     k_max: int,
 ):
     raw_move_costs = move_costs.reshape((-1,))
@@ -249,13 +264,13 @@ def _compute_diffusion_q(
 def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStatesAndActions: Xtructurable,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStatesAndActions: type[SolveConfigsAndStatesAndActionsView],
+    SolveConfigsAndStates: type[SolveConfigsAndStatesView],
     q_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_q_params: Any,
     q_params: Any,
-    shuffled_path: dict[str, chex.Array],
+    shuffled_path: TrajectoryDataset,
     key: chex.PRNGKey,
     k_max: int,
     temperature: float = 1.0 / 3.0,
@@ -266,7 +281,7 @@ def _get_datasets_with_diffusion_distance(
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
     action_costs = shuffled_path["action_costs"].reshape((-1, 1))
-    parent_indices = shuffled_path["parent_indices"]
+    parent_indices = require_parent_indices(shuffled_path)
 
     # Flatten strictly for compute_diffusion logic inside
     solve_configs_flat = solve_configs.reshape((-1,))
@@ -334,20 +349,14 @@ def get_qfunction_dataset_builder(
         fixed_target_error="Fixed target is not supported for hindsight target",
     )
 
-    @xtructure_dataclass
-    class SolveConfigsAndStatesAndActions:
-        solveconfigs: Annotated[
-            XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        ]
-        states: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.State)]
-        actions: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))]
+    class SolveConfigsAndStatesAndActions(SolveConfigsAndStatesAndActionsView):
+        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
+        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
+        actions: Annotated[chex.Array, FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))]
 
-    @xtructure_dataclass
-    class SolveConfigsAndStates:
-        solveconfigs: Annotated[
-            XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        ]
-        states: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.State)]
+    class SolveConfigsAndStates(SolveConfigsAndStatesView):
+        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
+        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
 
     base_get_datasets = partial(
         _get_datasets_with_policy,

@@ -6,8 +6,8 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
-from xtructure.core.protocol import Xtructurable as XtructurableProtocol
+from train_util.trajectory_dataset_adapter import TrajectoryDataset, require_parent_indices
+from xtructure import FieldDescriptor, Xtructurable
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import (
@@ -23,12 +23,19 @@ from train_util.trajectory_dataset_adapter import (
 )
 
 
+class SolveConfigsAndStatesView(Xtructurable, abstract=True):
+    """Typed view of the per-puzzle (solve config, state) pair class."""
+
+    solveconfigs: Xtructurable
+    states: Xtructurable
+
+
 def _infer_neighbor_heuristics(
     model: DistanceModel | DistanceHLGModel,
     inputs: jax.Array,
     solve_configs: Xtructurable,
     neighbors: Xtructurable,
-    SolveConfigsAndStates: type[Xtructurable],
+    SolveConfigsAndStates: type[SolveConfigsAndStatesView],
     infer: Callable,
 ) -> tuple[None, jax.Array]:
     if not model.supports_row_independent_inference:
@@ -91,12 +98,12 @@ def _infer_neighbor_heuristics(
 def _get_datasets(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStates: type[Xtructurable],
+    SolveConfigsAndStates: type[SolveConfigsAndStatesView],
     heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
-    shuffled_path: dict[str, chex.Array],
+    shuffled_path: TrajectoryDataset,
     key: chex.PRNGKey,
     k_max: int,
     temperature: float = 1.0 / 3.0,
@@ -164,7 +171,7 @@ def _get_datasets(
         is_solved,
         shuffled_path["move_costs"],
         shuffled_path["action_costs"].reshape((-1,)),
-        shuffled_path["parent_indices"],
+        require_parent_indices(shuffled_path),
         SolveConfigsAndStates,
         k_max,
     )
@@ -178,13 +185,13 @@ def _get_datasets(
 
 
 def _compute_diffusion_distance(
-    solve_configs: chex.Array,
-    states: chex.Array,
+    solve_configs: Xtructurable,
+    states: Xtructurable,
     is_solved: chex.Array,
     move_costs: chex.Array,
     action_costs: chex.Array,
     parent_indices: chex.Array,
-    SolveConfigsAndStates: type[Xtructurable],
+    SolveConfigsAndStates: type[SolveConfigsAndStatesView],
     k_max: int,
 ):
     raw_move_costs = move_costs.reshape((-1,))
@@ -216,12 +223,12 @@ def _compute_diffusion_distance(
 def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStates: type[Xtructurable],
+    SolveConfigsAndStates: type[SolveConfigsAndStatesView],
     heuristic_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_heuristic_params: Any,
     heuristic_params: Any,
-    shuffled_path: dict[str, chex.Array],
+    shuffled_path: TrajectoryDataset,
     key: chex.PRNGKey,
     k_max: int,
     temperature: float = 1.0 / 3.0,
@@ -235,7 +242,7 @@ def _get_datasets_with_diffusion_distance(
     solve_configs = solve_configs.reshape((-1,))
     states = states.reshape((-1,))
     action_costs = action_costs.reshape((-1,))
-    parent_indices = shuffled_path["parent_indices"]
+    parent_indices = require_parent_indices(shuffled_path)
 
     is_solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True).reshape(
         (-1,)
@@ -294,12 +301,9 @@ def get_heuristic_dataset_builder(
         create_target_shuffled_path=create_target_shuffled_path,
     )
 
-    @xtructure_dataclass
-    class SolveConfigsAndStates:
-        solveconfigs: Annotated[
-            XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        ]
-        states: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.State)]
+    class SolveConfigsAndStates(SolveConfigsAndStatesView):
+        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
+        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
 
     base_get_datasets = partial(
         _get_datasets,

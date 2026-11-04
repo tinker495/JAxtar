@@ -25,7 +25,7 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, HashIdx, xtructure_dataclass
+from xtructure import FieldDescriptor, HashIdx, Xtructurable
 from xtructure.core.dataclass import base_dataclass
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
@@ -44,8 +44,7 @@ from JAxtar.stars.search_base import (
 )
 
 
-@xtructure_dataclass
-class MeetingPoint:
+class MeetingPoint(Xtructurable):
     """
     Tracks the best known meeting point between forward and backward search frontiers.
 

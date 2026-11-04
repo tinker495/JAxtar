@@ -58,7 +58,7 @@ def _reconstruct_trace_indices(
     return path_idx, length
 
 
-@base_dataclass(static_fields=("params"))
+@base_dataclass
 class BeamSearchLoopState:
     search_result: "BeamSearchResult"
     solve_config: Puzzle.SolveConfig
