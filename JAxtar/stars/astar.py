@@ -11,7 +11,7 @@ from heuristic.heuristic_base import Heuristic
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE, MIN_BATCH_SIZE
 from JAxtar.search_build_spec import DEFAULT_SEARCH_BUILD_SPEC, SearchBuildSpec
 from JAxtar.stars.common import Current, Parent, insert_priority_queue_batches
-from JAxtar.stars.search_base import (
+from JAxtar.stars.search_base_eager import (
     EagerSearchResult,
     LoopState,
     base_loop_condition,

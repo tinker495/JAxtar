@@ -105,25 +105,22 @@ def _bi_qstar_loop_builder(
         **kwargs: Any,
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional Q* search from start and goal states."""
+
+        def build_direction(direction_min_pop: int) -> DeferredSearchResult:
+            return DeferredSearchResult.build(
+                statecls,
+                batch_size,
+                max_nodes,
+                action_size,
+                pop_ratio,
+                min_pop=direction_min_pop,
+                is_reversible=puzzle.is_reversible,
+            )
+
         bi_result = build_bi_search_result(
-            DeferredSearchResult.build(
-                statecls,
-                batch_size,
-                max_nodes,
-                action_size,
-                pop_ratio,
-                min_pop=min_pop,
-                is_reversible=puzzle.is_reversible,
-            ),
-            DeferredSearchResult.build(
-                statecls,
-                batch_size,
-                max_nodes,
-                action_size,
-                pop_ratio,
-                min_pop=backward_min_pop,
-                is_reversible=puzzle.is_reversible,
-            ),
+            build_direction,
+            min_pop,
+            backward_min_pop,
         )
 
         q_params_forward = q_fn.prepare_q_parameters(solve_config, **kwargs)

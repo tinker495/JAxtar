@@ -21,10 +21,14 @@ from xtructure.core.dataclass import base_dataclass
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.stars.common import (
     POP_BATCH_FILLED_RATIO,
+    SEARCH_RESULT_STATIC_FIELDS,
     Current,
     Parent,
     SearchResult,
     insert_priority_queue_batches,
+    insert_start,
+    record_pq_pop,
+    search_continues,
     select_pop_batch,
 )
 
@@ -58,7 +62,7 @@ class LoopStateWithStates:
     filled: jax.Array
 
 
-@base_dataclass(static_fields=("action_size", "fixed_batch_pop", "estimated_successors"))
+@base_dataclass(static_fields=SEARCH_RESULT_STATIC_FIELDS + ("estimated_successors",))
 class DeferredSearchResult(SearchResult):
     """
     Search result whose priority queue holds `ParentWithCosts` edges (deferred expansion).
@@ -89,23 +93,25 @@ class DeferredSearchResult(SearchResult):
         is_reversible: bool = False,
     ) -> "DeferredSearchResult":
         """
-        Creates a deferred search result; see `SearchResult._build_with_queue` for the
+        Creates a deferred search result; see `SearchResult._shared_buffers` for the
         shared arguments.
 
         Args:
             is_reversible (bool): Whether one of the `action_size` children of an
                 expansion is its own parent, which the generated-state metric discounts.
         """
-        return DeferredSearchResult._build_with_queue(
-            ParentWithCosts,
-            statecls,
-            batch_size,
-            max_nodes,
-            action_size,
-            pop_ratio,
-            min_pop,
-            seed,
-            emit_workload_signature,
+        return DeferredSearchResult(
+            **SearchResult._shared_buffers(
+                ParentWithCosts,
+                statecls,
+                batch_size,
+                max_nodes,
+                action_size,
+                pop_ratio,
+                min_pop,
+                seed,
+                emit_workload_signature,
+            ),
             estimated_successors=action_size - 1 if is_reversible else action_size,
         )
 
@@ -394,28 +400,7 @@ class DeferredSearchResult(SearchResult):
             fixed_batch_pop=search_result.fixed_batch_pop,
         )
 
-        def _update_deferred(sr: "DeferredSearchResult"):
-            processed = jnp.sum(final_process_mask).astype(jnp.int32)
-            return replace(
-                sr,
-                xtr_steps=sr.xtr_steps + jnp.array(1, dtype=jnp.int32),
-                xtr_pq_delete_calls=sr.xtr_pq_delete_calls + delete_calls,
-                xtr_pq_popped_items=sr.xtr_pq_popped_items + popped_total,
-                xtr_pq_processed_items=sr.xtr_pq_processed_items + processed,
-                xtr_pq_requeued_items=sr.xtr_pq_requeued_items + (popped_total - processed),
-                xtr_pq_heap_size_sum=sr.xtr_pq_heap_size_sum
-                + sr.priority_queue.heap_size.astype(jnp.int32),
-                xtr_pq_buffer_size_sum=sr.xtr_pq_buffer_size_sum
-                + sr.priority_queue.buffer_size.astype(jnp.int32),
-                xtr_pq_size_samples=sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32),
-            )
-
-        search_result = jax.lax.cond(
-            search_result.xtr_enabled,
-            _update_deferred,
-            lambda sr: sr,
-            search_result,
-        )
+        search_result = record_pq_pop(search_result, final_process_mask, delete_calls, popped_total)
 
         final_costs = jnp.where(final_process_mask, final_costs, jnp.inf)
         search_result.priority_queue = next_queue
@@ -491,13 +476,7 @@ def init_base_loop_state(
     params: Any,
     sr_batch_size: int,
 ):
-    (
-        search_result.hashtable,
-        _,
-        hash_idx,
-    ) = search_result.hashtable.insert(start)
-
-    search_result.cost = search_result.cost.at[hash_idx.index].set(0)
+    hash_idx = insert_start(search_result, start)
     costs = jnp.zeros((sr_batch_size,), dtype=KEY_DTYPE)
     states = xnp.pad(start, (0, sr_batch_size - 1))
     hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
@@ -514,17 +493,13 @@ def init_base_loop_state(
 
 
 def base_loop_condition(puzzle: Puzzle, loop_state: LoopStateWithStates):
-    search_result = loop_state.search_result
-    solve_config = loop_state.solve_config
-    filled = loop_state.filled
-    hash_size = search_result.hashtable.size
-    size_cond1 = filled.any()  # queue is not empty
-    size_cond2 = hash_size < search_result.capacity  # hash table is not full
-    size_cond = jnp.logical_and(size_cond1, size_cond2)
-
-    solved = puzzle.batched_is_solved(solve_config, loop_state.states)
-    solved = jnp.logical_and(solved, filled)
-    return jnp.logical_and(size_cond, ~solved.any())
+    return search_continues(
+        puzzle,
+        loop_state.search_result,
+        loop_state.solve_config,
+        loop_state.states,
+        loop_state.filled,
+    )
 
 
 def build_deferred_loop_body(

@@ -114,7 +114,7 @@ def extract_heuristic_accuracy_data(
             )
 
             # Re-evaluate dist for each step using the model directly on the state.
-            # This matches how search algorithms (like search_base.py) update 'dist'
+            # This matches how search algorithms (like search_base_eager.py) update 'dist'
             # by evaluating the state when it is generated.
             if path_steps:
                 states = [step.state for step in path_steps]

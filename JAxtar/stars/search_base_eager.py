@@ -6,7 +6,6 @@ queueing, so its priority queue holds `Current` states. Shared buffers and queue
 helpers live in `common.py`.
 """
 
-from dataclasses import replace
 from functools import partial
 from typing import Any
 
@@ -19,8 +18,12 @@ from xtructure.core.dataclass import base_dataclass
 from JAxtar.annotate import KEY_DTYPE
 from JAxtar.stars.common import (
     POP_BATCH_FILLED_RATIO,
+    SEARCH_RESULT_STATIC_FIELDS,
     Current,
     SearchResult,
+    insert_start,
+    record_pq_pop,
+    search_continues,
     select_pop_batch,
 )
 
@@ -39,7 +42,7 @@ class LoopState:
     filled: jax.Array
 
 
-@base_dataclass(static_fields=("action_size", "fixed_batch_pop"))
+@base_dataclass(static_fields=SEARCH_RESULT_STATIC_FIELDS)
 class EagerSearchResult(SearchResult):
     """Search result whose priority queue holds `Current` states (eager expansion)."""
 
@@ -59,17 +62,19 @@ class EagerSearchResult(SearchResult):
         seed=42,
         emit_workload_signature: bool = False,
     ) -> "EagerSearchResult":
-        """Creates an eager search result; see `SearchResult._build_with_queue` for the arguments."""
-        return EagerSearchResult._build_with_queue(
-            Current,
-            statecls,
-            batch_size,
-            max_nodes,
-            action_size,
-            pop_ratio,
-            min_pop,
-            seed,
-            emit_workload_signature,
+        """Creates an eager search result; see `SearchResult._shared_buffers` for the arguments."""
+        return EagerSearchResult(
+            **SearchResult._shared_buffers(
+                Current,
+                statecls,
+                batch_size,
+                max_nodes,
+                action_size,
+                pop_ratio,
+                min_pop,
+                seed,
+                emit_workload_signature,
+            )
         )
 
     def pop_full(search_result) -> tuple["EagerSearchResult", Current, jax.Array]:
@@ -168,28 +173,7 @@ class EagerSearchResult(SearchResult):
             fixed_batch_pop=search_result.fixed_batch_pop,
         )
 
-        def _update_pq_pop(sr: "EagerSearchResult"):
-            processed = jnp.sum(final_process_mask).astype(jnp.int32)
-            return replace(
-                sr,
-                xtr_steps=sr.xtr_steps + jnp.array(1, dtype=jnp.int32),
-                xtr_pq_delete_calls=sr.xtr_pq_delete_calls + delete_calls,
-                xtr_pq_popped_items=sr.xtr_pq_popped_items + popped_total,
-                xtr_pq_processed_items=sr.xtr_pq_processed_items + processed,
-                xtr_pq_requeued_items=sr.xtr_pq_requeued_items + (popped_total - processed),
-                xtr_pq_heap_size_sum=sr.xtr_pq_heap_size_sum
-                + sr.priority_queue.heap_size.astype(jnp.int32),
-                xtr_pq_buffer_size_sum=sr.xtr_pq_buffer_size_sum
-                + sr.priority_queue.buffer_size.astype(jnp.int32),
-                xtr_pq_size_samples=sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32),
-            )
-
-        search_result = jax.lax.cond(
-            search_result.xtr_enabled,
-            _update_pq_pop,
-            lambda sr: sr,
-            search_result,
-        )
+        search_result = record_pq_pop(search_result, final_process_mask, delete_calls, popped_total)
 
         search_result.priority_queue = next_queue
 
@@ -261,13 +245,7 @@ def init_base_loop_state(
     params: Any,
     sr_batch_size: int,
 ):
-    (
-        search_result.hashtable,
-        _,
-        hash_idx,
-    ) = search_result.hashtable.insert(start)
-
-    search_result.cost = search_result.cost.at[hash_idx.index].set(0)
+    hash_idx = insert_start(search_result, start)
     hash_idxs = xnp.pad(hash_idx, (0, sr_batch_size - 1))
     costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
@@ -283,14 +261,7 @@ def init_base_loop_state(
 
 def base_loop_condition(puzzle: Puzzle, loop_state: LoopState):
     search_result = loop_state.search_result
-    solve_config = loop_state.solve_config
     states = search_result.get_state(loop_state.current)
-    filled = loop_state.filled
-    hash_size = search_result.hashtable.size
-    size_cond1 = filled.any()  # queue is not empty
-    size_cond2 = hash_size < search_result.capacity  # hash table is not full
-    size_cond = jnp.logical_and(size_cond1, size_cond2)
-
-    solved = puzzle.batched_is_solved(solve_config, states)
-    solved = jnp.logical_and(solved, filled)
-    return jnp.logical_and(size_cond, ~solved.any())
+    return search_continues(
+        puzzle, search_result, loop_state.solve_config, states, loop_state.filled
+    )

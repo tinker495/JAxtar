@@ -91,25 +91,22 @@ def _bi_astar_d_loop_builder(
         **kwargs: Any,
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional deferred search from start and goal states."""
+
+        def build_direction(direction_min_pop: int) -> DeferredSearchResult:
+            return DeferredSearchResult.build(
+                statecls,
+                batch_size,
+                max_nodes,
+                action_size,
+                pop_ratio,
+                min_pop=direction_min_pop,
+                is_reversible=puzzle.is_reversible,
+            )
+
         bi_result = build_bi_search_result(
-            DeferredSearchResult.build(
-                statecls,
-                batch_size,
-                max_nodes,
-                action_size,
-                pop_ratio,
-                min_pop=min_pop,
-                is_reversible=puzzle.is_reversible,
-            ),
-            DeferredSearchResult.build(
-                statecls,
-                batch_size,
-                max_nodes,
-                action_size,
-                pop_ratio,
-                min_pop=min_pop if use_backward_heuristic else 1,
-                is_reversible=puzzle.is_reversible,
-            ),
+            build_direction,
+            min_pop,
+            min_pop if use_backward_heuristic else 1,
         )
 
         heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)

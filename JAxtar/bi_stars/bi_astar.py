@@ -45,7 +45,7 @@ from JAxtar.bi_stars.bi_search_base import (
     update_meeting_point,
 )
 from JAxtar.stars.common import Current, Parent, insert_priority_queue_batches
-from JAxtar.stars.search_base import EagerSearchResult
+from JAxtar.stars.search_base_eager import EagerSearchResult
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
@@ -93,18 +93,16 @@ def _bi_astar_loop_builder(
         **kwargs: Any,
     ) -> BiLoopState:
         """Initialize bidirectional search from start and goal states."""
+
+        def build_direction(direction_min_pop: int) -> EagerSearchResult:
+            return EagerSearchResult.build(
+                statecls, batch_size, max_nodes, action_size, pop_ratio, min_pop=direction_min_pop
+            )
+
         bi_result = build_bi_search_result(
-            EagerSearchResult.build(
-                statecls, batch_size, max_nodes, action_size, pop_ratio, min_pop=min_pop
-            ),
-            EagerSearchResult.build(
-                statecls,
-                batch_size,
-                max_nodes,
-                action_size,
-                pop_ratio,
-                min_pop=min_pop if use_backward_heuristic else 1,
-            ),
+            build_direction,
+            min_pop,
+            min_pop if use_backward_heuristic else 1,
         )
 
         heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
@@ -157,7 +155,7 @@ def _bi_astar_loop_builder(
         )
 
     def _expand_direction(
-        bi_result: BiDirectionalSearchResult,
+        bi_result: BiDirectionalSearchResult[EagerSearchResult],
         solve_config: Puzzle.SolveConfig,
         inverse_solveconfig: Puzzle.SolveConfig,
         heuristic_params: Any,
@@ -165,7 +163,7 @@ def _bi_astar_loop_builder(
         filled: jax.Array,
         is_forward: bool,
         use_heuristic: bool,
-    ) -> tuple[BiDirectionalSearchResult, Current, jax.Array]:
+    ) -> tuple[BiDirectionalSearchResult[EagerSearchResult], Current, jax.Array]:
         """
         Expand one direction (forward or backward).
 
@@ -188,7 +186,6 @@ def _bi_astar_loop_builder(
             search_result = bi_result.backward
             current_solve_config = inverse_solveconfig
             get_neighbours_fn = puzzle.batched_get_inverse_neighbours
-        assert isinstance(search_result, EagerSearchResult)
 
         sr_batch_size = search_result.batch_size
 

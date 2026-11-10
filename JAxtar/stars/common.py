@@ -3,13 +3,13 @@ Shared core of the A*, A*-D and Q* searches.
 
 Holds the queue value types, the search result buffers and host-side readers that
 both expansion families use, and the priority-queue helpers whose semantics must
-stay identical across them. The eager family (A*) lives in `search_base.py`; the
+stay identical across them. The eager family (A*) lives in `search_base_eager.py`; the
 deferred family (A*-D, Q*) lives in `search_base_deferred.py`.
 """
 
 from dataclasses import replace
 from functools import partial
-from typing import Annotated, Self, TypeVar
+from typing import Annotated, Any, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -38,6 +38,9 @@ from JAxtar.solution_trace import (
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
 SearchResultT = TypeVar("SearchResultT", bound="SearchResult")
+
+# Fields every search result keeps as static pytree metadata; families may add more.
+SEARCH_RESULT_STATIC_FIELDS = ("action_size", "fixed_batch_pop")
 
 
 def select_pop_batch(
@@ -136,6 +139,57 @@ def insert_priority_queue_batches(
     return search_result
 
 
+def record_pq_pop(
+    search_result: SearchResultT,
+    process_mask: jax.Array,
+    delete_calls: jax.Array,
+    popped_total: jax.Array,
+) -> SearchResultT:
+    """Add one pop's priority-queue workload counters when the xtr_* counters are enabled."""
+
+    def update(sr: SearchResultT) -> SearchResultT:
+        processed = jnp.sum(process_mask).astype(jnp.int32)
+        return replace(
+            sr,
+            xtr_steps=sr.xtr_steps + jnp.array(1, dtype=jnp.int32),
+            xtr_pq_delete_calls=sr.xtr_pq_delete_calls + delete_calls,
+            xtr_pq_popped_items=sr.xtr_pq_popped_items + popped_total,
+            xtr_pq_processed_items=sr.xtr_pq_processed_items + processed,
+            xtr_pq_requeued_items=sr.xtr_pq_requeued_items + (popped_total - processed),
+            xtr_pq_heap_size_sum=sr.xtr_pq_heap_size_sum
+            + sr.priority_queue.heap_size.astype(jnp.int32),
+            xtr_pq_buffer_size_sum=sr.xtr_pq_buffer_size_sum
+            + sr.priority_queue.buffer_size.astype(jnp.int32),
+            xtr_pq_size_samples=sr.xtr_pq_size_samples + jnp.array(1, dtype=jnp.int32),
+        )
+
+    return jax.lax.cond(search_result.xtr_enabled, update, lambda sr: sr, search_result)
+
+
+def insert_start(search_result: "SearchResult", start: Xtructurable) -> HashIdx:
+    """Insert the start state with cost 0 (mutates `search_result`) and return its slot."""
+    search_result.hashtable, _, hash_idx = search_result.hashtable.insert(start)
+    search_result.cost = search_result.cost.at[hash_idx.index].set(0)
+    return hash_idx
+
+
+def search_continues(
+    puzzle: Puzzle,
+    search_result: "SearchResult",
+    solve_config: Puzzle.SolveConfig,
+    states: Xtructurable,
+    filled: jax.Array,
+) -> jax.Array:
+    """Loop condition shared by both families: work remains, room remains, nothing solved."""
+    size_cond1 = filled.any()  # queue is not empty
+    size_cond2 = search_result.hashtable.size < search_result.capacity  # hash table is not full
+    size_cond = jnp.logical_and(size_cond1, size_cond2)
+
+    solved = puzzle.batched_is_solved(solve_config, states)
+    solved = jnp.logical_and(solved, filled)
+    return jnp.logical_and(size_cond, ~solved.any())
+
+
 @partial(jax.jit, static_argnames=("max_steps",))
 def _reconstruct_path_arrays(
     parent_indices: jax.Array,
@@ -202,12 +256,12 @@ class Current(Xtructurable):
     cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
 
 
-@base_dataclass(static_fields=("action_size", "fixed_batch_pop"))
+@base_dataclass(static_fields=SEARCH_RESULT_STATIC_FIELDS)
 class SearchResult:
     """
     Buffers shared by the A*/A*-D/Q* searches; instantiate a family subclass.
 
-    `EagerSearchResult` (search_base.py) queues `Current` states and
+    `EagerSearchResult` (search_base_eager.py) queues `Current` states and
     `DeferredSearchResult` (search_base_deferred.py) queues `ParentWithCosts`
     edges. Both share the hash table, the per-state cost/dist/parent buffers,
     path reconstruction, and the xtr_* workload counters defined here.
@@ -259,9 +313,8 @@ class SearchResult:
     xtr_pq_buffer_size_sum: jax.Array
     xtr_pq_size_samples: jax.Array
 
-    @classmethod
-    def _build_with_queue(
-        cls,
+    @staticmethod
+    def _shared_buffers(
         queue_value: type[Xtructurable],
         statecls: Puzzle.State,
         batch_size: int,
@@ -271,13 +324,12 @@ class SearchResult:
         min_pop: int,
         seed: int,
         emit_workload_signature: bool,
-        **family_fields: int,
-    ) -> Self:
+    ) -> dict[str, Any]:
         """
         Allocates the shared buffers around a priority queue of `queue_value` entries.
 
-        Family subclasses call this from their jitted `build`, passing their own
-        fields through `family_fields`.
+        Returns the constructor fields every family shares; each family's jitted
+        `build` constructs itself from them plus its own fields.
 
         Args:
             queue_value: Priority-queue value type of the family
@@ -314,7 +366,7 @@ class SearchResult:
         xtr_enabled = jnp.array(emit_workload_signature, dtype=jnp.bool_)
         xtr_zero = jnp.array(0, dtype=jnp.int32)
 
-        return cls(
+        return dict(
             hashtable=hashtable,
             priority_queue=priority_queue,
             action_size=action_size,
@@ -346,7 +398,6 @@ class SearchResult:
             xtr_pq_heap_size_sum=xtr_zero,
             xtr_pq_buffer_size_sum=xtr_zero,
             xtr_pq_size_samples=xtr_zero,
-            **family_fields,
         )
 
     @property
@@ -460,7 +511,9 @@ class SearchResult:
 
         action_pad = action_pad_int(ACTION_DTYPE)
         path = search_result._get_solved_path()
-        raw_actions = [getattr(node, "action", action_pad) for node in path[:-1]]
+        raw_actions = [
+            node.action if isinstance(node, Parent) else action_pad for node in path[:-1]
+        ]
         states = tuple(search_result.get_state(node) for node in path)
         costs = tuple(float(jax.device_get(search_result.get_cost(node))) for node in path)
         dists = tuple(float(jax.device_get(search_result.get_dist(node))) for node in path)
