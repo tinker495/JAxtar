@@ -20,7 +20,7 @@ from puxle.core.trajectory import (
     create_hindsight_target_triangular_shuffled_path as _create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path as _create_target_shuffled_path,
 )
-from xtructure import Xtructurable, is_xtructure_dataclass_instance
+from xtructure import Xtructurable
 
 
 class TrajectoryDataset(TypedDict):
@@ -30,27 +30,21 @@ class TrajectoryDataset(TypedDict):
     move_costs_tm1: chex.Array
     actions: chex.Array
     action_costs: chex.Array
-    parent_indices: chex.Array | None
+    parent_indices: chex.Array
     trajectory_indices: chex.Array | None
     step_indices: chex.Array | None
-
-
-def require_parent_indices(dataset: TrajectoryDataset) -> chex.Array:
-    """Return the trajectory parent indices that diffusion targets need."""
-    parent_indices = dataset["parent_indices"]
-    if parent_indices is None:
-        raise ValueError("Diffusion targets need the trajectory parent indices.")
-    return parent_indices
 
 
 def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
     """Translate a ``PuzzleTrajectory`` into the flat dict shape consumed by
     JAxtar's JIT'd training step. Field names match the legacy dict keys.
     """
-    if not is_xtructure_dataclass_instance(
-        traj.solve_configs
-    ) or not is_xtructure_dataclass_instance(traj.states):
+    if not isinstance(traj.solve_configs, Xtructurable) or not isinstance(
+        traj.states, Xtructurable
+    ):
         raise TypeError("Trajectory solve_configs and states must be Xtructurable values")
+    if traj.parent_indices is None:
+        raise ValueError("Training trajectories must carry parent indices (diffusion targets).")
     return {
         "solve_configs": traj.solve_configs,
         "states": traj.states,
@@ -66,7 +60,7 @@ def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
 
 def trajectory_to_transition_dataset(
     traj: PuzzleTrajectory, limit: int
-) -> tuple[chex.ArrayTree, chex.Array, chex.ArrayTree]:
+) -> tuple[Xtructurable, chex.Array, Xtructurable]:
     """Flatten time/batch axes and truncate aligned transition triples."""
     return (
         traj.states[:-1].flatten()[:limit],
@@ -77,7 +71,7 @@ def trajectory_to_transition_dataset(
 
 def trajectory_to_eval_trajectory(
     traj: PuzzleTrajectory,
-) -> tuple[chex.ArrayTree, chex.Array]:
+) -> tuple[Xtructurable, chex.Array]:
     """Remove the singleton parallel axis from an evaluation trajectory."""
     return traj.states.flatten(), traj.actions.reshape(-1)
 
