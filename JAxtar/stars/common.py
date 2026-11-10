@@ -9,7 +9,7 @@ deferred family (A*-D, Q*) lives in `search_base_deferred.py`.
 
 from dataclasses import replace
 from functools import partial
-from typing import Annotated, Any, Generic, TypeVar
+from typing import Annotated, Generic, Self, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -259,6 +259,14 @@ class Current(Xtructurable):
     cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
 
 
+def _hashidx(idx: HashIdx | Current | Parent) -> HashIdx:
+    if isinstance(idx, HashIdx):
+        return idx
+    if isinstance(idx, (Current, Parent)):
+        return idx.hashidx
+    raise ValueError(f"Invalid index type: {type(idx)}")
+
+
 @base_dataclass(static_fields=SEARCH_RESULT_STATIC_FIELDS)
 class SearchResult(Generic[QueueValueT]):
     """
@@ -316,9 +324,10 @@ class SearchResult(Generic[QueueValueT]):
     xtr_pq_buffer_size_sum: jax.Array
     xtr_pq_size_samples: jax.Array
 
-    @staticmethod
-    def _shared_buffers(
-        queue_value: type[Xtructurable],
+    @classmethod
+    def _build(
+        cls,
+        queue_value: type[QueueValueT],
         statecls: Puzzle.State,
         batch_size: int,
         max_nodes: int,
@@ -327,12 +336,12 @@ class SearchResult(Generic[QueueValueT]):
         min_pop: int,
         seed: int,
         emit_workload_signature: bool,
-    ) -> dict[str, Any]:
+    ) -> Self:
         """
         Allocates the shared buffers around a priority queue of `queue_value` entries.
 
-        Returns the constructor fields every family shares; each family's jitted
-        `build` constructs itself from them plus its own fields.
+        Constructs the calling family with its own priority-queue value type.
+        Each family's jitted `build` supplies any family-specific initialization.
 
         Args:
             queue_value: Priority-queue value type of the family
@@ -369,7 +378,7 @@ class SearchResult(Generic[QueueValueT]):
         xtr_enabled = jnp.array(emit_workload_signature, dtype=jnp.bool_)
         xtr_zero = jnp.array(0, dtype=jnp.int32)
 
-        return dict(
+        return cls(
             hashtable=hashtable,
             priority_queue=priority_queue,
             action_size=action_size,
@@ -547,31 +556,16 @@ class SearchResult(Generic[QueueValueT]):
         """
         Get the state from the hash table.
         """
-        if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.hashtable[idx.hashidx]
-        elif isinstance(idx, HashIdx):
-            return search_result.hashtable[idx]
-        else:
-            raise ValueError(f"Invalid index type: {type(idx)}")
+        return search_result.hashtable[_hashidx(idx)]
 
     def get_cost(search_result, idx: HashIdx | Current | Parent) -> jax.Array:
         """
         Get the cost of the state from the cost array.
         """
-        if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.cost[idx.hashidx.index]
-        elif isinstance(idx, HashIdx):
-            return search_result.cost[idx.index]
-        else:
-            raise ValueError(f"Invalid index type: {type(idx)}")
+        return search_result.cost[_hashidx(idx).index]
 
     def get_dist(search_result, idx: HashIdx | Current | Parent) -> jax.Array:
         """
         Get the distance of the state from the distance array.
         """
-        if isinstance(idx, Current) or isinstance(idx, Parent):
-            return search_result.dist[idx.hashidx.index]
-        elif isinstance(idx, HashIdx):
-            return search_result.dist[idx.index]
-        else:
-            raise ValueError(f"Invalid index type: {type(idx)}")
+        return search_result.dist[_hashidx(idx).index]

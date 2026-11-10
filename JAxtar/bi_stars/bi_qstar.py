@@ -11,6 +11,7 @@ Key Benefits:
 - Efficient for domains where Q-learning has been applied
 """
 
+from functools import partial
 from typing import Any
 
 import chex
@@ -106,19 +107,16 @@ def _bi_qstar_loop_builder(
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional Q* search from start and goal states."""
 
-        def build_direction(direction_min_pop: int) -> DeferredSearchResult:
-            return DeferredSearchResult.build(
+        bi_result: BiDirectionalSearchResult[DeferredSearchResult] = build_bi_search_result(
+            partial(
+                DeferredSearchResult.build,
                 statecls,
                 batch_size,
                 max_nodes,
                 action_size,
                 pop_ratio,
-                min_pop=direction_min_pop,
                 is_reversible=puzzle.is_reversible,
-            )
-
-        bi_result = build_bi_search_result(
-            build_direction,
+            ),
             min_pop,
             backward_min_pop,
         )

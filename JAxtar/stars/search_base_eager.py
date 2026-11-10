@@ -62,19 +62,17 @@ class EagerSearchResult(SearchResult[Current]):
         seed=42,
         emit_workload_signature: bool = False,
     ) -> "EagerSearchResult":
-        """Creates an eager search result; see `SearchResult._shared_buffers` for the arguments."""
-        return EagerSearchResult(
-            **SearchResult._shared_buffers(
-                Current,
-                statecls,
-                batch_size,
-                max_nodes,
-                action_size,
-                pop_ratio,
-                min_pop,
-                seed,
-                emit_workload_signature,
-            )
+        """Creates an eager search result; see `SearchResult._build` for the arguments."""
+        return EagerSearchResult._build(
+            Current,
+            statecls,
+            batch_size,
+            max_nodes,
+            action_size,
+            pop_ratio,
+            min_pop,
+            seed,
+            emit_workload_signature,
         )
 
     def pop_full(search_result) -> tuple["EagerSearchResult", Current, jax.Array]:

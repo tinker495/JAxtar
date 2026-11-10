@@ -73,7 +73,7 @@ class DeferredSearchResult(SearchResult[ParentWithCosts]):
                 scale the generated-state metric.
     """
 
-    estimated_successors: int  # action_size - 1 if reversible
+    estimated_successors: int = 1  # Overridden by build from the puzzle's action count.
 
     @staticmethod
     @partial(
@@ -93,27 +93,26 @@ class DeferredSearchResult(SearchResult[ParentWithCosts]):
         is_reversible: bool = False,
     ) -> "DeferredSearchResult":
         """
-        Creates a deferred search result; see `SearchResult._shared_buffers` for the
+        Creates a deferred search result; see `SearchResult._build` for the
         shared arguments.
 
         Args:
             is_reversible (bool): Whether one of the `action_size` children of an
                 expansion is its own parent, which the generated-state metric discounts.
         """
-        return DeferredSearchResult(
-            **SearchResult._shared_buffers(
-                ParentWithCosts,
-                statecls,
-                batch_size,
-                max_nodes,
-                action_size,
-                pop_ratio,
-                min_pop,
-                seed,
-                emit_workload_signature,
-            ),
-            estimated_successors=action_size - 1 if is_reversible else action_size,
+        result = DeferredSearchResult._build(
+            ParentWithCosts,
+            statecls,
+            batch_size,
+            max_nodes,
+            action_size,
+            pop_ratio,
+            min_pop,
+            seed,
+            emit_workload_signature,
         )
+        result.estimated_successors = action_size - 1 if is_reversible else action_size
+        return result
 
     @property
     def generated_size(self) -> int:

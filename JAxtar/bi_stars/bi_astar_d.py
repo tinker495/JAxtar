@@ -11,6 +11,7 @@ Key Benefits:
 - Efficient for expensive heuristics with large branching factors
 """
 
+from functools import partial
 from typing import Any
 
 import chex
@@ -92,19 +93,16 @@ def _bi_astar_d_loop_builder(
     ) -> BiLoopStateWithStates:
         """Initialize bidirectional deferred search from start and goal states."""
 
-        def build_direction(direction_min_pop: int) -> DeferredSearchResult:
-            return DeferredSearchResult.build(
+        bi_result: BiDirectionalSearchResult[DeferredSearchResult] = build_bi_search_result(
+            partial(
+                DeferredSearchResult.build,
                 statecls,
                 batch_size,
                 max_nodes,
                 action_size,
                 pop_ratio,
-                min_pop=direction_min_pop,
                 is_reversible=puzzle.is_reversible,
-            )
-
-        bi_result = build_bi_search_result(
-            build_direction,
+            ),
             min_pop,
             min_pop if use_backward_heuristic else 1,
         )
