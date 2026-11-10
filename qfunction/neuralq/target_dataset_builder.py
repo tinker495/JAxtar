@@ -6,12 +6,14 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from train_util.trajectory_dataset_adapter import TrajectoryDataset, require_parent_indices
+from train_util.trajectory_dataset_adapter import TrajectoryDataset
 from xtructure import FieldDescriptor, Xtructurable
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import (
+    SolveConfigsAndStatesView,
     compute_diffusion_targets,
+    make_solve_configs_and_states_class,
     make_diffusion_step_selector,
     prepare_shuffled_path_sampling,
     wrap_dataset_runner,
@@ -30,13 +32,6 @@ class SolveConfigsAndStatesAndActionsView(Xtructurable, abstract=True):
     solveconfigs: Xtructurable
     states: Xtructurable
     actions: chex.Array
-
-
-class SolveConfigsAndStatesView(Xtructurable, abstract=True):
-    """Typed view of the per-puzzle (solve config, state) pair class."""
-
-    solveconfigs: Xtructurable
-    states: Xtructurable
 
 
 def _get_datasets_with_policy(
@@ -187,7 +182,7 @@ def _get_datasets_with_policy(
         trajectory_actions,
         shuffled_path["move_costs"],
         shuffled_path["action_costs"].reshape((-1, 1)),
-        require_parent_indices(shuffled_path),
+        shuffled_path["parent_indices"],
         SolveConfigsAndStatesAndActions,
         SolveConfigsAndStates,
         k_max,
@@ -281,7 +276,7 @@ def _get_datasets_with_diffusion_distance(
     states = shuffled_path["states"]
     move_costs = shuffled_path["move_costs"]
     action_costs = shuffled_path["action_costs"].reshape((-1, 1))
-    parent_indices = require_parent_indices(shuffled_path)
+    parent_indices = shuffled_path["parent_indices"]
 
     # Flatten strictly for compute_diffusion logic inside
     solve_configs_flat = solve_configs.reshape((-1,))
@@ -354,9 +349,7 @@ def get_qfunction_dataset_builder(
         states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
         actions: Annotated[chex.Array, FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))]
 
-    class SolveConfigsAndStates(SolveConfigsAndStatesView):
-        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
-        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
+    SolveConfigsAndStates = make_solve_configs_and_states_class(puzzle)
 
     base_get_datasets = partial(
         _get_datasets_with_policy,

@@ -1,12 +1,30 @@
 import math
 from functools import partial
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 
 import chex
 import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
-from xtructure import Xtructurable, is_xtructure_dataclass_instance
+from puxle import Puzzle
+from xtructure import FieldDescriptor, Xtructurable
+
+
+class SolveConfigsAndStatesView(Xtructurable, abstract=True):
+    """Typed view of the per-puzzle (solve config, state) pair class."""
+
+    solveconfigs: Xtructurable
+    states: Xtructurable
+
+
+def make_solve_configs_and_states_class(puzzle: Puzzle) -> type[SolveConfigsAndStatesView]:
+    """Build the (solve config, state) pair class for ``puzzle``'s per-instance classes."""
+
+    class SolveConfigsAndStates(SolveConfigsAndStatesView):
+        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
+        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
+
+    return SolveConfigsAndStates
 
 
 def minibatch_datasets(
@@ -34,7 +52,7 @@ def minibatch_datasets(
 
     batched_train_datasets = []
     for train_dataset in train_datasets:
-        if is_xtructure_dataclass_instance(train_dataset):
+        if isinstance(train_dataset, Xtructurable):
             batched_train_dataset = xnp.take(train_dataset, batch_indexs_replay, axis=0)
         else:
             batched_train_dataset = jnp.take(train_dataset, batch_indexs_replay, axis=0)
