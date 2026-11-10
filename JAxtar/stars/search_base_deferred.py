@@ -63,7 +63,7 @@ class LoopStateWithStates:
 
 
 @base_dataclass(static_fields=SEARCH_RESULT_STATIC_FIELDS + ("estimated_successors",))
-class DeferredSearchResult(SearchResult):
+class DeferredSearchResult(SearchResult[ParentWithCosts]):
     """
     Search result whose priority queue holds `ParentWithCosts` edges (deferred expansion).
 

@@ -43,7 +43,7 @@ class LoopState:
 
 
 @base_dataclass(static_fields=SEARCH_RESULT_STATIC_FIELDS)
-class EagerSearchResult(SearchResult):
+class EagerSearchResult(SearchResult[Current]):
     """Search result whose priority queue holds `Current` states (eager expansion)."""
 
     @staticmethod

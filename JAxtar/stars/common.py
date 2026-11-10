@@ -9,7 +9,7 @@ deferred family (A*-D, Q*) lives in `search_base_deferred.py`.
 
 from dataclasses import replace
 from functools import partial
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any, Generic, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -20,6 +20,7 @@ from xtructure import (
     HashIdx,
     HashTable,
     Xtructurable,
+    XtructurableT,
 )
 from xtructure.core.dataclass import base_dataclass
 
@@ -38,20 +39,22 @@ from JAxtar.solution_trace import (
 POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
 
 SearchResultT = TypeVar("SearchResultT", bound="SearchResult")
+# Priority-queue value of a search family (`Current` or `ParentWithCosts`).
+QueueValueT = TypeVar("QueueValueT", bound=Xtructurable)
 
 # Fields every search result keeps as static pytree metadata; families may add more.
 SEARCH_RESULT_STATIC_FIELDS = ("action_size", "fixed_batch_pop")
 
 
 def select_pop_batch(
-    priority_queue: BGPQ,
+    priority_queue: BGPQ[XtructurableT],
     key: jax.Array,
-    value: Xtructurable,
+    value: XtructurableT,
     *,
     pop_ratio: jax.Array,
     min_pop: int,
     fixed_batch_pop: bool,
-) -> tuple[BGPQ, jax.Array]:
+) -> tuple[BGPQ[XtructurableT], jax.Array]:
     """Select valid candidates and retain any ratio-rejected entries in the queue."""
     filled = jnp.isfinite(key)
     if fixed_batch_pop:
@@ -60,7 +63,7 @@ def select_pop_batch(
     threshold = key[0] * pop_ratio + 1e-6
     process_mask = jnp.less_equal(key, threshold)
 
-    def _limited_pop(queue: BGPQ):
+    def _limited_pop(queue: BGPQ[XtructurableT]):
         min_pop_mask = jnp.cumsum(filled) <= min_pop
         selected = filled & (process_mask | min_pop_mask)
         return queue.insert(jnp.where(selected, jnp.inf, key), value), selected
@@ -257,7 +260,7 @@ class Current(Xtructurable):
 
 
 @base_dataclass(static_fields=SEARCH_RESULT_STATIC_FIELDS)
-class SearchResult:
+class SearchResult(Generic[QueueValueT]):
     """
     Buffers shared by the A*/A*-D/Q* searches; instantiate a family subclass.
 
@@ -282,7 +285,7 @@ class SearchResult:
     """
 
     hashtable: HashTable  # hash table
-    priority_queue: BGPQ  # priority queue
+    priority_queue: BGPQ[QueueValueT]  # priority queue
     action_size: int  # number of actions available from each state
     pop_ratio: jax.Array  # normalized multiplier for the candidate score threshold
     min_pop: int  # minimum number of states to pop from the priority queue
