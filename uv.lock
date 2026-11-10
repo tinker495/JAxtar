@@ -1451,7 +1451,7 @@ wheels = [
 [[package]]
 name = "puxle"
 version = "0.2.0"
-source = { git = "https://github.com/tinker495/PuXle.git#5eaad7fc986136879279b6714fde265348b9cb27" }
+source = { git = "https://github.com/tinker495/PuXle.git#468281931d67c3fe7e7b81552dacc5639dce0436" }
 dependencies = [
     { name = "chex" },
     { name = "jax" },
