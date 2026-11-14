@@ -100,7 +100,7 @@ These are the core options that control the training loop and hyperparameters.
     -   Type: `String`
 -   `--td-error-clip`: Absolute clip value for TD-error; set <= 0 to disable.
     -   Type: `Float`
--   `-km, --k_max`: Override puzzle's default k_max (formerly shuffle_length).
+-   `-km, --k_max`: Override puzzle's default k_max.
     -   Type: `Integer`
 -   `--logger`: Logger to use.
     -   Type: `Choice`
