@@ -18,7 +18,7 @@ import xtructure.numpy as xnp
 
 from helpers.path_steps import PathStep, build_path_steps_from_trace
 from helpers.xtructure_signature import _as_float, _as_int, extract_xtructure_signature
-from JAxtar.stars.common import SearchResult
+from JAxtar.solution_trace import SearchAlgorithmResult
 
 from .verification import BenchmarkVerification, verify_benchmark_path
 
@@ -70,18 +70,12 @@ def measure_search(search_fn: Any, *args: Any) -> tuple[Any, float]:
 
     start_time = time.time()
     search_result = search_fn(*args)
-    ready_value = (
-        search_result.meeting.found
-        if _is_bidirectional_result(search_result)
-        else search_result.solved
-    )
-    if hasattr(ready_value, "block_until_ready"):
-        ready_value.block_until_ready()
+    search_result.solved.block_until_ready()
     return search_result, time.time() - start_time
 
 
 def normalise_search_result(
-    search_result: Any,
+    search_result: SearchAlgorithmResult,
     *,
     emit_workload_signature: bool = False,
 ) -> SearchOutcome:
@@ -92,11 +86,11 @@ def normalise_search_result(
     `with_solution_path(...)` for trace / artifact / verification facts.
     """
 
-    solved = _result_solved(search_result)
+    solved = bool(jax.device_get(search_result.solved))
     return SearchOutcome(
         solved=solved,
-        generated_size=_generated_size(search_result),
-        solved_cost=_solved_cost(search_result) if solved else None,
+        generated_size=_as_int(search_result.generated_size),
+        solved_cost=_as_float(search_result.solved_cost) if solved else None,
         workload_signature=(
             extract_xtructure_signature(search_result) if emit_workload_signature else {}
         ),
@@ -105,7 +99,7 @@ def normalise_search_result(
 
 def with_solution_path(
     outcome: SearchOutcome,
-    search_result: Any,
+    search_result: SearchAlgorithmResult,
     *,
     puzzle: Any,
     solve_config: Any,
@@ -202,7 +196,7 @@ def build_evaluation_result_item(
     return result_item
 
 
-def attach_expansion_analysis(result_item: dict, search_result: Any) -> None:
+def attach_expansion_analysis(result_item: dict, search_result: SearchAlgorithmResult) -> None:
     """Populate ``result_item["expansion_analysis"]`` from the result's Expansion Trace.
 
     Result families without expansion facts return ``None`` from
@@ -262,42 +256,6 @@ def build_deferred_payload(
         payload["verify_result"] = verification.matches_optimal_path
         payload["verify_error"] = verification.benchmark_verification_error
     return payload
-
-
-def _result_solved(search_result: Any) -> bool:
-    if _is_bidirectional_result(search_result):
-        return _ready_bool(search_result.meeting.found)
-    return _ready_bool(search_result.solved)
-
-
-def _generated_size(search_result: Any) -> int:
-    if _is_bidirectional_result(search_result):
-        return _as_int(search_result.total_generated)
-    return _as_int(search_result.generated_size)
-
-
-def _solved_cost(search_result: Any) -> float | None:
-    if _is_bidirectional_result(search_result):
-        return _as_float(search_result.meeting.total_cost)
-    if isinstance(search_result, SearchResult):
-        return _as_float(search_result.get_cost(search_result.solved_idx.hashidx))
-    if not hasattr(search_result, "get_cost") or not hasattr(search_result, "solved_idx"):
-        return None
-    return _as_float(search_result.get_cost(search_result.solved_idx))
-
-
-def _is_bidirectional_result(search_result: Any) -> bool:
-    return (
-        hasattr(search_result, "meeting")
-        and hasattr(search_result, "forward")
-        and hasattr(search_result, "backward")
-    )
-
-
-def _ready_bool(value: Any) -> bool:
-    if hasattr(value, "block_until_ready"):
-        value = value.block_until_ready()
-    return bool(jax.device_get(value))
 
 
 def _benchmark_reference_facts(benchmark_sample: Any, run_identifier: int) -> dict:

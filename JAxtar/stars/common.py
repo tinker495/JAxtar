@@ -48,7 +48,7 @@ def select_pop_batch(
     key: jax.Array,
     value: Xtructurable,
     *,
-    pop_ratio: jax.Array,
+    score_limit_multiplier: jax.Array,
     min_pop: int,
     fixed_batch_pop: bool,
 ) -> tuple[BGPQ, jax.Array]:
@@ -57,7 +57,7 @@ def select_pop_batch(
     if fixed_batch_pop:
         return priority_queue, filled
 
-    threshold = key[0] * pop_ratio + 1e-6
+    threshold = key[0] * score_limit_multiplier + 1e-6
     process_mask = jnp.less_equal(key, threshold)
 
     def _limited_pop(queue: BGPQ):
@@ -270,9 +270,9 @@ class SearchResult:
         hashtable (HashTable): Stores all encountered states for efficient lookup
         priority_queue (BGPQ): Priority queue for ordering state expansions
         action_size (int): Number of actions available from each state
-        pop_ratio (float): The final pop ratio for the search, controlling the
-                beam width. It is used to calculate a multiplier `M = max(1.0 + pop_ratio, 1.01)`.
-                The search beam will include all nodes with a cost up to `min_cost * M`.
+        score_limit_multiplier (jax.Array): `M = max(1.0 + pop_ratio, 1.01)` derived from
+                the pop ratio at build time. One pop processes candidates scoring up to
+                `best_score * M`.
         min_pop (int): Minimum number of states to pop from the priority queue
         cost (jax.Array): Cost array tracking path costs to each state (g value)
         dist (jax.Array): Distance array storing calculated heuristic or Q values
@@ -284,7 +284,7 @@ class SearchResult:
     hashtable: HashTable  # hash table
     priority_queue: BGPQ  # priority queue
     action_size: int  # number of actions available from each state
-    pop_ratio: jax.Array  # normalized multiplier for the candidate score threshold
+    score_limit_multiplier: jax.Array  # candidate score limit relative to the best score
     min_pop: int  # minimum number of states to pop from the priority queue
     fixed_batch_pop: bool  # process every valid candidate without a ratio limit
     cost: jax.Array  # cost array - g value
@@ -372,7 +372,7 @@ class SearchResult:
             hashtable=hashtable,
             priority_queue=priority_queue,
             action_size=action_size,
-            pop_ratio=jnp.maximum(1.0 + jnp.asarray(pop_ratio), 1.01),
+            score_limit_multiplier=jnp.maximum(1.0 + jnp.asarray(pop_ratio), 1.01),
             min_pop=min_pop,
             fixed_batch_pop=pop_ratio == float("inf"),
             cost=cost,
@@ -421,6 +421,11 @@ class SearchResult:
         directly wherever hash occupancy itself is meant.
         """
         return self.hashtable.size
+
+    @property
+    def solved_cost(self) -> jax.Array:
+        """Path cost of the solved state; meaningful only when `solved`."""
+        return self.cost[self.solved_idx.hashidx.index]
 
     def _get_solved_path(search_result) -> list[Parent]:
         """

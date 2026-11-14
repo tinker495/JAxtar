@@ -167,7 +167,7 @@ class EagerSearchResult(SearchResult):
             search_result.priority_queue,
             min_key,
             min_val,
-            pop_ratio=search_result.pop_ratio,
+            score_limit_multiplier=search_result.score_limit_multiplier,
             min_pop=search_result.min_pop,
             fixed_batch_pop=search_result.fixed_batch_pop,
         )

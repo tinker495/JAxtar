@@ -113,7 +113,15 @@ class BiDirectionalSearchResult(Generic[SearchResultT]):
         return self.forward.batch_size
 
     @property
-    def total_generated(self) -> int:
+    def solved(self) -> jax.Array:
+        return self.meeting.found
+
+    @property
+    def solved_cost(self) -> jax.Array:
+        return self.meeting.total_cost
+
+    @property
+    def generated_size(self) -> int:
         """States generated across both directions.
 
         Forward and backward share one hash table, so it already covers the union of

@@ -369,14 +369,12 @@ class IDSearchResult:
             action_pad=action_pad_int(ACTION_DTYPE),
         )
 
-    def get_generated_size(self):
-        return self.generated_count
-
     @property
     def generated_size(self):
         return self.generated_count
 
-    def get_cost(self, idx: int):
+    @property
+    def solved_cost(self) -> jax.Array:
         return self.solution_cost
 
     def get_top_batch(

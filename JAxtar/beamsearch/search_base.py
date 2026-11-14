@@ -146,9 +146,10 @@ class BeamSearchResult:
         """Return the state at `idx` in the current beam."""
         return self.beam[int(idx)]
 
-    def get_cost(self, idx: int) -> jax.Array:
-        """Return the accumulated path cost for the slot."""
-        return self.cost[int(idx)]
+    @property
+    def solved_cost(self) -> jax.Array:
+        """Accumulated path cost of the solved beam slot; meaningful only when `solved`."""
+        return self.cost[self.solved_idx]
 
     def get_dist(self, idx: int) -> jax.Array:
         """Return the cached heuristic/Q distance for the slot."""
