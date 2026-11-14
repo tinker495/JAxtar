@@ -365,12 +365,12 @@ class SearchResult:
 
         # Initialize arrays for tracking costs and state relationships
         # +1 for -1 index as a dummy node
-        cost = jnp.full(hashtable.table.batch_shape, jnp.inf, dtype=KEY_DTYPE)
-        dist = jnp.full(hashtable.table.batch_shape, jnp.inf, dtype=KEY_DTYPE)
-        parent = Parent.default(hashtable.table.batch_shape)
+        cost = jnp.full(hashtable.table.shape, jnp.inf, dtype=KEY_DTYPE)
+        dist = jnp.full(hashtable.table.shape, jnp.inf, dtype=KEY_DTYPE)
+        parent = Parent.default(hashtable.table.shape)
         solved = jnp.array(False)
         solved_idx = Current.default((1,))
-        pop_generation = jnp.full(hashtable.table.batch_shape, -1, dtype=jnp.int32)
+        pop_generation = jnp.full(hashtable.table.shape, -1, dtype=jnp.int32)
         pop_count = jnp.array(0, dtype=jnp.int32)
         xtr_enabled = jnp.array(emit_workload_signature, dtype=jnp.bool_)
         xtr_zero = jnp.array(0, dtype=jnp.int32)

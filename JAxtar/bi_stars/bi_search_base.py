@@ -209,7 +209,7 @@ def build_bi_search_result(
     # identical table geometry.
     backward.hashtable = forward.hashtable
 
-    seen_shape = forward.hashtable.table.batch_shape
+    seen_shape = forward.hashtable.table.shape
     seen_forward = jnp.zeros(seen_shape, dtype=jnp.bool_)
     seen_backward = jnp.zeros(seen_shape, dtype=jnp.bool_)
 
