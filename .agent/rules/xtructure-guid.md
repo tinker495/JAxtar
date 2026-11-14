@@ -62,16 +62,23 @@ unique_mask = xnp.unique_mask(batch_states, key=batch_costs, filled=batch_valid_
 
 ### Filtering & Pruning
 To filter a batch (e.g., pruning nodes in beam search):
-1.  Calculate scores/costs.
-2.  Determine indices to keep (e.g., via `jax.lax.top_k`).
-3.  Use `xnp.take` to extract the subset.
+1.  Calculate scores/costs and mask invalid candidates to `jnp.inf` before calling `jax.lax.top_k`.
+2.  Select the top indices via `jax.lax.top_k(-safe_scores, k=beam_width)` and build a `keep_mask` so padded slots stay masked when fewer than `beam_width` valid candidates exist.
+3.  Use `xnp.take` to extract the subset and apply `keep_mask` to the selected fields.
 
 ```python
-# 1. Top-k selection
-top_scores, top_indices = jax.lax.top_k(-scores, k=beam_width)
+# 1. Mask invalid slots to +inf before top-k selection
+safe_scores = jnp.where(valid_mask, scores, jnp.inf)
+_, top_indices = jax.lax.top_k(-safe_scores, k=beam_width)
 
 # 2. Extract structure subset
 next_beam = xnp.take(current_beam_batch, top_indices, axis=0)
+
+# 3. Apply keep_mask when valid candidates < beam_width
+selected_scores = safe_scores[top_indices]
+keep_mask = jnp.isfinite(selected_scores)
+next_valid = jnp.logical_and(keep_mask, valid_mask[top_indices])
+next_scores = jnp.where(next_valid, selected_scores, jnp.inf)
 ```
 
 ## 4. Documentation References
@@ -112,6 +119,5 @@ For detailed specs, refer to:
 - No history propagation across invalid rows.
 
 ### Implication for ID*
-- `action_history` propagation is fragile under late-stage pruning.
-- Recommended fix: switch ID* to parent-pointer reconstruction (align with stars/beamsearch).
-- Minimal fallback: re-mask action_history after every pruning step (unique_mask, hash insert, non-backtracking).
+- `IDSearchResult` (`JAxtar/id_stars/search_base.py`) already uses a parent-pointer arena (`trace_parent` and `trace_action`) and `reconstruct_solution_actions()` to reconstruct the solution path (splicing the initial frontier's `action_history` prefix once via `splice_frontier_trace()`).
+- Because ID* already uses `trace_parent` and `trace_action` for path reconstruction, no additional implementation changes are required.
