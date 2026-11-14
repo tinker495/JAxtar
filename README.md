@@ -83,6 +83,13 @@ uv run jaxtar test --help
 uv run astar_d --help
 ```
 
+This revision pins PuXle's `Xtructurable` migration commit from
+[PuXle #30](https://github.com/tinker495/PuXle/pull/30). Search entries and training
+records use `class Record(Xtructurable)` with `from xtructure import Xtructurable`.
+Declare fields with `Annotated[..., FieldDescriptor.scalar(...)]` or
+`FieldDescriptor.tensor(...)`; inheritance registers the JAX pytree and array
+operations. Use `record.batch_shape` for its batch dimensions.
+
 For the complete GPU training pipeline, including logging backends and evaluation tools:
 
 ```bash

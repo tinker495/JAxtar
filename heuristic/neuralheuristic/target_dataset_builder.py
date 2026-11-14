@@ -6,8 +6,7 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
-from xtructure.core.protocol import Xtructurable as XtructurableProtocol
+from xtructure import FieldDescriptor, Xtructurable
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import (
@@ -294,12 +293,9 @@ def get_heuristic_dataset_builder(
         create_target_shuffled_path=create_target_shuffled_path,
     )
 
-    @xtructure_dataclass
-    class SolveConfigsAndStates:
-        solveconfigs: Annotated[
-            XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        ]
-        states: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.State)]
+    class SolveConfigsAndStates(Xtructurable):
+        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
+        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
 
     base_get_datasets = partial(
         _get_datasets,

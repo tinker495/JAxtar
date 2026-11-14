@@ -20,7 +20,7 @@ from puxle.core.trajectory import (
     create_hindsight_target_triangular_shuffled_path as _create_hindsight_target_triangular_shuffled_path,
     create_target_shuffled_path as _create_target_shuffled_path,
 )
-from xtructure.core.protocol import Xtructurable
+from xtructure import Xtructurable
 
 
 class TrajectoryDataset(TypedDict):
@@ -58,7 +58,7 @@ def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
 
 def trajectory_to_transition_dataset(
     traj: PuzzleTrajectory, limit: int
-) -> tuple[chex.ArrayTree, chex.Array, chex.ArrayTree]:
+) -> tuple[Xtructurable, chex.Array, Xtructurable]:
     """Flatten time/batch axes and truncate aligned transition triples."""
     return (
         traj.states[:-1].flatten()[:limit],
@@ -69,7 +69,7 @@ def trajectory_to_transition_dataset(
 
 def trajectory_to_eval_trajectory(
     traj: PuzzleTrajectory,
-) -> tuple[chex.ArrayTree, chex.Array]:
+) -> tuple[Xtructurable, chex.Array]:
     """Remove the singleton parallel axis from an evaluation trajectory."""
     return traj.states.flatten(), traj.actions.reshape(-1)
 

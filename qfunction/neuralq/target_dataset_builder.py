@@ -6,8 +6,7 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
-from xtructure.core.protocol import Xtructurable as XtructurableProtocol
+from xtructure import FieldDescriptor, Xtructurable
 
 from neural_util.basemodel import DistanceHLGModel, DistanceModel
 from train_util.sampling import (
@@ -27,8 +26,8 @@ from train_util.util import boltzmann_action_selection
 def _get_datasets_with_policy(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStatesAndActions: Xtructurable,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStatesAndActions: type[Xtructurable],
+    SolveConfigsAndStates: type[Xtructurable],
     q_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_q_params: Any,
@@ -198,8 +197,8 @@ def _compute_diffusion_q(
     move_costs: chex.Array,
     action_costs: chex.Array,
     parent_indices: chex.Array,
-    SolveConfigsAndStatesAndActions: Xtructurable,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStatesAndActions: type[Xtructurable],
+    SolveConfigsAndStates: type[Xtructurable],
     k_max: int,
 ):
     raw_move_costs = move_costs.reshape((-1,))
@@ -249,8 +248,8 @@ def _compute_diffusion_q(
 def _get_datasets_with_diffusion_distance(
     puzzle: Puzzle,
     preproc_fn: Callable,
-    SolveConfigsAndStatesAndActions: Xtructurable,
-    SolveConfigsAndStates: Xtructurable,
+    SolveConfigsAndStatesAndActions: type[Xtructurable],
+    SolveConfigsAndStates: type[Xtructurable],
     q_model: DistanceModel | DistanceHLGModel,
     minibatch_size: int,
     target_q_params: Any,
@@ -334,20 +333,14 @@ def get_qfunction_dataset_builder(
         fixed_target_error="Fixed target is not supported for hindsight target",
     )
 
-    @xtructure_dataclass
-    class SolveConfigsAndStatesAndActions:
-        solveconfigs: Annotated[
-            XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        ]
-        states: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.State)]
+    class SolveConfigsAndStatesAndActions(Xtructurable):
+        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
+        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
         actions: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))]
 
-    @xtructure_dataclass
-    class SolveConfigsAndStates:
-        solveconfigs: Annotated[
-            XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)
-        ]
-        states: Annotated[XtructurableProtocol, FieldDescriptor.scalar(dtype=puzzle.State)]
+    class SolveConfigsAndStates(Xtructurable):
+        solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
+        states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
 
     base_get_datasets = partial(
         _get_datasets_with_policy,

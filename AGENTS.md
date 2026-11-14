@@ -55,9 +55,9 @@ new tests only after the user authorizes their scope and expected behavior.
 
 ## Repository Independence and Validation
 
-This repository owns its dependency updates and CI configuration. Related
-repositories' latest versions mean their main branches; explicitly select a
-branch or commit when needed. A sibling editable checkout is not required.
+This repository owns its dependency updates and CI configuration. Git dependencies
+on related repositories always track their main branches. Lock files record the
+resolved commits for reproducibility. A sibling editable checkout is not required.
 
 Run the existing lint/format hooks, Pyrefly new-diagnostics comparison, and CPU
 tests on each PR's latest commit as merge-required checks. Compare types against
