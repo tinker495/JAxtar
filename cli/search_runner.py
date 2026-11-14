@@ -30,7 +30,7 @@ from helpers.visualization import (
     save_solution_animation_and_frames,
 )
 from JAxtar.search_build_spec import SearchBuildSpec
-from JAxtar.stars.search_base import SearchResult
+from JAxtar.stars.common import SearchResult
 from heuristic.heuristic_base import Heuristic
 from qfunction.q_base import QFunction
 
@@ -227,7 +227,7 @@ def vmapped_search_samples(
 
     if not has_goal_data and solved.any():
         solved_st = jax.vmap(SearchResult.get_state, in_axes=(0, 0))(
-            search_result, search_result.solved_idx
+            search_result, search_result.solved_idx.hashidx
         )
         grid = Table.grid(expand=False)
         grid.add_column()
