@@ -18,6 +18,7 @@ import xtructure.numpy as xnp
 
 from helpers.path_steps import PathStep, build_path_steps_from_trace
 from helpers.xtructure_signature import _as_float, _as_int, extract_xtructure_signature
+from JAxtar.stars.common import SearchResult
 
 from .verification import BenchmarkVerification, verify_benchmark_path
 
@@ -278,6 +279,8 @@ def _generated_size(search_result: Any) -> int:
 def _solved_cost(search_result: Any) -> float | None:
     if _is_bidirectional_result(search_result):
         return _as_float(search_result.meeting.total_cost)
+    if isinstance(search_result, SearchResult):
+        return _as_float(search_result.get_cost(search_result.solved_idx.hashidx))
     if not hasattr(search_result, "get_cost") or not hasattr(search_result, "solved_idx"):
         return None
     return _as_float(search_result.get_cost(search_result.solved_idx))

@@ -19,7 +19,7 @@ this state?" is just `seen_opposite[slot]`, and the opposite g-value is
 `opposite.cost[slot]`. No second hash-table probe is needed.
 """
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable, Generic
 
 import jax
 import jax.numpy as jnp
@@ -35,13 +35,15 @@ from JAxtar.solution_trace import (
     SolutionTrace,
     action_pad_int,
 )
-from JAxtar.stars.search_base import (
+from JAxtar.stars.common import (
     Current,
-    Parant_with_Costs,
     Parent,
     SearchResult,
+    SearchResultT,
     insert_priority_queue_batches,
 )
+from JAxtar.stars.search_base_deferred import DeferredSearchResult, ParentWithCosts
+from JAxtar.stars.search_base_eager import EagerSearchResult
 
 
 class MeetingPoint(Xtructurable):
@@ -70,7 +72,7 @@ class MeetingPoint(Xtructurable):
 
 
 @base_dataclass(static_fields=("action_size",))
-class BiDirectionalSearchResult:
+class BiDirectionalSearchResult(Generic[SearchResultT]):
     """
     Container for bidirectional search state, holding both forward and backward
     SearchResult instances plus meeting point information.
@@ -78,6 +80,9 @@ class BiDirectionalSearchResult:
     Both directions share a single hash table (`forward.hashtable is backward.hashtable`
     at loop boundaries); the `seen_*` arrays are indexed by that shared slot space and
     record per-direction registration.
+
+    Both directions are one expansion family (`SearchResultT`), built with the same
+    state class and `max_nodes` by `build_bi_search_result`.
 
     Attributes:
         forward: SearchResult for start -> goal direction
@@ -88,8 +93,8 @@ class BiDirectionalSearchResult:
         seen_backward: Per-slot mask of states registered by the backward direction
     """
 
-    forward: SearchResult
-    backward: SearchResult
+    forward: SearchResultT
+    backward: SearchResultT
     action_size: int
     meeting: MeetingPoint
     seen_forward: jax.Array
@@ -150,59 +155,29 @@ class BiDirectionalSearchResult:
 
 
 def build_bi_search_result(
-    statecls: Puzzle.State,
-    batch_size: int,
-    max_nodes: int,
-    action_size: int,
-    pop_ratio: float = jnp.inf,
-    min_pop_forward: int = 1,
-    min_pop_backward: int = 1,
-    parant_with_costs: bool = False,
-    is_reversible: bool = False,
-) -> BiDirectionalSearchResult:
+    build: Callable[[int], SearchResultT],
+    forward_min_pop: int,
+    backward_min_pop: int,
+) -> BiDirectionalSearchResult[SearchResultT]:
     """
-    Creates a new BiDirectionalSearchResult with initialized forward and backward
-    SearchResult instances backed by a single shared hash table.
+    Builds both directions with one family builder and pairs them into a
+    BiDirectionalSearchResult backed by a single shared hash table.
 
     NOTE: This helper is JAX-traceable and can be called inside a jitted
     `init_loop_state(...)` (mirroring `JAxtar.stars` patterns). Keep in mind it
     allocates full search buffers sized by `max_nodes`.
 
     Args:
-        statecls: The state class for the puzzle
-        batch_size: Batch size for parallel processing
-        max_nodes: Shared hash-table capacity (both directions share this budget)
-        action_size: Number of actions
-        pop_ratio: Controls beam width
-        min_pop_forward: Minimum nodes to process per forward batch
-        min_pop_backward: Minimum nodes to process per backward batch
-        parant_with_costs: Whether to use Parant_with_Costs for PQ values
-        is_reversible: Whether an expansion's children include its own parent, which
-            the deferred generated-state metric discounts
+        build: Builds one direction's search result from its `min_pop`; both directions
+            therefore share the family, state class and `max_nodes` budget
+        forward_min_pop: `min_pop` of the start -> goal direction
+        backward_min_pop: `min_pop` of the goal -> start direction
 
     Returns:
         BiDirectionalSearchResult with initialized data structures
     """
-    forward = SearchResult.build(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio,
-        min_pop=min_pop_forward,
-        parant_with_costs=parant_with_costs,
-        is_reversible=is_reversible,
-    )
-    backward = SearchResult.build(
-        statecls,
-        batch_size,
-        max_nodes,
-        action_size,
-        pop_ratio,
-        min_pop=min_pop_backward,
-        parant_with_costs=parant_with_costs,
-        is_reversible=is_reversible,
-    )
+    forward = build(forward_min_pop)
+    backward = build(backward_min_pop)
     # Share ONE hash table between both directions so a state maps to a single slot
     # index across the whole search. Backward's own table (same seed/geometry) is
     # discarded; its cost/dist/parent buffers stay valid because they are sized by the
@@ -226,7 +201,7 @@ def build_bi_search_result(
     return BiDirectionalSearchResult(
         forward=forward,
         backward=backward,
-        action_size=action_size,
+        action_size=forward.action_size,
         meeting=meeting,
         seen_forward=seen_forward,
         seen_backward=seen_backward,
@@ -253,7 +228,7 @@ class BiLoopState:
         filled_backward: Boolean mask for valid entries in backward batch
     """
 
-    bi_result: BiDirectionalSearchResult
+    bi_result: BiDirectionalSearchResult[EagerSearchResult]
     solve_config: Puzzle.SolveConfig
     inverse_solveconfig: Puzzle.SolveConfig
     params_forward: Any
@@ -286,7 +261,7 @@ class BiLoopStateWithStates:
         filled_backward: Boolean mask for valid entries in backward batch
     """
 
-    bi_result: BiDirectionalSearchResult
+    bi_result: BiDirectionalSearchResult[DeferredSearchResult]
     solve_config: Puzzle.SolveConfig
     inverse_solveconfig: Puzzle.SolveConfig
     params_forward: Any
@@ -522,7 +497,7 @@ def get_min_f_value(
 
     where:
     - `g` is `Current.cost` (the path cost stored in the hashtable for the popped state).
-    - `dist` is `sr.get_dist(current)`.
+    - `dist` is `sr.get_dist(current.hashidx)`.
 
     Important contract: `dist` must be in the same units as `g` and must be the
     *same quantity* that was used to order the PQ for this algorithm.
@@ -541,7 +516,7 @@ def get_min_f_value(
     """
     # Get g-values and h-values (or Q-values) for current batch
     costs = current.cost  # g-values
-    dists = sr.get_dist(current)  # h-values or Q-values
+    dists = sr.get_dist(current.hashidx)  # h-values or Q-values
 
     # f = cost_weight * g + h (matches PQ ordering)
     f_values = cost_weight * costs + dists
@@ -626,7 +601,7 @@ def initialize_bi_loop_common(
     bi_result.seen_backward = bi_result.seen_backward.at[bwd_hash_idx.index].set(True)
 
     fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
-    # Safety parity with `JAxtar.stars.search_base.init_base_loop_state_current`:
+    # Safety parity with `JAxtar.stars.search_base_eager.init_eager_loop_state`:
     # pad non-filled entries with +inf so an accidental read cannot produce work.
     fwd_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     fwd_states = xnp.pad(start, (0, sr_batch_size - 1))
@@ -754,14 +729,14 @@ def build_bi_deferred_expand_direction(
     action_size = puzzle.action_size
 
     def _expand_direction(
-        bi_result: BiDirectionalSearchResult,
+        bi_result: BiDirectionalSearchResult[DeferredSearchResult],
         solve_config: Puzzle.SolveConfig,
         inverse_solveconfig: Puzzle.SolveConfig,
         params: Any,
         current: Current,
         states: Puzzle.State,
         filled: jax.Array,
-    ) -> tuple[BiDirectionalSearchResult, Current, Puzzle.State, jax.Array]:
+    ) -> tuple[BiDirectionalSearchResult[DeferredSearchResult], Current, Puzzle.State, jax.Array]:
         if is_forward:
             search_result = bi_result.forward
             current_solve_config = solve_config
@@ -798,7 +773,7 @@ def build_bi_deferred_expand_direction(
         )
 
         # Step 2: Priority Queue Insertion
-        flattened_vals = Parant_with_Costs(
+        flattened_vals = ParentWithCosts(
             parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
             cost=costs.flatten(),
             dist=dists.flatten(),

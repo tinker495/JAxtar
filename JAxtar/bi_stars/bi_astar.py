@@ -44,12 +44,8 @@ from JAxtar.bi_stars.bi_search_base import (
     stamp_bi_solved_from_meeting,
     update_meeting_point,
 )
-from JAxtar.stars.search_base import (
-    Current,
-    Parent,
-    SearchResult,
-    insert_priority_queue_batches,
-)
+from JAxtar.stars.common import Current, Parent, insert_priority_queue_batches
+from JAxtar.stars.search_base_eager import EagerSearchResult
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
 
@@ -97,15 +93,16 @@ def _bi_astar_loop_builder(
         **kwargs: Any,
     ) -> BiLoopState:
         """Initialize bidirectional search from start and goal states."""
+
+        def build_direction(direction_min_pop: int) -> EagerSearchResult:
+            return EagerSearchResult.build(
+                statecls, batch_size, max_nodes, action_size, pop_ratio, min_pop=direction_min_pop
+            )
+
         bi_result = build_bi_search_result(
-            statecls,
-            batch_size,
-            max_nodes,
-            action_size,
-            pop_ratio=pop_ratio,
-            min_pop_forward=min_pop,
-            min_pop_backward=min_pop if use_backward_heuristic else 1,
-            parant_with_costs=False,
+            build_direction,
+            min_pop,
+            min_pop if use_backward_heuristic else 1,
         )
 
         heuristic_params_forward = heuristic.prepare_heuristic_parameters(solve_config, **kwargs)
@@ -158,7 +155,7 @@ def _bi_astar_loop_builder(
         )
 
     def _expand_direction(
-        bi_result: BiDirectionalSearchResult,
+        bi_result: BiDirectionalSearchResult[EagerSearchResult],
         solve_config: Puzzle.SolveConfig,
         inverse_solveconfig: Puzzle.SolveConfig,
         heuristic_params: Any,
@@ -166,7 +163,7 @@ def _bi_astar_loop_builder(
         filled: jax.Array,
         is_forward: bool,
         use_heuristic: bool,
-    ) -> tuple[BiDirectionalSearchResult, Current, jax.Array]:
+    ) -> tuple[BiDirectionalSearchResult[EagerSearchResult], Current, jax.Array]:
         """
         Expand one direction (forward or backward).
 
@@ -193,7 +190,7 @@ def _bi_astar_loop_builder(
         sr_batch_size = search_result.batch_size
 
         # Get states for current batch
-        states = search_result.get_state(current)
+        states = search_result.get_state(current.hashidx)
 
         # Get neighbors
         neighbours, ncost = get_neighbours_fn(current_solve_config, states, filled)
@@ -312,7 +309,7 @@ def _bi_astar_loop_builder(
         final_process_mask_reshaped = flatten_final_process_mask.reshape(unflatten_shape)
 
         # Compute heuristic and insert into priority queue
-        def _new_states(sr: SearchResult, vals, neighbour, new_states_mask):
+        def _new_states(sr: EagerSearchResult, vals, neighbour, new_states_mask):
             if use_heuristic:
                 neighbour_heur = variable_heuristic_batch_switcher(
                     heuristic_params, neighbour, new_states_mask
@@ -327,11 +324,11 @@ def _bi_astar_loop_builder(
             )
             return sr, neighbour_heur
 
-        def _old_states(sr: SearchResult, vals, neighbour, new_states_mask):
+        def _old_states(sr: EagerSearchResult, vals, neighbour, new_states_mask):
             neighbour_heur = sr.dist[vals.hashidx.index]
             return sr, neighbour_heur
 
-        def _scan(sr: SearchResult, val):
+        def _scan(sr: EagerSearchResult, val):
             vals, neighbour, new_states_mask = val
             sr, neighbour_heur = jax.lax.cond(
                 jnp.any(new_states_mask),
