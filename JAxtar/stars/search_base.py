@@ -22,7 +22,6 @@ from xtructure import (
     HashIdx,
     HashTable,
     Xtructurable,
-    xtructure_dataclass,
 )
 from xtructure.core.dataclass import base_dataclass
 
@@ -191,22 +190,19 @@ def _reconstruct_path_arrays(
     return path_idx, path_costs, path_dists, length, loop_detected, corruption_detected
 
 
-@xtructure_dataclass
-class Parent:
+class Parent(Xtructurable):
 
     hashidx: Annotated[HashIdx, FieldDescriptor.scalar(dtype=HashIdx)]
     action: Annotated[jax.Array, FieldDescriptor.scalar(dtype=ACTION_DTYPE)]
 
 
-@xtructure_dataclass
-class Current:
+class Current(Xtructurable):
 
     hashidx: Annotated[HashIdx, FieldDescriptor.scalar(dtype=HashIdx)]
     cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=KEY_DTYPE)]
 
 
-@xtructure_dataclass
-class Parant_with_Costs:
+class Parant_with_Costs(Xtructurable):
     """
     A dataclass representing a hash table heap value for the priority queue.
     This class maintains the mapping between states in the hash table and their positions.
@@ -289,9 +285,9 @@ class SearchResult:
     fixed_batch_pop: bool  # process every valid candidate without a ratio limit
     cost: jax.Array  # cost array - g value
     dist: jax.Array  # distance array - calculated heuristic or Q value
-    parent: Xtructurable | Parent  # parent array
+    parent: Parent  # parent array
     solved: jax.Array  # solved array
-    solved_idx: Xtructurable | Current  # solved index
+    solved_idx: Current  # solved index
     pop_generation: jax.Array  # records which pop generation a node was expanded in
     pop_count: jax.Array  # counter for pop_full calls
     xtr_enabled: jax.Array  # enables xtr_* workload counters
@@ -369,12 +365,12 @@ class SearchResult:
 
         # Initialize arrays for tracking costs and state relationships
         # +1 for -1 index as a dummy node
-        cost = jnp.full(hashtable.table.shape.batch, jnp.inf, dtype=KEY_DTYPE)
-        dist = jnp.full(hashtable.table.shape.batch, jnp.inf, dtype=KEY_DTYPE)
-        parent = Parent.default(hashtable.table.shape.batch)
+        cost = jnp.full(hashtable.table.batch_shape, jnp.inf, dtype=KEY_DTYPE)
+        dist = jnp.full(hashtable.table.batch_shape, jnp.inf, dtype=KEY_DTYPE)
+        parent = Parent.default(hashtable.table.batch_shape)
         solved = jnp.array(False)
         solved_idx = Current.default((1,))
-        pop_generation = jnp.full(hashtable.table.shape.batch, -1, dtype=jnp.int32)
+        pop_generation = jnp.full(hashtable.table.batch_shape, -1, dtype=jnp.int32)
         pop_count = jnp.array(0, dtype=jnp.int32)
         xtr_enabled = jnp.array(emit_workload_signature, dtype=jnp.bool_)
         xtr_zero = jnp.array(0, dtype=jnp.int32)
