@@ -74,26 +74,14 @@ cd JAxtar
 uv sync --extra gpu
 ```
 
-JAxtar uses `pyproject.toml` for installation and command registration. PuXle and Xtructure are
-declared as Git dependencies and resolved to the revisions in `uv.lock`. From the synced checkout:
+JAxtar uses `pyproject.toml` for installation and command registration. PuXle and Xtructure
+Git dependencies track their `main` branches; `uv.lock` records the resolved commits.
+From the synced checkout:
 
 ```bash
 uv run jaxtar --help
 uv run jaxtar test --help
 uv run astar_d --help
-```
-
-This revision pins PuXle's `Xtructurable` migration commit from
-[PuXle #30](https://github.com/tinker495/PuXle/pull/30). Search entries and training
-records use `class Record(Xtructurable)` with `from xtructure import Xtructurable`.
-Declare fields with `Annotated[..., FieldDescriptor.scalar(...)]` or
-`FieldDescriptor.tensor(...)`; inheritance registers the JAX pytree and array
-operations. Use `record.batch_shape` for its batch dimensions.
-
-For the complete GPU training pipeline, including logging backends and evaluation tools:
-
-```bash
-uv sync --extra train
 ```
 
 The console commands are checkout-only. External distributions intentionally contain only the

@@ -1449,13 +1449,14 @@ wheels = [
 [[package]]
 name = "puxle"
 version = "0.2.0"
-source = { git = "https://github.com/tinker495/PuXle.git#dcc0ee4cda1696ebdfe12d255db90868710c3ab4" }
+source = { git = "https://github.com/tinker495/PuXle.git#755657b43baba49ece26917f6aabc2abaf1b9978" }
 dependencies = [
     { name = "chex" },
     { name = "jax" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pddl" },
+    { name = "tyro" },
     { name = "xtructure" },
 ]
 
@@ -2071,7 +2072,7 @@ wheels = [
 [[package]]
 name = "xtructure"
 version = "0.1.3"
-source = { git = "https://github.com/tinker495/xtructure.git#b391f7d75cf2ca57b1245f3ba61a9922ee5852c2" }
+source = { git = "https://github.com/tinker495/xtructure.git#73cf1eeea168432c98aa23fb7a711e8531b0bc31" }
 dependencies = [
     { name = "absl-py" },
     { name = "chex" },
