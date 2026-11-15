@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Protocol
 
+import jax
 import numpy as np
 
 from JAxtar.expansion_trace import ExpansionTrace
@@ -59,6 +60,21 @@ class SolutionTrace:
 
 class SearchAlgorithmResult(Protocol):
     """Static seam every search Result class implements for CLI/evaluation adapters."""
+
+    @property
+    def solved(self) -> jax.Array:
+        """Whether the search found a solution."""
+        ...
+
+    @property
+    def generated_size(self) -> jax.Array | int:
+        """Number of states the search generated."""
+        ...
+
+    @property
+    def solved_cost(self) -> jax.Array:
+        """Path cost of the found solution; meaningful only when `solved`."""
+        ...
 
     def to_solution_trace(self, *, puzzle: Any | None = None) -> SolutionTrace:
         ...
