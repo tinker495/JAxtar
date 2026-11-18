@@ -76,12 +76,3 @@ Keep reproduction scripts, independent validation tools, traces, diffs, and
 reports in Git-excluded local storage; do not commit or upload them. Report tests
 actually run, unverified scope, remaining failures, and decisions needed from
 the user. Include a short normal CLI verification command and a local record.
-
-## Source Navigation
-
-Consult an available `graft/` graph first: `graft ask "<task>" --source` for
-context, `graft grep "<literal>"` for all indexed occurrences, `graft skeleton
-<file>` for an API, or `graft callers <symbol> --depth all` for refactor impact.
-Read exact source spans when more detail is needed. Use Probe for unindexed
-source relationships when available and `rg` as the fallback. Use `rg` directly
-for filenames, configuration, documentation, and local output.
