@@ -76,9 +76,3 @@ Keep reproduction scripts, independent validation tools, traces, diffs, and
 reports in Git-excluded local storage; do not commit or upload them. Report tests
 actually run, unverified scope, remaining failures, and decisions needed from
 the user. Include a short normal CLI verification command and a local record.
-
-## Source Navigation
-
-Use Probe for source relationships when available and `rg` as the fallback.
-Read exact source spans when more detail is needed. Use `rg` directly for
-filenames, configuration, documentation, and local output.
