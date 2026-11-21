@@ -1,38 +1,43 @@
 # Benchmark Results & Logging
 
-When running benchmarks or evaluations in `JAxtar`, the results are automatically logged to the file system. This document explains the structure of these logs, the file formats, and how to interpret the generated metrics.
+When running `benchmark` or training evaluations in `JAxtar`, results and plots are written automatically to the file system.
 
 ## Output Directory Structure
 
-By default, all run artifacts are stored in the `runs/` directory. You can override this using the `--output-dir` option.
+By default, artifacts are stored under `runs/<puzzle>_<algo>_<timestamp>` (or `runs/<run_name>` when `--run-name` is set). Override the root path with `--output-dir`.
 
 ### Single Run
 
-A standard evaluation run produces a directory named with the pattern `<puzzle>_<algo>_<timestamp>` (e.g., `rubikscube_astar_2023-10-27_10-00-00`).
-
 ```text
 runs/rubikscube_astar_2023-10-27_10-00-00/
-├── config.json             # Full configuration of the run
-├── results.csv             # Detailed per-sample results
-├── console.log             # Capture of the terminal output
-├── heuristic_accuracy.png  # (If heuristic used) Accuracy plots
+├── config.json                     # Full configuration and runtime_provenance
+├── results.csv                     # Per-sample evaluation results
+├── console.log                     # Captured terminal output
 ├── path_cost_distribution.png
 ├── search_time_by_path_cost.png
-└── ... (other plots)
+├── nodes_generated_by_path_cost.png
+├── heuristic_accuracy.png          # (Or heuristic_accuracy_optimal_path.png)
+├── benchmark_path_comparison.png   # (When evaluating an exact benchmark)
+├── path_states/                    # Optional saved path state arrays
+└── expansion_plots/                # Per-seed expansion & tree plots (up to --max-expansion-plots)
 ```
 
 ### Parameter Sweep
 
-If you provide multiple values for options like `--pop_ratio` or `--cost_weight` (e.g., `-w 0.8,0.9`), `JAxtar` performs a parameter sweep. The directory structure is slightly different:
+On the CLI, `-pr`/`--pop_ratio` parses comma-separated lists for sweeps (e.g., `-pr inf,0.3,0.1`), whereas `-w`/`--cost-weight` and `-b`/`--batch-size` are scalar CLI flags (list-valued sweeps across `cost_weight` or `batch_size` come from presets such as training `EvalOptions`). The parent directory keeps the `<puzzle>_<algo>_<timestamp>` pattern, and each combination writes to a `pr_<pr>_cw_<cw>_bs_<bs>` subdirectory where `inf` is formatted as `Infinity`:
 
 ```text
-runs/rubikscube_astar_sweep_<timestamp>/
-├── comparison_report.png   # Aggregated plots comparing sub-runs
-├── pr_inf_cw_0.8_bs_10000/ # Sub-run 1
+runs/rubikscube_astar_2023-10-27_10-00-00/
+├── path_cost_comparison.png
+├── search_time_comparison.png
+├── nodes_generated_comparison.png
+├── nodes_vs_time_scatter.png
+├── nodes_vs_path_cost_scatter.png
+├── pr_Infinity_cw_0.6_bs_10000/
 │   ├── config.json
 │   ├── results.csv
 │   └── ...
-└── pr_inf_cw_0.9_bs_10000/ # Sub-run 2
+└── pr_0.3_cw_0.6_bs_10000/
     ├── config.json
     ├── results.csv
     └── ...
@@ -42,49 +47,45 @@ runs/rubikscube_astar_sweep_<timestamp>/
 
 ### `config.json`
 
-Contains the exact parameters used for the run, including puzzle settings, model metadata,
-search options, JAX backend/devices, and the revision plus dirty state of JAxtar, PuXle, and
-Xtructure. A package installed without Git metadata records `N/A` for its revision.
+Records puzzle/model metadata, search/eval options, heuristic/benchmark summary metrics, and `runtime_provenance` (`jax_version`, `jax_backend`, `jax_devices`, and Git revision plus dirty state for JAxtar, PuXle, and Xtructure — recording `N/A` if Git metadata is unavailable).
 
 ### `results.csv`
 
-This is the raw data file containing one row per evaluated puzzle sample. Key columns include:
+One row per evaluated puzzle sample. Key columns include:
 
--   `seed`: The seed or sample ID.
--   `solved`: Boolean indicating if a solution was found.
--   `search_time_s`: Time taken in seconds.
--   `nodes_generated`: Total number of nodes generated/explored.
--   `path_cost`: The cost of the found solution.
--   `path_action_count`: Number of actions in the solution.
--   `benchmark_optimal_path_cost`: (If available) The known optimal cost from the benchmark.
--   `matches_optimal_path`: (If available) Whether the found solution matches the optimal path/cost.
+- `seed`: Seed or benchmark sample ID.
+- `solved`: Whether a solution was found.
+- `search_time_s`: Synchronized wall-clock search time in seconds.
+- `nodes_generated`: Generated/explored node count (or beam slots for beam search).
+- `node_metric_label`: Metric label (`"Nodes Generated"` or `"Beam Slots"`).
+- `path_cost`: Cost of the found solution (`0` if unsolved).
+- `path_state_count`, `path_action_count`: Number of states and actions along the path.
+- `benchmark_optimal_path_cost`, `benchmark_optimal_action_count`: Known optimal references when using an exact benchmark.
+- `matches_optimal_path`: Whether the found solution matches the benchmark optimal reference.
 
 ## Visualizations
 
-`JAxtar` automatically generates several plots to help analyze performance:
-
--   **Path Cost Distribution**: Histogram of solution costs.
--   **Search Time vs. Path Cost**: Scatter plot showing the relationship between difficulty (cost) and time.
--   **Nodes Generated vs. Path Cost**: Scatter plot showing search effort vs. difficulty.
--   **Heuristic Accuracy**: (If applicable) Plots showing the correlation between heuristic estimates and actual costs-to-go.
--   **Benchmark Comparison**: (If applicable) Plots comparing found solution lengths against optimal benchmark lengths.
+- **Path Cost Distribution** (`path_cost_distribution.png`): Histogram of solved path costs with mean and median lines.
+- **Search Time vs. Path Cost** (`search_time_by_path_cost.png`): Boxplot of search time grouped by path cost, overlaid with a dashed median pointplot.
+- **Nodes Generated vs. Path Cost** (`nodes_generated_by_path_cost.png`): Boxplot of generated nodes grouped by path cost, overlaid with a dashed median pointplot.
+- **Heuristic Accuracy** (`heuristic_accuracy.png`): Boxplot and median curve of estimated distance vs. actual cost-to-go with $R^2$ and $\rho_c$ (CCC).
+- **Benchmark Comparison** (`benchmark_path_comparison.png`): Scatter plots comparing found vs. optimal cost and action count.
 
 ## Comparing Runs
 
-You can compare multiple completed runs using the `benchmark compare` command. This generates a report highlighting configuration differences and performance metrics.
+Use `benchmark compare` to compare completed runs or all sub-runs in a sweep directory:
 
 ```bash
-# Compare two specific run directories
 uv run benchmark compare runs/run_A runs/run_B
-
-# Compare all sub-runs within a sweep directory
 uv run benchmark compare runs/my_sweep_dir
 ```
 
+Multiple run paths write individual comparison PNGs (`path_cost_comparison.png`, `search_time_comparison.png`, `nodes_generated_comparison.png`, `nodes_vs_time_scatter.png`, `nodes_vs_path_cost_scatter.png`) to `runs/comparison_<timestamp>/`; passing a single sweep directory writes them directly into that directory.
+
 ## Metrics Glossary
 
--   **Success Rate**: The percentage of puzzles solved within the resource limits (node limit, batch size).
--   **Optimal Rate**: The percentage of solved puzzles where the found solution cost matches the known optimal cost (requires benchmark data).
--   **Avg Nodes Generated**: The average search effort required. Lower is better.
--   **Avg Time**: The average wall-clock time to solve.
--   **Cost Gap**: The average difference between the found path cost and the optimal path cost.
+- **Success Rate**: Percentage of evaluated instances solved within budget (`max_node_size`, `batch_size`).
+- **Optimal Rate**: Percentage of solved instances matching the benchmark optimal reference.
+- **Avg Nodes Generated**: Average search effort (`generated_size`: hash occupancy for eager search, expansions × branching factor for deferred search).
+- **Avg Time**: Mean wall-clock search time per instance.
+- **Cost Gap**: Mean difference between found path cost and benchmark optimal cost.

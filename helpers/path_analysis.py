@@ -21,22 +21,6 @@ def extract_heuristic_accuracy_data(
     heuristic_model: Optional[Heuristic] = None,
     qfunction_model: Optional[QFunction] = None,
 ) -> Optional[Dict[str, Any]]:
-    """
-    Extracts heuristic accuracy data (actual vs estimated distances) from an action sequence or state sequence.
-
-    Args:
-        puzzle: The puzzle instance.
-        solve_config: The solve configuration for the puzzle.
-        initial_state: The initial state of the puzzle.
-        action_sequence: A list of actions (integers or strings that can be converted to ints).
-        path_states: A list of states representing the path (optional, used if action_sequence is None).
-        heuristic_model: Optional heuristic model to evaluate.
-        qfunction_model: Optional Q-function model to evaluate.
-
-    Returns:
-        A dictionary containing 'actual' distances, 'estimated' distances, 'states', and 'actions',
-        or None if extraction fails or the sequence is invalid.
-    """
     path_steps = None
     actions_int = None
 
@@ -76,7 +60,6 @@ def extract_heuristic_accuracy_data(
             actions_int = []
             action_lookup = None
 
-            # Check if we need string-to-int conversion
             needs_lookup = False
             for a in action_sequence:
                 if isinstance(a, str) and not a.isdigit():
@@ -85,7 +68,6 @@ def extract_heuristic_accuracy_data(
 
             if needs_lookup:
                 try:
-                    # Attempt to build lookup table from puzzle
                     action_size = getattr(puzzle, "action_size", None)
                     if action_size is not None:
                         action_lookup = {
@@ -99,7 +81,6 @@ def extract_heuristic_accuracy_data(
                     if action_lookup and a in action_lookup:
                         actions_int.append(action_lookup[a])
                     else:
-                        # Cannot convert this string action, failing
                         return None
                 else:
                     actions_int.append(int(a))
@@ -113,9 +94,7 @@ def extract_heuristic_accuracy_data(
                 q_fn=None,
             )
 
-            # Re-evaluate dist for each step using the model directly on the state.
-            # This matches how search algorithms (like search_base_eager.py) update 'dist'
-            # by evaluating the state when it is generated.
+            # Evaluate dist directly on each state to match search-time dist semantics (e.g., search_base_eager.py).
             if path_steps:
                 states = [step.state for step in path_steps]
                 states_batch = xnp.concatenate(states)
@@ -129,31 +108,25 @@ def extract_heuristic_accuracy_data(
                         step.dist = _evaluate_model(step.state)
 
         elif path_states is not None:
-            # Construct path steps from states
-            # Note: This requires calculating transition costs between states to get actual costs.
+            # Recover per-step transition costs and actions via get_neighbours when only states are given.
             steps = []
             current_cost = 0.0
             valid_path = True
 
-            # 1. Add initial state placeholder
             state = path_states[0]
             steps.append(PathStep(state=state, cost=current_cost, dist=0.0, action=None))
 
-            # 2. Process transitions
             for i in range(len(path_states) - 1):
                 curr_s = path_states[i]
                 next_s = path_states[i + 1]
 
-                # Find transition cost and action from curr_s to next_s
                 step_cost = np.nan
                 action_idx = None
                 try:
                     neighbours, costs = puzzle.get_neighbours(solve_config, curr_s, True)
 
-                    # Find matching neighbor
                     found = False
                     for idx in range(len(costs)):
-                        # Flexible equality check for JAX/NumPy arrays or objects
                         n_s = neighbours[idx]
 
                         is_equal = False
@@ -175,20 +148,16 @@ def extract_heuristic_accuracy_data(
                     valid_path = False
                     break
 
-                # Update previous step with action
                 steps[-1].action = action_idx
 
-                # Evaluate current state's dist (heuristic/Q-value)
                 steps[-1].dist = _evaluate_model(
                     curr_s,
                 )
 
                 current_cost += step_cost
 
-                # Add next state placeholder
                 steps.append(PathStep(state=next_s, cost=current_cost, dist=0.0, action=None))
 
-            # Update distances in batch if possible.
             if valid_path and steps:
                 states = [s.state for s in steps]
                 states_batch = xnp.concatenate(states)
@@ -203,7 +172,6 @@ def extract_heuristic_accuracy_data(
                     )
                 path_steps = steps
 
-                # Extract actions for return dict
                 actions_int = [s.action for s in steps if s.action is not None]
 
         if not path_steps:

@@ -90,7 +90,6 @@ class ResMLPModel(DistanceModel):
             )
         )
 
-        # Prepare resblocks
         resblocks_list = []
         for i in range(self.Res_N - self.tail_head_precision):
             kwargs = {}
@@ -121,7 +120,6 @@ class ResMLPModel(DistanceModel):
                 fn = fn.func
             if isinstance(fn, type) and issubclass(fn, KeelResBlock):
                 kwargs["total_layers"] = self.Res_N
-                # layer_index removed as per simplification
 
             tail_head_resblocks_list.append(
                 self.resblock_fn(

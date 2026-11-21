@@ -10,9 +10,6 @@ class MazeHeuristic(Heuristic):
         super().__init__(puzzle)
 
     def distance(self, solve_config: Maze.SolveConfig, current: Maze.State) -> jax.Array:
-        """
-        Get distance between current state and target state.
-        """
         return jnp.sum(
             jnp.abs(current.pos.astype(int) - solve_config.GoalSpec.pos.astype(int))
         ).astype(jnp.float32)

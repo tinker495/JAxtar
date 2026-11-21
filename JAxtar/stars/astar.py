@@ -38,12 +38,12 @@ def _row_heuristics(
     network are a prefix: ``n_full`` all-new rows, then at most one mixed row when
     ``n_new % batch_size != 0``. Full rows call ``heuristic_fn`` directly inside a
     bounded while_loop (one host predicate readback per row instead of a lax.cond
-    plus the batch switcher's lax.switch); the mixed row keeps the switcher (its
-    ``inf`` padding past the evaluated slice is the existing behaviour); every other
-    row reads the cached ``dist`` values. A row without new states must keep its
-    cached values: the switcher has no zero branch (``MIN_BATCH_SIZE``), so an
-    all-False mask would evaluate the first ``MIN_BATCH_SIZE`` entries and pad the
-    rest with ``inf``, dropping improved old candidates from the queue.
+    plus the batch switcher's lax.switch); the mixed row uses the switcher (padding
+    past the evaluated slice with ``inf``); every other row reads the cached ``dist``
+    values. A row without new states must keep its cached values: the switcher has no
+    zero branch (``MIN_BATCH_SIZE``), so an all-False mask would evaluate the first
+    ``MIN_BATCH_SIZE`` entries and pad the rest with ``inf``, dropping improved old
+    candidates from the queue.
 
     Returns the updated ``dist`` cache and ``heurs`` of shape ``(action_size, batch_size)``.
     """
@@ -58,7 +58,7 @@ def _row_heuristics(
     def _full_body(carry):
         j, dist, heurs = carry
         row_heur = heuristic_fn(params, xnp.take(neighbours, j, axis=0)).astype(KEY_DTYPE)
-        # cache the heuristic value; each newly inserted state owns one index
+        # Each newly inserted state has a unique hash index, so unique_indices=True is safe.
         dist = xnp.update_on_condition(
             dist, vals.hashidx.index[j], new_states_mask[j], row_heur, unique_indices=True
         )
@@ -140,16 +140,14 @@ def _astar_loop_builder(
         parent_action = jnp.tile(
             jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
             (1, sr_batch_size),
-        )  # [n_neighbours, batch_size]
-        nextcosts = (current.cost[jnp.newaxis, :] + ncost).astype(
-            KEY_DTYPE
-        )  # [n_neighbours, batch_size]
-        filleds = jnp.isfinite(nextcosts)  # [n_neighbours, batch_size]
+        )
+        nextcosts = (current.cost[jnp.newaxis, :] + ncost).astype(KEY_DTYPE)
+        filleds = jnp.isfinite(nextcosts)
         # Use int32 for indexing; ACTION_DTYPE (uint8) overflows when batch_size > 255.
         parent_index = jnp.tile(
             jnp.arange(sr_batch_size, dtype=jnp.int32)[jnp.newaxis, :],
             (action_size, 1),
-        )  # [n_neighbours, batch_size]
+        )
         unflatten_shape = (action_size, sr_batch_size)
 
         parent = Parent(
@@ -192,10 +190,8 @@ def _astar_loop_builder(
             search_result,
         )
 
-        # It must also be cheaper than any previously found path to this state.
         optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
 
-        # Combine all conditions for the final decision.
         final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
 
         def _update_accept_stats(sr: EagerSearchResult):
@@ -210,15 +206,13 @@ def _astar_loop_builder(
             search_result,
         )
 
-        # Update the cost (g-value) for the newly found optimal paths before they are
-        # masked out. This ensures the cost table is always up-to-date.
-        # cheapest_uniques_mask selects at most one entry per hash index, so the
-        # masked scatter needs no first-true-wins resolution (unique_indices).
+        # Update cost/parent before masking non-optimal costs to inf; cheapest_uniques_mask
+        # guarantees unique hash indices (safe for unique_indices=True).
         search_result.cost = xnp.update_on_condition(
             search_result.cost,
             hash_idx.index,
             final_process_mask,
-            flatten_nextcosts,  # Use costs before they are set to inf
+            flatten_nextcosts,
             unique_indices=True,
         )
         search_result.parent = xnp.update_on_condition(
@@ -229,11 +223,9 @@ def _astar_loop_builder(
             unique_indices=True,
         )
 
-        # Apply the final mask: deactivate non-optimal nodes by setting their cost to infinity
-        # and updating the insertion flag. This ensures they are ignored in subsequent steps.
         flatten_nextcosts = jnp.where(final_process_mask, flatten_nextcosts, jnp.inf)
-        # Stable partition to group useful entries first.
-        # Improves computational efficiency by gathering only batches with samples that need updates.
+        # Partition new states first, then improved existing states, so _row_heuristics
+        # and prefix_rows PQ insert operate on dense prefixes.
         invperm = stable_partition_three(flatten_new_states_mask, final_process_mask)
 
         flatten_final_process_mask = final_process_mask[invperm]
@@ -314,9 +306,6 @@ def astar_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> EagerSearchResult:
-        """
-        astar is the implementation of the A* algorithm.
-        """
         loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
         search_result = loop_state.search_result

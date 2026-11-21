@@ -13,8 +13,6 @@ from typing import Any, Sequence
 
 @dataclass(frozen=True)
 class BenchmarkVerification:
-    """Facts produced by Benchmark Verification for one evaluated path."""
-
     path_action_strings: list[str] | None = None
     matches_optimal_path: bool | None = None
     benchmark_verification_error: str | None = None
@@ -28,7 +26,6 @@ def build_benchmark_action_strings(
     puzzle: Any,
     actual_actions: Sequence[int] | None,
 ) -> list[str] | None:
-    """Return benchmark-facing action labels, falling back to action ids as strings."""
     if not actual_actions:
         return None
 
@@ -68,7 +65,6 @@ def verify_benchmark_path(
     actual_actions: Sequence[int] | None,
     path_action_strings: Sequence[str] | None = None,
 ) -> BenchmarkVerification:
-    """Build action labels (if needed) and verify a reconstructed benchmark path."""
     if not _can_verify(benchmark, benchmark_sample, states):
         return _NO_VERIFICATION
 

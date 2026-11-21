@@ -16,6 +16,24 @@ Present evidence and consequences in severity order. Re-review code added after
 the reviewed commit before merging. Review suggestions do not authorize changes
 to tests or acceptance assets.
 
+## Documentation and Commenting Guidelines
+
+- **Explain "Why", not "What":** Use `.md` files and code comments only to record *why* a non-obvious configuration, invariant, constraint, algorithmic choice, workaround, or edge-case exists. Let expressive names, types, configs, and CLI `--help` document *what* the code does.
+- **No sequential work logs:** Keep session diaries, chronological refactor/migration narratives (`Previously...`, `Changed from...`, `PR #...`), rejected-candidate chronicles, dated investigation/regression reports, and benchmark dumps out of repository `.md` files and code comments. Local experiment and verification records live exclusively in Git-excluded `runs/`.
+- **Minimize comments & prefer self-documenting code:** Omit step-by-step narration (`# Compute cost`, `# Step 1: ...`), decorative section banners, hardcoded line numbers, and tautological docstrings. Keep public API docstrings concise and limited to contracts, axis/shape conventions, and invariants (for Sphinx autodoc and CLI `--help`).
+- **Preserve valid rationale & directives:** Keep existing human-written comments whose rationale still holds, as well as tooling directives (`# type: ignore`, `# noqa`, `# pragma`). Delete comments when refactoring/removal makes them obsolete or when they only restate code or work history.
+- **No placeholders or dead code:** Never leave conversational placeholders (`# ... existing code ...`), stale `# TODO` stubs, or commented-out code.
+
+```python
+# Bad: restates obvious code
+# Cast index to int32
+idx = idx.astype(jnp.int32)
+
+# Good: records the non-obvious invariant
+# Cast to int32 before subtracting so uint32 stack.size does not underflow.
+idx = idx.astype(jnp.int32)
+```
+
 ## Test Ownership and Change Permissions
 
 Tests are executable product specifications owned by the user. Agents may read

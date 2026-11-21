@@ -20,7 +20,6 @@ def boltzmann_action_selection(
     mask = jnp.isfinite(q_values)
     q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
 
-    # Scale Q-values by temperature for softmax
     safe_temperature = jnp.maximum(temperature, 1e-8)
     scaled_q_values = -q_values / safe_temperature
 
@@ -29,21 +28,17 @@ def boltzmann_action_selection(
     probs = jax.nn.softmax(masked_q_values, axis=1)
     probs = jnp.where(mask, probs, 0.0)
 
-    # Row-wise normalization with guard
     row_sum = jnp.sum(probs, axis=1, keepdims=True)
     probs = jnp.where(row_sum > 0.0, probs / row_sum, probs)
 
-    # Calculate uniform probabilities
     valid_actions = jnp.sum(mask, axis=1, keepdims=True)
     uniform_valid = jnp.where(mask, 1.0 / jnp.maximum(valid_actions, 1.0), 0.0)
 
     action_size = q_values.shape[1]
     uniform_all = jnp.ones_like(probs) / jnp.maximum(action_size, 1)
 
-    # Fallback if no valid actions in a row
     probs = jnp.where(valid_actions > 0, probs, uniform_all)
 
-    # ε-greedy mixing and final guard renormalization
     probs = probs * (1.0 - epsilon) + uniform_valid * epsilon
     probs = probs / (jnp.sum(probs, axis=1, keepdims=True) + 1e-8)
     return probs
@@ -56,13 +51,7 @@ def build_distance_train_loss(
     loss_args: Any,
     n_devices: int = 1,
 ) -> Callable:
-    """Build the per-minibatch train loss shared by distance-style trainers.
-
-    The returned function has signature
-    ``(params, batch_stats, solve_configs, states, *loss_inputs, key)`` and
-    routes through ``model.train_loss`` with conditionally mutable batch_stats,
-    returning ``(mean_loss, (new_batch_stats, log_infos))``.
-    """
+    """Return a loss fn ``(params, batch_stats, solve_configs, states, *loss_inputs, key) -> (mean_loss, (new_batch_stats, log_infos))``."""
 
     def train_loss(
         params: Any,
@@ -105,12 +94,7 @@ def apply_with_conditional_batch_stats(
     axis_name: str = "devices",
     **apply_kwargs,
 ):
-    """
-    Call a Flax Module.apply while conditionally enabling mutable batch_stats during training.
-
-    Returns (outputs, variable_updates_dict), where variable_updates_dict is empty when
-    no mutable collection is used.
-    """
+    """Always return ``(outputs, variable_updates)``, using ``{}`` when ``collection`` is not mutated (normalizing Flax's mutable/non-mutable return arity)."""
     if training and collection in params:
         outputs, variable_updates = apply_fn(
             params, *apply_args, training=True, mutable=[collection], **apply_kwargs

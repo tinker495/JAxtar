@@ -57,13 +57,9 @@ class DistanceHLGModel(ABC, nn.Module):
         return False
 
     def setup(self):
-        self.categorial_bins = np.linspace(
-            self.vmin, self.vmax, self.categorial_n + 1
-        )  # (categorial_n + 1,)
-        categorial_centers = (
-            self.categorial_bins[:-1] + self.categorial_bins[1:]
-        ) / 2  # (categorial_n,)
-        self.categorial_centers = categorial_centers.reshape(1, 1, -1)  # (1, 1, categorial_n)
+        self.categorial_bins = np.linspace(self.vmin, self.vmax, self.categorial_n + 1)
+        categorial_centers = (self.categorial_bins[:-1] + self.categorial_bins[1:]) / 2
+        self.categorial_centers = categorial_centers.reshape(1, 1, -1)
         self.sigma = self._sigma * (self.categorial_bins[1] - self.categorial_bins[0])
 
     @abstractmethod
@@ -82,26 +78,22 @@ class DistanceHLGModel(ABC, nn.Module):
 
     def train_loss(self, x, target, actions=None, **kwargs):
         categorial_bins, sigma = self.categorial_bins, self.sigma
-        # target: [batch, 1]
 
         categorial_centers = self.categorial_centers
 
         def f(target):
-            # 1. Clamp target to reachable range
             min_center = categorial_centers[0, 0, 0]
             max_center = categorial_centers[0, 0, -1]
             # Use small epsilon for stability against numerical noise at boundaries
             target = jnp.clip(target, min_center + 1e-4, max_center - 1e-4)
 
-            # 2. Define expectation function
             def get_expectation(mu):
                 cdf_evals = jax.scipy.special.erf((categorial_bins - mu) / (jnp.sqrt(2) * sigma))
                 z = cdf_evals[-1] - cdf_evals[0]
                 bin_probs = (cdf_evals[1:] - cdf_evals[:-1]) / z
                 return jnp.sum(bin_probs * categorial_centers)
 
-            # 3. One-step Newton-Raphson correction
-            # mu_0 = target
+            # One-step Newton-Raphson shift of mu so truncated-Gaussian bin expectation matches target.
             exp = get_expectation(target)
             diff = exp - target
             grad = jax.grad(get_expectation)(target)
@@ -109,10 +101,8 @@ class DistanceHLGModel(ABC, nn.Module):
             # Avoid division by zero or extremely small gradients
             grad = jnp.where(jnp.abs(grad) < 1e-6, 1.0, grad)
 
-            # Update mu
             mu_new = target - diff / grad
 
-            # 4. Generate final distribution
             cdf_evals = jax.scipy.special.erf((categorial_bins - mu_new) / (jnp.sqrt(2) * sigma))
             z = cdf_evals[-1] - cdf_evals[0]
             bin_probs = cdf_evals[1:] - cdf_evals[:-1]
@@ -130,7 +120,7 @@ class DistanceHLGModel(ABC, nn.Module):
             logits = jnp.take_along_axis(logits_actions, actions[:, jnp.newaxis], axis=1).squeeze(1)
             pred = jnp.take_along_axis(pred_actions, actions[:, jnp.newaxis], axis=1).squeeze(1)
 
-        sce = optax.softmax_cross_entropy(logits, target_probs)  # (batch_size,)
+        sce = optax.softmax_cross_entropy(logits, target_probs)
         diff = target - pred
         log_infos = (
             TrainLogInfo("Metrics/pred", pred),

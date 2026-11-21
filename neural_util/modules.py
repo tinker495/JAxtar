@@ -12,7 +12,6 @@ from .norm import BatchReNorm, DyTan
 DEFAULT_NORM_FN = partial(nn.BatchNorm, param_dtype=PARAM_DTYPE)
 
 
-# Norm application helper to handle BatchNorm/BatchReNorm running stats.
 def apply_norm(norm_fn, x, training):
     if norm_fn is None:
         return x
@@ -22,7 +21,6 @@ def apply_norm(norm_fn, x, training):
     return norm_fn()(x)
 
 
-# Norm function registry for config-driven selection
 NORM_FN_REGISTRY = {
     "batch": partial(nn.BatchNorm, param_dtype=PARAM_DTYPE),
     "batch0999": partial(nn.BatchNorm, momentum=0.999, param_dtype=PARAM_DTYPE),
@@ -136,7 +134,6 @@ def get_resblock_fn(resblock_name_or_fn=None):
     raise TypeError(f"resblock_fn must be a string or callable, got {type(resblock_name_or_fn)}")
 
 
-# Multi-layer Perceptron
 class MLP(nn.Module):
 
     hidden_dim: int = 1000
@@ -158,7 +155,6 @@ class MLP(nn.Module):
         return x
 
 
-# Pre-activation Multi-layer Perceptron
 class preactivation_MLP(nn.Module):
     hidden_dim: int = 1000
     norm_fn: Callable[[], nn.Module] | None = DEFAULT_NORM_FN
@@ -179,7 +175,6 @@ class preactivation_MLP(nn.Module):
         return x
 
 
-# Residual Block
 class ResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
@@ -223,7 +218,6 @@ class ResBlock(nn.Module):
         return self.activation(x + x0_cast)
 
 
-# Pre-activation Residual Block (improved version)
 class PreActivationResBlock(nn.Module):
     node_size: int
     hidden_N: int = 1
@@ -241,7 +235,6 @@ class PreActivationResBlock(nn.Module):
         param_dtype = self.param_dtype if self.param_dtype is not None else PARAM_DTYPE
         x0_cast = x0.astype(dtype)
         out_dim = x0.shape[-1]
-        # Pre-activation: Norm -> Activation -> Dense
         x = apply_norm(self.norm_fn, x0_cast, training)
         x = self.activation(x)
         for _ in range(self.hidden_N):
@@ -276,7 +269,6 @@ class PreActivationResBlock(nn.Module):
                 param_dtype=param_dtype,
                 dot_general_cls=self.dot_general_cls,
             )(x)
-        # Identity shortcut connection
         return x0_cast + x
 
 
@@ -379,7 +371,6 @@ class KeelResBlock(nn.Module):
     param_dtype: DTypeLike | None = None
     dot_general_cls: Any = None
 
-    # Keel specific arguments
     total_layers: int = 1
 
     @nn.compact
@@ -389,8 +380,6 @@ class KeelResBlock(nn.Module):
         x0_cast = x0.astype(dtype)
         out_dim = x0.shape[-1]
 
-        # Branch function F(x)
-        # In Keel, input to F is always LN(x) (Residual Branch Normalization)
         def branch_fn(x):
             for _ in range(self.hidden_N):
                 if self.use_swiglu:
@@ -417,24 +406,17 @@ class KeelResBlock(nn.Module):
             )(x)
             return x
 
-        # Standard Keel sub-layer logic (Simplified: applied to ALL layers)
-        # x_{l+1} = LN_out(alpha * x_l + F(LN_in(x_l)))
-
-        # 1. LN_in
+        # Keel update applied uniformly to all layers: x_{l+1} = LN_out(alpha * x_l + F(LN_in(x_l))).
         x_norm = apply_norm(self.norm_fn, x0_cast, training)
 
-        # 2. F(LN_in(x))
         fx = branch_fn(x_norm)
 
-        # 3. alpha * x + F
         alpha = self.total_layers
         x_combined = alpha * x0_cast + fx
 
-        # 4. LN_out
         return apply_norm(self.norm_fn, x_combined, training)
 
 
-# ResBlock type registry for config-driven selection
 RESBLOCK_REGISTRY = {
     "standard": ResBlock,
     "preactivation": PreActivationResBlock,
@@ -478,7 +460,6 @@ def is_row_independent_mlp(norm_fn: object, activation: object, resblock_fn: obj
     )
 
 
-# Conv Residual Block
 class ConvResBlock(nn.Module):
     filters: int
     kernel_size: int | tuple[int, ...]

@@ -10,9 +10,6 @@ class LightsOutHeuristic(Heuristic):
         super().__init__(puzzle)
 
     def distance(self, solve_config: LightsOut.SolveConfig, current: LightsOut.State) -> jax.Array:
-        """
-        Get distance between current state and target state.
-        """
         neq_state = jnp.not_equal(
             current.board_unpacked,
             solve_config.GoalSpec.board_unpacked,

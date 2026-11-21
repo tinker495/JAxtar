@@ -1,98 +1,27 @@
-# Benchmark Command
+# Benchmark Command (`benchmark`)
 
-The `benchmark` command measures search algorithms against either a registered exact dataset or generated puzzle instances when no exact dataset exists.
+Evaluates search algorithms on registered exact benchmark datasets or generated puzzle workloads, and compares completed runs.
 
 ## Usage
 
-The basic syntax for the `benchmark` command is:
-
 ```bash
-uv run benchmark <algorithm> [OPTIONS]
-```
-
-Example: Run A* benchmark on the default benchmark dataset.
-
-```bash
-uv run benchmark astar
-```
-
-Example: Run Q* benchmark on the `rubikscube-deepcubea` benchmark with a specific sample limit.
-
-```bash
+uv run benchmark <subcommand> [OPTIONS]
 uv run benchmark qstar --benchmark rubikscube-deepcubea --sample-limit 100
-```
-
-Example: Generate Rubik's Cube samples when no exact dataset is available.
-
-```bash
 uv run benchmark qstar --puzzle rubikscube --num-eval 200
+uv run benchmark compare runs/run_A runs/run_B
+uv run benchmark --help
 ```
+
+`benchmark` uses **tyro**: both `--kebab-case` and `--snake_case` work, numeric flags accept `10M` / `2^20` suffixes, and omitted flags inherit preset defaults. Run `uv run benchmark <subcommand> --help` for full subcommand options.
 
 ## Subcommands
 
-The available subcommands correspond to the search algorithms:
+- **Heuristic search**: `astar`, `astar-d`, `bi-astar`, `bi-astar-d`, `id-astar`, `beam`
+- **Q-function search**: `qstar`, `bi-qstar`, `id-qstar`, `qbeam`
+- **Run comparison**: `compare`
 
--   `astar`: Benchmark A* Search.
--   `astar-d`: Benchmark A* Deferred Search.
--   `qstar`: Benchmark Q* Search.
--   `beam`: Benchmark Beam Search.
--   `qbeam`: Benchmark Q-Beam Search.
+## Key Semantics
 
-## Options
-
-The `benchmark` command uses a set of options to select the benchmark dataset and configure the evaluation.
-
-### Benchmark Target Options (`@benchmark_options`)
-
--   `--benchmark`: The exact benchmark dataset to evaluate.
-    -   Type: `Choice`
-    -   Default: the first registered benchmark when neither target option is supplied
--   `-p, --puzzle`: Generate samples from this puzzle instead of using an exact dataset.
-    -   Type: `Choice`
--   `-pargs, --puzzle-args`: JSON string containing puzzle constructor arguments.
-    -   Type: `String`
--   `--benchmark-args`: JSON string containing keyword arguments for the benchmark constructor.
-    -   Type: `String`
--   `--sample-limit`: The maximum number of samples to evaluate from the benchmark dataset.
-    -   Type: `Integer`
--   `--sample-ids`: A comma-separated list of specific sample IDs to evaluate. This overrides `--sample-limit`.
-    -   Type: `String`
-
-### Evaluation Options (`@eval_options`)
-
-These options control the benchmark run for either target type.
-
--   `-ne, --num-eval`: Number of puzzles to evaluate (often overridden by benchmark settings, but can be used to limit the run).
-    -   Type: `Integer`
--   `-b, --batch-size`: Batch size for the search.
-    -   Type: `Integer`
--   `-m, --max-node-size`: Maximum number of nodes to explore.
-    -   Type: `String`
--   `-w, --cost-weight`: Weight for cost in search.
-    -   Type: `Float`
--   `-pr, --pop_ratio`: Ratio(s) for popping nodes from the priority queue.
-    -   Type: `String`
--   `-rn, --run-name`: Name of the evaluation run.
-    -   Type: `String`
--   `--use-early-stopping`: Enable early stopping based on success rate.
-    -   Type: `Boolean`
--   `--early-stop-patience`: Number of samples to check for early stopping.
-    -   Type: `Integer`
--   `--early-stop-threshold`: Minimum success rate threshold.
-    -   Type: `Float`
-
-### Model Options
-
-Depending on the algorithm (`astar` vs `qstar`), you can specify model options.
-
--   `--param-path`: Optional override for the parameter file path.
-    -   Type: `String`
--   `--model-type`: Type of the model (heuristic or Q-function) to load from the benchmark configuration.
-    -   Type: `String`
-    -   Default: `default`
--   `--output-dir`: Directory to store run artifacts (defaults to `runs/<timestamp>`).
-    -   Type: `Path`
-
-## Results and Logging
-
-For detailed information on where results are stored, file formats (`results.csv`, `config.json`), and how to generate comparison reports, please refer to the [**Benchmark Logging Documentation**](./benchmark_logging.md).
+- **Target mutual exclusion**: `--benchmark` (defaults to `rubikscube-deepcubea` when neither target is passed) and `-p, --puzzle` (generates hard puzzle instances) are mutually exclusive. `--benchmark-args`, `--sample-ids`, and `--sample-limit` require `--benchmark`; `--puzzle-args` requires `--puzzle`.
+- **CLI sweeps**: `-pr, --pop-ratio` accepts comma-separated sweep lists on the CLI (e.g., `-pr inf,0.3,0.1`); `-w, --cost-weight` and `-b, --batch-size` are scalar CLI flags.
+- **Output path**: `--output-dir` defaults to `runs/<puzzle>_<algo>_<timestamp>` (or `runs/<run_name>` when `--rn, --run-name` is set). See [**Benchmark Logging**](./benchmark_logging.md) for output schemas and plots.

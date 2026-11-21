@@ -92,8 +92,6 @@ def _bi_astar_loop_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> BiLoopState:
-        """Initialize bidirectional search from start and goal states."""
-
         def build_direction(direction_min_pop: int) -> EagerSearchResult:
             return EagerSearchResult.build(
                 statecls, batch_size, max_nodes, action_size, pop_ratio, min_pop=direction_min_pop
@@ -137,13 +135,6 @@ def _bi_astar_loop_builder(
         )
 
     def loop_condition(loop_state: BiLoopState) -> chex.Array:
-        """
-        Check if search should continue.
-
-        Continues while:
-        1. At least one direction can still expand nodes (has frontier AND hashtable capacity)
-        2. Termination condition not met (lower_bound < upper_bound)
-        """
         return common_bi_loop_condition(
             loop_state.bi_result,
             loop_state.filled_forward,
@@ -164,20 +155,6 @@ def _bi_astar_loop_builder(
         is_forward: bool,
         use_heuristic: bool,
     ) -> tuple[BiDirectionalSearchResult[EagerSearchResult], Current, jax.Array]:
-        """
-        Expand one direction (forward or backward).
-
-        Args:
-            bi_result: Current bidirectional search result
-            solve_config: Puzzle solve configuration
-            heuristic_params: Parameters for heuristic evaluation
-            current: Current batch of nodes to expand
-            filled: Boolean mask for valid entries
-            is_forward: True for forward expansion, False for backward
-
-        Returns:
-            Updated (bi_result, current, filled)
-        """
         if is_forward:
             search_result = bi_result.forward
             current_solve_config = solve_config
@@ -189,21 +166,16 @@ def _bi_astar_loop_builder(
 
         sr_batch_size = search_result.batch_size
 
-        # Get states for current batch
         states = search_result.get_state(current.hashidx)
 
-        # Get neighbors
         neighbours, ncost = get_neighbours_fn(current_solve_config, states, filled)
-        # neighbours: [action_size, batch_size]
-        # ncost: [action_size, batch_size]
 
-        # Prepare parent information
         parent_action = jnp.tile(
             jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
             (1, sr_batch_size),
-        )  # [action_size, batch_size]
+        )
         nextcosts = (current.cost[jnp.newaxis, :] + ncost).astype(KEY_DTYPE)
-        filleds = jnp.isfinite(nextcosts)  # [action_size, batch_size]
+        filleds = jnp.isfinite(nextcosts)
         parent_index = jnp.tile(
             jnp.arange(sr_batch_size, dtype=jnp.int32)[jnp.newaxis, :],
             (action_size, 1),
@@ -215,14 +187,12 @@ def _bi_astar_loop_builder(
             action=parent_action,
         )
 
-        # Flatten for batch processing
         flatten_neighbours = neighbours.flatten()
         flatten_filleds = filleds.flatten()
         flatten_nextcosts = nextcosts.flatten()
         flatten_parents = parent.flatten()
 
-        # Insert into the shared hash table. Under the shared-table design `hash_idx`
-        # is the common slot for each neighbour regardless of which direction owns it.
+        # hash_idx is the shared-table slot common to both directions.
         (
             search_result.hashtable,
             _,
@@ -232,19 +202,17 @@ def _bi_astar_loop_builder(
             flatten_neighbours, flatten_filleds, flatten_nextcosts
         )
 
-        # "New to THIS direction" must be judged from this direction's own seen flags,
-        # not from the shared-table insert mask: a state the opposite frontier already
-        # inserted is not new to us and its heuristic still needs computing.
+        # Judge novelty from this direction's seen flags, not the shared-table insert mask:
+        # a state inserted by the opposite frontier is not new to the table, yet still needs
+        # its heuristic computed here.
         seen_this = bi_result.seen_forward if is_forward else bi_result.seen_backward
         flatten_is_new = jnp.logical_and(
             flatten_filleds, jnp.logical_not(seen_this[hash_idx.index])
         )
 
-        # Check optimality
         optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
         final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
 
-        # Update cost and parent
         search_result.cost = xnp.update_on_condition(
             search_result.cost,
             hash_idx.index,
@@ -295,7 +263,7 @@ def _bi_astar_loop_builder(
             flatten_is_new = jnp.logical_and(flatten_is_new, tail_live)
             final_process_mask = jnp.logical_and(final_process_mask, tail_live)
 
-        # Stable partition for efficiency
+        # Group new states first so the heuristic scan below skips rows without new states.
         invperm = stable_partition_three(flatten_is_new, final_process_mask)
         flatten_final_process_mask = final_process_mask[invperm]
         flatten_is_new = flatten_is_new[invperm]
@@ -308,7 +276,6 @@ def _bi_astar_loop_builder(
         new_states_mask = flatten_is_new.reshape(unflatten_shape)
         final_process_mask_reshaped = flatten_final_process_mask.reshape(unflatten_shape)
 
-        # Compute heuristic and insert into priority queue
         def _new_states(sr: EagerSearchResult, vals, neighbour, new_states_mask):
             if use_heuristic:
                 neighbour_heur = variable_heuristic_batch_switcher(
@@ -354,10 +321,8 @@ def _bi_astar_loop_builder(
             final_process_mask_reshaped,
         )
 
-        # Pop next batch
         search_result, new_current, new_filled = search_result.pop_full()
 
-        # Update bi_result with modified search_result
         if is_forward:
             bi_result.forward = search_result
         else:
@@ -475,16 +440,6 @@ def bi_astar_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
-        """
-        Perform bidirectional A* search.
-
-        Args:
-            solve_config: Configuration containing the goal state
-            start: Initial state to search from
-
-        Returns:
-            BiDirectionalSearchResult containing both search trees and meeting point
-        """
         loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 

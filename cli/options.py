@@ -1,5 +1,3 @@
-"""Typed CLI inputs and explicit runtime configuration resolution."""
-
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +25,6 @@ from train_util.optimizer import OPTIMIZERS
 
 
 def parse_bool(value: str) -> bool:
-    """Accept the existing CLI's case-insensitive boolean values."""
     if value.lower() in ("1", "true", "t", "yes", "y", "on"):
         return True
     if value.lower() in ("0", "false", "f", "no", "n", "off"):
@@ -585,7 +582,6 @@ def _setup_neural_component(
         init_params=reset_params,
         **final_neural_config,
     )
-    # Attach runtime metadata (model type / path / param stats) for nicer config printing.
     attach_runtime_metadata(
         component,
         model_type=model_type,

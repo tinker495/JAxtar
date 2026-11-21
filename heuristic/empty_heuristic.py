@@ -8,7 +8,4 @@ class EmptyHeuristic(Heuristic):
         super().__init__(puzzle)
 
     def distance(self, solve_config: Puzzle.SolveConfig, current: Puzzle.State) -> float:
-        """
-        Return zero distance for any puzzle state.
-        """
         return 0.0

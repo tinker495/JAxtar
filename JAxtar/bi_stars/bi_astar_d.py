@@ -91,8 +91,6 @@ def _bi_astar_d_loop_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> BiLoopStateWithStates:
-        """Initialize bidirectional deferred search from start and goal states."""
-
         bi_result: BiDirectionalSearchResult[DeferredSearchResult] = build_bi_search_result(
             partial(
                 DeferredSearchResult.build,
@@ -144,7 +142,6 @@ def _bi_astar_d_loop_builder(
         )
 
     def loop_condition(loop_state: BiLoopStateWithStates) -> chex.Array:
-        """Check if search should continue."""
         return common_bi_loop_condition(
             loop_state.bi_result,
             loop_state.filled_forward,
@@ -174,7 +171,6 @@ def _bi_astar_d_loop_builder(
             cost_weight: float,
         ) -> tuple[chex.Array, chex.Array, chex.Array]:
             if enable_backward_value_lookahead:
-                # params is packed as (heuristic_params, forward_solve_config)
                 heuristic_params, forward_solve_config = params
             else:
                 heuristic_params = params
@@ -418,9 +414,7 @@ def bi_astar_d_builder(
         batch_size: Number of states to process in parallel per direction
         max_nodes: Combined shared hash-table capacity for BOTH directions (forward and
             backward share one table; this is the total node budget, not per-direction)
-        pop_ratio: Ratio controlling beam width
-        cost_weight: Weight for path cost in f = cost_weight * g + h
-        show_compile_time: If True, displays compilation time
+        spec: Shared build-time tuning knobs (`pop_ratio`, `cost_weight`, etc.).
         look_ahead_pruning: Enable look-ahead pruning optimization.
             Note: Bidirectional deferred search requires look_ahead_pruning=True
             for correct termination condition. If False is passed, it will be
@@ -429,6 +423,7 @@ def bi_astar_d_builder(
             backward deferred expansion. Disabled by default for stars parity.
         experimental_backward_value_lookahead_k: Number of backward candidates
             to refine when experimental_backward_value_lookahead=True.
+        terminate_on_first_solution: If True, stop as soon as any meeting is found.
 
     Returns:
         A JIT-compiled function that performs bidirectional A* deferred search
@@ -473,14 +468,11 @@ def bi_astar_d_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
-        """Perform bidirectional A* deferred search."""
         loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 
         bi_result = loop_state.bi_result
 
-        # With the shared table a meeting always carries valid slots on both sides, so
-        # no edge-only materialization is needed before stamping solved fields.
         return stamp_bi_solved_from_meeting(bi_result)
 
     return compile_search_builder(bi_astar_d, puzzle, spec.show_compile_time, spec.warmup_inputs)

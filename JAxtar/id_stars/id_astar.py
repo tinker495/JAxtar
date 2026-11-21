@@ -40,14 +40,6 @@ def _build_chunked_heuristic_eval(
     action_size: int,
     batch_size: int,
 ):
-    """
-    Factory function to create a chunked heuristic evaluation function.
-
-    This avoids code duplication between frontier builder and loop builder.
-    The returned function delegates to the shared ``chunked_masked_eval`` primitive,
-    closing over the heuristic parameters so the primitive stays value-fn generic.
-    """
-
     def _chunked_heuristic_eval(
         h_params: Puzzle.SolveConfig,
         flat_states: Puzzle.State,
@@ -72,10 +64,7 @@ def _id_astar_frontier_builder(
     non_backtracking_steps: int = 3,
     max_path_len: int = 256,
 ):
-    """
-    Returns a function that generates an initial frontier starting from a single state.
-    Uses Batched BFS with in-batch deduplication. (Inlined for ID-A*)
-    """
+    """Build a batched-BFS frontier generator with in-batch deduplication."""
     action_size = puzzle.action_size
     flat_size = action_size * batch_size
     statecls = puzzle.State
@@ -303,9 +292,6 @@ def _id_astar_loop_builder(
             frontier=frontier,
         )
 
-    # -----------------------------------------------------------------------
-    # INNER LOOP: Standard Batched DFS with Pruning by Bound
-    # -----------------------------------------------------------------------
     inner_cond = build_inner_cond()
 
     def inner_body(loop_state: IDLoopState):
@@ -346,7 +332,6 @@ def _id_astar_loop_builder(
 
         flat_valid = jnp.logical_and(flat_valid, flat_depth <= max_path_len)
 
-        # --- Optimization: Deduplication ---
         flat_valid = apply_standard_deduplication(
             flat_neighbours,
             flat_g,
@@ -361,9 +346,6 @@ def _id_astar_loop_builder(
             batch_size,
         )
 
-        # ----------------------------------------------------
-
-        # Heuristic Evaluation (No Caching - Re-compute Always)
         # chunked_masked_eval already clamps values to >= 0.
         flat_h = _chunked_heuristic_eval(params, flat_neighbours, flat_valid)
         flat_f = (cost_weight * flat_g + flat_h).astype(KEY_DTYPE)
@@ -378,10 +360,10 @@ def _id_astar_loop_builder(
         )
 
         # Unconditional masked push instead of lax.cond: the conditional forces
-        # XLA pass-through copies of the whole packed stack store (299MB per
-        # iteration at 1e6 nodes) plus a host predicate sync, while an all-False
-        # mask makes expand_and_push a bit-exact no-op (scatter drops every row,
-        # next_bound takes min with inf, ptr/count advance by zero).
+        # XLA pass-through copies of the whole packed stack store per iteration
+        # plus a host predicate sync, while an all-False mask makes expand_and_push
+        # a bit-exact no-op (scatter drops every row, next_bound takes min with
+        # inf, ptr/count advance by zero).
         push_valid = jnp.logical_and(flat_valid, jnp.logical_not(any_solved))
         return_sr = sr_solved.expand_and_push(
             flat_batch, flat_f, push_valid, update_next_bound=True

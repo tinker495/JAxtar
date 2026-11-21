@@ -22,7 +22,6 @@ from .constants import (
 def plot_expansion_distribution(
     results: list[dict], scatter_max_points: int = EXPANSION_SCATTER_MAX_POINTS
 ) -> plt.Figure:
-    """Plots the distribution of node costs, heuristics, and keys over expansion steps."""
     expansion_data = []
     for r in results:
         if r.get("expansion_analysis"):
@@ -59,12 +58,10 @@ def plot_expansion_distribution(
     combined_df = pd.concat(expansion_data, ignore_index=True)
     combined_df["key"] = combined_df["cost"] + combined_df["dist"]
 
-    # Use a smaller sample for scatter plot if data is too large, to avoid overplotting
     sample_df = combined_df
     if len(combined_df) > scatter_max_points:
         sample_df = combined_df.sample(n=scatter_max_points, random_state=42)
 
-    # Plot Cost (g) vs. Expansion Step
     sns.lineplot(
         data=combined_df,
         x="pop_generation",
@@ -89,7 +86,6 @@ def plot_expansion_distribution(
     axes[0].legend()
     axes[0].grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
-    # Plot Heuristic (h) vs. Expansion Step
     sns.lineplot(
         data=combined_df,
         x="pop_generation",
@@ -114,7 +110,6 @@ def plot_expansion_distribution(
     axes[1].legend()
     axes[1].grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
-    # Plot Key (f) vs. Expansion Step
     sns.lineplot(
         data=combined_df,
         x="pop_generation",
@@ -147,16 +142,11 @@ def plot_expansion_distribution(
 def plot_heuristic_accuracy(
     results: list[dict], metrics: Optional[Dict[str, float]] = None
 ) -> plt.Figure:
-    """Plots the heuristic/q-function accuracy."""
     all_actual_dists = []
     all_estimated_dists = []
 
-    # Check if we're plotting data derived from optimal paths
     has_optimal_path_used = metrics.get("has_optimal_path_used", False) if metrics else False
 
-    # Include results with path analysis.
-    # If metrics says we have optimal path used, we generally assume most/all valid points come from it,
-    # or at least we want to label it as such.
     results_with_analysis = [r for r in results if r.get("path_analysis")]
 
     for r in results_with_analysis:
@@ -168,9 +158,7 @@ def plot_heuristic_accuracy(
 
     fig, ax = plt.subplots(figsize=LARGE_FIGSIZE)
 
-    # Adjust title based on data source
-    # - Optimal Path: "Actual" is optimal remaining cost-to-go (benchmark reference).
-    # - Search Path: "Actual" is remaining cost-to-go along the *found* solution path, which can be suboptimal.
+    # "Actual" is optimal cost-to-go for benchmark references, but remaining cost along the found (possibly suboptimal) path otherwise.
     source_label = "Optimal Path" if has_optimal_path_used else "Search Path"
     title = f"Heuristic/Q-function Accuracy Analysis ({source_label})"
 

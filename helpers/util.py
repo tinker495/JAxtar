@@ -9,7 +9,6 @@ T = TypeVar("T", bound=BaseModel)
 
 def convert_to_serializable_dict(obj: Any) -> Any:
     if isinstance(obj, BaseModel):
-        # Recursively process the dict representation
         return convert_to_serializable_dict(obj.model_dump())
     if isinstance(obj, dict):
         return {str(k): convert_to_serializable_dict(v) for k, v in obj.items()}
@@ -46,7 +45,6 @@ def make_hashable(val):
 
 
 def display_value(val):
-    # Convert tuples back to lists for display, and pretty-print JSON strings
     if isinstance(val, tuple):
         return str(list(val))
     try:
@@ -55,24 +53,13 @@ def display_value(val):
             if isinstance(loaded, dict) or isinstance(loaded, list):
                 return json.dumps(loaded, indent=2)
     except json.JSONDecodeError:
-        pass  # Not a JSON string; fall through to default str(val) representation
+        pass
     return str(val)
 
 
 def map_kwargs_to_pydantic(
     model_class: Type[T], kwargs: Dict[str, Any], pop: bool = True
 ) -> Dict[str, Any]:
-    """
-    Extracts keys from kwargs that match the fields of a Pydantic model.
-
-    Args:
-        model_class: The Pydantic model class.
-        kwargs: The dictionary of arguments (e.g., from Click).
-        pop: If True, removes the matched keys from kwargs.
-
-    Returns:
-        A dictionary of arguments suitable for initializing the model.
-    """
     model_fields = model_class.model_fields.keys()
     result = {}
     # Iterate over a copy of keys since we might pop

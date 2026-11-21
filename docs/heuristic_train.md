@@ -1,139 +1,23 @@
-# DAVI Heuristic Training Command (`distance_train heuristic`)
+# Heuristic Training Command (`distance_train heuristic`)
 
-The `distance_train heuristic` command is used to train a neural network heuristic model. It implements a variant of the "learning from demonstration" paradigm, specifically tailored for heuristic search, which can be thought of as Dynamic A* Value Iteration (DAVI). The goal is to train a model that can accurately predict the distance (cost) from any given state to the goal state.
-
-This command is intended for users interested in research on neural heuristics or training custom models for puzzles.
+Trains a neural heuristic model to estimate cost-to-go distances via Dynamic A\* Value Iteration (DAVI) or trajectory diffusion.
 
 ## Usage
 
-The basic syntax for the `distance_train heuristic` command is:
-
 ```bash
 uv run distance_train heuristic [OPTIONS]
+uv run distance_train heuristic -p rubikscube -pre davi -s 10000 -db 1000 -dmb 200 -tmb 200
+uv run distance_train heuristic --help
 ```
 
-Example:
+`distance_train heuristic` uses **tyro**: both `--kebab-case` and `--snake_case` work, numeric flags accept `10M` / `2^20` suffixes, and omitted options inherit defaults (`puzzle="rubikscube"`, `hard=True` internally, `--optimizer muon`, and the chosen `--preset`). Use `--help` for the full option catalog.
 
-```bash
-uv run distance_train heuristic -p rubikscube -pre default -s 10000 -db 1000 -dmb 200 -tmb 200
-```
+## Key Semantics
 
-## Options
-
-The `distance_train heuristic` command uses several option groups to configure the training process.
-
-### Puzzle Options (`@dist_puzzle_options`)
-
-These options define the puzzle environment for which the heuristic is being trained.
-
--   `-p, --puzzle`: Specifies the puzzle to use for training.
-    -   Type: `Choice`
-    -   Default: `rubikscube`
--   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
-    -   Type: `String`
--   `-h, --hard`: If available, use a "hard" version of the puzzle for generating training data. (Default: True for distance training)
-    -   Type: `Flag`
--   `-s, --seeds`: Seed for the random puzzle (if supported).
-    -   Type: `String`
-    -   Default: `0`
-
-### Training Options (`@dist_train_options`)
-
-These are the core options that control the training loop and hyperparameters.
-
--   `-pre, --preset`: Selects a training configuration preset (e.g., learning rate, batch sizes).
-    -   Type: `Choice`
-    -   Default: `default`
--   `-s, --steps`: Total number of training steps.
-    -   Type: `Integer`
--   `-db, --dataset_batch_size`: The total number of states in the training dataset.
-    -   Type: `Integer`
--   `-dmb, --dataset_minibatch_size`: The size of mini-batches to sample from the main dataset.
-    -   Type: `Integer`
--   `-tmb, --train_minibatch_size`: The size of mini-batches used in a single training step.
-    -   Type: `Integer`
--   `-k, --key`: Seed for the random number generator used in training.
-    -   Type: `Integer`
--   `-r, --reset`: Initialize new model parameters instead of loading the configured checkpoint at training startup.
-    -   Type: `Boolean`
--   `-lt, --loss_threshold`: A loss value threshold that can trigger updates or other events during training.
-    -   Type: `Float`
--   `-ui, --update_interval`: The single-device-equivalent target update interval. Hard-update cadence is divided by the active device count; soft updates use the equivalent compounded Polyak rate.
-    -   Type: `Integer`
--   `-fui, --force_update_interval`: The single-device-equivalent interval to force update the target network; divided by the active device count.
-    -   Type: `Integer`
--   `-su, --use_soft_update`: Use soft updates (Polyak averaging) for the target network instead of hard updates.
-    -   Type: `Flag`
--   `-ddn, --use_double_dqn`: Enable Double DQN target computation.
-    -   Type: `Flag`
--   `-her, --using_hindsight_target`: Use Hindsight Experience Replay (HER) for generating target values.
-    -   Type: `Flag`
--   `-ts, --using_triangular_sampling`: Use triangular sampling for generating states.
-    -   Type: `Flag`
--   `--label`: Selects how training targets are generated: `td` (bootstrap targets; DAVI — always min-capped by deduplicated trajectory/diffusion distances to suppress overestimation), `diffusion` (trajectory Bellman propagation), or `warmup_td` (diffusion targets for the first `--warmup_ratio` of steps, then `td`).
-    -   Type: `Choice`
-    -   Default: `td`
--   `--warmup_ratio`: Fraction of total training steps that use diffusion targets before switching to `td`. Only used with `--label warmup_td`.
-    -   Type: `Float`
-    -   Default: `0.2`
--   `--sampling-non-backtracking-steps`: Number of previous states to avoid revisiting during dataset sampling.
-    -   Type: `Integer`
--   `-tp, --temperature`: Boltzmann temperature for action selection.
-    -   Type: `Float`
--   `-d, --debug`: Disables JIT compilation for easier debugging.
-    -   Type: `Flag`
--   `-md, --multi_device`: Enables training across multiple JAX devices (e.g., multiple GPUs).
-    -   Type: `Boolean`
--   `-osr, --opt_state_reset`: Reset optimizer state when target network is updated.
-    -   Type: `Boolean`
--   `--optimizer`: The optimization algorithm to use.
-    -   Type: `Choice`
-    -   Default: `adam`
--   `-lr, --learning_rate`: Learning rate.
-    -   Type: `Float`
--   `-wd, --weight_decay_size`: Weight decay size for regularization.
-    -   Type: `Float`
--   `--loss`: Select training loss function.
-    -   Type: `Choice`
-    -   Choices: `mse`, `huber`, `logcosh`, `asymmetric_huber`, `asymmetric_logcosh`
--   `--loss-args`: JSON object of additional keyword arguments for the selected loss.
-    -   Type: `String`
--   `--td-error-clip`: Absolute clip value for TD-error; set <= 0 to disable.
-    -   Type: `Float`
--   `-km, --k_max`: Override puzzle's default k_max.
-    -   Type: `Integer`
--   `--logger`: Logger to use.
-    -   Type: `Choice`
-    -   Choices: `aim`, `tensorboard`, `wandb`, `none`
-
-### Heuristic Model Options (`@dist_heuristic_options`)
-
-This group contains options for specifying the neural network model to be trained.
-
--   `--param-path`: Path to the heuristic parameter file.
-    -   Type: `String`
--   `-nc, --neural_config`: Neural configuration JSON string. Overrides the default configuration.
-    -   Type: `String`
-
-### Evaluation Options (`@eval_options`)
-
-These options control the evaluation performed during/after training.
-
--   `-b, --batch-size`: Batch size for search during evaluation.
-    -   Type: `Integer`
--   `-m, --max-node-size`: Maximum number of nodes to search during evaluation.
-    -   Type: `String`
--   `-w, --cost-weight`: Weight for cost in search.
-    -   Type: `Float`
--   `-pr, --pop_ratio`: Ratio(s) for popping nodes from the priority queue.
-    -   Type: `String`
--   `-ne, --num-eval`: Number of puzzles to evaluate.
-    -   Type: `Integer`
--   `-rn, --run-name`: Name of the evaluation run.
-    -   Type: `String`
--   `--use-early-stopping`: Enable early stopping based on success rate threshold.
-    -   Type: `Boolean`
--   `--early-stop-patience`: Number of samples to check before considering early stopping.
-    -   Type: `Integer`
--   `--early-stop-threshold`: Minimum success rate threshold for early stopping (0.0 to 1.0).
-    -   Type: `Float`
+- **Presets (`-pre, --preset`)**: `davi` (default), `quality`, `largebatch`, `diffusion_distance`, `diffusion_distance_warmup_davi`.
+- **Target generation (`--label`)**:
+  - `td` (default, DAVI): Bootstrap TD targets always min-capped by deduplicated trajectory (diffusion) distances to suppress overestimation.
+  - `diffusion`: Trajectory Bellman propagation directly without bootstrap targets.
+  - `warmup_td`: Uses diffusion targets for the first `--warmup-ratio` (default `0.2`) fraction of steps, then switches to `td`.
+- **Multi-device scaling (`-md, --multi-device`, default `True`)**: `-ui, --update-interval` and `-fui, --force-update-interval` are single-device-equivalent outer intervals. Across `n_devices > 1`, hard-update cadence and outer `steps` are divided by `n_devices`, and soft updates use the compounded Polyak rate `1 - (1 - 1 / update_interval) ** n_devices`.
+- **Training evaluation**: Controlled via `-ec, --eval-count` and `--eval-search-metric` (`astar`, `astar_d`, `bi_astar`, `bi_astar_d`, `beam`).

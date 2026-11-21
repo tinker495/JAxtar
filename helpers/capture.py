@@ -68,7 +68,6 @@ class _LogSanitizer:
         return [line.rstrip() for line in lines]
 
     def pending_text(self) -> str:
-        """Render the mutable tail (the last line may still be rewritten)."""
         return "\n".join(line.rstrip() for line in self._pending)
 
     def _feed_text(self, text: str) -> None:
@@ -135,8 +134,6 @@ class _LogCapture:
 
 
 class _TeeStream(TextIOBase):
-    """Mirror writes to the primary stream and capture sanitized output."""
-
     def __init__(self, primary: TextIO, capture: _LogCapture):
         self._primary = primary
         self._capture = capture
@@ -160,8 +157,6 @@ class _TeeStream(TextIOBase):
 
 @contextmanager
 def tee_console(log_path: Path):
-    """Context manager that mirrors stdout/stderr into a sanitized log file."""
-
     log_path = Path(log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 

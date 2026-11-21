@@ -94,7 +94,6 @@ class BatchReNorm(nn.Module):
             custom_mean = mean
             custom_var = var
             if not self.is_initializing():
-                # The code below is implemented following the Batch Renormalization paper
                 std = jnp.sqrt(var + self.epsilon)
                 ra_std = jnp.sqrt(ra_var.value + self.epsilon)
                 r = jnp.clip(std / ra_std, 1 / self.r_max, self.r_max)

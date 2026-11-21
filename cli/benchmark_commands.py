@@ -1,5 +1,3 @@
-"""Tyro benchmark commands for exact datasets and generated workloads."""
-
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path

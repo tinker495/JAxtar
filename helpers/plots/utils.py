@@ -34,10 +34,6 @@ def _plot_scatter_with_ellipses(
     add_annotations: bool = False,
     varying_params: Optional[List[str]] = None,
 ) -> plt.Figure:
-    """
-    Internal function to generate a generic scatter plot with confidence ellipses.
-    If varying_params are provided, it connects the centers of runs that share common parameters.
-    """
     fig, ax = plt.subplots(figsize=COMPARISON_FIGSIZE)
 
     plot_df = solved_df.copy()
@@ -97,7 +93,6 @@ def _plot_scatter_with_ellipses(
     palette = PALETTE_TAB10
     grouped = solved_df.groupby(hue_col)
 
-    # Pre-calculate run means for centers and lines
     run_means = {}
     for label, group_data in grouped:
         if not group_data.empty:
@@ -106,7 +101,6 @@ def _plot_scatter_with_ellipses(
                 np.mean(group_data[y_col]),
             )
 
-    # Plot ellipses and centers
     for i, label in enumerate(sorted_labels):
         if label not in grouped.groups:
             continue
@@ -133,7 +127,6 @@ def _plot_scatter_with_ellipses(
                 alpha=COMPARISON_ELLIPSE_ALPHA,
             )
 
-    # Connect centers if there are parameters to group by
     if varying_params and len(varying_params) > 1:
         if not run_means:
             return fig

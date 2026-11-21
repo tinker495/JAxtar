@@ -14,16 +14,12 @@ from helpers.util import convert_to_serializable_dict
 
 
 def _is_single_level(config: dict) -> bool:
-    """
-    Checks if the config dictionary has only one level of hierarchy.
-    """
     if not isinstance(config, dict):
-        return True  # Not a dictionary, so can't have multiple levels.
+        return True
     return not any(isinstance(v, dict) for v in config.values())
 
 
 def _format_value(value, apply_human_format=True):
-    """Recursively apply human-friendly formatting to numeric values."""
     if isinstance(value, bool):
         return value
     if isinstance(value, Number):
@@ -43,52 +39,40 @@ def _format_value(value, apply_human_format=True):
 
 
 def print_config(title: str, config: dict):
-    """
-    Prints a configuration in a hierarchical tree layout, wrapped in a panel.
-    Uses a two-column layout for a larger number of top-level items.
-    """
     config = convert_to_serializable_dict(config)
     config = _format_value(config)
     console = Console()
-    TRUNCATE_LENGTH = 80  # Character length threshold for truncation
-    TRUNCATE_SEQ_LENGTH = 10  # Number of items to show for long tuples/lists/sets
+    TRUNCATE_LENGTH = 80
+    TRUNCATE_SEQ_LENGTH = 10
 
     def maybe_truncate(value):
-        # Truncate long strings
         if isinstance(value, str):
             if len(value) > TRUNCATE_LENGTH:
                 return value[:TRUNCATE_LENGTH] + " ..."
             return value
-        # Truncate long tuples/lists/sets
         elif isinstance(value, (tuple, list, set)):
             if len(value) > TRUNCATE_SEQ_LENGTH:
-                # Symmetrical truncation
                 half = TRUNCATE_SEQ_LENGTH // 2
                 shown_front = list(value)[:half]
                 shown_back = list(value)[-half:]
                 str_value = f"[{', '.join(str(x) for x in shown_front)} ... {', '.join(str(x) for x in shown_back)}]"
                 return str_value
             return value
-        # Don't truncate dicts or None
         elif isinstance(value, dict) or value is None:
             return value
-        # Fallback: truncate string representation if too long
         s = str(value)
         if len(s) > TRUNCATE_LENGTH:
             return s[:TRUNCATE_LENGTH] + " ..."
         return value
 
     def add_node(parent: Tree, key: str, value):
-        """Recursively adds config items to the tree."""
         value = _format_value(value)
         if isinstance(value, dict):
-            # Create a new branch for a dictionary
             style = "bold magenta"
             branch = parent.add(f"[{style}]{key}[/{style}]")
             for k, v in value.items():
                 add_node(branch, k, v)
         else:
-            # Add a leaf node for a simple value, truncating if necessary.
             display_value = maybe_truncate(value)
 
             item_grid = Table.grid(padding=(0, 1))
@@ -107,14 +91,11 @@ def print_config(title: str, config: dict):
 
     if not config:
         layout = Text("Configuration is empty.", justify="center")
-    # For a small number of items or a single-level hierarchy, use a single, wide tree.
     elif len(config) <= 2 or _is_single_level(config):
         layout = Tree("", guide_style="bright_blue")
         for key, value in config.items():
             add_node(layout, key, value)
-    # For more items, put the longest item in the first column, and the rest in the second.
     else:
-        # Select the key with the longest JSON string representation as the main item.
         main_key = max(config.keys(), key=lambda k: len(json.dumps(config.get(k), default=str)))
 
         main_tree = Tree("", guide_style="bright_blue")

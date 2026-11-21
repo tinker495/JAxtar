@@ -36,10 +36,9 @@ from JAxtar.utils.array_ops import batched_state_equal, stable_partition_three
 def _bounded_scatter_leaf(stack_arr, update_arr, start, n_write):
     """Scatter ``update_arr[:n_write]`` into ``stack_arr`` at ``[start, start + n_write)``.
 
-    Rows at/after ``n_write`` map to an out-of-bounds index and are dropped. This
-    replaces ``dynamic_update_slice``, which clamps a near-capacity start index and
-    would slide the whole write block down, silently overwriting already-committed
-    live stack entries below ``start``.
+    Rows at/after ``n_write`` map past the buffer end and are dropped instead of using
+    ``dynamic_update_slice``, which clamps near-capacity start indices and would slide
+    the write window down onto committed stack entries below ``start``.
     """
     rows = jnp.arange(update_arr.shape[0], dtype=jnp.int32)
     target = jnp.where(rows < n_write, start + rows, stack_arr.shape[0])
@@ -130,13 +129,12 @@ class IDLoopState:
     static_fields=("capacity", "action_size", "ItemCls", "max_path_len", "trace_prefix")
 )
 class IDSearchResult:
-    """
-    Data structure for Iterative Deepening Search.
-    Maintains an explicit stack for Batched DFS. Each stack item stores only a
-    ``trace_index`` into a shared parent-pointer arena (``trace_parent``/``trace_action``,
-    the same shape Beam uses); the action sequence is walked out of that arena once, at
-    the end of the search. Carrying the full ``uint8[max_path_len]`` path on every stack
-    slot instead cost 256 of 299 packed bytes per node.
+    """Data structure for Iterative Deepening Search.
+
+    Maintains an explicit stack for batched DFS. Each stack item stores only a
+    ``trace_index`` into a shared parent-pointer arena (``trace_parent``/``trace_action``),
+    and the action sequence is reconstructed once at the end instead of storing
+    ``max_path_len`` action arrays on every stack slot.
     """
 
     capacity: int
@@ -145,29 +143,26 @@ class IDSearchResult:
     max_path_len: int
     trace_prefix: int  # arena rows reserved for the immutable frontier chains
 
-    # Global search state
-    bound: jax.Array  # Current cost bound (scalar)
-    next_bound: jax.Array  # Next cost bound (scalar)
-    solved: jax.Array  # Boolean scalar
-    solved_idx: jax.Array  # Index in the stack of the solution (if found)
+    bound: jax.Array
+    next_bound: jax.Array
+    solved: jax.Array
+    solved_idx: jax.Array  # Always -1 (see mark_solved).
 
-    # Stack storage (Fixed size = capacity)
-    # Allows LIFO access for DFS
     stack: Stack
 
     # Parent-pointer arena. Rows [0, trace_prefix) are the frontier chains, written once
     # and never reset; [trace_prefix, len) is refilled from scratch at each threshold.
     trace_parent: jax.Array  # [trace_capacity] uint32, TRACE_INVALID at a chain root
-    trace_action: jax.Array  # [trace_capacity] ACTION_DTYPE
+    trace_action: jax.Array
     trace_ptr: jax.Array  # Scalar - next free dynamic arena row
     trace_overflow: jax.Array  # Scalar - nodes dropped because the arena was full
 
-    solution_state: Xtructurable  # Single state
-    start_state: Xtructurable  # Single state (start)
-    solution_cost: jax.Array  # Scalar - cost of solution
-    generated_count: jax.Array  # Scalar - count of generated nodes
-    solution_actions_arr: jax.Array  # [max_path_len]
-    solved_trace_index: jax.Array  # Scalar - arena row of the solution node
+    solution_state: Xtructurable
+    start_state: Xtructurable
+    solution_cost: jax.Array
+    generated_count: jax.Array
+    solution_actions_arr: jax.Array
+    solved_trace_index: jax.Array
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5, 6))
@@ -183,7 +178,6 @@ class IDSearchResult:
         """
         Initialize the IDSearchResult with an empty stack and an empty trace arena.
         """
-        # Define dynamic Item class
         if non_backtracking_steps < 0:
             raise ValueError("non_backtracking_steps must be non-negative")
 
@@ -213,8 +207,8 @@ class IDSearchResult:
         trace_parent = jnp.full((trace_capacity,), TRACE_INVALID, dtype=TRACE_INDEX_DTYPE)
         trace_action = jnp.full((trace_capacity,), ACTION_PAD, dtype=ACTION_DTYPE)
 
-        solution_state = statecls.default((1,))  # Placeholder batch-1
-        start_state = statecls.default((1,))  # Placeholder batch-1
+        solution_state = statecls.default((1,))
+        start_state = statecls.default((1,))
         solution_cost = jnp.array(jnp.inf, dtype=KEY_DTYPE)
         solution_actions = jnp.full((max_path_len,), ACTION_PAD, dtype=ACTION_DTYPE)
         generated_count = jnp.array(0, dtype=jnp.int32)
@@ -318,13 +312,11 @@ class IDSearchResult:
         if puzzle is None or solve_config is None:
             return [self.solution_state[0]]
 
-        # Reconstruct path
         path = [self.start_state[0]]
         actions = self._solution_actions()
 
-        curr = xnp.expand_dims(self.start_state[0], 0)  # (1, ...)
+        curr = xnp.expand_dims(self.start_state[0], 0)
 
-        # Prepare step function
         @jax.jit
         def step_fn(acc_state, action):
             act_batch = jnp.array([action], dtype=jnp.int32)
@@ -334,7 +326,6 @@ class IDSearchResult:
             )
             return next_states
 
-        # Iterate actions on host
         actions_cpu = jax.device_get(actions)
         for i, act in enumerate(actions_cpu):
             curr = step_fn(curr, act)
@@ -344,9 +335,6 @@ class IDSearchResult:
         return path
 
     def _solution_actions(self):
-        """
-        Return the list of actions to reach the solution.
-        """
         valid_mask = self.solution_actions_arr != ACTION_PAD
         return self.solution_actions_arr[valid_mask]
 
@@ -359,7 +347,6 @@ class IDSearchResult:
         *,
         puzzle: Puzzle | None = None,
     ) -> SolutionTrace:
-        """Return the host-side solution trace for CLI/evaluation adapters."""
         if not bool(jax.device_get(self.solved)):
             return SolutionTrace.unsolved()
 
@@ -392,7 +379,7 @@ class IDSearchResult:
         Pop the top `batch_size` items from the stack.
         Returns (updated_self, states, costs, depths, trails, trace_indices, valid_mask)
         """
-        # Ensure consistent index type for JAX
+        # Cast to int32 so subtracting batch_size below does not underflow uint32 stack.size.
         current_size = self.stack.size.astype(jnp.int32)
 
         new_stack, popped_items = self.stack.pop(batch_size)
@@ -407,7 +394,7 @@ class IDSearchResult:
         indices_range = jnp.arange(batch_size, dtype=jnp.int32)
         valid_mask = indices_range >= (batch_size - valid_count)
 
-        # Recast back to stack native size type if needed
+        # Restore stack.size dtype to preserve the while_loop carry pytree type.
         actual_new_size = jnp.maximum(0, current_size - batch_size).astype(self.stack.size.dtype)
         new_stack = new_stack.replace(size=actual_new_size)
 
@@ -525,26 +512,11 @@ class IDSearchResult:
         bound: chex.Array,
         count_generated: bool = True,
     ) -> "IDSearchResult":
-        """
-        Push allowed frontier nodes to stack and update next_bound.
-
-        Common logic extracted from both id_astar.py and id_qstar.py.
-        This method filters frontier nodes by bound, updates next_bound
-        with the minimum f-score of pruned nodes, and pushes valid nodes.
-
-        Args:
-            frontier: IDFrontier containing states to push
-            bound: Current cost bound (scalar)
-
-        Returns:
-            Updated IDSearchResult with nodes pushed and next_bound updated
-        """
+        """Push frontier nodes within ``bound`` onto the stack and update ``next_bound``."""
         fs = frontier.f_scores
 
-        # Filter nodes within bound
         keep_mask = jnp.logical_and(frontier.valid_mask, fs <= bound + 1e-6)
 
-        # Determine next_bound from pruned nodes
         prune_mask = jnp.logical_and(frontier.valid_mask, fs > bound + 1e-6)
         pruned_fs = jnp.where(prune_mask, fs, jnp.inf)
         min_pruned = jnp.min(pruned_fs).astype(KEY_DTYPE)
@@ -569,30 +541,14 @@ class IDSearchResult:
         valid: jax.Array,
         update_next_bound: bool = True,
     ) -> "IDSearchResult":
-        """
-        Expand valid nodes and push to stack, sorted by f-value descending (LIFO).
+        """Filter ``node_batch`` by ``bound``, sort descending by f-score for LIFO DFS, and push.
 
-        Common logic extracted from _expand_step() in both id_astar.py and id_qstar.py.
-        This method:
-        1. Filters nodes within the current bound
-        2. Compacts and sorts by f-value (descending for LIFO)
-        3. Optionally updates next_bound from pruned nodes
-        4. Pushes to stack
-
-        Args:
-            node_batch: IDNodeBatch containing states, costs, depths, actions, etc.
-            fs: f-scores for each node [flat_size]
-            valid: validity mask for each node [flat_size]
-            update_next_bound: If True, update next_bound from pruned nodes (ID-A* needs this,
-                               ID-Q* updates next_bound earlier in inner_body)
-
-        Returns:
-            Updated IDSearchResult with nodes pushed to stack
+        When ``update_next_bound`` is True, updates ``next_bound`` from the minimum
+        f-score of valid nodes pruned above ``bound``.
         """
         active_bound = self.bound
         keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
 
-        # Compact valid nodes
         packed_batch, packed_valid, _, packed_idx = compact_by_valid(node_batch, keep_mask)
         packed_fs = jnp.where(packed_valid, fs[packed_idx], jnp.inf)
 
@@ -603,7 +559,6 @@ class IDSearchResult:
 
         n_push = jnp.sum(packed_valid)
 
-        # Optionally update next_bound from pruned nodes
         sr = self
         if update_next_bound:
             prune_mask = jnp.logical_and(valid, fs > active_bound + 1e-6)
@@ -711,16 +666,13 @@ class IDSearchResult:
         """
         Initialize bound and stack from a pre-computed frontier.
         """
-        # Calculate F values for the frontier
         frontier_h = eval_fn(params, frontier.states, frontier.valid_mask).astype(KEY_DTYPE)
         frontier_f = (cost_weight * frontier.costs + frontier_h).astype(KEY_DTYPE)
         frontier = replace(frontier, f_scores=frontier_f)
 
-        # Initial Bound = min(f) of valid frontier nodes
         valid_fs = jnp.where(frontier.valid_mask, frontier.f_scores, jnp.inf)
         start_bound = jnp.min(valid_fs).astype(KEY_DTYPE)
 
-        # Update search result with bound and solution from frontier
         sr = replace(
             self,
             bound=start_bound,
@@ -733,7 +685,6 @@ class IDSearchResult:
             solved_trace_index=TRACE_INVALID,
         ).splice_frontier_trace(frontier)
 
-        # Push frontier nodes within bound to stack
         return sr.push_frontier_to_stack(frontier, start_bound), frontier
 
     @staticmethod
@@ -763,9 +714,6 @@ class IDSearchResult:
         solve_config: Puzzle.SolveConfig,
         batch_size: int,
     ):
-        """
-        Pop top batch, check for solution, and get neighbours.
-        """
         (
             sr,
             parents,
@@ -817,7 +765,6 @@ def apply_standard_deduplication(
     trail_indices: jax.Array,
     batch_size: int,
 ) -> jax.Array:
-    """Apply in-batch deduplication and non-backtracking; return the filtered valid mask."""
     unique_mask = xnp.unique_mask(
         flat_neighbours,
         key=flat_g,
@@ -848,10 +795,6 @@ def finalize_builder(
     show_compile_time: bool = False,
     warmup_inputs: tuple[Puzzle.SolveConfig, Puzzle.State] | None = None,
 ):
-    """
-    Finalize the search builder by JIT-compiling and optionally warming up.
-    """
-
     def search_fn(solve_config: Puzzle.SolveConfig, start: Puzzle.State, **kwargs):
         loop_state = init_loop(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(cond, body, loop_state)
@@ -877,12 +820,6 @@ def finalize_builder(
 
 
 def build_inner_cond():
-    """
-    Build inner loop condition function for ID search algorithms.
-
-    Returns a function that checks if the DFS stack has items and search is not solved.
-    """
-
     def inner_cond(loop_state: IDLoopState) -> jnp.ndarray:
         sr = loop_state.search_result
         has_items = sr.stack_ptr > 0
@@ -899,17 +836,12 @@ def build_outer_loop(
 ):
     """Build the IDA* threshold loop.
 
-    ``bound_step`` rounds each new threshold up onto a ``bound_step`` grid. Without it
-    the ladder advances to the next *distinct observed* f-value, and since keys are
-    ``float16`` and a neural heuristic emits a dense spread of them, the threshold
-    creeps by a single ULP (0.015625 around f=16..32) per pass. Each pass re-derives
-    the whole tree from the frontier, so on rubikscube-deepcubea at ``cost_weight=1.0``
-    that measured 108-178 thresholds where a step of 1.0 needs 5, for 4-22x fewer
-    generated nodes at an identical solution cost on 3 of 4 benchmark samples.
-
-    The grid is eps-admissible, not admissible: the returned cost can exceed the
-    optimum by less than ``bound_step`` (the 4th sample went 21 -> 23). Set
-    ``bound_step=0`` to restore the exact ladder.
+    ``bound_step`` rounds each new threshold up onto a ``bound_step`` grid. With
+    ``bound_step=0``, the ladder advances to the next distinct observed ``float16``
+    f-value; under a real-valued neural heuristic or Q-function, thresholds can creep
+    by a single ``float16`` ULP per pass and re-derive the whole tree from the
+    frontier each pass. A positive ``bound_step`` makes the search eps-admissible:
+    returned cost can exceed the optimum by less than ``bound_step``.
     """
     quantize_bound = bound_step > 0.0
 

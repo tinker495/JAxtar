@@ -1,5 +1,3 @@
-"""Shared utility functions for SlidePuzzle heuristic and Q-function."""
-
 import jax
 import jax.numpy as jnp
 from puxle import SlidePuzzle
@@ -11,18 +9,7 @@ def diff_pos(
     puzzle_size: int,
     base_xy: jax.Array,
 ) -> tuple[jax.Array, jax.Array]:
-    """Compute positional difference between current and target board states.
-
-    Args:
-        current: Current puzzle state.
-        target: Target puzzle state.
-        puzzle_size: Size of the puzzle grid.
-        base_xy: Pre-computed coordinate grid of shape (size*size, 2).
-
-    Returns:
-        Tuple of (diff, tpos) where diff is (base_xy - tpos) and tpos
-        holds the target positions for each tile in the current board.
-    """
+    """Return (diff, tpos) of shape (size*size, 2), where tpos is each current tile's target (row, col) and diff = base_xy - tpos."""
 
     def to_xy(index):
         return index // puzzle_size, index % puzzle_size
@@ -43,17 +30,7 @@ def linear_conflict(
     diff: jax.Array,
     puzzle_size: int,
 ) -> jax.Array:
-    """Compute the linear conflict count for the slide puzzle.
-
-    Args:
-        tpos: Target positions array of shape (size*size, 2).
-        not_empty: Boolean mask of non-empty tiles, shape (size*size,).
-        diff: Positional difference array of shape (size*size, 2).
-        puzzle_size: Size of the puzzle grid.
-
-    Returns:
-        Total linear conflict value (each conflict adds 2 to distance).
-    """
+    """Return the linear-conflict distance penalty (2 per resolved conflict) for flattened (size*size, ...) board inputs."""
     tpos = jnp.reshape(tpos, (puzzle_size, puzzle_size, 2))
     not_empty = not_empty[:, jnp.newaxis]
     inrows = jnp.reshape(not_empty * (diff == 0), (puzzle_size, puzzle_size, 2))
@@ -74,9 +51,7 @@ def linear_conflict(
         i, j = jnp.arange(puzzle_size), jnp.arange(puzzle_size)
         i = jnp.expand_dims(i, axis=0)
         j = jnp.expand_dims(j, axis=1)
-        conflict = jnp.sum(
-            _check_conflict(i, j) * inrow[i] * inrow[j], axis=1, dtype=jnp.uint8
-        )  # check conflict in rows
+        conflict = jnp.sum(_check_conflict(i, j) * inrow[i] * inrow[j], axis=1, dtype=jnp.uint8)
 
         max_idx = jnp.argmax(conflict)
         inrow = inrow.at[max_idx].set(False)

@@ -10,32 +10,17 @@ class TSPHeuristic(Heuristic):
         super().__init__(puzzle)
 
     def distance(self, solve_config: TSP.SolveConfig, current: TSP.State) -> jax.Array:
-        """Computes MST + 2-edge heuristic for the Traveling Salesman Problem (TSP).
-
-        Step-by-step explanation:
-        1. Unpack the `visited` mask to get the set of unvisited cities **R**.
-        2. If R is empty, the remaining cost is only the distance from *current position → start point*.
-        3. If R exists, sum the following three terms:
-           a. Shortest distance from current position to R (departure edge)
-           b. Minimum Spanning Tree (MST) weight induced by R (cost to connect the set)
-           c. Shortest distance from start point to R (final edge before return)
-
-        This value is a lower bound of the actual remaining tour cost and is admissible for A* search.
-        """
-        # Unpack visited mask and point index.
+        """Admissible MST + 2-edge lower bound for remaining TSP tour cost (min edge from current to unvisited + MST over unvisited + min edge from start to unvisited; or return-to-start when all cities are visited)."""
         visited = current.mask_unpacked.astype(jnp.bool_)
         current_idx = current.point
 
         distance_matrix = solve_config.InstanceContext.distance_matrix
         start_idx = solve_config.InstanceContext.start
 
-        # If every city has been visited, heuristic is simply the cost of
-        # returning to the start city (or 0 if we are already at the start).
         all_visited = jnp.all(visited)
         return_to_start = distance_matrix[current_idx, start_idx]
         if_distance = jnp.where(all_visited, return_to_start, 0.0)
 
-        # Helper to compute MST weight of the remaining (unvisited) nodes.
         def _mst_weight(dist_matrix: jax.Array, remaining_mask: jax.Array) -> jax.Array:
             """Compute the MST weight of the sub-graph induced by `remaining_mask`.
 
@@ -46,7 +31,6 @@ class TSPHeuristic(Heuristic):
             n = dist_matrix.shape[0]
             num_remaining = jnp.sum(remaining_mask)
 
-            # Quick exit when there is 0 or 1 vertex left.
             def _return_zero(_):
                 return jnp.float32(0.0)
 
@@ -84,21 +68,17 @@ class TSPHeuristic(Heuristic):
 
             return jax.lax.cond(num_remaining <= 1, _return_zero, _compute_mst, None)
 
-        # Compute heuristic only if not all visited.
         def not_solved():
             remaining_mask = ~visited
 
-            # 1) cheapest edge from current city to any remaining city
             d_current_to_remaining = jnp.where(
                 remaining_mask, distance_matrix[current_idx], jnp.inf
             )
             h1 = jnp.min(d_current_to_remaining)
 
-            # 2) cheapest edge from start city to any remaining city
             d_start_to_remaining = jnp.where(remaining_mask, distance_matrix[start_idx], jnp.inf)
             h2 = jnp.min(d_start_to_remaining)
 
-            # 3) MST of remaining cities
             h_mst = _mst_weight(distance_matrix, remaining_mask)
 
             return h1 + h2 + h_mst

@@ -1,5 +1,3 @@
-"""Tyro search commands generated from the Search Algorithm Catalog."""
-
 from dataclasses import asdict
 from functools import partial
 

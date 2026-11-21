@@ -1,51 +1,20 @@
 # Iterative Deepening A\* Command (`id_astar`)
 
-The `id_astar` command solves a puzzle using the Iterative Deepening A\* (IDA\*) search algorithm. IDA\* combines the space efficiency of depth-first search with the optimality of A\*. It performs a series of depth-first searches with increasing cost thresholds.
+Runs JIT-compiled batched Iterative Deepening A\* (IDA\*), performing bounded depth-first expansions from a batched initial frontier with increasing `f = w * g + h` thresholds.
 
 ## Usage
 
-The basic syntax for the `id_astar` command is:
-
 ```bash
 uv run id_astar [OPTIONS]
-```
-
-Example:
-
-```bash
 uv run id_astar -p rubikscube -nn
+uv run id_astar --help
 ```
 
-## Options
+`id_astar` uses **tyro**: both `--kebab-case` and `--snake_case` work, numeric flags accept `10M` / `2^20` suffixes, and omitted flags inherit defaults (`puzzle="n-puzzle"`, puzzle/search presets). Note that `-h` means `--hard`; use `--help` for the full option catalog.
 
-The `id_astar` command uses the same option groups as `astar`.
+## Key Semantics
 
-### Puzzle Options (`@puzzle_options`)
-
--   `-p, --puzzle`: Specifies the puzzle to solve.
--   `-pargs, --puzzle_args`: JSON string for additional puzzle arguments.
--   `-h, --hard`: Use a hard version of the puzzle.
--   `-s, --seeds`: Comma-separated list of seeds.
-
-### Search Options (`@search_options`)
-
--   `-m, --max_node_size`: Max nodes to explore (per iteration).
--   `-b, --batch_size`: Batch size for GPU processing.
--   `-w, --cost_weight`: Path cost weight.
--   `-pr, --pop_ratio`: Pop ratio.
--   `-vm, --vmap_size`: Parallel solve size via vmap.
--   `--debug`: Disable JIT.
--   `--profile`: Enable profiling.
--   `--show_compile_time`: Print compile time.
-
-### Heuristic Options (`@heuristic_options`)
-
--   `-nn, --neural_heuristic`: Use neural network heuristic.
--   `--param-path`: Path to heuristic parameters.
--   `--model-type`: Heuristic model type.
-
-### Visualization Options (`@visualize_options`)
-
--   `-vt, --visualize_terminal`: Render path in terminal.
--   `-vi, --visualize_imgs`: Generate images/GIF.
--   `-mt, --max_animation_time`: Max GIF duration.
+- **`--bound-step`** (default `1.0`): Rounds each iterative-deepening threshold up onto a grid of this size. Setting `0` restores the exact `float16` ladder, which under a real-valued neural heuristic can advance by a single `float16` ULP per pass and re-derive the search tree from the frontier each time.
+- **`--max-path-len`** (default `256`): Per-node action-history length for the frontier and hard depth cutoff (`depth <= max_path_len`), dominating frontier/trace buffer sizing. Lower it only above the puzzle's solution depth; setting it too low silently turns deeper solvable instances into unsolved.
+- **`-w, --cost-weight`** (default `0.6`): Weights path cost in `f(n) = w * g(n) + h(n)`.
+- **Artifacts**: `--profile` writes a `jax.profiler` trace to `tmp/tensorboard`; `-vi` / `--visualize-imgs` saves step PNGs and `animation.gif` under `tmp/<puzzle>_<timestamp>/`.

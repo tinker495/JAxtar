@@ -15,10 +15,6 @@ def plot_comparison_analysis(
     scatter_max_points: int = COMPARISON_SCATTER_MAX_POINTS,
     varying_params: Optional[List[str]] = None,
 ) -> dict[str, plt.Figure]:
-    """
-    Generates a dictionary of plots for comparing multiple evaluation runs.
-    Dynamically creates 1D, 2D, or faceted plots based on the number of varying parameters.
-    """
     if solved_df.empty:
         return {}
 
@@ -29,8 +25,6 @@ def plot_comparison_analysis(
         varying_params = []
 
     def create_faceted_boxplot(y_metric, y_label, base_title):
-        """Helper to create simple, 2D, or faceted plots."""
-        # 0 or 1 varying parameter
         if len(varying_params) <= 1:
             fig, ax = plt.subplots(figsize=COMPARISON_FIGSIZE)
             x_var = "run_label" if not varying_params else varying_params[0]
@@ -58,8 +52,6 @@ def plot_comparison_analysis(
             fig.tight_layout()
             return fig
 
-        # 2 or more varying parameters
-        # Sort params by cardinality (descending) to decide axes.
         sorted_params = sorted(varying_params, key=lambda p: plot_df[p].nunique(), reverse=True)
         p_x, p_hue = sorted_params[0], sorted_params[1]
         p_col = None
@@ -73,11 +65,9 @@ def plot_comparison_analysis(
                 axis=1,
             )
 
-        # Prepare for sorting categorical axes
         def get_sorted_unique(param_name):
             if param_name not in plot_df.columns:
                 return None
-            # Convert to string for consistent sorting
             plot_df[param_name] = plot_df[param_name].replace([np.inf, -np.inf], "inf").astype(str)
             try:
                 return sorted(
@@ -115,7 +105,7 @@ def plot_comparison_analysis(
             g.set_axis_labels(x_var=p_x, y_var=y_label_final)
             g.set_titles(col_template="{col_name}")
             fig = g.fig
-        else:  # 2 params
+        else:
             fig, ax = plt.subplots(figsize=COMPARISON_FIGSIZE)
             sns.boxplot(
                 data=plot_df,
@@ -137,7 +127,6 @@ def plot_comparison_analysis(
         fig.tight_layout(rect=(0, 0, 1, 0.97))
         return fig
 
-    # Generate plots for each metric
     plots["path_cost_comparison"] = create_faceted_boxplot(
         "path_cost", "Path Cost", "Path Cost Comparison"
     )
@@ -148,7 +137,6 @@ def plot_comparison_analysis(
         "nodes_generated", "Nodes Generated", "Generated Nodes Comparison"
     )
 
-    # Scatter plot remains the same, showing all combinations distinctly
     plots["nodes_vs_time_scatter"] = _plot_scatter_with_ellipses(
         solved_df=plot_df,
         x_col="nodes_generated",
@@ -164,7 +152,6 @@ def plot_comparison_analysis(
         varying_params=varying_params,
     )
 
-    # NEW PLOT: Scatter plot for nodes vs path cost
     plots["nodes_vs_path_cost_scatter"] = _plot_scatter_with_ellipses(
         solved_df=plot_df,
         x_col="nodes_generated",

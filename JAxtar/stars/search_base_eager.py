@@ -92,7 +92,6 @@ class EagerSearchResult(SearchResult):
                 - A boolean mask indicating which entries in the batch are valid
         """
 
-        # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
         delete_calls0 = jnp.array(1, dtype=jnp.int32)
         min_key = search_result.mask_unoptimal(min_key, min_val)
@@ -101,24 +100,19 @@ class EagerSearchResult(SearchResult):
         buffer = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
         buffer_val = Current.default((batch_size,))
 
-        # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
             search_result, key, _, _, _, _, _ = state
             pq_not_empty = search_result.priority_queue.size > 0
 
-            # Optimization: Stop if batch is mostly full (e.g. 90%)
-            # This prevents excessive sorting/merging for diminishing returns
+            # Stop once nearly full to avoid repeated sort/merge passes for diminishing returns.
             fill_ratio = jnp.mean(jnp.isfinite(key))
             not_full_enough = fill_ratio < POP_BATCH_FILLED_RATIO
 
-            # For pop_ratio = inf, we don't check threshold and fill the batch completely.
-            # For other cases, we can stop early, but the final filtering is done later.
-            # This loop is mainly for ensuring we have enough candidates to select from.
+            # Refill regardless of pop_ratio; ratio filtering runs later in select_pop_batch.
             return jnp.logical_and(pq_not_empty, not_full_enough)
 
         def _body(state):
             search_result, key, val, _, _, delete_calls, popped_total = state
-            # Pop new nodes from PQ
             (
                 search_result.priority_queue,
                 new_key,
@@ -127,7 +121,6 @@ class EagerSearchResult(SearchResult):
             new_key = search_result.mask_unoptimal(new_key, new_val)
             new_popped = jnp.sum(jnp.isfinite(new_key)).astype(jnp.int32)
 
-            # Merge current batch with new nodes, splitting into main and overflow
             main_keys, main_vals, overflow_keys, overflow_vals = _unique_sort_merge_and_split(
                 key, val, new_key, new_val, batch_size
             )
@@ -141,7 +134,6 @@ class EagerSearchResult(SearchResult):
                 popped_total + new_popped,
             )
 
-        # Run the loop until we have a full batch of the best available nodes
         (
             search_result,
             min_key,
@@ -156,9 +148,8 @@ class EagerSearchResult(SearchResult):
             (search_result, min_key, min_val, buffer, buffer_val, delete_calls0, popped0),
         )
 
-        # Put overflow nodes back into the PQ so they are never lost. Unconditional:
-        # an all-inf block is a cheap no-op for BGPQ.insert, whereas the lax.cond cost
-        # a host predicate readback plus a pass-through copy of the whole store per pop.
+        # Re-insert overflow unconditionally: an all-inf block is a cheap BGPQ.insert no-op,
+        # avoiding a lax.cond host readback and whole-store copy per pop.
         search_result.priority_queue = search_result.priority_queue.insert(
             overflow_keys, overflow_vals
         )
@@ -189,9 +180,6 @@ class EagerSearchResult(SearchResult):
         return search_result, min_val, final_process_mask
 
     def mask_unoptimal(search_result, min_key: jax.Array, min_current: Current) -> jax.Array:
-        """
-        Mask the unoptimal states.
-        """
         optimal = jnp.less_equal(min_current.cost, search_result.get_cost(min_current.hashidx))
         return jnp.where(optimal, min_key, jnp.inf)
 
@@ -219,16 +207,13 @@ def unique_sort(key: jax.Array, val: Current, size: int | None = None) -> tuple[
     return sorted_key, sorted_val
 
 
-# Helper to merge, sort, and split two batches of nodes
 def _unique_sort_merge_and_split(k1, v1, k2, v2, batch_size: int):
     merged_key = jnp.concatenate([k1, k2])
     merged_val = xnp.concatenate([v1, v2])
     merged_size = batch_size * 2
 
-    # Sort and remove duplicates from the combined batch
     sorted_key, sorted_val = unique_sort(merged_key, merged_val, merged_size)
 
-    # Split into a main batch and an overflow batch
     main_keys = sorted_key[:batch_size]
     main_vals = sorted_val[:batch_size]
     overflow_keys = sorted_key[batch_size:]

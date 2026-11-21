@@ -6,7 +6,6 @@ from huggingface_hub.errors import EntryNotFoundError
 
 
 def iter_model_path_candidates(filename: str):
-    """Yield plausible checkpoint path candidates in priority order."""
     seen: set[str] = set()
     candidates = [filename]
     path = Path(filename)
@@ -20,7 +19,6 @@ def iter_model_path_candidates(filename: str):
 
 
 def resolve_model_path(filename: str) -> str:
-    """Return the first locally available checkpoint path candidate."""
     for candidate in iter_model_path_candidates(filename):
         if os.path.exists(candidate):
             return candidate

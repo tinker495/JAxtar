@@ -1,51 +1,20 @@
 # Iterative Deepening Q\* Command (`id_qstar`)
 
-The `id_qstar` command solves a puzzle using the Iterative Deepening Q\* (ID-Q\*) search algorithm. This is an experimental algorithm that adapts the principles of IDA\* to use learned Q-values. It performs iterative deepening search guided by Q-value estimates.
+Runs JIT-compiled batched Iterative Deepening Q\* (ID-Q\*), performing bounded depth-first expansions from a batched initial frontier using parent Q-values for `f = w * g + Q(s, a)` without per-node heuristic caching.
 
 ## Usage
 
-The basic syntax for the `id_qstar` command is:
-
 ```bash
 uv run id_qstar [OPTIONS]
-```
-
-Example:
-
-```bash
 uv run id_qstar -p rubikscube -nn
+uv run id_qstar --help
 ```
 
-## Options
+`id_qstar` uses **tyro**: both `--kebab-case` and `--snake_case` work, numeric flags accept `10M` / `2^20` suffixes, and omitted flags inherit defaults (`puzzle="n-puzzle"`, puzzle/search presets). Note that `-h` means `--hard`; use `--help` for the full option catalog.
 
-The `id_qstar` command uses similar option groups to the `qstar` command.
+## Key Semantics
 
-### Puzzle Options (`@puzzle_options`)
-
--   `-p, --puzzle`: Specifies the puzzle to solve.
--   `-pargs, --puzzle_args`: JSON string for additional puzzle arguments.
--   `-h, --hard`: Use a hard version of the puzzle.
--   `-s, --seeds`: Comma-separated list of seeds.
-
-### Search Options (`@search_options`)
-
--   `-m, --max_node_size`: Max nodes to explore.
--   `-b, --batch_size`: Batch size.
--   `-w, --cost_weight`: Path cost weight.
--   `-pr, --pop_ratio`: Pop ratio.
--   `-vm, --vmap_size`: Parallel solve size via vmap.
--   `--debug`: Disable JIT.
--   `--profile`: Enable profiling.
--   `--show_compile_time`: Print compile time.
-
-### Q-Function Options (`@qfunction_options`)
-
--   `-nn, --neural_qfunction`: Use neural network Q-function.
--   `--param-path`: Path to Q-function parameters.
--   `--model-type`: Q-function model type.
-
-### Visualization Options (`@visualize_options`)
-
--   `-vt, --visualize_terminal`: Render path in terminal.
--   `-vi, --visualize_imgs`: Generate images/GIF.
--   `-mt, --max_animation_time`: Max GIF duration.
+- **`--bound-step`** (default `1.0`): Rounds each iterative-deepening threshold up onto a grid of this size. Setting `0` restores the exact `float16` ladder, which under a real-valued Q-function can advance by a single `float16` ULP per pass and re-derive the search tree from the frontier each time.
+- **`--max-path-len`** (default `256`): Per-node action-history length for the frontier and hard depth cutoff (`depth <= max_path_len`), dominating frontier/trace buffer sizing. Lower it only above the puzzle's solution depth; setting it too low silently turns deeper solvable instances into unsolved.
+- **`-w, --cost-weight`** (default `0.6`): Weights path cost in `f = w * g(n) + Q(s, a)`.
+- **Artifacts**: `--profile` writes a `jax.profiler` trace to `tmp/tensorboard`; `-vi` / `--visualize-imgs` saves step PNGs and `animation.gif` under `tmp/<puzzle>_<timestamp>/`.

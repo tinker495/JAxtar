@@ -45,7 +45,6 @@ def _batched_path_dists(heuristic, heuristic_params, states: List) -> List[float
 
 
 def _batched_path_q_dists(q_fn, q_params, states: List) -> List[float]:
-    """Evaluate min-a Q(s, a) for a whole path in one jitted batched call."""
     n = len(states)
     pad = -n % _PATH_DIST_BUCKET
     batch = xnp.concatenate(list(states) + [states[-1]] * pad)
@@ -70,7 +69,6 @@ def build_path_steps_from_trace(
     heuristic=None,
     q_fn=None,
 ) -> List[PathStep]:
-    """Convert search-owned solution trace into display-oriented path steps."""
     if not solution_trace.solved:
         return []
 
@@ -145,13 +143,7 @@ def _path_dists(
     q_fn,
     q_fn_params,
 ) -> Sequence[float | None] | None:
-    """Resolve h (or min-a Q) for every path state in one batched, jitted call.
-
-    Per-state `heuristic.distance` / `q_fn.q_value` are eager model applies -- ~62 ms
-    each on the 14.5M-param rubikscube net -- so a search family whose trace carries no
-    dists (ID-*, bi-*) paid ~1.4 s of pure dispatch per solved sample, an order of
-    magnitude more than the search it was reporting.
-    """
+    """Prefer trace-supplied dists; otherwise evaluate in one batched jitted call to avoid eager per-state model dispatch overhead."""
     if dists is not None and len(dists) >= len(states):
         return [None if v is None else float(v) for v in list(dists)[: len(states)]]
     if heuristic is not None:

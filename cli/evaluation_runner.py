@@ -111,7 +111,7 @@ def _plot_per_seed_expansion(
                 sub_dir="expansion_plots",
             )
         except (ValueError, RuntimeError, AttributeError, OSError) as e:
-            # Semantic tree plot is best-effort; mirror prior behaviour.
+            # Semantic tree plot is best-effort; do not fail the evaluation run.
             print(f"Warning: Failed to generate semantic search tree plot: {e}")
 
 
@@ -283,7 +283,6 @@ class EvaluationRunner:
                 r["cost_weight"] = cw
                 r["batch_size"] = bs
 
-            # Calculate and store heuristic metrics
             heuristic_metrics = calculate_heuristic_metrics(results)
             if heuristic_metrics:
                 config["heuristic_metrics"] = heuristic_metrics
@@ -293,7 +292,6 @@ class EvaluationRunner:
                 if benchmark_metrics:
                     config["benchmark_metrics"] = benchmark_metrics
 
-                    # Log metrics to artifact manager
                     for metric_key in (
                         "avg_optimal_cost",
                         "avg_path_cost",
@@ -318,7 +316,6 @@ class EvaluationRunner:
             am.save_path_states(results)
 
             solved_df = pd.DataFrame([r for r in results if r["solved"]])
-            # Log final success rate based on results
             total = len(results)
             final_success_rate = (len(solved_df) / total) * 100 if total > 0 else 0.0
             am.log_scalar("success_rate", final_success_rate)
@@ -770,7 +767,6 @@ class EvaluationRunner:
                     pbar_desc_dict[cost_key] = cost_label
             pbar.set_description("Evaluating", desc_dict=pbar_desc_dict)
 
-            # Early stopping logic
             if (
                 self.eval_options.use_early_stopping
                 and (i + 1) >= self.eval_options.early_stop_patience

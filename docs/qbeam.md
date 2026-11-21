@@ -1,74 +1,20 @@
 # Q-Beam Search Command (`qbeam`)
 
-The `qbeam` command solves a puzzle using a variation of Beam Search guided by a Q-function (Q-Beam). Instead of a standard heuristic $h(n)$, it uses the learned Q-values $Q(s, a)$ to score and select nodes. This allows for beam search strategies driven by reinforcement learning models.
+Runs JIT-compiled batched Beam Search guided by a Q-function without hash tables or priority queues, retaining only a fixed-width frontier at each depth.
 
 ## Usage
 
-The basic syntax for the `qbeam` command is:
-
 ```bash
 uv run qbeam [OPTIONS]
-```
-
-Example:
-
-```bash
 uv run qbeam -p rubikscube -nn -b 5000
+uv run qbeam --help
 ```
 
-## Options
+`qbeam` uses **tyro**: both `--kebab-case` and `--snake_case` work, numeric flags accept `10M` / `2^20` suffixes, and omitted flags inherit defaults (`puzzle="n-puzzle"`, puzzle/search presets). Note that `-h` means `--hard`; use `--help` for the full option catalog.
 
-The `qbeam` command combines beam search mechanics with Q-function options.
+## Key Semantics
 
-### Puzzle Options (`@puzzle_options`)
-
--   `-p, --puzzle`: Specifies the puzzle to solve.
-    -   Type: `Choice`
-    -   Default: `n-puzzle`
--   `-pargs, --puzzle_args`: JSON string for additional puzzle-specific arguments.
-    -   Type: `String`
--   `-h, --hard`: If available, use a "hard" version of the puzzle.
-    -   Type: `Flag`
--   `-s, --seeds`: A comma-separated list of seeds for generating initial puzzle states.
-    -   Type: `String`
-    -   Default: `"0"`
-
-### Search Options (`@search_options`)
-
-For Q-Beam Search:
-
--   `-b, --batch_size`: **Critical.** Sets the **Beam Width** (or capacity) for the search.
-    -   Type: `Integer`
-    -   Default: `10000`
--   `-m, --max_node_size`: The maximum number of nodes to explore.
-    -   Type: `String`
--   `-w, --cost_weight`: The weight `w` for the path cost in the priority calculation.
-    -   Type: `Float`
--   `-pr, --pop_ratio`: Ratio for popping nodes.
-    -   Type: `Float`
--   `-vm, --vmap_size`: The number of different initial states to solve in parallel.
-    -   Type: `Integer`
--   `--debug`: Disables JIT compilation.
-    -   Type: `Flag`
--   `--profile`: Enables profiler.
-    -   Type: `Flag`
--   `--show_compile_time`: Prints compilation time.
-    -   Type: `Flag`
-
-### Q-Function Options (`@qfunction_options`)
-
--   `-nn, --neural_qfunction`: Use a pre-trained neural network as the Q-function.
-    -   Type: `Flag`
--   `--param-path`: Path to the Q-function parameter file.
-    -   Type: `String`
--   `--model-type`: Type of the Q-function model.
-    -   Type: `String`
-
-### Visualization Options (`@visualize_options`)
-
--   `-vt, --visualize_terminal`: Renders the solution path in the terminal.
-    -   Type: `Flag`
--   `-vi, --visualize_imgs`: Generates images and GIF for the solution.
-    -   Type: `Flag`
--   `-mt, --max_animation_time`: Max duration for GIF.
-    -   Type: `Integer`
+- **`-b, --batch-size`** (default `10000`): Sets the **Beam Width** (and caps depth at `ceil(max_node_size / beam_width)`).
+- **`-w, --cost-weight`** (default `0.6`): Weights child path cost in `f = w * g(s') + (Q(s, a) - c(s, a))`.
+- **`-pr, --pop-ratio`** (default `inf`): Applies multiplicative slack `best_score * pop_ratio` when pruning the beam (preserving at least `min_keep` valid candidates up to `beam_width`); `inf` keeps the top `beam_width`.
+- **Artifacts**: `--profile` writes a `jax.profiler` trace to `tmp/tensorboard`; `-vi` / `--visualize-imgs` saves step PNGs and `animation.gif` under `tmp/<puzzle>_<timestamp>/`.

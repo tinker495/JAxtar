@@ -1,5 +1,3 @@
-"""Shared distance-style neural trainer."""
-
 from __future__ import annotations
 
 import math
@@ -70,7 +68,6 @@ def distance_train_builder(
     loss_args: dict[str, Any] | None = None,
     replay_ratio: int = 1,
 ):
-    """Build the shared train loop for heuristic and Q-function distance models."""
     train_loss = build_distance_train_loss(
         model, preproc_fn, loss_type, loss_args, n_devices=n_devices
     )

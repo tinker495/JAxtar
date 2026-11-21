@@ -9,7 +9,6 @@ from helpers.formatting import human_format
 
 
 def create_summary_panel(results: list[dict], metrics: Optional[Dict[str, float]] = None) -> Panel:
-    """Creates a rich Panel with a summary of evaluation results."""
     summary_table = Table(
         title="[bold cyan]Evaluation Summary[/bold cyan]",
         show_header=True,
@@ -87,7 +86,6 @@ def create_summary_panel(results: list[dict], metrics: Optional[Dict[str, float]
 
 
 def create_comparison_summary_panel(combined_df: pd.DataFrame) -> Panel:
-    """Creates a rich Panel with a summary of comparison results."""
     summary_table = Table(
         title="[bold cyan]Evaluation Comparison Summary[/bold cyan]",
         show_header=True,
@@ -107,9 +105,7 @@ def create_comparison_summary_panel(combined_df: pd.DataFrame) -> Panel:
         num_solved = len(solved_group)
         success_rate = (num_solved / num_puzzles) * 100 if num_puzzles > 0 else 0
 
-        # Heuristic metrics are stored per-run, not per-row. We need to get them from the config.
-        # This requires a bit of a workaround since the config isn't directly passed here.
-        # We assume the comparison report generation step will add these to the dataframe.
+        # Heuristic metrics are per-run values merged onto each row by ComparisonGenerator, so iloc[0] is constant across the group.
         r_squared = None
         if "heuristic_metrics.r_squared" in group.columns:
             r_squared = group["heuristic_metrics.r_squared"].iloc[0]

@@ -65,17 +65,14 @@ def setup_optimizer(
     lr_init: float = 1e-3,
     weight_decay_size: float = 0.001,
 ) -> tuple[optax.GradientTransformation, optax.OptState]:
-    # Create the main decay schedule, making it conditional
     is_no_wd = weight_decay_size == 0.0
     in_prodigy = "prodigy" in optimizer_name
     in_schedule_free = "schedule_free" in optimizer_name
 
-    # Add warmup to the learning rate schedule
     lr = lr_init * num_devices if not in_prodigy else 1.0
 
     warmup_steps = one_iter_size
 
-    # Create a warmup schedule that linearly increases from 0 to init_value
     warmup_schedule = optax.linear_schedule(
         init_value=1e-6, end_value=lr, transition_steps=warmup_steps
     )
@@ -86,7 +83,6 @@ def setup_optimizer(
             5000,
             0.995,
         )
-        # Combine the schedules
         lr_schedule = optax.join_schedules(
             schedules=[warmup_schedule, decay_schedule], boundaries=[warmup_steps]
         )
@@ -98,7 +94,6 @@ def setup_optimizer(
 
     def mask_batch_stat_or_bias(params):
         def mask_fn(path, value):
-            # Check if 'batch_stats' is part of any dictionary key in the path
             is_batch_stat = any(
                 isinstance(entry, jax.tree_util.DictKey) and "batch_stats" in entry.key
                 for entry in path
@@ -130,7 +125,6 @@ def setup_optimizer(
     optimizer = optax.inject_hyperparams(optimizer_fn)(lr_schedule)
     opt_state = optimizer.init(params)
 
-    # test get eval params
     eval_params = get_eval_params(opt_state, params)
     assert eval_params is not None, "eval_params is None"
     return optimizer, opt_state

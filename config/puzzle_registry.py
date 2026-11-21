@@ -574,8 +574,6 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
     ),
 }
 
-# --- Sized variants registered below for clarity and explicit selection ---
-
 
 def _sized_bundle(
     base: PuzzleBundle,
@@ -586,10 +584,6 @@ def _sized_bundle(
     hard_cls=None,
     hard_initial_shuffle=None,
 ) -> PuzzleBundle:
-    """Create a size-bound copy of a base PuzzleBundle.
-
-    This preserves other bundle fields (heuristic configs, q-function configs, etc.).
-    """
     sized_puzzle = PuzzleConfig(callable=puzzle_cls, kwargs={"size": size, **kwargs})
     if hard_cls is not None:
         sized_puzzle_hard = PuzzleConfig(
@@ -608,7 +602,6 @@ def _sized_bundle(
     )
 
 
-# n-puzzle families (3x3, 4x4, 5x5, 6x6, 7x7) with size-specific k_max defaults
 _NP_KMAX = {3: 100, 4: 500, 5: 500, 6: 500, 7: 500}
 _NP_BENCHMARKS = {
     4: "slide15-deepcubea",
@@ -634,7 +627,6 @@ for _s in [3, 4, 5, 6, 7]:
     bundle_r.eval_benchmark = _NP_BENCHMARKS.get(_s)
     puzzle_bundles[f"n-puzzle-random-{_s}"] = bundle_r
 
-# LightsOut common sizes share hard initial shuffle policy and size-specific k_max.
 _LO_KMAX = {5: 50, 7: 70}
 for _s in [5, 7]:
     bundle_l = _sized_bundle(
@@ -659,7 +651,6 @@ for _s in [5, 7]:
     puzzle_bundles[f"lightsout-random-{_s}"] = bundle_lr
 
 
-# Rubik's Cube size 3 with size-specific k_max
 _RC_KMAX = {3: 26, 4: 45, 5: 65}
 _RC_UQTM_BENCHMARKS = {
     3: "rubikscube-santa333",
