@@ -43,15 +43,12 @@ def minibatch_datasets(
 
 
 def calculate_dataset_params(dataset_size: int, k_max: int, max_batch_size: int):
-    """Calculate optimal minibatch size and shuffle parameters for dataset generation."""
-    # Calculate optimal nn_minibatch_size
-    # It must be <= max_batch_size and divide dataset_size
+    # nn_minibatch_size must divide dataset_size evenly (for static reshape) and stay <= max_batch_size.
     n_batches = math.ceil(dataset_size / max_batch_size)
     while dataset_size % n_batches != 0:
         n_batches += 1
     nn_minibatch_size = dataset_size // n_batches
 
-    # Calculate optimal shuffle_parallel and steps to respect max_batch_size
     max_shuffle_parallel = max(1, int(max_batch_size / k_max))
     needed_trajectories = math.ceil(dataset_size / k_max)
     shuffle_parallel = min(needed_trajectories, max_shuffle_parallel)
@@ -75,7 +72,6 @@ def prepare_shuffled_path_sampling(
     create_target_shuffled_path: Callable,
     fixed_target_error: str | None = None,
 ):
-    """Build the shared shuffled-path sampler used by distance dataset builders."""
     if non_backtracking_steps < 0:
         raise ValueError("non_backtracking_steps must be non-negative")
     non_backtracking_steps = int(non_backtracking_steps)
@@ -128,27 +124,21 @@ def compute_diffusion_targets(
     inverse_state_indices: chex.Array | None = None,  # [N] mapping row to unique state group
     num_unique_states: int | None = None,
 ):
-    """Compute diffusion targets using Bellman propagation along trajectories.
-
-    This unifies the logic for state-based (heuristic) and state-action-based (Q) diffusion.
-    """
+    """Propagate Bellman min-cost targets along trajectories (state-level when inverse_state_indices is None; state-action-level otherwise)."""
     initial_values = jnp.asarray(initial_values)
     is_solved = jnp.asarray(is_solved)
     action_costs = jnp.asarray(action_costs)
     raw_move_costs = jnp.asarray(raw_move_costs)
     dataset_size = initial_values.shape[0]
 
-    # Ensure values are at least 2D [N, D] for consistent handling
     is_1d = initial_values.ndim == 1
     if is_1d:
         initial_values = initial_values[:, jnp.newaxis]
         action_costs = action_costs[:, jnp.newaxis]
 
-    # Always ensure is_solved matches initial_values dimensions for broadcasting
     if is_solved.ndim == 1:
         is_solved = is_solved[:, jnp.newaxis]
 
-    # 1. Edge cost alignment logic
     idx = jnp.arange(dataset_size, dtype=parent_indices.dtype)
     valid_parent = (parent_indices >= 0) & (parent_indices < dataset_size)
     safe_parent_indices = jnp.where(valid_parent, parent_indices, dataset_size)
@@ -169,7 +159,6 @@ def compute_diffusion_targets(
     parent_aligned_costs = padded_action_costs[safe_parent_indices]
     child_aligned_costs = action_costs
 
-    # Error checks for cost alignment
     err_child = jnp.abs(raw_move_costs[:, jnp.newaxis] - (parent_move_costs + child_aligned_costs))
     err_parent = jnp.abs(
         raw_move_costs[:, jnp.newaxis] - (parent_move_costs + parent_aligned_costs)
@@ -215,18 +204,14 @@ def compute_diffusion_targets(
             parent_state_group = inverse_state_indices_padded[safe_parent_indices]
             v_parents = padded_state_min_v[parent_state_group]
         else:
-            # Heuristic: simple propagation
             collapsed_padded_v = jnp.pad(current_v, ((0, 1), (0, 0)), constant_values=jnp.inf)
             v_parents = collapsed_padded_v[safe_parent_indices]
 
         new_v = edge_costs + v_parents
         improved_v = jnp.minimum(current_v, new_v)
 
-        # [Goal State Anchoring]
         improved_v = jnp.where(is_solved, 0.0, improved_v)
 
-        # [Utilizing State Identity]
-        # Consolidate improvements across identical states immediately
         unique_improved = _collapse(improved_v, inverse_indices, num_unique)
         improved_v = unique_improved[inverse_indices]
 
@@ -251,17 +236,10 @@ def wrap_dataset_runner(
     should_use_diffusion_fn: Callable[[int], bool],
     n_devices: int = 1,
 ):
-    """Wrap dataset extraction into a runner that handles pmap and diffusion warmup.
-
-    The returned function accepts a TrainStateExtended object and extracts:
-    - target_params from state.target_params and state.target_batch_stats
-    - eval_params from state.params (with batch_stats if present)
-    """
     from train_util.optimizer import get_eval_params
     from train_util.train_state import TrainStateExtended
 
     def _extract_params_from_state(state: TrainStateExtended) -> tuple[dict, dict]:
-        """Extract target_params and eval_params from TrainStateExtended."""
         target_params = {"params": state.target_params}
         eval_params = {"params": get_eval_params(state.opt_state, state.params)}
 
@@ -328,11 +306,6 @@ def _offset_parent_indices_for_scan(parent_indices: chex.Array) -> chex.Array:
 
 
 def flatten_scanned_paths(paths: dict[str, chex.Array], dataset_size: int) -> dict[str, chex.Array]:
-    """Flatten `jax.lax.scan` outputs of shuffled paths into a dataset batch.
-
-    Handles `parent_indices` specially: when multiple chunks are concatenated, parent pointers are
-    offset so they continue to reference the correct row after flattening.
-    """
     dataset_size = int(dataset_size)
     out = dict(paths)
     if "parent_indices" in out:

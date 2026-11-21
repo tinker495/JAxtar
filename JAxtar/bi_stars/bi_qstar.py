@@ -105,8 +105,6 @@ def _bi_qstar_loop_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> BiLoopStateWithStates:
-        """Initialize bidirectional Q* search from start and goal states."""
-
         bi_result: BiDirectionalSearchResult[DeferredSearchResult] = build_bi_search_result(
             partial(
                 DeferredSearchResult.build,
@@ -153,7 +151,6 @@ def _bi_qstar_loop_builder(
         )
 
     def loop_condition(loop_state: BiLoopStateWithStates) -> chex.Array:
-        """Check if search should continue."""
         return common_bi_loop_condition(
             loop_state.bi_result,
             loop_state.filled_forward,
@@ -430,9 +427,7 @@ def bi_qstar_builder(
         batch_size: Number of states to process in parallel per direction
         max_nodes: Combined shared hash-table capacity for BOTH directions (forward and
             backward share one table; this is the total node budget, not per-direction)
-        pop_ratio: Ratio controlling beam width
-        cost_weight: Weight for path cost in f = cost_weight * g + Q(s,a)
-        show_compile_time: If True, displays compilation time
+        spec: Shared build-time tuning knobs (`pop_ratio`, `cost_weight`, etc.).
         look_ahead_pruning: Enable look-ahead pruning optimization
         pessimistic_update: Use max Q-value for duplicates (True) or min (False)
         backward_mode: Backward-direction scoring mode:
@@ -500,14 +495,11 @@ def bi_qstar_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> BiDirectionalSearchResult:
-        """Perform bidirectional Q* search."""
         loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 
         bi_result = loop_state.bi_result
 
-        # With the shared table a meeting always carries valid slots on both sides, so
-        # no edge-only materialization is needed before stamping solved fields.
         return stamp_bi_solved_from_meeting(bi_result)
 
     return compile_search_builder(bi_qstar, puzzle, spec.show_compile_time, spec.warmup_inputs)

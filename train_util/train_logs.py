@@ -32,7 +32,6 @@ class TrainLogInfo:
         if not self.log_histogram:
             return self.name
 
-        # Fallback: Metric/log -> Metric/mean_log
         parts = self.name.split("/")
         parts[-1] = "mean_" + parts[-1]
         return "/".join(parts)

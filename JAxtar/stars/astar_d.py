@@ -215,9 +215,6 @@ def astar_d_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> DeferredSearchResult:
-        """
-        astar_d is the implementation of the A* with deferred search algorithm.
-        """
         loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
         search_result = loop_state.search_result

@@ -157,10 +157,9 @@ class DeferredSearchResult(SearchResult):
         """
 
         def _expand_and_filter(search_result, key, val):
-            """Helper to expand nodes, lookup in hashtable, and filter unoptimal ones."""
             filled = jnp.isfinite(key)
             parent_states = search_result.get_state(val.parent.hashidx)
-            parent_actions = val.parent.action  # [batch_size]
+            parent_actions = val.parent.action
             parent_costs = search_result.get_cost(val.parent.hashidx)
 
             if is_backward:
@@ -168,7 +167,7 @@ class DeferredSearchResult(SearchResult):
                 # that refer to the i-th inverse neighbour. Child generation must therefore
                 # use inverse neighbours and gather by action index.
                 if puzzle.is_reversible:
-                    inv_map = puzzle.inverse_action_map  # [action_size]
+                    inv_map = puzzle.inverse_action_map
                     inv_actions = inv_map[parent_actions.astype(jnp.int32)]
                     # Use batched_get_actions for efficient O(batch) expansion
                     current_states, ncosts = puzzle.batched_get_actions(
@@ -186,7 +185,7 @@ class DeferredSearchResult(SearchResult):
             else:
                 current_states, ncosts = puzzle.batched_get_actions(
                     solve_config, parent_states, parent_actions, filled
-                )  # [batch_size]
+                )
 
             current_costs = (parent_costs + ncosts).astype(KEY_DTYPE)
             current_dists = (val.dist if use_heuristic else (val.dist - ncosts)).astype(KEY_DTYPE)
@@ -219,13 +218,9 @@ class DeferredSearchResult(SearchResult):
             )
 
             old_costs = search_result.get_cost(current_hash_idxs)
-            # Only consider nodes that are either:
-            # 1. Not found in the hash table (new nodes), or
-            # 2. Found but have better cost than existing
             better_cost_mask = jnp.less(current_costs, old_costs)
             optimal_mask = unique_mask & (jnp.logical_or(~found, better_cost_mask))
 
-            # Mask unoptimal keys with infinity
             filtered_key = jnp.where(optimal_mask, key, jnp.inf)
 
             return (
@@ -237,13 +232,11 @@ class DeferredSearchResult(SearchResult):
                 current_probe,
             )
 
-        # 1. Get an initial batch from the Priority Queue (PQ)
         search_result.priority_queue, min_key, min_val = search_result.priority_queue.delete_mins()
         delete_calls0 = jnp.array(1, dtype=jnp.int32)
         batch_size = search_result.batch_size
         stack_size = batch_size * 2
 
-        # Initial expansion and filtering
         (
             search_result,
             current_states,
@@ -254,24 +247,21 @@ class DeferredSearchResult(SearchResult):
         ) = _expand_and_filter(search_result, min_key, min_val)
         popped0 = jnp.sum(jnp.isfinite(min_key)).astype(jnp.int32)
 
-        # Apply unique mask to initial batch to maintain invariant
         filled = jnp.isfinite(min_key)
         unique_mask = xnp.unique_mask(current_states, current_costs, filled)
         min_key = jnp.where(unique_mask, min_key, jnp.inf)
 
-        # Initialize buffer for overflow (inf)
         buffer_key = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
         buffer_val = ParentWithCosts.default((batch_size,))
         # Carry the per-state hash probe alongside states through the merge/sort loop
         # so the final batch's probe stays aligned with final_states for reuse at insert.
         buffer_probe = jax.tree.map(jnp.zeros_like, current_probe)
 
-        # 2. Loop to fill the batch if it's not full of valid nodes
         def _cond(state):
             search_result, _, _, _, key, _, _, _, _, _, _, _ = state
             pq_not_empty = search_result.priority_queue.size > 0
 
-            # Optimization: Stop if batch is mostly full (e.g. 90%)
+            # Stop once nearly full to avoid repeated sort/merge passes for diminishing returns.
             fill_ratio = jnp.mean(jnp.isfinite(key))
             not_full_enough = fill_ratio < POP_BATCH_FILLED_RATIO
 
@@ -293,14 +283,12 @@ class DeferredSearchResult(SearchResult):
                 _buffer_probe,
             ) = state
 
-            # Pop new nodes from PQ
             (
                 search_result.priority_queue,
                 new_key,
                 new_val,
             ) = search_result.priority_queue.delete_mins()
 
-            # Expand and filter new nodes
             (
                 search_result,
                 new_states,
@@ -311,30 +299,24 @@ class DeferredSearchResult(SearchResult):
             ) = _expand_and_filter(search_result, new_key, new_val)
             new_popped = jnp.sum(jnp.isfinite(new_key)).astype(jnp.int32)
 
-            # Merge with existing batch
             stack_states = xnp.concatenate((current_states, new_states))
             stack_costs = jnp.concatenate((costs, new_costs))
             stack_dists = jnp.concatenate((dists, new_dists))
             stack_key = jnp.concatenate((key, new_key))
             stack_val = xnp.concatenate((val, new_val))
-            # Concatenate the hash probes in lockstep with the states.
             stack_probe = jax.tree.map(lambda a, b: jnp.concatenate([a, b]), probe, new_probe)
 
-            # Deduplicate across the entire stack (old + new)
             stack_filled = jnp.isfinite(stack_key)
             unique_mask = xnp.unique_mask(stack_states, stack_costs, stack_filled)
             stack_key = jnp.where(unique_mask, stack_key, jnp.inf)
 
-            # Sort to keep best candidates
             sorted_key, sorted_idx = jax.lax.sort_key_val(stack_key, jnp.arange(stack_size))
             sorted_val = stack_val[sorted_idx]
             sorted_states = stack_states[sorted_idx]
             sorted_costs = stack_costs[sorted_idx]
             sorted_dists = stack_dists[sorted_idx]
-            # Permute the probe by the same order so probe[i] stays the hash of states[i].
             sorted_probe = jax.tree.map(lambda a: a[sorted_idx], stack_probe)
 
-            # Split back into current batch and overflow buffer
             return (
                 search_result,
                 sorted_states[:batch_size],
@@ -342,15 +324,14 @@ class DeferredSearchResult(SearchResult):
                 sorted_dists[:batch_size],
                 sorted_key[:batch_size],
                 sorted_val[:batch_size],
-                sorted_key[batch_size:],  # New buffer (overflow)
-                sorted_val[batch_size:],  # New buffer val
+                sorted_key[batch_size:],
+                sorted_val[batch_size:],
                 delete_calls + jnp.array(1, dtype=jnp.int32),
                 popped_total + new_popped,
                 jax.tree.map(lambda a: a[:batch_size], sorted_probe),
                 jax.tree.map(lambda a: a[batch_size:], sorted_probe),
             )
 
-        # Run the loop until we have a full batch of the best available nodes
         (
             search_result,
             final_states,
@@ -385,9 +366,8 @@ class DeferredSearchResult(SearchResult):
 
         final_parents = final_val.parent
 
-        # Put overflow nodes back into the PQ so they are never lost. Unconditional:
-        # an all-inf block is a cheap no-op for BGPQ.insert, whereas the lax.cond cost
-        # a host predicate readback plus a pass-through copy of the whole store per pop.
+        # Re-insert overflow unconditionally: an all-inf block is a cheap BGPQ.insert no-op,
+        # avoiding a lax.cond host readback and whole-store copy per pop.
         search_result.priority_queue = search_result.priority_queue.insert(
             overflow_keys, overflow_vals
         )
@@ -522,17 +502,14 @@ def build_deferred_loop_body(
         action_size = search_result.action_size
         sr_batch_size = search_result.batch_size
         flat_size = action_size * sr_batch_size
-        idx_tiles = xnp.tile(hash_idx, (action_size, 1))  # [action_size, batch_size, ...]
+        idx_tiles = xnp.tile(hash_idx, (action_size, 1))
         action = jnp.tile(
             jnp.arange(action_size, dtype=ACTION_DTYPE)[:, jnp.newaxis],
             (1, sr_batch_size),
-        )  # [n_neighbours, batch_size]
-        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))  # [action_size, batch_size]
-        filled_tiles = jnp.tile(
-            filled[jnp.newaxis, :], (action_size, 1)
-        )  # [action_size, batch_size]
+        )
+        costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))
+        filled_tiles = jnp.tile(filled[jnp.newaxis, :], (action_size, 1))
 
-        # Inject standard computations, delegate to eval_fn for Q-value / Heuristic specific logic
         neighbour_keys, dists, optimal_mask = eval_fn(
             puzzle,
             search_result,
@@ -556,7 +533,6 @@ def build_deferred_loop_body(
             optimal_mask.flatten(), neighbour_keys.flatten(), jnp.inf
         )
 
-        # Sort to keep best candidates
         sorted_key, sorted_idx = jax.lax.sort_key_val(
             flattened_neighbour_keys, jnp.arange(flat_size)
         )

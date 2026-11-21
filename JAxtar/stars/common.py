@@ -35,7 +35,7 @@ from JAxtar.solution_trace import (
     action_pad_int,
 )
 
-POP_BATCH_FILLED_RATIO = 0.99  # ratio of batch to be filled before popping
+POP_BATCH_FILLED_RATIO = 0.99
 
 SearchResultT = TypeVar("SearchResultT", bound="SearchResult")
 
@@ -181,8 +181,8 @@ def search_continues(
     filled: jax.Array,
 ) -> jax.Array:
     """Loop condition shared by both families: work remains, room remains, nothing solved."""
-    size_cond1 = filled.any()  # queue is not empty
-    size_cond2 = search_result.hashtable.size < search_result.capacity  # hash table is not full
+    size_cond1 = filled.any()
+    size_cond2 = search_result.hashtable.size < search_result.capacity
     size_cond = jnp.logical_and(size_cond1, size_cond2)
 
     solved = puzzle.batched_is_solved(solve_config, states)
@@ -281,20 +281,20 @@ class SearchResult:
         solved_idx (Current): Index of the solved state in the hash table
     """
 
-    hashtable: HashTable  # hash table
-    priority_queue: BGPQ  # priority queue
-    action_size: int  # number of actions available from each state
-    score_limit_multiplier: jax.Array  # candidate score limit relative to the best score
-    min_pop: int  # minimum number of states to pop from the priority queue
+    hashtable: HashTable
+    priority_queue: BGPQ
+    action_size: int
+    score_limit_multiplier: jax.Array
+    min_pop: int
     fixed_batch_pop: bool  # process every valid candidate without a ratio limit
-    cost: jax.Array  # cost array - g value
-    dist: jax.Array  # distance array - calculated heuristic or Q value
-    parent: Parent  # parent array
-    solved: jax.Array  # solved array
-    solved_idx: Current  # solved index
-    pop_generation: jax.Array  # records which pop generation a node was expanded in
-    pop_count: jax.Array  # counter for pop_full calls
-    xtr_enabled: jax.Array  # enables xtr_* workload counters
+    cost: jax.Array
+    dist: jax.Array
+    parent: Parent
+    solved: jax.Array
+    solved_idx: Current
+    pop_generation: jax.Array
+    pop_count: jax.Array
+    xtr_enabled: jax.Array
     xtr_steps: jax.Array
     xtr_cand_total: jax.Array
     xtr_cand_valid: jax.Array
@@ -356,8 +356,6 @@ class SearchResult:
         )
         priority_queue = BGPQ.build(max_nodes, batch_size, queue_value, KEY_DTYPE)
 
-        # Initialize arrays for tracking costs and state relationships
-        # +1 for -1 index as a dummy node
         cost = jnp.full(hashtable.table.shape, jnp.inf, dtype=KEY_DTYPE)
         dist = jnp.full(hashtable.table.shape, jnp.inf, dtype=KEY_DTYPE)
         parent = Parent.default(hashtable.table.shape)
@@ -404,12 +402,10 @@ class SearchResult:
 
     @property
     def capacity(self) -> int:
-        """Maximum number of states that can be stored."""
         return self.hashtable.capacity
 
     @property
     def batch_size(self) -> int:
-        """Batch size of the search."""
         return self.priority_queue.batch_size
 
     @property
@@ -474,7 +470,6 @@ class SearchResult:
                 "corruption_detected=False"
             )
 
-        # Check that costs are monotonically increasing to prevent path corruption
         if corruption_detected:
             path_costs = jax.device_get(path_costs)
             path_dists = jax.device_get(path_dists)
@@ -512,7 +507,6 @@ class SearchResult:
         *,
         puzzle: Puzzle | None = None,
     ) -> SolutionTrace:
-        """Return the host-side solution trace for CLI/evaluation adapters."""
         if not bool(jax.device_get(search_result.solved)):
             return SolutionTrace.unsolved()
 
@@ -534,7 +528,6 @@ class SearchResult:
         )
 
     def to_expansion_trace(search_result) -> ExpansionTrace | None:
-        """Return the host-side expansion trace for evaluation adapters."""
         solved_index = None
         if bool(jax.device_get(search_result.solved)):
             solved_index = int(jax.device_get(search_result.solved_idx.hashidx.index))
@@ -547,19 +540,10 @@ class SearchResult:
         )
 
     def get_state(search_result, idx: HashIdx) -> Puzzle.State:
-        """
-        Get the state from the hash table.
-        """
         return search_result.hashtable[idx]
 
     def get_cost(search_result, idx: HashIdx) -> jax.Array:
-        """
-        Get the cost of the state from the cost array.
-        """
         return search_result.cost[idx.index]
 
     def get_dist(search_result, idx: HashIdx) -> jax.Array:
-        """
-        Get the distance of the state from the distance array.
-        """
         return search_result.dist[idx.index]

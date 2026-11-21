@@ -12,7 +12,6 @@ from JAxtar.annotate import ACTION_DTYPE, ACTION_PAD, KEY_DTYPE, TRACE_INDEX_DTY
 
 
 def validate_non_backtracking_steps(steps: int) -> int:
-    """Validate and convert non_backtracking_steps."""
     if steps < 0:
         raise ValueError("non_backtracking_steps must be non-negative")
     return int(steps)

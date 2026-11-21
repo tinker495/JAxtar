@@ -1,5 +1,3 @@
-"""Neural utilities module for JAxtar."""
-
 from __future__ import annotations
 
 import importlib

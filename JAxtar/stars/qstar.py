@@ -184,9 +184,6 @@ def qstar_builder(
         start: Puzzle.State,
         **kwargs: Any,
     ) -> DeferredSearchResult:
-        """
-        qstar is the implementation of the Q* algorithm.
-        """
         loop_state = init_loop_state(solve_config, start, **kwargs)
         loop_state = jax.lax.while_loop(loop_condition, loop_body, loop_state)
 

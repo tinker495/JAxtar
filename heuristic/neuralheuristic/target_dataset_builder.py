@@ -108,9 +108,7 @@ def _get_datasets(
 
     def get_minibatched_datasets(_, vals):
         solve_configs, states = vals
-        solved = puzzle.batched_is_solved(
-            solve_configs, states, multi_solve_config=True
-        )  # [batch_size]
+        solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
         neighbors, cost = puzzle.batched_get_neighbours(
             solve_configs, states, filleds=jnp.ones(minibatch_size), multi_solve_config=True
         )  # [action_size, batch_size] [action_size, batch_size]
@@ -131,11 +129,9 @@ def _get_datasets(
             SolveConfigsAndStates,
             compute_heur_for_action,
         )  # [action_size, batch_size]
-        backup = heur + cost  # [action_size, batch_size]
+        backup = heur + cost
         target_heuristic = jnp.min(jnp.maximum(backup, cost), axis=0)
-        target_heuristic = jnp.where(
-            solved, 0.0, target_heuristic
-        )  # if the puzzle is already solved, the heuristic is 0
+        target_heuristic = jnp.where(solved, 0.0, target_heuristic)
 
         return None, (
             solve_configs,
@@ -155,8 +151,7 @@ def _get_datasets(
     target_heuristic = target_heuristic.reshape((-1,))
     is_solved = solved.reshape((-1,))
 
-    # Cap bootstrap targets with deduplicated trajectory (diffusion) distances to
-    # suppress overestimation; strictly tighter than the old min(target, move_costs).
+    # Cap bootstrap targets with deduplicated trajectory (diffusion) distances to suppress overestimation.
     diffusion_heuristic = _compute_diffusion_distance(
         solve_configs,
         states,
@@ -190,7 +185,6 @@ def _compute_diffusion_distance(
     action_costs = action_costs.reshape((-1,))
     solve_configs_and_states = SolveConfigsAndStates(solveconfigs=solve_configs, states=states)
 
-    # 1. Unique states
     _, unique_state_idx, inverse_indices = xnp.unique_mask(
         val=solve_configs_and_states,
         key=raw_move_costs,
@@ -199,7 +193,6 @@ def _compute_diffusion_distance(
     )
     num_unique_states = unique_state_idx.shape[0]
 
-    # 2. Compute diffusion using common utility
     return compute_diffusion_targets(
         initial_values=raw_move_costs,
         is_solved=is_solved,

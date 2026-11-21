@@ -156,7 +156,7 @@ def _id_qstar_frontier_builder(
 
             q_vals = variable_q_parent_switcher(q_params, states, valid).astype(KEY_DTYPE)
             q_vals = jnp.where(valid[:, None], q_vals, jnp.inf)
-            q_vals = jnp.maximum(0.0, q_vals)  # Ensure non-negative Q-values
+            q_vals = jnp.maximum(0.0, q_vals)
             q_vals = q_vals.transpose()
             f_vals = (cost_weight * gs[jnp.newaxis, :] + q_vals).astype(KEY_DTYPE)
             flat_f = f_vals.reshape((flat_size,))
@@ -242,7 +242,7 @@ def _id_qstar_loop_builder(
     def _min_q(q_params, states, valid_mask):
         q_vals = variable_q_parent_switcher(q_params, states, valid_mask).astype(KEY_DTYPE)
         q_vals = jnp.where(valid_mask[:, None], q_vals, jnp.inf)
-        q_vals = jnp.maximum(0.0, q_vals)  # Ensure non-negative Q-values
+        q_vals = jnp.maximum(0.0, q_vals)
         return jnp.min(q_vals, axis=-1)
 
     generate_frontier = _id_qstar_frontier_builder(
@@ -329,12 +329,9 @@ def _id_qstar_loop_builder(
         f_vals = (cost_weight * parent_costs[jnp.newaxis, :] + q_vals).astype(KEY_DTYPE)
         flat_f = f_vals.reshape((flat_size,))
 
-        # --- Optimization: Deduplication (before the bound split, matching id_astar) ---
-        # Dedup/backtracking must run before deriving next_bound, otherwise duplicate and
-        # backtracking children with f > bound would drag next_bound below the true minimum
-        # f of genuinely-expandable pruned nodes, causing wasted re-expansion thresholds.
-        # expand_and_push(update_next_bound=True) below applies the keep split (f <= bound)
-        # and computes next_bound from the POST-dedup pruned set.
+        # Run dedup/non-backtracking before expand_and_push derives next_bound,
+        # otherwise duplicate or backtracking children with f > bound pull
+        # next_bound below the true minimum f of genuinely-expandable pruned nodes.
         flat_valid = apply_standard_deduplication(
             flat_neighbours,
             flat_g,

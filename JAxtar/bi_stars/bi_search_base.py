@@ -139,7 +139,6 @@ class BiDirectionalSearchResult(Generic[SearchResultT]):
         *,
         puzzle: Puzzle | None = None,
     ) -> SolutionTrace:
-        """Return the host-side solution trace for CLI/evaluation adapters."""
         if not bool(jax.device_get(self.meeting.found)):
             return SolutionTrace.unsolved()
 
@@ -421,11 +420,7 @@ def update_meeting_point(
 def stamp_bi_solved_from_meeting(
     bi_result: BiDirectionalSearchResult,
 ) -> BiDirectionalSearchResult:
-    """Stamp solved fields (`solved`, `solved_idx`) from `bi_result.meeting`.
-
-    With a shared table the meeting always carries valid slots in both directions
-    (both frontiers committed the state), so no materialization step is needed.
-    """
+    """Populate forward and backward solved fields from `bi_result.meeting`."""
 
     found = bi_result.meeting.found
     bi_result.forward.solved = found
@@ -473,15 +468,11 @@ def bi_termination_condition(
     if terminate_on_first_solution:
         return bi_result.meeting.found
 
-    # Best known path through meeting point (weighted for comparison with PQ keys)
     meeting_cost_weighted = cost_weight * bi_result.meeting.total_cost
 
-    # Terminate when weighted meeting cost <= both min f-values
-    # This proves no unexplored path can be better
     fwd_done = meeting_cost_weighted <= fwd_min_f
     bwd_done = meeting_cost_weighted <= bwd_min_f
 
-    # Also need a meeting point to have been found
     optimal_found = jnp.logical_and(
         bi_result.meeting.found,
         jnp.logical_and(fwd_done, bwd_done),
@@ -522,14 +513,11 @@ def get_min_f_value(
     Returns:
         Minimum f-value among valid entries
     """
-    # Get g-values and h-values (or Q-values) for current batch
-    costs = current.cost  # g-values
-    dists = sr.get_dist(current.hashidx)  # h-values or Q-values
+    costs = current.cost
+    dists = sr.get_dist(current.hashidx)
 
-    # f = cost_weight * g + h (matches PQ ordering)
     f_values = cost_weight * costs + dists
 
-    # Mask out invalid entries
     f_values = jnp.where(filled, f_values, jnp.inf)
 
     return jnp.min(f_values)
@@ -551,12 +539,10 @@ def common_bi_loop_condition(
     1. At least one direction can still expand nodes (has frontier AND hashtable capacity)
     2. Termination condition not met (lower_bound < upper_bound)
     """
-    # Check if queues have nodes
     fwd_has_nodes = filled_forward.any()
     bwd_has_nodes = filled_backward.any()
 
-    # Check shared hash table capacity. Both directions share one table, so
-    # `hashtable.size` is the shared total; when it is full neither can insert more.
+    # Shared table: hashtable.size is the combined occupancy across both directions.
     fwd_not_full = bi_result.forward.hashtable.size < bi_result.forward.capacity
     bwd_not_full = bi_result.backward.hashtable.size < bi_result.backward.capacity
     has_work = jnp.logical_or(
@@ -564,7 +550,6 @@ def common_bi_loop_condition(
         jnp.logical_and(bwd_has_nodes, bwd_not_full),
     )
 
-    # Check termination condition
     fwd_min_f = get_min_f_value(bi_result.forward, current_forward, filled_forward, cost_weight)
     bwd_min_f = get_min_f_value(bi_result.backward, current_backward, filled_backward, cost_weight)
 
@@ -591,26 +576,21 @@ def initialize_bi_loop_common(
     """
     sr_batch_size = bi_result.batch_size
 
-    # Forward root: insert start into the shared table.
     bi_result.forward.hashtable, _, fwd_hash_idx = bi_result.forward.hashtable.insert(start)
     bi_result.forward.cost = bi_result.forward.cost.at[fwd_hash_idx.index].set(0)
 
-    # Backward root: adopt the shared table (now holding start), then insert goal.
     bi_result = _adopt_shared_hashtable(bi_result, from_forward=True)
     goal = puzzle.solve_config_to_state_transform(solve_config, key=jax.random.PRNGKey(0))
     bi_result.backward.hashtable, _, bwd_hash_idx = bi_result.backward.hashtable.insert(goal)
     bi_result.backward.cost = bi_result.backward.cost.at[bwd_hash_idx.index].set(0)
 
-    # Re-sync forward to the shared table (now holding both roots).
     bi_result = _adopt_shared_hashtable(bi_result, from_forward=False)
 
-    # Register roots in their respective directions.
     bi_result.seen_forward = bi_result.seen_forward.at[fwd_hash_idx.index].set(True)
     bi_result.seen_backward = bi_result.seen_backward.at[bwd_hash_idx.index].set(True)
 
     fwd_hash_idxs = xnp.pad(fwd_hash_idx, (0, sr_batch_size - 1))
-    # Safety parity with `JAxtar.stars.search_base_eager.init_eager_loop_state`:
-    # pad non-filled entries with +inf so an accidental read cannot produce work.
+    # Pad unfilled cost slots with +inf so accidental reads cannot produce work.
     fwd_costs = jnp.full((sr_batch_size,), jnp.inf, dtype=KEY_DTYPE).at[0].set(0)
     fwd_states = xnp.pad(start, (0, sr_batch_size - 1))
     fwd_filled = jnp.zeros(sr_batch_size, dtype=jnp.bool_).at[0].set(True)
@@ -717,22 +697,17 @@ def build_bi_deferred_expand_direction(
     is_forward: bool,
     use_heuristic_in_pop: bool,
 ):
-    """
-    Builds the generalized bidirectional deferred expansion logic.
-    This acts as a high-order function replacing _expand_direction_deferred and _expand_direction_q.
+    """Build the bidirectional deferred expansion step for one direction.
 
     Deferred callback contract:
-        Stars-parity contract:
-
         `eval_fn(puzzle, search_result, solve_config, params, states, costs, filled_tiles, filled,`
         `        look_ahead_pruning, cost_weight) -> (neighbour_keys, dists, optimal_mask)`
 
-        - neighbour_keys: (action_size, batch), KEY_DTYPE
-        - dists: (action_size, batch), KEY_DTYPE
-        - optimal_mask: (action_size, batch), bool
+        - neighbour_keys: `(action_size, batch)`, `KEY_DTYPE`
+        - dists: `(action_size, batch)`, `KEY_DTYPE`
+        - optimal_mask: `(action_size, batch)`, `bool`
 
-        The bidirectional helper owns only orchestration:
-        PQ insertion -> pop_full_with_actions -> post-pop meeting detection.
+    Orchestrates PQ insertion -> `pop_full_with_actions` -> post-pop meeting detection.
     """
     action_size = puzzle.action_size
 
@@ -766,7 +741,6 @@ def build_bi_deferred_expand_direction(
         costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))
         filled_tiles = jnp.tile(filled[jnp.newaxis, :], (action_size, 1))
 
-        # Step 1: Evaluation Callback (algorithm-owned pruning/unique/optimal_mask)
         neighbour_keys, dists, optimal_mask = eval_fn(
             puzzle,
             search_result,
@@ -780,7 +754,6 @@ def build_bi_deferred_expand_direction(
             cost_weight,
         )
 
-        # Step 2: Priority Queue Insertion
         flattened_vals = ParentWithCosts(
             parent=Parent(hashidx=idx_tiles.flatten(), action=action.flatten()),
             cost=costs.flatten(),
@@ -808,8 +781,7 @@ def build_bi_deferred_expand_direction(
             presorted=True,
         )
 
-        # Step 3: Pop and commit into the shared hash table. The returned hashidxs are
-        # shared-table slots, so meeting detection needs no extra hash probe.
+        # Returned hashidxs are shared-table slots, so detect_meeting below needs no hash probe.
         search_result, new_current, new_states, new_filled = search_result.pop_full_with_actions(
             puzzle=puzzle,
             solve_config=current_solve_config,

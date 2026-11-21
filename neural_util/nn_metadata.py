@@ -19,10 +19,7 @@ CallableRegistry = Dict[str, Any]
 def merge_saved_nn_args(
     current_kwargs: Dict[str, Any], saved_nn_args: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    """
-    Merge kwargs provided at construction time with the ones that were stored in metadata.
-    Current kwargs take precedence over saved ones so users can override defaults.
-    """
+    """Current kwargs take precedence over saved metadata so callers can override checkpoint defaults."""
     merged = {}
     if saved_nn_args:
         merged.update(saved_nn_args)
@@ -31,10 +28,6 @@ def merge_saved_nn_args(
 
 
 def prepare_model_kwargs(raw_kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Normalize keyword arguments before instantiating a neural module by resolving
-    string/callable aliases into concrete functions.
-    """
     kwargs = deepcopy(raw_kwargs)
     if "norm_fn" in kwargs:
         kwargs["norm_fn"] = get_norm_fn(kwargs["norm_fn"])
@@ -61,10 +54,6 @@ def _callable_to_key(value: Any, registry: CallableRegistry, default_key: str) -
 
 
 def serialize_nn_args(model_kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Convert resolved model kwargs into a metadata-friendly dictionary by replacing
-    callables with their registry keys whenever possible.
-    """
     encoded = {}
     for key, value in model_kwargs.items():
         if key in ["aqt_cfg", "quant_mode"]:
@@ -83,10 +72,6 @@ def serialize_nn_args(model_kwargs: Dict[str, Any]) -> Dict[str, Any]:
 def resolve_model_kwargs(
     current_kwargs: Dict[str, Any], saved_nn_args: Optional[Dict[str, Any]] = None
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """
-    Convenience helper that merges saved args, prepares them for model instantiation,
-    and returns both the resolved kwargs and their serializable representation.
-    """
     merged = merge_saved_nn_args(current_kwargs, saved_nn_args)
     prepared = prepare_model_kwargs(merged)
     serialized = serialize_nn_args(prepared)

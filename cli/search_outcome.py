@@ -25,8 +25,6 @@ from .verification import BenchmarkVerification, verify_benchmark_path
 
 @dataclass(frozen=True)
 class SearchOutcome:
-    """Normalised facts a runner needs after one search invocation."""
-
     solved: bool
     generated_size: int
     solved_cost: float | None
@@ -66,8 +64,6 @@ class SearchOutcome:
 
 
 def measure_search(search_fn: Any, *args: Any) -> tuple[Any, float]:
-    """Run one compiled search and measure only its synchronized execution."""
-
     start_time = time.time()
     search_result = search_fn(*args)
     search_result.solved.block_until_ready()
@@ -109,8 +105,6 @@ def with_solution_path(
     benchmark: Any | None = None,
     benchmark_sample: Any | None = None,
 ) -> SearchOutcome:
-    """Attach Solution Trace, Path Step, and optional Benchmark Verification facts."""
-
     if not outcome.solved:
         return replace(outcome, path_steps=())
 
@@ -147,8 +141,6 @@ def apply_benchmark_verification(
     result_item: dict,
     verification: BenchmarkVerification,
 ) -> None:
-    """Apply Verification Module facts to an evaluation result artifact row."""
-
     if verification.path_action_strings is not None:
         result_item["path_action_strings"] = verification.path_action_strings
     if verification.benchmark_verification_error is not None:
@@ -168,8 +160,6 @@ def build_evaluation_result_item(
     search_time_s: float = 0.0,
     benchmark_sample: Any | None = None,
 ) -> dict:
-    """Build the per-sample artifact facts consumed by EvaluationRunner."""
-
     result_item = {
         "seed": run_identifier,
         "solved": outcome.solved,
@@ -197,12 +187,7 @@ def build_evaluation_result_item(
 
 
 def attach_expansion_analysis(result_item: dict, search_result: SearchAlgorithmResult) -> None:
-    """Populate ``result_item["expansion_analysis"]`` from the result's Expansion Trace.
-
-    Result families without expansion facts return ``None`` from
-    ``to_expansion_trace`` and leave the item untouched. The dict keys are the
-    legacy plot contract consumed by ``helpers.plots``.
-    """
+    """Flatten ExpansionTrace into the dict key schema expected by ``helpers.plots``."""
     trace = search_result.to_expansion_trace()
     if trace is None:
         return
@@ -224,8 +209,6 @@ def build_deferred_payload(
     initial_state: Any,
     benchmark_sample: Any | None,
 ) -> dict:
-    """Build deferred path / verification facts for EvaluationRunner finalisation."""
-
     payload = {
         "result_item": result_item,
         "solve_config": solve_config,

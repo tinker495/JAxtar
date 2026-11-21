@@ -211,7 +211,6 @@ def _heuristic_beam_loop_builder(
             selected_valid,
         )
 
-        # Keep the while_loop carry structure consistent with the input
         return BeamSearchLoopState(
             search_result=search_result,
             solve_config=solve_config,

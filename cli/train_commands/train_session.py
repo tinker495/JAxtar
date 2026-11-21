@@ -1,11 +1,3 @@
-"""Shared session plumbing for the distance-training commands.
-
-Everything here is identical between the dataset-driven trainer
-(`dist_train_command`) and the replay-driven WBS trainer
-(`wbs_train_command`): eval resolution, optimizer/state setup, in-training
-eval sweeps and final checkpointing.
-"""
-
 import os
 from pathlib import Path
 from typing import Callable
@@ -98,7 +90,6 @@ def setup_train_state(
     steps: int,
     one_iter_size: int,
 ):
-    """Split model params, build the optimizer and the initial TrainStateExtended."""
     model = search_model.model
     model_params = search_model.params
     params = model_params.get("params", model_params)
@@ -179,7 +170,6 @@ def finalize_training(
     pbar,
     **kwargs,
 ):
-    """Save the final checkpoint, run the closing evaluation sweep and close the logger."""
     search_model.params = state.get_full_eval_params()
     backup_path = os.path.join(logger.log_dir, f"{save_prefix}_final.pkl")
     search_model.save_model(path=backup_path)

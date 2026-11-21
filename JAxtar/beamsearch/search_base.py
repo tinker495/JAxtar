@@ -143,7 +143,6 @@ class BeamSearchResult:
         return jnp.isfinite(self.cost)
 
     def get_state(self, idx: int) -> Puzzle.State:
-        """Return the state at `idx` in the current beam."""
         return self.beam[int(idx)]
 
     @property
@@ -152,11 +151,9 @@ class BeamSearchResult:
         return self.cost[self.solved_idx]
 
     def get_dist(self, idx: int) -> jax.Array:
-        """Return the cached heuristic/Q distance for the slot."""
         return self.dist[int(idx)]
 
     def _get_solved_path(self):
-        """Return the sequence of states along the solved path."""
         solved_idx = int(self.solved_idx)
         if solved_idx < 0:
             return []
@@ -193,7 +190,6 @@ class BeamSearchResult:
         *,
         puzzle: Puzzle | None = None,
     ) -> SolutionTrace:
-        """Return the host-side solution trace for CLI/evaluation adapters."""
         if not bool(jax.device_get(self.solved)):
             return SolutionTrace.unsolved()
 

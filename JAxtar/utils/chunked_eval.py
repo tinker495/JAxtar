@@ -10,7 +10,7 @@ def chunked_masked_eval(value_fn, flat_states, flat_valid, action_size, batch_si
     """Evaluate ``value_fn`` only on the masked states, chunk by chunk.
 
     The valid states are partitioned to the front, reshaped into
-    ``(action_size, batch_size)`` chunks, evaluated with a ``jax.lax.scan`` so
+    ``(action_size, batch_size)`` chunks, evaluated with a ``jax.lax.while_loop`` so
     only one batch is resident at a time, and scattered back to their original
     positions. This keeps the peak memory footprint at a single chunk while
     still producing a fully populated ``(action_size * batch_size,)`` result.
@@ -59,7 +59,7 @@ def chunked_masked_eval(value_fn, flat_states, flat_valid, action_size, batch_si
         states_j = xnp.take(chunk_states, j, axis=0)
         mask_j = chunk_mask[j]
         v = value_fn(states_j, mask_j).astype(KEY_DTYPE)
-        v = jnp.maximum(0.0, v)  # Ensure non-negative value
+        v = jnp.maximum(0.0, v)
         v = jnp.where(mask_j, v, jnp.inf)
         return j + 1, vals.at[j].set(v)
 

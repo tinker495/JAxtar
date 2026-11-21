@@ -1,10 +1,3 @@
-"""
-Training utilities module for JAxtar.
-
-Provides dataset generation, optimizer factories, and loss functions
-for neural heuristic and Q-function training.
-"""
-
 from __future__ import annotations
 
 import importlib

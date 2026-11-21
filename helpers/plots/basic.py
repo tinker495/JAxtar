@@ -14,7 +14,6 @@ from .constants import (
 
 
 def plot_path_cost_distribution(solved_df: pd.DataFrame) -> plt.Figure:
-    """Plots the distribution of path costs for solved puzzles."""
     fig, ax = plt.subplots(figsize=DEFAULT_FIGSIZE)
     costs = solved_df["path_cost"].dropna().to_numpy()
     if costs.size == 0:
@@ -62,7 +61,6 @@ def plot_path_cost_distribution(solved_df: pd.DataFrame) -> plt.Figure:
 
 
 def plot_search_time_by_path_cost(solved_df: pd.DataFrame) -> plt.Figure:
-    """Plots the distribution of search time by path cost."""
     fig, ax = plt.subplots(figsize=DEFAULT_FIGSIZE)
     sns.boxplot(data=solved_df, x="path_cost", y="search_time_s", ax=ax)
     sns.pointplot(
@@ -83,7 +81,6 @@ def plot_search_time_by_path_cost(solved_df: pd.DataFrame) -> plt.Figure:
 
 
 def plot_nodes_generated_by_path_cost(solved_df: pd.DataFrame) -> plt.Figure:
-    """Plots the distribution of generated nodes by path cost."""
     fig, ax = plt.subplots(figsize=DEFAULT_FIGSIZE)
     sns.boxplot(data=solved_df, x="path_cost", y="nodes_generated", ax=ax)
     sns.pointplot(

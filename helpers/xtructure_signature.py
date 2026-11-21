@@ -7,7 +7,6 @@ import numpy as np
 
 
 def _as_int(x: Any) -> int:
-    """Convert JAX / NumPy scalar-like values to int."""
     try:
         return int(np.asarray(x))
     except (TypeError, ValueError, OverflowError):
@@ -15,7 +14,6 @@ def _as_int(x: Any) -> int:
 
 
 def _as_float(x: Any) -> float:
-    """Convert JAX / NumPy scalar-like values to float."""
     try:
         return float(np.asarray(x))
     except (TypeError, ValueError, OverflowError):
@@ -23,7 +21,6 @@ def _as_float(x: Any) -> float:
 
 
 def extract_xtructure_signature(search_result: Any) -> Dict[str, Any]:
-    """Extract xtr_* workload counters/ratios from a search result."""
     try:
         enabled = bool(jax.device_get(search_result.xtr_enabled))
     except (AttributeError, TypeError, ValueError):

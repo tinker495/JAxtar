@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 def _format_bytes(num_bytes: int) -> str:
-    """Human-readable binary size string (KiB, MiB, GiB...)."""
     if num_bytes is None:
         return "0B"
     n = int(num_bytes)
@@ -30,7 +29,6 @@ def _format_bytes(num_bytes: int) -> str:
 
 
 def _quant_itemsize(aqt_cfg: str | None) -> float | None:
-    """Bytes per element for AQT-quantized kernels, or None if unknown/absent."""
     if not aqt_cfg:
         return None
     if "int8" in aqt_cfg:
@@ -47,12 +45,6 @@ def _is_quantizable_kernel(leaf: Any) -> bool:
 
 
 def _leaf_stats(tree: Any, kernel_itemsize: float | None = None) -> Tuple[int, int]:
-    """
-    Sum (total_params, total_bytes) over a pytree.
-
-    kernel_itemsize, if given, overrides the storage size of quantizable
-    kernels (see _is_quantizable_kernel); other leaves use their real dtype.
-    """
     total_params = 0
     total_bytes = 0
     for leaf in jax.tree_util.tree_leaves(tree):
@@ -121,10 +113,7 @@ def attach_runtime_metadata(
     param_path: str | None = None,
     extra: Dict[str, Any] | None = None,
 ) -> None:
-    """
-    Attach a small runtime-only metadata block to a heuristic/qfunction instance.
-    This is used by CLI config printing (`*_metadata`) to show model type + param stats.
-    """
+    """Populate ``component.metadata["runtime"]`` for CLI config printing (``*_metadata``)."""
     if component is None or not hasattr(component, "metadata"):
         return
 
@@ -143,7 +132,6 @@ def attach_runtime_metadata(
     if param_path is not None:
         runtime["param_path"] = param_path
 
-    # Check for aqt_cfg
     aqt_cfg = getattr(component, "aqt_cfg", None)
     if aqt_cfg is None:
         aqt_cfg = md.get("aqt_cfg")

@@ -27,10 +27,6 @@ def vmapping_search(
     vmap_size: int,
     show_compile_time: bool = False,
 ):
-    """
-    Vmap the search function over the batch dimension.
-    """
-
     cache_key = (id(star_fn), vmap_size)
     cached = _VMAPPED_STAR_CACHE.get(cache_key)
     if cached is not None:

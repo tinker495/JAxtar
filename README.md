@@ -4,10 +4,9 @@
 
 # JA<sup>xtar</sup>: GPU-accelerated Batched parallel A\* & Q\* solver in pure JAX!
 
-JA<sup>xtar</sup> is a project with a JAX-native implementation of parallelizable a A\* & Q\* solver for neural heuristic search research.
-This project is inspired by [mctx](https://github.com/google-deepmind/mctx) from Google DeepMind. If MCTS can be implemented entirely in pure JAX, why not A\*?
+JA<sup>xtar</sup> is a JAX-native implementation of parallelizable A\* & Q\* solvers for neural heuristic search research, inspired by Google DeepMind's [mctx](https://github.com/google-deepmind/mctx).
 
-This project provides the following algorithms:
+Supported search algorithms:
 - **A\***: Standard A* Search
 - **A\* Deferred**: A* Search with deferred node expansion (for heavy expansion costs)
 - **Bi-A\***: Bidirectional A* Search
@@ -16,47 +15,19 @@ This project provides the following algorithms:
 - **Beam Search**: Standard Beam Search
 - **Q\***: Q* Search (A* with learned Q-values)
 - **Bi-Q\***: Bidirectional Q* Search
-- **ID-Q\***: Iterative Deepening Q* Search (Experimental)
+- **ID-Q\***: Iterative Deepening Q* Search
 - **Q-Beam**: Beam Search with learned Q-values
 
-MCTS, or tree search, is used in many RL algorithmic techniques, starting with AlphaGo, but graph search (not tree search) doesn't seem to have received much attention. Nevertheless, there are puzzle‐solving algorithms that use neural heuristics like [DeepcubeA](https://github.com/forestagostinelli/DeepCubeA) with A\* or [Q\*](https://arxiv.org/abs/2102.04518)(graph search).
+## Architecture Rationale
 
-However, the most frustrating aspect of [my brief research (MSc)](https://drive.google.com/file/d/1clo8OmuXvIHhJzOUhH__0ZWzAamgVK84/view?usp=drive_link) in this area is the time it takes to pass information back and forth between the GPU and CPU.
-When using a neural heuristic to evaluate a single node, the communication between the CPU and GPU, rather than the computation itself, can consume between 50% and 80% of the total processing time. Because of this communication overhead, DeepcubeA batches multiple nodes concurrently, which appears to work quite well.
+Evaluating single nodes with neural networks on a GPU spends 50%–80% of runtime in CPU–GPU data transfers, so solvers such as [DeepCubeA](https://github.com/forestagostinelli/DeepCubeA) and [Q\*](https://arxiv.org/abs/2102.04518) batch evaluations. Keeping only network inference on the GPU still leaves host-device round trips on every expansion; running the entire search loop on-device avoids that bottleneck. Existing GPU implementations are typically written in C/CUDA (awkward for ML research), restricted to 2D grids or dense adjacency matrices that cannot scale to large state spaces, or coupled to a single domain.
 
-However, these issues indicate that a more fundamental solution is needed. This led me to search for ways to perform A\* directly on the GPU, but I discovered that most implementations suffer from the following problems.
-
-- Many are written in pure C and CUDA, which is not well-suited for machine learning research.
-- Some are written in JAX or PyTorch, but these are often limited to 2D grid environments or connectivity matrices, and cannot scale to an infinite number of different states that cannot all be held in memory.
-- The implementation itself is often dependent on the specific definition of the state or problem.
-
-To address these challenges, I decided to develop code based on the following principles:
-
-- Pure JAX implementation
-  - Specifically for machine learning research.
-- JAX-native priority queue
-  - The A\* algorithm necessitates a priority queue to process nodes based on the lowest combined cost and heuristic estimate.
-  - However, standard Python heaps use lists, which are not JIT-compilable in JAX. Thus, a JAX-iterable heap is necessary.
-- Hashable state representation and a hashtable for JAX operations.
-  - This is crucial for tracking node status (open/closed) in A\* and efficiently retrieving parent state information.
-  - Hashing is optional for simple, indexable states. But for complex or infinite state spaces, hashing becomes essential for efficient indexing and retrieval of unique states.
-- Fully batched and parallelized operations
-  - GPUs provide massive parallelism but have slower cores than CPUs. Therefore, algorithms for GPUs must be highly parallelized to leverage their architecture.
-- Puzzle-agnostic implementation
-  - The implementation should be general enough to handle any puzzle with a defined state and action space.
-  - This generality enables wider research and allows for formalizing 'strict' behaviors in future implementations.
-
-This project features specially written components, including:
-
-- [`Xtructure`](https://github.com/tinker495/Xtructure): A library providing JAX-compatible hash and priority queue implementations, originally developed as part of this project and later separated. This package includes:
-  - a hashtable for parallel lookup and insertion operations
-  - a priority queue that supports batching, push, and pop operations
-- [`PuXle`](https://github.com/tinker495/PuXle): All puzzle implementations have been moved to this separate high-performance library for parallelized puzzle environments built on JAX
-- PuXle world models registered for latent-space heuristic search
-- Network heuristics and Q-functions designed for JIT-compilable integration with A\* & Q\* algorithm
-- a fully JIT-compiled A\* & Q\* algorithm for puzzles
-
-This project was quite challenging to develop, and it felt like performing acrobatics with JAX. However, I managed to create a fully functional version, and hopefully it will inspire you to discover something amazing as you delve into JAX.
+JA<sup>xtar</sup> avoids those constraints through:
+- **Pure JAX JIT-compiled search**: Keeps search loops, neural evaluation, and training composable in Python/JAX.
+- **JAX-native priority queue and hash table**: Uses [`Xtructure`](https://github.com/tinker495/Xtructure) (`BGPQ` and `HashTable`) instead of non-JIT Python heaps or dense state matrices, enabling batched push/pop, open/closed tracking, and parent retrieval for arbitrary hashable state spaces.
+- **Fully batched operations**: Expands, hashes, and evaluates batches in parallel to saturate GPU cores.
+- **Puzzle-agnostic interface**: Uses [`PuXle`](https://github.com/tinker495/PuXle) for parallelized puzzle environments and trained world models, decoupling search algorithms from domain definitions.
+- **Integrated neural guidance**: Connects neural heuristics, Q-functions, and latent-space world models directly into JIT-compiled search.
 
 ## Installation
 
@@ -74,9 +45,7 @@ cd JAxtar
 uv sync --extra gpu
 ```
 
-JAxtar uses `pyproject.toml` for installation and command registration. PuXle and Xtructure
-Git dependencies track their `main` branches; `uv.lock` records the resolved commits.
-From the synced checkout:
+JAxtar uses `pyproject.toml` for installation and command registration. PuXle and Xtructure Git dependencies track their `main` branches; `uv.lock` records the resolved commits. From the synced checkout:
 
 ```bash
 uv run jaxtar --help
@@ -84,163 +53,15 @@ uv run jaxtar test --help
 uv run astar_d --help
 ```
 
-The console commands are checkout-only. External distributions intentionally contain only the
-`JAxtar` core package; generic top-level modules such as `cli`, `config`, and `helpers` are not
-packaged.
+The console commands are checkout-only. External distributions intentionally contain only the `JAxtar` core package; generic top-level modules such as `cli`, `config`, and `helpers` are not packaged.
 
-Omit `--extra gpu` for CPU-only use, or replace it with `--extra tpu` on TPU. Evaluation tools are
-installed by default. The `train` extra adds the GPU runtime and all logging backends, so it
-conflicts with `tpu`.
+Omit `--extra gpu` for CPU-only use, or replace it with `--extra tpu` on TPU. Evaluation tools are installed by default. The `train` extra adds the GPU runtime and all logging backends, so it conflicts with `tpu`.
 
 ## Usage and Documentation
 
-The CLI uses **tyro** with typed options. Existing flat flags, short aliases, and
-`10M` / `2^20` numeric notation are supported. Both `--batch-size` and
-`--batch_size` work. Use `--help` for help; `-h` retains its `--hard` meaning.
-Omitted options inherit puzzle and training preset defaults.
+The CLI uses **tyro** with typed options. Flat flags, short aliases, and `10M` / `2^20` numeric notation are supported. Both `--batch-size` and `--batch_size` work. Use `--help` for help; `-h` retains its `--hard` meaning. Omitted options inherit puzzle and training preset defaults.
 
-For detailed information on all available commands and their options, please refer to the official documentation.
-
-[**Go to Documentation**](./docs/README.md)
-
-## Result
-
-We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.
-
-The following speed benchmarks were measured on an Nvidia RTX 5090 hosted at vast.ai.
-
-You can easily test it yourself with the colab link below.
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1TJUazlkm9miP4sIKCXShExaRcT6oGD4K?usp=sharing)
-
-### Test Run
-
-```bash
-$ uv run astar
-╭─────────────── Seed 0 ────────────────╮
-│    Start State        Target State    │
-│ ┏━━━┳━━━┳━━━┳━━━┓   ┏━━━┳━━━┳━━━┳━━━┓ │
-│ ┃ 9 ┃ E ┃ 6 ┃ 8 ┃   ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃ │
-│ ┣━━━╋━━━╋━━━╋━━━┫   ┣━━━╋━━━╋━━━╋━━━┫ │
-│ ┃ D ┃ 4 ┃ 7 ┃   ┃   ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃ │
-│ ┣━━━╋━━━╋━━━╋━━━┫ → ┣━━━╋━━━╋━━━╋━━━┫ │
-│ ┃ B ┃ 1 ┃ A ┃ C ┃   ┃ 9 ┃ A ┃ B ┃ C ┃ │
-│ ┣━━━╋━━━╋━━━╋━━━┫   ┣━━━╋━━━╋━━━╋━━━┫ │
-│ ┃ 5 ┃ 3 ┃ F ┃ 2 ┃   ┃ D ┃ E ┃ F ┃   ┃ │
-│ ┗━━━┻━━━┻━━━┻━━━┛   ┗━━━┻━━━┻━━━┻━━━┛ │
-│              Dist: 34.00              │
-╰───────────────────────────────────────╯
-     Search Result for Seed 0
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
-┃ Metric        ┃          Value ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
-│ Status        │ Solution Found │
-│ Cost          │           50.0 │
-│ Search Time   │         0.12 s │
-│ Search States │           738K │
-│ States/s      │          6.15M │
-└───────────────┴────────────────┘
-```
-
-### Test vmapped run
-
-```bash
-$ uv run astar --vmap_size 20
-╭──────────────────────────────── Vmapped Search Setup ─────────────────────────────────╮
-│ ╭────────────────────────────────── Batched State ──────────────────────────────────╮ │
-│ │  ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓       ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  │ │
-│ │  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃       ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  ┃ 9 ┃ E ┃ 6 ┃ 8 ┃  │ │
-│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫       ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
-│ │  ┃ D ┃ 4 ┃ 7 ┃   ┃  ┃ D ┃ 4 ┃ 7 ┃   ┃       ┃ D ┃ 4 ┃ 7 ┃   ┃  ┃ D ┃ 4 ┃ 7 ┃   ┃  │ │
-│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  ...  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
-│ │  ┃ B ┃ 1 ┃ A ┃ C ┃  ┃ B ┃ 1 ┃ A ┃ C ┃       ┃ B ┃ 1 ┃ A ┃ C ┃  ┃ B ┃ 1 ┃ A ┃ C ┃  │ │
-│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫       ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
-│ │  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃       ┃ 5 ┃ 3 ┃ F ┃ 2 ┃  ┃ 5 ┃ 3 ┃ F ┃ 2 ┃  │ │
-│ │  ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛       ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛  │ │
-│ ╰────────────────────────────────── shape: (20,) ───────────────────────────────────╯ │
-│                                                                                       │
-│                                           ↓                                           │
-│                                                                                       │
-│ ╭─────────────────────────────── Batched SolveConfig ───────────────────────────────╮ │
-│ │  ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓       ┏━━━┳━━━┳━━━┳━━━┓  ┏━━━┳━━━┳━━━┳━━━┓  │ │
-│ │  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃       ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  ┃ 1 ┃ 2 ┃ 3 ┃ 4 ┃  │ │
-│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫       ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
-│ │  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃       ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  ┃ 5 ┃ 6 ┃ 7 ┃ 8 ┃  │ │
-│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  ...  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
-│ │  ┃ 9 ┃ A ┃ B ┃ C ┃  ┃ 9 ┃ A ┃ B ┃ C ┃       ┃ 9 ┃ A ┃ B ┃ C ┃  ┃ 9 ┃ A ┃ B ┃ C ┃  │ │
-│ │  ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫       ┣━━━╋━━━╋━━━╋━━━┫  ┣━━━╋━━━╋━━━╋━━━┫  │ │
-│ │  ┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃       ┃ D ┃ E ┃ F ┃   ┃  ┃ D ┃ E ┃ F ┃   ┃  │ │
-│ │  ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛       ┗━━━┻━━━┻━━━┻━━━┛  ┗━━━┻━━━┻━━━┻━━━┛  │ │
-│ ╰────────────────────────────────── shape: (20,) ───────────────────────────────────╯ │
-│                                                                                       │
-╰───────────────────────────────────────────────────────────────────────────────────────╯
-           Vmapped Search Result
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Metric          ┃                  Value ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Search Time     │       3.18s (x26.5/20) │
-│ Search States   │ 14.8M (4.64M states/s) │
-│ Speedup         │                   x0.8 │
-│ Solutions Found │                100.00% │
-└─────────────────┴────────────────────────┘
-```
-
-### A\* with neural heuristic model
-
-```bash
-$ uv run astar -nn -h -p rubikscube -w 0.2
-
-...
-
-     Search Result for Seed 0
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
-┃ Metric        ┃          Value ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
-│ Status        │ Solution Found │
-│ Cost          │           22.0 │
-│ Search Time   │         0.49 s │
-│ Search States │          1.85M │
-│ States/s      │          3.78M │
-└───────────────┴────────────────┘
-```
-
-### Q\* with neural Q model
-
-```bash
-$ uv run qstar -nn -h -p rubikscube -w 0.2
-
-...
-
-     Search Result for Seed 0
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
-┃ Metric        ┃          Value ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
-│ Status        │ Solution Found │
-│ Cost          │           22.0 │
-│ Search Time   │         0.16 s │
-│ Search States │          1.79M │
-│ States/s      │          10.9M │
-└───────────────┴────────────────┘
-```
-
-### World Model Puzzle with A\* & Q\*
-
-```bash
-$ uv run qstar -p rubikscube_world_model_optimized -nn -w 0.6
-
-...
-
-     Search Result for Seed 0
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
-┃ Metric        ┃          Value ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
-│ Status        │ Solution Found │
-│ Cost          │           22.0 │
-│ Search Time   │         0.17 s │
-│ Search States │          1.82M │
-│ States/s      │          10.5M │
-└───────────────┴────────────────┘
-```
+[**Go to Documentation**](./docs/README.md) · [**Benchmark Results**](./docs/benchmark_results.md)
 
 ## Puzzles
 
@@ -251,15 +72,14 @@ $ uv run qstar -p rubikscube_world_model_optimized -nn -w 0.6
 | ![Rubiks cube solve](images/rubikscubesolve.png)        | ![Slide puzzle solve](images/slidepuzzlesolve.png)        | ![Lights out solve](images/lightsoutsolve.png)        | ![Sokoban solve](images/sokobansolve.png)        |
 | ![Rubiks cube animate](images/rubikscube_animation.gif) | ![Slide puzzle animate](images/slidepuzzle_animation.gif) | ![Lights out animate](images/lightsout_animation.gif) | ![Sokoban animate](images/sokoban_animation.gif) |
 
-
-| Maze                                       | Pancake Sorting                                          | Hanoi                                        |  TopSpin |
-| ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------- | ------------------------------ |
+| Maze                                       | Pancake Sorting                                          | Hanoi                                        | TopSpin                                   |
+| ------------------------------------------ | -------------------------------------------------------- | -------------------------------------------- | ----------------------------------------- |
 | ![Maze solve](images/mazesolve.png)        | ![Pancake Sorting solve](images/pancakesolve.png)        | ![Hanoi solve](images/hanoisolve.png)        | ![TopSpin Solve](images/topspinsolve.png) |
 | ![Maze animate](images/maze_animation.gif) | ![Pancake Sorting animate](images/pancake_animation.gif) | ![Hanoi animate](images/hanoi_animation.gif) | ![TopSpin Solve](images/topsplin_animation.gif) |
 
 ### Target not available puzzle
 
-These types of puzzles are not strictly the kind that are typically solved with A\*, but after some simple testing, it turns out that, depending on how the problem is defined, they can be solved. Furthermore, this approach can be extended to TSP and countless other COP problems, provided that with a good heuristic. The training method will need to be investigated further.
+Puzzles without an explicit goal state (such as Dotknot or combinatorial optimization formulations like TSP) can also be solved with A\*/Q\* when paired with an appropriate state formulation and learned heuristic.
 
 | Dotknot                                          | TSP                                      |
 | ------------------------------------------------ | ---------------------------------------- |
@@ -268,13 +88,11 @@ These types of puzzles are not strictly the kind that are typically solved with 
 
 ### World Model Puzzle
 
-The world-model implementation and training APIs live in PuXle. JAxtar registers those models to perform A\* & Q\* search in the learned latent space, following ["Learning Discrete World Models for Heuristic Search"](https://rlj.cs.umass.edu/2024/papers/RLJ_RLC_2024_225.pdf).
+World-model implementation and training APIs live in PuXle. JAxtar registers those trained models to perform A\* & Q\* search in learned latent spaces, following ["Learning Discrete World Models for Heuristic Search"](https://rlj.cs.umass.edu/2024/papers/RLJ_RLC_2024_225.pdf).
 
-<!-- Currently, this implementation achieves node search speeds that are basically more than 10 times faster than those presented in the paper. -->
-
-| Terminal View                                | Rubiks Cube                                                |   Rubiks Cube Reversed | Sokoban                                             |
-| -------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------- |
-| ![terminal view](images/worldmodelsolve.png) | ![rubiks cube](images/worldmodel_rubikscube_animation.gif) | ![rubiks cube rev](images/worldmodel_rubikscube_rev_animation.gif) |![sokoban](images/worldmodel_sokoban_animation.gif) |
+| Terminal View                                | Rubiks Cube                                                | Rubiks Cube Reversed                                             | Sokoban                                             |
+| -------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
+| ![terminal view](images/worldmodelsolve.png) | ![rubiks cube](images/worldmodel_rubikscube_animation.gif) | ![rubiks cube rev](images/worldmodel_rubikscube_rev_animation.gif) | ![sokoban](images/worldmodel_sokoban_animation.gif) |
 
 ## Citation
 

@@ -20,9 +20,6 @@ class RubiksCubeHeuristic(Heuristic):
     def distance(
         self, solve_config: RubiksCube.SolveConfig, current: RubiksCube.State
     ) -> jax.Array:
-        """
-        Get distance between current state and target state.
-        """
         current_faces = current.faces_unpacked
         target_faces = solve_config.GoalSpec.faces_unpacked
         if not self._use_color_embedding:

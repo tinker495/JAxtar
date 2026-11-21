@@ -7,7 +7,7 @@ from heuristic.slidepuzzle_utils import diff_pos, linear_conflict
 
 
 class SlidePuzzleHeuristic(Heuristic):
-    base_xy: jax.Array  # The coordinates of the numbers in the puzzle
+    base_xy: jax.Array
 
     def __init__(self, puzzle: SlidePuzzle):
         super().__init__(puzzle)
@@ -22,9 +22,6 @@ class SlidePuzzleHeuristic(Heuristic):
     def distance(
         self, solve_config: SlidePuzzle.SolveConfig, current: SlidePuzzle.State
     ) -> jax.Array:
-        """
-        This function should return the distance between the state and the target.
-        """
         diff, tpos = diff_pos(current, solve_config.GoalSpec, self.puzzle.size, self.base_xy)
         not_empty = current.board_unpacked != 0
         return (

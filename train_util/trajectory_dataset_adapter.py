@@ -1,13 +1,4 @@
-"""JAxtar-owned adapter at the **Puzzle Trajectory Module** seam.
-
-PuXle's ``puxle.core.trajectory`` is the single source of truth for trajectory
-generation. JAxtar only adapts ``PuzzleTrajectory`` records to training shapes.
-
-The three wrapped names re-export the PuXle creators with the same parameter
-order so call sites (``partial(create_target_shuffled_path, puzzle, ...)``)
-remain unchanged when migrating off the legacy ``train_util.sampling``
-duplicates.
-"""
+"""Adapts PuXle ``PuzzleTrajectory`` records to JAxtar training shapes; wrappers preserve PuXle's positional parameter order for ``partial(...)`` callers."""
 
 from __future__ import annotations
 
@@ -36,9 +27,6 @@ class TrajectoryDataset(TypedDict):
 
 
 def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
-    """Translate a ``PuzzleTrajectory`` into the flat dict shape consumed by
-    JAxtar's JIT'd training step. Field names match the legacy dict keys.
-    """
     if not isinstance(traj.solve_configs, Xtructurable) or not isinstance(
         traj.states, Xtructurable
     ):
@@ -59,7 +47,6 @@ def trajectory_to_dataset_dict(traj: PuzzleTrajectory) -> TrajectoryDataset:
 def trajectory_to_transition_dataset(
     traj: PuzzleTrajectory, limit: int
 ) -> tuple[Xtructurable, chex.Array, Xtructurable]:
-    """Flatten time/batch axes and truncate aligned transition triples."""
     return (
         traj.states[:-1].flatten()[:limit],
         traj.actions.reshape(-1)[:limit],

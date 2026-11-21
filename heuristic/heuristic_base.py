@@ -8,7 +8,7 @@ from puxle import Puzzle
 
 
 class Heuristic(ABC):
-    puzzle: Puzzle  # The puzzle rule object
+    puzzle: Puzzle
     is_fixed: bool = (
         False  # True if this heuristic is only valid for a fixed target (i.e. it does not
     )
@@ -20,40 +20,13 @@ class Heuristic(ABC):
     def prepare_heuristic_parameters(
         self, solve_config: Puzzle.SolveConfig, **kwargs: Any
     ) -> Union[Puzzle.SolveConfig, Any]:
-        """
-        This function prepares the parameters for use in distance calculations.
-        By default, it returns the solve config unchanged. Subclasses can override
-        this to transform the solve config into a more efficient representation,
-        such as embedding it into a special vector (e.g., via a neural network)
-        to guide the search toward the goal. During the search process, this method
-        is called once at the beginning to prepare parameters that remain invariant
-        throughout the search iterations.
-
-        For example, this enables cases where the solve config is converted to
-        an embedding vector for processing in specialized neural networks.
-
-        If a neural net heuristic or similar case, this method's output may include
-        the neural net's parameters or similar.
-
-        Returns:
-            The prepared parameters, which could be the original or a transformed representation.
-        """
+        """Called once per search before expansion to precompute search-invariant parameters (e.g., neural weights or goal embeddings). Defaults to returning solve_config unchanged."""
         return solve_config
 
     def batched_distance(
         self, heuristic_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State
     ) -> chex.Array:
-        """
-        This function should return the distance between the state and the target.
-
-        Args:
-            heuristic_parameters: The parameters for the heuristic. normally a SolveConfig
-            current: The current state.
-
-        Returns:
-            The distance between the state and the target.
-            shape : (batch_size,)
-        """
+        """Return estimated distances to the target with shape (batch_size,)."""
         return jnp.asarray(
             jax.vmap(self.distance, in_axes=(None, 0))(heuristic_parameters, current)
         )
@@ -62,15 +35,5 @@ class Heuristic(ABC):
     def distance(
         self, heuristic_parameters: Union[Puzzle.SolveConfig, Any], current: Puzzle.State, /
     ) -> float | jax.Array:
-        """
-        This function should return the distance between the state and the target.
-
-        Args:
-            heuristic_parameters: The parameters for the heuristic. normally a SolveConfig
-            current: The current state.
-
-        Returns:
-            The distance between the state and the target.
-            shape : single scalar
-        """
+        """Return scalar estimated distance from a single state to the target."""
         pass

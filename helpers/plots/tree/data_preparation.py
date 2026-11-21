@@ -28,30 +28,13 @@ def _filter_top_n_leaf_paths(
     dists: np.ndarray,
     top_n: Optional[int],
 ) -> Optional[np.ndarray]:
-    """
-    Identify top N leaf nodes and return mask of nodes to keep.
-
-    A node is a leaf if it is not listed as a parent of any other node.
-    Top N leaf nodes are selected by smallest h-value (closest to goal).
-
-    Args:
-        original_indices: Array of original hash indices for each node
-        parent_indices: Array of parent hash indices for each node
-        dists: Array of h-values (heuristic distance to goal)
-        top_n: Number of top leaf nodes to keep, or None to keep all
-
-    Returns:
-        Boolean mask array indicating which nodes to keep, or None if top_n is None
-    """
     if top_n is None or top_n <= 0:
         return None
 
     N = len(original_indices)
 
-    # Create set of all parent indices (excluding -1 for root)
     parent_set = set(int(p) for p in parent_indices if p >= 0)
 
-    # Identify leaf nodes: nodes whose original_index is NOT in parent_set
     is_leaf = np.array([int(orig) not in parent_set for orig in original_indices])
 
     leaf_indices = np.where(is_leaf)[0]
@@ -59,14 +42,11 @@ def _filter_top_n_leaf_paths(
     if len(leaf_indices) == 0:
         return None
 
-    # Sort leaf nodes by h-value (smallest h = closest to goal)
     leaf_h_values = dists[leaf_indices]
     sorted_order = np.argsort(leaf_h_values)
 
-    # Take top N leaf nodes
     top_n_indices = leaf_indices[sorted_order[: min(top_n, len(leaf_indices))]]
 
-    # Find all ancestors of top N leaf nodes by tracing back through parents
     keep_set = set()
     for leaf_idx in top_n_indices:
         curr = leaf_idx
@@ -75,7 +55,6 @@ def _filter_top_n_leaf_paths(
             p_idx = parent_indices[curr]
             if p_idx == -1:
                 break
-            # Find parent array position from original_indices
             parent_pos = None
             for i, orig in enumerate(original_indices):
                 if int(orig) == int(p_idx):
@@ -85,7 +64,6 @@ def _filter_top_n_leaf_paths(
                 break
             curr = parent_pos
 
-    # Create mask
     kept_node_mask = np.array([i in keep_set for i in range(N)], dtype=bool)
 
     return kept_node_mask
@@ -115,7 +93,6 @@ def prepare_tree_data(
     if N > max_points:
         indices = np.random.choice(N, max_points, replace=False)
         if kept_node_mask is not None:
-            # Apply leaf filter to downsampled indices
             indices_to_sample = np.where(kept_node_mask)[0]
             if len(indices_to_sample) > 0:
                 indices = np.random.choice(

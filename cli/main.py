@@ -1,5 +1,3 @@
-"""Unified JAxtar command line, parsed by tyro."""
-
 import tyro
 
 from .benchmark_commands import benchmark_app

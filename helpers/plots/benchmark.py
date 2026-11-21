@@ -14,10 +14,8 @@ from .constants import (
 
 
 def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
-    """Compares solution costs and lengths against benchmark-optimal references."""
     fig, axes = plt.subplots(1, 2, figsize=WIDE_FIGSIZE)
 
-    # Cost comparison subplot
     ax_cost = axes[0]
     cost_df = solved_df.dropna(subset=["path_cost", "benchmark_optimal_path_cost"])
     if not cost_df.empty:
@@ -64,7 +62,6 @@ def plot_benchmark_path_comparison(solved_df: pd.DataFrame) -> plt.Figure:
     ax_cost.set_ylabel("Solution Path Cost")
     ax_cost.grid(True, linestyle=GRID_LINESTYLE, alpha=GRID_ALPHA)
 
-    # Path length comparison subplot
     ax_len = axes[1]
     length_df = solved_df.dropna(subset=["path_action_count", "benchmark_optimal_action_count"])
     if not length_df.empty:

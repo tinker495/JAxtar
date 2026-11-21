@@ -74,11 +74,9 @@ class BaseLogger(ABC):
         if artifact_name is None:
             artifact_name = os.path.basename(artifact_path)
 
-        # Create artifacts subdirectory
         artifacts_dir = os.path.join(self.log_dir, "artifacts", artifact_type)
         os.makedirs(artifacts_dir, exist_ok=True)
 
-        # Copy artifact to artifacts directory
         dest_path = os.path.join(artifacts_dir, artifact_name)
         if os.path.isdir(artifact_path):
             shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
@@ -261,8 +259,6 @@ class WandbLogger(BaseLogger):
         self._wandb: ModuleType
         try:
             self._wandb = _optional_module("wandb", "Wandb logging")
-            # Initialize wandb with project name and config
-            # Support for run organization through config
             init_kwargs = {
                 "project": log_dir_base,
                 "config": convert_to_serializable_dict(config),
@@ -270,7 +266,6 @@ class WandbLogger(BaseLogger):
                 "reinit": "finish_previous",
             }
 
-            # Optional run organization parameters
             if "run_name" in config:
                 init_kwargs["name"] = config["run_name"]
             if "wandb_group" in config:
@@ -289,7 +284,6 @@ class WandbLogger(BaseLogger):
 
     def _log_hyperparameters(self):
         super()._log_hyperparameters()
-        # Wandb automatically logs config during init, but we can also update it
         if self.wandb_run:
             self._wandb.config.update(
                 convert_to_serializable_dict(self.config), allow_val_change=True
@@ -319,7 +313,6 @@ class WandbLogger(BaseLogger):
         image = np.asarray(image)
         if self.wandb_run:
             if dataformats == "CHW":
-                # Convert CHW to HWC for wandb
                 image = np.transpose(image, (1, 2, 0))
             self._wandb.log({tag: self._wandb.Image(image)}, step=step)
 
@@ -337,10 +330,6 @@ class WandbLogger(BaseLogger):
         artifact_type: str = "model",
         aliases: list[str] | None = None,
     ):
-        """
-        Log artifact to Wandb using native artifact support.
-        Wandb has excellent native artifact tracking capabilities.
-        """
         if not self.wandb_run:
             print("Warning: Wandb run not initialized, cannot log artifact")
             return
@@ -363,13 +352,11 @@ class WandbLogger(BaseLogger):
             }
             artifact = self._wandb.Artifact(**artifact_kwargs)
 
-            # Add file or directory to artifact
             if os.path.isdir(artifact_path):
                 artifact.add_dir(artifact_path)
             else:
                 artifact.add_file(artifact_path)
 
-            # Log artifact to wandb with explicit run context and aliases
             self.wandb_run.log_artifact(artifact, aliases=aliases)
             print(
                 f"Artifact '{artifact_name}' logged to Wandb successfully with aliases: {aliases}"
@@ -377,7 +364,6 @@ class WandbLogger(BaseLogger):
 
         except (AttributeError, ValueError, RuntimeError, ConnectionError) as e:
             print(f"Error logging artifact to Wandb: {e}")
-            # Fallback: copy to local directory like other loggers
             self._save_artifact_local(artifact_path, artifact_name, artifact_type)
 
     def close(self):

@@ -4,7 +4,6 @@ import numpy as np
 
 
 def calculate_heuristic_metrics(results: List[Dict]) -> Optional[Dict[str, float]]:
-    """Calculates R-squared and CCC for heuristic accuracy from evaluation results."""
     all_actual_dists = []
     all_estimated_dists = []
     has_optimal_path_used = False
@@ -13,15 +12,12 @@ def calculate_heuristic_metrics(results: List[Dict]) -> Optional[Dict[str, float
     # (e.g. if we used optimal path from benchmark for analysis)
     results_with_analysis = [r for r in results if r.get("path_analysis")]
 
-    # If at least one result used optimal path, we prefer to use ONLY those for metric calculation
-    # to be consistent (or we can mix, but usually we want one consistent source).
-    # Let's check if any result used optimal path.
+    # Prefer optimal-path analyses exclusively when present to avoid mixing reference and suboptimal search paths.
     optimal_path_results = [
         r for r in results_with_analysis if r.get("used_optimal_path_for_analysis")
     ]
 
     if optimal_path_results:
-        # If available, use ONLY optimal path results for accuracy metrics
         target_results = optimal_path_results
         has_optimal_path_used = True
     else:
@@ -41,19 +37,16 @@ def calculate_heuristic_metrics(results: List[Dict]) -> Optional[Dict[str, float
     y_true = np.array(all_actual_dists)
     y_pred = np.array(all_estimated_dists)
 
-    # --- R-squared Calculation ---
     mean_y_true = np.mean(y_true)
     ss_total = np.sum((y_true - mean_y_true) ** 2)
     ss_residual = np.sum((y_true - y_pred) ** 2)
 
-    # Handle case where variance of true values is zero
     if ss_total > 0:
         r_squared = 1 - (ss_residual / ss_total)
     else:
         # If total variance is zero, R-squared is 1 if error is also zero, else undefined (or 0).
         r_squared = 1.0 if ss_residual == 0 else 0.0
 
-    # --- Concordance Correlation Coefficient (CCC) Calculation ---
     mean_true = np.mean(y_true)
     mean_pred = np.mean(y_pred)
     std_true = np.std(y_true)
@@ -69,7 +62,6 @@ def calculate_heuristic_metrics(results: List[Dict]) -> Optional[Dict[str, float
     numerator = 2 * pearson_corr * std_true * std_pred
     denominator = std_true**2 + std_pred**2 + (mean_true - mean_pred) ** 2
 
-    # Handle case where denominator is zero
     if denominator > 0:
         ccc = numerator / denominator
     else:
@@ -81,10 +73,8 @@ def calculate_heuristic_metrics(results: List[Dict]) -> Optional[Dict[str, float
 
 
 def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
-    """Calculates benchmark-specific metrics (cost gap, action gap, optimal path matching)."""
     metrics = {}
 
-    # --- Cost Metrics ---
     solved_with_opt_cost = [
         r
         for r in results
@@ -110,7 +100,6 @@ def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
             }
         )
 
-    # --- Length/Action Metrics ---
     solved_with_opt_length = [
         r
         for r in results
@@ -134,7 +123,7 @@ def calculate_benchmark_metrics(results: List[Dict]) -> Dict[str, float]:
             }
         )
 
-    # --- Verification-based optimality (regardless of action sequence availability) ---
+    # Verification-based optimality applies even when no reference action sequence is provided.
     verification_matches = [
         r["matches_optimal_path"] for r in results if r.get("matches_optimal_path") is not None
     ]

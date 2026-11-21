@@ -23,7 +23,6 @@ class Model(DistanceModel):
 
     @nn.compact
     def __call__(self, x, training=False):
-        # [4, 4, 1] -> conv
         x = nn.Conv(64, (3, 3), strides=1, padding="SAME", dtype=DTYPE, param_dtype=PARAM_DTYPE)(x)
         x = apply_norm(self.norm_fn, x, training)
         x = nn.relu(x)

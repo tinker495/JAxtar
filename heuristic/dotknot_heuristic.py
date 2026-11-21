@@ -11,9 +11,6 @@ class DotKnotHeuristic(Heuristic):
         super().__init__(puzzle)
 
     def distance(self, solve_config: "DotKnot.SolveConfig", current: DotKnot.State) -> jax.Array:
-        """
-        Get distance for solving puzzle.
-        """
         color_distances = jax.vmap(
             lambda color_idx: get_color_distances(
                 current, color_idx, self.puzzle.size, self.puzzle.color_num

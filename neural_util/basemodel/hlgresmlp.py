@@ -90,7 +90,6 @@ class HLGResMLPModel(DistanceHLGModel):
             )
         )
 
-        # Prepare resblocks
         resblocks_list = []
         for i in range(self.Res_N - self.tail_head_precision):
             kwargs = {}
@@ -148,7 +147,6 @@ class HLGResMLPModel(DistanceHLGModel):
             )
         )
 
-        # Learnable Logit Scale (Temperature Adjustment)
         self.logit_scale = self.param(
             "logit_scale", nn.initializers.constant(1.0), (1,), HEAD_DTYPE
         )
@@ -173,7 +171,6 @@ class HLGResMLPModel(DistanceHLGModel):
 
         x = x.reshape(x.shape[0], self.action_size, self.categorial_n)
 
-        # Apply Logit Scale
         x = x * self.logit_scale
 
         return x

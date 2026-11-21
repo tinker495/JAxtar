@@ -66,18 +66,15 @@ class ArtifactManager:
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
     def save_config(self, config: dict):
-        """Saves the configuration dictionary to a JSON file."""
         with open(self.run_dir / "config.json", "w") as f:
             config = {**config, "runtime_provenance": _runtime_provenance()}
             serializable_config = convert_to_serializable_dict(config)
             json.dump(serializable_config, f, indent=4)
 
     def save_results(self, results: List[Dict]):
-        """Saves the main evaluation results to a CSV file."""
         pd.DataFrame(results).to_csv(self.run_dir / "results.csv", index=False)
 
     def save_path_states(self, results: List[Dict]):
-        """Saves path states to .npz files if they exist in the results."""
         path_states_dir = self.run_dir / "path_states"
         path_states_dir.mkdir(exist_ok=True)
         for r in results:
@@ -87,7 +84,6 @@ class ArtifactManager:
                 states.save(path_states_dir / filename)
 
     def save_and_log_plot(self, plot_name: str, fig: plt.Figure, sub_dir: Optional[str] = None):
-        """Saves a plot to a file and logs it to Tensorboard if a logger is available."""
         plot_dir = self.run_dir
         if sub_dir:
             plot_dir = self.run_dir / sub_dir
@@ -103,7 +99,6 @@ class ArtifactManager:
         plt.close(fig)
 
     def log_scalar(self, name: str, value: float):
-        """Logs a scalar value to Tensorboard if a logger is available."""
         if self.logger:
             log_tag = f"Comparison/{self.log_namespace}/{name}"
             self.logger.log_scalar(log_tag, value, self.step)

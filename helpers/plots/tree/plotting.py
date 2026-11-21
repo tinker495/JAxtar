@@ -1,5 +1,3 @@
-"""Main plotting orchestration for search tree visualization."""
-
 import logging
 from typing import Any, Dict, Optional
 
@@ -28,22 +26,6 @@ def plot_search_tree_semantic(
     max_points: int = 100000,
     top_n_leaf_nodes: Optional[int] = None,
 ) -> plt.Figure:
-    """
-    Plot search tree in semantic coordinates (g vs h).
-
-    Args:
-        result_item: Dictionary containing search results with keys:
-            - expansion_analysis: Dict with costs, dists, original_indices, parent_indices
-            - path_analysis: Optional dict with actual/estimated values
-            - solved_index: Optional hash index of solved node
-            - path_cost: Optional total path cost
-        max_points: Maximum number of points to plot (downsampling threshold)
-        top_n_leaf_nodes: If specified, only show paths to top N leaf nodes
-            by h-value (closest to goal). None shows all paths.
-
-    Returns:
-        Matplotlib figure object
-    """
     tree_data = prepare_tree_data(result_item, max_points, top_n_leaf_nodes)
 
     if tree_data is None:
@@ -59,7 +41,6 @@ def plot_search_tree_semantic(
     parent_indices = tree_data.parent_indices
     kept_node_mask = tree_data.kept_node_mask
 
-    # Filter data if leaf node mask is specified
     if kept_node_mask is not None:
         costs = costs[kept_node_mask]
         dists = dists[kept_node_mask]
@@ -99,12 +80,6 @@ def _plot_solution_path(
     original_indices: np.ndarray,
     parent_indices: np.ndarray,
 ) -> bool:
-    """
-    Attempt to plot the solution path using multiple fallback strategies.
-
-    Returns:
-        True if path was successfully plotted, False otherwise
-    """
     analysis = result_item.get("expansion_analysis", {})
 
     path_indices = None
@@ -167,12 +142,6 @@ def _plot_solution_path(
 
 
 def _plot_path_from_analysis(ax, result_item: Dict[str, Any]) -> bool:
-    """
-    Plot path using path_analysis data if available.
-
-    Returns:
-        True if path was successfully plotted, False otherwise
-    """
     try:
         path_data = result_item.get("path_analysis")
         used_optimal = result_item.get("used_optimal_path_for_analysis")

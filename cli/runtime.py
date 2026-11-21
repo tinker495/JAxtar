@@ -1,5 +1,3 @@
-"""Shared tyro presentation and CLI error boundary."""
-
 import sys
 from collections.abc import Callable, Sequence
 from typing import Any

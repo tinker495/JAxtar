@@ -6,12 +6,9 @@ import jax.numpy as jnp
 def batched_state_equal(lhs: object, rhs: object) -> chex.Array:
     """Per-row equality of two equally-shaped batched states -> ``(batch,)`` bool.
 
-    Compares the raw leaves instead of ``lhs == rhs``: ``Xtructurable.__eq__`` reduces
-    the whole comparison to a single scalar, so the previous implementation returned a
-    0-d array. Every caller then broadcast that scalar over its mask, making the
-    non-backtracking filters in both ``id_stars`` and ``beamsearch`` all-or-nothing --
-    in practice always "nothing", so they blocked no node while still paying for the
-    ancestor trail/trace bookkeeping.
+    Compares raw pytree leaves instead of ``lhs == rhs`` because ``Xtructurable.__eq__``
+    reduces across the batch to a single scalar, which would collapse per-row
+    non-backtracking masks.
     """
     lhs_leaves = jax.tree_util.tree_leaves(lhs)
     rhs_leaves = jax.tree_util.tree_leaves(rhs)
@@ -40,32 +37,20 @@ def stable_partition_three(mask2: chex.Array, mask1: chex.Array) -> chex.Array:
     - Category 0 (else): last block
 
     Returns indices suitable for gathering flattened arrays to achieve the
-    [2..., 1..., 0...] ordering while preserving relative order within each class.
-    Implementation uses prefix-sum (cumsum) + scatter for O(N) complexity,
-    replacing the previous O(N log N) sort-based approach.
+    [2..., 1..., 0...] ordering while preserving relative order within each class,
+    using prefix-sum (cumsum) + scatter for O(N) complexity.
     """
 
-    # Flatten masks
     flat2 = mask2.reshape(-1)
-    # Ensure category 1 excludes category 2
     flat1 = jnp.logical_and(mask1.reshape(-1), jnp.logical_not(flat2))
-    # Category 0 is whatever is left
     flat0 = jnp.logical_not(jnp.logical_or(flat2, flat1))
 
-    # Calculate counts and offsets
     count2 = jnp.sum(flat2)
     count1 = jnp.sum(flat1)
 
-    # Calculate position within each category (stable order)
-    # cumsum gives 1-based index, so subtract 1 for 0-based
     pos2 = jnp.cumsum(flat2) - 1
     pos1 = jnp.cumsum(flat1) - 1
     pos0 = jnp.cumsum(flat0) - 1
-
-    # Calculate destination indices
-    # If in cat2: dest = pos2
-    # If in cat1: dest = count2 + pos1
-    # If in cat0: dest = count2 + count1 + pos0
 
     offset1 = count2
     offset0 = count2 + count1
@@ -79,7 +64,6 @@ def stable_partition_three(mask2: chex.Array, mask1: chex.Array) -> chex.Array:
     n = flat2.shape[0]
     indices = jnp.arange(n, dtype=jnp.int32)
 
-    # Use scatter to create invperm
     invperm = jnp.zeros(n, dtype=jnp.int32).at[dest_idx].set(indices)
 
     return invperm

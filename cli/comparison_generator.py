@@ -65,7 +65,6 @@ class ComparisonGenerator:
             self.console.print("[bold red]No valid evaluation runs found to compare.[/bold red]")
             return
 
-        # Config comparison
         flat_configs = {name: flatten_dict(cfg) for name, cfg in all_configs.items()}
         config_df = pd.DataFrame.from_dict(flat_configs, orient="index")
         differing_params = []
@@ -131,7 +130,6 @@ class ComparisonGenerator:
                 "[bold yellow]No configuration differences found among runs.[/bold yellow]"
             )
 
-        # Results comparison
         combined_df = pd.concat(all_dfs, ignore_index=True)
 
         if "heuristic_metrics.r_squared" in config_df.columns:

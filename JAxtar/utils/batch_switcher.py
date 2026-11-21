@@ -49,7 +49,6 @@ def variable_batch_switcher_builder(
 
     current_batch = max_batch_size
     while True:
-        # Handle 0 batch size specifically to skip computation
         if current_batch == 0:
             batch_sizes.append(0)
 
@@ -85,7 +84,6 @@ def variable_batch_switcher_builder(
 
         next_batch = max(current_batch >> 1, min_batch_size)
         if next_batch == current_batch:
-            # Halving stalled at min_batch_size; drop to 0 only if 0 is allowed.
             if min_batch_size == 0 and current_batch > 0:
                 next_batch = 0
             else:

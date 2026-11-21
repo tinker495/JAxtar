@@ -125,7 +125,6 @@ class EvalOptions(BaseModel):
         return self.max_node_size // batch_size * batch_size
 
     def resolve_for_eval_setup(self, *, has_benchmark: bool) -> "EvalOptions":
-        """Apply context-dependent defaults before evaluation setup."""
         if has_benchmark or self.num_eval >= 0:
             return self
         return self.model_copy(update={"num_eval": self.DEFAULT_NUM_EVAL_WITHOUT_BENCHMARK})

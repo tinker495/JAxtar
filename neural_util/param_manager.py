@@ -12,43 +12,31 @@ from neural_util.dtypes import PARAM_DTYPE
 
 
 def save_params_with_metadata(path: str, params: Any, metadata: Dict[str, Any]):
-    """
-    Saves model parameters along with metadata to a specified path.
-    """
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
     data = {
         "params": params,
         "metadata": metadata,
-        "timestamp": datetime.now().isoformat(),  # Add a timestamp automatically
+        "timestamp": datetime.now().isoformat(),
     }
     with open(path, "wb") as f:
         pickle.dump(data, f)
 
 
 def load_params_with_metadata(path: str) -> Tuple[Any, Dict[str, Any]]:
-    """
-    Loads model parameters and metadata from a specified path.
-    Returns a tuple of (params, metadata).
-    Returns (None, {}) if loading fails or the format is unrecognized/invalid.
-    """
+    """Returns (None, {}) instead of raising if loading fails or the checkpoint format is invalid."""
     try:
         with open(path, "rb") as f:
             loaded_content = pickle.load(f)
 
-        # New format: dictionary with 'params' and 'metadata' keys
         if isinstance(loaded_content, dict) and "metadata" in loaded_content:
             return loaded_content.get("params", None), loaded_content.get("metadata", {})
-        # Old format: just the parameters directly
+        # Bare Flax parameter dict without a metadata wrapper.
         else:
-            # Validate if the old format content is a non-empty dictionary (typical Flax params)
-            if (
-                isinstance(loaded_content, dict) and loaded_content
-            ):  # Check if it's a non-empty dict
+            if isinstance(loaded_content, dict) and loaded_content:
                 return loaded_content, {}
             else:
-                # If it's not a dict, or an empty dict, consider it invalid old format
                 print(f"Warning: Unrecognized or invalid old format for parameters in {path}.")
                 return None, {}
     except (FileNotFoundError, pickle.PickleError, OSError, ValueError) as e:
@@ -57,16 +45,10 @@ def load_params_with_metadata(path: str) -> Tuple[Any, Dict[str, Any]]:
 
 
 def merge_params(new_params: Any, old_params: Any) -> Any:
-    """
-    Merges old_params into new_params.
-    Values in old_params take precedence.
-    Structure/keys present in new_params but missing in old_params are preserved (new values).
-    Useful for initializing new model components (e.g. AQT) while keeping trained weights.
-    """
+    """Validate exact parameter-tree key equality (after remapping flat ResBlock_*/{BatchNorm_1,Dense_1} keys to MLP_0) and overlay old_params onto new_params as a FrozenDict."""
     if old_params is None:
         return new_params
 
-    # Convert to mutable dicts if needed
     target = unfreeze(new_params) if isinstance(new_params, FrozenDict) else new_params
     source = unfreeze(old_params) if isinstance(old_params, FrozenDict) else old_params
 
@@ -95,9 +77,7 @@ def merge_params(new_params: Any, old_params: Any) -> Any:
 
     source = adapt_legacy_resblock_keys(target, source)
 
-    # If standard dicts, we might need deep copy of target to avoid side effects if mutable,
-    # but typically new_params is fresh.
-    # We'll use a recursive update function.
+    # Mutates target in place when new_params is a plain dict (callers pass freshly initialized params).
 
     def validate_structure(d1, d2, path=""):
         is_d1_dict = isinstance(d1, dict)
@@ -129,23 +109,16 @@ def merge_params(new_params: Any, old_params: Any) -> Any:
                 d[k] = v
         return d
 
-    # We assume 'target' is a dictionary-like structure representing the full model
     if isinstance(target, dict) and isinstance(source, dict):
         validate_structure(target, source)
         merged = recursive_update(target, source)
     else:
-        # Fallback for non-dict (though params should be dicts)
         merged = source
 
     return freeze(merged)
 
 
 def align_params_dtype(params: Any, target_dtype: Any = PARAM_DTYPE) -> Any:
-    """
-    Recursively aligns the dtype of all leaf nodes in the params tree to target_dtype.
-    Useful when loading parameters saved in a different dtype (e.g. float32)
-    into a model expecting a specific dtype (e.g. bfloat16).
-    """
     if params is None:
         return None
 
