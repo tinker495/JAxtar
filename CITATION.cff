@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+type: software
+message: "If you use this software, please cite the version you used."
+title: "JAxtar: GPU-Accelerated Heuristic Search in JAX"
+authors:
+  - family-names: Jung
+    given-names: Kyuseok
+abstract: "JAX implementations of batched A* and Q* search for neural heuristic search research."
+version: "0.1.0"
+doi: "10.5281/zenodo.24442929"
+commit: "e743522f35bc817ff26ac1cde36dc6518b00d8eb"
+date-released: "2026-11-22"
+license: MIT
+repository-code: "https://github.com/tinker495/JAxtar"
+url: "https://github.com/tinker495/JAxtar"
