@@ -71,11 +71,15 @@ def _row_heuristics(
     has_mixed_row = jnp.logical_and(n_full < action_size, n_new % batch_size != 0)
     mixed = jnp.minimum(n_full, action_size - 1)
     mixed_mask = jnp.logical_and(new_states_mask[mixed], has_mixed_row)
-    mixed_heur = switcher(params, xnp.take(neighbours, mixed, axis=0), mixed_mask).astype(KEY_DTYPE)
+    mixed_heur = jax.lax.cond(
+        has_mixed_row,
+        lambda: switcher(params, xnp.take(neighbours, mixed, axis=0), mixed_mask).astype(KEY_DTYPE),
+        lambda: heurs[mixed],
+    )
     dist = xnp.update_on_condition(
         dist, vals.hashidx.index[mixed], mixed_mask, mixed_heur, unique_indices=True
     )
-    heurs = heurs.at[mixed].set(jnp.where(has_mixed_row, mixed_heur, heurs[mixed]))
+    heurs = heurs.at[mixed].set(mixed_heur)
     return dist, heurs
 
 
