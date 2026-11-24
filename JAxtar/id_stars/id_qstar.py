@@ -65,6 +65,7 @@ def _id_qstar_frontier_builder(
         max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
+        prefix_mask=True,
     )
 
     def generate_frontier(
@@ -240,7 +241,10 @@ def _id_qstar_loop_builder(
     )
 
     def _min_q(q_params, states, valid_mask):
-        q_vals = variable_q_parent_switcher(q_params, states, valid_mask).astype(KEY_DTYPE)
+        # The initial frontier is seeded at index zero or sorted by finite score.
+        q_vals = variable_q_parent_switcher(q_params, states, valid_mask, prefix_mask=True).astype(
+            KEY_DTYPE
+        )
         q_vals = jnp.where(valid_mask[:, None], q_vals, jnp.inf)
         q_vals = jnp.maximum(0.0, q_vals)  # Ensure non-negative Q-values
         return jnp.min(q_vals, axis=-1)

@@ -54,7 +54,7 @@ def _build_chunked_heuristic_eval(
         flat_valid: jnp.ndarray,
     ) -> jnp.ndarray:
         return chunked_masked_eval(
-            lambda s, m: variable_heuristic_fn(h_params, s, m, prefix_mask=True),
+            lambda s, m: variable_heuristic_fn(h_params, s, m),
             flat_states,
             flat_valid,
             action_size,
@@ -90,6 +90,7 @@ def _id_astar_frontier_builder(
         max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
+        prefix_mask=True,
     )
     trail_indices = jnp.arange(non_backtracking_steps, dtype=jnp.int32)
 
@@ -259,6 +260,7 @@ def _id_astar_loop_builder(
         max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
+        prefix_mask=True,
     )
 
     generate_frontier = _id_astar_frontier_builder(
