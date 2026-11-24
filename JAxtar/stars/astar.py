@@ -132,9 +132,7 @@ def _astar_loop_builder(
         heuristic_parameters = loop_state.params
         current = loop_state.current
         filled = loop_state.filled
-        states = search_result.get_state(current.hashidx)
-
-        neighbours, ncost = puzzle.batched_get_neighbours(solve_config, states, filled)
+        neighbours, ncost = puzzle.batched_get_neighbours(solve_config, loop_state.states, filled)
         action_size = search_result.action_size
         sr_batch_size = search_result.batch_size
         parent_action = jnp.tile(
@@ -273,6 +271,7 @@ def _astar_loop_builder(
             params=heuristic_parameters,
             current=current,
             filled=filled,
+            states=search_result.get_state(current.hashidx),
         )
 
     return init_loop_state, loop_condition, loop_body
@@ -322,8 +321,7 @@ def astar_builder(
         search_result = loop_state.search_result
         current = loop_state.current
         filled = loop_state.filled
-        states = search_result.get_state(current.hashidx)
-        solved = puzzle.batched_is_solved(solve_config, states)
+        solved = puzzle.batched_is_solved(solve_config, loop_state.states)
         solved = jnp.logical_and(solved, filled)
         search_result.solved = solved.any()
         search_result.solved_idx = current[jnp.argmax(solved)]

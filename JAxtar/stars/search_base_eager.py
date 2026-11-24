@@ -32,7 +32,7 @@ from JAxtar.stars.common import (
 class LoopState:
     """
     Loop state of the eager search (A*).
-    Tracks hash indices, costs, and masks; states are fetched from the hash table on demand.
+    The popped states are shared by the goal check and the next expansion.
     """
 
     search_result: "EagerSearchResult"
@@ -40,6 +40,7 @@ class LoopState:
     params: Any
     current: Current
     filled: jax.Array
+    states: Puzzle.State
 
 
 @base_dataclass(static_fields=SEARCH_RESULT_STATIC_FIELDS)
@@ -255,12 +256,12 @@ def init_eager_loop_state(
         params=params,
         current=Current(hashidx=hash_idxs, cost=costs),
         filled=filled,
+        states=search_result.get_state(hash_idxs),
     )
 
 
 def eager_loop_condition(puzzle: Puzzle, loop_state: LoopState):
     search_result = loop_state.search_result
-    states = search_result.get_state(loop_state.current.hashidx)
     return search_continues(
-        puzzle, search_result, loop_state.solve_config, states, loop_state.filled
+        puzzle, search_result, loop_state.solve_config, loop_state.states, loop_state.filled
     )
