@@ -385,10 +385,9 @@ class DeferredSearchResult(SearchResult):
 
         final_parents = final_val.parent
 
-        # Put overflow nodes back into the PQ so they are never lost. Unconditional:
-        # an all-inf block is a cheap no-op for BGPQ.insert, whereas the lax.cond cost
-        # a host predicate readback plus a pass-through copy of the whole store per pop.
-        search_result.priority_queue = search_result.priority_queue.insert(
+        # The initial buffer is all inf; each refill replaces it with the aligned
+        # suffix of a stable key sort. Reinsert without sorting the same row again.
+        search_result.priority_queue = search_result.priority_queue.insert_sorted(
             overflow_keys, overflow_vals
         )
 
