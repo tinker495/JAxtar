@@ -226,7 +226,9 @@ def _bi_qstar_loop_builder(
                     flat_need_compute = need_compute.flatten()
 
                     computed_heuristic_vals = chunked_masked_eval(
-                        lambda s, m: jnp.min(variable_q_batch_switcher(q_params, s, m), axis=-1),
+                        lambda s, m: jnp.min(
+                            variable_q_batch_switcher(q_params, s, m, prefix_mask=True), axis=-1
+                        ),
                         flat_states,
                         flat_need_compute,
                         action_size,

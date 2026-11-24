@@ -83,6 +83,7 @@ def _bi_astar_loop_builder(
         max_batch_size=batch_size,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
+        prefix_mask=True,
     )
     estimated_successors = max(1, action_size - int(puzzle.is_reversible))
     min_pop = (min(batch_size, MIN_BATCH_SIZE) + estimated_successors - 1) // estimated_successors

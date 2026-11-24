@@ -47,6 +47,7 @@ def _heuristic_beam_loop_builder(
         max_batch_size=beam_width,
         min_batch_size=MIN_BATCH_SIZE,
         pad_value=jnp.inf,
+        prefix_mask=True,
     )
 
     if non_backtracking_steps < 0:

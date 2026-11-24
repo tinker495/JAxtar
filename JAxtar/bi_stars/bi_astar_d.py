@@ -223,7 +223,9 @@ def _bi_astar_d_loop_builder(
                     flat_need_compute = need_compute.flatten()
 
                     computed_heuristic_vals = chunked_masked_eval(
-                        lambda s, m: variable_heuristic_batch_switcher(heuristic_params, s, m),
+                        lambda s, m: variable_heuristic_batch_switcher(
+                            heuristic_params, s, m, prefix_mask=True
+                        ),
                         flat_states,
                         flat_need_compute,
                         action_size,

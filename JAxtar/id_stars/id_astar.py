@@ -54,7 +54,7 @@ def _build_chunked_heuristic_eval(
         flat_valid: jnp.ndarray,
     ) -> jnp.ndarray:
         return chunked_masked_eval(
-            lambda s, m: variable_heuristic_fn(h_params, s, m),
+            lambda s, m: variable_heuristic_fn(h_params, s, m, prefix_mask=True),
             flat_states,
             flat_valid,
             action_size,

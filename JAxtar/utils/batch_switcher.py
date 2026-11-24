@@ -37,6 +37,7 @@ def variable_batch_switcher_builder(
         pad_value: Value used when padding the evaluated result back to
             ``max_batch_size`` along the leading dimension.
         prefix_mask: When true, active entries must form a contiguous prefix.
+            The returned callable accepts the same keyword for individual call sites.
     """
 
     max_batch_size = int(max_batch_size)
@@ -102,6 +103,8 @@ def variable_batch_switcher_builder(
         distance_fn_parameters,
         current,
         filled: chex.Array,
+        *,
+        prefix_mask: bool = prefix_mask,
     ):
         if prefix_mask:
             # A smaller bucket of size s fits exactly when filled[s] is false.
