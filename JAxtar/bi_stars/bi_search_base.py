@@ -766,18 +766,27 @@ def build_bi_deferred_expand_direction(
         costs = jnp.tile(cost[jnp.newaxis, :], (action_size, 1))
         filled_tiles = jnp.tile(filled[jnp.newaxis, :], (action_size, 1))
 
-        # Step 1: Evaluation Callback (algorithm-owned pruning/unique/optimal_mask)
-        neighbour_keys, dists, optimal_mask = eval_fn(
-            puzzle,
-            search_result,
-            current_solve_config,
-            params,
-            states,
-            costs,
-            filled_tiles,
-            filled,
-            look_ahead_pruning,
-            cost_weight,
+        # The opposite direction can keep the loop alive when this one has no parents.
+        def evaluate_edges():
+            return eval_fn(
+                puzzle,
+                search_result,
+                current_solve_config,
+                params,
+                states,
+                costs,
+                filled_tiles,
+                filled,
+                look_ahead_pruning,
+                cost_weight,
+            )
+
+        def empty_edges():
+            inf = jnp.full_like(costs, jnp.inf, dtype=KEY_DTYPE)
+            return inf, inf, jnp.zeros_like(filled_tiles)
+
+        neighbour_keys, dists, optimal_mask = jax.lax.cond(
+            jnp.any(filled), evaluate_edges, empty_edges
         )
 
         # Step 2: Priority Queue Insertion

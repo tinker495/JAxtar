@@ -335,13 +335,9 @@ def _bi_astar_d_loop_builder(
     def loop_body(loop_state: BiLoopStateWithStates) -> BiLoopStateWithStates:
         """Main loop body for bidirectional A* deferred.
 
-        Both directions run unconditionally each iteration, baton-passing the
-        shared hash table so each direction inserts into the table already
-        holding the other's states. Emptiness and the post-meeting tail are
-        gated by masking `filled`, never by lax.cond — identity cond branches
-        force full D2D copies of the carried buffers. An exhausted direction's
-        PQ can never refill (each direction feeds only its own queue), so a
-        masked no-op expansion is equivalent to skipping it.
+        Each direction adopts the other's hash table on every iteration. An empty
+        parent mask, including the backward tail after a meeting, skips edge
+        evaluation. The table and queue stay outside that conditional.
         """
         bi_result = loop_state.bi_result
         solve_config = loop_state.solve_config
