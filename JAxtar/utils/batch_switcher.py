@@ -23,6 +23,7 @@ def variable_batch_switcher_builder(
     max_batch_size: int,
     min_batch_size: int,
     pad_value,
+    prefix_mask: bool = False,
 ):
     """
     Build a callable that dynamically selects a pre-JITed branch based on how many
@@ -35,6 +36,7 @@ def variable_batch_switcher_builder(
         min_batch_size: Minimum batch size (inclusive) to pre-compile.
         pad_value: Value used when padding the evaluated result back to
             ``max_batch_size`` along the leading dimension.
+        prefix_mask: When true, active entries must form a contiguous prefix.
     """
 
     max_batch_size = int(max_batch_size)
@@ -101,11 +103,16 @@ def variable_batch_switcher_builder(
         current,
         filled: chex.Array,
     ):
-        filled_count = jnp.sum(filled.astype(jnp.int32), axis=0)
-        filled_count = jnp.clip(filled_count, 0, max_batch_size)
-        eligible = filled_count <= batch_sizes_array
-        num_eligible = jnp.sum(eligible.astype(jnp.int32))
-        branch_index = jnp.clip(num_eligible - 1, 0, num_branches - 1)
+        if prefix_mask:
+            # A smaller bucket of size s fits exactly when filled[s] is false.
+            boundaries = jnp.asarray(filled)[batch_sizes_array[1:]]
+            branch_index = jnp.sum(jnp.logical_not(boundaries), dtype=jnp.int32)
+        else:
+            filled_count = jnp.sum(filled.astype(jnp.int32), axis=0)
+            filled_count = jnp.clip(filled_count, 0, max_batch_size)
+            eligible = filled_count <= batch_sizes_array
+            num_eligible = jnp.sum(eligible.astype(jnp.int32))
+            branch_index = jnp.clip(num_eligible - 1, 0, num_branches - 1)
         return jax.lax.switch(
             branch_index,
             tuple(branches),
