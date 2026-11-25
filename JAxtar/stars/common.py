@@ -22,6 +22,7 @@ from xtructure import (
     Xtructurable,
 )
 from xtructure.core.dataclass import base_dataclass
+from xtructure.numpy import where as xnp_where
 
 from JAxtar.annotate import (
     ACTION_DTYPE,
@@ -41,6 +42,20 @@ SearchResultT = TypeVar("SearchResultT", bound="SearchResult")
 
 # Fields every search result keeps as static pytree metadata; families may add more.
 SEARCH_RESULT_STATIC_FIELDS = ("action_size", "fixed_batch_pop")
+
+
+def reinsert_refill_overflow(
+    queue: BGPQ, keys: jax.Array, values: Xtructurable, delete_calls: jax.Array
+) -> BGPQ:
+    """Only a refill can produce overflow entries from the merged batches."""
+    refilled = delete_calls > 1
+    # The stable merge puts the initial all-inf row before equal buffer padding.
+    # Preserve its default payload in those slots when bypassing the heap walk.
+    pad = ~refilled & jnp.isposinf(queue.key_buffer)
+    queue = queue.replace(val_buffer=xnp_where(pad, values[:-1], queue.val_buffer))
+    return jax.lax.fori_loop(
+        0, refilled.astype(jnp.int32), lambda _, q: q.insert_sorted(keys, values), queue
+    )
 
 
 def select_pop_batch(
