@@ -7,6 +7,8 @@ authors:
     given-names: Kyuseok
 abstract: "JAX implementations of batched A* and Q* search for neural heuristic search research."
 version: "0.1.1"
+doi: "10.5281/zenodo.24545129"
+commit: "bbc543217154860b78a29e85d5ef9e06e24ff0f9"
 date-released: "2026-11-26"
 license: MIT
 repository-code: "https://github.com/tinker495/JAxtar"
