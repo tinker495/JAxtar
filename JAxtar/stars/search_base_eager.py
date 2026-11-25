@@ -156,10 +156,8 @@ class EagerSearchResult(SearchResult):
             (search_result, min_key, min_val, buffer, buffer_val, delete_calls0, popped0),
         )
 
-        # Put overflow nodes back into the PQ so they are never lost. Unconditional:
-        # an all-inf block is a cheap no-op for BGPQ.insert, whereas the lax.cond cost
-        # a host predicate readback plus a pass-through copy of the whole store per pop.
-        search_result.priority_queue = search_result.priority_queue.insert(
+        # Overflow is either the all-inf initial buffer or the sorted suffix from refill.
+        search_result.priority_queue = search_result.priority_queue.insert_sorted(
             overflow_keys, overflow_vals
         )
 
