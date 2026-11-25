@@ -47,11 +47,14 @@ def stable_partition_three(mask2: chex.Array, mask1: chex.Array) -> chex.Array:
 
     flat2 = mask2.reshape(-1)
     flat1 = jnp.logical_and(mask1.reshape(-1), jnp.logical_not(flat2))
-    count2 = jnp.sum(flat2)
-    count1 = jnp.sum(flat1)
+    indices = jnp.arange(flat2.size, dtype=jnp.int32)
+    if flat2.size == 0:
+        return indices
+
     prefix2 = jnp.cumsum(flat2)
     prefix1 = jnp.cumsum(flat1)
-    indices = jnp.arange(flat2.size, dtype=jnp.int32)
+    count2 = prefix2[-1]
+    count1 = prefix1[-1]
 
     # At a category-0 element both prefixes count only preceding elements.
     pos0 = indices - prefix2 - prefix1
