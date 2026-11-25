@@ -43,6 +43,15 @@ SearchResultT = TypeVar("SearchResultT", bound="SearchResult")
 SEARCH_RESULT_STATIC_FIELDS = ("action_size", "fixed_batch_pop")
 
 
+def reinsert_refill_overflow(
+    queue: BGPQ, keys: jax.Array, values: Xtructurable, delete_calls: jax.Array
+) -> BGPQ:
+    """Only a refill can produce overflow entries from the merged batches."""
+    return jax.lax.fori_loop(
+        0, (delete_calls > 1).astype(jnp.int32), lambda _, q: q.insert_sorted(keys, values), queue
+    )
+
+
 def select_pop_batch(
     priority_queue: BGPQ,
     key: jax.Array,

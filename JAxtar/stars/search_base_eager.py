@@ -23,6 +23,7 @@ from JAxtar.stars.common import (
     SearchResult,
     insert_start,
     record_pq_pop,
+    reinsert_refill_overflow,
     search_continues,
     select_pop_batch,
 )
@@ -156,9 +157,8 @@ class EagerSearchResult(SearchResult):
             (search_result, min_key, min_val, buffer, buffer_val, delete_calls0, popped0),
         )
 
-        # Overflow is either the all-inf initial buffer or the sorted suffix from refill.
-        search_result.priority_queue = search_result.priority_queue.insert_sorted(
-            overflow_keys, overflow_vals
+        search_result.priority_queue = reinsert_refill_overflow(
+            search_result.priority_queue, overflow_keys, overflow_vals, delete_calls
         )
 
         next_queue, final_process_mask = select_pop_batch(

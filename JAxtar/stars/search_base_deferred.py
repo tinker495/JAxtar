@@ -28,6 +28,7 @@ from JAxtar.stars.common import (
     insert_priority_queue_batches,
     insert_start,
     record_pq_pop,
+    reinsert_refill_overflow,
     search_continues,
     select_pop_batch,
 )
@@ -385,10 +386,8 @@ class DeferredSearchResult(SearchResult):
 
         final_parents = final_val.parent
 
-        # The initial buffer is all inf; each refill replaces it with the aligned
-        # suffix of a stable key sort. Reinsert without sorting the same row again.
-        search_result.priority_queue = search_result.priority_queue.insert_sorted(
-            overflow_keys, overflow_vals
+        search_result.priority_queue = reinsert_refill_overflow(
+            search_result.priority_queue, overflow_keys, overflow_vals, delete_calls
         )
 
         next_queue, final_process_mask = select_pop_batch(
