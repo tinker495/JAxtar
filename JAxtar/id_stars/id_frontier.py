@@ -90,15 +90,13 @@ class IDFrontier:
         new_sol_cost: jax.Array,
         new_sol_actions: jax.Array,
     ) -> "IDFrontier":
-        packed_batch, packed_valid, _, packed_idx = compact_by_valid(flat_batch, flat_valid)
-        packed_f = jnp.where(packed_valid, f_safe[packed_idx], jnp.inf)
-
-        neg_f = -packed_f
+        packed_f, packed_valid, _, packed_idx = compact_by_valid(f_safe, flat_valid)
+        neg_f = -jnp.where(packed_valid, packed_f, jnp.inf)
         top_vals, top_indices = jax.lax.top_k(neg_f, batch_size)
         selected_f = (-top_vals).astype(KEY_DTYPE)
         selected_valid = jnp.isfinite(selected_f)
 
-        selected = xnp.take(packed_batch, top_indices, axis=0)
+        selected = xnp.take(flat_batch, packed_idx[top_indices], axis=0)
         selected_valid = jnp.logical_and(selected_valid, packed_valid[top_indices])
 
         return IDFrontier(

@@ -5,7 +5,7 @@ Search Base for Iterative Deepening Algorithms (IDA* / ID-Q*)
 import time
 from dataclasses import replace
 from functools import partial
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any, Callable, Protocol, Self
 
 import chex
 import jax
@@ -31,6 +31,20 @@ from JAxtar.solution_trace import (
     action_pad_int,
 )
 from JAxtar.utils.array_ops import batched_state_equal, stable_partition_three
+
+
+class _ExpansionBatch(Protocol):
+    """Fields shared by the puzzle-specific DFS expansion batches."""
+
+    state: Xtructurable
+    cost: jax.Array
+    depth: jax.Array
+    trail: Xtructurable
+    parent_trace: jax.Array
+    action: jax.Array
+
+    def __getitem__(self, index: jax.Array) -> Self:
+        ...
 
 
 def _bounded_scatter_leaf(stack_arr, update_arr, start, n_write):
@@ -564,7 +578,7 @@ class IDSearchResult:
 
     def expand_and_push(
         self,
-        node_batch: Xtructurable,
+        node_batch: _ExpansionBatch,
         fs: jax.Array,
         valid: jax.Array,
         update_next_bound: bool = True,
@@ -592,14 +606,13 @@ class IDSearchResult:
         active_bound = self.bound
         keep_mask = jnp.logical_and(valid, fs <= active_bound + 1e-6)
 
-        # Compact valid nodes
-        packed_batch, packed_valid, _, packed_idx = compact_by_valid(node_batch, keep_mask)
-        packed_fs = jnp.where(packed_valid, fs[packed_idx], jnp.inf)
+        # Rank the compacted scores before gathering the wider node payload.
+        packed_fs, packed_valid, _, packed_idx = compact_by_valid(fs, keep_mask)
 
         # Sort by f-value descending (worst -> best) for LIFO stack order
         f_key = jnp.where(packed_valid, -packed_fs, jnp.inf)
         perm = jnp.argsort(f_key)
-        ordered = xnp.take(packed_batch, perm, axis=0)
+        ordered = node_batch[packed_idx[perm]]
 
         n_push = jnp.sum(packed_valid)
 
