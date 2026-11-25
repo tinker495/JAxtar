@@ -9,11 +9,8 @@ from JAxtar.utils.array_ops import stable_partition_three
 def chunked_masked_eval(value_fn, flat_states, flat_valid, action_size, batch_size):
     """Evaluate ``value_fn`` only on the masked states, chunk by chunk.
 
-    The valid states are partitioned to the front, reshaped into
-    ``(action_size, batch_size)`` chunks, evaluated with a ``jax.lax.scan`` so
-    only one batch is resident at a time, and scattered back to their original
-    positions. This keeps the peak memory footprint at a single chunk while
-    still producing a fully populated ``(action_size * batch_size,)`` result.
+    Partition the row indices, then gather one chunk of states per iteration.
+    Write each chunk's scores directly to their original positions.
 
     Args:
         value_fn: ``value_fn(states_slice, mask_slice) -> (batch_size,)``. Any
@@ -41,13 +38,8 @@ def chunked_masked_eval(value_fn, flat_states, flat_valid, action_size, batch_si
     """
     flat_size = action_size * batch_size
     sorted_idx = stable_partition_three(flat_valid, jnp.zeros_like(flat_valid, dtype=jnp.bool_))
-    sorted_states = xnp.take(flat_states, sorted_idx, axis=0)
-    sorted_mask = flat_valid[sorted_idx]
-
-    chunk_states = xnp.reshape(sorted_states, (action_size, batch_size))
-    chunk_mask = sorted_mask.reshape((action_size, batch_size))
-
-    n_valid = jnp.sum(sorted_mask, dtype=jnp.int32)
+    chunk_indices = jnp.reshape(sorted_idx, (action_size, batch_size))
+    n_valid = jnp.sum(flat_valid, dtype=jnp.int32)
     n_chunks = (n_valid + batch_size - 1) // batch_size
 
     def _cond(carry):
@@ -56,16 +48,15 @@ def chunked_masked_eval(value_fn, flat_states, flat_valid, action_size, batch_si
 
     def _body(carry):
         j, vals = carry
-        states_j = xnp.take(chunk_states, j, axis=0)
-        mask_j = chunk_mask[j]
+        start = j * batch_size
+        indices = chunk_indices[j]
+        states_j = xnp.take(flat_states, indices, axis=0)
+        mask_j = start + jnp.arange(batch_size, dtype=jnp.int32) < n_valid
         v = value_fn(states_j, mask_j).astype(KEY_DTYPE)
         v = jnp.maximum(0.0, v)  # Ensure non-negative value
         v = jnp.where(mask_j, v, jnp.inf)
-        return j + 1, vals.at[j].set(v)
+        return j + 1, vals.at[indices].set(v, unique_indices=True)
 
-    init_vals = jnp.full((action_size, batch_size), jnp.inf, dtype=KEY_DTYPE)
-    _, chunk_vals = jax.lax.while_loop(_cond, _body, (jnp.array(0, dtype=jnp.int32), init_vals))
-    sorted_vals = chunk_vals.reshape((flat_size,))
-    flat_vals = jnp.full((flat_size,), jnp.inf, dtype=KEY_DTYPE)
-    flat_vals = flat_vals.at[sorted_idx].set(sorted_vals)
+    init_vals = jnp.full((flat_size,), jnp.inf, dtype=KEY_DTYPE)
+    _, flat_vals = jax.lax.while_loop(_cond, _body, (jnp.array(0, dtype=jnp.int32), init_vals))
     return flat_vals
