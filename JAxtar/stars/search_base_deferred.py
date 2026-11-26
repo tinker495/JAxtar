@@ -254,10 +254,8 @@ class DeferredSearchResult(SearchResult):
         ) = _expand_and_filter(search_result, min_key, min_val)
         popped0 = jnp.sum(jnp.isfinite(min_key)).astype(jnp.int32)
 
-        # Apply unique mask to initial batch to maintain invariant
-        filled = jnp.isfinite(min_key)
-        unique_mask = xnp.unique_mask(current_states, current_costs, filled)
-        min_key = jnp.where(unique_mask, min_key, jnp.inf)
+        # _expand_and_filter already selected at most one active representative per
+        # state, and optimal_mask only removes entries.
 
         # Initialize buffer for overflow (inf)
         buffer_key = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
