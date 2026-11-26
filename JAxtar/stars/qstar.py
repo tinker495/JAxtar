@@ -2,7 +2,6 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
-import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
@@ -101,13 +100,10 @@ def _qstar_loop_builder(
 
             distinct_score = flattened_look_a_head_costs + dist_sign * 1e-5 * dists
 
-            unique_mask = xnp.unique_mask(
+            current_hash_idxs, found, unique_mask = search_result.hashtable.lookup_parallel_dedup(
                 flattened_neighbour_look_head,
-                distinct_score,
                 flattened_filled_tiles,
-            )
-            current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head, unique_mask
+                unique_key=distinct_score,
             )
             old_costs = search_result.get_cost(current_hash_idxs)
             old_dists = search_result.get_dist(current_hash_idxs)

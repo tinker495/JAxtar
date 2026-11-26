@@ -17,7 +17,6 @@ from typing import Any
 import chex
 import jax
 import jax.numpy as jnp
-import xtructure.numpy as xnp
 from puxle import Puzzle
 
 from helpers.jax_compile import compile_search_builder
@@ -197,20 +196,20 @@ def _bi_qstar_loop_builder(
                 flattened_look_ahead_costs = look_ahead_costs.flatten().astype(KEY_DTYPE)
 
                 if use_value_heuristic:
-                    current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                        flattened_neighbour_look_ahead, flattened_filled_tiles
+                    (
+                        current_hash_idxs,
+                        found,
+                        unique_mask,
+                    ) = search_result.hashtable.lookup_parallel_dedup(
+                        flattened_neighbour_look_ahead,
+                        flattened_filled_tiles,
+                        unique_key=flattened_look_ahead_costs,
                     )
                     old_costs = search_result.get_cost(current_hash_idxs)
 
-                    candidate_mask = flattened_filled_tiles & jnp.logical_or(
+                    optimal_mask_flat = unique_mask & jnp.logical_or(
                         ~found, jnp.less(flattened_look_ahead_costs, old_costs)
                     )
-                    unique_mask = xnp.unique_mask(
-                        flattened_neighbour_look_ahead,
-                        flattened_look_ahead_costs,
-                        candidate_mask,
-                    )
-                    optimal_mask_flat = unique_mask & candidate_mask
                     optimal_mask = optimal_mask_flat.reshape(action_size, sr_batch_size)
 
                     old_dists = search_result.get_dist(current_hash_idxs).reshape(
@@ -258,13 +257,14 @@ def _bi_qstar_loop_builder(
                     else:
                         distinct_score = flattened_look_ahead_costs
 
-                    unique_mask = xnp.unique_mask(
+                    (
+                        current_hash_idxs,
+                        found,
+                        unique_mask,
+                    ) = search_result.hashtable.lookup_parallel_dedup(
                         flattened_neighbour_look_ahead,
-                        distinct_score,
                         flattened_filled_tiles,
-                    )
-                    current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                        flattened_neighbour_look_ahead, unique_mask
+                        unique_key=distinct_score,
                     )
                     old_costs = search_result.get_cost(current_hash_idxs)
                     old_dists = search_result.get_dist(current_hash_idxs)

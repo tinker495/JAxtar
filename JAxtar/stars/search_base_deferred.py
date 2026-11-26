@@ -191,17 +191,20 @@ class DeferredSearchResult(SearchResult):
             current_costs = (parent_costs + ncosts).astype(KEY_DTYPE)
             current_dists = (val.dist if use_heuristic else (val.dist - ncosts)).astype(KEY_DTYPE)
 
-            # Optimization: deduplicate before lookup to avoid redundant hash lookups.
-            unique_mask = xnp.unique_mask(current_states, current_costs, filled)
-            # Capture the hash-pass probe here so the later parallel_insert of these
-            # same states can reuse it instead of hashing them a second time. The probe
-            # is per-state and independent of the mask, so it stays valid as the states
-            # are permuted/merged before insertion (we carry it through identically).
+            # Deduplicate and look up in one hash pass; keep the probe so the
+            # later parallel_insert reuses it instead of hashing a second time.
+            # The probe is per-state and independent of the mask, so it stays
+            # valid across downstream filtering and merge permutations.
             (
                 current_hash_idxs,
                 found,
+                unique_mask,
                 current_probe,
-            ) = search_result.hashtable.lookup_parallel_with_probe(current_states, unique_mask)
+            ) = search_result.hashtable.lookup_parallel_dedup_with_probe(
+                current_states,
+                filled,
+                unique_key=current_costs,
+            )
 
             def _update_lookup(sr: "DeferredSearchResult"):
                 return replace(
@@ -318,9 +321,9 @@ class DeferredSearchResult(SearchResult):
             # Concatenate the hash probes in lockstep with the states.
             stack_probe = jax.tree.map(lambda a, b: jnp.concatenate([a, b]), probe, new_probe)
 
-            # Deduplicate across the entire stack (old + new)
+            # Deduplicate across the merged stack reusing the carried uint32ed encodings.
             stack_filled = jnp.isfinite(stack_key)
-            unique_mask = xnp.unique_mask(stack_states, stack_costs, stack_filled)
+            unique_mask = stack_probe.unique_mask(key=stack_costs, filled=stack_filled)
             stack_key = jnp.where(unique_mask, stack_key, jnp.inf)
 
             # Sort to keep best candidates
