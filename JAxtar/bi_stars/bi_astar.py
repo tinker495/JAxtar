@@ -23,6 +23,7 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
+from xtructure import HashIdx
 
 from helpers.jax_compile import compile_search_builder
 from heuristic.heuristic_base import Heuristic
@@ -48,6 +49,15 @@ from JAxtar.stars.common import Current, Parent, insert_priority_queue_batches
 from JAxtar.stars.search_base_eager import EagerSearchResult
 from JAxtar.utils.array_ops import stable_partition_three
 from JAxtar.utils.batch_switcher import variable_batch_switcher_builder
+
+
+def _first_slot_writes(slots: HashIdx, active: jax.Array, table_size: int) -> jax.Array:
+    """Pick the first active lane for each writable slot using batch-sized storage."""
+    # An inactive lane cannot precede a writer for any in-bounds slot.
+    masked_slots = HashIdx(
+        index=jnp.where(active, slots.index, jnp.asarray(table_size, slots.index.dtype))
+    )
+    return jnp.logical_and(active, xnp.unique_mask(masked_slots))
 
 
 def _bi_astar_loop_builder(
@@ -244,18 +254,21 @@ def _bi_astar_loop_builder(
         optimal_mask = jnp.less(flatten_nextcosts, search_result.get_cost(hash_idx))
         final_process_mask = jnp.logical_and(cheapest_uniques_mask, optimal_mask)
 
-        # Update cost and parent
+        # Cost and parent must elect the same first writer for each slot.
+        commit_mask = _first_slot_writes(hash_idx, final_process_mask, search_result.cost.shape[0])
         search_result.cost = xnp.update_on_condition(
             search_result.cost,
             hash_idx.index,
-            final_process_mask,
+            commit_mask,
             flatten_nextcosts,
+            unique_indices=True,
         )
         search_result.parent = xnp.update_on_condition(
             search_result.parent,
             hash_idx.index,
-            final_process_mask,
+            commit_mask,
             flatten_parents,
+            unique_indices=True,
         )
 
         # Meeting detection via the shared table + per-direction seen flags.
@@ -319,8 +332,9 @@ def _bi_astar_loop_builder(
             sr.dist = xnp.update_on_condition(
                 sr.dist,
                 vals.hashidx.index,
-                new_states_mask,
+                _first_slot_writes(vals.hashidx, new_states_mask, sr.dist.shape[0]),
                 neighbour_heur,
+                unique_indices=True,
             )
             return sr, neighbour_heur
 

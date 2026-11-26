@@ -2144,14 +2144,18 @@ wheels = [
 [[package]]
 name = "xtructure"
 version = "0.1.4"
-source = { git = "https://github.com/tinker495/xtructure.git?rev=main#5f41e38342cefe34dda11550a88106a948f9bed2" }
+source = { git = "https://github.com/tinker495/xtructure.git?rev=main#8f5ec5cc3d741f55872dfa05e39d8d2f86d02210" }
 dependencies = [
     { name = "absl-py" },
     { name = "chex" },
     { name = "jax" },
+    { name = "jax", extra = ["cuda"], marker = "sys_platform == 'linux'" },
     { name = "jaxtyping" },
+    { name = "matplotlib" },
     { name = "numpy" },
+    { name = "rich" },
     { name = "typing-extensions" },
+    { name = "tyro" },
 ]
 
 [[package]]
