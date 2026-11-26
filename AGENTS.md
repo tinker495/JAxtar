@@ -13,8 +13,11 @@ merging, or deleting modules when evidence supports it. Prefer deep modules with
 narrow interfaces and fewer concepts. Flag single-implementation interfaces,
 unused configuration, and standard-library replacements as deletion candidates.
 Present evidence and consequences in severity order. Re-review code added after
-the reviewed commit before merging. Review suggestions do not authorize changes
-to tests or acceptance assets.
+the reviewed commit before merging. Flag seam leakage—private or internal
+cross-package imports, caller-side workarounds that mirror upstream sentinel or
+layout internals, and multi-pass container choreography—and move the invariant
+or deepened interface into the owning module or upstream repository. Review
+suggestions do not authorize changes to tests or acceptance assets.
 
 ## Test Ownership and Change Permissions
 

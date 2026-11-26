@@ -6,7 +6,7 @@ import jax
 import numpy as np
 
 
-def _as_int(x: Any) -> int:
+def as_int(x: Any) -> int:
     """Convert JAX / NumPy scalar-like values to int."""
     try:
         return int(np.asarray(x))
@@ -14,7 +14,7 @@ def _as_int(x: Any) -> int:
         return int(x)
 
 
-def _as_float(x: Any) -> float:
+def as_float(x: Any) -> float:
     """Convert JAX / NumPy scalar-like values to float."""
     try:
         return float(np.asarray(x))
@@ -35,7 +35,7 @@ def extract_xtructure_signature(search_result: Any) -> Dict[str, Any]:
     def get(name: str, default: int = 0) -> int:
         if not hasattr(search_result, name):
             return default
-        return _as_int(jax.device_get(getattr(search_result, name)))
+        return as_int(jax.device_get(getattr(search_result, name)))
 
     steps = get("xtr_steps")
     cand_total = get("xtr_cand_total")
@@ -66,7 +66,7 @@ def extract_xtructure_signature(search_result: Any) -> Dict[str, Any]:
 
     occupancy = None
     try:
-        generated = _as_int(jax.device_get(search_result.generated_size))
+        generated = as_int(jax.device_get(search_result.generated_size))
         capacity = int(search_result.capacity)
         occupancy = float(generated) / float(capacity) if capacity > 0 else 0.0
     except (AttributeError, TypeError, ValueError):
@@ -90,15 +90,15 @@ def extract_xtructure_signature(search_result: Any) -> Dict[str, Any]:
         "xtr_pq_heap_size_sum": pq_heap_sum,
         "xtr_pq_buffer_size_sum": pq_buffer_sum,
         "xtr_pq_size_samples": pq_samples,
-        "xtr_dup_ratio_eff": _as_float(dup_ratio),
-        "xtr_hit_ratio_eff": _as_float(hit_ratio),
-        "xtr_accept_ratio": _as_float(accept_ratio),
-        "xtr_pop_calls_eff": _as_float(pop_calls_eff),
-        "xtr_processed_ratio_eff": _as_float(processed_ratio),
-        "xtr_requeue_ratio_eff": _as_float(requeue_ratio),
-        "xtr_pq_heap_size_avg": _as_float(heap_avg),
-        "xtr_pq_buffer_size_avg": _as_float(buffer_avg),
+        "xtr_dup_ratio_eff": as_float(dup_ratio),
+        "xtr_hit_ratio_eff": as_float(hit_ratio),
+        "xtr_accept_ratio": as_float(accept_ratio),
+        "xtr_pop_calls_eff": as_float(pop_calls_eff),
+        "xtr_processed_ratio_eff": as_float(processed_ratio),
+        "xtr_requeue_ratio_eff": as_float(requeue_ratio),
+        "xtr_pq_heap_size_avg": as_float(heap_avg),
+        "xtr_pq_buffer_size_avg": as_float(buffer_avg),
     }
     if occupancy is not None:
-        out["xtr_ht_occupancy_end"] = _as_float(occupancy)
+        out["xtr_ht_occupancy_end"] = as_float(occupancy)
     return out
