@@ -17,6 +17,7 @@ import xtructure.numpy as xnp
 from puxle import Puzzle
 from xtructure import FieldDescriptor, Xtructurable
 from xtructure.core.dataclass import base_dataclass
+from xtructure.core.xtructure_numpy.dataclass_ops.unique_ops import _hash_to_wide
 
 from JAxtar.annotate import ACTION_DTYPE, KEY_DTYPE
 from JAxtar.stars.common import (
@@ -32,6 +33,22 @@ from JAxtar.stars.common import (
     search_continues,
     select_pop_batch,
 )
+
+
+def _filter_unique_padding(states: Xtructurable, costs: jax.Array, keys: jax.Array) -> jax.Array:
+    """Apply the padding tie rule to an already deduplicated batch."""
+    size = keys.shape[0]
+    lanes = jnp.arange(size)
+    first_padding = jnp.min(jnp.where(jnp.isfinite(keys), size, lanes))
+    # unique_mask gives inactive rows an all-ones hash and +inf cost. A live
+    # member of that group with +inf cost must precede the first padding lane.
+    # A NaN cost sorts after every padding lane. All other winners survive.
+    padding_hash = jnp.ones_like(keys, dtype=jnp.bool_)
+    for word in _hash_to_wide(states.uint32ed.reshape(size, -1)):
+        padding_hash &= word == jnp.asarray(jnp.iinfo(word.dtype).max, dtype=word.dtype)
+    wins_tie = jnp.where(jnp.isnan(costs), first_padding == size, lanes < first_padding)
+    loses_to_padding = padding_hash & ~(costs < jnp.inf) & ~wins_tie
+    return jnp.where(loses_to_padding, jnp.inf, keys)
 
 
 class ParentWithCosts(Xtructurable):
@@ -255,10 +272,8 @@ class DeferredSearchResult(SearchResult):
         ) = _expand_and_filter(search_result, min_key, min_val)
         popped0 = jnp.sum(jnp.isfinite(min_key)).astype(jnp.int32)
 
-        # Apply unique mask to initial batch to maintain invariant
-        filled = jnp.isfinite(min_key)
-        unique_mask = xnp.unique_mask(current_states, current_costs, filled)
-        min_key = jnp.where(unique_mask, min_key, jnp.inf)
+        # _expand_and_filter already selected at most one live state per group.
+        min_key = _filter_unique_padding(current_states, current_costs, min_key)
 
         # Initialize buffer for overflow (inf)
         buffer_key = jnp.full((batch_size,), jnp.inf, dtype=KEY_DTYPE)
