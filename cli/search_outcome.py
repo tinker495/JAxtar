@@ -17,7 +17,7 @@ import numpy as np
 import xtructure.numpy as xnp
 
 from helpers.path_steps import PathStep, build_path_steps_from_trace
-from helpers.xtructure_signature import _as_float, _as_int, extract_xtructure_signature
+from helpers.xtructure_signature import as_float, as_int, extract_xtructure_signature
 from JAxtar.solution_trace import SearchAlgorithmResult
 
 from .verification import BenchmarkVerification, verify_benchmark_path
@@ -89,8 +89,8 @@ def normalise_search_result(
     solved = bool(jax.device_get(search_result.solved))
     return SearchOutcome(
         solved=solved,
-        generated_size=_as_int(search_result.generated_size),
-        solved_cost=_as_float(search_result.solved_cost) if solved else None,
+        generated_size=as_int(search_result.generated_size),
+        solved_cost=as_float(search_result.solved_cost) if solved else None,
         workload_signature=(
             extract_xtructure_signature(search_result) if emit_workload_signature else {}
         ),

@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure.core.dataclass import base_dataclass
+from xtructure import base_dataclass
 
 from JAxtar.annotate import KEY_DTYPE
 from JAxtar.stars.common import (

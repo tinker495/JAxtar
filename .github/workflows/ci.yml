@@ -25,6 +25,7 @@ jobs:
           python-version: '3.12'
       - run: uv sync --locked --group dev
       - run: uv run --no-sync pre-commit run --all-files
+      - run: uv run --no-sync python .github/scripts/check_seam_leaks.py
 
   types:
     name: Pyrefly new diagnostics

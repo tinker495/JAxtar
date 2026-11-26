@@ -20,8 +20,8 @@ from xtructure import (
     HashIdx,
     HashTable,
     Xtructurable,
+    base_dataclass,
 )
-from xtructure.core.dataclass import base_dataclass
 from xtructure.numpy import where as xnp_where
 
 from JAxtar.annotate import (

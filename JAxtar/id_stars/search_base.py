@@ -12,10 +12,8 @@ import jax
 import jax.numpy as jnp
 import xtructure.numpy as xnp
 from puxle import Puzzle
-from xtructure import FieldDescriptor, Xtructurable
-from xtructure.core.dataclass import base_dataclass
+from xtructure import FieldDescriptor, Stack, Xtructurable, base_dataclass
 from xtructure.core.packing import pack_rows
-from xtructure.stack import Stack
 
 from helpers.jax_compile import compile_with_example, warmup_with_example
 from JAxtar.annotate import (
