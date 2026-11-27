@@ -31,3 +31,12 @@ repos:
         args: [--line-length=120]
         additional_dependencies: [black==23.1.0]
         exclude: docs/source-app
+
+  - repo: local
+    hooks:
+      - id: uv-lock-check
+        name: Verify uv.lock matches pyproject.toml
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$

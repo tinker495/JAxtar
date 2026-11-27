@@ -42,7 +42,6 @@ SANCTIONED_SEAMS: dict[str, frozenset[str]] = {
         {
             "puxle",
             "puxle.benchmark",
-            "puxle.world_model",
             "puxle.core.trajectory",
         }
     ),
