@@ -107,7 +107,8 @@ For detailed information on all available commands and their options, please ref
 
 We can find the optimal path using a jittable, batched A\* search as shown below. This is not a super blazingly fast result, but it can be well integrated with heuristics using neural networks.
 
-The following speed benchmarks were measured on an Nvidia RTX 5090 hosted at vast.ai.
+All benchmarks below were measured on an NVIDIA RTX 5090 hosted at vast.ai.
+The single-run examples report search time and throughput for seed 0.
 
 You can easily test it yourself with the colab link below.
 
@@ -136,9 +137,9 @@ $ uv run astar
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           50.0 │
-│ Search Time   │         0.12 s │
+│ Search Time   │         0.04 s │
 │ Search States │           738K │
-│ States/s      │          6.15M │
+│ States/s      │          17.8M │
 └───────────────┴────────────────┘
 ```
 
@@ -192,16 +193,16 @@ $ uv run astar -nn -h -p rubikscube -w 0.2
 
 ...
 
-     Search Result for Seed 0
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
-┃ Metric        ┃          Value ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
-│ Status        │ Solution Found │
-│ Cost          │           22.0 │
-│ Search Time   │         0.49 s │
-│ Search States │          1.85M │
-│ States/s      │          3.78M │
-└───────────────┴────────────────┘
+         Seed 0 (default)                     Seed 0 (int8, -q)
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓    ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Metric        ┃          Value ┃    ┃ Metric        ┃          Value ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩    ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ Status        │ Solution Found │    │ Status        │ Solution Found │
+│ Cost          │           22.0 │    │ Cost          │           22.0 │
+│ Search Time   │         0.36 s │    │ Search Time   │         0.31 s │
+│ Search States │          1.85M │    │ Search States │          1.85M │
+│ States/s      │          5.12M │    │ States/s      │          5.94M │
+└───────────────┴────────────────┘    └───────────────┴────────────────┘
 ```
 
 ### Q\* with neural Q model
@@ -211,16 +212,16 @@ $ uv run qstar -nn -h -p rubikscube -w 0.2
 
 ...
 
-     Search Result for Seed 0
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
-┃ Metric        ┃          Value ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
-│ Status        │ Solution Found │
-│ Cost          │           22.0 │
-│ Search Time   │         0.16 s │
-│ Search States │          1.79M │
-│ States/s      │          10.9M │
-└───────────────┴────────────────┘
+         Seed 0 (default)                     Seed 0 (int8, -q)
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓    ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Metric        ┃          Value ┃    ┃ Metric        ┃          Value ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩    ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ Status        │ Solution Found │    │ Status        │ Solution Found │
+│ Cost          │           20.0 │    │ Cost          │           20.0 │
+│ Search Time   │         0.06 s │    │ Search Time   │         0.05 s │
+│ Search States │          1.88M │    │ Search States │          1.88M │
+│ States/s      │          33.2M │    │ States/s      │          36.7M │
+└───────────────┴────────────────┘    └───────────────┴────────────────┘
 ```
 
 ### World Model Puzzle with A\* & Q\*
@@ -236,9 +237,9 @@ $ uv run qstar -p rubikscube_world_model_optimized -nn -w 0.6
 ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
 │ Status        │ Solution Found │
 │ Cost          │           22.0 │
-│ Search Time   │         0.17 s │
-│ Search States │          1.82M │
-│ States/s      │          10.5M │
+│ Search Time   │         0.08 s │
+│ Search States │           2.1M │
+│ States/s      │          27.7M │
 └───────────────┴────────────────┘
 ```
 
