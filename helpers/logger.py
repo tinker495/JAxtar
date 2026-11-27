@@ -13,16 +13,6 @@ import numpy as np
 from helpers.util import convert_to_serializable_dict
 
 
-def _optional_module(module_name: str, feature: str):
-    try:
-        return importlib.import_module(module_name)
-    except ImportError as exc:
-        raise ImportError(
-            f"{feature} requires optional logging dependencies. "
-            "Install them with `uv sync --extra logging`."
-        ) from exc
-
-
 class BaseLogger(ABC):
     def __init__(self, log_dir_base: str, config: dict):
         self.config = config
@@ -125,7 +115,7 @@ class BaseLogger(ABC):
 class TensorboardLogger(BaseLogger):
     def __init__(self, log_dir_base: str, config: dict):
         super().__init__(log_dir_base, config)
-        tensorboardX = _optional_module("tensorboardX", "Tensorboard logging")
+        tensorboardX = importlib.import_module("tensorboardX")
         self.writer = tensorboardX.SummaryWriter(self.log_dir)
         print(f"Tensorboard log directory: {self.log_dir}")
         self._log_hyperparameters()
@@ -175,7 +165,7 @@ class AimLogger(BaseLogger):
         self.aim_run = None
         self._aim: ModuleType
         try:
-            self._aim = _optional_module("aim", "Aim logging")
+            self._aim = importlib.import_module("aim")
             self.aim_run = self._aim.Run(experiment=log_dir_base)
             print(f"Aim logging enabled. Repo: {self.aim_run.repo.path}")
             print(f"Aim run hash: {self.aim_run.hash}")
@@ -260,7 +250,7 @@ class WandbLogger(BaseLogger):
         self.wandb_run = None
         self._wandb: ModuleType
         try:
-            self._wandb = _optional_module("wandb", "Wandb logging")
+            self._wandb = importlib.import_module("wandb")
             # Initialize wandb with project name and config
             # Support for run organization through config
             init_kwargs = {
