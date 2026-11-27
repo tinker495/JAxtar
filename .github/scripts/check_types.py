@@ -29,7 +29,7 @@ class Diagnostic(TypedDict):
 
 
 def _editable_search_paths(interpreter: Path) -> list[Path]:
-    if interpreter.resolve() != Path(sys.executable).resolve():
+    if interpreter.parent.parent.resolve() != Path(sys.prefix).resolve():
         return []
     paths: list[Path] = []
     for package in EDITABLE_DEPENDENCY_PACKAGES:
