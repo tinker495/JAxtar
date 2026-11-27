@@ -84,6 +84,8 @@ def check(root: Path, interpreter: Path) -> list[Diagnostic]:
         )
         for search_path in search_paths:
             description = description.replace(str(search_path), "<python-environment>")
+        if error["name"] == "missing-import":
+            description = description.splitlines()[0]
         diagnostics.append(
             Diagnostic(
                 path=error["path"],
