@@ -201,7 +201,11 @@ class DeferredSearchResult(SearchResult):
                 current_hash_idxs,
                 found,
                 current_probe,
-            ) = search_result.hashtable.lookup_parallel_with_probe(current_states, unique_mask)
+            ) = search_result.hashtable.lookup_parallel_with_probe(
+                current_states,
+                unique_mask,
+                assume_unique=True,
+            )
 
             def _update_lookup(sr: "DeferredSearchResult"):
                 return replace(

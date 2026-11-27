@@ -192,20 +192,21 @@ def _bi_astar_d_loop_builder(
                 flattened_neighbour_look_head = neighbour_look_a_head.flatten()
                 flattened_look_a_head_costs = look_a_head_costs.flatten().astype(KEY_DTYPE)
 
-                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                    flattened_neighbour_look_head, flattened_filled_tiles
-                )
-                old_costs = search_result.get_cost(current_hash_idxs)
-
-                candidate_mask = flattened_filled_tiles & jnp.logical_or(
-                    ~found, jnp.less(flattened_look_a_head_costs, old_costs)
-                )
                 unique_mask = xnp.unique_mask(
                     flattened_neighbour_look_head,
                     flattened_look_a_head_costs,
-                    candidate_mask,
+                    flattened_filled_tiles,
                 )
-                optimal_mask_flat = unique_mask & candidate_mask
+                current_hash_idxs, found = search_result.hashtable.lookup_parallel(
+                    flattened_neighbour_look_head,
+                    unique_mask,
+                    assume_unique=True,
+                )
+                old_costs = search_result.get_cost(current_hash_idxs)
+
+                optimal_mask_flat = unique_mask & jnp.logical_or(
+                    ~found, jnp.less(flattened_look_a_head_costs, old_costs)
+                )
                 optimal_mask = optimal_mask_flat.reshape(action_size, sr_batch_size)
 
                 if use_heuristic:

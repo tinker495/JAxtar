@@ -107,7 +107,9 @@ def _qstar_loop_builder(
                 flattened_filled_tiles,
             )
             current_hash_idxs, found = search_result.hashtable.lookup_parallel(
-                flattened_neighbour_look_head, unique_mask
+                flattened_neighbour_look_head,
+                unique_mask,
+                assume_unique=True,
             )
             old_costs = search_result.get_cost(current_hash_idxs)
             old_dists = search_result.get_dist(current_hash_idxs)
