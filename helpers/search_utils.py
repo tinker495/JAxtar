@@ -5,9 +5,9 @@ import jax
 import xtructure.numpy as xnp
 from puxle import Puzzle
 
-from helpers.jax_compile import compile_with_example, warmup_with_example
+from helpers.jax_compile import compile_with_example, jit_vmapped_search, warmup_with_example
 
-_VMAPPED_STAR_CACHE: dict[tuple[int, int], Callable] = {}
+_VMAPPED_STAR_CACHE: dict[tuple[int, int], tuple[Callable, Callable]] = {}
 
 
 def vmapping_init_target(
@@ -32,13 +32,12 @@ def vmapping_search(
     """
 
     cache_key = (id(star_fn), vmap_size)
-    cached = _VMAPPED_STAR_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
+    if cache_key in _VMAPPED_STAR_CACHE:
+        return _VMAPPED_STAR_CACHE[cache_key][1]
 
     empty_states = puzzle.State.default((vmap_size,))
     empty_solve_configs = puzzle.SolveConfig.default((vmap_size,))
-    vmapped_star = jax.jit(jax.vmap(star_fn, in_axes=(0, 0)))
+    vmapped_star = jit_vmapped_search(star_fn)
     start = None
     if show_compile_time:
         print("initializing vmapped jit")
@@ -49,5 +48,6 @@ def vmapping_search(
         print(f"Compile Time: {end - start:6.2f} seconds")
         print("JIT compiled\n\n")
     warmup_with_example(vmapped_star, empty_solve_configs, empty_states)
-    _VMAPPED_STAR_CACHE[cache_key] = vmapped_star
+    # The batched JIT can close over the body alone. Keep the scalar's cache identity alive.
+    _VMAPPED_STAR_CACHE[cache_key] = (star_fn, vmapped_star)
     return vmapped_star

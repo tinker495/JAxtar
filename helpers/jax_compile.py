@@ -4,6 +4,7 @@ import os
 import re
 import time
 from typing import Any, Callable
+from weakref import finalize
 
 import jax
 
@@ -45,6 +46,9 @@ SEARCH_COMPILER_OPTIONS = {
     ),
 }
 
+# Only the exact scalar JIT returned by a builder owns its body and compiler options.
+_SEARCH_KERNELS: dict[int, tuple[Callable, dict[str, Any]]] = {}
+
 
 def _search_compiler_options() -> dict[str, Any]:
     # A per-jit option replaces xla_disable_hlo_passes instead of extending it, so carry over the
@@ -72,7 +76,8 @@ def compile_search_builder(
     show_compile_time: bool = False,
     warmup_inputs=None,
 ):
-    fn = jax.jit(fn, compiler_options=_search_compiler_options())
+    options = _search_compiler_options()
+    scalar = jax.jit(fn, compiler_options=options)
     start = None
     if show_compile_time:
         print("initializing jit")
@@ -80,12 +85,24 @@ def compile_search_builder(
 
     if warmup_inputs is None:
         warmup_inputs = (puzzle.SolveConfig.default(), puzzle.State.default())
-    compile_with_example(fn, *warmup_inputs)
+    compile_with_example(scalar, *warmup_inputs)
 
     if start is not None:
         end = time.time()
         print(f"Compile Time: {end - start:6.2f} seconds")
         print("JIT compiled\n\n")
 
-    warmup_with_example(fn, *warmup_inputs)
-    return fn
+    warmup_with_example(scalar, *warmup_inputs)
+    key = id(scalar)
+    _SEARCH_KERNELS[key] = (fn, options)
+    finalize(scalar, _SEARCH_KERNELS.pop, key, None)
+    return scalar
+
+
+def jit_vmapped_search(search: Callable) -> jax.stages.Wrapped:
+    # JAX accepts compiler options only on the outer JIT of the batched program.
+    body, options = search, None
+    key = id(search)
+    if key in _SEARCH_KERNELS:
+        body, options = _SEARCH_KERNELS[key]
+    return jax.jit(jax.vmap(body, in_axes=(0, 0)), compiler_options=options)
