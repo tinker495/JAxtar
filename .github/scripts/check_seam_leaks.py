@@ -50,7 +50,7 @@ SANCTIONED_SEAMS: dict[str, frozenset[str]] = {
 
 UNAPPROVED_PACKAGE_CHILDREN: dict[str, frozenset[str]] = {
     "xtructure": frozenset({"core", "hashtable", "bgpq", "queue", "stack"}),
-    "puxle": frozenset({"core", "puzzles", "render", "utils", "cli"}),
+    "puxle": frozenset({"core", "puzzles", "render", "utils", "cli", "world_model"}),
 }
 
 EXCLUDED_PARTS = {

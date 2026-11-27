@@ -21,6 +21,8 @@ from puxle import (
     SokobanHard,
     TopSpin,
     TowerOfHanoi,
+    WorldModelPresets,
+    WorldModelPuzzle,
 )
 
 from heuristic import (
@@ -65,7 +67,6 @@ from qfunction.neuralq import (
     SokobanNeuralQ,
     WorldModelNeuralQ,
 )
-from puxle.world_model import trained_world_model_registry
 
 from .pydantic_models import (
     EvalOptions,
@@ -445,7 +446,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         q_function=_q_from_heuristic(PDDLHeuristic),
     ),
     "rubikscube_world_model": PuzzleBundle(
-        puzzle=trained_world_model_registry.RubiksCubeWorldModel,
+        puzzle=lambda: WorldModelPuzzle(**WorldModelPresets.RUBIKSCUBE),
         k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
@@ -461,7 +462,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_test": PuzzleBundle(
-        puzzle=trained_world_model_registry.RubiksCubeWorldModel_test,
+        puzzle=lambda: WorldModelPuzzle(**WorldModelPresets.RUBIKSCUBE_TEST),
         k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
@@ -477,7 +478,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_reversed": PuzzleBundle(
-        puzzle=trained_world_model_registry.RubiksCubeWorldModel_reversed,
+        puzzle=lambda: WorldModelPuzzle(**WorldModelPresets.RUBIKSCUBE_REVERSED),
         k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
@@ -493,7 +494,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_optimized": PuzzleBundle(
-        puzzle=trained_world_model_registry.RubiksCubeWorldModelOptimized,
+        puzzle=lambda: WorldModelPuzzle(**WorldModelPresets.RUBIKSCUBE_OPTIMIZED),
         k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
@@ -509,7 +510,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_optimized_test": PuzzleBundle(
-        puzzle=trained_world_model_registry.RubiksCubeWorldModelOptimized_test,
+        puzzle=lambda: WorldModelPuzzle(**WorldModelPresets.RUBIKSCUBE_OPTIMIZED_TEST),
         k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
@@ -525,7 +526,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "rubikscube_world_model_optimized_reversed": PuzzleBundle(
-        puzzle=trained_world_model_registry.RubiksCubeWorldModelOptimized_reversed,
+        puzzle=lambda: WorldModelPuzzle(**WorldModelPresets.RUBIKSCUBE_OPTIMIZED_REVERSED),
         k_max=26,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
@@ -541,7 +542,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "sokoban_world_model": PuzzleBundle(
-        puzzle=trained_world_model_registry.SokobanWorldModel,
+        puzzle=lambda: WorldModelPuzzle(**WorldModelPresets.SOKOBAN),
         k_max=500,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
@@ -557,7 +558,7 @@ puzzle_bundles: Dict[str, PuzzleBundle] = {
         },
     ),
     "sokoban_world_model_optimized": PuzzleBundle(
-        puzzle=trained_world_model_registry.SokobanWorldModelOptimized,
+        puzzle=lambda: WorldModelPuzzle(**WorldModelPresets.SOKOBAN_OPTIMIZED),
         k_max=500,
         heuristic_nn_configs={
             "default": NeuralCallableConfig(
