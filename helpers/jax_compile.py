@@ -34,15 +34,12 @@ def _block_until_ready(tree: Any) -> None:
 
 
 # Search-jit XLA options.
-# - jax 0.11.2 tightened GEMM autotuning (xla_gpu_autotune_gemm_rtol 0.1 -> 0.01), which
-#   rejects the faster bf16 kernels for the heuristic MLP and slows eager A* by ~5%; keep
-#   the earlier tolerance.
-# - jax 0.11's default command-buffer types plus WHILE: the search while_loops run as
-#   CUDA-graph device loops (conditional nodes) instead of reading every loop predicate
-#   back to the host (one MemcpyD2H + host round trip per iteration). compiler_options
-#   replaces the list (no "+WHILE" form). XLA ignores GPU options on other backends.
+# - Enable command-buffer types including WHILE so search while_loops run as CUDA-graph
+#   device loops (conditional nodes) instead of reading every loop predicate back to the
+#   host (one MemcpyD2H + host round trip per iteration). compiler_options replaces the
+#   default list rather than appending ("+WHILE" is unsupported). XLA ignores GPU options
+#   on other backends.
 SEARCH_COMPILER_OPTIONS = {
-    "xla_gpu_autotune_gemm_rtol": 0.1,
     "xla_gpu_enable_command_buffer": (
         "FUSION,CUBLAS,CUBLASLT,CUSTOM_CALL,CUDNN,DYNAMIC_SLICE_FUSION,CONDITIONAL,WHILE"
     ),

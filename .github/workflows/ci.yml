@@ -26,6 +26,7 @@ jobs:
       - run: uv sync --locked --group dev
       - run: uv run --no-sync pre-commit run --all-files
       - run: uv run --no-sync python .github/scripts/check_seam_leaks.py
+      - run: uv run --no-sync python .github/scripts/check_runtime_contracts.py
 
   types:
     name: Pyrefly new diagnostics

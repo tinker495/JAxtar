@@ -60,22 +60,18 @@ This project was quite challenging to develop, and it felt like performing acrob
 
 ## Installation
 
-Add JAxtar directly from GitHub to another uv project:
-
-```bash
-uv add "jaxtar @ git+https://github.com/tinker495/JAxtar.git"
-```
-
-For development or to use the checkout-only CLI, clone the repository and sync its environment:
+Clone the repository and sync its environment (recommended default setup):
 
 ```bash
 git clone https://github.com/tinker495/JAxtar.git
 cd JAxtar
-uv sync --extra gpu
+uv sync
 ```
 
-JAxtar uses `pyproject.toml` for installation and command registration. PuXle and Xtructure
-Git dependencies track their `main` branches; `uv.lock` records the resolved commits.
+Linux installations include `jax[cuda]`, evaluation tools, and all training/logging backends
+(`aim`, `tensorboardX`, `wandb`) by default; add `--extra tpu` when running on TPU. PuXle and
+Xtructure Git dependencies track `@main`, and `uv.lock` records the resolved commits.
+
 From the synced checkout:
 
 ```bash
@@ -84,13 +80,6 @@ uv run jaxtar test --help
 uv run astar_d --help
 ```
 
-The console commands are checkout-only. External distributions intentionally contain only the
-`JAxtar` core package; generic top-level modules such as `cli`, `config`, and `helpers` are not
-packaged.
-
-Omit `--extra gpu` for CPU-only use, or replace it with `--extra tpu` on TPU. Evaluation tools are
-installed by default. The `train` extra adds the GPU runtime and all logging backends, so it
-conflicts with `tpu`.
 
 ## Usage and Documentation
 
