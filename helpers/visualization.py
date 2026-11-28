@@ -213,36 +213,31 @@ def build_solution_path_panel(
         )
     )
 
+    arrow = Text(" → ", style="bold blue")
+    continuation = Text("↓", style="bold blue")
+    right_padding = 1
+    # The continuation marker occupies the outer panel's left padding cell.
+    available_width = console.width - 2 - continuation.cell_len - right_padding
+    rows: list[list[Panel]] = []
+    remaining_width = 0
+    for panel in solution_panels:
+        panel_width = console.measure(panel).maximum
+        if not rows or panel_width > remaining_width:
+            rows.append([])
+            remaining_width = available_width
+        rows[-1].append(panel)
+        remaining_width -= panel_width + arrow.cell_len
+
     solution_path_group = []
-    if solution_panels:
-        arrow_width = 3  # For " → "
-        available_width = console.width - 4  # Account for panel borders
-
-        panel_widths = [console.measure(panel).maximum for panel in solution_panels]
-        max_panel_width = max(panel_widths) if panel_widths else 20
-
-        if max_panel_width > 0:
-            states_per_row = (available_width + arrow_width) // (max_panel_width + arrow_width)
-        else:
-            states_per_row = 1
-        states_per_row = max(1, min(states_per_row, len(solution_panels)))
-    else:
-        states_per_row = 1
-
-    for i in range(0, len(solution_panels), states_per_row):
-        chunk = solution_panels[i : i + states_per_row]
+    for i, panels in enumerate(rows):
         row_grid = Table.grid(expand=False)
-        row_widgets: list[ConsoleRenderable | str] = []
+        row_grid.add_column(width=continuation.cell_len, vertical="middle")
+        row_widgets: list[ConsoleRenderable | str] = [continuation if i else ""]
 
-        if i > 0:
-            row_widgets.append(Align.center("[bold blue]↓[/bold blue]", vertical="middle"))
-        else:
-            row_widgets.append("  ")
-
-        for j, panel in enumerate(chunk):
+        for j, panel in enumerate(panels):
+            if j:
+                row_widgets.append(Align.center(arrow, vertical="middle"))
             row_widgets.append(panel)
-            if j < len(chunk) - 1:
-                row_widgets.append(Align.center("[bold blue] → [/bold blue]", vertical="middle"))
 
         row_grid.add_row(*row_widgets)
         solution_path_group.append(row_grid)
@@ -250,6 +245,7 @@ def build_solution_path_panel(
     return Panel(
         Group(*solution_path_group),
         title="[bold green]Solution Path[/bold green]",
+        padding=(0, right_padding, 0, 0),
         expand=False,
     )
 
