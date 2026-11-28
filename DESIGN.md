@@ -228,10 +228,11 @@ The unit is one character cell. Tokens under `spacing` are cell counts.
   from a bold `Average` row with `add_section()`.
 - Seed setup panel: Start and Goal side by side separated by a bold blue ` → `, each headed by a
   centered bold blue label; a `Dist:` line underneath. Without goal data only Start is shown.
-- Solution path: step panels flow left to right, joined by ` → ` (`arrow-gutter`, 3 cells), and
-  wrap to the terminal width. Panels per row =
-  `(console.width - border-allowance + arrow-gutter) // (widest panel + arrow-gutter)`, at least 1.
-  Every row after the first starts with a bold blue `↓`. The last panel is the solved state.
+- Solution path panels flow left to right in path order. Each row holds one step, then adds
+  steps while the three-cell ` → ` and the next panel fit. The four-cell `border-allowance`
+  covers the two outer borders, the right padding and a one-cell column before the first step.
+  This column is blank on the first row and holds a bold blue `↓` on later rows.
+  The last panel is the solved state.
 - Config panel: a single tree when there are at most two top-level keys or the config is flat;
   otherwise two columns, with the largest item (by JSON length) alone on the left. Strings longer
   than 80 characters end in ` ...`; sequences longer than 10 items show the first 5 and last 5.

@@ -214,8 +214,10 @@ def build_solution_path_panel(
     )
 
     arrow = Text(" → ", style="bold blue")
+    continuation = Text("↓", style="bold blue")
+    right_padding = 1
     # The continuation marker occupies the outer panel's left padding cell.
-    available_width = console.width - 4  # Two borders, the marker, and right padding.
+    available_width = console.width - 2 - continuation.cell_len - right_padding
     rows: list[list[Panel]] = []
     remaining_width = 0
     for panel in solution_panels:
@@ -229,8 +231,8 @@ def build_solution_path_panel(
     solution_path_group = []
     for i, panels in enumerate(rows):
         row_grid = Table.grid(expand=False)
-        row_grid.add_column(width=1, vertical="middle")
-        row_widgets: list[ConsoleRenderable | str] = [Text("↓", style="bold blue") if i else ""]
+        row_grid.add_column(width=continuation.cell_len, vertical="middle")
+        row_widgets: list[ConsoleRenderable | str] = [continuation if i else ""]
 
         for j, panel in enumerate(panels):
             if j:
@@ -243,7 +245,7 @@ def build_solution_path_panel(
     return Panel(
         Group(*solution_path_group),
         title="[bold green]Solution Path[/bold green]",
-        padding=(0, 1, 0, 0),
+        padding=(0, right_padding, 0, 0),
         expand=False,
     )
 
