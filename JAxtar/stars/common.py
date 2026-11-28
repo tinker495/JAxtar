@@ -536,15 +536,15 @@ class SearchResult:
         raw_actions = [edge.action for edge in edges]
         path = [edge.hashidx for edge in edges] + [search_result.solved_idx.hashidx]
         states = tuple(search_result.get_state(idx) for idx in path)
-        costs = tuple(float(jax.device_get(search_result.get_cost(idx))) for idx in path)
         dists = tuple(float(jax.device_get(search_result.get_dist(idx))) for idx in path)
 
+        # Reopening a parent can shorten the chain before descendant g-values update.
+        # Leaving costs unset requests replay of its actual transition costs.
         return SolutionTrace.from_raw(
             solved=True,
             raw_actions=raw_actions,
             action_pad=action_pad,
             states=states,
-            costs=costs,
             dists=dists,
         )
 

@@ -120,13 +120,13 @@ def _materialise_path(
         traced_cost = _traced(costs_list, depth + 1)
 
         if next_state is None or traced_cost is None:
-            neighbours, transition_cost = puzzle.get_neighbours(solve_config, state, True)
-            step_cost = float(transition_cost[action_val])
+            successor, transition_cost = puzzle.get_actions(solve_config, state, action_val)
+            step_cost = float(transition_cost)
             if not np.isfinite(step_cost):
                 return path_states, path_costs, action_sequence[:depth]
             running_cost += step_cost
             if next_state is None:
-                next_state = neighbours[action_val]
+                next_state = successor
         if traced_cost is not None:
             running_cost = traced_cost
 
