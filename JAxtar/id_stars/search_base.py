@@ -82,7 +82,7 @@ def apply_non_backtracking(
 
 
 def build_frontier_cond(batch_size: int, max_steps: int = 100):
-    def cond_bounded(val: tuple["IDFrontier", jnp.int32]):
+    def cond_bounded(val: tuple["IDFrontier", jax.Array]):
         frontier, i = val
         num_valid = jnp.sum(frontier.valid_mask)
         has_capacity = num_valid < batch_size
