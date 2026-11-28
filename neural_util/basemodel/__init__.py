@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from _lazy_imports import lazy_dir, load_lazy_export
 
-__all__ = ["DistanceHLGModel", "DistanceModel", "HLGResMLPModel", "ResMLPModel"]
+__all__ = [
+    "DiscreteVarTransformerHybridModel",
+    "DiscreteVarTransformerModel",
+    "DistanceHLGModel",
+    "DistanceModel",
+    "HLGResMLPModel",
+    "ResMLPModel",
+]
 
 _EXPORTS = {
+    "DiscreteVarTransformerHybridModel": "neural_util.basemodel.transformer",
+    "DiscreteVarTransformerModel": "neural_util.basemodel.transformer",
     "DistanceHLGModel": "neural_util.basemodel.base",
     "DistanceModel": "neural_util.basemodel.base",
     "HLGResMLPModel": "neural_util.basemodel.hlgresmlp",

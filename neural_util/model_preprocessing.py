@@ -9,13 +9,13 @@ from neural_util.dtypes import DTYPE
 from neural_util.preprocessing import (
     lightsout_pre_process,
     pancake_pre_process,
+    rubikscube_face_tokens,
     rubikscube_pre_process,
     rubikscube_random_pre_process,
     slidepuzzle_diff_pos,
     slidepuzzle_pre_process,
     slidepuzzle_zero_pos,
 )
-
 
 if TYPE_CHECKING:
     # Describe the next cooperative initializer without changing the runtime MRO.
@@ -98,6 +98,43 @@ class RubiksCubeRandomPreProcessMixin(RubiksCubePreProcessMixin):
             current_flatten_face,
             target_flatten_face,
         )
+
+
+class RubiksCubeTokenPreProcessMixin(_PreProcessParent):
+    puzzle: RubiksCube
+    is_fixed: bool = True
+
+    def __init__(self, puzzle, **kwargs):
+        self._use_color_embedding = getattr(puzzle, "color_embedding", True)
+        tile_count = puzzle.size * puzzle.size
+        self._num_tile_classes = 6 if self._use_color_embedding else 6 * tile_count
+        self.metric = puzzle.metric
+        if "vocab_size" in kwargs and kwargs["vocab_size"] != self._num_tile_classes:
+            raise ValueError(
+                f"vocab_size ({kwargs['vocab_size']}) does not match puzzle tile classes "
+                f"({self._num_tile_classes})."
+            )
+        kwargs.setdefault("vocab_size", self._num_tile_classes)
+        super().__init__(puzzle, **kwargs)
+
+    def pre_process(self, solve_config, current) -> chex.Array:
+        del solve_config
+        return rubikscube_face_tokens(
+            self.metric, self.puzzle.size, current.faces_unpacked.flatten()
+        )
+
+
+class RubiksCubeRandomTokenPreProcessMixin(RubiksCubeTokenPreProcessMixin):
+    is_fixed: bool = False
+
+    def pre_process(self, solve_config, current) -> chex.Array:
+        current_tokens = rubikscube_face_tokens(
+            self.metric, self.puzzle.size, current.faces_unpacked.flatten()
+        )
+        target_tokens = rubikscube_face_tokens(
+            self.metric, self.puzzle.size, solve_config.GoalSpec.faces_unpacked.flatten()
+        )
+        return jnp.concatenate([target_tokens, current_tokens], axis=-1)
 
 
 class SlidePuzzlePreProcessMixin(_PreProcessParent):
