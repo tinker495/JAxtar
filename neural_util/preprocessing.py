@@ -121,6 +121,19 @@ def slidepuzzle_pre_process(
     return ((one_hots - 0.5) * 2.0).astype(DTYPE)
 
 
+def rubikscube_face_tokens(
+    metric: str,
+    puzzle_size: int,
+    flatten_face: chex.Array,
+) -> chex.Array:
+    """Return retained integer sticker tokens for a single RubiksCube face array.
+
+    UQTM keeps all stickers including face centres; other metrics drop centres.
+    """
+    retained = flatten_face if metric == "UQTM" else remove_face_centers(flatten_face, puzzle_size)
+    return retained.astype(jnp.int32)
+
+
 def rubikscube_face_one_hot(
     one_hot_fn,
     metric: str,
@@ -138,13 +151,7 @@ def rubikscube_face_one_hot(
     Returns:
         Flat one-hot array (values in {0, 1}).
     """
-    if metric == "UQTM":
-        # UQTM needs all stickers including centres
-        return one_hot_fn(flatten_face).flatten()
-    else:
-        face_no_centers = remove_face_centers(flatten_face, puzzle_size)
-        # Create a one-hot encoding of the flattened face without centre stickers
-        return one_hot_fn(face_no_centers).flatten()
+    return one_hot_fn(rubikscube_face_tokens(metric, puzzle_size, flatten_face)).flatten()
 
 
 def rubikscube_pre_process(

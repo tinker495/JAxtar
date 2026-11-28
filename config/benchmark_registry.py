@@ -17,6 +17,8 @@ from heuristic.neuralheuristic import (
     LightsOutConvNeuralHeuristic,
     LightsOutNeuralHeuristic,
     RubiksCubeNeuralHeuristic,
+    RubiksCubeTransformerHybridNeuralHeuristic,
+    RubiksCubeTransformerNeuralHeuristic,
     SlidePuzzleConvNeuralHeuristic,
     SlidePuzzleNeuralHeuristic,
 )
@@ -24,6 +26,8 @@ from qfunction.neuralq import (
     LightsOutConvNeuralQ,
     LightsOutNeuralQ,
     RubiksCubeNeuralQ,
+    RubiksCubeTransformerHybridNeuralQ,
+    RubiksCubeTransformerNeuralQ,
     SlidePuzzleConvNeuralQ,
     SlidePuzzleNeuralQ,
 )
@@ -42,6 +46,14 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_3_4M_v2.pkl",
             ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-transformer_3_v2.pkl",
+            ),
+            "transformer-hybrid": NeuralCallableConfig(
+                callable=RubiksCubeTransformerHybridNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-transformer-hybrid_3_v2.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
@@ -51,6 +63,14 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "4M": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube_3_4M_v2.pkl",
+            ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-transformer_3_v2.pkl",
+            ),
+            "transformer-hybrid": NeuralCallableConfig(
+                callable=RubiksCubeTransformerHybridNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-transformer-hybrid_3_v2.pkl",
             ),
         },
     ),
@@ -65,6 +85,14 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube_3_4M_v2.pkl",
             ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-transformer_3_v2.pkl",
+            ),
+            "transformer-hybrid": NeuralCallableConfig(
+                callable=RubiksCubeTransformerHybridNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-transformer-hybrid_3_v2.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
@@ -74,6 +102,14 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "4M": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube_3_4M_v2.pkl",
+            ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-transformer_3_v2.pkl",
+            ),
+            "transformer-hybrid": NeuralCallableConfig(
+                callable=RubiksCubeTransformerHybridNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-transformer-hybrid_3_v2.pkl",
             ),
         },
     ),
@@ -88,6 +124,14 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_3_4M_v2.pkl",
             ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-transformer_3_v2.pkl",
+            ),
+            "transformer-hybrid": NeuralCallableConfig(
+                callable=RubiksCubeTransformerHybridNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-transformer-hybrid_3_v2.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
@@ -97,6 +141,14 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "4M": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_3_4M_v2.pkl",
+            ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm-transformer_3_v2.pkl",
+            ),
+            "transformer-hybrid": NeuralCallableConfig(
+                callable=RubiksCubeTransformerHybridNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm-transformer-hybrid_3_v2.pkl",
             ),
         },
     ),
@@ -111,6 +163,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_4_4M_v2.pkl",
             ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-transformer_4_v2.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
@@ -120,6 +176,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "4M": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_4_4M_v2.pkl",
+            ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm-transformer_4_v2.pkl",
             ),
         },
     ),
@@ -134,6 +194,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_5_4M_v2.pkl",
             ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-transformer_5_v2.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
@@ -143,6 +207,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "4M": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_5_4M_v2.pkl",
+            ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm-transformer_5_v2.pkl",
             ),
         },
     ),
@@ -157,6 +225,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
                 callable=RubiksCubeNeuralHeuristic,
                 param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm_6_4M_v2.pkl",
             ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralHeuristic,
+                param_path="heuristic/neuralheuristic/model/params/rubikscube-uqtm-transformer_6_v2.pkl",
+            ),
         },
         q_function_nn_configs={
             "default": NeuralCallableConfig(
@@ -166,6 +238,10 @@ benchmark_bundles: dict[str, BenchmarkBundle] = {
             "4M": NeuralCallableConfig(
                 callable=RubiksCubeNeuralQ,
                 param_path="qfunction/neuralq/model/params/rubikscube-uqtm_6_4M_v2.pkl",
+            ),
+            "transformer": NeuralCallableConfig(
+                callable=RubiksCubeTransformerNeuralQ,
+                param_path="qfunction/neuralq/model/params/rubikscube-uqtm-transformer_6_v2.pkl",
             ),
         },
     ),
