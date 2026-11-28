@@ -29,9 +29,12 @@ def _infer_neighbor_heuristics(
     neighbors: Xtructurable,
     SolveConfigsAndStates: type[Xtructurable],
     infer: Callable,
-) -> tuple[None, jax.Array]:
+    key: chex.PRNGKey,
+) -> jax.Array:
     if not model.supports_row_independent_inference:
-        return jax.lax.scan(infer, None, inputs)
+        return jax.lax.map(
+            lambda pair: infer(*pair), (jax.random.split(key, inputs.shape[0]), inputs)
+        )
 
     actions, rows = inputs.shape[:2]
     total = actions * rows
@@ -68,7 +71,7 @@ def _infer_neighbor_heuristics(
     count = jnp.where(mapping_valid, count, total)
     indices = jnp.where(mapping_valid, indices, identity)
     inverse = jnp.where(mapping_valid, inverse, identity)
-    prediction_spec = jax.eval_shape(infer, None, inputs[0])[1]
+    prediction_spec = jax.eval_shape(infer, key, inputs[0])
 
     def condition(carry):
         index, _ = carry
@@ -77,14 +80,14 @@ def _infer_neighbor_heuristics(
     def body(carry):
         index, result = carry
         selected = jax.lax.dynamic_slice(indices, (index * rows,), (rows,))
-        _, prediction = infer(None, flat_inputs[jnp.clip(selected, 0, total - 1)])
+        prediction = infer(key, flat_inputs[jnp.clip(selected, 0, total - 1)])
         result = jax.lax.dynamic_update_slice(result, prediction.reshape((rows,)), (index * rows,))
         return index + 1, result
 
     _, result = jax.lax.while_loop(
         condition, body, (jnp.int32(0), jnp.zeros((total,), dtype=prediction_spec.dtype))
     )
-    return None, result[inverse].reshape((actions, *prediction_spec.shape))
+    return result[inverse].reshape((actions, *prediction_spec.shape))
 
 
 def _get_datasets(
@@ -107,7 +110,7 @@ def _get_datasets(
     minibatched_states = states.reshape((-1, minibatch_size))
 
     def get_minibatched_datasets(_, vals):
-        solve_configs, states = vals
+        solve_configs, states, inference_key = vals
         solved = puzzle.batched_is_solved(
             solve_configs, states, multi_solve_config=True
         )  # [batch_size]
@@ -119,17 +122,22 @@ def _get_datasets(
         )
         # preproc_neighbors: [action_size, batch_size, ...]
 
-        def compute_heur_for_action(carry, preproc_neighbor):
-            heur = heuristic_model.apply(target_heuristic_params, preproc_neighbor, training=False)
-            return None, heur.squeeze()
+        def compute_heur_for_action(model_key, preproc_neighbor):
+            return heuristic_model.apply(
+                target_heuristic_params,
+                preproc_neighbor,
+                training=False,
+                rngs={"params": model_key},
+            ).squeeze(-1)
 
-        _, heur = _infer_neighbor_heuristics(
+        heur = _infer_neighbor_heuristics(
             heuristic_model,
             preproc_neighbors,
             solve_configs,
             neighbors,
             SolveConfigsAndStates,
             compute_heur_for_action,
+            inference_key,
         )  # [action_size, batch_size]
         backup = heur + cost  # [action_size, batch_size]
         target_heuristic = jnp.min(jnp.maximum(backup, cost), axis=0)
@@ -147,7 +155,11 @@ def _get_datasets(
     _, (solve_configs, states, target_heuristic, solved) = jax.lax.scan(
         get_minibatched_datasets,
         None,
-        (minibatched_solve_configs, minibatched_states),
+        (
+            minibatched_solve_configs,
+            minibatched_states,
+            jax.random.split(key, minibatched_states.shape[0]),
+        ),
     )
 
     solve_configs = solve_configs.reshape((-1,))
