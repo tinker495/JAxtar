@@ -45,7 +45,8 @@ def _get_datasets_with_policy(
     minibatched_states = states.reshape((-1, minibatch_size))
 
     def get_minibatched_datasets(key, vals):
-        key, subkey = jax.random.split(key)
+        key, subkey, model_key = jax.random.split(key, 3)
+        policy_key, target_key, online_key = jax.random.split(model_key, 3)
         solve_configs, states = vals
         # Check if the current states are already in a solved configuration.
         solved = puzzle.batched_is_solved(solve_configs, states, multi_solve_config=True)
@@ -53,7 +54,7 @@ def _get_datasets_with_policy(
         # Preprocess the states to be suitable for neural network input.
         preproc = jax.vmap(preproc_fn)(solve_configs, states)
         # Get the Q-values Q(s,a) for all actions 'a' in the current state 's' using the online Q-network.
-        q_values = q_model.apply(q_params, preproc, training=False)
+        q_values = q_model.apply(q_params, preproc, training=False, rngs={"params": policy_key})
         q_values = jnp.nan_to_num(q_values, posinf=1e6, neginf=-1e6)
         # Get all possible neighbor states (s') and the costs c(s,a,s') to move to them.
         neighbors, cost = puzzle.batched_get_neighbours(
@@ -110,7 +111,7 @@ def _get_datasets_with_policy(
         # to get the Q-values for the next state, Q_target(s', a').
         # Using a separate target network stabilizes training.
         q = q_model.apply(
-            target_q_params, preproc_neighbors, training=False
+            target_q_params, preproc_neighbors, training=False, rngs={"params": target_key}
         )  # [minibatch_size, action_shape]
         q = jnp.nan_to_num(q, posinf=1e6, neginf=-1e6)
         # Invalidate actions that are not reachable from the next state.
@@ -120,7 +121,9 @@ def _get_datasets_with_policy(
         q_next = jnp.where(neighbor_valid_mask, q, jnp.inf)
 
         if use_double_dqn:
-            q_online = q_model.apply(q_params, preproc_neighbors, training=False)
+            q_online = q_model.apply(
+                q_params, preproc_neighbors, training=False, rngs={"params": online_key}
+            )
             q_online = jnp.nan_to_num(q_online, posinf=1e6, neginf=-1e6)
             q_online = jnp.where(jnp.isfinite(valid_neighbor_cost), q_online, jnp.inf)
             best_actions = jnp.argmin(q_online, axis=1)
