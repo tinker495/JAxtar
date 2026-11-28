@@ -82,7 +82,6 @@ def build_path_steps_from_trace(
         heuristic=heuristic,
         q_fn=q_fn,
         states=list(solution_trace.states) if solution_trace.states is not None else None,
-        costs=list(solution_trace.costs) if solution_trace.costs is not None else None,
         dists=list(solution_trace.dists) if solution_trace.dists is not None else None,
     )
 
@@ -93,13 +92,12 @@ def _materialise_path(
     initial_state,
     action_sequence: List[int],
     states_list,
-    costs_list,
 ) -> tuple[list, List[float], List[int]]:
-    """Resolve the state and cost at every path index.
+    """Resolve the state and cumulative transition cost at every path index.
 
-    Trace-supplied states / costs win wherever they reach; the remaining indices are
-    replayed one action at a time through the puzzle. Replay stops at an unreachable
-    transition, so the action sequence is truncated to the states actually produced.
+    Trace-supplied states are reused when present; each action is replayed through
+    the puzzle to accumulate exact transition costs and recover any missing states.
+    Replay stops at an unreachable transition, truncating the action sequence.
     """
 
     def _traced(seq, idx):
@@ -108,27 +106,20 @@ def _materialise_path(
     state = _traced(states_list, 0)
     if state is None:
         state = initial_state
-    running_cost = _traced(costs_list, 0)
-    if running_cost is None:
-        running_cost = 0.0
+    running_cost = 0.0
 
     path_states = [state]
     path_costs = [running_cost]
 
     for depth, action_val in enumerate(action_sequence):
+        successor, transition_cost = puzzle.get_actions(solve_config, state, action_val)
+        step_cost = float(transition_cost)
+        if not np.isfinite(step_cost):
+            return path_states, path_costs, action_sequence[:depth]
+        running_cost += step_cost
         next_state = _traced(states_list, depth + 1)
-        traced_cost = _traced(costs_list, depth + 1)
-
-        if next_state is None or traced_cost is None:
-            neighbours, transition_cost = puzzle.get_neighbours(solve_config, state, True)
-            step_cost = float(transition_cost[action_val])
-            if not np.isfinite(step_cost):
-                return path_states, path_costs, action_sequence[:depth]
-            running_cost += step_cost
-            if next_state is None:
-                next_state = neighbours[action_val]
-        if traced_cost is not None:
-            running_cost = traced_cost
+        if next_state is None:
+            next_state = successor
 
         path_states.append(next_state)
         path_costs.append(running_cost)
@@ -169,7 +160,6 @@ def build_path_steps_from_actions(
     heuristic=None,
     q_fn=None,
     states=None,
-    costs=None,
     dists=None,
 ) -> List[PathStep]:
     heuristic_params = (
@@ -190,7 +180,6 @@ def build_path_steps_from_actions(
         initial_state=initial_state,
         action_sequence=action_sequence,
         states_list=list(states) if states is not None else None,
-        costs_list=[float(c) for c in costs] if costs is not None else None,
     )
 
     path_dists = _path_dists(

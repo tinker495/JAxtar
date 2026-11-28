@@ -83,7 +83,6 @@ class BeamSearchResult:
     generated_size: jax.Array
     trace_parent: jax.Array
     trace_action: jax.Array
-    trace_cost: jax.Array
     trace_dist: jax.Array
     trace_depth: jax.Array
     trace_state: Xtructurable
@@ -111,7 +110,6 @@ class BeamSearchResult:
         trace_capacity = (max_depth + 1) * beam_width
         trace_parent = jnp.full((trace_capacity,), TRACE_INVALID, dtype=TRACE_INDEX_DTYPE)
         trace_action = jnp.full((trace_capacity,), ACTION_PAD, dtype=ACTION_DTYPE)
-        trace_cost = jnp.full((trace_capacity,), jnp.inf, dtype=KEY_DTYPE)
         trace_dist = jnp.full((trace_capacity,), jnp.inf, dtype=KEY_DTYPE)
         trace_depth = jnp.full((trace_capacity,), -1, dtype=jnp.int32)
         active_trace = jnp.full((beam_width,), TRACE_INVALID, dtype=TRACE_INDEX_DTYPE)
@@ -132,7 +130,6 @@ class BeamSearchResult:
             generated_size=generated_size,
             trace_parent=trace_parent,
             trace_action=trace_action,
-            trace_cost=trace_cost,
             trace_dist=trace_dist,
             trace_depth=trace_depth,
             trace_state=trace_state,
@@ -201,9 +198,8 @@ class BeamSearchResult:
         if trace is None:
             return SolutionTrace.unsolved()
 
-        costs, dists, actions = trace
+        dists, actions = trace
         states = tuple(self._get_solved_path())
-        costs_tuple = tuple(float(cost) for cost in costs)
         dists_tuple = tuple(None if dist is None else float(dist) for dist in dists)
 
         return SolutionTrace.from_raw(
@@ -211,7 +207,6 @@ class BeamSearchResult:
             raw_actions=actions,
             action_pad=action_pad_int(ACTION_DTYPE),
             states=states if states else None,
-            costs=costs_tuple,
             dists=dists_tuple,
         )
 
@@ -227,30 +222,25 @@ class BeamSearchResult:
 
         trace_parent = np.asarray(jax.device_get(self.trace_parent), dtype=np.uint32)
         trace_action = jax.device_get(self.trace_action)
-        trace_cost = jax.device_get(self.trace_cost)
         trace_dist = jax.device_get(self.trace_dist)
 
-        costs_rev = []
         dists_rev = []
         actions_rev = []
 
         invalid = TRACE_INVALID_INT
 
         while node_idx != invalid:
-            cost_val = float(trace_cost[node_idx])
             dist_raw = float(trace_dist[node_idx])
             dists_rev.append(dist_raw if math.isfinite(dist_raw) else None)
-            costs_rev.append(cost_val)
 
             parent_idx = int(trace_parent[node_idx])
             if parent_idx != invalid:
                 actions_rev.append(int(trace_action[node_idx]))
             node_idx = parent_idx
 
-        costs = list(reversed(costs_rev))
         dists = list(reversed(dists_rev))
         actions = list(reversed(actions_rev))
-        return costs, dists, actions
+        return dists, actions
 
     def seed_start(self, start: Puzzle.State, dist: jax.Array, score: jax.Array):
         self.beam = self.beam.at[0].set(start)
@@ -259,7 +249,6 @@ class BeamSearchResult:
         self.scores = self.scores.at[0].set(score)
         self.parent_index = self.parent_index.at[0].set(-1)
         self.active_trace = self.active_trace.at[0].set(0)
-        self.trace_cost = self.trace_cost.at[0].set(0)
         self.trace_dist = self.trace_dist.at[0].set(dist)
         self.trace_depth = self.trace_depth.at[0].set(0)
         self.trace_action = self.trace_action.at[0].set(ACTION_PAD)
@@ -298,7 +287,6 @@ class BeamSearchResult:
 
         self.trace_parent = self.trace_parent.at[next_trace_ids].set(parent_trace_ids)
         self.trace_action = self.trace_action.at[next_trace_ids].set(trace_actions)
-        self.trace_cost = self.trace_cost.at[next_trace_ids].set(selected_costs)
         self.trace_dist = self.trace_dist.at[next_trace_ids].set(selected_dists)
         self.trace_depth = self.trace_depth.at[next_trace_ids].set(trace_depths)
         self.trace_state = self.trace_state.at[next_trace_ids].set(selected_states)

@@ -156,7 +156,6 @@ class BiDirectionalSearchResult(Generic[SearchResultT]):
             raw_actions=(action for action, _, _ in path[1:]),
             action_pad=action_pad,
             states=tuple(state for _, state, _ in path),
-            costs=tuple(cost for _, _, cost in path),
             dists=None,
         )
 

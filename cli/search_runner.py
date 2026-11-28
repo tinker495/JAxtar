@@ -96,26 +96,23 @@ def search_samples(
         )
         states_per_second = outcome.generated_size / single_search_time
 
-        def ensure_path_outcome():
-            nonlocal outcome
-            if outcome.solved and not outcome.path_steps:
-                outcome = with_solution_path(
-                    outcome,
-                    search_result,
-                    puzzle=puzzle,
-                    solve_config=solve_config,
-                    initial_state=state,
-                    heuristic=heuristic,
-                    qfunction=qfunction,
-                )
-            return outcome
+        need_path_dists = visualize_options.visualize_terminal or visualize_options.visualize_imgs
+        if outcome.solved:
+            outcome = with_solution_path(
+                outcome,
+                search_result,
+                puzzle=puzzle,
+                solve_config=solve_config,
+                initial_state=state,
+                heuristic=heuristic if need_path_dists else None,
+                qfunction=qfunction if need_path_dists else None,
+            )
 
         if (not has_goal_data) and outcome.solved:
-            path_outcome = ensure_path_outcome()
-            if path_outcome.solution_state is not None:
+            if outcome.solution_state is not None:
                 console.print(
                     Panel(
-                        Text.from_ansi(str(path_outcome.solution_state)),
+                        Text.from_ansi(str(outcome.solution_state)),
                         title="[bold green]Solution State[/bold green]",
                         expand=False,
                     )
@@ -134,7 +131,7 @@ def search_samples(
             single_search_time=single_search_time,
             generated_size=outcome.generated_size,
             states_per_second=states_per_second,
-            solved_cost=outcome.solved_cost,
+            solved_cost=outcome.path_cost if outcome.solved else None,
             seed=seed,
         )
         console.print(result_table)
@@ -148,10 +145,10 @@ def search_samples(
             )
 
         if outcome.solved:
-            total_costs.append(outcome.solved_cost if outcome.solved_cost is not None else 0.0)
+            total_costs.append(outcome.path_cost)
 
-            if visualize_options.visualize_terminal or visualize_options.visualize_imgs:
-                path_steps = list(ensure_path_outcome().path_steps)
+            if need_path_dists:
+                path_steps = list(outcome.path_steps)
 
                 if visualize_options.visualize_terminal:
                     console.print(
