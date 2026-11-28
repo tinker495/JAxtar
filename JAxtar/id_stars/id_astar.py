@@ -117,7 +117,7 @@ def _id_astar_frontier_builder(
         action_ids = jnp.arange(action_size, dtype=jnp.int32)
         cond_bounded = build_frontier_cond(batch_size)
 
-        def body_bounded(val: tuple[IDFrontier, jnp.int32]):
+        def body_bounded(val: tuple[IDFrontier, jax.Array]):
             frontier, i = val
 
             states = frontier.states
