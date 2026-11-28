@@ -6,9 +6,14 @@ Write repository documentation in English, including nested AGENTS.md files.
 Use Korean for conversation, review comments, PR bodies, and local reports;
 keep code, comments, identifiers, and commit messages in English.
 
-Read [CODING_STANDARDS.md](CODING_STANDARDS.md) when reviewing code or writing
-repository documentation and comments. CI owns formatting and linting; review
-suggestions do not authorize changes to tests or acceptance assets.
+Read [CODING_STANDARDS.md](CODING_STANDARDS.md) for documentation and code review.
+Review findings are subject to the test ownership rules below.
+
+Before changing a call across repositories, including a helper built from existing
+public calls, identify the owner of the invariant and inspect its public API.
+Run `python .github/scripts/check_seam_leaks.py` in the affected checkout before
+benchmarking or submitting the change. Before sign-off, apply the
+[ownership review](CODING_STANDARDS.md#cross-repository-ownership) to the final diff.
 
 ## Test Ownership and Change Permissions
 
