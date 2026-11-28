@@ -205,7 +205,7 @@ def _compute_diffusion_q(
     solve_configs_and_states_and_actions = SolveConfigsAndStatesAndActions(
         solveconfigs=solve_configs,
         states=states,
-        actions=trajectory_actions,
+        actions=trajectory_actions.astype(jnp.int32),
     )
 
     # 1. Unique state-action pairs
@@ -336,7 +336,7 @@ def get_qfunction_dataset_builder(
     class SolveConfigsAndStatesAndActions(Xtructurable):
         solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
         states: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.State)]
-        actions: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,))]
+        actions: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.int32, shape=(1,))]
 
     class SolveConfigsAndStates(Xtructurable):
         solveconfigs: Annotated[Xtructurable, FieldDescriptor.scalar(dtype=puzzle.SolveConfig)]
