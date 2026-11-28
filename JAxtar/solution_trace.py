@@ -18,9 +18,7 @@ class SolutionTrace:
     solved: bool
     actions: tuple[int, ...]
     states: tuple[Any, ...] | None = None
-    costs: tuple[float, ...] | None = None
     dists: tuple[float | None, ...] | None = None
-    requires_replay: bool = False
 
     @classmethod
     def unsolved(cls) -> "SolutionTrace":
@@ -34,27 +32,21 @@ class SolutionTrace:
         raw_actions: Iterable[Any],
         action_pad: int,
         states: tuple[Any, ...] | None = None,
-        costs: tuple[float, ...] | None = None,
         dists: tuple[float | None, ...] | None = None,
     ) -> "SolutionTrace":
         """Build a SolutionTrace from algorithm-specific raw reconstruction data.
 
-        Owns the Solution Replay Requirement policy: a trace requires replay
-        when any of states / costs / dists is missing, so a Path Step Adapter
-        can decide whether to replay actions through a puzzle to recover the
-        missing facts.
+        Actions are normalised here; cumulative transition costs are always
+        derived by replaying those actions through the puzzle in `path_steps.py`.
         """
         if not solved:
             return cls.unsolved()
         actions = normalise_action_sequence(raw_actions, action_pad=action_pad)
-        requires_replay = states is None or costs is None or dists is None
         return cls(
             solved=True,
             actions=actions,
             states=states,
-            costs=costs,
             dists=dists,
-            requires_replay=requires_replay,
         )
 
 
